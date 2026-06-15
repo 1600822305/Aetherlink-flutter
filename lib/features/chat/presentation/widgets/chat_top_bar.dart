@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 
 /// Static UI strings, ported verbatim from the original (i18n is a later
@@ -76,11 +78,12 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
             label: const Text(_modelPlaceholderLabel),
           ),
         ),
-        // Settings — the settings page is a later milestone; disabled.
-        const IconButton(
-          icon: Icon(Icons.settings),
+        // Settings — now wired to the settings hub (`/settings`), pushed so
+        // the back button returns to the chat.
+        IconButton(
+          icon: const Icon(Icons.settings),
           tooltip: _settingsTooltip,
-          onPressed: null,
+          onPressed: () => context.push(AppRouter.settingsPath),
         ),
         const SizedBox(width: 4),
       ],

@@ -48,6 +48,9 @@ dependencies:
   share_plus: ^11.0.0
   device_info_plus: ^11.0.0
   go_router: ^17.3.0
+  # Lucide icon set for visual parity with the React app (ADR-0009). Pinned to an
+  # exact version per the ADR's "pin a concrete version" guardrail.
+  lucide_icons_flutter: 3.1.14+2
 
 dev_dependencies:
   flutter_test:
