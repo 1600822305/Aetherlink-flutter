@@ -4,6 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_page.dart';
 import 'package:aetherlink_flutter/features/theming/application/default_theme_spec.dart';
 
@@ -27,6 +30,12 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
+        // The chat home now binds real read providers; stub them empty so this
+        // routing test stays hermetic (no database access).
+        overrides: [
+          currentTopicProvider.overrideWith((ref) => null),
+          chatMessagesProvider.overrideWith((ref) => const <Message>[]),
+        ],
         child: MaterialApp.router(
           theme: AppTheme.light(defaultThemeSpec),
           darkTheme: AppTheme.dark(defaultThemeSpec),
@@ -35,8 +44,8 @@ void main() {
       ),
     );
 
-    // Home route renders the kept ChatPage placeholder.
-    expect(find.text('Chat'), findsOneWidget);
+    // Home route renders the chat home (ChatPage skeleton).
+    expect(find.byType(ChatPage), findsOneWidget);
 
     router.go(AppRouter.aboutPath);
     await tester.pumpAndSettle();

@@ -4,6 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
 import 'package:aetherlink_flutter/features/theming/application/default_theme_spec.dart';
 import 'package:aetherlink_flutter/features/welcome/application/onboarding_controller.dart';
 import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
@@ -24,7 +27,14 @@ void main() {
   testWidgets('tapping start marks onboarding done and navigates to chat home', (
     tester,
   ) async {
-    final container = ProviderContainer();
+    // The chat home now binds real read providers; stub them empty so this
+    // navigation test stays hermetic (no database access).
+    final container = ProviderContainer(
+      overrides: [
+        currentTopicProvider.overrideWith((ref) => null),
+        chatMessagesProvider.overrideWith((ref) => const <Message>[]),
+      ],
+    );
     addTearDown(container.dispose);
     final router = AppRouter.create(startAtWelcome: true);
     addTearDown(router.dispose);
@@ -49,6 +59,6 @@ void main() {
 
     // markStarted() ran (in-memory seam flipped) and we navigated to the chat home.
     expect(container.read(onboardingControllerProvider), isFalse);
-    expect(find.text('Chat'), findsOneWidget);
+    expect(find.byType(ChatPage), findsOneWidget);
   });
 }
