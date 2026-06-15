@@ -12,7 +12,7 @@
 - **原项目（要迁走的）**：`https://github.com/1600822305/Aetherlink`
   技术栈：React 19 + MUI v7 + @emotion + tailwind，跑在 Capacitor 8（移动 webview）+ Tauri 2（桌面 webview）上。状态用 Redux Toolkit（14 slice）+ zustand + signals，数据用 Dexie/IndexedDB，LLM 走 Vercel AI SDK。规模：**972 个 TS 文件 / 207 个目录**。
 - **新项目（本仓库，要迁到的）**：`https://github.com/1600822305/Aetherlink-flutter`
-  技术栈：Flutter（Dart）。目前 `lib/` 还是 `flutter create` 的默认计数器骨架，**业务代码一行没写**，只有 `docs/` 这套设计文档。
+  技术栈：Flutter（Dart）。已搭起 feature-first 骨架，并完成 **M0（freezed 领域模型）** 与 **M1（Drift/SQLite 数据层）**；下一步 M2（网络/LLM）。详见 `ROADMAP.md` 进度看板。
 
 ---
 
@@ -65,10 +65,12 @@
 
 ## 4. 现在做到哪了（当前状态）
 
-- ✅ **设计文档已写齐并合并**（PR #1、#2）：结构/架构/迁移/模型/路线图/约定/测试/ADR 全在 `docs/`。
-- ✅ 结构强度已拍板：单包 feature-first + lint 强制边界。
-- ⬜ **代码：尚未开始。** `lib/` 还是默认骨架。
-- ⏭ **下一步 = M0**：搭 feature-first 骨架（空目录 + 依赖 + lint 边界配置 + 最小闭环），再把核心 freezed 领域模型翻出来。
+- ✅ **设计文档已写齐并合并**（PR #1、#2、#3）：结构/架构/迁移/模型/路线图/约定/测试/ADR 全在 `docs/`。
+- ✅ 结构强度已拍板：单包 feature-first + lint 强制边界（custom_lint 装不上，用 `test/architecture/import_boundaries_test.dart` 等价兜底）。
+- ✅ **骨架已立**（PR #4）：feature-first 目录 + 依赖 + 边界测试 + 最小闭环。
+- ✅ **M0 领域模型已完成**（PR #5）：MessageBlock 15 联合 + Message/Topic/Assistant 等翻成 freezed，JSON key/枚举 wire 值钉死。
+- ✅ **M1 数据层已完成**（PR #6）：Drift/SQLite 四张 chat 核心表（topics/messages/message_blocks/assistants），JSON-blob 存整模型、索引对齐原 v9，`ChatRepositoryImpl` 落地。边界规则 4 给 `core/database` 开了 narrow 例外，已用 ADR-0005 钉死（PR #7）。
+- ⏭ **下一步 = M2 网络/LLM**：dio + 自写 SSE + 各 provider client，收口单一 ProviderFactory（见 `adr/0004`）。
 
 > 进度的**实时看板**在 `ROADMAP.md` 末尾（M0~M5 + 数据迁移，⬜/✅）。**每完成一个里程碑，就去把那张表对应行打勾**——它是「做到哪了」的唯一事实来源。
 
@@ -106,7 +108,7 @@ M5  桌面端 UI         复用下层，只做桌面 shell
 
 > 读 `1600822305/Aetherlink-flutter` 仓库的 `docs/CONTEXT.md` 了解全部前因后果，然后看 `docs/ROADMAP.md` 的进度看板，从当前**未完成的最靠前里程碑**接着做。严格遵守 `docs/PROJECT_STRUCTURE.md` 和 `docs/CONVENTIONS.md` 的死规矩。
 
-（如果只是要「搭骨架」这一步，另有一份现成的详细提示词可直接用。）
+（当前进度：M0、M1 已完成，**下一个是 M2 网络/LLM 层**。）
 
 ---
 
