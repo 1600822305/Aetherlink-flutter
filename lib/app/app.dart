@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme.dart';
 import 'package:aetherlink_flutter/features/theming/application/theme_controller.dart';
+import 'package:aetherlink_flutter/features/welcome/application/onboarding_controller.dart';
 
 /// Root application widget (composition root).
 ///
@@ -21,8 +22,11 @@ class AetherlinkApp extends ConsumerStatefulWidget {
 
 class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
   /// Created once for the app's lifetime so theme rebuilds never recreate it
-  /// (which would reset navigation state).
-  final GoRouter _router = AppRouter.create();
+  /// (which would reset navigation state). First-time users land on the welcome
+  /// page; the decision is read once here from the in-memory onboarding seam.
+  late final GoRouter _router = AppRouter.create(
+    startAtWelcome: ref.read(onboardingControllerProvider),
+  );
 
   @override
   Widget build(BuildContext context) {
