@@ -1,0 +1,16 @@
+# json_serializable options applied to all freezed/json models.
+# - include_if_null: false keeps the persisted shape minimal and faithful to the
+#   original IndexedDB records (absent fields stay absent, not `null`).
+# - explicit_to_json: true so nested value objects serialize to maps, not
+#   `Instance of ...`.
+# - field_rename: none so Dart field names map 1:1 to wire keys unless a field
+#   carries an explicit @JsonKey (the original camel/snake mix is pinned that
+#   way).
+targets:
+  $default:
+    builders:
+      json_serializable:
+        options:
+          explicit_to_json: true
+          include_if_null: false
+          field_rename: none
