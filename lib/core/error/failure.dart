@@ -9,3 +9,13 @@ sealed class Failure {
 
   final String message;
 }
+
+/// A failure while talking to a remote provider — transport error, timeout or
+/// non-2xx HTTP status. Pure Dart; the dio-specific mapping that produces it
+/// lives in `network_error_mapper.dart`.
+final class NetworkFailure extends Failure {
+  const NetworkFailure(super.message, {this.statusCode});
+
+  /// HTTP status code when the failure came from a server response.
+  final int? statusCode;
+}
