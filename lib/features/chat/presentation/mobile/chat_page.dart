@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_message_bubble.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_sidebar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_top_bar.dart';
 
@@ -58,8 +59,8 @@ class ChatPage extends ConsumerWidget {
 }
 
 /// The scrollable message region. Reflects the real read provider: loading →
-/// spinner, failure → error notice, empty → empty state, and (later) a list of
-/// messages. Block rendering is M4.2.1.
+/// spinner, failure → error notice, empty → empty state, and a list of message
+/// bubbles otherwise.
 class _MessageList extends StatelessWidget {
   const _MessageList({required this.messagesAsync});
 
@@ -121,10 +122,11 @@ class _ErrorNotice extends StatelessWidget {
   }
 }
 
-/// One row per message, keyed by author role. Message-block rendering (bubbles,
-/// markdown, code, thinking …) is M4.2.1 — it replaces the row body without
-/// changing this scrollable-list shape. With a fresh database this list is
-/// empty, so the empty state shows instead.
+/// One bubble per message (M4.2.1). Each [ChatMessageBubble] reads its own
+/// `main_text` blocks through the real provider and aligns by role. Markdown,
+/// the other 14 block variants, sending and streaming are later slices that
+/// extend the bubble without changing this scrollable-list shape. With a fresh
+/// database this list is empty, so the empty state shows instead.
 class _MessageListView extends StatelessWidget {
   const _MessageListView(this.messages);
 
@@ -136,7 +138,7 @@ class _MessageListView extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: messages.length,
       itemBuilder: (context, index) =>
-          ListTile(dense: true, title: Text(messages[index].role.name)),
+          ChatMessageBubble(message: messages[index]),
     );
   }
 }
