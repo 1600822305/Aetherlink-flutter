@@ -87,6 +87,7 @@ riverpod_lint: ^latest
 2. **`domain` 不许 import** Flutter / dio / drift / riverpod 等框架/IO 包（保持纯 Dart）。
 3. **feature A 不许 import feature B 的内部文件**（只能引 B `domain` 的对外契约）。
 4. **`core` / `shared` 不许 import `features`**；`core` 不许 import `shared`。
+   - **唯一例外**：`core/database/`（Drift 单库组装根）可 import `features/*/data` 的表/DAO 定义 + `domain` 实体——边界严格限定，见 `adr/0005-core-database-composition-root.md`。其余 `core → features/shared` 仍一律拦截。
 
 CI 跑：
 
