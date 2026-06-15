@@ -1,7 +1,19 @@
-/// Placeholder for the shared dio instance and interceptors.
+import 'package:dio/dio.dart';
+
+/// Builds the shared [Dio] used by every LLM protocol adapter.
 ///
-/// The real client — auth/logging/retry interceptors plus a handwritten SSE
-/// parser, collapsed behind a single provider factory (see ADR-0004) — lands in
-/// milestone M2. No dio instance is created yet; this library only fixes the
-/// network module's location per `docs/PROJECT_STRUCTURE.md`.
-library;
+/// Mechanical plumbing only (connect / receive timeouts; a swappable
+/// [Dio.httpClientAdapter] so tests can feed recorded bytes without a network).
+/// Provider-specific auth headers, request bodies and endpoints live in the
+/// adapters, never here — this layer carries no protocol semantics
+/// (ADR-0004 / ADR-0006).
+Dio buildLlmDio() {
+  return Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 30),
+      // Streamed completions can run for minutes; keep the socket open.
+      receiveTimeout: const Duration(minutes: 5),
+      headers: const {Headers.contentTypeHeader: Headers.jsonContentType},
+    ),
+  );
+}
