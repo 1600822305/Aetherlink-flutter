@@ -158,7 +158,6 @@ void main() {
 
     // The hub really navigates: the existing About page is now on screen.
     expect(find.byType(AboutPage), findsOneWidget);
-    expect(find.text('关于'), findsWidgets);
     expect(find.text('AetherLink'), findsOneWidget);
   });
 }

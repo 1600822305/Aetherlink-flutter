@@ -1,91 +1,263 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import 'package:aetherlink_flutter/app/theme/app_theme_extension.dart';
+import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/settings/application/about_controller.dart';
 import 'package:aetherlink_flutter/features/settings/domain/about_info.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/setting_group.dart';
 
-/// The About page — the first concrete page in M4.0. Its job is to prove the
-/// theme → go_router → `Scaffold` pipeline end to end.
+/// The About page ("关于我们"), a 1:1 reproduction of the original
+/// `src/pages/Settings/AboutPage.tsx`: an info card (circular app icon + name +
+/// description + version badge) followed by a links card (GitHub / 官方群组 /
+/// 反馈 / 开发者工具).
 ///
 /// It is a pure view: all display state comes from [aboutInfoProvider] in the
-/// application layer; it holds no business logic and never touches `data`.
+/// application layer; it holds no business logic and never touches `data`. The
+/// external links open in the system browser; "开发者工具" targets an in-app
+/// page that does not exist yet, so that row renders disabled. All colors are
+/// theme tokens (ADR-0008); icons are lucide (ADR-0009).
 class AboutPage extends ConsumerWidget {
   const AboutPage({super.key});
 
+  static const String _appIconAsset = 'assets/images/app-icon.png';
+  static const String _githubIconAsset = 'assets/icons/lucide_github.svg';
+  static const double _appIconSize = 70;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final info = ref.watch(aboutInfoProvider);
-    final radius =
-        Theme.of(context).extension<AppThemeExtension>()?.borderRadius ?? 8.0;
 
     return Scaffold(
       appBar: AppBar(
-        leading: BackButton(
-          onPressed: () => context.canPop() ? context.pop() : context.go('/'),
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.onSurface,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: false,
+        shape: Border(bottom: BorderSide(color: theme.dividerColor)),
+        leading: IconButton(
+          icon: const Icon(LucideIcons.arrowLeft),
+          color: theme.colorScheme.primary,
+          onPressed: () => context.canPop()
+              ? context.pop()
+              : context.go(AppRouter.settingsPath),
         ),
-        title: const Text('关于'),
+        title: const Text('关于我们'),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _Header(info: info, radius: radius),
+          _SettingCard(child: _AboutHeader(info: info)),
           const SizedBox(height: 24),
-          for (final link in info.links)
-            ListTile(
-              leading: const Icon(Icons.link),
-              title: Text(link.label),
-              trailing: const Icon(Icons.open_in_new, size: 16),
-              subtitle: Text(link.url),
-            ),
+          _SettingCard(child: _LinksList(links: info.links)),
         ],
       ),
     );
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header({required this.info, required this.radius});
+/// The bordered surface card shared by the About page's two sections — same
+/// shape as the settings hub's group card.
+class _SettingCard extends StatelessWidget {
+  const _SettingCard({required this.child});
 
-  final AboutInfo info;
-  final double radius;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            color: theme.colorScheme.primary,
-            borderRadius: BorderRadius.circular(radius),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            info.appName.isEmpty ? '?' : info.appName[0],
-            style: theme.textTheme.headlineSmall?.copyWith(
-              color: theme.colorScheme.onPrimary,
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(kSettingGroupRadius),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(kSettingGroupRadius),
+        child: Material(type: MaterialType.transparency, child: child),
+      ),
+    );
+  }
+}
+
+class _AboutHeader extends StatelessWidget {
+  const _AboutHeader({required this.info});
+
+  final AboutInfo info;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipOval(
+            child: Image.asset(
+              AboutPage._appIconAsset,
+              width: AboutPage._appIconSize,
+              height: AboutPage._appIconSize,
+              fit: BoxFit.cover,
             ),
           ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(info.appName, style: theme.textTheme.titleLarge),
-              const SizedBox(height: 4),
-              Text(info.description, style: theme.textTheme.bodyMedium),
-              const SizedBox(height: 8),
-              Chip(label: Text('v${info.version}')),
-            ],
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  info.appName,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 22,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  info.description,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _VersionBadge(version: info.version),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
+  }
+}
+
+/// The green "v0.6.5" pill. Uses the theme's emerald [ColorScheme.secondary] as
+/// the success accent (the original used MUI's `success` palette) — no
+/// hard-coded color.
+class _VersionBadge extends StatelessWidget {
+  const _VersionBadge({required this.version});
+
+  final String version;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.secondary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.12),
+        border: Border.all(color: accent),
+        borderRadius: BorderRadius.circular(25),
+      ),
+      child: Text(
+        'v$version',
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: accent),
+      ),
+    );
+  }
+}
+
+class _LinksList extends StatelessWidget {
+  const _LinksList({required this.links});
+
+  final List<AboutLink> links;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <Widget>[];
+    for (var i = 0; i < links.length; i++) {
+      if (i > 0) {
+        rows.add(const Divider(height: 1, thickness: 1));
+      }
+      rows.add(_AboutLinkRow(link: links[i]));
+    }
+    return Column(children: rows);
+  }
+}
+
+class _AboutLinkRow extends StatelessWidget {
+  const _AboutLinkRow({required this.link});
+
+  final AboutLink link;
+
+  static const double _iconSize = 20;
+  static const double _arrowSize = 16;
+
+  Future<void> _open(String url) async {
+    final uri = Uri.parse(url);
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final url = link.url;
+    final enabled = url != null;
+
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          _LinkLeadingIcon(
+            kind: link.kind,
+            size: _iconSize,
+            color: theme.colorScheme.onSurface,
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Text(link.title, style: theme.textTheme.bodyLarge)),
+          const SizedBox(width: 8),
+          Icon(
+            LucideIcons.arrowUpRight,
+            size: _arrowSize,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ],
+      ),
+    );
+
+    if (!enabled) {
+      return Opacity(opacity: 0.5, child: row);
+    }
+    return InkWell(onTap: () => _open(url), child: row);
+  }
+}
+
+/// Maps an [AboutLinkKind] to its lucide leading icon. GitHub is rendered from
+/// the official lucide `github.svg` (this lucide port dropped the brand icons),
+/// the rest are native `LucideIcons.*`.
+class _LinkLeadingIcon extends StatelessWidget {
+  const _LinkLeadingIcon({
+    required this.kind,
+    required this.size,
+    required this.color,
+  });
+
+  final AboutLinkKind kind;
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    if (kind == AboutLinkKind.github) {
+      return SvgPicture.asset(
+        AboutPage._githubIconAsset,
+        width: size,
+        height: size,
+        colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+      );
+    }
+    final icon = switch (kind) {
+      AboutLinkKind.qqGroup => LucideIcons.messageCircle,
+      AboutLinkKind.feedback => LucideIcons.messageSquare,
+      AboutLinkKind.devTools => LucideIcons.terminal,
+      AboutLinkKind.github => LucideIcons.arrowUpRight, // unreachable
+    };
+    return Icon(icon, size: size, color: color);
   }
 }
