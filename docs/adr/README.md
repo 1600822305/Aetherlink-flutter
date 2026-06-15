@@ -20,3 +20,4 @@
 | [0003](./0003-drift-for-persistence.md) | 持久化用 Drift/SQLite（不用 Isar/sqflite 裸写） | Accepted |
 | [0004](./0004-dio-handwritten-sse.md) | 网络/LLM 用 dio + 自写 SSE（不移植 Vercel AI SDK） | Accepted |
 | [0005](./0005-core-database-composition-root.md) | `core/database` 作为持久化组装根，对边界规则 4 开 narrow 例外 | Accepted |
+| [0006](./0006-provider-protocol-adapters.md) | LLM provider 按协议族收口成 3 个 adapter，统一接缝不统一内脏（refines 0004） | Accepted |
