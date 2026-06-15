@@ -47,7 +47,7 @@
 | 分层 | Clean Architecture：`presentation → application → domain ← data` | UI 与业务解耦，domain 纯 Dart 可单测。`ARCHITECTURE.md` |
 | 状态 | **Riverpod** | 与原 Redux slice 近乎一一对应，兼当 DI。`adr/0002` |
 | 持久化 | **Drift / SQLite** | 数据是 topic→message→block 的关系结构。`adr/0003` |
-| 网络/LLM | **dio + 自写 SSE**，收口单一 ProviderFactory | 修掉原项目两个 factory 的病；删 cors-proxy。`adr/0004` |
+| 网络/LLM | **dio + 自写 SSE**，按协议族收口成 **3 个 adapter**（OpenAI 兼容 / Anthropic / Gemini）+ 单一 ProviderFactory；全自写，不引第三方 LLM SDK | 修掉原项目两个 factory 的病；删 cors-proxy；统一接缝不统一内脏。`adr/0004`、`adr/0006` |
 | 模型 | **freezed**（先行） | 模型是所有层的契约，第一步先定死。`DOMAIN_MODEL.md` |
 | 迁移方式 | **按行为重写，不逐行抄** + 补丁三分类 | 抄会把框架税和 bug 一起搬过来。`MIGRATION.md` |
 | 桌面端 | **暂时搁置**，但架构设计成 UI 无关，以后随时并入 | `ARCHITECTURE.md` §7 |
@@ -70,7 +70,7 @@
 - ✅ **骨架已立**（PR #4）：feature-first 目录 + 依赖 + 边界测试 + 最小闭环。
 - ✅ **M0 领域模型已完成**（PR #5）：MessageBlock 15 联合 + Message/Topic/Assistant 等翻成 freezed，JSON key/枚举 wire 值钉死。
 - ✅ **M1 数据层已完成**（PR #6）：Drift/SQLite 四张 chat 核心表（topics/messages/message_blocks/assistants），JSON-blob 存整模型、索引对齐原 v9，`ChatRepositoryImpl` 落地。边界规则 4 给 `core/database` 开了 narrow 例外，已用 ADR-0005 钉死（PR #7）。
-- ⏭ **下一步 = M2 网络/LLM**：dio + 自写 SSE + 各 provider client，收口单一 ProviderFactory（见 `adr/0004`）。
+- ⏭ **下一步 = M2 网络/LLM**：dio + 自写 SSE，按协议族收口成 **3 个 adapter**（OpenAI 兼容 / Anthropic / Gemini，DashScope/Grok 等并入 OpenAI 兼容族）+ 单一 ProviderFactory（见 `adr/0004` + `adr/0006`）。**build-vs-buy 已评估社区库（openai_dart/anthropic_sdk_dart/googleai_dart）后定为全自写**——兼容供应商动物园 + 非标字段强类型库扛不住，且少一份依赖风险。交接提示词已发实现方。
 
 > 进度的**实时看板**在 `ROADMAP.md` 末尾（M0~M5 + 数据迁移，⬜/✅）。**每完成一个里程碑，就去把那张表对应行打勾**——它是「做到哪了」的唯一事实来源。
 
@@ -81,7 +81,7 @@
 ```
 M0  领域模型 + 骨架   freezed 模型；feature-first 目录 + 依赖 + lint 边界
 M1  数据层           Drift schema/DAO/repository 实现 + 老数据迁移方案
-M2  网络/LLM 层       dio + SSE + 各 provider client（收口单一 factory）
+M2  网络/LLM 层       dio + 自写 SSE + 3 个协议 adapter（收口单一 factory，全自写）
 M3  平台抽象层        UnifiedPlatformApi + 各平台插件实现
 M4  移动端 UI         逐页复刻（已验证可 1:1）
 M5  桌面端 UI         复用下层，只做桌面 shell
