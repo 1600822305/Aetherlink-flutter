@@ -11,9 +11,15 @@ part of 'about_controller.dart';
 /// Supplies the About page with its display state from the application layer
 /// (the page stays a pure view — no business logic, ADR/PROJECT_STRUCTURE).
 ///
-/// Values are static for M4.0 (ported from the original `AboutPage.tsx`). The
-/// version can later be sourced from `package_info_plus` without touching the
-/// view — only this provider changes.
+/// Values are ported verbatim from the original `AboutPage.tsx` /
+/// `settings.about` zh-CN strings. The version is static for now; it can later
+/// be sourced from `package_info_plus` without touching the view — only this
+/// provider changes.
+///
+/// The "开发者工具" row points at the original's in-app `/devtools` page, which
+/// does not exist in the Flutter app yet, so its [AboutLink.url] is `null` and
+/// the row renders disabled (the settings hub's convention for unimplemented
+/// destinations — no fake page).
 
 @ProviderFor(aboutInfo)
 final aboutInfoProvider = AboutInfoProvider._();
@@ -21,9 +27,15 @@ final aboutInfoProvider = AboutInfoProvider._();
 /// Supplies the About page with its display state from the application layer
 /// (the page stays a pure view — no business logic, ADR/PROJECT_STRUCTURE).
 ///
-/// Values are static for M4.0 (ported from the original `AboutPage.tsx`). The
-/// version can later be sourced from `package_info_plus` without touching the
-/// view — only this provider changes.
+/// Values are ported verbatim from the original `AboutPage.tsx` /
+/// `settings.about` zh-CN strings. The version is static for now; it can later
+/// be sourced from `package_info_plus` without touching the view — only this
+/// provider changes.
+///
+/// The "开发者工具" row points at the original's in-app `/devtools` page, which
+/// does not exist in the Flutter app yet, so its [AboutLink.url] is `null` and
+/// the row renders disabled (the settings hub's convention for unimplemented
+/// destinations — no fake page).
 
 final class AboutInfoProvider
     extends $FunctionalProvider<AboutInfo, AboutInfo, AboutInfo>
@@ -31,9 +43,15 @@ final class AboutInfoProvider
   /// Supplies the About page with its display state from the application layer
   /// (the page stays a pure view — no business logic, ADR/PROJECT_STRUCTURE).
   ///
-  /// Values are static for M4.0 (ported from the original `AboutPage.tsx`). The
-  /// version can later be sourced from `package_info_plus` without touching the
-  /// view — only this provider changes.
+  /// Values are ported verbatim from the original `AboutPage.tsx` /
+  /// `settings.about` zh-CN strings. The version is static for now; it can later
+  /// be sourced from `package_info_plus` without touching the view — only this
+  /// provider changes.
+  ///
+  /// The "开发者工具" row points at the original's in-app `/devtools` page, which
+  /// does not exist in the Flutter app yet, so its [AboutLink.url] is `null` and
+  /// the row renders disabled (the settings hub's convention for unimplemented
+  /// destinations — no fake page).
   AboutInfoProvider._()
     : super(
         from: null,
@@ -67,4 +85,4 @@ final class AboutInfoProvider
   }
 }
 
-String _$aboutInfoHash() => r'98ee8d682d5165b338c5d120f41222b6d99760c1';
+String _$aboutInfoHash() => r'6b92cb98d87de8b88e73b126b3a2c841d85a995c';

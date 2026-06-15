@@ -1,6 +1,6 @@
 /// Pure-Dart display model for the About page (ported from the original
 /// `src/pages/Settings/AboutPage.tsx`: app name, description, version and the
-/// external links). Pure data — no Flutter import — so it passes
+/// link rows). Pure data — no Flutter import — so it passes
 /// `import_boundaries_test`.
 class AboutInfo {
   const AboutInfo({
@@ -16,10 +16,19 @@ class AboutInfo {
   final List<AboutLink> links;
 }
 
-/// A labelled external link shown as a row on the About page.
-class AboutLink {
-  const AboutLink({required this.label, required this.url});
+/// Identifies an About-page link row so the presentation layer can attach the
+/// matching (lucide) icon without leaking `IconData` into the domain.
+enum AboutLinkKind { github, qqGroup, feedback, devTools }
 
-  final String label;
-  final String url;
+/// A row in the About page's links card.
+class AboutLink {
+  const AboutLink({required this.kind, required this.title, this.url});
+
+  final AboutLinkKind kind;
+  final String title;
+
+  /// External URL to open, or `null` when the target is an in-app destination
+  /// that does not exist in the Flutter app yet (rendered disabled, matching
+  /// the settings hub's treatment of unimplemented entries).
+  final String? url;
 }
