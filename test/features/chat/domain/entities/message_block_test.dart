@@ -2,6 +2,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/citation_metada
 import 'package:aetherlink_flutter/features/chat/domain/entities/citation_source.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/chart_type.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_reference_item.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_reference_metadata.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_file_reference.dart';
@@ -94,6 +95,35 @@ void main() {
           WebSearchReferenceItem(index: 1, title: 'Hit', url: 'https://w'),
         ],
         citationMetadata: const CitationMetadata(searchQuery: 'dart'),
+      );
+      expect(MessageBlock.fromJson(block.toJson()), block);
+    });
+
+    test('knowledge_reference (strongly-typed metadata with results)', () {
+      final block = MessageBlock.knowledgeReference(
+        id: 'b10',
+        messageId: 'm1',
+        status: MessageBlockStatus.success,
+        createdAt: createdAt,
+        content: 'kb answer',
+        knowledgeBaseId: 'kb1',
+        similarity: 0.88,
+        metadata: const KnowledgeReferenceMetadata(
+          fileName: 'doc.pdf',
+          fileId: 'f1',
+          knowledgeDocumentId: 'kd1',
+          searchQuery: 'dart freezed',
+          isCombined: true,
+          resultCount: 1,
+          results: [
+            KnowledgeReferenceMetadataResult(
+              index: 0,
+              content: 'snippet',
+              similarity: 0.77,
+              documentId: 'd1',
+            ),
+          ],
+        ),
       );
       expect(MessageBlock.fromJson(block.toJson()), block);
     });

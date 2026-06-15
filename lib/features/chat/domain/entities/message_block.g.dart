@@ -606,7 +606,11 @@ KnowledgeReferenceBlock _$KnowledgeReferenceBlockFromJson(
   model: json['model'] == null
       ? null
       : Model.fromJson(json['model'] as Map<String, dynamic>),
-  metadata: json['metadata'] as Map<String, dynamic>?,
+  metadata: json['metadata'] == null
+      ? null
+      : KnowledgeReferenceMetadata.fromJson(
+          json['metadata'] as Map<String, dynamic>,
+        ),
   error: json['error'] as Map<String, dynamic>?,
   content: json['content'] as String,
   knowledgeBaseId: json['knowledgeBaseId'] as String,
@@ -627,7 +631,7 @@ Map<String, dynamic> _$KnowledgeReferenceBlockToJson(
     const IsoDateTimeConverter().toJson,
   ),
   'model': ?instance.model?.toJson(),
-  'metadata': ?instance.metadata,
+  'metadata': ?instance.metadata?.toJson(),
   'error': ?instance.error,
   'content': instance.content,
   'knowledgeBaseId': instance.knowledgeBaseId,

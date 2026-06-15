@@ -3,6 +3,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/chart_type.dart
 import 'package:aetherlink_flutter/features/chat/domain/entities/citation_metadata.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/citation_source.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_reference_item.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_reference_metadata.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_file_reference.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/web_search_reference_item.dart';
@@ -264,7 +265,7 @@ sealed class MessageBlock with _$MessageBlock {
     @IsoDateTimeConverter() required DateTime createdAt,
     @IsoDateTimeConverter() DateTime? updatedAt,
     Model? model,
-    Map<String, dynamic>? metadata,
+    KnowledgeReferenceMetadata? metadata,
     Map<String, dynamic>? error,
     required String content,
     required String knowledgeBaseId,
