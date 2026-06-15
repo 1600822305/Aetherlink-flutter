@@ -20,10 +20,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// the outgoing request so adapters' body/header/url construction can be
 /// asserted. No API key or socket is involved.
 class _ReplayAdapter implements HttpClientAdapter {
-  _ReplayAdapter(this.sse, {this.statusCode = 200});
+  _ReplayAdapter(this.sse);
 
   final String sse;
-  final int statusCode;
   RequestOptions? request;
   String requestBody = '';
 
@@ -50,7 +49,7 @@ class _ReplayAdapter implements HttpClientAdapter {
     ]);
     return ResponseBody(
       stream,
-      statusCode,
+      200,
       headers: {
         Headers.contentTypeHeader: ['text/event-stream'],
       },
