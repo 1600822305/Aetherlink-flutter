@@ -71,8 +71,8 @@ void main() {
   );
 
   testWidgets(
-    'Top bar restores the model-selector placeholder and settings, both '
-    'disabled (no model configured, no fabricated name)',
+    'Top bar shows the disabled model-selector placeholder, with settings now '
+    'wired to the settings hub',
     (tester) async {
       await pumpChatPage(tester);
 
@@ -87,11 +87,12 @@ void main() {
       );
       expect(modelSelector.onPressed, isNull);
 
-      // Settings action is present but disabled (no settings page yet).
+      // Settings action is now wired (the settings hub exists) — it navigates
+      // to `/settings`, so it is enabled.
       final settingsButton = tester.widget<IconButton>(
         find.widgetWithIcon(IconButton, Icons.settings),
       );
-      expect(settingsButton.onPressed, isNull);
+      expect(settingsButton.onPressed, isNotNull);
     },
   );
 

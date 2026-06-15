@@ -2,6 +2,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/settings_page.dart';
 import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
 
 /// Declarative application route table (go_router).
@@ -15,6 +16,7 @@ import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_
 /// register their own routes as later milestones land.
 abstract final class AppRouter {
   static const String chatPath = '/';
+  static const String settingsPath = '/settings';
   static const String aboutPath = '/about';
   static const String welcomePath = '/welcome';
 
@@ -34,6 +36,11 @@ abstract final class AppRouter {
         path: welcomePath,
         name: 'welcome',
         builder: (context, state) => const WelcomePage(),
+      ),
+      GoRoute(
+        path: settingsPath,
+        name: 'settings',
+        builder: (context, state) => const SettingsPage(),
       ),
       GoRoute(
         path: aboutPath,
