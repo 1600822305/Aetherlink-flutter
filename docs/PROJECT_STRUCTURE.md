@@ -140,7 +140,7 @@ app  ──►  features/*  ──►  shared  ──►  core
 
 - 引入 `custom_lint` + `riverpod_lint`，并增加 import 边界规则（可用社区包如 import boundary lint，或自定义 lint）。
 - `analysis_options.yaml` 打开严格 lint；CI 跑 `flutter analyze` + `dart run custom_lint`，**有告警即失败**。
-- 详细落地见 `CONVENTIONS`（待补）与 CI 配置。
+- 详细落地（`analysis_options.yaml` + custom_lint 规则 + CI 命令）见 `CONVENTIONS.md` §2。
 
 ---
 
