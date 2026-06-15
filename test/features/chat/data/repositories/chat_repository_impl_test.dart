@@ -1,5 +1,6 @@
 import 'package:aetherlink_flutter/core/database/app_database.dart';
 import 'package:aetherlink_flutter/features/chat/data/repositories/chat_repository_impl.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_reference_metadata.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
@@ -69,6 +70,42 @@ void main() {
         originName: 'photo.png',
         size: 1024,
         mimeType: 'image/png',
+      ),
+    ),
+    MessageBlock.tool(
+      id: 'b-tool',
+      messageId: messageId,
+      status: MessageBlockStatus.success,
+      createdAt: createdAt,
+      toolId: 't1',
+      toolName: 'search',
+      arguments: const {'query': 'dart', 'limit': 5},
+      content: 'tool output text',
+    ),
+    MessageBlock.knowledgeReference(
+      id: 'b-kref',
+      messageId: messageId,
+      status: MessageBlockStatus.success,
+      createdAt: createdAt,
+      content: 'referenced snippet',
+      knowledgeBaseId: 'kb-1',
+      source: 'doc.md',
+      similarity: 0.91,
+      metadata: const KnowledgeReferenceMetadata(
+        fileName: 'doc.md',
+        fileId: 'file-1',
+        knowledgeDocumentId: 'kdoc-1',
+        searchQuery: 'dart drift',
+        isCombined: true,
+        resultCount: 1,
+        results: [
+          KnowledgeReferenceMetadataResult(
+            index: 0,
+            content: 'snippet body',
+            similarity: 0.91,
+            documentId: 'kdoc-1',
+          ),
+        ],
       ),
     ),
   ];
