@@ -2,6 +2,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_page.dart';
+import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
 
 /// Declarative application route table (go_router).
 ///
@@ -9,20 +10,30 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_p
 /// declarative routes, deep-link support, and a smooth path to the desktop
 /// master-detail shell in M5.
 ///
-/// M4.0 only wires the foundation routes. The existing [ChatPage] placeholder is
-/// kept as the home target — its content is owned by M4.1 and is left untouched
-/// here. New feature pages register their own routes as later milestones land.
+/// The existing [ChatPage] placeholder is kept as the home target — its content
+/// is owned by a later milestone and is left untouched here. New feature pages
+/// register their own routes as later milestones land.
 abstract final class AppRouter {
   static const String chatPath = '/';
   static const String aboutPath = '/about';
+  static const String welcomePath = '/welcome';
 
-  static GoRouter create() => GoRouter(
-    initialLocation: chatPath,
+  /// Builds the router. [startAtWelcome] decides the first landing page: M4.1
+  /// passes the in-memory onboarding state (first-time user → [welcomePath],
+  /// otherwise → [chatPath]). It defaults to `false` so existing callers keep
+  /// landing on the chat home.
+  static GoRouter create({bool startAtWelcome = false}) => GoRouter(
+    initialLocation: startAtWelcome ? welcomePath : chatPath,
     routes: [
       GoRoute(
         path: chatPath,
         name: 'chat',
         builder: (context, state) => const ChatPage(),
+      ),
+      GoRoute(
+        path: welcomePath,
+        name: 'welcome',
+        builder: (context, state) => const WelcomePage(),
       ),
       GoRoute(
         path: aboutPath,
