@@ -33,6 +33,7 @@
 **目标**：headless 跑通流式对话。
 - dio 实例 + 拦截器 + SSE 解析器（机械水电，跨协议共享）。
 - **3 个协议 adapter**（`openaiCompatible` / `anthropic` / `gemini`）+ 单一 provider factory（按 `protocol` 选；DashScope/Grok 等并入 OpenAI 兼容族）。**统一接缝不统一内脏**，划线 + 抽象判据见 `adr/0006-provider-protocol-adapters.md`（refines `adr/0004`）。
+- **全自写，不引第三方 LLM SDK**（已评估 `openai_dart`/`anthropic_sdk_dart`/`googleai_dart`）：兼容供应商动物园 + 非标流式字段强类型库扛不住，且少一份依赖风险。
 - 补丁三分类落地：删 cors-proxy/polyfill；保留并测试②类业务修复。
 
 **验收**
