@@ -12,7 +12,7 @@
 - **原项目（要迁走的）**：`https://github.com/1600822305/Aetherlink`
   技术栈：React 19 + MUI v7 + @emotion + tailwind，跑在 Capacitor 8（移动 webview）+ Tauri 2（桌面 webview）上。状态用 Redux Toolkit（14 slice）+ zustand + signals，数据用 Dexie/IndexedDB，LLM 走 Vercel AI SDK。规模：**972 个 TS 文件 / 207 个目录**。
 - **新项目（本仓库，要迁到的）**：`https://github.com/1600822305/Aetherlink-flutter`
-  技术栈：Flutter（Dart）。已搭起 feature-first 骨架，并完成 **M0（freezed 领域模型）** 与 **M1（Drift/SQLite 数据层）**；下一步 M2（网络/LLM）。详见 `ROADMAP.md` 进度看板。
+  技术栈：Flutter（Dart）。已搭起 feature-first 骨架，并完成 **M0（freezed 领域模型）**、**M1（Drift/SQLite 数据层）** 与 **M2（网络/LLM 层）**；下一步 M3（平台抽象层）。详见 `ROADMAP.md` 进度看板。
 
 ---
 
@@ -70,7 +70,8 @@
 - ✅ **骨架已立**（PR #4）：feature-first 目录 + 依赖 + 边界测试 + 最小闭环。
 - ✅ **M0 领域模型已完成**（PR #5）：MessageBlock 15 联合 + Message/Topic/Assistant 等翻成 freezed，JSON key/枚举 wire 值钉死。
 - ✅ **M1 数据层已完成**（PR #6）：Drift/SQLite 四张 chat 核心表（topics/messages/message_blocks/assistants），JSON-blob 存整模型、索引对齐原 v9，`ChatRepositoryImpl` 落地。边界规则 4 给 `core/database` 开了 narrow 例外，已用 ADR-0005 钉死（PR #7）。
-- ⏭ **下一步 = M2 网络/LLM**：dio + 自写 SSE，按协议族收口成 **3 个 adapter**（OpenAI 兼容 / Anthropic / Gemini，DashScope/Grok 等并入 OpenAI 兼容族）+ 单一 ProviderFactory（见 `adr/0004` + `adr/0006`）。**build-vs-buy 已评估社区库（openai_dart/anthropic_sdk_dart/googleai_dart）后定为全自写**——兼容供应商动物园 + 非标字段强类型库扛不住，且少一份依赖风险。交接提示词已发实现方。
+- ✅ **M2 网络/LLM 已完成**（PR #11）：dio + 自写 SSE 解析器（机械水电、跨协议共享）；按协议族收口成 **3 个自包含 adapter**（OpenAI 兼容 / Anthropic / Gemini，DashScope/Grok/DeepSeek 等并入 OpenAI 兼容族）+ 单一 ProviderFactory，**统一接缝不统一内脏**（见 `adr/0004` + `adr/0006`）。全自写不引第三方 LLM SDK；headless 流式问答（含 reasoning/thinking 通道）跑通，30 个测试全绿。
+- ⏭ **下一步 = M3 平台抽象层**：`UnifiedPlatformApi` 抽象 + 各平台插件实现（fs / 通知 / 剪贴板 / 设备 / 分享 / 图库 / TTS / STT…），按平台注入。
 
 > 进度的**实时看板**在 `ROADMAP.md` 末尾（M0~M5 + 数据迁移，⬜/✅）。**每完成一个里程碑，就去把那张表对应行打勾**——它是「做到哪了」的唯一事实来源。
 
@@ -108,7 +109,7 @@ M5  桌面端 UI         复用下层，只做桌面 shell
 
 > 读 `1600822305/Aetherlink-flutter` 仓库的 `docs/CONTEXT.md` 了解全部前因后果，然后看 `docs/ROADMAP.md` 的进度看板，从当前**未完成的最靠前里程碑**接着做。严格遵守 `docs/PROJECT_STRUCTURE.md` 和 `docs/CONVENTIONS.md` 的死规矩。
 
-（当前进度：M0、M1 已完成，**下一个是 M2 网络/LLM 层**。）
+（当前进度：M0、M1、M2 已完成，**下一个是 M3 平台抽象层**。）
 
 ---
 
