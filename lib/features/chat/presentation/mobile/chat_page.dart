@@ -1,69 +1,56 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:aetherlink_flutter/app/theme/app_theme_extension.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_sidebar.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_top_bar.dart';
 
 /// Static UI strings. The original ran these through i18n; they are ported
 /// verbatim as constants per the M4.1 approach — wiring up i18n is a separate
-/// effort and out of scope for the skeleton.
+/// effort and out of scope.
 const String _emptyConversationLabel = '对话开始了，请输入您的问题';
-const String _inputHint = '和ai助手说点什么...';
-const String _drawerPlaceholderLabel = '侧边栏';
 
-/// The chat home page (mobile) — the third validation page after About (M4.0)
-/// and Welcome (M4.1), and the ChatPage's "About-page moment": it stands up the
-/// real layout shell and proves the presentation → application → repository →
-/// Drift pipeline is connected, even with nothing to show yet.
+/// The chat home page (mobile). After M4.2.0 stood up the real layout shell and
+/// proved the presentation → application → repository → Drift pipeline, M4.2.0b
+/// restores the visual chrome 1:1 to the original Aetherlink: a full top bar
+/// (menu / topic name / model selector / settings), the integrated input with
+/// its button toolbar, the sidebar shell, and a themed background surface.
 ///
-/// It is a pure view: the message list and title come from application-layer
-/// providers ([chatMessagesProvider] / [currentTopicProvider], backed by the M1
-/// [ChatRepository]); an empty database yields an empty list rendered as the
-/// empty state — no mock messages anywhere. It never imports `data` (Rule 1).
+/// It remains a pure view: the message list and title come from
+/// application-layer providers ([chatMessagesProvider] / [currentTopicProvider],
+/// backed by the M1 [ChatRepository]); an empty database yields an empty list
+/// rendered as the empty state — no mock data anywhere. It never imports `data`
+/// (Rule 1).
 ///
-/// Sending, streaming, message-block rendering, the drawer's topic/assistant
-/// lists and the peripheral actions (model selector, search, settings …) are
-/// later slices (M4.2.1+). The widget tree is laid out in its final shape now
-/// so those slices fill it in without rearranging it.
+/// Nothing is wired this round: sending, streaming, message-block rendering, the
+/// model selector, the sidebar's real lists, search and the rest are disabled
+/// placeholders (later slices), so the tree keeps its final shape.
 class ChatPage extends ConsumerWidget {
   const ChatPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final topicAsync = ref.watch(currentTopicProvider);
+    final theme = Theme.of(context);
     final messagesAsync = ref.watch(chatMessagesProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        leading: Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.view_sidebar_outlined),
-            tooltip: '打开侧边栏',
-            onPressed: () => Scaffold.of(context).openDrawer(),
-          ),
-        ),
-        // Dynamic title from the application layer; empty until a topic exists.
-        title: topicAsync.maybeWhen(
-          data: (topic) => topic == null
-              ? const SizedBox.shrink()
-              : Text(topic.name, overflow: TextOverflow.ellipsis),
-          orElse: () => const SizedBox.shrink(),
-        ),
-        actions: const [
-          // Right-side action placeholder. The model selector / search /
-          // settings actions arrive in later slices; shown disabled here so
-          // the bar's shape is final (no fake buttons).
-          IconButton(icon: Icon(Icons.more_vert), onPressed: null),
-        ],
-      ),
-      drawer: const _ChatDrawer(),
+      appBar: const ChatTopBar(),
+      drawer: const ChatSidebar(),
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(child: _MessageList(messagesAsync: messagesAsync)),
-            const _ChatInputBar(),
-          ],
+        top: false,
+        // Background surface layer. The original layered a chat-background image
+        // and a gradient overlay here; this round restores a solid themed
+        // surface only (background-image loading is a later slice).
+        child: ColoredBox(
+          color: theme.colorScheme.surface,
+          child: Column(
+            children: [
+              Expanded(child: _MessageList(messagesAsync: messagesAsync)),
+              const ChatInputBar(),
+            ],
+          ),
         ),
       ),
     );
@@ -150,94 +137,6 @@ class _MessageListView extends StatelessWidget {
       itemCount: messages.length,
       itemBuilder: (context, index) =>
           ListTile(dense: true, title: Text(messages[index].role.name)),
-    );
-  }
-}
-
-/// Side drawer placeholder. Its content (topic / assistant lists) is a later
-/// slice (M4.2.x); the skeleton only stands up the drawer shell.
-class _ChatDrawer extends StatelessWidget {
-  const _ChatDrawer();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Drawer(
-      child: SafeArea(
-        child: Center(
-          child: Text(
-            _drawerPlaceholderLabel,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.textTheme.bodySmall?.color,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Bottom composer. The field accepts text (local UI state), but sending is
-/// disabled — message sending is M4.2.2. Colors come from theme tokens.
-class _ChatInputBar extends StatefulWidget {
-  const _ChatInputBar();
-
-  @override
-  State<_ChatInputBar> createState() => _ChatInputBarState();
-}
-
-class _ChatInputBarState extends State<_ChatInputBar> {
-  final TextEditingController _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final radius = theme.extension<AppThemeExtension>()?.borderRadius ?? 8.0;
-
-    return Material(
-      color: theme.colorScheme.surface,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _controller,
-                minLines: 1,
-                maxLines: 5,
-                textInputAction: TextInputAction.newline,
-                decoration: InputDecoration(
-                  hintText: _inputHint,
-                  filled: true,
-                  fillColor: theme.colorScheme.surfaceContainerHighest,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(radius),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            // Sending is M4.2.2: present but disabled.
-            const IconButton(
-              icon: Icon(Icons.send),
-              tooltip: '发送',
-              onPressed: null,
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
