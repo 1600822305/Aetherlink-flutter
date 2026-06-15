@@ -51,6 +51,11 @@ dependencies:
   # Lucide icon set for visual parity with the React app (ADR-0009). Pinned to an
   # exact version per the ADR's "pin a concrete version" guardrail.
   lucide_icons_flutter: 3.1.14+2
+  # Opens the About page's external links (GitHub / QQ group / feedback).
+  url_launcher: ^6.3.2
+  # Renders the lucide GitHub glyph, which lucide_icons_flutter dropped along
+  # with the other brand icons — used only for the About page's GitHub row.
+  flutter_svg: ^2.3.0
 
 dev_dependencies:
   flutter_test:
@@ -80,6 +85,10 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/icons/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
