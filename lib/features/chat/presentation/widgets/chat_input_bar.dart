@@ -96,56 +96,71 @@ class _InputButtonToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Row(
-      children: [
-        // Feature buttons scroll horizontally so the row never overflows on
-        // narrow screens.
-        Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                IconButton(
-                  icon: Icon(Icons.public),
-                  tooltip: _webSearchTooltip,
-                  onPressed: null,
-                ),
-                IconButton(
-                  icon: Icon(Icons.build),
-                  tooltip: _mcpToolsTooltip,
-                  onPressed: null,
-                ),
-                IconButton(
-                  icon: Icon(Icons.menu_book),
-                  tooltip: _knowledgeTooltip,
-                  onPressed: null,
-                ),
-                IconButton(
-                  icon: Icon(Icons.image),
-                  tooltip: _imageTooltip,
-                  onPressed: null,
-                ),
-                IconButton(
-                  icon: Icon(Icons.mic),
-                  tooltip: _voiceTooltip,
-                  onPressed: null,
-                ),
-                IconButton(
-                  icon: Icon(Icons.swap_horiz),
-                  tooltip: _multiModelTooltip,
-                  onPressed: null,
-                ),
-              ],
+    final theme = Theme.of(context);
+
+    // Tighten the toolbar to the original's compact icon row (the previous pass
+    // used full-size default `IconButton`s, which read as chunky/generic).
+    // Disabled buttons still grey out — the honest "not connected" signal.
+    return IconButtonTheme(
+      data: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          foregroundColor: theme.colorScheme.onSurfaceVariant,
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.all(6),
+          iconSize: 22,
+        ),
+      ),
+      child: const Row(
+        children: [
+          // Feature buttons scroll horizontally so the row never overflows on
+          // narrow screens.
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.public),
+                    tooltip: _webSearchTooltip,
+                    onPressed: null,
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.build),
+                    tooltip: _mcpToolsTooltip,
+                    onPressed: null,
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.menu_book),
+                    tooltip: _knowledgeTooltip,
+                    onPressed: null,
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.image),
+                    tooltip: _imageTooltip,
+                    onPressed: null,
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.mic),
+                    tooltip: _voiceTooltip,
+                    onPressed: null,
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.swap_horiz),
+                    tooltip: _multiModelTooltip,
+                    onPressed: null,
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        // Send — message sending is a later slice; disabled.
-        IconButton(
-          icon: Icon(Icons.send),
-          tooltip: _sendTooltip,
-          onPressed: null,
-        ),
-      ],
+          // Send — message sending is a later slice; disabled.
+          IconButton(
+            icon: Icon(Icons.send),
+            tooltip: _sendTooltip,
+            onPressed: null,
+          ),
+        ],
+      ),
     );
   }
 }
