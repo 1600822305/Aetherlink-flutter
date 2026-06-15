@@ -2,6 +2,8 @@
 
 将 [Aetherlink](https://github.com/1600822305/Aetherlink)（React 19 + MUI v7 + Capacitor/Tauri）迁移到 Flutter 的架构与迁移规范。**内部团队文档。**
 
+> 🧠 **新会话 / 接手的人先读 [`CONTEXT.md`](./CONTEXT.md)（统筹大脑总纲）** —— 一份讲清「前因后果 + 当前进度 + 下一步」的入口文档。读完它再按下面的索引深入。
+
 迁移的两个核心目标：
 1. **解决原项目结构混乱**（type-first、重复抽象层、God-folder、概念散落）——见 `PROJECT_STRUCTURE.md`。
 2. **用原生渲染消除 webview 滚动天花板**，UI 1:1 复刻 MUI 观感。
@@ -10,6 +12,7 @@
 
 | 文档 | 内容 |
 | --- | --- |
+| [CONTEXT.md](./CONTEXT.md) | 🧠 **统筹大脑总纲**：前因后果、核心决策、当前进度、下一步、文档地图（**最先读**） |
 | [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) | **死规矩**：feature-first 目录、依赖边界、core/shared 准入门槛、决策树、大小护栏 |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | 分层（presentation/application/domain/data）、技术选型、流式聊天数据流、平台抽象、双 UI |
 | [MIGRATION.md](./MIGRATION.md) | 按行为重写、补丁三分类、对拍+回归测试、迁移顺序、老数据迁移 |
@@ -21,7 +24,7 @@
 
 ## 阅读顺序
 
-新人：`README` → `PROJECT_STRUCTURE` → `ARCHITECTURE` → `DOMAIN_MODEL` → `MIGRATION` → `ROADMAP`。
+新人：`CONTEXT`（总纲）→ `PROJECT_STRUCTURE` → `ARCHITECTURE` → `DOMAIN_MODEL` → `MIGRATION` → `ROADMAP`。
 约定与测试随用随查：`CONVENTIONS` / `TESTING`；技术选型背后的「为什么」看 `adr/`。
 
 ## 技术栈速览
