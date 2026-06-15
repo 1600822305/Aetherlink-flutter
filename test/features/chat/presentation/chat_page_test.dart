@@ -5,18 +5,38 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherlink_flutter/core/database/app_database.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/data/repositories/chat_repository_impl.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
+import 'package:aetherlink_flutter/shared/domain/topic.dart';
 
 void main() {
   // Real pipeline, no mocks: an in-memory Drift database backs the real
   // chatRepositoryProvider / read providers. Empty database → empty list.
-  Future<void> pumpChatPage(WidgetTester tester) async {
-    final db = AppDatabase(NativeDatabase.memory());
-    addTearDown(db.close);
+  //
+  // The debug seed is overridden to a no-op here: `kDebugMode` is true under
+  // `flutter test`, so the real seed would otherwise populate a conversation
+  // and break the empty-state assertions. Tests that want data seed it
+  // explicitly through the real repository (see the bubble test below).
+  Future<void> pumpChatPage(
+    WidgetTester tester, {
+    AppDatabase? database,
+  }) async {
+    final db = database ?? AppDatabase(NativeDatabase.memory());
+    if (database == null) {
+      addTearDown(db.close);
+    }
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [appDatabaseProvider.overrideWith((ref) => db)],
+        overrides: [
+          appDatabaseProvider.overrideWith((ref) => db),
+          debugChatSeedProvider.overrideWith((ref) async {}),
+        ],
         child: const MaterialApp(home: ChatPage()),
       ),
     );
@@ -123,6 +143,105 @@ void main() {
         find.widgetWithText(TextField, '搜索话题...').first,
       );
       expect(searchField.enabled, isFalse);
+    },
+  );
+
+  testWidgets(
+    'Stored main_text blocks render as bubbles, split left/right by role',
+    (tester) async {
+      // Seed through the REAL repository on the same in-memory database the
+      // page reads from — no widget-level fake bubbles. The blocks flow back
+      // out via getMessageBlocksByMessageId like any real conversation.
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = ChatRepositoryImpl(db);
+
+      final now = DateTime.now();
+      const topicId = 'topic-1';
+      const userMessageId = 'msg-user';
+      const assistantMessageId = 'msg-assistant';
+      const userBlockId = 'block-user';
+      const assistantBlockId = 'block-assistant';
+
+      await repo.saveTopic(
+        Topic(
+          id: topicId,
+          assistantId: 'assistant-1',
+          name: '测试话题',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      await repo.saveMessage(
+        Message(
+          id: userMessageId,
+          role: MessageRole.user,
+          assistantId: 'assistant-1',
+          topicId: topicId,
+          createdAt: now,
+          status: MessageStatus.success,
+          blocks: const <String>[userBlockId],
+        ),
+      );
+      await repo.saveMessageBlock(
+        MessageBlock.mainText(
+          id: userBlockId,
+          messageId: userMessageId,
+          status: MessageBlockStatus.success,
+          createdAt: now,
+          content: '用户消息内容',
+        ),
+      );
+      await repo.saveMessage(
+        Message(
+          id: assistantMessageId,
+          role: MessageRole.assistant,
+          assistantId: 'assistant-1',
+          topicId: topicId,
+          createdAt: now.add(const Duration(seconds: 1)),
+          status: MessageStatus.success,
+          blocks: const <String>[assistantBlockId],
+        ),
+      );
+      await repo.saveMessageBlock(
+        MessageBlock.mainText(
+          id: assistantBlockId,
+          messageId: assistantMessageId,
+          status: MessageBlockStatus.success,
+          createdAt: now.add(const Duration(seconds: 1)),
+          content: '助手回复内容',
+        ),
+      );
+
+      await pumpChatPage(tester, database: db);
+
+      // Both main_text blocks are painted as bubbles (no empty state, a list).
+      expect(find.text('对话开始了，请输入您的问题'), findsNothing);
+      expect(find.byType(ListView), findsOneWidget);
+      expect(find.text('用户消息内容'), findsOneWidget);
+      expect(find.text('助手回复内容'), findsOneWidget);
+
+      // Role split: the user bubble hugs the right, the assistant the left.
+      final userAligns = tester.widgetList<Align>(
+        find.ancestor(of: find.text('用户消息内容'), matching: find.byType(Align)),
+      );
+      expect(
+        userAligns.any((a) => a.alignment == Alignment.centerRight),
+        isTrue,
+        reason: 'user bubble should be right-aligned',
+      );
+      final assistantAligns = tester.widgetList<Align>(
+        find.ancestor(of: find.text('助手回复内容'), matching: find.byType(Align)),
+      );
+      expect(
+        assistantAligns.any((a) => a.alignment == Alignment.centerLeft),
+        isTrue,
+        reason: 'assistant bubble should be left-aligned',
+      );
+      expect(
+        tester.getCenter(find.text('用户消息内容')).dx,
+        greaterThan(tester.getCenter(find.text('助手回复内容')).dx),
+      );
     },
   );
 }
