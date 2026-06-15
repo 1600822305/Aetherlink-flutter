@@ -93,10 +93,32 @@ void main() {
 
       // Rule 4: core/shared must not import features; core must not import
       // shared.
+      //
+      // Narrow exception — the persistence composition root: the single Drift
+      // database under `core/database/` is the one place that must aggregate
+      // every feature's tables + DAOs (a single SQLite file). Those definitions
+      // can only live in their owning feature's `data` layer, because their
+      // JSON-blob `TypeConverter`s reference the domain models being persisted.
+      // The generated database part also names those domain entities directly,
+      // so `core/database/` may import (a) feature `data/datasources`
+      // definitions and (b) the pure-Dart `domain` entities they persist — the
+      // database equivalent of how `app/` composes features. This stays narrow:
+      // only `core/database/`, only feature `data` files and `domain` entities
+      // (which import no frameworks, per Rule 2); every other
+      // `core → features/shared` import still fails.
       if (internalPath != null) {
+        final isDbCompositionRoot =
+            _isIn(libPath, 'core') && _isIn(libPath, 'database');
+        final importsFeatureData =
+            _isIn(internalPath, 'features') && _isIn(internalPath, 'data');
+        final importsDomain = _isIn(internalPath, 'domain');
+        final allowedDbComposition =
+            isDbCompositionRoot && (importsFeatureData || importsDomain);
+
         if (_isIn(libPath, 'core') &&
             (_isIn(internalPath, 'features') ||
-                _isIn(internalPath, 'shared'))) {
+                _isIn(internalPath, 'shared')) &&
+            !allowedDbComposition) {
           violations.add(
             '[core→${_topOf(internalPath)}] $libPath '
             'imports $import',
