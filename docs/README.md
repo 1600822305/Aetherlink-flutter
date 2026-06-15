@@ -15,10 +15,14 @@
 | [MIGRATION.md](./MIGRATION.md) | 按行为重写、补丁三分类、对拍+回归测试、迁移顺序、老数据迁移 |
 | [DOMAIN_MODEL.md](./DOMAIN_MODEL.md) | 模型先行、TS→freezed 映射、MessageBlock 14 联合、丢弃清单 |
 | [ROADMAP.md](./ROADMAP.md) | M0 模型 → M5 桌面端里程碑 + 验收标准 |
+| [CONVENTIONS.md](./CONVENTIONS.md) | 命名、`analysis_options.yaml` + custom_lint 边界配置、codegen 流程、分支/commit/PR、DoD |
+| [TESTING.md](./TESTING.md) | 测试金字塔、test/ 镜像、单元/Widget/golden、对拍、②类补丁→测试模板、覆盖率与 CI |
+| [adr/](./adr/) | 架构决策记录：单包 feature-first / Riverpod / Drift / dio+SSE（含模板与状态机） |
 
 ## 阅读顺序
 
 新人：`README` → `PROJECT_STRUCTURE` → `ARCHITECTURE` → `DOMAIN_MODEL` → `MIGRATION` → `ROADMAP`。
+约定与测试随用随查：`CONVENTIONS` / `TESTING`；技术选型背后的「为什么」看 `adr/`。
 
 ## 技术栈速览
 
