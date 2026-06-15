@@ -31,8 +31,8 @@
 
 ## M2 · 网络 / LLM 层
 **目标**：headless 跑通流式对话。
-- dio 实例 + 拦截器 + SSE 解析器。
-- 各 provider client（openai / anthropic / gemini / dashscope）+ provider factory（**收口成一个**，不重蹈原项目两个 factory）。
+- dio 实例 + 拦截器 + SSE 解析器（机械水电，跨协议共享）。
+- **3 个协议 adapter**（`openaiCompatible` / `anthropic` / `gemini`）+ 单一 provider factory（按 `protocol` 选；DashScope/Grok 等并入 OpenAI 兼容族）。**统一接缝不统一内脏**，划线 + 抽象判据见 `adr/0006-provider-protocol-adapters.md`（refines `adr/0004`）。
 - 补丁三分类落地：删 cors-proxy/polyfill；保留并测试②类业务修复。
 
 **验收**
