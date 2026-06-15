@@ -59,10 +59,11 @@
 
 **子阶段**
 - **M4.0 地基**（✅ PR #17）：主题即数据（`ThemeSpec` token 化 → `ThemeData`+`ThemeExtension`，`useMaterial3:false`）+ `go_router` 导航骨架 + 关于页打通「主题→导航→脚手架」管线。导航/主题装配/`shared/widgets` 沉淀规则决策内嵌于该期交接提示词；主题系统全景见 `adr/0008-themeable-system-tokens-decoration-sharing.md`（M4.0 只落其地基，装饰层/配图/AI 生成/分享/持久化延后）。
-- **M4.1 ChatPage 聊天主界面**（重头）：消息列表（block 渲染 main_text/thinking/code）、输入框、发送、流式增量、话题/助手抽屉。串起 M0(block)+M1(存储)+M2(流式)。
-- **M4.2 模型/供应商设置**：AddProvider / EditModel / AdvancedAPIConfig + DefaultModelSettings。**M4.1+M4.2 = 第一个可演示闭环**（加模型→发消息→看流式回复）。
-- **M4.3 设置主页外壳 + 高频页**：Appearance / Behavior / ChatInterface…
-- **M4.4+ 长尾**：KnowledgeBase、Voice（依赖 M3 延后能力）、MCP、WebSearch、AIDebate、ModelCombo、DataSettings…每页一阶段或小簇。
+- **M4.1 欢迎页（首屏进入页）**（✅ PR #19）：继关于页之后第二个验证「主题→`go_router` 导航→`Scaffold`」管线的低风险页——居中 logo + 渐变标题（`ShaderMask`，颜色全走主题 token）+ 副标题 + 「开始」按钮；首次进入门控做成内存态 `onboardingController` 接缝（`markStarted()`，持久化延后留 `restore()` 缝）。
+- **M4.2 ChatPage 聊天主界面**（重头）：消息列表（block 渲染 main_text/thinking/code）、输入框、发送、流式增量、话题/助手抽屉。串起 M0(block)+M1(存储)+M2(流式)。**这页本身再拆子阶段**（骨架 → 消息渲染 → 发送/流式闭环 → 外围功能逐个），逐个独立 PR。
+- **M4.3 模型/供应商设置**：AddProvider / EditModel / AdvancedAPIConfig + DefaultModelSettings；含模型配置持久化（Drift models 表 + repository，当前尚未建）。**M4.2 + M4.3 = 第一个可演示闭环**（配模型→发消息→看流式回复）——ChatPage 的「发送/流式」一刀需要一个已配 `Model`，而 `Model` 领域模型已在 M0、M2 按 `Model` 跑流式，缺的是配置 UI + 落库。
+- **M4.4 设置主页外壳 + 高频页**：Appearance / Behavior / ChatInterface…
+- **M4.5+ 长尾**：KnowledgeBase、Voice（依赖 M3 延后能力）、MCP、WebSearch、AIDebate、ModelCombo、DataSettings…每页一阶段或小簇。
 
 **验收（每子阶段逐页适用）**
 - [ ] 核心页面与原版视觉对比 ≥ 95%。
@@ -98,9 +99,10 @@
 | M2 网络/LLM | ✅ 已完成（PR #11） |
 | M3 平台层 | ✅ 已完成（PR #14） |
 | M4.0 移动 UI 地基（主题+导航+关于页） | ✅ 已完成（PR #17） |
-| M4.1 ChatPage 聊天主界面 | ⬜ 下一个 |
-| M4.2 模型/供应商设置 | ⬜ |
-| M4.3 设置外壳 + 高频页 | ⬜ |
-| M4.4+ 设置长尾 | ⬜ |
+| M4.1 欢迎页（首屏进入页） | ✅ 已完成（PR #19） |
+| M4.2 ChatPage 聊天主界面 | ⬜ 下一个 |
+| M4.3 模型/供应商设置 | ⬜ |
+| M4.4 设置外壳 + 高频页 | ⬜ |
+| M4.5+ 设置长尾 | ⬜ |
 | M5 桌面端 UI | ⬜ |
 | 数据迁移 | ⬜ |
