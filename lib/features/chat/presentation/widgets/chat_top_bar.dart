@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
 
 /// Static UI strings, ported verbatim from the original (i18n is a later
 /// effort, per the M4.1 approach).
@@ -33,6 +34,8 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
     final theme = Theme.of(context);
     final topicAsync = ref.watch(currentTopicProvider);
     final current = ref.watch(appCurrentModelProvider).value;
+    final providers = ref.watch(appModelProvidersProvider).value ?? const [];
+    final hasModels = providers.any((p) => p.models.isNotEmpty);
     final modelLabel = current?.model.name ?? _modelPlaceholderLabel;
 
     // The original header is light and flat: `bg-paper` fill, `elevation 0`,
@@ -70,10 +73,13 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: OutlinedButton.icon(
-            // Tapping the selector opens the model-settings page, where the
-            // current chat model is chosen. It shows the selected model's name
-            // once configured, otherwise the "未配置模型" placeholder.
-            onPressed: () => context.push(AppRouter.defaultModelPath),
+            // Tapping the selector opens the model picker (ported from the
+            // original SolidJS `DialogModelSelector`) when models exist;
+            // otherwise it jumps to the model-settings page to add some. Shows
+            // the selected model's name once configured, else the placeholder.
+            onPressed: () => hasModels
+                ? showModelSelectorDialog(context)
+                : context.push(AppRouter.defaultModelPath),
             style: OutlinedButton.styleFrom(
               foregroundColor: theme.colorScheme.onSurface,
               side: BorderSide(color: theme.dividerColor),
