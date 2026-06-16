@@ -19,6 +19,7 @@
 | [DOMAIN_MODEL.md](./DOMAIN_MODEL.md) | 模型先行、TS→freezed 映射、MessageBlock 14 联合、丢弃清单 |
 | [ROADMAP.md](./ROADMAP.md) | M0 模型 → M5 桌面端里程碑 + 验收标准 |
 | [CONVENTIONS.md](./CONVENTIONS.md) | 命名、`analysis_options.yaml` + custom_lint 边界配置、codegen 流程、分支/commit/PR、DoD |
+| [UI_PARITY_PLAYBOOK.md](./UI_PARITY_PLAYBOOK.md) | **UI 像素级 1:1 复刻手册**：MUI/SolidJS → Flutter 映射对照表、实战坑清单、对拍验证流程（逐页复刻随用随查） |
 | [TESTING.md](./TESTING.md) | 测试金字塔、test/ 镜像、单元/Widget/golden、对拍、②类补丁→测试模板、覆盖率与 CI |
 | [adr/](./adr/) | 架构决策记录：单包 feature-first / Riverpod / Drift / dio+SSE（含模板与状态机） |
 

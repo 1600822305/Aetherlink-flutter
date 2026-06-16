@@ -69,7 +69,7 @@ M0  领域模型      TS types → freezed model（契约先定）
 M1  数据层        Drift schema + DAO + repository 实现（可单测）
 M2  网络/LLM 层    dio + SSE + 各 provider client（可单测，headless）
 M3  平台抽象层     UnifiedPlatformApi + 各平台实现
-M4  移动端 UI      逐页复刻（已验证可 1:1）
+M4  移动端 UI      逐页复刻（已验证可 1:1，打法见 UI_PARITY_PLAYBOOK.md）
 M5  桌面端 UI      复用下层，只做 shell/导航
         ┊
    老数据迁移      IndexedDB → SQLite 一次性导入（见 §5）
