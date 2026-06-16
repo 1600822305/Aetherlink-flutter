@@ -202,7 +202,12 @@ class _ModelProviderDetailPageState
     final keyCount = provider.apiKeys?.length ?? 0;
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        16 + MediaQuery.paddingOf(context).bottom,
+      ),
       children: [
         _ProviderHeaderCard(
           provider: provider,
@@ -403,7 +408,12 @@ class _ModelProviderDetailPageState
     final showTest = _testMode || _alwaysShowTestButton;
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        16 + MediaQuery.paddingOf(context).bottom,
+      ),
       children: [
         // 测试模式
         ModelSettingsCard(
