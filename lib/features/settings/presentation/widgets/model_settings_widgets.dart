@@ -261,3 +261,77 @@ class ModelTonalButton extends StatelessWidget {
     );
   }
 }
+
+/// The original `CustomSwitch` (`src/components/CustomSwitch.tsx`): a compact
+/// 32×16 pill with a 12px white thumb, animated over 200ms. Off the track is
+/// the original's `#AAB4BE` (light) / `#8796A5` (dark); on it is `primary`. The
+/// thumb sits 2px from the rail (`translateX(2)`) and slides to `translateX(18)`
+/// when on.
+///
+/// When [onChanged] is null the switch is non-interactive but still renders its
+/// [value] state at full fidelity (the original only changes the cursor when
+/// `disabled`, not the appearance).
+class CustomSwitch extends StatelessWidget {
+  const CustomSwitch({super.key, required this.value, this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+
+  static const double _trackWidth = 32;
+  static const double _trackHeight = 16;
+  static const double _thumbSize = 12;
+  static const Duration _duration = Duration(milliseconds: 200);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    // The original off-track colors; on uses `primary.main`.
+    final trackColor = value
+        ? theme.colorScheme.primary
+        : (isDark ? const Color(0xFF8796A5) : const Color(0xFFAAB4BE));
+
+    final pill = AnimatedContainer(
+      duration: _duration,
+      width: _trackWidth,
+      height: _trackHeight,
+      decoration: BoxDecoration(
+        color: trackColor,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Stack(
+        children: [
+          AnimatedPositioned(
+            duration: _duration,
+            curve: Curves.easeInOut,
+            // translateX(2) off → translateX(18) on; vertically centered.
+            left: value ? 18 : 2,
+            top: (_trackHeight - _thumbSize) / 2,
+            child: Container(
+              width: _thumbSize,
+              height: _thumbSize,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0x33000000), // rgba(0,0,0,0.2)
+                    blurRadius: 4,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (onChanged == null) return pill;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onChanged!(!value),
+      child: pill,
+    );
+  }
+}
