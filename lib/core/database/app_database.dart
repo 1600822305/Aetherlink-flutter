@@ -7,6 +7,8 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:aetherlink_flutter/features/chat/data/datasources/local/assistant_dao.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/local/assistants_table.dart';
+import 'package:aetherlink_flutter/features/chat/data/datasources/local/group_dao.dart';
+import 'package:aetherlink_flutter/features/chat/data/datasources/local/groups_table.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/local/message_block_dao.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/local/message_blocks_table.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/local/message_dao.dart';
@@ -24,6 +26,7 @@ import 'package:aetherlink_flutter/features/models/data/datasources/local/model_
 import 'package:aetherlink_flutter/features/models/data/datasources/local/provider_dao.dart';
 import 'package:aetherlink_flutter/features/models/data/datasources/local/providers_table.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
+import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 
@@ -45,8 +48,16 @@ part 'app_database.g.dart';
     MessageBlockRows,
     AssistantRows,
     ProviderRows,
+    GroupRows,
   ],
-  daos: [TopicDao, MessageDao, MessageBlockDao, AssistantDao, ProviderDao],
+  daos: [
+    TopicDao,
+    MessageDao,
+    MessageBlockDao,
+    AssistantDao,
+    ProviderDao,
+    GroupDao,
+  ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
@@ -56,10 +67,11 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.open() : super(_openConnection());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
-  // v1 → v2 adds the model-provider store ([ProviderRows]). The one-time
-  // IndexedDB (`aetherlink-db-new` v9) → SQLite data import remains a separate
+  // v1 → v2 adds the model-provider store ([ProviderRows]); v2 → v3 adds the
+  // sidebar group store ([GroupRows]). The one-time IndexedDB
+  // (`aetherlink-db-new` v9) → SQLite data import remains a separate
   // cross-cutting task (see docs/ROADMAP.md).
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -67,6 +79,9 @@ class AppDatabase extends _$AppDatabase {
     onUpgrade: (m, from, to) async {
       if (from < 2) {
         await m.createTable(providerRows);
+      }
+      if (from < 3) {
+        await m.createTable(groupRows);
       }
     },
   );

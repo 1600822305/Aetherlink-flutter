@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
+import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 
 /// Drift [TypeConverter]s that store a whole domain entity as a JSON blob in a
@@ -60,4 +61,16 @@ class AssistantConverter extends TypeConverter<Assistant, String> {
 
   @override
   String toSql(Assistant value) => jsonEncode(value.toJson());
+}
+
+/// Stores a [Group] as a JSON blob.
+class GroupConverter extends TypeConverter<Group, String> {
+  const GroupConverter();
+
+  @override
+  Group fromSql(String fromDb) =>
+      Group.fromJson(jsonDecode(fromDb) as Map<String, dynamic>);
+
+  @override
+  String toSql(Group value) => jsonEncode(value.toJson());
 }
