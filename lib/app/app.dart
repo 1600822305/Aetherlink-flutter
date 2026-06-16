@@ -37,26 +37,28 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
     final spec = ref.watch(themeControllerProvider);
     final mode = ref.watch(themeModeControllerProvider);
     final fontSize = ref.watch(fontSizeControllerProvider);
-    // Mirror the original `fontScale = fontSize / 16`: fold the global font size
-    // into the spec's text scale so every text style scales proportionally.
-    final scaledSpec = spec.copyWith(
-      typography: spec.typography.copyWith(
-        textScale:
-            spec.typography.textScale *
-            fontSize /
-            FontSizeController.defaultSize,
-      ),
-    );
+    // Mirror the original `fontScale = fontSize / 16`. Apply it as a uniform
+    // text scale via `MediaQuery.textScaler` rather than the theme's
+    // `fontSizeFactor`: the base text theme keeps some null `fontSize`s, and
+    // `TextStyle.apply` asserts a non-1.0 factor is only used on a set size, so
+    // scaling through the theme would crash off the default size.
+    final textScale = fontSize / FontSizeController.defaultSize;
     return MaterialApp.router(
       title: 'Aetherlink',
-      theme: AppTheme.light(scaledSpec),
-      darkTheme: AppTheme.dark(scaledSpec),
+      theme: AppTheme.light(spec),
+      darkTheme: AppTheme.dark(spec),
       themeMode: switch (mode) {
         AppThemeMode.system => ThemeMode.system,
         AppThemeMode.light => ThemeMode.light,
         AppThemeMode.dark => ThemeMode.dark,
       },
       routerConfig: _router,
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(textScaler: TextScaler.linear(textScale)),
+        child: child ?? const SizedBox.shrink(),
+      ),
     );
   }
 }
