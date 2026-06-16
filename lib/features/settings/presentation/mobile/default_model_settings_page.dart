@@ -9,23 +9,19 @@ import 'package:aetherlink_flutter/app/router/app_router.dart';
 /// reproduction of the layout of the original
 /// `src/pages/Settings/DefaultModelSettings.tsx`.
 ///
-/// It is a pure view — no business logic, no `data` import, no fabricated
-/// providers, and every control that would need real data or a not-yet-built
-/// destination is rendered disabled (the settings hub / About page convention:
-/// half opacity, no tap handler):
+/// This is a pure view — no business logic, no `data` import, no fabricated
+/// providers. The page mirrors the original's exact metrics (font sizes, card
+/// radius, paddings, spacing, colors). Controls that would need real data or a
+/// not-yet-built destination carry no tap handler (they render at full visual
+/// fidelity, they just don't do anything yet):
 ///   * 添加 / 批量删除 — need the provider store + add/multi-select flows.
 ///   * the provider list — has no data, so it renders empty (no fake rows).
-///   * the "推荐操作" rows — link to third-level pages / toggle persisted state
-///     that don't exist yet.
+///   * the "推荐操作" rows — link to third-level pages / toggle persisted state.
 ///
-/// The provider rows, drag-reorder, multi-select delete and edit dialog remain
-/// deferred to later milestones.
-///
-/// All colors are theme tokens (ADR-0008); icons are lucide (ADR-0009). The
-/// original's per-action avatar brand hues (indigo / cyan / purple) are
-/// deliberately mapped to the theme's [ColorScheme.primary] accent — adding a
-/// multi-hue palette to `ThemeSpec` is a separate effort, and hard-coding those
-/// hex values would violate ADR-0008.
+/// To match the original pixel-for-pixel, the per-action avatar brand hues and
+/// the subtle `rgba(0,0,0,...)` tints/shadows are taken verbatim from the
+/// original CSS (the only literal colors on the page; everything else is a
+/// theme token).
 class DefaultModelSettingsPage extends ConsumerWidget {
   const DefaultModelSettingsPage({super.key});
 
@@ -45,18 +41,19 @@ class DefaultModelSettingsPage extends ConsumerWidget {
         foregroundColor: theme.colorScheme.onSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
+        toolbarHeight: 56,
         centerTitle: false,
         titleSpacing: 0,
         shape: Border(bottom: BorderSide(color: theme.dividerColor)),
         leading: IconButton(
-          icon: const Icon(LucideIcons.arrowLeft),
+          icon: const Icon(LucideIcons.arrowLeft, size: 24),
           color: theme.colorScheme.primary,
           onPressed: () => context.canPop()
               ? context.pop()
               : context.go(AppRouter.settingsPath),
         ),
-        // Match the original HeaderBar title: 1.125rem (18px) at weight 600,
-        // left-aligned tight against the back button (SettingComponents.tsx).
+        // Original HeaderBar title: the themed h6 (1.125rem = 18px) at weight
+        // 600, left-aligned tight against the back button.
         titleTextStyle: theme.textTheme.titleLarge?.copyWith(
           fontSize: 18,
           fontWeight: FontWeight.w600,
@@ -64,13 +61,12 @@ class DefaultModelSettingsPage extends ConsumerWidget {
         ),
         title: const Text(_title),
         actions: const [
-          // Both actions need the provider store / a flow that doesn't exist
-          // yet, so they render disabled (no tap handler).
           _ToolbarAction(
             icon: LucideIcons.trash2,
             label: _batchDeleteLabel,
             tint: _ToolbarTint.error,
           ),
+          SizedBox(width: 8),
           _ToolbarAction(
             icon: LucideIcons.plus,
             label: _addLabel,
@@ -91,15 +87,16 @@ class DefaultModelSettingsPage extends ConsumerWidget {
   }
 }
 
-/// The original's inline `Paper`: 8px radius, a 1px divider-colored border and
-/// a soft drop shadow, clipped so children (header tints, dividers) honor the
-/// rounded corners. Shared by both cards on this page.
+/// The original inline `Paper`: `borderRadius: 2` (= 16px against the theme's
+/// `shape.borderRadius: 8`), a 1px divider-colored border and a soft
+/// `0 4px 12px rgba(0,0,0,0.05)` shadow, clipped so children (header tints,
+/// dividers) honor the rounded corners. Shared by both cards on this page.
 class _ModelCard extends StatelessWidget {
   const _ModelCard({required this.child});
 
   final Widget child;
 
-  static const double _radius = 8;
+  static const double _radius = 16;
 
   @override
   Widget build(BuildContext context) {
@@ -110,11 +107,11 @@ class _ModelCard extends StatelessWidget {
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(_radius),
         border: Border.all(color: theme.dividerColor),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.05),
+            color: Color(0x0D000000), // rgba(0,0,0,0.05)
             blurRadius: 12,
-            offset: const Offset(0, 4),
+            offset: Offset(0, 4),
           ),
         ],
       ),
@@ -133,13 +130,16 @@ class _ModelCard extends StatelessWidget {
   }
 }
 
-/// The "模型服务商" card: section header (title + description) followed by the
-/// (empty) provider-list region.
+/// The "模型服务商" card: a tinted header (subtitle1 title + body2 description)
+/// followed by a full-width divider and the (empty) provider-list region.
 class _ProvidersCard extends StatelessWidget {
   const _ProvidersCard();
 
   static const String _providersTitle = '模型服务商';
   static const String _providersDesc = '您可以配置多个模型服务商，点击对应的服务商进行设置和管理';
+
+  // The original header/subheader `bgcolor: 'rgba(0,0,0,0.01)'`.
+  static const Color _headerTint = Color(0x03000000);
 
   @override
   Widget build(BuildContext context) {
@@ -150,26 +150,32 @@ class _ProvidersCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _providersTitle,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+          ColoredBox(
+            color: _headerTint,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _providersTitle,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurface,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  _providersDesc,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                  const SizedBox(height: 2),
+                  Text(
+                    _providersDesc,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 14,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           const Divider(height: 1, thickness: 1),
@@ -181,9 +187,9 @@ class _ProvidersCard extends StatelessWidget {
   }
 }
 
-/// The lower "推荐操作" card. Its three rows link to third-level pages / toggle
-/// persisted state that don't exist yet, so each row is a disabled placeholder
-/// (half opacity, no tap handler). The subheader is a plain label.
+/// The lower "推荐操作" card: a list subheader followed by three rows
+/// (辅助模型设置 / 模型选择器样式 / 添加模型服务商) split by full-width inset
+/// dividers, each with its own brand-tinted avatar.
 class _RecommendedActionsCard extends StatelessWidget {
   const _RecommendedActionsCard();
 
@@ -191,11 +197,19 @@ class _RecommendedActionsCard extends StatelessWidget {
   static const String _assistantTitle = '辅助模型设置';
   static const String _assistantDesc = '设置话题命名、AI 意图分析等辅助功能的模型';
   static const String _selectorTitle = '模型选择器样式';
-  // The original defaults `modelSelectorStyle` to 'dialog' (`defaults.ts`),
-  // so the static placeholder shows the dialog state's label + icon.
+  // The original defaults `modelSelectorStyle` to 'dialog' (`defaults.ts`), so
+  // the static placeholder shows the dialog state's label + `List` icon.
   static const String _selectorDesc = '当前：弹窗式选择器（点击切换为下拉式）';
   static const String _addProviderTitle = '添加模型服务商';
   static const String _addProviderDesc = '设置新的模型服务商';
+
+  // Verbatim per-action avatar accents from the original CSS.
+  static const Color _assistantAccent = Color(0xFF4F46E5); // indigo
+  static const Color _selectorAccent = Color(0xFF06B6D4); // cyan
+  static const Color _addProviderAccent = Color(0xFF9333EA); // purple
+
+  // The subheader `bgcolor: 'rgba(0,0,0,0.01)'`.
+  static const Color _subheaderTint = Color(0x03000000);
 
   @override
   Widget build(BuildContext context) {
@@ -206,25 +220,36 @@ class _RecommendedActionsCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.01),
-            child: Text(
-              _subheader,
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
+          ColoredBox(
+            color: _subheaderTint,
+            child: SizedBox(
+              height: 48,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _subheader,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
           const _ActionRow(
             icon: LucideIcons.bot,
+            accent: _assistantAccent,
             title: _assistantTitle,
             description: _assistantDesc,
           ),
           const Divider(height: 1, thickness: 1),
           const _ActionRow(
             icon: LucideIcons.list,
+            accent: _selectorAccent,
             title: _selectorTitle,
             description: _selectorDesc,
             showChevron: false,
@@ -232,6 +257,7 @@ class _RecommendedActionsCard extends StatelessWidget {
           const Divider(height: 1, thickness: 1),
           const _ActionRow(
             icon: LucideIcons.plus,
+            accent: _addProviderAccent,
             title: _addProviderTitle,
             description: _addProviderDesc,
           ),
@@ -241,18 +267,21 @@ class _RecommendedActionsCard extends StatelessWidget {
   }
 }
 
-/// A single "推荐操作" row: a tinted circular avatar + title/description, with an
-/// optional trailing chevron. Always rendered disabled this milestone (half
-/// opacity, no tap handler).
+/// A single "推荐操作" row: the original `ListItemButton` (8px×16px padding) with
+/// a 40px brand-tinted avatar, primary/secondary text and an optional trailing
+/// 20px chevron. Rendered at full visual fidelity but with no tap handler this
+/// milestone (its destinations / toggles don't exist yet).
 class _ActionRow extends StatelessWidget {
   const _ActionRow({
     required this.icon,
+    required this.accent,
     required this.title,
     required this.description,
     this.showChevron = true,
   });
 
   final IconData icon;
+  final Color accent;
   final String title;
   final String description;
   final bool showChevron;
@@ -262,49 +291,60 @@ class _ActionRow extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
-    return Opacity(
-      opacity: 0.5,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: scheme.primary.withValues(alpha: 0.12),
-              child: Icon(icon, size: 20, color: scheme.primary),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: accent.withValues(alpha: 0.12),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0D000000), // rgba(0,0,0,0.05)
+                  blurRadius: 6,
+                  offset: Offset(0, 2),
+                ),
+              ],
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+            child: Icon(icon, size: 24, color: accent),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface,
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    description,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  description,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontSize: 14,
+                    color: scheme.onSurfaceVariant,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            if (showChevron) ...[
-              const SizedBox(width: 8),
-              Icon(
-                LucideIcons.chevronRight,
-                size: 20,
-                color: scheme.onSurfaceVariant,
-              ),
-            ],
+          ),
+          if (showChevron) ...[
+            const SizedBox(width: 8),
+            Icon(
+              LucideIcons.chevronRight,
+              size: 20,
+              color: scheme.onSurfaceVariant,
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -313,10 +353,10 @@ class _ActionRow extends StatelessWidget {
 /// Whether a toolbar action carries the primary or the error accent.
 enum _ToolbarTint { primary, error }
 
-/// A header-bar action — the original's tonal `Button` (icon + label on a
-/// low-alpha tint). Rendered disabled this milestone: the app's placeholder
-/// convention (half opacity, no tap handler), since both actions need data /
-/// flows that don't exist yet.
+/// A header-bar action — the original's tonal `Button` (startIcon + label on a
+/// `borderRadius: 2` (16px) low-alpha tint, weight 600, no text-transform).
+/// Rendered at full visual fidelity but with no tap handler this milestone
+/// (both actions need data / flows that don't exist yet).
 class _ToolbarAction extends StatelessWidget {
   const _ToolbarAction({
     required this.icon,
@@ -330,34 +370,31 @@ class _ToolbarAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final accent = tint == _ToolbarTint.error ? scheme.error : scheme.primary;
+    final theme = Theme.of(context);
+    final accent = tint == _ToolbarTint.error
+        ? theme.colorScheme.error
+        : theme.colorScheme.primary;
 
-    return Padding(
-      padding: const EdgeInsets.only(left: 4),
-      child: Opacity(
-        opacity: 0.5,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: accent.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 24, color: accent),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontSize: 14,
+              color: accent,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 18, color: accent),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: accent,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }
