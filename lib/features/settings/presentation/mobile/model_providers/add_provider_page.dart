@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 
 /// The "添加提供商" third-level page (二级页 添加供应商 → this page), a 1:1
 /// reproduction of `src/pages/Settings/ModelProviders/AddProvider.tsx`.
 ///
-/// Pure view, zero data: typing the name and picking a type drive a live
-/// preview (local UI state only — nothing is persisted). The footer 「下一步」
-/// stays disabled (it would create a provider in the store, which is out of
-/// scope this milestone); 「取消」 simply navigates back.
-class AddProviderPage extends StatefulWidget {
+/// Typing the name and picking a type drive a live preview. 「下一步」 is enabled
+/// once both are set: it upserts a new [ModelProvider] through the model store
+/// and replaces this page with the provider's detail page. 「取消」 navigates back.
+class AddProviderPage extends ConsumerStatefulWidget {
   const AddProviderPage({super.key});
 
   static const String _title = '添加提供商';
@@ -24,10 +27,14 @@ class AddProviderPage extends StatefulWidget {
   static const String _nextLabel = '下一步';
 
   @override
-  State<AddProviderPage> createState() => _AddProviderPageState();
+  ConsumerState<AddProviderPage> createState() => _AddProviderPageState();
 }
 
-class _AddProviderPageState extends State<AddProviderPage> {
+class _AddProviderPageState extends ConsumerState<AddProviderPage> {
+  // A neutral default brand color for a user-created provider (hex, matching
+  // the original's string-stored `color`).
+  static const String _defaultColor = '#64748B';
+
   final TextEditingController _nameController = TextEditingController();
   String _name = '';
   _ProviderType? _selectedType;
@@ -41,6 +48,25 @@ class _AddProviderPageState extends State<AddProviderPage> {
   String get _avatarLetter => _selectedType == null
       ? 'P'
       : _selectedType!.label.characters.first.toUpperCase();
+
+  bool get _canSubmit => _name.trim().isNotEmpty && _selectedType != null;
+
+  Future<void> _submit() async {
+    final type = _selectedType;
+    if (!_canSubmit || type == null) return;
+    final id = generateId('provider');
+    final provider = ModelProvider(
+      id: id,
+      name: _name.trim(),
+      avatar: _avatarLetter,
+      color: _defaultColor,
+      isEnabled: true,
+      providerType: type.value,
+    );
+    await ref.read(modelStoreProvider.notifier).saveProvider(provider);
+    if (!mounted) return;
+    context.pushReplacement(AppRouter.modelProviderPath(id));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -134,11 +160,11 @@ class _AddProviderPageState extends State<AddProviderPage> {
                           child: const Text(AddProviderPage._cancelLabel),
                         ),
                         const SizedBox(width: 16),
-                        // 下一步 creates a provider in the store — disabled this
-                        // milestone (no data layer).
-                        const ModelTonalButton(
+                        // 下一步 upserts the new provider and opens its detail
+                        // page; disabled until a name and type are set.
+                        ModelTonalButton(
                           label: AddProviderPage._nextLabel,
-                          onPressed: null,
+                          onPressed: _canSubmit ? _submit : null,
                         ),
                       ],
                     ),

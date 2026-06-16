@@ -3,18 +3,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/domain/model.dart';
+import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 
 /// The 供应商详情 hub third-level page, a 1:1 reproduction of
 /// `src/pages/Settings/ModelProviders/index.tsx`.
 ///
-/// Pure view, zero data: [providerId] is received from the route but not yet
-/// queried (M4.3.2), so the page renders a static skeleton. The API-config
-/// inputs and the 获取/添加 model actions render greyed (they need the data
-/// layer); the model list shows its empty state. 「配置高级参数」 is a pure
-/// navigation hop to the advanced-config page.
-class ModelProviderDetailPage extends ConsumerWidget {
+/// Reads the persisted provider by [providerId] and renders its API config and
+/// model list. The 密钥 / 基础URL inputs persist through the model store (保存
+/// in the app bar); each model row can be tapped to edit, deleted, or selected
+/// as the app-level current chat model. 「配置高级参数」 hops to the advanced page.
+class ModelProviderDetailPage extends ConsumerStatefulWidget {
   const ModelProviderDetailPage({super.key, required this.providerId});
 
   final String providerId;
@@ -26,23 +28,111 @@ class ModelProviderDetailPage extends ConsumerWidget {
   static const String _baseUrlLabel = '基础URL (可选)';
   static const String _baseUrlHint = '输入基础URL，例如: https://tow.bt6.top';
   static const String _baseUrlHelper = '在URL末尾添加#可强制使用自定义格式，末尾添加/也可保持原格式';
-  static const String _responsesTitle = 'Responses API';
-  static const String _responsesHint =
-      '注意：大多数 OpenAI 兼容 API（如硅基流动、DeepSeek）不支持 Responses API，请保持关闭。';
-  static const String _disabledLabel = '已禁用';
   static const String _advancedLabel = '高级 API 配置';
   static const String _advancedButton = '配置高级参数';
   static const String _modelsTitle = '模型列表';
-  static const String _autoFetchLabel = '获取';
   static const String _manualAddLabel = '添加';
   static const String _noModels = '尚未添加任何模型';
+  static const String _saveLabel = '保存';
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ModelProviderDetailPage> createState() =>
+      _ModelProviderDetailPageState();
+}
+
+class _ModelProviderDetailPageState
+    extends ConsumerState<ModelProviderDetailPage> {
+  final TextEditingController _apiKeyController = TextEditingController();
+  final TextEditingController _baseUrlController = TextEditingController();
+  bool _obscureKey = true;
+  bool _initialized = false;
+
+  @override
+  void dispose() {
+    _apiKeyController.dispose();
+    _baseUrlController.dispose();
+    super.dispose();
+  }
+
+  void _seedFrom(ModelProvider provider) {
+    if (_initialized) return;
+    _apiKeyController.text = provider.apiKey ?? '';
+    _baseUrlController.text = provider.baseUrl ?? '';
+    _initialized = true;
+  }
+
+  Future<void> _saveApiConfig(ModelProvider provider) async {
+    final updated = provider.copyWith(
+      apiKey: _apiKeyController.text.trim().isEmpty
+          ? null
+          : _apiKeyController.text.trim(),
+      baseUrl: _baseUrlController.text.trim().isEmpty
+          ? null
+          : _baseUrlController.text.trim(),
+    );
+    await ref.read(modelStoreProvider.notifier).saveProvider(updated);
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('已保存')));
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final providerAsync = ref.watch(
+      appModelProviderProvider(widget.providerId),
+    );
+
+    return providerAsync.maybeWhen(
+      data: (provider) {
+        if (provider == null) {
+          return const Scaffold(
+            appBar: ModelSettingsAppBar(title: ModelProviderDetailPage._title),
+            body: Center(child: Text('供应商不存在')),
+          );
+        }
+        _seedFrom(provider);
+        return _buildContent(context, theme, provider);
+      },
+      orElse: () => const Scaffold(
+        appBar: ModelSettingsAppBar(title: ModelProviderDetailPage._title),
+        body: Center(child: CircularProgressIndicator()),
+      ),
+    );
+  }
+
+  Widget _buildContent(
+    BuildContext context,
+    ThemeData theme,
+    ModelProvider provider,
+  ) {
+    final currentAsync = ref.watch(appCurrentModelProvider);
+    final currentModelId = currentAsync.maybeWhen(
+      data: (current) => current != null && current.provider.id == provider.id
+          ? current.model.id
+          : null,
+      orElse: () => null,
+    );
 
     return Scaffold(
-      appBar: const ModelSettingsAppBar(title: _title),
+      appBar: ModelSettingsAppBar(
+        title: ModelProviderDetailPage._title,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: ElevatedButton(
+              onPressed: () => _saveApiConfig(provider),
+              style: ElevatedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: const Text(ModelProviderDetailPage._saveLabel),
+            ),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -51,30 +141,33 @@ class ModelProviderDetailPage extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const ModelSectionTitle(_apiConfigTitle),
+                const ModelSectionTitle(
+                  ModelProviderDetailPage._apiConfigTitle,
+                ),
                 const SizedBox(height: 24),
-                const ModelFormField(
-                  label: _apiKeyLabel,
-                  hint: _apiKeyHint,
-                  enabled: false,
-                  obscureText: true,
+                ModelFormField(
+                  label: ModelProviderDetailPage._apiKeyLabel,
+                  hint: ModelProviderDetailPage._apiKeyHint,
+                  controller: _apiKeyController,
+                  obscureText: _obscureKey,
                   suffixIcon: IconButton(
-                    icon: Icon(LucideIcons.eyeOff, size: 20),
-                    onPressed: null,
+                    icon: Icon(
+                      _obscureKey ? LucideIcons.eyeOff : LucideIcons.eye,
+                      size: 20,
+                    ),
+                    onPressed: () => setState(() => _obscureKey = !_obscureKey),
                   ),
                 ),
                 const SizedBox(height: 24),
-                const ModelFormField(
-                  label: _baseUrlLabel,
-                  hint: _baseUrlHint,
-                  helper: _baseUrlHelper,
-                  enabled: false,
+                ModelFormField(
+                  label: ModelProviderDetailPage._baseUrlLabel,
+                  hint: ModelProviderDetailPage._baseUrlHint,
+                  helper: ModelProviderDetailPage._baseUrlHelper,
+                  controller: _baseUrlController,
                 ),
                 const SizedBox(height: 24),
-                _ResponsesApiRow(theme: theme),
-                const SizedBox(height: 24),
                 Text(
-                  _advancedLabel,
+                  ModelProviderDetailPage._advancedLabel,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
@@ -84,7 +177,7 @@ class ModelProviderDetailPage extends ConsumerWidget {
                 const SizedBox(height: 6),
                 OutlinedButton.icon(
                   onPressed: () =>
-                      context.push(AppRouter.advancedApiPath(providerId)),
+                      context.push(AppRouter.advancedApiPath(provider.id)),
                   icon: const Icon(LucideIcons.settings, size: 16),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: theme.colorScheme.secondary,
@@ -99,7 +192,7 @@ class ModelProviderDetailPage extends ConsumerWidget {
                       vertical: 10,
                     ),
                   ),
-                  label: const Text(_advancedButton),
+                  label: const Text(ModelProviderDetailPage._advancedButton),
                 ),
               ],
             ),
@@ -111,36 +204,50 @@ class ModelProviderDetailPage extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 获取/添加 need the provider's models — disabled this
-                // milestone (no data layer).
-                const Row(
+                Row(
                   children: [
-                    Expanded(child: ModelSectionTitle(_modelsTitle)),
-                    ModelTonalButton(
-                      label: _autoFetchLabel,
-                      icon: LucideIcons.zap,
-                      onPressed: null,
+                    const Expanded(
+                      child: ModelSectionTitle(
+                        ModelProviderDetailPage._modelsTitle,
+                      ),
                     ),
-                    SizedBox(width: 8),
                     ModelTonalButton(
-                      label: _manualAddLabel,
+                      label: ModelProviderDetailPage._manualAddLabel,
                       icon: LucideIcons.plus,
-                      onPressed: null,
+                      onPressed: () =>
+                          context.push(AppRouter.editModelPath(provider.id)),
                     ),
                   ],
                 ),
                 const SizedBox(height: 24),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  child: Center(
-                    child: Text(
-                      _noModels,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                if (provider.models.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Text(
+                        ModelProviderDetailPage._noModels,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
-                  ),
-                ),
+                  )
+                else
+                  for (final model in provider.models)
+                    _ModelRow(
+                      model: model,
+                      isCurrent: model.id == currentModelId,
+                      onTap: () => context.push(
+                        AppRouter.editModelPath(provider.id, modelId: model.id),
+                      ),
+                      onSelect: () => ref
+                          .read(modelStoreProvider.notifier)
+                          .selectCurrentModel(
+                            providerId: provider.id,
+                            modelId: model.id,
+                          ),
+                      onDelete: () => _deleteModel(provider, model.id),
+                    ),
               ],
             ),
           ),
@@ -148,59 +255,87 @@ class ModelProviderDetailPage extends ConsumerWidget {
       ),
     );
   }
+
+  Future<void> _deleteModel(ModelProvider provider, String modelId) async {
+    final updated = provider.copyWith(
+      models: [
+        for (final m in provider.models)
+          if (m.id != modelId) m,
+      ],
+    );
+    await ref.read(modelStoreProvider.notifier).saveProvider(updated);
+  }
 }
 
-/// The Responses-API switch row (OpenAI-only in the original): a `subtitle2`
-/// title + info hint, a trailing switch and a caption note. The switch renders
-/// disabled this milestone (it persists provider config).
-class _ResponsesApiRow extends StatelessWidget {
-  const _ResponsesApiRow({required this.theme});
+/// A single model row in the provider's model list: the model name, a
+/// current-selection radio (taps set it as the app's current chat model), an
+/// edit affordance (tapping the row) and a trailing delete.
+class _ModelRow extends StatelessWidget {
+  const _ModelRow({
+    required this.model,
+    required this.isCurrent,
+    required this.onTap,
+    required this.onSelect,
+    required this.onDelete,
+  });
 
-  final ThemeData theme;
+  final Model model;
+  final bool isCurrent;
+  final VoidCallback onTap;
+  final VoidCallback onSelect;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
+    final theme = Theme.of(context);
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
           children: [
-            Text(
-              ModelProviderDetailPage._responsesTitle,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: theme.colorScheme.onSurface,
+            IconButton(
+              icon: Icon(
+                isCurrent ? LucideIcons.circleCheck : LucideIcons.circle,
+                size: 20,
+                color: isCurrent
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+              tooltip: '设为当前模型',
+              onPressed: onSelect,
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    model.name,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontSize: 16,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  Text(
+                    model.id,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 4),
-            Icon(
-              LucideIcons.info,
-              size: 16,
-              color: theme.colorScheme.onSurfaceVariant,
+            IconButton(
+              icon: const Icon(LucideIcons.trash2, size: 18),
+              color: theme.colorScheme.error,
+              tooltip: '删除',
+              onPressed: onDelete,
             ),
-            const Spacer(),
-            Text(
-              ModelProviderDetailPage._disabledLabel,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontSize: 14,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Switch(value: false, onChanged: null),
           ],
         ),
-        const SizedBox(height: 4),
-        Text(
-          ModelProviderDetailPage._responsesHint,
-          style: theme.textTheme.bodySmall?.copyWith(
-            fontSize: 12,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

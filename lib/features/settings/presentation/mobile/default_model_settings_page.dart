@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 
 /// The "模型设置" second-level page (hub "配置模型" → this page), a 1:1
 /// reproduction of the layout of the original
@@ -60,19 +62,20 @@ class DefaultModelSettingsPage extends ConsumerWidget {
           color: theme.colorScheme.onSurface,
         ),
         title: const Text(_title),
-        actions: const [
-          _ToolbarAction(
+        actions: [
+          const _ToolbarAction(
             icon: LucideIcons.trash2,
             label: _batchDeleteLabel,
             tint: _ToolbarTint.error,
           ),
-          SizedBox(width: 8),
+          const SizedBox(width: 8),
           _ToolbarAction(
             icon: LucideIcons.plus,
             label: _addLabel,
             tint: _ToolbarTint.primary,
+            onTap: () => context.push(AppRouter.addProviderPath),
           ),
-          SizedBox(width: 8),
+          const SizedBox(width: 8),
         ],
       ),
       body: ListView(
@@ -131,8 +134,9 @@ class _ModelCard extends StatelessWidget {
 }
 
 /// The "模型服务商" card: a tinted header (subtitle1 title + body2 description)
-/// followed by a full-width divider and the (empty) provider-list region.
-class _ProvidersCard extends StatelessWidget {
+/// followed by a full-width divider and the persisted provider list. With no
+/// providers (fresh install) the list region stays empty — no fabricated rows.
+class _ProvidersCard extends ConsumerWidget {
   const _ProvidersCard();
 
   static const String _providersTitle = '模型服务商';
@@ -142,8 +146,9 @@ class _ProvidersCard extends StatelessWidget {
   static const Color _headerTint = Color(0x03000000);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final providersAsync = ref.watch(appModelProvidersProvider);
 
     return _ModelCard(
       child: Column(
@@ -179,10 +184,87 @@ class _ProvidersCard extends StatelessWidget {
             ),
           ),
           const Divider(height: 1, thickness: 1),
-          // No data this milestone: the provider list renders empty — no
-          // fabricated rows.
+          providersAsync.maybeWhen(
+            data: (providers) => providers.isEmpty
+                ? const SizedBox.shrink()
+                : _ProviderList(providers: providers),
+            orElse: () => const SizedBox.shrink(),
+          ),
         ],
       ),
+    );
+  }
+}
+
+/// The reorderable list of persisted providers. Dragging a row persists the
+/// new order (`reorderProviders`); the trailing trash deletes one; tapping a
+/// row opens its detail page.
+class _ProviderList extends ConsumerWidget {
+  const _ProviderList({required this.providers});
+
+  final List<ModelProvider> providers;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+
+    return ReorderableListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      itemCount: providers.length,
+      onReorderItem: (oldIndex, newIndex) {
+        final ids = [for (final p in providers) p.id];
+        final moved = ids.removeAt(oldIndex);
+        ids.insert(newIndex, moved);
+        ref.read(modelStoreProvider.notifier).reorderProviders(ids);
+      },
+      itemBuilder: (context, index) {
+        final provider = providers[index];
+        return InkWell(
+          key: ValueKey(provider.id),
+          onTap: () => context.push(AppRouter.modelProviderPath(provider.id)),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                ReorderableDragStartListener(
+                  index: index,
+                  child: Icon(
+                    LucideIcons.gripVertical,
+                    size: 20,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    provider.name,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontSize: 16,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${provider.models.length} 个模型',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(LucideIcons.trash2, size: 18),
+                  color: theme.colorScheme.error,
+                  tooltip: '删除',
+                  onPressed: () => ref
+                      .read(modelStoreProvider.notifier)
+                      .deleteProvider(provider.id),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -375,11 +457,16 @@ class _ToolbarAction extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.tint,
+    this.onTap,
   });
 
   final IconData icon;
   final String label;
   final _ToolbarTint tint;
+
+  /// Tap handler. When null the action renders at full visual fidelity but is
+  /// non-functional this milestone.
+  final VoidCallback? onTap;
 
   // The original palette's `error.main`. The shared theme currently maps
   // `colorScheme.error` to Material's `#B00020`, so the literal is used here to
@@ -394,7 +481,7 @@ class _ToolbarAction extends StatelessWidget {
         ? _errorRed
         : theme.colorScheme.primary;
 
-    return Container(
+    final content = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: accent.withValues(alpha: 0.1),
@@ -415,6 +502,13 @@ class _ToolbarAction extends StatelessWidget {
           ),
         ],
       ),
+    );
+
+    if (onTap == null) return content;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: content,
     );
   }
 }

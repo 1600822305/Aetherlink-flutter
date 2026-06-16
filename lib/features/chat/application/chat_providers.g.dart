@@ -151,6 +151,70 @@ final class ChatRepositoryProvider
 
 String _$chatRepositoryHash() => r'34392e2d116c2a4deefb88f3764971d53b1f2bd1';
 
+/// The LLM gateway factory port, backed by the protocol-selecting
+/// `LlmProviderFactory` (M2 `data`) with a runtime `dio`. The [ChatController]
+/// depends only on the [LlmGatewayFactory] interface; tests override this with
+/// a fake factory (and a fake gateway) so the closed loop runs without a
+/// network or a real key.
+
+@ProviderFor(llmGatewayFactory)
+final llmGatewayFactoryProvider = LlmGatewayFactoryProvider._();
+
+/// The LLM gateway factory port, backed by the protocol-selecting
+/// `LlmProviderFactory` (M2 `data`) with a runtime `dio`. The [ChatController]
+/// depends only on the [LlmGatewayFactory] interface; tests override this with
+/// a fake factory (and a fake gateway) so the closed loop runs without a
+/// network or a real key.
+
+final class LlmGatewayFactoryProvider
+    extends
+        $FunctionalProvider<
+          LlmGatewayFactory,
+          LlmGatewayFactory,
+          LlmGatewayFactory
+        >
+    with $Provider<LlmGatewayFactory> {
+  /// The LLM gateway factory port, backed by the protocol-selecting
+  /// `LlmProviderFactory` (M2 `data`) with a runtime `dio`. The [ChatController]
+  /// depends only on the [LlmGatewayFactory] interface; tests override this with
+  /// a fake factory (and a fake gateway) so the closed loop runs without a
+  /// network or a real key.
+  LlmGatewayFactoryProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'llmGatewayFactoryProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$llmGatewayFactoryHash();
+
+  @$internal
+  @override
+  $ProviderElement<LlmGatewayFactory> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
+
+  @override
+  LlmGatewayFactory create(Ref ref) {
+    return llmGatewayFactory(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(LlmGatewayFactory value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<LlmGatewayFactory>(value),
+    );
+  }
+}
+
+String _$llmGatewayFactoryHash() => r'68cc9fbd6419097c4c41772c43542368e4c310c2';
+
 /// Debug-only seed so message rendering is visible before send/streaming exist
 /// (M4.2.2+). In release builds ([kDebugMode] false) this is a no-op, so the
 /// read pipeline behaves exactly as before. It is idempotent — it writes

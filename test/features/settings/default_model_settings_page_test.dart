@@ -67,13 +67,13 @@ void main() {
     expect(find.byIcon(LucideIcons.gripVertical), findsNothing);
   });
 
-  testWidgets('only 添加模型服务商 carries a tap handler', (tester) async {
+  testWidgets('the add-provider entries carry tap handlers', (tester) async {
     await pumpPage(tester);
 
-    // Every still-unwired control renders at full visual fidelity but is
+    // Still-unwired controls render at full visual fidelity but are
     // non-functional this milestone (the back button is an
     // IconButton/InkResponse, not an InkWell).
-    for (final label in const ['批量删除', '添加', '辅助模型设置', '模型选择器样式']) {
+    for (final label in const ['批量删除', '辅助模型设置', '模型选择器样式']) {
       expect(
         find.ancestor(of: find.text(label), matching: find.byType(InkWell)),
         findsNothing,
@@ -81,11 +81,15 @@ void main() {
       );
     }
 
-    // 添加模型服务商 is the one wired entry: it navigates to AddProviderPage.
-    expect(
-      find.ancestor(of: find.text('添加模型服务商'), matching: find.byType(InkWell)),
-      findsOneWidget,
-    );
+    // Both add-provider entries are wired and navigate to AddProviderPage: the
+    // toolbar 添加 action and the 添加模型服务商 row.
+    for (final label in const ['添加', '添加模型服务商']) {
+      expect(
+        find.ancestor(of: find.text(label), matching: find.byType(InkWell)),
+        findsOneWidget,
+        reason: '$label should be tappable',
+      );
+    }
   });
 
   testWidgets('back button returns to the settings hub', (tester) async {

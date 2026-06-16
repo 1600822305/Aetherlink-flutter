@@ -2,12 +2,14 @@ import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/core/database/app_database.dart';
+import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/provider_factory.dart';
 import 'package:aetherlink_flutter/features/chat/data/repositories/chat_repository_impl.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway_factory.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 
@@ -43,6 +45,14 @@ AppDatabase appDatabase(Ref ref) {
 @Riverpod(keepAlive: true)
 ChatRepository chatRepository(Ref ref) =>
     ChatRepositoryImpl(ref.watch(appDatabaseProvider));
+
+/// The LLM gateway factory port, backed by the protocol-selecting
+/// `LlmProviderFactory` (M2 `data`) with a runtime `dio`. The [ChatController]
+/// depends only on the [LlmGatewayFactory] interface; tests override this with
+/// a fake factory (and a fake gateway) so the closed loop runs without a
+/// network or a real key.
+@Riverpod(keepAlive: true)
+LlmGatewayFactory llmGatewayFactory(Ref ref) => LlmProviderFactory();
 
 /// Debug-only seed so message rendering is visible before send/streaming exist
 /// (M4.2.2+). In release builds ([kDebugMode] false) this is a no-op, so the

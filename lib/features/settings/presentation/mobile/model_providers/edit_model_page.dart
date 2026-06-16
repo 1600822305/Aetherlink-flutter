@@ -1,20 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/domain/model.dart';
+import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 
 /// The "编辑模型" third-level page, a 1:1 reproduction of
 /// `src/pages/Settings/ModelProviders/EditModelPage.tsx` (whose form body is the
 /// `EditModelForm.solid` component).
 ///
-/// Pure view, zero data: [providerId] is received but not queried (M4.3.2), so
-/// the form renders an empty skeleton. Every field needs the model store, so
-/// they all render disabled (greyed); the top-right 保存 is likewise disabled.
-class EditModelPage extends ConsumerWidget {
-  const EditModelPage({super.key, required this.providerId});
+/// Reads the provider by [providerId]; when [modelId] is given the form is
+/// seeded from that model (edit), otherwise it starts blank (add). 保存 upserts
+/// the model into the provider's `models` and persists through the model store.
+/// The model-type chips stay advisory (auto-detect) this milestone.
+class EditModelPage extends ConsumerStatefulWidget {
+  const EditModelPage({super.key, required this.providerId, this.modelId});
 
   final String providerId;
+  final String? modelId;
 
   static const String _title = '编辑模型';
   static const String _saveLabel = '保存';
@@ -30,24 +36,115 @@ class EditModelPage extends ConsumerWidget {
   static const String _typeHelperAuto = '根据模型ID和提供商自动检测模型类型';
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
+  ConsumerState<EditModelPage> createState() => _EditModelPageState();
+}
 
+class _EditModelPageState extends ConsumerState<EditModelPage> {
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _modelIdController = TextEditingController();
+  bool _initialized = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _modelIdController.dispose();
+    super.dispose();
+  }
+
+  void _seedFrom(ModelProvider provider) {
+    if (_initialized) return;
+    _initialized = true;
+    final id = widget.modelId;
+    if (id == null) return;
+    for (final model in provider.models) {
+      if (model.id == id) {
+        _nameController.text = model.name;
+        _modelIdController.text = model.id;
+        return;
+      }
+    }
+  }
+
+  bool get _canSave =>
+      _nameController.text.trim().isNotEmpty &&
+      _modelIdController.text.trim().isNotEmpty;
+
+  Future<void> _save(ModelProvider provider) async {
+    final newId = _modelIdController.text.trim();
+    final name = _nameController.text.trim();
+    if (newId.isEmpty || name.isEmpty) return;
+
+    final existing = <Model>[
+      for (final m in provider.models)
+        if (m.id != widget.modelId && m.id != newId) m,
+    ];
+    Model? preserved;
+    if (widget.modelId != null) {
+      for (final m in provider.models) {
+        if (m.id == widget.modelId) {
+          preserved = m;
+          break;
+        }
+      }
+    }
+    final base =
+        preserved ?? Model(id: newId, name: name, provider: provider.name);
+    final model = base.copyWith(
+      id: newId,
+      name: name,
+      provider: provider.name,
+      providerType: provider.providerType,
+    );
+    final updated = provider.copyWith(models: [...existing, model]);
+    await ref.read(modelStoreProvider.notifier).saveProvider(updated);
+    if (!mounted) return;
+    if (context.canPop()) context.pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final providerAsync = ref.watch(
+      appModelProviderProvider(widget.providerId),
+    );
+
+    return providerAsync.maybeWhen(
+      data: (provider) {
+        if (provider == null) {
+          return const Scaffold(
+            appBar: ModelSettingsAppBar(title: EditModelPage._title),
+            body: Center(child: Text('供应商不存在')),
+          );
+        }
+        _seedFrom(provider);
+        return _buildForm(context, theme, provider);
+      },
+      orElse: () => const Scaffold(
+        appBar: ModelSettingsAppBar(title: EditModelPage._title),
+        body: Center(child: CircularProgressIndicator()),
+      ),
+    );
+  }
+
+  Widget _buildForm(
+    BuildContext context,
+    ThemeData theme,
+    ModelProvider provider,
+  ) {
     return Scaffold(
       appBar: ModelSettingsAppBar(
-        title: _title,
+        title: EditModelPage._title,
         actions: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: ElevatedButton(
-              // 保存 persists the model — disabled this milestone (no data).
-              onPressed: null,
+              onPressed: _canSave ? () => _save(provider) : null,
               style: ElevatedButton.styleFrom(
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
-              child: const Text(_saveLabel),
+              child: const Text(EditModelPage._saveLabel),
             ),
           ),
         ],
@@ -57,17 +154,19 @@ class EditModelPage extends ConsumerWidget {
         children: [
           _AvatarCard(theme: theme),
           const SizedBox(height: 24),
-          const ModelFormField(label: _nameLabel, enabled: false),
-          const SizedBox(height: 24),
-          const _DisabledSelectField(
-            label: _providerLabel,
-            helper: _providerHelper,
+          ModelFormField(
+            label: EditModelPage._nameLabel,
+            controller: _nameController,
+            onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 24),
-          const ModelFormField(
-            label: _modelIdLabel,
-            helper: _modelIdHelper,
-            enabled: false,
+          _ProviderField(name: provider.name),
+          const SizedBox(height: 24),
+          ModelFormField(
+            label: EditModelPage._modelIdLabel,
+            helper: EditModelPage._modelIdHelper,
+            controller: _modelIdController,
+            onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 24),
           _ModelTypeSection(theme: theme),
@@ -141,13 +240,12 @@ class _AvatarCard extends StatelessWidget {
   }
 }
 
-/// A disabled labelled dropdown placeholder (the original `<select>`), drawn
-/// greyed with a trailing chevron and an optional helper line.
-class _DisabledSelectField extends StatelessWidget {
-  const _DisabledSelectField({required this.label, this.helper});
+/// The 提供商 field — fixed to the provider this model belongs to (the model is
+/// edited from within a provider), shown read-only with the original helper.
+class _ProviderField extends StatelessWidget {
+  const _ProviderField({required this.name});
 
-  final String label;
-  final String? helper;
+  final String name;
 
   @override
   Widget build(BuildContext context) {
@@ -158,7 +256,7 @@ class _DisabledSelectField extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          label,
+          EditModelPage._providerLabel,
           style: theme.textTheme.bodyMedium?.copyWith(
             fontSize: 14,
             fontWeight: FontWeight.w500,
@@ -166,27 +264,28 @@ class _DisabledSelectField extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 6),
-        DropdownButtonFormField<String>(
-          isDense: true,
-          isExpanded: true,
-          items: const [],
-          onChanged: null,
-          decoration: const InputDecoration(
+        InputDecorator(
+          decoration: InputDecoration(
             isDense: true,
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            border: OutlineInputBorder(),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
+            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+          ),
+          child: Text(
+            name,
+            style: theme.textTheme.bodyMedium?.copyWith(fontSize: 14),
           ),
         ),
-        if (helper != null) ...[
-          const SizedBox(height: 6),
-          Text(
-            helper!,
-            style: theme.textTheme.bodySmall?.copyWith(
-              fontSize: 12,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+        const SizedBox(height: 6),
+        Text(
+          EditModelPage._providerHelper,
+          style: theme.textTheme.bodySmall?.copyWith(
+            fontSize: 12,
+            color: theme.colorScheme.onSurfaceVariant,
           ),
-        ],
+        ),
       ],
     );
   }

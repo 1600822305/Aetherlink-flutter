@@ -8,27 +8,57 @@ part of 'chat_controller.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
-/// Placeholder Riverpod controller for the chat feature.
+/// Orchestrates the chat send/stream loop (application layer).
 ///
-/// Proves the `application` layer wiring (codegen + DI) end to end. The real
-/// orchestration — calling use cases, subscribing to the streaming reply,
-/// throttling tokens — lands in milestone M2 (see `docs/ARCHITECTURE.md` §4).
+/// It owns the rendered conversation ([ChatState]) and depends only on ports:
+/// the [ChatRepository] for persistence, the cross-feature current model
+/// (`appCurrentModelProvider`), and the `LlmGatewayFactory` for the gateway —
+/// every concrete implementation is injected via Riverpod (the DI seam in
+/// `chat_providers.dart` / `app/di/model_access.dart`), so the boundary tests
+/// hold and tests run the whole loop with a fake gateway.
+///
+/// Send flow: persist the user message (+ `main_text` block) → persist a
+/// streaming assistant message → build an [LlmChatRequest] from the current
+/// model + history → subscribe to the gateway stream, accumulating text into
+/// the assistant's `main_text` and reasoning into its `thinking` while updating
+/// state per chunk → on [LlmDone] finalize and persist the blocks; on a stream
+/// error mark the message errored and persist an `error` block.
 
 @ProviderFor(ChatController)
 final chatControllerProvider = ChatControllerProvider._();
 
-/// Placeholder Riverpod controller for the chat feature.
+/// Orchestrates the chat send/stream loop (application layer).
 ///
-/// Proves the `application` layer wiring (codegen + DI) end to end. The real
-/// orchestration — calling use cases, subscribing to the streaming reply,
-/// throttling tokens — lands in milestone M2 (see `docs/ARCHITECTURE.md` §4).
+/// It owns the rendered conversation ([ChatState]) and depends only on ports:
+/// the [ChatRepository] for persistence, the cross-feature current model
+/// (`appCurrentModelProvider`), and the `LlmGatewayFactory` for the gateway —
+/// every concrete implementation is injected via Riverpod (the DI seam in
+/// `chat_providers.dart` / `app/di/model_access.dart`), so the boundary tests
+/// hold and tests run the whole loop with a fake gateway.
+///
+/// Send flow: persist the user message (+ `main_text` block) → persist a
+/// streaming assistant message → build an [LlmChatRequest] from the current
+/// model + history → subscribe to the gateway stream, accumulating text into
+/// the assistant's `main_text` and reasoning into its `thinking` while updating
+/// state per chunk → on [LlmDone] finalize and persist the blocks; on a stream
+/// error mark the message errored and persist an `error` block.
 final class ChatControllerProvider
-    extends $NotifierProvider<ChatController, ChatState> {
-  /// Placeholder Riverpod controller for the chat feature.
+    extends $AsyncNotifierProvider<ChatController, ChatState> {
+  /// Orchestrates the chat send/stream loop (application layer).
   ///
-  /// Proves the `application` layer wiring (codegen + DI) end to end. The real
-  /// orchestration — calling use cases, subscribing to the streaming reply,
-  /// throttling tokens — lands in milestone M2 (see `docs/ARCHITECTURE.md` §4).
+  /// It owns the rendered conversation ([ChatState]) and depends only on ports:
+  /// the [ChatRepository] for persistence, the cross-feature current model
+  /// (`appCurrentModelProvider`), and the `LlmGatewayFactory` for the gateway —
+  /// every concrete implementation is injected via Riverpod (the DI seam in
+  /// `chat_providers.dart` / `app/di/model_access.dart`), so the boundary tests
+  /// hold and tests run the whole loop with a fake gateway.
+  ///
+  /// Send flow: persist the user message (+ `main_text` block) → persist a
+  /// streaming assistant message → build an [LlmChatRequest] from the current
+  /// model + history → subscribe to the gateway stream, accumulating text into
+  /// the assistant's `main_text` and reasoning into its `thinking` while updating
+  /// state per chunk → on [LlmDone] finalize and persist the blocks; on a stream
+  /// error mark the message errored and persist an `error` block.
   ChatControllerProvider._()
     : super(
         from: null,
@@ -46,35 +76,37 @@ final class ChatControllerProvider
   @$internal
   @override
   ChatController create() => ChatController();
-
-  /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(ChatState value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<ChatState>(value),
-    );
-  }
 }
 
-String _$chatControllerHash() => r'0a042ea00717d99a39a9cabf96b8fbf835fe1f35';
+String _$chatControllerHash() => r'f2a592425423042d1fc8e56271ebb9eb6f4cc663';
 
-/// Placeholder Riverpod controller for the chat feature.
+/// Orchestrates the chat send/stream loop (application layer).
 ///
-/// Proves the `application` layer wiring (codegen + DI) end to end. The real
-/// orchestration — calling use cases, subscribing to the streaming reply,
-/// throttling tokens — lands in milestone M2 (see `docs/ARCHITECTURE.md` §4).
+/// It owns the rendered conversation ([ChatState]) and depends only on ports:
+/// the [ChatRepository] for persistence, the cross-feature current model
+/// (`appCurrentModelProvider`), and the `LlmGatewayFactory` for the gateway —
+/// every concrete implementation is injected via Riverpod (the DI seam in
+/// `chat_providers.dart` / `app/di/model_access.dart`), so the boundary tests
+/// hold and tests run the whole loop with a fake gateway.
+///
+/// Send flow: persist the user message (+ `main_text` block) → persist a
+/// streaming assistant message → build an [LlmChatRequest] from the current
+/// model + history → subscribe to the gateway stream, accumulating text into
+/// the assistant's `main_text` and reasoning into its `thinking` while updating
+/// state per chunk → on [LlmDone] finalize and persist the blocks; on a stream
+/// error mark the message errored and persist an `error` block.
 
-abstract class _$ChatController extends $Notifier<ChatState> {
-  ChatState build();
+abstract class _$ChatController extends $AsyncNotifier<ChatState> {
+  FutureOr<ChatState> build();
   @$mustCallSuper
   @override
   WhenComplete runBuild() {
-    final ref = this.ref as $Ref<ChatState, ChatState>;
+    final ref = this.ref as $Ref<AsyncValue<ChatState>, ChatState>;
     final element =
         ref.element
             as $ClassProviderElement<
-              AnyNotifier<ChatState, ChatState>,
-              ChatState,
+              AnyNotifier<AsyncValue<ChatState>, ChatState>,
+              AsyncValue<ChatState>,
               Object?,
               Object?
             >;
