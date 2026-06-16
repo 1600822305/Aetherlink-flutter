@@ -166,13 +166,9 @@ class _SidebarTabBar extends StatelessWidget {
           height: 1.25,
         ),
         indicatorSize: TabBarIndicatorSize.tab,
-        // Indicator: height 2px, radius 1px, currentColor @ opacity 0.55.
+        // Indicator: full tab width, height 2px, solid onSurface (#1E293B).
         indicator: UnderlineTabIndicator(
-          borderRadius: BorderRadius.circular(1),
-          borderSide: BorderSide(
-            width: 2,
-            color: textPrimary.withValues(alpha: 0.55),
-          ),
+          borderSide: BorderSide(width: 2, color: textPrimary),
         ),
         tabs: const [
           _SidebarTab(icon: LucideIcons.bot, label: _assistantTabLabel),
