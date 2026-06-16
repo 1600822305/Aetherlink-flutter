@@ -3,6 +3,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
+import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 
 /// Drift-backed [ChatRepository]. Delegates to the per-table DAOs, which store
@@ -111,4 +112,15 @@ class ChatRepositoryImpl implements ChatRepository {
 
   @override
   Future<void> deleteAssistant(String id) => _db.assistantDao.deleteById(id);
+
+  // --- Groups ---------------------------------------------------------------
+
+  @override
+  Future<List<Group>> getAllGroups() => _db.groupDao.getAll();
+
+  @override
+  Future<void> saveGroup(Group group) => _db.groupDao.upsert(group);
+
+  @override
+  Future<void> deleteGroup(String id) => _db.groupDao.deleteById(id);
 }
