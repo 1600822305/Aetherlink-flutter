@@ -1318,6 +1318,268 @@ class ProviderRowsCompanion extends UpdateCompanion<ProviderRow> {
   }
 }
 
+class $GroupRowsTable extends GroupRows
+    with TableInfo<$GroupRowsTable, GroupRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $GroupRowsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _orderIndexMeta = const VerificationMeta(
+    'orderIndex',
+  );
+  @override
+  late final GeneratedColumn<int> orderIndex = GeneratedColumn<int>(
+    'order_index',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<Group, String> data =
+      GeneratedColumn<String>(
+        'data',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<Group>($GroupRowsTable.$converterdata);
+  @override
+  List<GeneratedColumn> get $columns => [id, orderIndex, data];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'group_rows';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<GroupRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('order_index')) {
+      context.handle(
+        _orderIndexMeta,
+        orderIndex.isAcceptableOrUnknown(data['order_index']!, _orderIndexMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_orderIndexMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  GroupRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return GroupRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      orderIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}order_index'],
+      )!,
+      data: $GroupRowsTable.$converterdata.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}data'],
+        )!,
+      ),
+    );
+  }
+
+  @override
+  $GroupRowsTable createAlias(String alias) {
+    return $GroupRowsTable(attachedDatabase, alias);
+  }
+
+  static TypeConverter<Group, String> $converterdata = const GroupConverter();
+}
+
+class GroupRow extends DataClass implements Insertable<GroupRow> {
+  final String id;
+  final int orderIndex;
+  final Group data;
+  const GroupRow({
+    required this.id,
+    required this.orderIndex,
+    required this.data,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['order_index'] = Variable<int>(orderIndex);
+    {
+      map['data'] = Variable<String>(
+        $GroupRowsTable.$converterdata.toSql(data),
+      );
+    }
+    return map;
+  }
+
+  GroupRowsCompanion toCompanion(bool nullToAbsent) {
+    return GroupRowsCompanion(
+      id: Value(id),
+      orderIndex: Value(orderIndex),
+      data: Value(data),
+    );
+  }
+
+  factory GroupRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return GroupRow(
+      id: serializer.fromJson<String>(json['id']),
+      orderIndex: serializer.fromJson<int>(json['orderIndex']),
+      data: serializer.fromJson<Group>(json['data']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'orderIndex': serializer.toJson<int>(orderIndex),
+      'data': serializer.toJson<Group>(data),
+    };
+  }
+
+  GroupRow copyWith({String? id, int? orderIndex, Group? data}) => GroupRow(
+    id: id ?? this.id,
+    orderIndex: orderIndex ?? this.orderIndex,
+    data: data ?? this.data,
+  );
+  GroupRow copyWithCompanion(GroupRowsCompanion data) {
+    return GroupRow(
+      id: data.id.present ? data.id.value : this.id,
+      orderIndex: data.orderIndex.present
+          ? data.orderIndex.value
+          : this.orderIndex,
+      data: data.data.present ? data.data.value : this.data,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GroupRow(')
+          ..write('id: $id, ')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('data: $data')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, orderIndex, data);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is GroupRow &&
+          other.id == this.id &&
+          other.orderIndex == this.orderIndex &&
+          other.data == this.data);
+}
+
+class GroupRowsCompanion extends UpdateCompanion<GroupRow> {
+  final Value<String> id;
+  final Value<int> orderIndex;
+  final Value<Group> data;
+  final Value<int> rowid;
+  const GroupRowsCompanion({
+    this.id = const Value.absent(),
+    this.orderIndex = const Value.absent(),
+    this.data = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  GroupRowsCompanion.insert({
+    required String id,
+    required int orderIndex,
+    required Group data,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       orderIndex = Value(orderIndex),
+       data = Value(data);
+  static Insertable<GroupRow> custom({
+    Expression<String>? id,
+    Expression<int>? orderIndex,
+    Expression<String>? data,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (orderIndex != null) 'order_index': orderIndex,
+      if (data != null) 'data': data,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  GroupRowsCompanion copyWith({
+    Value<String>? id,
+    Value<int>? orderIndex,
+    Value<Group>? data,
+    Value<int>? rowid,
+  }) {
+    return GroupRowsCompanion(
+      id: id ?? this.id,
+      orderIndex: orderIndex ?? this.orderIndex,
+      data: data ?? this.data,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (orderIndex.present) {
+      map['order_index'] = Variable<int>(orderIndex.value);
+    }
+    if (data.present) {
+      map['data'] = Variable<String>(
+        $GroupRowsTable.$converterdata.toSql(data.value),
+      );
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GroupRowsCompanion(')
+          ..write('id: $id, ')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('data: $data, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -1328,6 +1590,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   );
   late final $AssistantRowsTable assistantRows = $AssistantRowsTable(this);
   late final $ProviderRowsTable providerRows = $ProviderRowsTable(this);
+  late final $GroupRowsTable groupRows = $GroupRowsTable(this);
   late final Index idxTopicsLastMessageTimeNum = Index(
     'idx_topics_last_message_time_num',
     'CREATE INDEX idx_topics_last_message_time_num ON topic_rows (last_message_time_num)',
@@ -1348,6 +1611,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'idx_providers_sort_order',
     'CREATE INDEX idx_providers_sort_order ON provider_rows (sort_order)',
   );
+  late final Index idxGroupsOrder = Index(
+    'idx_groups_order',
+    'CREATE INDEX idx_groups_order ON group_rows (order_index)',
+  );
   late final TopicDao topicDao = TopicDao(this as AppDatabase);
   late final MessageDao messageDao = MessageDao(this as AppDatabase);
   late final MessageBlockDao messageBlockDao = MessageBlockDao(
@@ -1355,6 +1622,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   );
   late final AssistantDao assistantDao = AssistantDao(this as AppDatabase);
   late final ProviderDao providerDao = ProviderDao(this as AppDatabase);
+  late final GroupDao groupDao = GroupDao(this as AppDatabase);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1365,11 +1633,13 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     messageBlockRows,
     assistantRows,
     providerRows,
+    groupRows,
     idxTopicsLastMessageTimeNum,
     idxMessagesTopicId,
     idxMessagesAssistantId,
     idxMessageBlocksMessageId,
     idxProvidersSortOrder,
+    idxGroupsOrder,
   ];
 }
 
@@ -2188,6 +2458,165 @@ typedef $$ProviderRowsTableProcessedTableManager =
       ProviderRow,
       PrefetchHooks Function()
     >;
+typedef $$GroupRowsTableCreateCompanionBuilder =
+    GroupRowsCompanion Function({
+      required String id,
+      required int orderIndex,
+      required Group data,
+      Value<int> rowid,
+    });
+typedef $$GroupRowsTableUpdateCompanionBuilder =
+    GroupRowsCompanion Function({
+      Value<String> id,
+      Value<int> orderIndex,
+      Value<Group> data,
+      Value<int> rowid,
+    });
+
+class $$GroupRowsTableFilterComposer
+    extends Composer<_$AppDatabase, $GroupRowsTable> {
+  $$GroupRowsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<Group, Group, String> get data =>
+      $composableBuilder(
+        column: $table.data,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+}
+
+class $$GroupRowsTableOrderingComposer
+    extends Composer<_$AppDatabase, $GroupRowsTable> {
+  $$GroupRowsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get data => $composableBuilder(
+    column: $table.data,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$GroupRowsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $GroupRowsTable> {
+  $$GroupRowsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<Group, String> get data =>
+      $composableBuilder(column: $table.data, builder: (column) => column);
+}
+
+class $$GroupRowsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $GroupRowsTable,
+          GroupRow,
+          $$GroupRowsTableFilterComposer,
+          $$GroupRowsTableOrderingComposer,
+          $$GroupRowsTableAnnotationComposer,
+          $$GroupRowsTableCreateCompanionBuilder,
+          $$GroupRowsTableUpdateCompanionBuilder,
+          (GroupRow, BaseReferences<_$AppDatabase, $GroupRowsTable, GroupRow>),
+          GroupRow,
+          PrefetchHooks Function()
+        > {
+  $$GroupRowsTableTableManager(_$AppDatabase db, $GroupRowsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$GroupRowsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$GroupRowsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$GroupRowsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<int> orderIndex = const Value.absent(),
+                Value<Group> data = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => GroupRowsCompanion(
+                id: id,
+                orderIndex: orderIndex,
+                data: data,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required int orderIndex,
+                required Group data,
+                Value<int> rowid = const Value.absent(),
+              }) => GroupRowsCompanion.insert(
+                id: id,
+                orderIndex: orderIndex,
+                data: data,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$GroupRowsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $GroupRowsTable,
+      GroupRow,
+      $$GroupRowsTableFilterComposer,
+      $$GroupRowsTableOrderingComposer,
+      $$GroupRowsTableAnnotationComposer,
+      $$GroupRowsTableCreateCompanionBuilder,
+      $$GroupRowsTableUpdateCompanionBuilder,
+      (GroupRow, BaseReferences<_$AppDatabase, $GroupRowsTable, GroupRow>),
+      GroupRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -2202,4 +2631,6 @@ class $AppDatabaseManager {
       $$AssistantRowsTableTableManager(_db, _db.assistantRows);
   $$ProviderRowsTableTableManager get providerRows =>
       $$ProviderRowsTableTableManager(_db, _db.providerRows);
+  $$GroupRowsTableTableManager get groupRows =>
+      $$GroupRowsTableTableManager(_db, _db.groupRows);
 }
