@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_p
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/advanced_api_config_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/edit_model_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/model_provider_detail_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/multi_key_management_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/settings_page.dart';
 import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
 
@@ -39,6 +40,8 @@ abstract final class AppRouter {
             '${Uri.encodeQueryComponent(modelId)}';
   static String advancedApiPath(String providerId) =>
       '/settings/model-provider/$providerId/advanced-api';
+  static String multiKeyPath(String providerId) =>
+      '/settings/model-provider/$providerId/multi-key';
 
   /// Builds the router. [startAtWelcome] decides the first landing page: M4.1
   /// passes the in-memory onboarding state (first-time user → [welcomePath],
@@ -96,6 +99,13 @@ abstract final class AppRouter {
         path: '/settings/model-provider/:providerId/advanced-api',
         name: 'advanced-api',
         builder: (context, state) => AdvancedApiConfigPage(
+          providerId: state.pathParameters['providerId'] ?? '',
+        ),
+      ),
+      GoRoute(
+        path: '/settings/model-provider/:providerId/multi-key',
+        name: 'multi-key',
+        builder: (context, state) => MultiKeyManagementPage(
           providerId: state.pathParameters['providerId'] ?? '',
         ),
       ),
