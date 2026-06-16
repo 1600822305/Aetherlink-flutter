@@ -104,7 +104,6 @@ class _AboutHeader extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ClipOval(
             child: Image.asset(
@@ -145,9 +144,10 @@ class _AboutHeader extends StatelessWidget {
   }
 }
 
-/// The green "v0.6.5" pill. Uses the theme's emerald [ColorScheme.secondary] as
-/// the success accent (the original used MUI's `success` palette) — no
-/// hard-coded color.
+/// The green "v0.6.5" pill. Fills solid with the theme's emerald
+/// [ColorScheme.secondary] as the success accent (the original used MUI's
+/// `success` palette) and reads with [ColorScheme.onSecondary] — no hard-coded
+/// color.
 class _VersionBadge extends StatelessWidget {
   const _VersionBadge({required this.version});
 
@@ -155,17 +155,19 @@ class _VersionBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.secondary;
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.12),
-        border: Border.all(color: accent),
+        color: scheme.secondary,
+        border: Border.all(color: scheme.secondary),
         borderRadius: BorderRadius.circular(25),
       ),
       child: Text(
         'v$version',
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: accent),
+        style: Theme.of(
+          context,
+        ).textTheme.labelSmall?.copyWith(color: scheme.onSecondary),
       ),
     );
   }
@@ -178,14 +180,9 @@ class _LinksList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rows = <Widget>[];
-    for (var i = 0; i < links.length; i++) {
-      if (i > 0) {
-        rows.add(const Divider(height: 1, thickness: 1));
-      }
-      rows.add(_AboutLinkRow(link: links[i]));
-    }
-    return Column(children: rows);
+    return Column(
+      children: [for (final link in links) _AboutLinkRow(link: link)],
+    );
   }
 }
 
