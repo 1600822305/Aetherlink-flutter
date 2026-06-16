@@ -91,6 +91,7 @@ class _ChatSidebarState extends State<ChatSidebar>
         ),
       ),
       child: SafeArea(
+        top: false,
         child: Column(
           children: [
             const _CloseRow(),
@@ -126,6 +127,8 @@ class _CloseRow extends StatelessWidget {
         onPressed: () => Scaffold.maybeOf(context)?.closeDrawer(),
         iconSize: 20,
         color: theme.colorScheme.onSurface,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 36, height: 36),
         icon: const Icon(LucideIcons.x),
       ),
     );
