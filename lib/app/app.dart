@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme.dart';
+import 'package:aetherlink_flutter/features/settings/application/font_size_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/theme_mode_controller.dart';
 import 'package:aetherlink_flutter/features/settings/domain/app_theme_mode.dart';
 import 'package:aetherlink_flutter/features/theming/application/theme_controller.dart';
@@ -12,9 +13,10 @@ import 'package:aetherlink_flutter/features/welcome/application/onboarding_contr
 /// Root application widget (composition root).
 ///
 /// It only wires features together (no business logic): it watches the active
-/// [ThemeController] + [ThemeModeController] and feeds the resulting `ThemeData`
-/// and `ThemeMode` into the go_router-driven `MaterialApp`. Swapping either at
-/// runtime rebuilds the app's appearance without recreating the router.
+/// [ThemeController] + [ThemeModeController] + [FontSizeController] and feeds
+/// the resulting `ThemeData` and `ThemeMode` into the go_router-driven
+/// `MaterialApp`. Swapping any of them at runtime rebuilds the app's appearance
+/// without recreating the router.
 class AetherlinkApp extends ConsumerStatefulWidget {
   const AetherlinkApp({super.key});
 
@@ -34,10 +36,21 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
   Widget build(BuildContext context) {
     final spec = ref.watch(themeControllerProvider);
     final mode = ref.watch(themeModeControllerProvider);
+    final fontSize = ref.watch(fontSizeControllerProvider);
+    // Mirror the original `fontScale = fontSize / 16`: fold the global font size
+    // into the spec's text scale so every text style scales proportionally.
+    final scaledSpec = spec.copyWith(
+      typography: spec.typography.copyWith(
+        textScale:
+            spec.typography.textScale *
+            fontSize /
+            FontSizeController.defaultSize,
+      ),
+    );
     return MaterialApp.router(
       title: 'Aetherlink',
-      theme: AppTheme.light(spec),
-      darkTheme: AppTheme.dark(spec),
+      theme: AppTheme.light(scaledSpec),
+      darkTheme: AppTheme.dark(scaledSpec),
       themeMode: switch (mode) {
         AppThemeMode.system => ThemeMode.system,
         AppThemeMode.light => ThemeMode.light,
