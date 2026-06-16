@@ -39,6 +39,10 @@ abstract final class AppTheme {
       onError: const Color(0xFFFFFFFF),
       surface: surface,
       onSurface: textPrimary,
+      // Map the muted role to the original's `text.secondary` token so every
+      // secondary label / trailing icon reads in the slate-gray it expects,
+      // instead of Material's darker default (ADR-0008).
+      onSurfaceVariant: textSecondary,
     );
 
     final baseTypography = brightness == Brightness.dark
