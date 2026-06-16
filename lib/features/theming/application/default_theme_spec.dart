@@ -33,7 +33,9 @@ const ThemeSpec defaultThemeSpec = ThemeSpec(
       bubbleAi: 0xFF2A2A2A,
     ),
   ),
-  typography: ThemeTypography(),
+  // Roboto is the cross-platform member of the original's system font stack
+  // (themes.ts `system`), bundled so every platform renders in the same font.
+  typography: ThemeTypography(fontFamily: 'Roboto'),
   shape: ThemeShape(),
   density: ThemeDensity.standard,
 );

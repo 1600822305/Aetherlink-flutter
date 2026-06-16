@@ -43,12 +43,20 @@ class SettingsPage extends ConsumerWidget {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
+        titleSpacing: 0,
         shape: Border(bottom: BorderSide(color: theme.dividerColor)),
         leading: IconButton(
           icon: const Icon(LucideIcons.arrowLeft),
           color: theme.colorScheme.primary,
           onPressed: () =>
               context.canPop() ? context.pop() : context.go(AppRouter.chatPath),
+        ),
+        // Match the original HeaderBar title: 1.125rem (18px) at weight 600,
+        // left-aligned tight against the back button (SettingComponents.tsx).
+        titleTextStyle: theme.textTheme.titleLarge?.copyWith(
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onSurface,
         ),
         title: const Text(kSettingsTitle),
         actions: [
