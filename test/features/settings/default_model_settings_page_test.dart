@@ -19,6 +19,7 @@ void main() {
   }
 
   Future<void> pumpPage(WidgetTester tester) async {
+    useTallSurface(tester);
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
@@ -33,42 +34,51 @@ void main() {
     await pumpPage(tester);
 
     expect(find.text('模型设置'), findsOneWidget);
+
+    // 模型服务商 card.
     expect(find.text('模型服务商'), findsOneWidget);
     expect(find.text('您可以配置多个模型服务商，点击对应的服务商进行设置和管理'), findsOneWidget);
+
+    // 推荐操作 card: subheader + the three rows.
+    expect(find.text('推荐操作'), findsOneWidget);
+    expect(find.text('辅助模型设置'), findsOneWidget);
+    expect(find.text('模型选择器样式'), findsOneWidget);
+    expect(find.text('添加模型服务商'), findsOneWidget);
+
     // Header actions render with their lucide icons.
     expect(find.text('批量删除'), findsOneWidget);
     expect(find.text('添加'), findsOneWidget);
     expect(find.byIcon(LucideIcons.trash2), findsOneWidget);
-    expect(find.byIcon(LucideIcons.plus), findsOneWidget);
     expect(find.byIcon(LucideIcons.arrowLeft), findsOneWidget);
+    // plus is used twice: the toolbar 添加 action + the 添加模型服务商 row.
+    expect(find.byIcon(LucideIcons.plus), findsNWidgets(2));
   });
 
   testWidgets('provider list is empty (no fabricated rows)', (tester) async {
     await pumpPage(tester);
 
-    // Only the card's header/divider exist — no provider rows, so nothing is
-    // tappable inside the body and no chevron/grip handles are drawn.
+    // No provider rows are fabricated: no drag handles, and nothing in the
+    // body is tappable.
     expect(find.byType(InkWell), findsNothing);
     expect(find.byIcon(LucideIcons.gripVertical), findsNothing);
-    expect(find.byIcon(LucideIcons.chevronRight), findsNothing);
   });
 
-  testWidgets('the 批量删除 / 添加 actions are disabled placeholders', (
+  testWidgets('every data/navigation control is a disabled placeholder', (
     tester,
   ) async {
     await pumpPage(tester);
 
-    // Both header actions render at half opacity (the app's disabled
-    // convention) and carry no tap handler.
+    // 2 header actions + 3 推荐操作 rows render at half opacity (the app's
+    // disabled convention).
     final disabled = tester
         .widgetList<Opacity>(
           find.byWidgetPredicate((w) => w is Opacity && w.opacity == 0.5),
         )
         .toList();
-    expect(disabled, hasLength(2));
+    expect(disabled, hasLength(5));
 
-    // Neither action has a tappable ancestor (no InkWell / button wiring).
-    for (final label in const ['批量删除', '添加']) {
+    // None of them has a tappable ancestor (no InkWell / button wiring).
+    for (final label in const ['批量删除', '添加', '辅助模型设置', '模型选择器样式', '添加模型服务商']) {
       expect(
         find.ancestor(of: find.text(label), matching: find.byType(InkWell)),
         findsNothing,
