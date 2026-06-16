@@ -69,6 +69,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.palette,
         title: '外观',
         description: '主题、字体大小和语言设置',
+        route: AppRouter.appearancePath,
       ),
       SettingItemData(
         icon: LucideIcons.settings,

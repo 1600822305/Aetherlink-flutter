@@ -2,6 +2,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/appearance_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/default_model_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/add_provider_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/advanced_api_config_page.dart';
@@ -25,6 +26,7 @@ abstract final class AppRouter {
   static const String settingsPath = '/settings';
   static const String aboutPath = '/about';
   static const String defaultModelPath = '/settings/default-model';
+  static const String appearancePath = '/settings/appearance';
   static const String welcomePath = '/welcome';
 
   /// The model-provider third-level pages (M4.3.1). The detail / edit / advanced
@@ -74,6 +76,11 @@ abstract final class AppRouter {
         path: defaultModelPath,
         name: 'default-model',
         builder: (context, state) => const DefaultModelSettingsPage(),
+      ),
+      GoRoute(
+        path: appearancePath,
+        name: 'appearance',
+        builder: (context, state) => const AppearanceSettingsPage(),
       ),
       GoRoute(
         path: addProviderPath,
