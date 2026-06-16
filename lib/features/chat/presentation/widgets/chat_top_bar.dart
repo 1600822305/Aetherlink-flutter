@@ -3,26 +3,47 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/app/di/top_toolbar_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
+import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
+import 'package:aetherlink_flutter/shared/domain/top_toolbar_settings.dart';
+import 'package:aetherlink_flutter/shared/widgets/top_toolbar_component_catalog.dart';
 
 /// Static UI strings, ported verbatim from the original (i18n is a later
 /// effort, per the M4.1 approach).
 const String _menuTooltip = '打开侧边栏';
 const String _settingsTooltip = '设置';
+const String _newTopicTooltip = '新建话题';
+const String _clearTooltip = '清空内容';
+const String _searchTooltip = '搜索';
+const String _condenseTooltip = '压缩上下文';
 const String _modelPlaceholderLabel = '未配置模型';
 
-/// The chat top bar, restored to the original Aetherlink default toolbar set
-/// (`DEFAULT_TOP_TOOLBAR_SETTINGS`): left = menu (drawer trigger) + topic name,
-/// right = model selector ("full" style) + settings.
+/// The chat top bar, driven by the appearance 顶部工具栏 DIY 设置 page's
+/// [TopToolbarSettings] (read through the [appTopToolbarSettings] composition
+/// seam — never `settings/application` directly, per import-boundary Rule 3).
 ///
-/// The menu trigger opens the drawer; settings and the model selector are wired
-/// (the selector opens the model-settings page, where the current chat model is
-/// chosen). The selector shows the current model's name once configured,
-/// otherwise the "未配置模型"
-/// placeholder — never a fabricated model name. The title is provider-driven
-/// ([currentTopicProvider]) and stays empty until a topic exists.
+/// Mirrors the original `ChatPageUI` toolbar:
+/// - When `positions` is non-empty (`isDIYLayout`) the placed components are
+///   rendered at their free `x%/y%` inside the toolbar (`translate(-50%,-50%)`),
+///   exactly like the settings preview consumes the same config.
+/// - Otherwise the original default layout shows: left = menu (drawer trigger) +
+///   topic name, right = model selector + settings.
+///
+/// The model selector honors `modelSelectorDisplayStyle` (icon ⇒ a `Bot`
+/// `IconButton`; text ⇒ the outlined model-name/provider stack of the original
+/// `UnifiedModelDisplay`). Glyphs are the 1:1 catalog glyphs (lucide + the
+/// non-lucide SVGs), never Material substitutes.
+///
+/// Wired actions: menu opens the drawer, settings pushes `/settings`, the model
+/// selector opens the picker (or jumps to model settings when none exist). The
+/// remaining toolbar buttons (new topic / clear / search / condense) are
+/// full-fidelity glyphs whose behaviors are a later slice, so they render
+/// disabled rather than as fake buttons. The selector shows the current model's
+/// name once configured, otherwise the "未配置模型" placeholder — never a
+/// fabricated model name.
 class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
   const ChatTopBar({super.key});
 
@@ -32,17 +53,75 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final topicAsync = ref.watch(currentTopicProvider);
+    final settings = ref.watch(appTopToolbarSettingsProvider);
+    final topic = ref.watch(currentTopicProvider).value;
     final current = ref.watch(appCurrentModelProvider).value;
     final providers = ref.watch(appModelProvidersProvider).value ?? const [];
     final hasModels = providers.any((p) => p.models.isNotEmpty);
-    final modelLabel = current?.model.name ?? _modelPlaceholderLabel;
 
-    // The original header is light and flat: `bg-paper` fill, `elevation 0`,
-    // and a 1px bottom divider (ChatPageUI.tsx `baseStyles.appBar`). A bare
-    // Material 2 `AppBar` would instead fill with `primaryColor`, which is why
-    // the previous pass read as a generic Material/MUI bar. All colors are
-    // theme tokens — no hardcoded hex.
+    // The original header is light and flat: `bg-paper` fill, `elevation 0` and
+    // a 1px bottom divider (`baseStyles.appBar`). All colors are theme tokens.
+    final isDiy = settings.positions.isNotEmpty;
+
+    if (isDiy) {
+      return AppBar(
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.onSurface,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        shape: Border(bottom: BorderSide(color: theme.dividerColor)),
+        automaticallyImplyLeading: false,
+        titleSpacing: 0,
+        title: SizedBox(
+          height: kToolbarHeight,
+          width: double.infinity,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final w = constraints.maxWidth;
+              final h = constraints.maxHeight;
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  for (final pos in settings.positions)
+                    if (_buildComponent(
+                          pos.component,
+                          context: context,
+                          ref: ref,
+                          theme: theme,
+                          settings: settings,
+                          topicName: topic?.name,
+                          current: current,
+                          hasModels: hasModels,
+                        )
+                        case final Widget child)
+                      Positioned(
+                        left: pos.x / 100 * w,
+                        top: pos.y / 100 * h,
+                        child: FractionalTranslation(
+                          translation: const Offset(-0.5, -0.5),
+                          child: child,
+                        ),
+                      ),
+                ],
+              );
+            },
+          ),
+        ),
+      );
+    }
+
+    // Default (non-DIY) layout: menu + topic name on the left, model selector +
+    // settings on the right (`DEFAULT_TOP_TOOLBAR_SETTINGS`).
+    final modelSelector = _buildComponent(
+      TopToolbarComponent.modelSelector,
+      context: context,
+      ref: ref,
+      theme: theme,
+      settings: settings,
+      topicName: topic?.name,
+      current: current,
+      hasModels: hasModels,
+    );
     return AppBar(
       backgroundColor: theme.colorScheme.surface,
       foregroundColor: theme.colorScheme.onSurface,
@@ -50,56 +129,234 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
       scrolledUnderElevation: 0,
       shape: Border(bottom: BorderSide(color: theme.dividerColor)),
       titleSpacing: 0,
-      leading: Builder(
-        builder: (context) => IconButton(
-          icon: const Icon(Icons.menu),
-          tooltip: _menuTooltip,
-          onPressed: () => Scaffold.of(context).openDrawer(),
-        ),
+      leading: _buildComponent(
+        TopToolbarComponent.menuButton,
+        context: context,
+        ref: ref,
+        theme: theme,
+        settings: settings,
+        topicName: topic?.name,
+        current: current,
+        hasModels: hasModels,
       ),
-      // Dynamic title from the application layer; empty until a topic exists.
-      title: topicAsync.maybeWhen(
-        data: (topic) => topic == null
-            ? const SizedBox.shrink()
-            : Text(topic.name, overflow: TextOverflow.ellipsis),
-        orElse: () => const SizedBox.shrink(),
-      ),
+      title: topic == null
+          ? const SizedBox.shrink()
+          : _TopicTitle(name: topic.name),
       actions: [
-        // Model selector ("full" style) — the most recognizable element,
-        // restyled to the original's outlined pill (UnifiedModelDisplay's
-        // `variant="outlined"` with a `divider` border). No model is configured
-        // this round, so it is a disabled "未配置模型" placeholder (no
-        // fabricated name, no fake picker).
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: OutlinedButton.icon(
-            // Tapping the selector opens the model picker (ported from the
-            // original SolidJS `DialogModelSelector`) when models exist;
-            // otherwise it jumps to the model-settings page to add some. Shows
-            // the selected model's name once configured, else the placeholder.
-            onPressed: () => hasModels
-                ? showModelSelectorDialog(context)
-                : context.push(AppRouter.defaultModelPath),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: theme.colorScheme.onSurface,
-              side: BorderSide(color: theme.dividerColor),
-              shape: const StadiumBorder(),
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              visualDensity: VisualDensity.compact,
-            ),
-            icon: const Icon(Icons.smart_toy_outlined, size: 18),
-            label: Text(modelLabel, overflow: TextOverflow.ellipsis),
-          ),
-        ),
-        // Settings — now wired to the settings hub (`/settings`), pushed so
-        // the back button returns to the chat.
-        IconButton(
-          icon: const Icon(Icons.settings),
-          tooltip: _settingsTooltip,
-          onPressed: () => context.push(AppRouter.settingsPath),
-        ),
+        if (modelSelector != null) modelSelector,
+        _buildComponent(
+          TopToolbarComponent.settingsButton,
+          context: context,
+          ref: ref,
+          theme: theme,
+          settings: settings,
+          topicName: topic?.name,
+          current: current,
+          hasModels: hasModels,
+        )!,
         const SizedBox(width: 4),
       ],
+    );
+  }
+
+  /// Builds a single toolbar component, or `null` when it should not render
+  /// (the original's `renderToolbarComponent` returns `null` for `topicName` /
+  /// `clearButton` with no current topic).
+  Widget? _buildComponent(
+    TopToolbarComponent component, {
+    required BuildContext context,
+    required WidgetRef ref,
+    required ThemeData theme,
+    required TopToolbarSettings settings,
+    required String? topicName,
+    required CurrentModel? current,
+    required bool hasModels,
+  }) {
+    switch (component) {
+      case TopToolbarComponent.menuButton:
+        return Builder(
+          builder: (context) => _ToolbarIconButton(
+            icon: topToolbarComponentIcon(
+              component,
+              color: theme.colorScheme.onSurface,
+            ),
+            tooltip: _menuTooltip,
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        );
+      case TopToolbarComponent.topicName:
+        if (topicName == null) return null;
+        return _TopicTitle(name: topicName);
+      case TopToolbarComponent.newTopicButton:
+        return _ToolbarIconButton(
+          icon: topToolbarComponentIcon(component, color: theme.disabledColor),
+          tooltip: _newTopicTooltip,
+          onPressed: null,
+        );
+      case TopToolbarComponent.clearButton:
+        if (topicName == null) return null;
+        return _ToolbarIconButton(
+          icon: topToolbarComponentIcon(component, color: theme.disabledColor),
+          tooltip: _clearTooltip,
+          onPressed: null,
+        );
+      case TopToolbarComponent.searchButton:
+        return _ToolbarIconButton(
+          icon: topToolbarComponentIcon(component, color: theme.disabledColor),
+          tooltip: _searchTooltip,
+          onPressed: null,
+        );
+      case TopToolbarComponent.modelSelector:
+        return _ModelSelector(
+          style: settings.modelSelectorDisplayStyle,
+          current: current,
+          onPressed: () => hasModels
+              ? showModelSelectorDialog(context)
+              : context.push(AppRouter.defaultModelPath),
+        );
+      case TopToolbarComponent.settingsButton:
+        return _ToolbarIconButton(
+          icon: topToolbarComponentIcon(
+            component,
+            color: theme.colorScheme.onSurface,
+          ),
+          tooltip: _settingsTooltip,
+          onPressed: () => context.push(AppRouter.settingsPath),
+        );
+      case TopToolbarComponent.condenseButton:
+        return _ToolbarIconButton(
+          icon: topToolbarComponentIcon(component, color: theme.disabledColor),
+          tooltip: _condenseTooltip,
+          onPressed: null,
+        );
+    }
+  }
+}
+
+/// The topic name (`Typography variant="h6" noWrap`, 18px/500), ellipsized and
+/// width-capped so it stays on one line in either layout.
+class _TopicTitle extends StatelessWidget {
+  const _TopicTitle({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 200),
+      child: Text(
+        name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w500,
+          color: theme.colorScheme.onSurface,
+        ),
+      ),
+    );
+  }
+}
+
+/// A toolbar icon button mirroring the original's `IconButton` (a `null`
+/// handler renders the glyph but does not act — its behavior is a later slice).
+class _ToolbarIconButton extends StatelessWidget {
+  const _ToolbarIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final Widget icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(icon: icon, tooltip: tooltip, onPressed: onPressed);
+  }
+}
+
+/// The model selector, a 1:1 port of `UnifiedModelDisplay`: `icon` ⇒ a small
+/// `Bot` `IconButton`; `text` ⇒ an outlined button stacking the model name
+/// (`body2`/500) over the provider name (`caption`). Shows the placeholder, not
+/// a fabricated name, when no model is configured.
+class _ModelSelector extends StatelessWidget {
+  const _ModelSelector({
+    required this.style,
+    required this.current,
+    required this.onPressed,
+  });
+
+  final ModelSelectorDisplayStyle style;
+  final CurrentModel? current;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final modelLabel = current?.model.name ?? _modelPlaceholderLabel;
+
+    if (style == ModelSelectorDisplayStyle.icon) {
+      return _ToolbarIconButton(
+        icon: topToolbarComponentIcon(
+          TopToolbarComponent.modelSelector,
+          color: theme.colorScheme.onSurface,
+        ),
+        tooltip: modelLabel,
+        onPressed: onPressed,
+      );
+    }
+
+    final providerName = current?.provider.name ?? '';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: theme.colorScheme.onSurface,
+          side: BorderSide(color: theme.dividerColor),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          minimumSize: Size.zero,
+          visualDensity: VisualDensity.compact,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 140),
+              child: Text(
+                modelLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  height: 1.1,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+            ),
+            if (providerName.isNotEmpty)
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 140),
+                child: Text(
+                  providerName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10.4,
+                    height: 1.0,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
