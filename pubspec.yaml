@@ -90,6 +90,19 @@ flutter:
     - assets/images/
     - assets/icons/
 
+  # Roboto — the cross-platform member of the original app's system font stack
+  # (`-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, …`, themes.ts).
+  # Bundling it makes every platform (incl. Linux desktop) render in the same
+  # font the original uses, instead of the host's default sans. Apache-2.0.
+  fonts:
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/Roboto-Regular.ttf
+        - asset: assets/fonts/Roboto-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Roboto-Bold.ttf
+          weight: 700
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
