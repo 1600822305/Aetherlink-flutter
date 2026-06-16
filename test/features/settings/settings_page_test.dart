@@ -76,7 +76,8 @@ void main() {
   });
 
   testWidgets(
-    'only 关于我们 is enabled; every other row is a disabled placeholder',
+    'only the wired rows (关于我们, 配置模型) are enabled; the rest are disabled '
+    'placeholders',
     (tester) async {
       await pumpHub(tester);
 
@@ -85,11 +86,13 @@ void main() {
           .toList();
       final enabled = rows.where((r) => r.enabled).toList();
 
-      expect(enabled, hasLength(1));
-      expect(enabled.single.title, '关于我们');
-      expect(enabled.single.onTap, isNotNull);
+      const wiredTitles = {'关于我们', '配置模型'};
+      expect(enabled.map((r) => r.title).toSet(), wiredTitles);
+      for (final row in enabled) {
+        expect(row.onTap, isNotNull, reason: '${row.title} should be tappable');
+      }
 
-      for (final row in rows.where((r) => r.title != '关于我们')) {
+      for (final row in rows.where((r) => !wiredTitles.contains(r.title))) {
         expect(row.enabled, isFalse, reason: '${row.title} should be disabled');
         expect(
           row.onTap,

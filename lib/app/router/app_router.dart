@@ -2,6 +2,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/default_model_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/settings_page.dart';
 import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
 
@@ -18,6 +19,7 @@ abstract final class AppRouter {
   static const String chatPath = '/';
   static const String settingsPath = '/settings';
   static const String aboutPath = '/about';
+  static const String defaultModelPath = '/settings/default-model';
   static const String welcomePath = '/welcome';
 
   /// Builds the router. [startAtWelcome] decides the first landing page: M4.1
@@ -46,6 +48,11 @@ abstract final class AppRouter {
         path: aboutPath,
         name: 'about',
         builder: (context, state) => const AboutPage(),
+      ),
+      GoRoute(
+        path: defaultModelPath,
+        name: 'default-model',
+        builder: (context, state) => const DefaultModelSettingsPage(),
       ),
     ],
   );
