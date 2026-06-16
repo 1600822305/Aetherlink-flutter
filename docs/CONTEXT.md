@@ -12,7 +12,7 @@
 - **原项目（要迁走的）**：`https://github.com/1600822305/Aetherlink`
   技术栈：React 19 + MUI v7 + @emotion + tailwind，跑在 Capacitor 8（移动 webview）+ Tauri 2（桌面 webview）上。状态用 Redux Toolkit（14 slice）+ zustand + signals，数据用 Dexie/IndexedDB，LLM 走 Vercel AI SDK。规模：**972 个 TS 文件 / 207 个目录**。
 - **新项目（本仓库，要迁到的）**：`https://github.com/1600822305/Aetherlink-flutter`
-  技术栈：Flutter（Dart）。已搭起 feature-first 骨架，并完成 **M0~M3**（领域模型 / Drift 数据层 / 网络·LLM 含 **E2E 验穿** / 平台能力层）、**M4.0 UI 地基**、**M4.1 欢迎页**、**M4.2.1 聊天消息渲染**、**M4.4.0 设置 hub + 关于页**、**M4.3 数据层 + M4.3.0 二级页 + M4.3.1 三级页 UI**；**当前在飞 = M4.3.2 接线 + 发送/流式闭环**（配模型→发消息→看真流式回复，点亮地基最后一件）。M4 分子阶段逐页重写，详见 `ROADMAP.md` 进度看板。
+  技术栈：Flutter（Dart）。已搭起 feature-first 骨架，并完成 **M0~M3**（领域模型 / Drift 数据层 / 网络·LLM 含 **E2E 验穿** / 平台能力层）、**M4.0 UI 地基**、**M4.1 欢迎页**、**M4.2.1 聊天消息渲染**、**M4.4.0 设置 hub + 关于页**、**M4.3 数据层 + M4.3.0 二级页 + M4.3.1 三级页 UI**、**M4.3.2 接线 + 发送/流式闭环**（地基最后一件已点亮 —— 「打字→发送→真流式→落库→渲染」在 app 里跑通，第一个可演示闭环）；**下一步 = M4 外围（聊天话题/助手抽屉、消息操作）+ M4.4 设置高频页（Appearance/Behavior…）**。M4 分子阶段逐页重写，详见 `ROADMAP.md` 进度看板。
 
 ---
 
@@ -80,7 +80,8 @@
 - ✅ **M4.3.0 默认模型设置（二级页 UI）已完成**（PR #31/#32）：hub「默认模型」→ 二级页 1:1 复刻，空态 + 需数据控件置灰，lucide 图标。
 - ✅ **M2 流式已 E2E 验穿**（PR #33）：真 socket + 本地 mock SSE server 跑通「请求→SSE 分块→适配器→`LlmStreamChunk`」全链 + `bin/llm_smoke.dart` dev 冒烟入口（不依赖 UI / 真 key）。**地基体检里「M2 未在运行时端到端验证」这一最后风险已退。**
 - ✅ **M4.3.1 模型配置三级页 UI 已完成**（PR #35）：添加供应商 / 供应商详情（枢纽）/ 编辑模型 / 高级API 配置四页 1:1 复刻，需数据控件全置灰，test 112 全绿。
-- ⏭ **当前在飞 = M4.3.2 接线 + 发送/流式闭环**（一轨做全）：(A) 三级页 UI ↔ 模型持久层（解灰、真列表、配置落库）+ (B) ChatPage 发送 ↔ M2 网关 ↔ 落库 ↔ 渲染（用「当前模型」组 `LlmChatRequest` → `LlmProviderFactory.forModel` → `streamChat` 增量进 `mainText`/`thinking` block → 落库 → 渐进渲染）。**这是把 M0+M1+M2 在 app 里真正咬合、点亮地基最后一件的关键刀**——跑通后「打字→发送→真流式→落库→渲染」第一次在 app 里活。真 key 由用户在配置页运行时输入，实现方用假网关/mock 验证、不要真 key。
+- ✅ **M4.3.2 接线 + 发送/流式闭环已完成**（PR #37，地基最后一件点亮）：真 `ChatController`（application 编排）只依赖端口——`ChatRepository`、跨 feature 的 `appCurrentModelProvider`（取当前模型，仅 domain）、`LlmGatewayFactory`，全走 Riverpod 注入（DI 接缝 `app/di/model_access.dart` + `chat/application/chat_providers.dart`）。发送流：落用户消息（+`main_text` block）→ 落 streaming 态 assistant 消息 → 由当前模型+历史组 `LlmChatRequest` → 订阅 `gateway.streamChat`，`LlmTextDelta` 累进 `main_text`、`LlmReasoningDelta` 累进 `thinking`、逐块刷状态 → `LlmDone` 定稿落库；stream error → 错误态 + `error` block 落库。三级页控件解灰接 `ModelRepository`（添供应商/编辑模型/高级API 真落库）。**「打字→发送→真流式→落库→渲染」第一次在 app 里活**；M0(block)+M1(落库)+M2(流式) 真正咬合。验收链全绿：analyze 干净 / format 0 改 / build_runner 后 git 空 / **test 117 全过**（含边界测试 + 闭环测试走假网关，不要真 key）。
+- ⏭ **下一步 = M4 外围 + M4.4 设置高频页**：聊天外围（话题/助手抽屉、多话题切换、消息复制/重发/删除）+ 设置高频页（Appearance / Behavior / ChatInterface）。现在在 app 里填一组真 key 就能见证闭环真活（真 key 不入仓，运行时配置页输入）。
 
 > 进度的**实时看板**在 `ROADMAP.md` 末尾（M0~M5 + 数据迁移，⬜/✅）。**每完成一个里程碑，就去把那张表对应行打勾**——它是「做到哪了」的唯一事实来源。
 
