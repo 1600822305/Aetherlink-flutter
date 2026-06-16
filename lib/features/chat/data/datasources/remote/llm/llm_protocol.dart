@@ -10,12 +10,18 @@ enum LlmProtocol { openaiCompatible, anthropic, gemini }
 /// `provider`). Anything unrecognised maps to [LlmProtocol.openaiCompatible],
 /// since the OpenAI-compatible surface is the de-facto standard and the place
 /// the long tail of vendors lives.
-LlmProtocol protocolForModel(Model model) {
-  final key = (model.providerType ?? model.provider).toLowerCase();
-  if (key == 'anthropic' || key == 'claude') {
+LlmProtocol protocolForModel(Model model) =>
+    protocolForProviderKey(model.providerType ?? model.provider);
+
+/// Resolves a raw provider key (`providerType` / `provider`) to its protocol.
+/// Shared by [protocolForModel] and the model-catalog lookup, which has no
+/// concrete [Model] yet.
+LlmProtocol protocolForProviderKey(String key) {
+  final normalized = key.toLowerCase();
+  if (normalized == 'anthropic' || normalized == 'claude') {
     return LlmProtocol.anthropic;
   }
-  if (key == 'gemini' || key == 'google') {
+  if (normalized == 'gemini' || normalized == 'google') {
     return LlmProtocol.gemini;
   }
   return LlmProtocol.openaiCompatible;

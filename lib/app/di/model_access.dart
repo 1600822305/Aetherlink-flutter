@@ -1,8 +1,11 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/model_catalog.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_model_catalog.dart';
 import 'package:aetherlink_flutter/features/models/application/model_providers.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/features/models/domain/repositories/model_repository.dart';
+import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 
 part 'model_access.g.dart';
@@ -53,6 +56,13 @@ Future<CurrentModel?> appCurrentModel(Ref ref) async {
   return findCurrentModel(providers);
 }
 
+/// The model-catalog port for `自动获取模型`. Composed here (the root may depend
+/// on `chat/data`) so the settings UI can list a provider's models through the
+/// pure-Dart port without importing `chat`'s `data`. Tests override it with a
+/// fake catalog.
+@Riverpod(keepAlive: true)
+LlmModelCatalog appModelCatalog(Ref ref) => LlmModelCatalogImpl();
+
 /// Write API over the model store for the settings UI. Every mutation persists
 /// through the [ModelRepository] port and then invalidates
 /// [appModelProviders] so the lists and the current-model selection refresh.
@@ -100,6 +110,28 @@ class ModelStore extends _$ModelStore {
         await _repo.saveProvider(updated[i]);
       }
     }
+    ref.invalidate(appModelProvidersProvider);
+  }
+
+  /// Merges [models] into [providerId]'s model list (de-duplicating by id, new
+  /// entries appended; existing models keep their config) and persists. Used by
+  /// the detail page after fetching a provider's catalog.
+  Future<void> addModels({
+    required String providerId,
+    required List<Model> models,
+  }) async {
+    if (models.isEmpty) return;
+    final provider = await _repo.getProvider(providerId);
+    if (provider == null) return;
+    final existingIds = {for (final m in provider.models) m.id};
+    final additions = [
+      for (final m in models)
+        if (existingIds.add(m.id)) m,
+    ];
+    if (additions.isEmpty) return;
+    await _repo.saveProvider(
+      provider.copyWith(models: [...provider.models, ...additions]),
+    );
     ref.invalidate(appModelProvidersProvider);
   }
 }

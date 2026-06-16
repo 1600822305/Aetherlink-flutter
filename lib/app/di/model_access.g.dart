@@ -284,6 +284,62 @@ final class AppCurrentModelProvider
 
 String _$appCurrentModelHash() => r'ba18069a341eb110b9c2b1aace475c0cb0587daf';
 
+/// The model-catalog port for `自动获取模型`. Composed here (the root may depend
+/// on `chat/data`) so the settings UI can list a provider's models through the
+/// pure-Dart port without importing `chat`'s `data`. Tests override it with a
+/// fake catalog.
+
+@ProviderFor(appModelCatalog)
+final appModelCatalogProvider = AppModelCatalogProvider._();
+
+/// The model-catalog port for `自动获取模型`. Composed here (the root may depend
+/// on `chat/data`) so the settings UI can list a provider's models through the
+/// pure-Dart port without importing `chat`'s `data`. Tests override it with a
+/// fake catalog.
+
+final class AppModelCatalogProvider
+    extends
+        $FunctionalProvider<LlmModelCatalog, LlmModelCatalog, LlmModelCatalog>
+    with $Provider<LlmModelCatalog> {
+  /// The model-catalog port for `自动获取模型`. Composed here (the root may depend
+  /// on `chat/data`) so the settings UI can list a provider's models through the
+  /// pure-Dart port without importing `chat`'s `data`. Tests override it with a
+  /// fake catalog.
+  AppModelCatalogProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'appModelCatalogProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$appModelCatalogHash();
+
+  @$internal
+  @override
+  $ProviderElement<LlmModelCatalog> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  LlmModelCatalog create(Ref ref) {
+    return appModelCatalog(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(LlmModelCatalog value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<LlmModelCatalog>(value),
+    );
+  }
+}
+
+String _$appModelCatalogHash() => r'2642aa6fc0ca2550261234a54f941eb5ffe76f3a';
+
 /// Write API over the model store for the settings UI. Every mutation persists
 /// through the [ModelRepository] port and then invalidates
 /// [appModelProviders] so the lists and the current-model selection refresh.
@@ -337,7 +393,7 @@ final class ModelStoreProvider extends $NotifierProvider<ModelStore, void> {
   }
 }
 
-String _$modelStoreHash() => r'b6136d507c169243f502f35478de967eac3d3db5';
+String _$modelStoreHash() => r'810bc4ccc1b3c97fe89c1411f19bfc4a4b3f3c7f';
 
 /// Write API over the model store for the settings UI. Every mutation persists
 /// through the [ModelRepository] port and then invalidates
