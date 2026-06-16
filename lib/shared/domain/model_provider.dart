@@ -1,3 +1,4 @@
+import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 
@@ -15,10 +16,14 @@ part 'model_provider.g.dart';
 /// is invented.
 ///
 /// Dropped per `docs/DOMAIN_MODEL.md` §5: `useCorsPlugin` (webview-only, like
-/// `Model.useCorsPlugin`), plus the web-only `useResponsesAPI` /
-/// `customModelEndpoint`. Multi-key (`apiKeys` / `keyManagement` /
-/// `ApiKeyConfig`) is not yet spec'd in the SSOT, so only the single
-/// backward-compat [apiKey] is carried — see the TODO below.
+/// `Model.useCorsPlugin`) and the web-only `customModelEndpoint`.
+///
+/// [useResponsesAPI], [apiKeys] and [keyManagement] are modelled for UI +
+/// persistence (the 三级页 配置 Tab edits them and they round-trip through the
+/// JSON blob), but the request layer does **not** consume them yet: the OpenAI
+/// adapter still posts to `/chat/completions` with the single [apiKey], so the
+/// UI marks the Responses-API toggle and multi-key scheduling as 即将支持. See
+/// `docs/DOMAIN_MODEL.md` §4.
 @freezed
 abstract class ModelProvider with _$ModelProvider {
   const factory ModelProvider({
@@ -28,17 +33,21 @@ abstract class ModelProvider with _$ModelProvider {
     required String color,
     @Default(false) bool isEnabled,
     @Default(<Model>[]) List<Model> models,
-    // TODO(multi-key): the original also has `apiKeys: ApiKeyConfig[]` +
-    // `keyManagement` for round-robin/quota scheduling. That is a whole
-    // web-side runtime concern not yet spec'd in `docs/DOMAIN_MODEL.md`; carry
-    // only the single backward-compat key for now and model the multi-key
-    // types once the SSOT defines their semantics (don't invent them here).
     String? apiKey,
     String? baseUrl,
     String? providerType,
     bool? isSystem,
     Map<String, String>? extraHeaders,
     Map<String, dynamic>? extraBody,
+    // Whether to call OpenAI's `/responses` endpoint instead of
+    // `/chat/completions` (only meaningful for OpenAI-family types). UI +
+    // persistence only — the adapter does not branch on it yet (即将支持).
+    bool? useResponsesAPI,
+    // The multi-key pool + its load-balancing config. Edited by the multi-key
+    // manager page and persisted, but not yet consumed by request scheduling
+    // (即将支持); chat / model-fetch still use the single [apiKey].
+    List<ApiKeyConfig>? apiKeys,
+    KeyManagementConfig? keyManagement,
   }) = _ModelProvider;
 
   factory ModelProvider.fromJson(Map<String, dynamic> json) =>

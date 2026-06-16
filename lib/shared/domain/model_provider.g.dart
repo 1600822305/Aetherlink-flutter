@@ -26,6 +26,15 @@ _ModelProvider _$ModelProviderFromJson(Map<String, dynamic> json) =>
         (k, e) => MapEntry(k, e as String),
       ),
       extraBody: json['extraBody'] as Map<String, dynamic>?,
+      useResponsesAPI: json['useResponsesAPI'] as bool?,
+      apiKeys: (json['apiKeys'] as List<dynamic>?)
+          ?.map((e) => ApiKeyConfig.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      keyManagement: json['keyManagement'] == null
+          ? null
+          : KeyManagementConfig.fromJson(
+              json['keyManagement'] as Map<String, dynamic>,
+            ),
     );
 
 Map<String, dynamic> _$ModelProviderToJson(_ModelProvider instance) =>
@@ -42,4 +51,7 @@ Map<String, dynamic> _$ModelProviderToJson(_ModelProvider instance) =>
       'isSystem': ?instance.isSystem,
       'extraHeaders': ?instance.extraHeaders,
       'extraBody': ?instance.extraBody,
+      'useResponsesAPI': ?instance.useResponsesAPI,
+      'apiKeys': ?instance.apiKeys?.map((e) => e.toJson()).toList(),
+      'keyManagement': ?instance.keyManagement?.toJson(),
     };
