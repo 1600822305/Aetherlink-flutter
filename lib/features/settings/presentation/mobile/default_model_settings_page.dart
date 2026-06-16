@@ -255,11 +255,14 @@ class _RecommendedActionsCard extends StatelessWidget {
             showChevron: false,
           ),
           const Divider(height: 1, thickness: 1),
-          const _ActionRow(
+          // The only wired entry this milestone: 添加供应商 → AddProviderPage
+          // (the third-level destination now exists, M4.3.1).
+          _ActionRow(
             icon: LucideIcons.plus,
             accent: _addProviderAccent,
             title: _addProviderTitle,
             description: _addProviderDesc,
+            onTap: () => context.push(AppRouter.addProviderPath),
           ),
         ],
       ),
@@ -278,6 +281,7 @@ class _ActionRow extends StatelessWidget {
     required this.title,
     required this.description,
     this.showChevron = true,
+    this.onTap,
   });
 
   final IconData icon;
@@ -286,12 +290,16 @@ class _ActionRow extends StatelessWidget {
   final String description;
   final bool showChevron;
 
+  /// Navigation tap. When null the row renders at full visual fidelity but is
+  /// non-functional (its destination / toggle doesn't exist yet this milestone).
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
-    return Padding(
+    final row = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
@@ -347,6 +355,11 @@ class _ActionRow extends StatelessWidget {
         ],
       ),
     );
+
+    // Only the wired entry is ink-tappable; the rest render at full visual
+    // fidelity but carry no handler this milestone.
+    if (onTap == null) return row;
+    return InkWell(onTap: onTap, child: row);
   }
 }
 
@@ -368,11 +381,17 @@ class _ToolbarAction extends StatelessWidget {
   final String label;
   final _ToolbarTint tint;
 
+  // The original palette's `error.main`. The shared theme currently maps
+  // `colorScheme.error` to Material's `#B00020`, so the literal is used here to
+  // match the original's exact red (the 添加 action already matches via
+  // `colorScheme.primary` = `#64748B`).
+  static const Color _errorRed = Color(0xFFEF4444);
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final accent = tint == _ToolbarTint.error
-        ? theme.colorScheme.error
+        ? _errorRed
         : theme.colorScheme.primary;
 
     return Container(
