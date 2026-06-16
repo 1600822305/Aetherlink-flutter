@@ -12,7 +12,7 @@
 - **原项目（要迁走的）**：`https://github.com/1600822305/Aetherlink`
   技术栈：React 19 + MUI v7 + @emotion + tailwind，跑在 Capacitor 8（移动 webview）+ Tauri 2（桌面 webview）上。状态用 Redux Toolkit（14 slice）+ zustand + signals，数据用 Dexie/IndexedDB，LLM 走 Vercel AI SDK。规模：**972 个 TS 文件 / 207 个目录**。
 - **新项目（本仓库，要迁到的）**：`https://github.com/1600822305/Aetherlink-flutter`
-  技术栈：Flutter（Dart）。已搭起 feature-first 骨架，并完成 **M0（freezed 领域模型）**、**M1（Drift/SQLite 数据层）**、**M2（网络/LLM 层）**、**M3（平台能力层）**、**M4.0（移动 UI 地基：主题+导航+关于页）** 与 **M4.1（欢迎页/首屏进入页）**；下一步 M4.2（ChatPage 聊天主界面）。M4 分子阶段逐页重写，详见 `ROADMAP.md` 进度看板。
+  技术栈：Flutter（Dart）。已搭起 feature-first 骨架，并完成 **M0~M3**（领域模型 / Drift 数据层 / 网络·LLM 含 **E2E 验穿** / 平台能力层）、**M4.0 UI 地基**、**M4.1 欢迎页**、**M4.2.1 聊天消息渲染**、**M4.4.0 设置 hub + 关于页**、**M4.3 数据层 + M4.3.0 二级页 + M4.3.1 三级页 UI**；**当前在飞 = M4.3.2 接线 + 发送/流式闭环**（配模型→发消息→看真流式回复，点亮地基最后一件）。M4 分子阶段逐页重写，详见 `ROADMAP.md` 进度看板。
 
 ---
 
@@ -35,7 +35,7 @@
 > **结论：迁 Flutter 是重订结构的唯一窗口。** 这套文档的核心使命，就是把「干净的结构」立成**死规矩（靠工具强制，不靠自觉）**，别让新项目又烂成老样子。
 
 ### 一个已经关掉的问题：UI 还原度
-曾经担心「Flutter 复刻不出 MUI 的观感」。已用三页验证否决了这个担心：关于页 ~95%、模型设置 ~97%、聊天主界面（气泡/思考块/输入框）已逐像素对齐。动态渲染（markdown/代码高亮/LaTeX）用户在别的 Flutter 项目实测正常。**所以 UI 不是风险，剩下的是工作量。** 这一条不用再纠结。
+曾经担心「Flutter 复刻不出 MUI 的观感」。已用多页验证否决了这个担心：关于页 ~95%、模型设置 ~97%、聊天主界面（气泡/思考块/输入框）已逐像素对齐，设置 hub + 模型配置二/三级页也 1:1 落地。动态渲染（markdown/代码高亮/LaTeX）用户在别的 Flutter 项目实测正常。**所以 UI 不是风险，剩下的是工作量。** 这一条不用再纠结。
 
 ---
 
@@ -74,7 +74,13 @@
 - ✅ **M3 平台能力层已完成**（PR #14）：按 `adr/0007` 买成熟插件、**按能力拆 5 个纯 Dart 接口**（FileSystem / Clipboard / ImagePicker / Share / DeviceInfo）各配独立 Riverpod provider，删掉空胖 facade `UnifiedPlatformApi`；插件只在 `core/platform/impl/` import，接口零插件 import（中性 DTO，可随时换实现），`Platform.is*` 收口于 `DeviceInfoApi`；每能力一个 headless 冒烟测试，47 个测试全绿（含边界测试）。通知/haptics/TTS/STT 按 ADR-0007 延后。
 - ✅ **M4.0 移动 UI 地基已完成**（PR #17）：**主题即数据**（`ThemeSpec` token 化纯 Dart → `ThemeData`+`ThemeExtension`，`useMaterial3:false`，颜色用 ARGB int 存以保 domain 纯净）、`go_router` 声明式导航骨架、**关于页**打通「主题→导航→脚手架」管线。导航/主题装配/`shared/widgets` 沉淀规则决策内嵌于该期交接提示词；主题系统全景见 `adr/0008`（M4.0 只落地基，装饰层/自由配图/AI 生成/分享/持久化均延后，靠 `schemaVersion` 兼容）。新增 5 个测试，52 全绿（含边界测试）。
 - ✅ **M4.1 欢迎页已完成**（PR #19）：继关于页之后第二个落地页，居中 logo + 渐变标题（`ShaderMask`）+ 副标题 + 「开始」按钮，颜色全走主题 token（零硬编码色）；首次进入门控 = 内存态 `onboardingController` 接缝（`markStarted()`，持久化延后留 `restore()` 缝，不引新依赖）。54 全绿（含边界测试）。
-- ⏭ **下一步 = M4.2 ChatPage 聊天主界面**（M4 重头）：消息列表（block 渲染 main_text/thinking/code）、输入框、发送、流式增量、话题/助手抽屉——第一次把 M0(block)+M1(存储)+M2(流式) 串成「能看见的聊天」。状态全来自 application 层、UI 无业务逻辑。**这页本身再拆子阶段**（骨架 → 消息渲染 → 发送/流式闭环 → 外围功能逐个）；其中「发送/流式」需要一个已配 `Model`，故模型/供应商设置（M4.3）含配置落库，与 ChatPage 合成第一个可演示闭环。
+- ✅ **M4.2.1 聊天消息渲染已完成**（PR #24）：ChatPage 经 `presentation→application→repository→Drift` 读真数据，已存 `main_text` block 真画成气泡（思考块/代码块渲染范式就位）。
+- ✅ **M4.4.0 设置 hub 外壳 + 关于页已完成**（PR #26 / #27 / #28）：设置主页 1:1 复刻（未做条目置灰、关于可跳），**提前于 M4.3 做**（hub 是导航父级；编号 M4.4.0）。
+- ✅ **M4.3 数据层已完成**（PR #34）：Drift `ProviderRows` 表（JSON-blob + `sortOrder`）+ `ProviderDao` + `ModelRepository` + `ModelProvider` 领域实体（含 `List<Model>`），`schemaVersion` 升级 + 迁移；首启空库（UI 空态依赖），种子留显式调用、本期不自动跑。
+- ✅ **M4.3.0 默认模型设置（二级页 UI）已完成**（PR #31/#32）：hub「默认模型」→ 二级页 1:1 复刻，空态 + 需数据控件置灰，lucide 图标。
+- ✅ **M2 流式已 E2E 验穿**（PR #33）：真 socket + 本地 mock SSE server 跑通「请求→SSE 分块→适配器→`LlmStreamChunk`」全链 + `bin/llm_smoke.dart` dev 冒烟入口（不依赖 UI / 真 key）。**地基体检里「M2 未在运行时端到端验证」这一最后风险已退。**
+- ✅ **M4.3.1 模型配置三级页 UI 已完成**（PR #35）：添加供应商 / 供应商详情（枢纽）/ 编辑模型 / 高级API 配置四页 1:1 复刻，需数据控件全置灰，test 112 全绿。
+- ⏭ **当前在飞 = M4.3.2 接线 + 发送/流式闭环**（一轨做全）：(A) 三级页 UI ↔ 模型持久层（解灰、真列表、配置落库）+ (B) ChatPage 发送 ↔ M2 网关 ↔ 落库 ↔ 渲染（用「当前模型」组 `LlmChatRequest` → `LlmProviderFactory.forModel` → `streamChat` 增量进 `mainText`/`thinking` block → 落库 → 渐进渲染）。**这是把 M0+M1+M2 在 app 里真正咬合、点亮地基最后一件的关键刀**——跑通后「打字→发送→真流式→落库→渲染」第一次在 app 里活。真 key 由用户在配置页运行时输入，实现方用假网关/mock 验证、不要真 key。
 
 > 进度的**实时看板**在 `ROADMAP.md` 末尾（M0~M5 + 数据迁移，⬜/✅）。**每完成一个里程碑，就去把那张表对应行打勾**——它是「做到哪了」的唯一事实来源。
 
