@@ -853,6 +853,7 @@ class _CustomizationCard extends StatelessWidget {
       accent: Color(0xFFEC4899), // pink
       title: '输入框管理设置',
       description: '自定义输入框的风格和布局样式',
+      route: AppRouter.inputBoxSettingsPath,
     ),
   ];
 
@@ -875,25 +876,29 @@ class _CustomizationCard extends StatelessWidget {
   }
 }
 
-/// One "界面定制" row's data.
+/// One "界面定制" row's data. [route] is the third-level destination; rows
+/// without one are still 置灰 (greyed, non-interactive) until their page exists.
 class _CustomizationItem {
   const _CustomizationItem({
     required this.icon,
     required this.accent,
     required this.title,
     required this.description,
+    this.route,
   });
 
   final IconData icon;
   final Color accent;
   final String title;
   final String description;
+  final String? route;
 }
 
 /// A single "界面定制" row: the original `ListItemButton` (8px×16px padding) with
 /// a 40px brand-tinted avatar, body1 title, body2 description and a trailing
-/// 20px chevron. Greyed at 0.5 opacity and non-interactive — its third-level
-/// destination isn't built yet (置灰).
+/// 20px chevron. Rows with a built destination ([_CustomizationItem.route]) are
+/// full-opacity and tappable; the rest stay greyed at 0.5 opacity and
+/// non-interactive until their third-level page exists (置灰).
 class _CustomizationRow extends StatelessWidget {
   const _CustomizationRow({required this.item});
 
@@ -903,62 +908,67 @@ class _CustomizationRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Opacity(
-      opacity: 0.5,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: item.accent.withValues(alpha: 0.12),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x0D000000), // rgba(0,0,0,0.05)
-                    blurRadius: 6,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Icon(item.icon, size: 20, color: item.accent),
+    final route = item.route;
+    if (route != null) {
+      return InkWell(onTap: () => context.push(route), child: _content(theme));
+    }
+    return Opacity(opacity: 0.5, child: _content(theme));
+  }
+
+  Widget _content(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: item.accent.withValues(alpha: 0.12),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0D000000), // rgba(0,0,0,0.05)
+                  blurRadius: 6,
+                  offset: Offset(0, 2),
+                ),
+              ],
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    item.title,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: theme.colorScheme.onSurface,
-                    ),
+            child: Icon(item.icon, size: 20, color: item.accent),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  item.title,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface,
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    item.description,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontSize: 14,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  item.description,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontSize: 14,
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Icon(
-              LucideIcons.chevronRight,
-              size: 20,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 8),
+          Icon(
+            LucideIcons.chevronRight,
+            size: 20,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ],
       ),
     );
   }
