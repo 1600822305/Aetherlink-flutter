@@ -32,8 +32,11 @@ abstract final class AppRouter {
   static const String addProviderPath = '/settings/add-provider';
   static String modelProviderPath(String providerId) =>
       '/settings/model-provider/$providerId';
-  static String editModelPath(String providerId) =>
-      '/settings/model-provider/$providerId/edit-model';
+  static String editModelPath(String providerId, {String? modelId}) =>
+      modelId == null
+      ? '/settings/model-provider/$providerId/edit-model'
+      : '/settings/model-provider/$providerId/edit-model?modelId='
+            '${Uri.encodeQueryComponent(modelId)}';
   static String advancedApiPath(String providerId) =>
       '/settings/model-provider/$providerId/advanced-api';
 
@@ -84,8 +87,10 @@ abstract final class AppRouter {
       GoRoute(
         path: '/settings/model-provider/:providerId/edit-model',
         name: 'edit-model',
-        builder: (context, state) =>
-            EditModelPage(providerId: state.pathParameters['providerId'] ?? ''),
+        builder: (context, state) => EditModelPage(
+          providerId: state.pathParameters['providerId'] ?? '',
+          modelId: state.uri.queryParameters['modelId'],
+        ),
       ),
       GoRoute(
         path: '/settings/model-provider/:providerId/advanced-api',

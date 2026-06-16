@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme_extension.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
+import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 
 /// Static UI strings, ported verbatim from the original (i18n is a later
 /// effort, per the M4.1 approach).
@@ -12,34 +16,75 @@ const String _imageTooltip = '图片';
 const String _voiceTooltip = '语音';
 const String _multiModelTooltip = '多模型';
 const String _sendTooltip = '发送';
+const String _noModelHint = '请先配置模型';
 
 /// The bottom composer, restored to the original "integrated input" look
 /// (`IntegratedChatInput`): a rounded, themed surface holding the text field on
 /// top and the button toolbar below.
 ///
-/// The field accepts text (local UI state). Sending and every feature button
-/// are unwired, disabled placeholders this round (M4.2.0b is appearance-only) —
-/// no fake buttons. Colors come from theme tokens.
-class ChatInputBar extends StatefulWidget {
+/// The composer now sends: the send button is enabled once a current chat
+/// model with an API key is configured and the field is non-empty, and a tap
+/// hands the text to [ChatController.send]. With no model configured the button
+/// stays disabled and a tap surfaces the "configure a model first" hint. The
+/// other feature buttons remain disabled placeholders (later slices).
+class ChatInputBar extends ConsumerStatefulWidget {
   const ChatInputBar({super.key});
 
   @override
-  State<ChatInputBar> createState() => _ChatInputBarState();
+  ConsumerState<ChatInputBar> createState() => _ChatInputBarState();
 }
 
-class _ChatInputBarState extends State<ChatInputBar> {
+class _ChatInputBarState extends ConsumerState<ChatInputBar> {
   final TextEditingController _controller = TextEditingController();
+  bool _hasText = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    final hasText = _controller.text.trim().isNotEmpty;
+    if (hasText != _hasText) {
+      setState(() => _hasText = hasText);
+    }
+  }
 
   @override
   void dispose() {
+    _controller.removeListener(_onTextChanged);
     _controller.dispose();
     super.dispose();
+  }
+
+  void _send() {
+    final text = _controller.text;
+    if (text.trim().isEmpty) return;
+    _controller.clear();
+    setState(() => _hasText = false);
+    ref.read(chatControllerProvider.notifier).send(text);
+  }
+
+  void _showNoModelHint() {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text(_noModelHint)));
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final radius = theme.extension<AppThemeExtension>()?.borderRadius ?? 8.0;
+
+    final CurrentModel? current = ref.watch(appCurrentModelProvider).value;
+    final hasApiKey =
+        (current?.model.apiKey?.isNotEmpty ?? false) ||
+        (current?.provider.apiKey?.isNotEmpty ?? false);
+    final modelReady = current != null && hasApiKey;
+    final isStreaming =
+        ref.watch(chatControllerProvider).value?.isStreaming ?? false;
+    final canSend = modelReady && _hasText && !isStreaming;
 
     return Material(
       color: theme.colorScheme.surface,
@@ -57,7 +102,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Upper layer: the text composer (input enabled, local UI only).
+                // Upper layer: the text composer.
                 TextField(
                   controller: _controller,
                   minLines: 1,
@@ -74,7 +119,15 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   ),
                 ),
                 // Lower layer: the button toolbar.
-                const _InputButtonToolbar(),
+                _InputButtonToolbar(
+                  canSend: canSend,
+                  // When no model is configured, the button is disabled but a
+                  // tap still surfaces the hint (so the toolbar handles taps).
+                  onSend: canSend
+                      ? _send
+                      : (modelReady ? null : _showNoModelHint),
+                  sendEnabledColor: canSend,
+                ),
               ],
             ),
           ),
@@ -86,21 +139,23 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
 /// The button toolbar below the composer (`ButtonToolbar`): a left cluster of
 /// feature buttons and a right-aligned send button, mirroring the original's
-/// space-between layout.
-///
-/// Every button is disabled (`onPressed: null`) — M4.2.0b wires no behaviour;
-/// disabled is the honest "not connected yet" signal. Icons are Flutter
-/// built-ins approximating the original lucide set.
+/// space-between layout. Feature buttons stay disabled (later slices); the send
+/// button is wired to [onSend].
 class _InputButtonToolbar extends StatelessWidget {
-  const _InputButtonToolbar();
+  const _InputButtonToolbar({
+    required this.canSend,
+    required this.onSend,
+    required this.sendEnabledColor,
+  });
+
+  final bool canSend;
+  final VoidCallback? onSend;
+  final bool sendEnabledColor;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // Tighten the toolbar to the original's compact icon row (the previous pass
-    // used full-size default `IconButton`s, which read as chunky/generic).
-    // Disabled buttons still grey out — the honest "not connected" signal.
     return IconButtonTheme(
       data: IconButtonThemeData(
         style: IconButton.styleFrom(
@@ -110,11 +165,11 @@ class _InputButtonToolbar extends StatelessWidget {
           iconSize: 22,
         ),
       ),
-      child: const Row(
+      child: Row(
         children: [
           // Feature buttons scroll horizontally so the row never overflows on
           // narrow screens.
-          Expanded(
+          const Expanded(
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
@@ -153,11 +208,11 @@ class _InputButtonToolbar extends StatelessWidget {
               ),
             ),
           ),
-          // Send — message sending is a later slice; disabled.
           IconButton(
-            icon: Icon(Icons.send),
+            icon: const Icon(Icons.send),
             tooltip: _sendTooltip,
-            onPressed: null,
+            color: sendEnabledColor ? theme.colorScheme.primary : null,
+            onPressed: onSend,
           ),
         ],
       ),
