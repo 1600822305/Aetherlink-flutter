@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_model_catalog.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
@@ -32,6 +33,7 @@ class ModelProviderDetailPage extends ConsumerStatefulWidget {
   static const String _advancedButton = '配置高级参数';
   static const String _modelsTitle = '模型列表';
   static const String _manualAddLabel = '添加';
+  static const String _fetchLabel = '获取';
   static const String _noModels = '尚未添加任何模型';
   static const String _saveLabel = '保存';
 
@@ -46,6 +48,7 @@ class _ModelProviderDetailPageState
   final TextEditingController _baseUrlController = TextEditingController();
   bool _obscureKey = true;
   bool _initialized = false;
+  bool _fetching = false;
 
   @override
   void dispose() {
@@ -212,6 +215,14 @@ class _ModelProviderDetailPageState
                       ),
                     ),
                     ModelTonalButton(
+                      label: ModelProviderDetailPage._fetchLabel,
+                      icon: LucideIcons.download,
+                      onPressed: _fetching
+                          ? null
+                          : () => _fetchModels(provider),
+                    ),
+                    const SizedBox(width: 8),
+                    ModelTonalButton(
                       label: ModelProviderDetailPage._manualAddLabel,
                       icon: LucideIcons.plus,
                       onPressed: () =>
@@ -254,6 +265,70 @@ class _ModelProviderDetailPageState
         ],
       ),
     );
+  }
+
+  /// Fetches the provider's catalog (`自动获取模型`) using the API key / base URL
+  /// currently in the form (so it works before 保存), lets the user pick which
+  /// models to add, then persists them onto the provider.
+  Future<void> _fetchModels(ModelProvider provider) async {
+    if (_fetching) return;
+    setState(() => _fetching = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final catalog = ref.read(appModelCatalogProvider);
+      final fetched = await catalog.listModels(
+        LlmModelQuery(
+          providerType: provider.providerType ?? provider.name,
+          apiKey: _apiKeyController.text.trim().isEmpty
+              ? null
+              : _apiKeyController.text.trim(),
+          baseUrl: _baseUrlController.text.trim().isEmpty
+              ? null
+              : _baseUrlController.text.trim(),
+          extraHeaders: provider.extraHeaders,
+        ),
+      );
+      if (!mounted) return;
+      if (fetched.isEmpty) {
+        messenger.showSnackBar(const SnackBar(content: Text('未获取到模型')));
+        return;
+      }
+      final existingIds = {for (final m in provider.models) m.id};
+      final selected = await showModalBottomSheet<List<LlmModelInfo>>(
+        context: context,
+        isScrollControlled: true,
+        builder: (_) =>
+            _FetchedModelsSheet(models: fetched, existingIds: existingIds),
+      );
+      if (selected == null || selected.isEmpty || !mounted) return;
+      await ref
+          .read(modelStoreProvider.notifier)
+          .addModels(
+            providerId: provider.id,
+            models: [
+              for (final info in selected)
+                Model(
+                  id: info.id,
+                  name: info.name ?? info.id,
+                  provider: provider.name,
+                  providerType: provider.providerType,
+                  description: info.description,
+                  enabled: true,
+                ),
+            ],
+          );
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('已添加 ${selected.length} 个模型')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('获取模型失败，请检查密钥与基础URL')),
+      );
+    } finally {
+      if (mounted) setState(() => _fetching = false);
+    }
   }
 
   Future<void> _deleteModel(ModelProvider provider, String modelId) async {
@@ -335,6 +410,96 @@ class _ModelRow extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// A bottom sheet listing the models fetched from a provider's catalog. Models
+/// already on the provider are shown disabled (already added); the rest are
+/// pre-checked. 「添加」 pops the selected [LlmModelInfo]s; cancel pops null.
+class _FetchedModelsSheet extends StatefulWidget {
+  const _FetchedModelsSheet({required this.models, required this.existingIds});
+
+  final List<LlmModelInfo> models;
+  final Set<String> existingIds;
+
+  @override
+  State<_FetchedModelsSheet> createState() => _FetchedModelsSheetState();
+}
+
+class _FetchedModelsSheetState extends State<_FetchedModelsSheet> {
+  late final Set<String> _selected = {
+    for (final m in widget.models)
+      if (!widget.existingIds.contains(m.id)) m.id,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '获取到 ${widget.models.length} 个模型',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('取消'),
+                ),
+              ],
+            ),
+          ),
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: widget.models.length,
+              itemBuilder: (context, index) {
+                final model = widget.models[index];
+                final already = widget.existingIds.contains(model.id);
+                return CheckboxListTile(
+                  value: already || _selected.contains(model.id),
+                  onChanged: already
+                      ? null
+                      : (checked) => setState(() {
+                          if (checked ?? false) {
+                            _selected.add(model.id);
+                          } else {
+                            _selected.remove(model.id);
+                          }
+                        }),
+                  title: Text(model.name ?? model.id),
+                  subtitle: Text(already ? '${model.id} · 已添加' : model.id),
+                );
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _selected.isEmpty
+                    ? null
+                    : () => Navigator.of(context).pop([
+                        for (final m in widget.models)
+                          if (_selected.contains(m.id)) m,
+                      ]),
+                child: Text('添加 (${_selected.length})'),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

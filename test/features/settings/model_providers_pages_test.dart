@@ -4,8 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_model_catalog.dart';
 import 'package:aetherlink_flutter/core/database/app_database.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
@@ -18,6 +20,20 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_p
 import 'package:aetherlink_flutter/features/theming/application/default_theme_spec.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
+
+/// A catalog that returns a fixed model list — no network, no key.
+class _FakeCatalog implements LlmModelCatalog {
+  _FakeCatalog(this.models);
+
+  final List<LlmModelInfo> models;
+  LlmModelQuery? lastQuery;
+
+  @override
+  Future<List<LlmModelInfo>> listModels(LlmModelQuery query) async {
+    lastQuery = query;
+    return models;
+  }
+}
 
 void main() {
   void useTallSurface(WidgetTester tester) {
@@ -35,6 +51,7 @@ void main() {
     WidgetTester tester,
     String location, {
     List<ModelProvider> providers = const <ModelProvider>[],
+    LlmModelCatalog? catalog,
   }) async {
     useTallSurface(tester);
     final db = AppDatabase(NativeDatabase.memory());
@@ -53,6 +70,8 @@ void main() {
           currentTopicProvider.overrideWith((ref) => null),
           chatMessagesProvider.overrideWith((ref) => const <Message>[]),
           modelRepositoryProvider.overrideWithValue(repo),
+          if (catalog != null)
+            appModelCatalogProvider.overrideWithValue(catalog),
         ],
         child: MaterialApp.router(
           theme: AppTheme.light(defaultThemeSpec),
@@ -172,6 +191,37 @@ void main() {
 
       expect(find.byType(AdvancedApiConfigPage), findsOneWidget);
       expect(find.text('高级 API 配置'), findsOneWidget);
+    });
+
+    testWidgets('获取 fetches the catalog, then adds the picked models', (
+      tester,
+    ) async {
+      final catalog = _FakeCatalog(const [
+        LlmModelInfo(id: 'gpt-4o', name: 'GPT-4o'),
+        LlmModelInfo(id: 'gpt-4o-mini'),
+      ]);
+      final repo = await pumpAt(
+        tester,
+        AppRouter.modelProviderPath('p1'),
+        providers: [providerP1()],
+        catalog: catalog,
+      );
+
+      await tester.enterText(find.byType(TextField).first, 'sk-secret');
+      await tester.tap(find.text('获取'));
+      await tester.pumpAndSettle();
+
+      // The sheet lists the fetched models; query carried the entered key.
+      expect(find.text('获取到 2 个模型'), findsOneWidget);
+      expect(catalog.lastQuery!.apiKey, 'sk-secret');
+      expect(catalog.lastQuery!.providerType, 'openai');
+
+      await tester.tap(find.text('添加 (2)'));
+      await tester.pumpAndSettle();
+
+      final saved = await repo.getProvider('p1');
+      expect(saved?.models.map((m) => m.id), ['gpt-4o', 'gpt-4o-mini']);
+      expect(saved?.models.first.name, 'GPT-4o');
     });
 
     testWidgets('saving the API key persists it through the repository', (
