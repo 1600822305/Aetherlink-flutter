@@ -1,6 +1,7 @@
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
+import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 
 /// Contract for chat persistence, owned by the `domain` layer and implemented
@@ -66,4 +67,14 @@ abstract interface class ChatRepository {
   Future<void> saveAssistant(Assistant assistant);
 
   Future<void> deleteAssistant(String id);
+
+  // --- Groups ---------------------------------------------------------------
+
+  /// All sidebar groups (assistant folders and topic folders), ascending by
+  /// display order.
+  Future<List<Group>> getAllGroups();
+
+  Future<void> saveGroup(Group group);
+
+  Future<void> deleteGroup(String id);
 }
