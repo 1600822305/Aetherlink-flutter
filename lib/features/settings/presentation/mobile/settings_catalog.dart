@@ -84,6 +84,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.bot,
         title: '配置模型',
         description: '管理AI模型和API密钥',
+        route: AppRouter.defaultModelPath,
       ),
       SettingItemData(
         icon: LucideIcons.sliders,
