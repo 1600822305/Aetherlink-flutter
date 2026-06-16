@@ -45,28 +45,28 @@ class _DefaultModelSettingsPageState
   final Set<String> _selected = <String>{};
 
   void _enterMultiSelect() => setState(() {
-        _multiSelect = true;
-        _selected.clear();
-      });
+    _multiSelect = true;
+    _selected.clear();
+  });
 
   void _exitMultiSelect() => setState(() {
-        _multiSelect = false;
-        _selected.clear();
-      });
+    _multiSelect = false;
+    _selected.clear();
+  });
 
   void _toggle(String id) => setState(() {
-        if (!_selected.remove(id)) _selected.add(id);
-      });
+    if (!_selected.remove(id)) _selected.add(id);
+  });
 
   void _selectAll(List<ModelProvider> providers) => setState(() {
-        if (_selected.length == providers.length) {
-          _selected.clear();
-        } else {
-          _selected
-            ..clear()
-            ..addAll(providers.map((p) => p.id));
-        }
-      });
+    if (_selected.length == providers.length) {
+      _selected.clear();
+    } else {
+      _selected
+        ..clear()
+        ..addAll(providers.map((p) => p.id));
+    }
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -421,9 +421,30 @@ class _ProviderList extends ConsumerWidget {
           selected: selectedIds.contains(provider.id),
           onToggle: () => onToggle(provider.id),
           onOpen: () => context.push(AppRouter.modelProviderPath(provider.id)),
+          onEdit: () => _editProvider(context, ref, provider),
         );
       },
     );
+  }
+
+  /// Opens the original's 编辑供应商 dialog (the gear's `handleEditProvider`)
+  /// and, on save, persists the edited name + type through `saveProvider`
+  /// (the original's `updateProvider({ name, providerType })`).
+  Future<void> _editProvider(
+    BuildContext context,
+    WidgetRef ref,
+    ModelProvider provider,
+  ) async {
+    final result = await showDialog<(String, String)>(
+      context: context,
+      builder: (_) => _EditProviderDialog(provider: provider),
+    );
+    if (result == null) return;
+    await ref
+        .read(modelStoreProvider.notifier)
+        .saveProvider(
+          provider.copyWith(name: result.$1, providerType: result.$2),
+        );
   }
 }
 
@@ -440,6 +461,7 @@ class _ProviderRow extends StatelessWidget {
     required this.selected,
     required this.onToggle,
     required this.onOpen,
+    required this.onEdit,
   });
 
   final ModelProvider provider;
@@ -448,6 +470,7 @@ class _ProviderRow extends StatelessWidget {
   final bool selected;
   final VoidCallback onToggle;
   final VoidCallback onOpen;
+  final VoidCallback onEdit;
 
   // The original chevron's `rgba(79, 70, 229, 0.5)`.
   static const Color _chevron = Color(0x804F46E5);
@@ -543,10 +566,12 @@ class _ProviderRow extends StatelessWidget {
                   color: theme.colorScheme.onSurfaceVariant,
                   padding: EdgeInsets.zero,
                   visualDensity: VisualDensity.compact,
-                  constraints:
-                      const BoxConstraints.tightFor(width: 32, height: 32),
+                  constraints: const BoxConstraints.tightFor(
+                    width: 32,
+                    height: 32,
+                  ),
                   tooltip: '编辑',
-                  onPressed: onOpen,
+                  onPressed: onEdit,
                 ),
                 const SizedBox(width: 8),
                 const Icon(LucideIcons.chevronRight, size: 20, color: _chevron),
@@ -885,5 +910,119 @@ class _ToolbarAction extends StatelessWidget {
     // would stretch the pill to the full 56px toolbar height. Center keeps it at
     // the intrinsic 36.5px and vertically centered, matching the MUI button.
     return Center(child: tappable);
+  }
+}
+
+/// The original's 编辑供应商 dialog (`handleEditProvider` → `handleSaveProvider`):
+/// an outlined name field over a provider-type dropdown, with a weight-600
+/// title and a tonal 保存 that greys out while the name is blank. Pops the
+/// edited `(name, type)` on save, or null on cancel.
+class _EditProviderDialog extends StatefulWidget {
+  const _EditProviderDialog({required this.provider});
+
+  final ModelProvider provider;
+
+  // The original `providerTypeOptions` (value, label), verbatim.
+  static const List<(String, String)> typeOptions = [
+    ('openai', 'OpenAI'),
+    ('openai-response', 'OpenAI (Responses API)'),
+    ('anthropic', 'Anthropic'),
+    ('deepseek', 'DeepSeek'),
+    ('zhipu', '智谱AI'),
+    ('google', 'Google'),
+    ('azure-openai', 'Azure OpenAI'),
+    ('siliconflow', 'SiliconFlow'),
+    ('volcengine', '火山引擎'),
+    ('grok', 'Grok'),
+    ('custom', '自定义'),
+  ];
+
+  @override
+  State<_EditProviderDialog> createState() => _EditProviderDialogState();
+}
+
+class _EditProviderDialogState extends State<_EditProviderDialog> {
+  late final TextEditingController _name;
+  String? _type;
+
+  @override
+  void initState() {
+    super.initState();
+    _name = TextEditingController(text: widget.provider.name);
+    // Seed the dropdown only when the stored type is one of the options;
+    // otherwise leave it unselected (the original `provider.providerType || ''`
+    // would simply show no matching MenuItem).
+    final stored = widget.provider.providerType;
+    _type = _EditProviderDialog.typeOptions.any((o) => o.$1 == stored)
+        ? stored
+        : null;
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final canSave = _name.text.trim().isNotEmpty;
+
+    return AlertDialog(
+      title: const Text('编辑供应商', style: TextStyle(fontWeight: FontWeight.w600)),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _name,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: '供应商名称',
+                hintText: '例如: 我的智谱AI',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              initialValue: _type,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: '供应商类型',
+                border: OutlineInputBorder(),
+              ),
+              items: [
+                for (final option in _EditProviderDialog.typeOptions)
+                  DropdownMenuItem<String>(
+                    value: option.$1,
+                    child: Text(option.$2),
+                  ),
+              ],
+              onChanged: (value) => setState(() => _type = value),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          style: TextButton.styleFrom(
+            foregroundColor: theme.colorScheme.primary,
+            backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
+          ),
+          onPressed: canSave
+              ? () =>
+                    Navigator.of(context).pop((_name.text.trim(), _type ?? ''))
+              : null,
+          child: const Text('保存'),
+        ),
+      ],
+    );
   }
 }
