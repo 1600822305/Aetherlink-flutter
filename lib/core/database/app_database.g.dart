@@ -1056,6 +1056,268 @@ class AssistantRowsCompanion extends UpdateCompanion<AssistantRow> {
   }
 }
 
+class $ProviderRowsTable extends ProviderRows
+    with TableInfo<$ProviderRowsTable, ProviderRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ProviderRowsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<ModelProvider, String> data =
+      GeneratedColumn<String>(
+        'data',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<ModelProvider>($ProviderRowsTable.$converterdata);
+  @override
+  List<GeneratedColumn> get $columns => [id, sortOrder, data];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'provider_rows';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ProviderRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sortOrderMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  ProviderRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ProviderRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
+      data: $ProviderRowsTable.$converterdata.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}data'],
+        )!,
+      ),
+    );
+  }
+
+  @override
+  $ProviderRowsTable createAlias(String alias) {
+    return $ProviderRowsTable(attachedDatabase, alias);
+  }
+
+  static TypeConverter<ModelProvider, String> $converterdata =
+      const ModelProviderConverter();
+}
+
+class ProviderRow extends DataClass implements Insertable<ProviderRow> {
+  final String id;
+  final int sortOrder;
+  final ModelProvider data;
+  const ProviderRow({
+    required this.id,
+    required this.sortOrder,
+    required this.data,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['sort_order'] = Variable<int>(sortOrder);
+    {
+      map['data'] = Variable<String>(
+        $ProviderRowsTable.$converterdata.toSql(data),
+      );
+    }
+    return map;
+  }
+
+  ProviderRowsCompanion toCompanion(bool nullToAbsent) {
+    return ProviderRowsCompanion(
+      id: Value(id),
+      sortOrder: Value(sortOrder),
+      data: Value(data),
+    );
+  }
+
+  factory ProviderRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ProviderRow(
+      id: serializer.fromJson<String>(json['id']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      data: serializer.fromJson<ModelProvider>(json['data']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+      'data': serializer.toJson<ModelProvider>(data),
+    };
+  }
+
+  ProviderRow copyWith({String? id, int? sortOrder, ModelProvider? data}) =>
+      ProviderRow(
+        id: id ?? this.id,
+        sortOrder: sortOrder ?? this.sortOrder,
+        data: data ?? this.data,
+      );
+  ProviderRow copyWithCompanion(ProviderRowsCompanion data) {
+    return ProviderRow(
+      id: data.id.present ? data.id.value : this.id,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      data: data.data.present ? data.data.value : this.data,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ProviderRow(')
+          ..write('id: $id, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('data: $data')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, sortOrder, data);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ProviderRow &&
+          other.id == this.id &&
+          other.sortOrder == this.sortOrder &&
+          other.data == this.data);
+}
+
+class ProviderRowsCompanion extends UpdateCompanion<ProviderRow> {
+  final Value<String> id;
+  final Value<int> sortOrder;
+  final Value<ModelProvider> data;
+  final Value<int> rowid;
+  const ProviderRowsCompanion({
+    this.id = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.data = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ProviderRowsCompanion.insert({
+    required String id,
+    required int sortOrder,
+    required ModelProvider data,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       sortOrder = Value(sortOrder),
+       data = Value(data);
+  static Insertable<ProviderRow> custom({
+    Expression<String>? id,
+    Expression<int>? sortOrder,
+    Expression<String>? data,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (data != null) 'data': data,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ProviderRowsCompanion copyWith({
+    Value<String>? id,
+    Value<int>? sortOrder,
+    Value<ModelProvider>? data,
+    Value<int>? rowid,
+  }) {
+    return ProviderRowsCompanion(
+      id: id ?? this.id,
+      sortOrder: sortOrder ?? this.sortOrder,
+      data: data ?? this.data,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (data.present) {
+      map['data'] = Variable<String>(
+        $ProviderRowsTable.$converterdata.toSql(data.value),
+      );
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ProviderRowsCompanion(')
+          ..write('id: $id, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('data: $data, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -1065,6 +1327,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     this,
   );
   late final $AssistantRowsTable assistantRows = $AssistantRowsTable(this);
+  late final $ProviderRowsTable providerRows = $ProviderRowsTable(this);
   late final Index idxTopicsLastMessageTimeNum = Index(
     'idx_topics_last_message_time_num',
     'CREATE INDEX idx_topics_last_message_time_num ON topic_rows (last_message_time_num)',
@@ -1081,12 +1344,17 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'idx_message_blocks_message_id',
     'CREATE INDEX idx_message_blocks_message_id ON message_block_rows (message_id)',
   );
+  late final Index idxProvidersSortOrder = Index(
+    'idx_providers_sort_order',
+    'CREATE INDEX idx_providers_sort_order ON provider_rows (sort_order)',
+  );
   late final TopicDao topicDao = TopicDao(this as AppDatabase);
   late final MessageDao messageDao = MessageDao(this as AppDatabase);
   late final MessageBlockDao messageBlockDao = MessageBlockDao(
     this as AppDatabase,
   );
   late final AssistantDao assistantDao = AssistantDao(this as AppDatabase);
+  late final ProviderDao providerDao = ProviderDao(this as AppDatabase);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1096,10 +1364,12 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     messageRows,
     messageBlockRows,
     assistantRows,
+    providerRows,
     idxTopicsLastMessageTimeNum,
     idxMessagesTopicId,
     idxMessagesAssistantId,
     idxMessageBlocksMessageId,
+    idxProvidersSortOrder,
   ];
 }
 
@@ -1755,6 +2025,169 @@ typedef $$AssistantRowsTableProcessedTableManager =
       AssistantRow,
       PrefetchHooks Function()
     >;
+typedef $$ProviderRowsTableCreateCompanionBuilder =
+    ProviderRowsCompanion Function({
+      required String id,
+      required int sortOrder,
+      required ModelProvider data,
+      Value<int> rowid,
+    });
+typedef $$ProviderRowsTableUpdateCompanionBuilder =
+    ProviderRowsCompanion Function({
+      Value<String> id,
+      Value<int> sortOrder,
+      Value<ModelProvider> data,
+      Value<int> rowid,
+    });
+
+class $$ProviderRowsTableFilterComposer
+    extends Composer<_$AppDatabase, $ProviderRowsTable> {
+  $$ProviderRowsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<ModelProvider, ModelProvider, String>
+  get data => $composableBuilder(
+    column: $table.data,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+}
+
+class $$ProviderRowsTableOrderingComposer
+    extends Composer<_$AppDatabase, $ProviderRowsTable> {
+  $$ProviderRowsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get data => $composableBuilder(
+    column: $table.data,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ProviderRowsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ProviderRowsTable> {
+  $$ProviderRowsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<ModelProvider, String> get data =>
+      $composableBuilder(column: $table.data, builder: (column) => column);
+}
+
+class $$ProviderRowsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ProviderRowsTable,
+          ProviderRow,
+          $$ProviderRowsTableFilterComposer,
+          $$ProviderRowsTableOrderingComposer,
+          $$ProviderRowsTableAnnotationComposer,
+          $$ProviderRowsTableCreateCompanionBuilder,
+          $$ProviderRowsTableUpdateCompanionBuilder,
+          (
+            ProviderRow,
+            BaseReferences<_$AppDatabase, $ProviderRowsTable, ProviderRow>,
+          ),
+          ProviderRow,
+          PrefetchHooks Function()
+        > {
+  $$ProviderRowsTableTableManager(_$AppDatabase db, $ProviderRowsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ProviderRowsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ProviderRowsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ProviderRowsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
+                Value<ModelProvider> data = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ProviderRowsCompanion(
+                id: id,
+                sortOrder: sortOrder,
+                data: data,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required int sortOrder,
+                required ModelProvider data,
+                Value<int> rowid = const Value.absent(),
+              }) => ProviderRowsCompanion.insert(
+                id: id,
+                sortOrder: sortOrder,
+                data: data,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ProviderRowsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ProviderRowsTable,
+      ProviderRow,
+      $$ProviderRowsTableFilterComposer,
+      $$ProviderRowsTableOrderingComposer,
+      $$ProviderRowsTableAnnotationComposer,
+      $$ProviderRowsTableCreateCompanionBuilder,
+      $$ProviderRowsTableUpdateCompanionBuilder,
+      (
+        ProviderRow,
+        BaseReferences<_$AppDatabase, $ProviderRowsTable, ProviderRow>,
+      ),
+      ProviderRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -1767,4 +2200,6 @@ class $AppDatabaseManager {
       $$MessageBlockRowsTableTableManager(_db, _db.messageBlockRows);
   $$AssistantRowsTableTableManager get assistantRows =>
       $$AssistantRowsTableTableManager(_db, _db.assistantRows);
+  $$ProviderRowsTableTableManager get providerRows =>
+      $$ProviderRowsTableTableManager(_db, _db.providerRows);
 }

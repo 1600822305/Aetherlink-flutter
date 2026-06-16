@@ -20,7 +20,11 @@ import 'package:aetherlink_flutter/features/chat/data/datasources/local/topics_t
 // `test/architecture/import_boundaries_test.dart`.
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/models/data/datasources/local/model_provider_converters.dart';
+import 'package:aetherlink_flutter/features/models/data/datasources/local/provider_dao.dart';
+import 'package:aetherlink_flutter/features/models/data/datasources/local/providers_table.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
+import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 
 part 'app_database.g.dart';
@@ -35,8 +39,14 @@ part 'app_database.g.dart';
 /// wires up features. See the documented carve-out in
 /// `test/architecture/import_boundaries_test.dart`.
 @DriftDatabase(
-  tables: [TopicRows, MessageRows, MessageBlockRows, AssistantRows],
-  daos: [TopicDao, MessageDao, MessageBlockDao, AssistantDao],
+  tables: [
+    TopicRows,
+    MessageRows,
+    MessageBlockRows,
+    AssistantRows,
+    ProviderRows,
+  ],
+  daos: [TopicDao, MessageDao, MessageBlockDao, AssistantDao, ProviderDao],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
@@ -46,11 +56,20 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.open() : super(_openConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
-  // TODO(migration): the one-time IndexedDB (`aetherlink-db-new` v9) → SQLite
-  // import is a separate cross-cutting task (see docs/ROADMAP.md). schemaVersion
-  // stays 1 (fresh database); Drift migrations land alongside that work.
+  // v1 → v2 adds the model-provider store ([ProviderRows]). The one-time
+  // IndexedDB (`aetherlink-db-new` v9) → SQLite data import remains a separate
+  // cross-cutting task (see docs/ROADMAP.md).
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onCreate: (m) => m.createAll(),
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await m.createTable(providerRows);
+      }
+    },
+  );
 
   static QueryExecutor _openConnection() {
     return LazyDatabase(() async {

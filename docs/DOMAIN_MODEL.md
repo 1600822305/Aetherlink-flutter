@@ -205,6 +205,26 @@ class Topic with _$Topic {
 ### Model（`index.ts`）
 迁移 id/name/provider/providerType/apiKey/baseUrl/能力 `capabilities{...}` 等；`providerName`（运行时注入、非持久化）不进模型。
 
+### ModelProvider（`src/shared/config/defaultModels.ts`，跨 feature → 放 `shared/domain`）
+模型供应商配置。1:1 迁移原版 `ModelProvider` 的持久化字段：
+
+| 字段 | Dart 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `String` | 主键 |
+| `name` | `String` | 显示名 |
+| `avatar` | `String` | 头像标识（原版即字符串：字母 `O`、emoji `🧠`、或资源键 `dashscope`）——**存原始 `String`，不转 Flutter `IconData`** |
+| `color` | `String` | 主题色，原版即十六进制串 `#10a37f`——**存原始 `String`，不转 Flutter `Color`/`int`**（保证与原版 JSON 1:1 round-trip，零有损编码） |
+| `isEnabled` | `bool`（默认 `false`） | 是否启用 |
+| `apiKey` | `String?` | 单 key（向后兼容字段） |
+| `baseUrl` | `String?` | 接口地址 |
+| `models` | `List<Model>`（默认 `[]`） | 该供应商下的模型，复用既有 `Model` |
+| `providerType` | `String?` | 适配器类型（`openai`/`gemini`/`anthropic`/`volcengine`/`zhipu`/`dashscope`…） |
+| `isSystem` | `bool?` | 系统内置供应商 |
+| `extraHeaders` | `Map<String, String>?` | 附加请求头 |
+| `extraBody` | `Map<String, dynamic>?` | 附加请求体 |
+
+**多 key 取舍（`apiKeys` / `keyManagement` / `ApiKeyConfig`）**：原版的多 key 轮询/配额是一整套 web 端运行时调度逻辑，本仓 SSOT 暂未 spec 其领域语义。按「没 spec 不擅自发明」原则，本期只迁单 `apiKey`，多 key 留 `// TODO(multi-key)` 待 SSOT 补齐后再建对应 freezed 类型（`ApiKeyConfig` / `KeyManagement`），不预先发明。
+
 ---
 
 ## 5. 明确「丢弃」清单（不迁移的 React-only / 历史字段）
@@ -216,6 +236,8 @@ class Topic with _$Topic {
 | `Model.providerName` | `index.ts` | 运行时注入，非持久化 |
 | `Assistant.topics`（运行时聚合） | `Assistant.ts` | 由 repository 组装，不入持久化模型 |
 | `Model.useCorsPlugin` | `index.ts` | CORS 是 webview 概念，原生无 → 评估后大概率删 |
+| `ModelProvider.useCorsPlugin` | `defaultModels.ts` | 同上，webview-only CORS，原生无 |
+| `ModelProvider.useResponsesAPI / customModelEndpoint` | `defaultModels.ts` | web 端 Responses API / 自定义端点开关，本仓未 spec，暂不迁移 |
 
 > 每丢一个字段都要在对应 PR 说明，避免「干净重写」时误删②类必要字段。
 
