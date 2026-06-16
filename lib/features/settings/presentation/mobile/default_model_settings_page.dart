@@ -368,11 +368,17 @@ class _ToolbarAction extends StatelessWidget {
   final String label;
   final _ToolbarTint tint;
 
+  // The original palette's `error.main`. The shared theme currently maps
+  // `colorScheme.error` to Material's `#B00020`, so the literal is used here to
+  // match the original's exact red (the 添加 action already matches via
+  // `colorScheme.primary` = `#64748B`).
+  static const Color _errorRed = Color(0xFFEF4444);
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final accent = tint == _ToolbarTint.error
-        ? theme.colorScheme.error
+        ? _errorRed
         : theme.colorScheme.primary;
 
     return Container(
