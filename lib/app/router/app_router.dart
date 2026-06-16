@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_p
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/model_provider_detail_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/multi_key_management_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/top_toolbar_settings_page.dart';
 import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
 
 /// Declarative application route table (go_router).
@@ -29,6 +30,8 @@ abstract final class AppRouter {
   static const String defaultModelPath = '/settings/default-model';
   static const String appearancePath = '/settings/appearance';
   static const String inputBoxSettingsPath = '/settings/appearance/input-box';
+  static const String topToolbarSettingsPath =
+      '/settings/appearance/top-toolbar';
   static const String welcomePath = '/welcome';
 
   /// The model-provider third-level pages (M4.3.1). The detail / edit / advanced
@@ -88,6 +91,11 @@ abstract final class AppRouter {
         path: inputBoxSettingsPath,
         name: 'input-box-settings',
         builder: (context, state) => const InputBoxSettingsPage(),
+      ),
+      GoRoute(
+        path: topToolbarSettingsPath,
+        name: 'top-toolbar-settings',
+        builder: (context, state) => const TopToolbarSettingsPage(),
       ),
       GoRoute(
         path: addProviderPath,

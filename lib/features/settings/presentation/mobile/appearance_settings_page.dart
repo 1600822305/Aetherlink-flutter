@@ -829,6 +829,7 @@ class _CustomizationCard extends StatelessWidget {
       accent: Color(0xFF10B981), // emerald
       title: '顶部工具栏设置',
       description: '自定义顶部工具栏的组件和布局，支持拖拽DIY布局',
+      route: AppRouter.topToolbarSettingsPath,
     ),
     _CustomizationItem(
       icon: LucideIcons.messageSquare,
