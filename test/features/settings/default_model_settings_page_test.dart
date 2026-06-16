@@ -50,34 +50,30 @@ void main() {
     expect(find.text('添加'), findsOneWidget);
     expect(find.byIcon(LucideIcons.trash2), findsOneWidget);
     expect(find.byIcon(LucideIcons.arrowLeft), findsOneWidget);
+    expect(find.byIcon(LucideIcons.bot), findsOneWidget);
+    expect(find.byIcon(LucideIcons.list), findsOneWidget);
     // plus is used twice: the toolbar 添加 action + the 添加模型服务商 row.
     expect(find.byIcon(LucideIcons.plus), findsNWidgets(2));
+    // The 辅助模型设置 and 添加模型服务商 rows each end with a chevron; the
+    // 模型选择器样式 (toggle) row has none.
+    expect(find.byIcon(LucideIcons.chevronRight), findsNWidgets(2));
   });
 
   testWidgets('provider list is empty (no fabricated rows)', (tester) async {
     await pumpPage(tester);
 
-    // No provider rows are fabricated: no drag handles, and nothing in the
-    // body is tappable.
-    expect(find.byType(InkWell), findsNothing);
+    // No provider rows are fabricated: no drag handles are drawn.
     expect(find.byIcon(LucideIcons.gripVertical), findsNothing);
   });
 
-  testWidgets('every data/navigation control is a disabled placeholder', (
-    tester,
-  ) async {
+  testWidgets('data/navigation controls carry no tap handler', (tester) async {
     await pumpPage(tester);
 
-    // 2 header actions + 3 推荐操作 rows render at half opacity (the app's
-    // disabled convention).
-    final disabled = tester
-        .widgetList<Opacity>(
-          find.byWidgetPredicate((w) => w is Opacity && w.opacity == 0.5),
-        )
-        .toList();
-    expect(disabled, hasLength(5));
+    // The header actions and 推荐操作 rows render at full visual fidelity but
+    // are non-functional this milestone: nothing on the page is ink-tappable
+    // (the back button is an IconButton/InkResponse, not an InkWell).
+    expect(find.byType(InkWell), findsNothing);
 
-    // None of them has a tappable ancestor (no InkWell / button wiring).
     for (final label in const ['批量删除', '添加', '辅助模型设置', '模型选择器样式', '添加模型服务商']) {
       expect(
         find.ancestor(of: find.text(label), matching: find.byType(InkWell)),
