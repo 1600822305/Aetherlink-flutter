@@ -6,35 +6,70 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
+import 'package:aetherlink_flutter/shared/utils/provider_icons.dart';
 
 /// The "模型设置" second-level page (hub "配置模型" → this page), a 1:1
 /// reproduction of the layout of the original
 /// `src/pages/Settings/DefaultModelSettings.tsx`.
 ///
-/// This is a pure view — no business logic, no `data` import, no fabricated
-/// providers. The page mirrors the original's exact metrics (font sizes, card
-/// radius, paddings, spacing, colors). Controls that would need real data or a
-/// not-yet-built destination carry no tap handler (they render at full visual
-/// fidelity, they just don't do anything yet):
-///   * 添加 / 批量删除 — need the provider store + add/multi-select flows.
-///   * the provider list — has no data, so it renders empty (no fake rows).
-///   * the "推荐操作" rows — link to third-level pages / toggle persisted state.
+/// The page mirrors the original's exact metrics (font sizes, card radius,
+/// paddings, spacing, colors) and is fully wired: 添加 opens the add-provider
+/// page, 批量删除 enters the original's multi-select batch-delete flow, and the
+/// provider list renders the persisted providers (brand avatar + enabled status
+/// + reorder), opening each provider's detail page on tap. Some "推荐操作" rows
+/// still link to not-yet-built destinations and carry no handler.
 ///
 /// To match the original pixel-for-pixel, the per-action avatar brand hues and
 /// the subtle `rgba(0,0,0,...)` tints/shadows are taken verbatim from the
 /// original CSS (the only literal colors on the page; everything else is a
 /// theme token).
-class DefaultModelSettingsPage extends ConsumerWidget {
+class DefaultModelSettingsPage extends ConsumerStatefulWidget {
   const DefaultModelSettingsPage({super.key});
 
+  @override
+  ConsumerState<DefaultModelSettingsPage> createState() =>
+      _DefaultModelSettingsPageState();
+}
+
+class _DefaultModelSettingsPageState
+    extends ConsumerState<DefaultModelSettingsPage> {
   // Strings lifted verbatim from the original `modelSettings.modelList.*`
   // zh-CN i18n (the M4.1/M4.2 static-constant approach).
   static const String _title = '模型设置';
   static const String _batchDeleteLabel = '批量删除';
   static const String _addLabel = '添加';
+  static const String _cancelLabel = '取消';
+
+  // The original's `isMultiSelectMode` / `selectedProviders` component state.
+  bool _multiSelect = false;
+  final Set<String> _selected = <String>{};
+
+  void _enterMultiSelect() => setState(() {
+        _multiSelect = true;
+        _selected.clear();
+      });
+
+  void _exitMultiSelect() => setState(() {
+        _multiSelect = false;
+        _selected.clear();
+      });
+
+  void _toggle(String id) => setState(() {
+        if (!_selected.remove(id)) _selected.add(id);
+      });
+
+  void _selectAll(List<ModelProvider> providers) => setState(() {
+        if (_selected.length == providers.length) {
+          _selected.clear();
+        } else {
+          _selected
+            ..clear()
+            ..addAll(providers.map((p) => p.id));
+        }
+      });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -47,12 +82,21 @@ class DefaultModelSettingsPage extends ConsumerWidget {
         centerTitle: false,
         titleSpacing: 0,
         shape: Border(bottom: BorderSide(color: theme.dividerColor)),
-        leading: IconButton(
-          icon: const Icon(LucideIcons.arrowLeft, size: 24),
-          color: theme.colorScheme.primary,
-          onPressed: () => context.canPop()
-              ? context.pop()
-              : context.go(AppRouter.settingsPath),
+        // Original back IconButton: a 40x40 hit target sitting 4px from the
+        // edge (16px gutter − the 12px `edge="start"` overhang), so its 24px
+        // glyph lands 16px in and the title butts up at x=44.
+        leadingWidth: 44,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 4),
+          child: IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            icon: const Icon(LucideIcons.arrowLeft, size: 24),
+            color: theme.colorScheme.primary,
+            onPressed: () => context.canPop()
+                ? context.pop()
+                : context.go(AppRouter.settingsPath),
+          ),
         ),
         // Original HeaderBar title: the themed h6 (1.125rem = 18px) at weight
         // 600, left-aligned tight against the back button.
@@ -63,30 +107,126 @@ class DefaultModelSettingsPage extends ConsumerWidget {
         ),
         title: const Text(_title),
         actions: [
-          const _ToolbarAction(
-            icon: LucideIcons.trash2,
-            label: _batchDeleteLabel,
-            tint: _ToolbarTint.error,
-          ),
-          const SizedBox(width: 8),
-          _ToolbarAction(
-            icon: LucideIcons.plus,
-            label: _addLabel,
-            tint: _ToolbarTint.primary,
-            onTap: () => context.push(AppRouter.addProviderPath),
-          ),
-          const SizedBox(width: 8),
+          if (_multiSelect) ...[
+            _ToolbarAction(
+              icon: LucideIcons.x,
+              label: _cancelLabel,
+              tint: _ToolbarTint.neutral,
+              onTap: _exitMultiSelect,
+            ),
+            const SizedBox(width: 8),
+            _ToolbarAction(
+              icon: LucideIcons.trash2,
+              label: '删除 (${_selected.length})',
+              tint: _ToolbarTint.error,
+              enabled: _selected.isNotEmpty,
+              onTap: _selected.isEmpty ? null : _confirmDeleteSelected,
+            ),
+          ] else ...[
+            _ToolbarAction(
+              icon: LucideIcons.trash2,
+              label: _batchDeleteLabel,
+              tint: _ToolbarTint.error,
+              onTap: _enterMultiSelect,
+            ),
+            const SizedBox(width: 8),
+            _ToolbarAction(
+              icon: LucideIcons.plus,
+              label: _addLabel,
+              tint: _ToolbarTint.primary,
+              onTap: () => context.push(AppRouter.addProviderPath),
+            ),
+          ],
+          // Toolbar right gutter (16px on the mobile breakpoint).
+          const SizedBox(width: 16),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
-        children: const [
-          _ProvidersCard(),
-          SizedBox(height: 16),
-          _RecommendedActionsCard(),
+        children: [
+          _ProvidersCard(
+            multiSelect: _multiSelect,
+            selectedIds: _selected,
+            onToggle: _toggle,
+            onSelectAll: _selectAll,
+          ),
+          const SizedBox(height: 16),
+          const _RecommendedActionsCard(),
         ],
       ),
     );
+  }
+
+  /// Confirms then deletes every selected provider (the original's
+  /// `handleConfirmDelete`), then clears the selection and leaves multi-select.
+  Future<void> _confirmDeleteSelected() async {
+    if (_selected.isEmpty) return;
+    final ids = _selected.toList();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return AlertDialog(
+          title: Text(
+            '确认删除',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.error,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text.rich(
+                TextSpan(
+                  children: [
+                    const TextSpan(text: '您确定要删除选中的 '),
+                    TextSpan(
+                      text: '${ids.length}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const TextSpan(text: ' 个供应商吗？'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '此操作将删除这些供应商及其所有配置信息，且无法恢复。',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFEF4444),
+                backgroundColor: const Color(0x1AEF4444),
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('确认删除'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    final store = ref.read(modelStoreProvider.notifier);
+    for (final id in ids) {
+      await store.deleteProvider(id);
+    }
+    if (!mounted) return;
+    _exitMultiSelect();
   }
 }
 
@@ -137,10 +277,23 @@ class _ModelCard extends StatelessWidget {
 /// followed by a full-width divider and the persisted provider list. With no
 /// providers (fresh install) the list region stays empty — no fabricated rows.
 class _ProvidersCard extends ConsumerWidget {
-  const _ProvidersCard();
+  const _ProvidersCard({
+    required this.multiSelect,
+    required this.selectedIds,
+    required this.onToggle,
+    required this.onSelectAll,
+  });
+
+  final bool multiSelect;
+  final Set<String> selectedIds;
+  final void Function(String id) onToggle;
+  final void Function(List<ModelProvider> providers) onSelectAll;
 
   static const String _providersTitle = '模型服务商';
   static const String _providersDesc = '您可以配置多个模型服务商，点击对应的服务商进行设置和管理';
+  static const String _selectToDelete = '选择要删除的服务商';
+  static const String _selectAll = '全选';
+  static const String _unselectAll = '取消全选';
 
   // The original header/subheader `bgcolor: 'rgba(0,0,0,0.01)'`.
   static const Color _headerTint = Color(0x03000000);
@@ -149,6 +302,9 @@ class _ProvidersCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final providersAsync = ref.watch(appModelProvidersProvider);
+    final providers = providersAsync.asData?.value ?? const <ModelProvider>[];
+    final allSelected =
+        providers.isNotEmpty && selectedIds.length == providers.length;
 
     return _ModelCard(
       child: Column(
@@ -159,55 +315,91 @@ class _ProvidersCard extends ConsumerWidget {
             color: _headerTint,
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
+              child: Row(
                 children: [
-                  Text(
-                    _providersTitle,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: theme.colorScheme.onSurface,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _providersTitle,
+                          // subtitle1: not overridden in the theme, so it keeps
+                          // MUI's default scaled by the `typography.fontSize:16`
+                          // coef (16/14) → 18.29px, line-height 1.75 (= 32px).
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontSize: 128 / 7,
+                            height: 1.75,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        Text(
+                          multiSelect ? _selectToDelete : _providersDesc,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontSize: 14,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    _providersDesc,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontSize: 14,
-                      color: theme.colorScheme.onSurfaceVariant,
+                  if (multiSelect)
+                    TextButton(
+                      onPressed: () => onSelectAll(providers),
+                      style: TextButton.styleFrom(
+                        foregroundColor: theme.colorScheme.primary,
+                        minimumSize: Size.zero,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        textStyle: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      child: Text(allSelected ? _unselectAll : _selectAll),
                     ),
-                  ),
                 ],
               ),
             ),
           ),
           const Divider(height: 1, thickness: 1),
-          providersAsync.maybeWhen(
-            data: (providers) => providers.isEmpty
-                ? const SizedBox.shrink()
-                : _ProviderList(providers: providers),
-            orElse: () => const SizedBox.shrink(),
-          ),
+          if (providers.isNotEmpty)
+            _ProviderList(
+              providers: providers,
+              multiSelect: multiSelect,
+              selectedIds: selectedIds,
+              onToggle: onToggle,
+            ),
         ],
       ),
     );
   }
 }
 
-/// The reorderable list of persisted providers. Dragging a row persists the
-/// new order (`reorderProviders`); the trailing trash deletes one; tapping a
-/// row opens its detail page.
+/// The reorderable list of persisted providers — a 1:1 port of the original
+/// `List` of `ListItemButton`s. Each row drags to reorder (`reorderProviders`),
+/// shows the provider's brand avatar + enabled/disabled status, and opens its
+/// detail page on tap. In multi-select mode the drag handle becomes a checkbox
+/// and tapping toggles the row's selection instead of navigating.
 class _ProviderList extends ConsumerWidget {
-  const _ProviderList({required this.providers});
+  const _ProviderList({
+    required this.providers,
+    required this.multiSelect,
+    required this.selectedIds,
+    required this.onToggle,
+  });
 
   final List<ModelProvider> providers;
+  final bool multiSelect;
+  final Set<String> selectedIds;
+  final void Function(String id) onToggle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-
     return ReorderableListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -221,50 +413,201 @@ class _ProviderList extends ConsumerWidget {
       },
       itemBuilder: (context, index) {
         final provider = providers[index];
-        return InkWell(
+        return _ProviderRow(
           key: ValueKey(provider.id),
-          onTap: () => context.push(AppRouter.modelProviderPath(provider.id)),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              children: [
-                ReorderableDragStartListener(
-                  index: index,
-                  child: Icon(
-                    LucideIcons.gripVertical,
-                    size: 20,
-                    color: theme.colorScheme.onSurfaceVariant,
+          provider: provider,
+          index: index,
+          multiSelect: multiSelect,
+          selected: selectedIds.contains(provider.id),
+          onToggle: () => onToggle(provider.id),
+          onOpen: () => context.push(AppRouter.modelProviderPath(provider.id)),
+        );
+      },
+    );
+  }
+}
+
+/// One provider row. Layout mirrors the original `ListItemButton`: a leading
+/// drag handle (or checkbox in multi-select), the 40px brand avatar, the name
+/// over an "已启用/已禁用·N 个模型" status line, and a trailing settings gear +
+/// chevron (hidden in multi-select).
+class _ProviderRow extends StatelessWidget {
+  const _ProviderRow({
+    super.key,
+    required this.provider,
+    required this.index,
+    required this.multiSelect,
+    required this.selected,
+    required this.onToggle,
+    required this.onOpen,
+  });
+
+  final ModelProvider provider;
+  final int index;
+  final bool multiSelect;
+  final bool selected;
+  final VoidCallback onToggle;
+  final VoidCallback onOpen;
+
+  // The original chevron's `rgba(79, 70, 229, 0.5)`.
+  static const Color _chevron = Color(0x804F46E5);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    // MUI `success.main` (light #2e7d32 / dark #66bb6a) and `text.disabled`.
+    final statusColor = provider.isEnabled
+        ? (isDark ? const Color(0xFF66BB6A) : const Color(0xFF2E7D32))
+        : theme.colorScheme.onSurface.withValues(alpha: 0.38);
+
+    return Material(
+      color: selected
+          ? theme.colorScheme.primary.withValues(alpha: 0.08)
+          : Colors.transparent,
+      child: InkWell(
+        onTap: multiSelect ? onToggle : onOpen,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              if (multiSelect)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: Checkbox(
+                      value: selected,
+                      onChanged: (_) => onToggle(),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    provider.name,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      fontSize: 16,
-                      color: theme.colorScheme.onSurface,
+                )
+              else
+                Opacity(
+                  opacity: 0.6,
+                  child: ReorderableDragStartListener(
+                    index: index,
+                    child: const Padding(
+                      padding: EdgeInsets.only(right: 8),
+                      child: Icon(LucideIcons.gripVertical, size: 20),
                     ),
                   ),
                 ),
-                Text(
-                  '${provider.models.length} 个模型',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+              _ProviderAvatar(provider: provider),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      provider.name,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Text(
+                          provider.isEnabled ? '已启用' : '已禁用',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: statusColor,
+                          ),
+                        ),
+                        if (provider.models.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            '${provider.models.length} 个模型',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontSize: 14,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
                 ),
+              ),
+              if (!multiSelect) ...[
                 IconButton(
-                  icon: const Icon(LucideIcons.trash2, size: 18),
-                  color: theme.colorScheme.error,
-                  tooltip: '删除',
-                  onPressed: () => ref
-                      .read(modelStoreProvider.notifier)
-                      .deleteProvider(provider.id),
+                  icon: const Icon(LucideIcons.settings, size: 16),
+                  color: theme.colorScheme.onSurfaceVariant,
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  constraints:
+                      const BoxConstraints.tightFor(width: 32, height: 32),
+                  tooltip: '编辑',
+                  onPressed: onOpen,
                 ),
+                const SizedBox(width: 8),
+                const Icon(LucideIcons.chevronRight, size: 20, color: _chevron),
               ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The provider's 40px circular brand avatar — the original MUI `Avatar` with a
+/// transparent fill, a soft `0 2px 6px rgba(0,0,0,0.05)` shadow and a
+/// first-letter fallback when the bundled logo can't be resolved.
+class _ProviderAvatar extends StatelessWidget {
+  const _ProviderAvatar({required this.provider});
+
+  final ModelProvider provider;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final type = provider.providerType;
+    final assetPath = getProviderIcon(
+      (type != null && type.isNotEmpty) ? type : provider.id,
+      isDark: isDark,
+    );
+    final fallback = provider.name.isNotEmpty
+        ? provider.name.substring(0, 1).toUpperCase()
+        : '?';
+
+    return Container(
+      width: 40,
+      height: 40,
+      clipBehavior: Clip.antiAlias,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.transparent,
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x0D000000), // rgba(0,0,0,0.05)
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Image.asset(
+        assetPath,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stack) => Center(
+          child: Text(
+            fallback,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -312,8 +655,9 @@ class _RecommendedActionsCard extends StatelessWidget {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     _subheader,
+                    // ListSubheader default size scaled by the 16/14 coef = 16px.
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      fontSize: 14,
+                      fontSize: 16,
                       fontWeight: FontWeight.w600,
                       color: theme.colorScheme.onSurface,
                     ),
@@ -445,24 +789,26 @@ class _ActionRow extends StatelessWidget {
   }
 }
 
-/// Whether a toolbar action carries the primary or the error accent.
-enum _ToolbarTint { primary, error }
+/// Whether a toolbar action carries the primary, error or neutral accent.
+enum _ToolbarTint { primary, error, neutral }
 
 /// A header-bar action — the original's tonal `Button` (startIcon + label on a
 /// `borderRadius: 2` (16px) low-alpha tint, weight 600, no text-transform).
-/// Rendered at full visual fidelity but with no tap handler this milestone
-/// (both actions need data / flows that don't exist yet).
+/// Carries error / primary / neutral accents plus an optional disabled state
+/// (the 删除 (N) action greys out when nothing is selected).
 class _ToolbarAction extends StatelessWidget {
   const _ToolbarAction({
     required this.icon,
     required this.label,
     required this.tint,
+    this.enabled = true,
     this.onTap,
   });
 
   final IconData icon;
   final String label;
   final _ToolbarTint tint;
+  final bool enabled;
 
   /// Tap handler. When null the action renders at full visual fidelity but is
   /// non-functional this milestone.
@@ -477,38 +823,67 @@ class _ToolbarAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accent = tint == _ToolbarTint.error
-        ? _errorRed
-        : theme.colorScheme.primary;
+    final Color bg;
+    final Color fg;
+    if (!enabled) {
+      // The original `&:disabled`: grey[500] @ 0.05 fill, `text.disabled` ink.
+      bg = const Color(0x0D9E9E9E);
+      fg = theme.colorScheme.onSurface.withValues(alpha: 0.38);
+    } else {
+      switch (tint) {
+        case _ToolbarTint.error:
+          bg = _errorRed.withValues(alpha: 0.1);
+          fg = _errorRed;
+        case _ToolbarTint.primary:
+          bg = theme.colorScheme.primary.withValues(alpha: 0.1);
+          fg = theme.colorScheme.primary;
+        case _ToolbarTint.neutral:
+          // The original 取消: grey[500] @ 0.1 fill, `text.secondary` ink.
+          bg = const Color(0x1A9E9E9E);
+          fg = theme.colorScheme.onSurfaceVariant;
+      }
+    }
 
-    final content = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 24, color: accent),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: theme.textTheme.labelLarge?.copyWith(
-              fontSize: 14,
-              color: accent,
-              fontWeight: FontWeight.w600,
+    // MUI text Button: minWidth 64, ~36.5px tall, `borderRadius:2` (16px), and
+    // a startIcon whose −4px left / 8px right margins net to 4px before the
+    // glyph and 8px before the label inside the 8px horizontal padding.
+    final content = ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 64, minHeight: 36.5),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(4, 6, 8, 6),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 24, color: fg),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: theme.textTheme.labelLarge?.copyWith(
+                fontSize: 14,
+                color: fg,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
 
-    if (onTap == null) return content;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: content,
-    );
+    final tappable = onTap == null
+        ? content
+        : InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(16),
+            child: content,
+          );
+
+    // AppBar lays its `actions` out in a `CrossAxisAlignment.stretch` Row, which
+    // would stretch the pill to the full 56px toolbar height. Center keeps it at
+    // the intrinsic 36.5px and vertically centered, matching the MUI button.
+    return Center(child: tappable);
   }
 }
