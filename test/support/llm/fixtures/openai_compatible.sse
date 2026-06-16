@@ -1,0 +1,16 @@
+data: {"choices":[{"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{"reasoning_content":"先想一下用户在问什么。"},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{"reasoning_content":"好,可以回答了。"},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{"content":"你好"},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{"content":"，世界！"},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+data: {"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}
+
+data: [DONE]
+
