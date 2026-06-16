@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme_extension.dart';
@@ -8,27 +10,85 @@ import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 
 /// Static UI strings, ported verbatim from the original (i18n is a later
 /// effort, per the M4.1 approach).
-const String _inputHint = '和ai助手说点什么...';
+const String _inputHint = '和ai助手说点什么... (Ctrl+Enter 展开)';
+const String _toolsTooltip = '扩展';
+const String _clearTooltip = '清空内容';
 const String _webSearchTooltip = '网络搜索';
-const String _mcpToolsTooltip = 'MCP 工具';
-const String _knowledgeTooltip = '知识库';
-const String _imageTooltip = '图片';
-const String _voiceTooltip = '语音';
-const String _multiModelTooltip = '多模型';
-const String _sendTooltip = '发送';
+const String _addContentTooltip = '添加内容';
+const String _voiceTooltip = '切换到语音输入模式';
+const String _sendTooltip = '发送消息';
+const String _stopTooltip = '停止生成';
 const String _noModelHint = '请先配置模型';
 
-/// The bottom composer, restored to the original "integrated input" look
-/// (`IntegratedChatInput`): a rounded, themed surface holding the text field on
-/// top and the button toolbar below.
+/// The original's two non-lucide toolbar glyphs, ported as SVG assets (the
+/// `tools`/`search` buttons use bespoke `CustomIcon`s, not lucide — see
+/// `src/components/icons/iconData.ts`).
+const String _settingsPanelIcon = 'assets/icons/aether_settings_panel.svg';
+const String _searchIcon = 'assets/icons/aether_search.svg';
+
+/// The original's literal button-identity colors (`ButtonToolbar.tsx`). These
+/// are intrinsic to the send button rather than theme-able roles, so — like the
+/// lucide glyph shapes — they are kept as fixed values for 1:1 parity.
+const Color _sendGreenLight = Color(0xFF09BB07);
+const Color _sendGreenDark = Color(0xFF4CAF50);
+const Color _disabledLight = Color(0xFFCCCCCC);
+const Color _disabledDark = Color(0xFF555555);
+const Color _stopRed = Color(0xFFFF4D4F);
+
+/// Active-state colors (web-search blue / clear-confirm + voice red) and the
+/// active-button tint, kept for when the corresponding actions are wired.
+const Color _webSearchActiveBlue = Color(0xFF3B82F6);
+const Color _activeRed = Color(0xFFF44336);
+const Color _activeTint = Color(0x1A3B82F6); // rgba(59,130,246,0.1)
+
+/// The bottom composer, a 1:1 port of the original `IntegratedChatInput`: a
+/// rounded, paper-surfaced card holding the text field on top and a
+/// space-between button toolbar below (left `tools / clear / search`, right
+/// `upload / voice / send`).
 ///
-/// The composer now sends: the send button is enabled once a current chat
-/// model with an API key is configured and the field is non-empty, and a tap
-/// hands the text to [ChatController.send]. With no model configured the button
-/// stays disabled and a tap surfaces the "configure a model first" hint. The
-/// other feature buttons remain disabled placeholders (later slices).
+/// The send button is wired: it lights up once a current chat model with an API
+/// key is configured and the field is non-empty, and a tap hands the text to
+/// [ChatController.send]. With no model configured it stays disabled and a tap
+/// surfaces the "configure a model first" hint.
+///
+/// The remaining feature buttons are full-fidelity visuals with their behaviors
+/// not yet implemented; their actions are exposed as the [onToolsMenu] /
+/// [onClearTopic] / [onToggleWebSearch] / [onAddContent] / [onToggleVoice]
+/// callbacks (null ⇒ the button renders but does nothing), so a later slice can
+/// wire them without touching this widget. [webSearchActive] / [voiceActive]
+/// drive the active-state styling those buttons take once wired.
 class ChatInputBar extends ConsumerStatefulWidget {
-  const ChatInputBar({super.key});
+  const ChatInputBar({
+    super.key,
+    this.onToolsMenu,
+    this.onClearTopic,
+    this.onToggleWebSearch,
+    this.onAddContent,
+    this.onToggleVoice,
+    this.webSearchActive = false,
+    this.voiceActive = false,
+  });
+
+  /// Opens the "扩展" (tools/extensions) menu.
+  final VoidCallback? onToolsMenu;
+
+  /// Clears the current topic's content.
+  final VoidCallback? onClearTopic;
+
+  /// Toggles web-search mode.
+  final VoidCallback? onToggleWebSearch;
+
+  /// Opens the "添加内容" (upload) menu.
+  final VoidCallback? onAddContent;
+
+  /// Toggles voice-input mode.
+  final VoidCallback? onToggleVoice;
+
+  /// Whether web-search mode is active (drives the search button's blue tint).
+  final bool webSearchActive;
+
+  /// Whether voice-input mode is active (drives the voice button's red glyph).
+  final bool voiceActive;
 
   @override
   ConsumerState<ChatInputBar> createState() => _ChatInputBarState();
@@ -76,6 +136,7 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final radius = theme.extension<AppThemeExtension>()?.borderRadius ?? 8.0;
+    final isDark = theme.brightness == Brightness.dark;
 
     final CurrentModel? current = ref.watch(appCurrentModelProvider).value;
     final hasApiKey =
@@ -89,46 +150,67 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
     return Material(
       color: theme.colorScheme.surface,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+        // The original centers the card with an 8px horizontal gutter on mobile.
+        padding: const EdgeInsets.all(8),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest,
+            // var(--theme-bg-paper) → the paper/surface role.
+            color: theme.colorScheme.surface,
             borderRadius: BorderRadius.circular(radius),
             border: Border.all(color: theme.dividerColor),
+            boxShadow: [
+              // 0 2px 8px rgba(0,0,0,0.1) light / 0.3 dark.
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Upper layer: the text composer.
-                TextField(
-                  controller: _controller,
-                  minLines: 1,
-                  maxLines: 5,
-                  textInputAction: TextInputAction.newline,
-                  decoration: const InputDecoration(
-                    hintText: _inputHint,
-                    border: InputBorder.none,
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 10,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 68),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Upper layer: the text composer.
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8, right: 2),
+                    child: TextField(
+                      controller: _controller,
+                      minLines: 1,
+                      maxLines: 5,
+                      textInputAction: TextInputAction.newline,
+                      style: const TextStyle(fontSize: 16, height: 1.4),
+                      decoration: const InputDecoration(
+                        hintText: _inputHint,
+                        hintStyle: TextStyle(fontSize: 16, height: 1.4),
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(vertical: 8),
+                      ),
                     ),
                   ),
-                ),
-                // Lower layer: the button toolbar.
-                _InputButtonToolbar(
-                  canSend: canSend,
-                  // When no model is configured, the button is disabled but a
-                  // tap still surfaces the hint (so the toolbar handles taps).
-                  onSend: canSend
-                      ? _send
-                      : (modelReady ? null : _showNoModelHint),
-                  sendEnabledColor: canSend,
-                ),
-              ],
+                  // Lower layer: the button toolbar.
+                  _InputButtonToolbar(
+                    isDark: isDark,
+                    canSend: canSend,
+                    isStreaming: isStreaming,
+                    onSend: canSend
+                        ? _send
+                        : (modelReady ? null : _showNoModelHint),
+                    onToolsMenu: widget.onToolsMenu,
+                    onClearTopic: widget.onClearTopic,
+                    onToggleWebSearch: widget.onToggleWebSearch,
+                    onAddContent: widget.onAddContent,
+                    onToggleVoice: widget.onToggleVoice,
+                    webSearchActive: widget.webSearchActive,
+                    voiceActive: widget.voiceActive,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -137,85 +219,147 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
   }
 }
 
-/// The button toolbar below the composer (`ButtonToolbar`): a left cluster of
-/// feature buttons and a right-aligned send button, mirroring the original's
-/// space-between layout. Feature buttons stay disabled (later slices); the send
-/// button is wired to [onSend].
+/// The button toolbar below the composer (`ButtonToolbar.tsx`): a left cluster
+/// (`tools / clear / search`) and a right cluster (`upload / voice / send`) laid
+/// out space-between in a 36px-tall row.
 class _InputButtonToolbar extends StatelessWidget {
   const _InputButtonToolbar({
+    required this.isDark,
     required this.canSend,
+    required this.isStreaming,
     required this.onSend,
-    required this.sendEnabledColor,
+    required this.onToolsMenu,
+    required this.onClearTopic,
+    required this.onToggleWebSearch,
+    required this.onAddContent,
+    required this.onToggleVoice,
+    required this.webSearchActive,
+    required this.voiceActive,
   });
 
+  final bool isDark;
   final bool canSend;
+  final bool isStreaming;
   final VoidCallback? onSend;
-  final bool sendEnabledColor;
+  final VoidCallback? onToolsMenu;
+  final VoidCallback? onClearTopic;
+  final VoidCallback? onToggleWebSearch;
+  final VoidCallback? onAddContent;
+  final VoidCallback? onToggleVoice;
+  final bool webSearchActive;
+  final bool voiceActive;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // iconColor = isDarkMode ? '#ffffff' : '#000000' → the on-surface role.
+    final iconColor = theme.colorScheme.onSurface;
+    final sendColor = canSend
+        ? (isDark ? _sendGreenDark : _sendGreenLight)
+        : (isDark ? _disabledDark : _disabledLight);
 
-    return IconButtonTheme(
-      data: IconButtonThemeData(
-        style: IconButton.styleFrom(
-          foregroundColor: theme.colorScheme.onSurfaceVariant,
-          visualDensity: VisualDensity.compact,
-          padding: const EdgeInsets.all(6),
-          iconSize: 22,
-        ),
-      ),
+    return SizedBox(
+      height: 36,
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Feature buttons scroll horizontally so the row never overflows on
-          // narrow screens.
-          const Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.public),
-                    tooltip: _webSearchTooltip,
-                    onPressed: null,
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.build),
-                    tooltip: _mcpToolsTooltip,
-                    onPressed: null,
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.menu_book),
-                    tooltip: _knowledgeTooltip,
-                    onPressed: null,
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.image),
-                    tooltip: _imageTooltip,
-                    onPressed: null,
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.mic),
-                    tooltip: _voiceTooltip,
-                    onPressed: null,
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.swap_horiz),
-                    tooltip: _multiModelTooltip,
-                    onPressed: null,
-                  ),
-                ],
+          // Left cluster: tools / clear / search.
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _ToolbarButton(
+                icon: _svg(_settingsPanelIcon, iconColor),
+                tooltip: _toolsTooltip,
+                onPressed: onToolsMenu,
               ),
-            ),
+              _ToolbarButton(
+                icon: Icon(LucideIcons.trash2, size: 20, color: iconColor),
+                tooltip: _clearTooltip,
+                onPressed: onClearTopic,
+              ),
+              _ToolbarButton(
+                icon: _svg(
+                  _searchIcon,
+                  webSearchActive ? _webSearchActiveBlue : iconColor,
+                ),
+                tooltip: _webSearchTooltip,
+                active: webSearchActive,
+                onPressed: onToggleWebSearch,
+              ),
+            ],
           ),
-          IconButton(
-            icon: const Icon(Icons.send),
-            tooltip: _sendTooltip,
-            color: sendEnabledColor ? theme.colorScheme.primary : null,
-            onPressed: onSend,
+          // Right cluster: upload / voice / send.
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _ToolbarButton(
+                icon: Icon(LucideIcons.plus, size: 20, color: iconColor),
+                tooltip: _addContentTooltip,
+                onPressed: onAddContent,
+              ),
+              _ToolbarButton(
+                icon: Icon(
+                  voiceActive ? LucideIcons.keyboard : LucideIcons.mic,
+                  size: 20,
+                  color: voiceActive ? _activeRed : iconColor,
+                ),
+                tooltip: _voiceTooltip,
+                active: voiceActive,
+                onPressed: onToggleVoice,
+              ),
+              _ToolbarButton(
+                icon: Icon(
+                  isStreaming ? LucideIcons.square : LucideIcons.send,
+                  size: 18,
+                  color: isStreaming ? _stopRed : sendColor,
+                ),
+                tooltip: isStreaming ? _stopTooltip : _sendTooltip,
+                // Stopping a stream is a later slice; during streaming the
+                // button shows the stop glyph but does not act.
+                onPressed: isStreaming ? null : onSend,
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 }
+
+/// A single toolbar icon button mirroring the original's `IconButton`
+/// (`size="medium"`, `padding: 6px`, active background `rgba(59,130,246,0.1)`).
+class _ToolbarButton extends StatelessWidget {
+  const _ToolbarButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    this.active = false,
+  });
+
+  final Widget icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      icon: icon,
+      tooltip: tooltip,
+      onPressed: onPressed,
+      padding: const EdgeInsets.all(6),
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      style: active ? IconButton.styleFrom(backgroundColor: _activeTint) : null,
+    );
+  }
+}
+
+/// Renders a bespoke (non-lucide) SVG glyph tinted to [color], matching the
+/// original `CustomIcon` fill behavior.
+Widget _svg(String asset, Color color, {double size = 20}) => SvgPicture.asset(
+  asset,
+  width: size,
+  height: size,
+  colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+);
