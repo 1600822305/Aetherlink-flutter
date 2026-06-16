@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/app/theme/app_theme.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/default_model_settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/add_provider_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/settings_page.dart';
 import 'package:aetherlink_flutter/features/theming/application/default_theme_spec.dart';
 
@@ -66,21 +67,25 @@ void main() {
     expect(find.byIcon(LucideIcons.gripVertical), findsNothing);
   });
 
-  testWidgets('data/navigation controls carry no tap handler', (tester) async {
+  testWidgets('only 添加模型服务商 carries a tap handler', (tester) async {
     await pumpPage(tester);
 
-    // The header actions and 推荐操作 rows render at full visual fidelity but
-    // are non-functional this milestone: nothing on the page is ink-tappable
-    // (the back button is an IconButton/InkResponse, not an InkWell).
-    expect(find.byType(InkWell), findsNothing);
-
-    for (final label in const ['批量删除', '添加', '辅助模型设置', '模型选择器样式', '添加模型服务商']) {
+    // Every still-unwired control renders at full visual fidelity but is
+    // non-functional this milestone (the back button is an
+    // IconButton/InkResponse, not an InkWell).
+    for (final label in const ['批量删除', '添加', '辅助模型设置', '模型选择器样式']) {
       expect(
         find.ancestor(of: find.text(label), matching: find.byType(InkWell)),
         findsNothing,
         reason: '$label should not be tappable',
       );
     }
+
+    // 添加模型服务商 is the one wired entry: it navigates to AddProviderPage.
+    expect(
+      find.ancestor(of: find.text('添加模型服务商'), matching: find.byType(InkWell)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('back button returns to the settings hub', (tester) async {
@@ -137,5 +142,33 @@ void main() {
 
     expect(find.byType(DefaultModelSettingsPage), findsOneWidget);
     expect(find.text('模型设置'), findsOneWidget);
+  });
+
+  testWidgets('添加模型服务商 row navigates to AddProviderPage', (tester) async {
+    useTallSurface(tester);
+    final router = AppRouter.create();
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          currentTopicProvider.overrideWith((ref) => null),
+          chatMessagesProvider.overrideWith((ref) => const <Message>[]),
+        ],
+        child: MaterialApp.router(
+          theme: AppTheme.light(defaultThemeSpec),
+          routerConfig: router,
+        ),
+      ),
+    );
+
+    router.go(AppRouter.defaultModelPath);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('添加模型服务商'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AddProviderPage), findsOneWidget);
+    expect(find.text('添加提供商'), findsOneWidget);
   });
 }
