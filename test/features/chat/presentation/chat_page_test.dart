@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/core/database/app_database.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/data/repositories/chat_repository_impl.dart';
@@ -36,6 +37,9 @@ void main() {
         overrides: [
           appDatabaseProvider.overrideWith((ref) => db),
           debugChatSeedProvider.overrideWith((ref) async {}),
+          // No model configured: avoids opening the models DB (which needs a
+          // platform path) and exercises the composer's disabled-send path.
+          appCurrentModelProvider.overrideWith((ref) async => null),
         ],
         child: const MaterialApp(home: ChatPage()),
       ),
@@ -45,7 +49,7 @@ void main() {
 
   testWidgets(
     'ChatPage shows the empty state from an empty repository, with input '
-    'enabled and send disabled',
+    'enabled and send not yet sendable (no model)',
     (tester) async {
       await pumpChatPage(tester);
 
@@ -62,22 +66,23 @@ void main() {
       await tester.enterText(find.byType(TextField), '你好');
       expect(find.text('你好'), findsOneWidget);
 
-      // ...but sending is disabled this milestone.
-      final sendButton = tester.widget<IconButton>(
-        find.widgetWithIcon(IconButton, Icons.send),
-      );
-      expect(sendButton.onPressed, isNull);
+      // ...but with no model configured a tap surfaces the hint instead of
+      // sending: the button handles taps but does not send.
+      await tester.tap(find.widgetWithIcon(IconButton, Icons.send));
+      await tester.pump();
+      expect(find.text('请先配置模型'), findsOneWidget);
     },
   );
 
   testWidgets(
-    'Top bar shows the disabled model-selector placeholder, with settings now '
-    'wired to the settings hub',
+    'Top bar shows the model-selector placeholder, both it and settings now '
+    'wired',
     (tester) async {
       await pumpChatPage(tester);
 
-      // Model selector ("full" style) shows the disabled "未配置模型"
-      // placeholder — never a fabricated model name.
+      // Model selector ("full" style) shows the "未配置模型" placeholder while no
+      // model is configured — never a fabricated model name. It is now wired:
+      // tapping it opens the model-settings page, so it is enabled.
       expect(find.text('未配置模型'), findsOneWidget);
       final modelSelector = tester.widget<OutlinedButton>(
         find.ancestor(
@@ -85,7 +90,7 @@ void main() {
           matching: find.byType(OutlinedButton),
         ),
       );
-      expect(modelSelector.onPressed, isNull);
+      expect(modelSelector.onPressed, isNotNull);
 
       // Settings action is now wired (the settings hub exists) — it navigates
       // to `/settings`, so it is enabled.
@@ -97,23 +102,22 @@ void main() {
   );
 
   testWidgets(
-    'Input button toolbar restores each feature button, all present and '
-    'disabled',
+    'Input button toolbar restores each feature button; placeholders disabled, '
+    'send wired',
     (tester) async {
       await pumpChatPage(tester);
 
-      // The original default button set, restored as disabled placeholders.
-      const toolbarIcons = <IconData>[
+      // The feature buttons remain disabled placeholders (later slices).
+      const placeholderIcons = <IconData>[
         Icons.public, // 网络搜索
         Icons.build, // MCP 工具
         Icons.menu_book, // 知识库
         Icons.image, // 图片
         Icons.mic, // 语音
         Icons.swap_horiz, // 多模型
-        Icons.send, // 发送
       ];
 
-      for (final icon in toolbarIcons) {
+      for (final icon in placeholderIcons) {
         final finder = find.widgetWithIcon(IconButton, icon);
         expect(finder, findsOneWidget, reason: 'missing toolbar icon $icon');
         expect(
@@ -122,6 +126,12 @@ void main() {
           reason: 'toolbar icon $icon should be disabled',
         );
       }
+
+      // Send is wired: with no model configured it stays greyed but a tap
+      // surfaces the "configure a model first" hint, so it handles taps.
+      final sendFinder = find.widgetWithIcon(IconButton, Icons.send);
+      expect(sendFinder, findsOneWidget);
+      expect(tester.widget<IconButton>(sendFinder).onPressed, isNotNull);
     },
   );
 

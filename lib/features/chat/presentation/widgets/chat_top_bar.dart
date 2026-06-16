@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 
@@ -15,9 +16,10 @@ const String _modelPlaceholderLabel = '未配置模型';
 /// (`DEFAULT_TOP_TOOLBAR_SETTINGS`): left = menu (drawer trigger) + topic name,
 /// right = model selector ("full" style) + settings.
 ///
-/// This round is appearance-only (M4.2.0b): the menu trigger opens the drawer,
-/// but the model selector and settings are unwired, disabled placeholders. No
-/// model is configured yet, so the selector shows a disabled "未配置模型"
+/// The menu trigger opens the drawer; settings and the model selector are wired
+/// (the selector opens the model-settings page, where the current chat model is
+/// chosen). The selector shows the current model's name once configured,
+/// otherwise the "未配置模型"
 /// placeholder — never a fabricated model name. The title is provider-driven
 /// ([currentTopicProvider]) and stays empty until a topic exists.
 class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
@@ -30,6 +32,8 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final topicAsync = ref.watch(currentTopicProvider);
+    final current = ref.watch(appCurrentModelProvider).value;
+    final modelLabel = current?.model.name ?? _modelPlaceholderLabel;
 
     // The original header is light and flat: `bg-paper` fill, `elevation 0`,
     // and a 1px bottom divider (ChatPageUI.tsx `baseStyles.appBar`). A bare
@@ -66,7 +70,10 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: OutlinedButton.icon(
-            onPressed: null,
+            // Tapping the selector opens the model-settings page, where the
+            // current chat model is chosen. It shows the selected model's name
+            // once configured, otherwise the "未配置模型" placeholder.
+            onPressed: () => context.push(AppRouter.defaultModelPath),
             style: OutlinedButton.styleFrom(
               foregroundColor: theme.colorScheme.onSurface,
               side: BorderSide(color: theme.dividerColor),
@@ -75,7 +82,7 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
               visualDensity: VisualDensity.compact,
             ),
             icon: const Icon(Icons.smart_toy_outlined, size: 18),
-            label: const Text(_modelPlaceholderLabel),
+            label: Text(modelLabel, overflow: TextOverflow.ellipsis),
           ),
         ),
         // Settings — now wired to the settings hub (`/settings`), pushed so

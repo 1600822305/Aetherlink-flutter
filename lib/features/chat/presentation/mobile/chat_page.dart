@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
-import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_message_bubble.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_sidebar.dart';
@@ -34,7 +34,7 @@ class ChatPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final messagesAsync = ref.watch(chatMessagesProvider);
+    final stateAsync = ref.watch(chatControllerProvider);
 
     return Scaffold(
       appBar: const ChatTopBar(),
@@ -48,7 +48,7 @@ class ChatPage extends ConsumerWidget {
           color: theme.colorScheme.surface,
           child: Column(
             children: [
-              Expanded(child: _MessageList(messagesAsync: messagesAsync)),
+              Expanded(child: _MessageList(stateAsync: stateAsync)),
               const ChatInputBar(),
             ],
           ),
@@ -62,17 +62,18 @@ class ChatPage extends ConsumerWidget {
 /// spinner, failure → error notice, empty → empty state, and a list of message
 /// bubbles otherwise.
 class _MessageList extends StatelessWidget {
-  const _MessageList({required this.messagesAsync});
+  const _MessageList({required this.stateAsync});
 
-  final AsyncValue<List<Message>> messagesAsync;
+  final AsyncValue<ChatState> stateAsync;
 
   @override
   Widget build(BuildContext context) {
-    return messagesAsync.when(
+    return stateAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, _) => const _ErrorNotice(),
-      data: (messages) =>
-          messages.isEmpty ? const _EmptyState() : _MessageListView(messages),
+      data: (state) => state.messages.isEmpty
+          ? const _EmptyState()
+          : _MessageListView(state.messages),
     );
   }
 }
@@ -130,15 +131,14 @@ class _ErrorNotice extends StatelessWidget {
 class _MessageListView extends StatelessWidget {
   const _MessageListView(this.messages);
 
-  final List<Message> messages;
+  final List<ChatMessageView> messages;
 
   @override
   Widget build(BuildContext context) {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: messages.length,
-      itemBuilder: (context, index) =>
-          ChatMessageBubble(message: messages[index]),
+      itemBuilder: (context, index) => ChatMessageBubble(view: messages[index]),
     );
   }
 }
