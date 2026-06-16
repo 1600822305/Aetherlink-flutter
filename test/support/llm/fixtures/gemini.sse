@@ -1,0 +1,6 @@
+data: {"candidates":[{"content":{"role":"model","parts":[{"text":"让我先想想。","thought":true}]}}]}
+
+data: {"candidates":[{"content":{"role":"model","parts":[{"text":"你好"}]}}]}
+
+data: {"candidates":[{"content":{"role":"model","parts":[{"text":"，世界"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":3,"totalTokenCount":11}}
+
