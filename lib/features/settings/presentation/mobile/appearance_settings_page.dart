@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/settings/application/font_size_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/theme_mode_controller.dart';
 import 'package:aetherlink_flutter/features/settings/domain/app_theme_mode.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
@@ -16,11 +17,13 @@ import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_
 /// app's [ThemeModeController], so picking 浅色/深色/跟随系统 switches
 /// `MaterialApp.themeMode` live. Per the milestone scope, the third-level
 /// destinations are not built yet, so the "界面定制" rows render greyed and carry
-/// no navigation (置灰); the remaining controls (语言 / 全局字体大小 / 全局字体 /
-/// 添加本地字体 / 开发者工具 switches / import + share) render at full visual
-/// fidelity but are non-interactive, since their backing features
-/// (i18n / a global font-scale + persistence / custom-font infra / a perf
-/// monitor / appearance-config import-export) don't exist on Flutter yet.
+/// no navigation (置灰). The 全局字体大小 slider is also wired — it drives the
+/// app's [FontSizeController], so dragging it rescales every text style live
+/// (matching the original theme's `fontScale = fontSize / 16`). The remaining
+/// controls (语言 / 全局字体 / 添加本地字体 / 开发者工具 switches / import + share)
+/// render at full visual fidelity but are non-interactive, since their backing
+/// features (i18n / custom-font infra / a perf monitor / appearance-config
+/// import-export) don't exist on Flutter yet.
 ///
 /// To match the original pixel-for-pixel, the per-action avatar brand hues and
 /// the slider's `#9333EA → #754AB4` gradient are taken verbatim from the
@@ -35,6 +38,7 @@ class AppearanceSettingsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final mode = ref.watch(themeModeControllerProvider);
+    final fontSize = ref.watch(fontSizeControllerProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -96,6 +100,9 @@ class AppearanceSettingsPage extends ConsumerWidget {
             mode: mode,
             onModeChanged: (next) =>
                 ref.read(themeModeControllerProvider.notifier).use(next),
+            fontSize: fontSize,
+            onFontSizeChanged: (next) =>
+                ref.read(fontSizeControllerProvider.notifier).use(next),
           ),
           const SizedBox(height: 16), // original card `mb: 2`
           const _CustomizationCard(),
@@ -202,10 +209,17 @@ class _CardHeader extends StatelessWidget {
 /// The "主题和字体" card: theme + language selects, the global font-size slider
 /// and the font-family field. Only the theme select is wired this milestone.
 class _ThemeAndFontCard extends StatelessWidget {
-  const _ThemeAndFontCard({required this.mode, required this.onModeChanged});
+  const _ThemeAndFontCard({
+    required this.mode,
+    required this.onModeChanged,
+    required this.fontSize,
+    required this.onFontSizeChanged,
+  });
 
   final AppThemeMode mode;
   final ValueChanged<AppThemeMode> onModeChanged;
+  final int fontSize;
+  final ValueChanged<int> onFontSizeChanged;
 
   static const String _title = '主题和字体';
   static const String _description = '自定义应用的外观主题和全局字体大小设置';
@@ -257,10 +271,12 @@ class _ThemeAndFontCard extends StatelessWidget {
                   helper: _languageHelper,
                 ),
                 const SizedBox(height: 24),
-                // 全局字体大小 — static preview (no global font-scale yet).
-                const _FontSizeSection(
+                // 全局字体大小 — wired: drives the app-wide text scale.
+                _FontSizeSection(
                   label: _fontSizeLabel,
                   helper: _fontSizeHelper,
+                  value: fontSize,
+                  onChanged: onFontSizeChanged,
                 ),
                 const SizedBox(height: 16), // original `mb: 2`
                 // 全局字体 + 添加本地字体 — static (font selector sub-page /
@@ -411,16 +427,23 @@ InputDecoration _selectDecoration(
 }
 
 /// The 全局字体大小 section: a label + value chip row over the gradient preset
-/// slider and a helper line. The slider is a static preview (no global
-/// font-scale setting exists yet).
+/// slider and a helper line. Wired to [onChanged] — dragging the slider sets
+/// the global font size, which the app shell folds into the active theme's
+/// text scale.
 class _FontSizeSection extends StatelessWidget {
-  const _FontSizeSection({required this.label, required this.helper});
+  const _FontSizeSection({
+    required this.label,
+    required this.helper,
+    required this.value,
+    required this.onChanged,
+  });
 
   final String label;
   final String helper;
+  final int value;
+  final ValueChanged<int> onChanged;
 
-  // The original defaults `fontSize` to 16 (`defaults.ts`).
-  static const int _currentSize = 16;
+  // The original slider bounds (`min={12} max={24}`).
   static const int _min = 12;
   static const int _max = 24;
 
@@ -434,8 +457,17 @@ class _FontSizeSection extends StatelessWidget {
     (24, '超大'),
   ];
 
-  static String _labelFor(int size) =>
-      _presets.firstWhere((p) => p.$1 == size).$2;
+  // The original `custom` label, shown for any value off a preset.
+  static const String _customLabel = '自定义';
+
+  // Mirrors the original `getCurrentFontSizeLabel`: the preset label if [size]
+  // matches one, else 自定义.
+  static String _labelFor(int size) {
+    for (final (v, label) in _presets) {
+      if (v == size) return label;
+    }
+    return _customLabel;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -458,17 +490,16 @@ class _FontSizeSection extends StatelessWidget {
                 color: theme.colorScheme.onSurface,
               ),
             ),
-            _FontSizeChip(
-              label: '${_currentSize}px (${_labelFor(_currentSize)})',
-            ),
+            _FontSizeChip(label: '${value}px (${_labelFor(value)})'),
           ],
         ),
         const SizedBox(height: 16), // original `mb: 2` between row and slider
-        const _PresetSlider(
-          value: _currentSize,
+        _PresetSlider(
+          value: value,
           min: _min,
           max: _max,
           presets: _presets,
+          onChanged: onChanged,
         ),
         const SizedBox(height: 8), // original helper `mt: 1`
         Text(
@@ -514,22 +545,28 @@ class _FontSizeChip extends StatelessWidget {
   }
 }
 
-/// A static reproduction of the original preset `Slider`: a 0.3-opacity primary
-/// rail, a `#9333EA → #754AB4` gradient active track up to the current value, a
-/// solid primary thumb and slate preset marks with `text.secondary` 10.4px
-/// labels. Non-interactive (no global font-scale setting exists yet).
+/// A reproduction of the original preset `Slider`: a 0.3-opacity primary rail, a
+/// `#9333EA → #754AB4` gradient active track up to the current value, a solid
+/// primary thumb and slate preset marks with `text.secondary` 10.4px labels.
+///
+/// When [onChanged] is non-null the whole track row is draggable/tappable (any
+/// integer step in `[min, max]`, like the original `step={1}`); the value is
+/// derived from the touch x-position. A null [onChanged] renders it as a static
+/// preview.
 class _PresetSlider extends StatelessWidget {
   const _PresetSlider({
     required this.value,
     required this.min,
     required this.max,
     required this.presets,
+    this.onChanged,
   });
 
   final int value;
   final int min;
   final int max;
   final List<(int, String)> presets;
+  final ValueChanged<int>? onChanged;
 
   // The original `MuiSlider-track` gradient.
   static const Color _gradientStart = Color(0xFF9333EA);
@@ -548,73 +585,95 @@ class _PresetSlider extends StatelessWidget {
     final thumbColor = theme.colorScheme.primary;
     final activeFraction = _fraction(value);
 
+    final cb = onChanged;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
 
+        // Map a touch x-position to the nearest integer step (original
+        // `step={1}`) and report it if it changed.
+        void emit(double dx) {
+          if (cb == null || width <= 0) return;
+          final fraction = (dx / width).clamp(0.0, 1.0);
+          final next = (min + fraction * (max - min)).round();
+          if (next != value) cb(next);
+        }
+
+        final track = SizedBox(
+          height: _trackRowHeight,
+          width: width,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // Rail (full width).
+              Positioned(
+                left: 0,
+                right: 0,
+                top: (_trackRowHeight - _railHeight) / 2,
+                child: Container(
+                  height: _railHeight,
+                  decoration: BoxDecoration(
+                    color: railColor,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              // Active gradient track (0 → current value).
+              Positioned(
+                left: 0,
+                top: (_trackRowHeight - _railHeight) / 2,
+                child: Container(
+                  width: width * activeFraction,
+                  height: _railHeight,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [_gradientStart, _gradientEnd],
+                    ),
+                    borderRadius: BorderRadius.all(Radius.circular(2)),
+                  ),
+                ),
+              ),
+              // Preset marks (2x8 slate ticks).
+              for (final (v, _) in presets)
+                Positioned(
+                  left: (width * _fraction(v) - 1).clamp(0.0, width - 2),
+                  top: (_trackRowHeight - 8) / 2,
+                  child: Container(width: 2, height: 8, color: thumbColor),
+                ),
+              // Thumb.
+              Positioned(
+                left: (width * activeFraction - _thumbSize / 2).clamp(
+                  0.0,
+                  width - _thumbSize,
+                ),
+                top: (_trackRowHeight - _thumbSize) / 2,
+                child: Container(
+                  width: _thumbSize,
+                  height: _thumbSize,
+                  decoration: BoxDecoration(
+                    color: thumbColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(
-              height: _trackRowHeight,
-              width: width,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  // Rail (full width).
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    top: (_trackRowHeight - _railHeight) / 2,
-                    child: Container(
-                      height: _railHeight,
-                      decoration: BoxDecoration(
-                        color: railColor,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  // Active gradient track (0 → current value).
-                  Positioned(
-                    left: 0,
-                    top: (_trackRowHeight - _railHeight) / 2,
-                    child: Container(
-                      width: width * activeFraction,
-                      height: _railHeight,
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [_gradientStart, _gradientEnd],
-                        ),
-                        borderRadius: BorderRadius.all(Radius.circular(2)),
-                      ),
-                    ),
-                  ),
-                  // Preset marks (2x8 slate ticks).
-                  for (final (v, _) in presets)
-                    Positioned(
-                      left: (width * _fraction(v) - 1).clamp(0.0, width - 2),
-                      top: (_trackRowHeight - 8) / 2,
-                      child: Container(width: 2, height: 8, color: thumbColor),
-                    ),
-                  // Thumb.
-                  Positioned(
-                    left: (width * activeFraction - _thumbSize / 2).clamp(
-                      0.0,
-                      width - _thumbSize,
-                    ),
-                    top: (_trackRowHeight - _thumbSize) / 2,
-                    child: Container(
-                      width: _thumbSize,
-                      height: _thumbSize,
-                      decoration: BoxDecoration(
-                        color: thumbColor,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-                ],
+            if (cb == null)
+              track
+            else
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapDown: (d) => emit(d.localPosition.dx),
+                onHorizontalDragStart: (d) => emit(d.localPosition.dx),
+                onHorizontalDragUpdate: (d) => emit(d.localPosition.dx),
+                child: track,
               ),
-            ),
             const SizedBox(height: 8),
             // Preset labels, centered under their marks (the ends align to the
             // track edges, matching the original's `translateX(-50%)` clamped at
