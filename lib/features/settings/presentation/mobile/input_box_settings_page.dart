@@ -491,7 +491,8 @@ enum _ButtonArea { left, right, available }
 /// right / available) with cross-area drag, in-list reordering (drop a button
 /// onto another to insert before it) and an eye toggle to show/hide a button.
 ///
-/// Built on Flutter's own [Draggable] / [DragTarget] (no extra dependency).
+/// Built on Flutter's own [LongPressDraggable] / [DragTarget] (no extra
+/// dependency); a long press starts the drag to avoid accidental moves.
 class _DraggableButtonConfig extends StatelessWidget {
   const _DraggableButtonConfig({
     required this.settings,
@@ -843,7 +844,9 @@ class _DraggableButton extends StatelessWidget {
       onToggleVisibility: onToggleVisibility,
     );
 
-    final draggable = Draggable<InputBoxButtonId>(
+    // Long-press (not an immediate pan) starts the drag, so a tap or a scroll
+    // over the tile no longer accidentally moves/removes a button.
+    final draggable = LongPressDraggable<InputBoxButtonId>(
       data: id,
       dragAnchorStrategy: childDragAnchorStrategy,
       feedback: Transform.rotate(
