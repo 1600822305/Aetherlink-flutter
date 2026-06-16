@@ -340,6 +340,71 @@ final class AppModelCatalogProvider
 
 String _$appModelCatalogHash() => r'2642aa6fc0ca2550261234a54f941eb5ffe76f3a';
 
+/// The LLM gateway factory for the settings 测试模式 (per-model connectivity
+/// test). Re-exposed from `chat`'s composed factory so the settings UI can run
+/// a one-shot `streamChat` through the pure-Dart port without importing `chat`'s
+/// `application` directly (the import-boundary rule only constrains
+/// feature↔feature edges — `app/` is the composition root).
+
+@ProviderFor(appLlmGatewayFactory)
+final appLlmGatewayFactoryProvider = AppLlmGatewayFactoryProvider._();
+
+/// The LLM gateway factory for the settings 测试模式 (per-model connectivity
+/// test). Re-exposed from `chat`'s composed factory so the settings UI can run
+/// a one-shot `streamChat` through the pure-Dart port without importing `chat`'s
+/// `application` directly (the import-boundary rule only constrains
+/// feature↔feature edges — `app/` is the composition root).
+
+final class AppLlmGatewayFactoryProvider
+    extends
+        $FunctionalProvider<
+          LlmGatewayFactory,
+          LlmGatewayFactory,
+          LlmGatewayFactory
+        >
+    with $Provider<LlmGatewayFactory> {
+  /// The LLM gateway factory for the settings 测试模式 (per-model connectivity
+  /// test). Re-exposed from `chat`'s composed factory so the settings UI can run
+  /// a one-shot `streamChat` through the pure-Dart port without importing `chat`'s
+  /// `application` directly (the import-boundary rule only constrains
+  /// feature↔feature edges — `app/` is the composition root).
+  AppLlmGatewayFactoryProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'appLlmGatewayFactoryProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$appLlmGatewayFactoryHash();
+
+  @$internal
+  @override
+  $ProviderElement<LlmGatewayFactory> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
+
+  @override
+  LlmGatewayFactory create(Ref ref) {
+    return appLlmGatewayFactory(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(LlmGatewayFactory value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<LlmGatewayFactory>(value),
+    );
+  }
+}
+
+String _$appLlmGatewayFactoryHash() =>
+    r'275e14e3575e35c5ca63e825f60b2088ce45c161';
+
 /// Write API over the model store for the settings UI. Every mutation persists
 /// through the [ModelRepository] port and then invalidates
 /// [appModelProviders] so the lists and the current-model selection refresh.

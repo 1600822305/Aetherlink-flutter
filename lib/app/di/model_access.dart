@@ -1,6 +1,8 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/model_catalog.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway_factory.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_model_catalog.dart';
 import 'package:aetherlink_flutter/features/models/application/model_providers.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
@@ -62,6 +64,15 @@ Future<CurrentModel?> appCurrentModel(Ref ref) async {
 /// fake catalog.
 @Riverpod(keepAlive: true)
 LlmModelCatalog appModelCatalog(Ref ref) => LlmModelCatalogImpl();
+
+/// The LLM gateway factory for the settings 测试模式 (per-model connectivity
+/// test). Re-exposed from `chat`'s composed factory so the settings UI can run
+/// a one-shot `streamChat` through the pure-Dart port without importing `chat`'s
+/// `application` directly (the import-boundary rule only constrains
+/// feature↔feature edges — `app/` is the composition root).
+@Riverpod(keepAlive: true)
+LlmGatewayFactory appLlmGatewayFactory(Ref ref) =>
+    ref.watch(llmGatewayFactoryProvider);
 
 /// Write API over the model store for the settings UI. Every mutation persists
 /// through the [ModelRepository] port and then invalidates

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,37 +7,35 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_model_catalog.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/provider_config_utils.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
+import 'package:aetherlink_flutter/shared/utils/provider_icons.dart';
 
-/// The 供应商详情 hub third-level page, a 1:1 reproduction of
-/// `src/pages/Settings/ModelProviders/index.tsx`.
+/// The 供应商详情 third-level page — a style-aligned (not pixel-1:1) port of
+/// `src/pages/Settings/ModelProviders/index.tsx`, reusing the PR #44 design
+/// system. The long original scroll is split into a top **Tab (配置 / 模型)**:
 ///
-/// Reads the persisted provider by [providerId] and renders its API config and
-/// model list. The 密钥 / 基础URL inputs persist through the model store (保存
-/// in the app bar); each model row can be tapped to edit, deleted, or selected
-/// as the app-level current chat model. 「配置高级参数」 hops to the advanced page.
+///  * AppBar: dynamic provider name + 启用 switch + 保存.
+///  * Tab 配置: header block (avatar + name + `{type} API` + edit/delete),
+///    single/multi-key mode, key input, multi-key entry point, base-URL
+///    completion preview, Responses-API toggle (即将支持) and the advanced-API
+///    entry point.
+///  * Tab 模型: 测试模式 toggle + 长期显示测试按钮, search, the 自动获取 / 自定义端点 /
+///    手动添加 tool row and the grouped model list (edit / delete / test per
+///    row, 2-step group delete).
+///
+/// CORS-plugin features are intentionally dropped (no CORS concern on Flutter).
 class ModelProviderDetailPage extends ConsumerStatefulWidget {
   const ModelProviderDetailPage({super.key, required this.providerId});
 
   final String providerId;
-
-  static const String _title = '模型供应商';
-  static const String _apiConfigTitle = 'API配置';
-  static const String _apiKeyLabel = 'API密钥';
-  static const String _apiKeyHint = '输入API密钥';
-  static const String _baseUrlLabel = '基础URL (可选)';
-  static const String _baseUrlHint = '输入基础URL，例如: https://tow.bt6.top';
-  static const String _baseUrlHelper = '在URL末尾添加#可强制使用自定义格式，末尾添加/也可保持原格式';
-  static const String _advancedLabel = '高级 API 配置';
-  static const String _advancedButton = '配置高级参数';
-  static const String _modelsTitle = '模型列表';
-  static const String _manualAddLabel = '添加';
-  static const String _fetchLabel = '获取';
-  static const String _noModels = '尚未添加任何模型';
-  static const String _saveLabel = '保存';
 
   @override
   ConsumerState<ModelProviderDetailPage> createState() =>
@@ -43,17 +43,37 @@ class ModelProviderDetailPage extends ConsumerStatefulWidget {
 }
 
 class _ModelProviderDetailPageState
-    extends ConsumerState<ModelProviderDetailPage> {
+    extends ConsumerState<ModelProviderDetailPage>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _baseUrlController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
+
   bool _obscureKey = true;
   bool _initialized = false;
   bool _fetching = false;
+  bool _isEnabled = false;
+  bool _useResponsesAPI = false;
+  bool _useMultiKey = false;
+  bool _testMode = false;
+  bool _alwaysShowTestButton = false;
+  String _search = '';
+  String? _testingModelId;
+  String? _groupPendingDelete;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
 
   @override
   void dispose() {
+    _tabController.dispose();
     _apiKeyController.dispose();
     _baseUrlController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -61,10 +81,13 @@ class _ModelProviderDetailPageState
     if (_initialized) return;
     _apiKeyController.text = provider.apiKey ?? '';
     _baseUrlController.text = provider.baseUrl ?? '';
+    _isEnabled = provider.isEnabled;
+    _useResponsesAPI = provider.useResponsesAPI ?? false;
+    _useMultiKey = provider.apiKeys?.isNotEmpty ?? false;
     _initialized = true;
   }
 
-  Future<void> _saveApiConfig(ModelProvider provider) async {
+  Future<void> _save(ModelProvider provider) async {
     final updated = provider.copyWith(
       apiKey: _apiKeyController.text.trim().isEmpty
           ? null
@@ -72,6 +95,8 @@ class _ModelProviderDetailPageState
       baseUrl: _baseUrlController.text.trim().isEmpty
           ? null
           : _baseUrlController.text.trim(),
+      isEnabled: _isEnabled,
+      useResponsesAPI: _useResponsesAPI,
     );
     await ref.read(modelStoreProvider.notifier).saveProvider(updated);
     if (!mounted) return;
@@ -82,7 +107,6 @@ class _ModelProviderDetailPageState
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final providerAsync = ref.watch(
       appModelProviderProvider(widget.providerId),
     );
@@ -91,66 +115,157 @@ class _ModelProviderDetailPageState
       data: (provider) {
         if (provider == null) {
           return const Scaffold(
-            appBar: ModelSettingsAppBar(title: ModelProviderDetailPage._title),
+            appBar: ModelSettingsAppBar(title: '模型供应商'),
             body: Center(child: Text('供应商不存在')),
           );
         }
         _seedFrom(provider);
-        return _buildContent(context, theme, provider);
+        return _buildContent(context, provider);
       },
       orElse: () => const Scaffold(
-        appBar: ModelSettingsAppBar(title: ModelProviderDetailPage._title),
+        appBar: ModelSettingsAppBar(title: '模型供应商'),
         body: Center(child: CircularProgressIndicator()),
       ),
     );
   }
 
-  Widget _buildContent(
-    BuildContext context,
-    ThemeData theme,
-    ModelProvider provider,
-  ) {
-    final currentAsync = ref.watch(appCurrentModelProvider);
-    final currentModelId = currentAsync.maybeWhen(
-      data: (current) => current != null && current.provider.id == provider.id
-          ? current.model.id
-          : null,
-      orElse: () => null,
-    );
+  Widget _buildContent(BuildContext context, ModelProvider provider) {
+    final theme = Theme.of(context);
 
     return Scaffold(
       appBar: ModelSettingsAppBar(
-        title: ModelProviderDetailPage._title,
+        title: provider.name.isEmpty ? '模型供应商' : provider.name,
         actions: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            child: ElevatedButton(
-              onPressed: () => _saveApiConfig(provider),
-              style: ElevatedButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+          Center(
+            child: Row(
+              children: [
+                Switch(
+                  value: _isEnabled,
+                  onChanged: (v) => setState(() => _isEnabled = v),
                 ),
-              ),
-              child: const Text(ModelProviderDetailPage._saveLabel),
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ModelTonalButton(
+                    label: '保存',
+                    onPressed: () => _save(provider),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+      body: Column(
         children: [
-          ModelSettingsCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              border: Border(bottom: BorderSide(color: theme.dividerColor)),
+            ),
+            child: TabBar(
+              controller: _tabController,
+              labelColor: theme.colorScheme.primary,
+              unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+              indicatorColor: theme.colorScheme.primary,
+              indicatorSize: TabBarIndicatorSize.label,
+              labelStyle: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+              tabs: const [
+                Tab(text: '配置'),
+                Tab(text: '模型'),
+              ],
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
               children: [
-                const ModelSectionTitle(
-                  ModelProviderDetailPage._apiConfigTitle,
+                _buildConfigTab(context, provider),
+                _buildModelsTab(context, provider),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tab 1 · 配置
+  // ---------------------------------------------------------------------------
+
+  Widget _buildConfigTab(BuildContext context, ModelProvider provider) {
+    final theme = Theme.of(context);
+    final isOpenAI = isOpenAIProvider(provider.providerType);
+    final keyCount = provider.apiKeys?.length ?? 0;
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _ProviderHeaderCard(
+          provider: provider,
+          typeLabel: _typeLabel(provider.providerType),
+          onEdit: provider.isSystem == true
+              ? null
+              : () => _editProvider(provider),
+          onDelete: provider.isSystem == true
+              ? null
+              : () => _confirmDelete(provider),
+        ),
+        const SizedBox(height: 16),
+        // API Key 卡片
+        ModelSettingsCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  const Expanded(child: ModelSectionTitle('API 密钥')),
+                  Tooltip(
+                    message: '开启后可配置多个 API Key 做负载均衡（调度即将支持）',
+                    child: Icon(
+                      LucideIcons.info,
+                      size: 16,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '多 Key',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Switch(
+                    value: _useMultiKey,
+                    onChanged: (v) => setState(() => _useMultiKey = v),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (_useMultiKey) ...[
+                ModelTonalButton(
+                  label: '管理多 Key（$keyCount 个密钥）',
+                  icon: LucideIcons.keyRound,
+                  onPressed: () =>
+                      context.push(AppRouter.multiKeyPath(provider.id)),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 8),
+                Text(
+                  '多 Key 可配置并持久化，调度（轮询/配额/故障转移）即将支持。',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ] else
                 ModelFormField(
-                  label: ModelProviderDetailPage._apiKeyLabel,
-                  hint: ModelProviderDetailPage._apiKeyHint,
+                  label: 'API 密钥',
+                  hint: '输入 API 密钥',
                   controller: _apiKeyController,
                   obscureText: _obscureKey,
                   suffixIcon: IconButton(
@@ -161,93 +276,293 @@ class _ModelProviderDetailPageState
                     onPressed: () => setState(() => _obscureKey = !_obscureKey),
                   ),
                 ),
-                const SizedBox(height: 24),
-                ModelFormField(
-                  label: ModelProviderDetailPage._baseUrlLabel,
-                  hint: ModelProviderDetailPage._baseUrlHint,
-                  helper: ModelProviderDetailPage._baseUrlHelper,
-                  controller: _baseUrlController,
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  ModelProviderDetailPage._advancedLabel,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: theme.colorScheme.onSurfaceVariant,
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        // 基础 URL 卡片
+        ModelSettingsCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ModelSectionTitle('基础 URL'),
+              const SizedBox(height: 16),
+              ModelFormField(
+                label: '基础 URL (可选)',
+                hint: '输入基础URL，例如: https://api.openai.com',
+                helper: '在URL末尾添加#可强制使用自定义格式，末尾添加/也可保持原格式',
+                controller: _baseUrlController,
+                onChanged: (_) => setState(() {}),
+              ),
+              if (isOpenAI && _baseUrlController.text.trim().isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _UrlPreview(
+                  url: getCompleteApiUrl(
+                    _baseUrlController.text,
+                    provider.providerType,
+                    useResponsesAPI: _useResponsesAPI,
                   ),
-                ),
-                const SizedBox(height: 6),
-                OutlinedButton.icon(
-                  onPressed: () =>
-                      context.push(AppRouter.advancedApiPath(provider.id)),
-                  icon: const Icon(LucideIcons.settings, size: 16),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: theme.colorScheme.secondary,
-                    side: BorderSide(
-                      color: theme.colorScheme.secondary.withValues(alpha: 0.5),
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                  ),
-                  label: const Text(ModelProviderDetailPage._advancedButton),
                 ),
               ],
-            ),
+            ],
           ),
-          const SizedBox(height: 24),
+        ),
+        const SizedBox(height: 16),
+        // Responses API（仅 OpenAI 类）
+        if (isOpenAI)
           ModelSettingsCard(
-            padding: const EdgeInsets.all(16),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
                   children: [
-                    const Expanded(
-                      child: ModelSectionTitle(
-                        ModelProviderDetailPage._modelsTitle,
-                      ),
-                    ),
-                    ModelTonalButton(
-                      label: ModelProviderDetailPage._fetchLabel,
-                      icon: LucideIcons.download,
-                      onPressed: _fetching
-                          ? null
-                          : () => _fetchModels(provider),
-                    ),
+                    const ModelSectionTitle('Responses API'),
                     const SizedBox(width: 8),
-                    ModelTonalButton(
-                      label: ModelProviderDetailPage._manualAddLabel,
-                      icon: LucideIcons.plus,
-                      onPressed: () =>
-                          context.push(AppRouter.editModelPath(provider.id)),
+                    const _ComingSoonChip(),
+                    const Spacer(),
+                    Switch(
+                      value: _useResponsesAPI,
+                      onChanged: (v) => setState(() => _useResponsesAPI = v),
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
-                if (provider.models.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: Center(
-                      child: Text(
-                        ModelProviderDetailPage._noModels,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                const SizedBox(height: 8),
+                Text(
+                  '使用 OpenAI 的 /responses 端点替代 /chat/completions。'
+                  '设置会保存，但请求层暂未接入（即将支持）。',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (isOpenAI) const SizedBox(height: 16),
+        // 高级 API 配置入口
+        ModelSettingsCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ModelSectionTitle('高级 API 配置'),
+              const SizedBox(height: 8),
+              Text(
+                '额外请求头与请求体（已接入聊天与模型获取，真实生效）。',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 12,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ModelTonalButton(
+                label: '配置高级参数',
+                icon: LucideIcons.settings,
+                accent: theme.colorScheme.secondary,
+                onPressed: () =>
+                    context.push(AppRouter.advancedApiPath(provider.id)),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tab 2 · 模型
+  // ---------------------------------------------------------------------------
+
+  Widget _buildModelsTab(BuildContext context, ModelProvider provider) {
+    final theme = Theme.of(context);
+    final currentAsync = ref.watch(appCurrentModelProvider);
+    final currentModelId = currentAsync.maybeWhen(
+      data: (current) => current != null && current.provider.id == provider.id
+          ? current.model.id
+          : null,
+      orElse: () => null,
+    );
+
+    final query = _search.trim().toLowerCase();
+    final filtered = query.isEmpty
+        ? provider.models
+        : [
+            for (final m in provider.models)
+              if (m.name.toLowerCase().contains(query) ||
+                  m.id.toLowerCase().contains(query))
+                m,
+          ];
+    final groups = groupModels<Model>(
+      filtered,
+      idOf: (m) => m.id,
+      groupOf: (m) => m.group,
+      providerId: provider.id,
+    );
+    final showTest = _testMode || _alwaysShowTestButton;
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // 测试模式
+        ModelSettingsCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: ModelTonalButton(
+                      label: _testMode ? '退出测试模式' : '测试模式',
+                      icon: LucideIcons.flaskConical,
+                      accent: _testMode ? theme.colorScheme.error : null,
+                      onPressed: () => setState(() => _testMode = !_testMode),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '长期显示测试按钮',
+                      style: theme.textTheme.bodyMedium?.copyWith(fontSize: 14),
+                    ),
+                  ),
+                  Switch(
+                    value: _alwaysShowTestButton,
+                    onChanged: (v) => setState(() => _alwaysShowTestButton = v),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        // 搜索框
+        TextField(
+          controller: _searchController,
+          onChanged: (v) => setState(() => _search = v),
+          style: theme.textTheme.bodyMedium?.copyWith(fontSize: 14),
+          decoration: InputDecoration(
+            isDense: true,
+            hintText: '搜索模型',
+            prefixIcon: const Icon(LucideIcons.search, size: 18),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
+            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: theme.dividerColor),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        // 工具行
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ModelTonalButton(
+              label: '自动获取',
+              icon: LucideIcons.download,
+              onPressed: _fetching ? null : () => _fetchModels(provider),
+            ),
+            ModelTonalButton(
+              label: '自定义端点',
+              icon: LucideIcons.link,
+              accent: theme.colorScheme.secondary,
+              onPressed: _fetching ? null : () => _customEndpoint(provider),
+            ),
+            ModelTonalButton(
+              label: '手动添加',
+              icon: LucideIcons.plus,
+              onPressed: () =>
+                  context.push(AppRouter.editModelPath(provider.id)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        // 分组模型列表
+        if (provider.models.isEmpty)
+          ModelSettingsCard(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text(
+                  '尚未添加任何模型',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          )
+        else if (groups.isEmpty)
+          ModelSettingsCard(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text(
+                  '没有匹配「$_search」的模型',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          )
+        else
+          for (final (groupName, models) in groups) ...[
+            ModelSettingsCard(
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '$groupName (${models.length})',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
-                    ),
-                  )
-                else
-                  for (final model in provider.models)
+                      TextButton.icon(
+                        onPressed: () => _deleteGroup(provider, models),
+                        icon: Icon(
+                          _groupPendingDelete == groupName
+                              ? LucideIcons.check
+                              : LucideIcons.trash2,
+                          size: 14,
+                        ),
+                        style: TextButton.styleFrom(
+                          foregroundColor: theme.colorScheme.error,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        label: Text(
+                          _groupPendingDelete == groupName ? '确认删除整组' : '删除整组',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 8),
+                  for (final model in models)
                     _ModelRow(
                       model: model,
                       isCurrent: model.id == currentModelId,
+                      showTest: showTest,
+                      testing: _testingModelId == model.id,
+                      testDisabled: _testingModelId != null,
                       onTap: () => context.push(
                         AppRouter.editModelPath(provider.id, modelId: model.id),
                       ),
@@ -257,24 +572,94 @@ class _ModelProviderDetailPageState
                             providerId: provider.id,
                             modelId: model.id,
                           ),
+                      onTest: () => _testModel(provider, model),
                       onDelete: () => _deleteModel(provider, model.id),
                     ),
-              ],
+                ],
+              ),
             ),
+            const SizedBox(height: 16),
+          ],
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Actions
+  // ---------------------------------------------------------------------------
+
+  String _typeLabel(String? type) {
+    for (final option in providerTypeOptions) {
+      if (option.$1 == type) return option.$2;
+    }
+    return (type == null || type.isEmpty) ? '自定义' : type;
+  }
+
+  Future<void> _editProvider(ModelProvider provider) async {
+    final result = await showDialog<(String, String?)>(
+      context: context,
+      builder: (_) => _EditProviderDialog(provider: provider),
+    );
+    if (result == null) return;
+    final (name, type) = result;
+    await ref
+        .read(modelStoreProvider.notifier)
+        .saveProvider(provider.copyWith(name: name, providerType: type));
+  }
+
+  Future<void> _confirmDelete(ModelProvider provider) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          '删除供应商',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: Theme.of(ctx).colorScheme.error,
+          ),
+        ),
+        content: Text('确定要删除「${provider.name}」吗？此操作不可恢复。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('删除'),
           ),
         ],
       ),
     );
+    if (confirmed != true) return;
+    await ref.read(modelStoreProvider.notifier).deleteProvider(provider.id);
+    if (!mounted) return;
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go(AppRouter.defaultModelPath);
+    }
   }
 
-  /// Fetches the provider's catalog (`自动获取模型`) using the API key / base URL
-  /// currently in the form (so it works before 保存), lets the user pick which
-  /// models to add, then persists them onto the provider.
-  Future<void> _fetchModels(ModelProvider provider) async {
+  /// Fetches the provider's catalog (`自动获取模型`) using the form's current key /
+  /// base URL (so it works before 保存), lets the user pick models, then
+  /// persists them. [endpointOverride] supplies the 自定义端点 base URL.
+  Future<void> _fetchModels(
+    ModelProvider provider, {
+    String? endpointOverride,
+  }) async {
     if (_fetching) return;
     setState(() => _fetching = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
+      final baseUrl = endpointOverride?.trim().isNotEmpty == true
+          ? endpointOverride!.trim()
+          : (_baseUrlController.text.trim().isEmpty
+                ? null
+                : _baseUrlController.text.trim());
       final catalog = ref.read(appModelCatalogProvider);
       final fetched = await catalog.listModels(
         LlmModelQuery(
@@ -282,9 +667,7 @@ class _ModelProviderDetailPageState
           apiKey: _apiKeyController.text.trim().isEmpty
               ? null
               : _apiKeyController.text.trim(),
-          baseUrl: _baseUrlController.text.trim().isEmpty
-              ? null
-              : _baseUrlController.text.trim(),
+          baseUrl: baseUrl,
           extraHeaders: provider.extraHeaders,
         ),
       );
@@ -331,33 +714,351 @@ class _ModelProviderDetailPageState
     }
   }
 
-  Future<void> _deleteModel(ModelProvider provider, String modelId) async {
-    final updated = provider.copyWith(
-      models: [
-        for (final m in provider.models)
-          if (m.id != modelId) m,
-      ],
+  Future<void> _customEndpoint(ModelProvider provider) async {
+    final controller = TextEditingController(
+      text: _baseUrlController.text.trim(),
     );
-    await ref.read(modelStoreProvider.notifier).saveProvider(updated);
+    final endpoint = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(
+          '自定义获取端点',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: '端点 URL',
+                hintText: 'https://api.example.com/v1',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '用于本次「获取模型」的基础 URL，不会修改已保存的基础 URL。',
+              style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                fontSize: 12,
+                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('获取'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (endpoint == null || endpoint.isEmpty) return;
+    await _fetchModels(provider, endpointOverride: endpoint);
+  }
+
+  /// One-shot connectivity test: streams a tiny "Hi" through the gateway and
+  /// reports success on the first event / done, or surfaces the transport
+  /// error. Uses the form's current key / base URL so it works before 保存.
+  Future<void> _testModel(ModelProvider provider, Model model) async {
+    if (_testingModelId != null) return;
+    setState(() => _testingModelId = model.id);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final testModel = model.copyWith(
+        apiKey: _apiKeyController.text.trim().isEmpty
+            ? provider.apiKey
+            : _apiKeyController.text.trim(),
+        baseUrl: _baseUrlController.text.trim().isEmpty
+            ? provider.baseUrl
+            : _baseUrlController.text.trim(),
+        providerType: provider.providerType ?? model.providerType,
+        extraHeaders: model.extraHeaders ?? provider.extraHeaders,
+        extraBody: model.extraBody ?? provider.extraBody,
+      );
+      final gateway = ref
+          .read(appLlmGatewayFactoryProvider)
+          .forModel(testModel);
+      final request = LlmChatRequest(
+        model: testModel,
+        messages: const [LlmMessage(role: MessageRole.user, content: 'Hi')],
+        maxTokens: 1,
+        extraHeaders: provider.extraHeaders,
+        extraBody: provider.extraBody,
+      );
+      var ok = false;
+      await for (final chunk
+          in gateway.streamChat(request).timeout(const Duration(seconds: 30))) {
+        if (chunk is LlmTextDelta ||
+            chunk is LlmReasoningDelta ||
+            chunk is LlmDone) {
+          ok = true;
+          break;
+        }
+      }
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(ok ? '测试成功：${model.name}' : '测试无响应')),
+      );
+    } on TimeoutException {
+      if (!mounted) return;
+      messenger.showSnackBar(const SnackBar(content: Text('测试超时')));
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('测试失败：$e')));
+    } finally {
+      if (mounted) setState(() => _testingModelId = null);
+    }
+  }
+
+  Future<void> _deleteModel(ModelProvider provider, String modelId) async {
+    await ref
+        .read(modelStoreProvider.notifier)
+        .saveProvider(
+          provider.copyWith(
+            models: [
+              for (final m in provider.models)
+                if (m.id != modelId) m,
+            ],
+          ),
+        );
+  }
+
+  /// 2-step group delete: the first tap arms [_groupPendingDelete]; a second tap
+  /// (on the same group) removes every model in it.
+  Future<void> _deleteGroup(ModelProvider provider, List<Model> models) async {
+    final names = groupModels<Model>(
+      [models.first],
+      idOf: (m) => m.id,
+      groupOf: (m) => m.group,
+      providerId: provider.id,
+    );
+    final groupName = names.first.$1;
+    if (_groupPendingDelete != groupName) {
+      setState(() => _groupPendingDelete = groupName);
+      return;
+    }
+    final ids = {for (final m in models) m.id};
+    await ref
+        .read(modelStoreProvider.notifier)
+        .saveProvider(
+          provider.copyWith(
+            models: [
+              for (final m in provider.models)
+                if (!ids.contains(m.id)) m,
+            ],
+          ),
+        );
+    if (mounted) setState(() => _groupPendingDelete = null);
   }
 }
 
-/// A single model row in the provider's model list: the model name, a
-/// current-selection radio (taps set it as the app's current chat model), an
-/// edit affordance (tapping the row) and a trailing delete.
+/// The header block of the 配置 Tab: a 56px brand avatar, the provider name, a
+/// `{type} API` subtitle and (for non-system providers) edit-name / delete
+/// icon buttons.
+class _ProviderHeaderCard extends StatelessWidget {
+  const _ProviderHeaderCard({
+    required this.provider,
+    required this.typeLabel,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final ModelProvider provider;
+  final String typeLabel;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final type = provider.providerType;
+    final assetPath = getProviderIcon(
+      (type != null && type.isNotEmpty) ? type : provider.id,
+      isDark: isDark,
+    );
+    final fallback = provider.name.isNotEmpty
+        ? provider.name.substring(0, 1).toUpperCase()
+        : '?';
+
+    return ModelSettingsCard(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            clipBehavior: Clip.antiAlias,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.transparent,
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0x0D000000),
+                  blurRadius: 6,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Image.asset(
+              assetPath,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stack) => Center(
+                child: Text(
+                  fallback,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  provider.name,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$typeLabel API',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 13,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (onEdit != null)
+            IconButton(
+              icon: const Icon(LucideIcons.pencil, size: 18),
+              color: theme.colorScheme.secondary,
+              tooltip: '编辑名称 / 类型',
+              onPressed: onEdit,
+            ),
+          if (onDelete != null)
+            IconButton(
+              icon: const Icon(LucideIcons.trash2, size: 18),
+              color: theme.colorScheme.error,
+              tooltip: '删除供应商',
+              onPressed: onDelete,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The base-URL completion preview — a tinted rounded line showing the full
+/// endpoint (`getCompleteApiUrl`).
+class _UrlPreview extends StatelessWidget {
+  const _UrlPreview({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: theme.colorScheme.primary.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '完整端点',
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: 11,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            url,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: 12,
+              fontFamily: 'monospace',
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small amber 「即将支持」 chip for not-yet-wired toggles.
+class _ComingSoonChip extends StatelessWidget {
+  const _ComingSoonChip();
+
+  @override
+  Widget build(BuildContext context) {
+    const accent = Color(0xFFED6C02); // MUI warning.main
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Text(
+        '即将支持',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: accent,
+        ),
+      ),
+    );
+  }
+}
+
+/// A single model row: a current-selection radio, the model name / id, an
+/// optional 测试 button (when test mode is on) and edit (row tap) / delete.
 class _ModelRow extends StatelessWidget {
   const _ModelRow({
     required this.model,
     required this.isCurrent,
+    required this.showTest,
+    required this.testing,
+    required this.testDisabled,
     required this.onTap,
     required this.onSelect,
+    required this.onTest,
     required this.onDelete,
   });
 
   final Model model;
   final bool isCurrent;
+  final bool showTest;
+  final bool testing;
+  final bool testDisabled;
   final VoidCallback onTap;
   final VoidCallback onSelect;
+  final VoidCallback onTest;
   final VoidCallback onDelete;
 
   @override
@@ -367,7 +1068,7 @@ class _ModelRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
           children: [
             IconButton(
@@ -389,7 +1090,7 @@ class _ModelRow extends StatelessWidget {
                   Text(
                     model.name,
                     style: theme.textTheme.bodyLarge?.copyWith(
-                      fontSize: 16,
+                      fontSize: 15,
                       color: theme.colorScheme.onSurface,
                     ),
                   ),
@@ -402,8 +1103,29 @@ class _ModelRow extends StatelessWidget {
                 ],
               ),
             ),
+            if (showTest)
+              IconButton(
+                icon: testing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(LucideIcons.circleCheckBig, size: 18),
+                color: theme.brightness == Brightness.dark
+                    ? const Color(0xFF66BB6A)
+                    : const Color(0xFF2E7D32),
+                tooltip: '测试连接',
+                onPressed: testDisabled ? null : onTest,
+              ),
             IconButton(
-              icon: const Icon(LucideIcons.trash2, size: 18),
+              icon: const Icon(LucideIcons.pencil, size: 16),
+              color: theme.colorScheme.secondary,
+              tooltip: '编辑',
+              onPressed: onTap,
+            ),
+            IconButton(
+              icon: const Icon(LucideIcons.trash2, size: 16),
               color: theme.colorScheme.error,
               tooltip: '删除',
               onPressed: onDelete,
@@ -411,6 +1133,91 @@ class _ModelRow extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The 编辑供应商 dialog (name + provider type). Pops `(name, type)` on save, or
+/// null on cancel. Mirrors the original `handleEditProviderName`.
+class _EditProviderDialog extends StatefulWidget {
+  const _EditProviderDialog({required this.provider});
+
+  final ModelProvider provider;
+
+  @override
+  State<_EditProviderDialog> createState() => _EditProviderDialogState();
+}
+
+class _EditProviderDialogState extends State<_EditProviderDialog> {
+  late final TextEditingController _name;
+  String? _type;
+
+  @override
+  void initState() {
+    super.initState();
+    _name = TextEditingController(text: widget.provider.name);
+    final stored = widget.provider.providerType;
+    _type = providerTypeOptions.any((o) => o.$1 == stored) ? stored : null;
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canSave = _name.text.trim().isNotEmpty;
+    return AlertDialog(
+      title: const Text('编辑供应商', style: TextStyle(fontWeight: FontWeight.w600)),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _name,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: '供应商名称',
+                hintText: '例如: 我的智谱AI',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              initialValue: _type,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: '供应商类型',
+                border: OutlineInputBorder(),
+              ),
+              items: [
+                for (final option in providerTypeOptions)
+                  DropdownMenuItem<String>(
+                    value: option.$1,
+                    child: Text(option.$2),
+                  ),
+              ],
+              onChanged: (value) => setState(() => _type = value),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: canSave
+              ? () => Navigator.of(context).pop((_name.text.trim(), _type))
+              : null,
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }
