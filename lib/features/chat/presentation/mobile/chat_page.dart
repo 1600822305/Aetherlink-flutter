@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aetherlink_flutter/app/di/chat_interface_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_message_bubble.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_sidebar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_top_bar.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/system_prompt_bubble.dart';
 
 /// Static UI strings. The original ran these through i18n; they are ported
 /// verbatim as constants per the M4.1 approach — wiring up i18n is a separate
@@ -35,6 +37,10 @@ class ChatPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final stateAsync = ref.watch(chatControllerProvider);
+    // 系统提示词气泡显隐响应 聊天界面设置 的开关（PR #71 的「系统提示词气泡」）。
+    final showSystemPromptBubble = ref.watch(
+      chatInterfaceSettingsProvider.select((s) => s.showSystemPromptBubble),
+    );
 
     return Scaffold(
       appBar: const ChatTopBar(),
@@ -48,6 +54,10 @@ class ChatPage extends ConsumerWidget {
           color: theme.colorScheme.surface,
           child: Column(
             children: [
+              if (showSystemPromptBubble) ...const [
+                SizedBox(height: 8),
+                SystemPromptBubble(),
+              ],
               Expanded(child: _MessageList(stateAsync: stateAsync)),
               const ChatInputBar(),
             ],
