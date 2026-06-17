@@ -1842,35 +1842,70 @@ Future<String?> _promptText(
   required String hint,
   String? initial,
 }) async {
-  final controller = TextEditingController(text: initial);
   final result = await showDialog<String>(
     context: context,
-    builder: (dialogContext) {
-      return AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: InputDecoration(hintText: hint),
-          onSubmitted: (v) => Navigator.of(dialogContext).pop(v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () =>
-                Navigator.of(dialogContext).pop(controller.text.trim()),
-            child: const Text('确定'),
-          ),
-        ],
-      );
-    },
+    builder: (dialogContext) =>
+        _PromptTextDialog(title: title, hint: hint, initial: initial),
   );
-  controller.dispose();
   if (result == null || result.isEmpty) return null;
   return result;
+}
+
+/// The single-field dialog backing [_promptText]. It owns the text field's
+/// [TextEditingController] so the controller lives exactly as long as the
+/// dialog element and is disposed by the framework when the route unmounts.
+class _PromptTextDialog extends StatefulWidget {
+  const _PromptTextDialog({
+    required this.title,
+    required this.hint,
+    this.initial,
+  });
+
+  final String title;
+  final String hint;
+  final String? initial;
+
+  @override
+  State<_PromptTextDialog> createState() => _PromptTextDialogState();
+}
+
+class _PromptTextDialogState extends State<_PromptTextDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initial);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: InputDecoration(hintText: widget.hint),
+        onSubmitted: (v) => Navigator.of(context).pop(v.trim()),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
+          child: const Text('确定'),
+        ),
+      ],
+    );
+  }
 }
 
 /// A destructive confirm dialog; returns `true` only when 确定 is pressed.
