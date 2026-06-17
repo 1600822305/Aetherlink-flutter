@@ -273,13 +273,20 @@ class Assistants extends _$Assistants {
     if (assistant != null) {
       await _repo.saveAssistant(assistant.copyWith(topicIds: const <String>[]));
     }
-    if (ref.read(currentAssistantProvider)?.id == assistantId) {
+    // Resolve "current" via [currentAssistantIdProvider], NOT the derived
+    // [currentAssistant] — the latter watches [assistantsProvider], so reading
+    // it from this notifier throws a CircularDependencyError that aborts the
+    // method before [_reload], leaving the UI stale (the 清空话题 lag bug).
+    final selectedId = ref.read(currentAssistantIdProvider);
+    await _reload();
+    // [Topics] watches [assistantsProvider], so [_reload] above rebuilds it,
+    // which refreshes the 话题数 / 话题列表 views.
+    final all = state.asData?.value ?? const <Assistant>[];
+    final effectiveCurrentId =
+        selectedId ?? (all.isEmpty ? null : all.first.id);
+    if (effectiveCurrentId == assistantId) {
       ref.read(currentTopicIdProvider.notifier).set(null);
     }
-    await _reload();
-    // The 话题数 / 话题列表 views watch [Topics], not [Assistants], so refresh it
-    // here too — otherwise they only update on the next indirect rebuild (lag).
-    await ref.read(topicsProvider.notifier).reloadFromStore();
   }
 }
 
@@ -300,11 +307,6 @@ class Topics extends _$Topics {
   Future<void> _reload() async {
     state = AsyncData<List<Topic>>(await _repo.getAllTopics());
   }
-
-  /// Re-reads topics from the store after an external mutation made by another
-  /// notifier (e.g. [Assistants.clearTopics]), so the dependent views update
-  /// immediately instead of waiting for an indirect rebuild.
-  Future<void> reloadFromStore() => _reload();
 
   List<Topic> _topicsOf(String assistantId, List<Topic> all) {
     final mine = all.where((t) => t.assistantId == assistantId).toList();
