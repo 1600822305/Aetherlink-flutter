@@ -71,12 +71,25 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    // Restore the last active tab (persisted via [SidebarTabIndex]); the web
+    // does the same with `settings.sidebarTabIndex`.
+    _tabController = TabController(
+      length: 3,
+      vsync: this,
+      initialIndex: ref.read(sidebarTabIndexProvider),
+    );
+    _tabController.addListener(_onTabChanged);
+  }
+
+  void _onTabChanged() {
+    if (_tabController.indexIsChanging) return;
+    // Persist the active tab so it survives reopening the drawer / a restart.
+    final index = _tabController.index;
+    if (ref.read(sidebarTabIndexProvider) != index) {
+      ref.read(sidebarTabIndexProvider.notifier).set(index);
+    }
     // The 翻译 button only renders on the 助手/话题 tabs, so rebuild on switch.
-    _tabController.addListener(() {
-      if (_tabController.indexIsChanging) return;
-      setState(() {});
-    });
+    setState(() {});
   }
 
   @override
@@ -88,6 +101,13 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // The persisted index can hydrate from storage after [initState] built the
+    // controller (cold start), so keep the controller in sync with it.
+    ref.listen<int>(sidebarTabIndexProvider, (previous, next) {
+      if (_tabController.index != next) {
+        _tabController.index = next;
+      }
+    });
     final showTranslate = _tabController.index != 2;
 
     return Drawer(
