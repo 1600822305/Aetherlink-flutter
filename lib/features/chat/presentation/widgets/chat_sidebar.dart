@@ -56,11 +56,6 @@ const Color _avatarUnselectedBg = Color(0xFFE0E0E0);
 /// 兼容 API chip outline, MUI `grey.400` `#bdbdbd`.
 const Color _chipBorderColor = Color(0xFFBDBDBD);
 
-/// List-frame box (port of the web `border: divider` + `background.paper`):
-/// MUI light-theme `divider` = rgba(0,0,0,0.12); paper = white.
-const Color _listFrameBorder = Color(0x1F000000);
-const Color _listFrameBg = Color(0xFFFFFFFF);
-
 /// The original mobile drawer is 350px wide (`AppSidebar.solid.tsx`).
 const double _sidebarWidth = 350;
 
@@ -1501,6 +1496,7 @@ class _ListFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     Widget content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -1518,9 +1514,12 @@ class _ListFrame extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       clipBehavior: Clip.antiAlias,
+      // Port of the web `background.paper` + `border: divider`: both follow the
+      // theme so the box blends into the sidebar (light & dark) instead of
+      // showing a hard-coded white block in dark mode.
       decoration: BoxDecoration(
-        color: _listFrameBg,
-        border: Border.all(color: _listFrameBorder),
+        color: theme.colorScheme.surface,
+        border: Border.all(color: theme.dividerColor),
         borderRadius: BorderRadius.circular(8),
       ),
       child: content,
