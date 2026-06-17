@@ -54,6 +54,11 @@ const Color _avatarUnselectedBg = Color(0xFFE0E0E0);
 /// 兼容 API chip outline, MUI `grey.400` `#bdbdbd`.
 const Color _chipBorderColor = Color(0xFFBDBDBD);
 
+/// List-frame box (port of the web `border: divider` + `background.paper`):
+/// MUI light-theme `divider` = rgba(0,0,0,0.12); paper = white.
+const Color _listFrameBorder = Color(0x1F000000);
+const Color _listFrameBg = Color(0xFFFFFFFF);
+
 /// The original mobile drawer is 350px wide (`AppSidebar.solid.tsx`).
 const double _sidebarWidth = 350;
 
@@ -363,19 +368,25 @@ class _AssistantTabState extends ConsumerState<_AssistantTab> {
                 if (groups.isEmpty)
                   _EmptyHint(text: '没有助手分组', color: textSecondary)
                 else
-                  for (final g in groups) ...[
-                    _GroupHeader(
-                      group: g,
-                      count: g.items.where(byId.containsKey).length,
-                      textPrimary: textPrimary,
-                      textSecondary: textSecondary,
+                  for (final g in groups)
+                    _ListFrame(
+                      children: [
+                        _GroupHeader(
+                          group: g,
+                          count: g.items.where(byId.containsKey).length,
+                          textPrimary: textPrimary,
+                          textSecondary: textSecondary,
+                        ),
+                        if (g.expanded)
+                          for (final id in g.items)
+                            if (byId[id] != null) item(byId[id]!),
+                      ],
                     ),
-                    if (g.expanded)
-                      for (final id in g.items)
-                        if (byId[id] != null) item(byId[id]!),
-                  ],
                 _SectionLabel(text: '未分组助手', color: textSecondary),
-                for (final a in ungrouped) item(a),
+                if (ungrouped.isEmpty)
+                  _EmptyHint(text: '暂无未分组助手', color: textSecondary)
+                else
+                  _ListFrame(children: [for (final a in ungrouped) item(a)]),
                 _CountFooter(text: '共 ${all.length} 个助手', color: textSecondary),
               ],
             ],
@@ -675,19 +686,27 @@ class _TopicTabState extends ConsumerState<_TopicTab> {
                       if (groups.isEmpty)
                         _EmptyHint(text: '没有话题分组', color: textSecondary)
                       else
-                        for (final g in groups) ...[
-                          _GroupHeader(
-                            group: g,
-                            count: g.items.where(byId.containsKey).length,
-                            textPrimary: textPrimary,
-                            textSecondary: textSecondary,
+                        for (final g in groups)
+                          _ListFrame(
+                            children: [
+                              _GroupHeader(
+                                group: g,
+                                count: g.items.where(byId.containsKey).length,
+                                textPrimary: textPrimary,
+                                textSecondary: textSecondary,
+                              ),
+                              if (g.expanded)
+                                for (final id in g.items)
+                                  if (byId[id] != null) item(byId[id]!),
+                            ],
                           ),
-                          if (g.expanded)
-                            for (final id in g.items)
-                              if (byId[id] != null) item(byId[id]!),
-                        ],
                       _SectionLabel(text: '未分组话题', color: textSecondary),
-                      for (final t in ungrouped) item(t),
+                      if (ungrouped.isEmpty)
+                        _EmptyHint(text: '暂无未分组话题', color: textSecondary)
+                      else
+                        _ListFrame(
+                          children: [for (final t in ungrouped) item(t)],
+                        ),
                       _CountFooter(
                         text: '共 ${topics.length} 个话题',
                         color: textSecondary,
@@ -1391,6 +1410,33 @@ class _SectionLabel extends StatelessWidget {
       child: Text(
         text,
         style: TextStyle(fontSize: 14, height: 1.43, color: color),
+      ),
+    );
+  }
+}
+
+/// A rounded, 1px-bordered box that frames a list section — the port of the web
+/// `VirtualizedList` / group `Accordion` container (border `divider`, radius 8,
+/// `background.paper` background).
+class _ListFrame extends StatelessWidget {
+  const _ListFrame({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      decoration: BoxDecoration(
+        color: _listFrameBg,
+        border: Border.all(color: _listFrameBorder),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: children,
       ),
     );
   }
