@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,6 +11,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_messa
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_sidebar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_top_bar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/system_prompt_bubble.dart';
+import 'package:aetherlink_flutter/shared/domain/chat_interface_settings.dart';
 
 /// Static UI strings. The original ran these through i18n; they are ported
 /// verbatim as constants per the M4.1 approach — wiring up i18n is a separate
@@ -35,11 +38,14 @@ class ChatPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     final stateAsync = ref.watch(chatControllerProvider);
     // 系统提示词气泡显隐响应 聊天界面设置 的开关（PR #71 的「系统提示词气泡」）。
     final showSystemPromptBubble = ref.watch(
       chatInterfaceSettingsProvider.select((s) => s.showSystemPromptBubble),
+    );
+    // 聊天背景（图片/透明度/渐变遮罩/尺寸·位置·重复）接 聊天界面设置（PR #71）。
+    final background = ref.watch(
+      chatInterfaceSettingsProvider.select((s) => s.background),
     );
 
     return Scaffold(
@@ -47,11 +53,12 @@ class ChatPage extends ConsumerWidget {
       drawer: const ChatSidebar(),
       body: SafeArea(
         top: false,
-        // Background surface layer. The original layered a chat-background image
-        // and a gradient overlay here; this round restores a solid themed
-        // surface only (background-image loading is a later slice).
-        child: ColoredBox(
-          color: theme.colorScheme.surface,
+        // Background layer. The original (`ChatPageUI.tsx`) layers a
+        // chat-background image (opacity applied directly) and an optional
+        // white readability gradient behind the message area; [_ChatBackground]
+        // ports that 1:1 and falls back to a solid themed surface when disabled.
+        child: _ChatBackground(
+          background: background,
           child: Column(
             children: [
               if (showSystemPromptBubble) ...const [
@@ -67,6 +74,134 @@ class ChatPage extends ConsumerWidget {
     );
   }
 }
+
+/// The chat-message-area background, ported 1:1 from the original
+/// `ChatPageUI.tsx` (lines 805-846). When [ChatBackgroundSettings.enabled] and
+/// an image is set it stacks, bottom to top:
+///   1. the background image — `opacity` is applied directly to the image layer
+///      (`BoxFit`/`Alignment`/`ImageRepeat` mapped from CSS size/position/repeat),
+///      blending toward the themed surface painted behind it;
+///   2. an optional white readability gradient
+///      (`linear-gradient(to bottom, rgba(255,255,255,.3), rgba(255,255,255,.5))`),
+///      shown when [ChatBackgroundSettings.showOverlay];
+///   3. the chat content ([child]).
+/// When disabled (or no image) it collapses to the original solid themed
+/// surface. The image is a base64 data URL; it is decoded once and cached as a
+/// [MemoryImage] so rebuilds (typing, streaming) never re-decode it.
+class _ChatBackground extends StatefulWidget {
+  const _ChatBackground({required this.background, required this.child});
+
+  final ChatBackgroundSettings background;
+  final Widget child;
+
+  @override
+  State<_ChatBackground> createState() => _ChatBackgroundState();
+}
+
+class _ChatBackgroundState extends State<_ChatBackground> {
+  MemoryImage? _image;
+  String _decodedUrl = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _decodeImage();
+  }
+
+  @override
+  void didUpdateWidget(_ChatBackground oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.background.imageUrl != _decodedUrl) {
+      _decodeImage();
+    }
+  }
+
+  /// Decodes the `data:<mime>;base64,<...>` URL into cached bytes. Mirrors the
+  /// settings page's `_ImageArea._decode`.
+  void _decodeImage() {
+    final url = widget.background.imageUrl;
+    _decodedUrl = url;
+    final marker = url.indexOf('base64,');
+    if (marker < 0) {
+      _image = null;
+      return;
+    }
+    try {
+      _image = MemoryImage(base64Decode(url.substring(marker + 7)));
+    } on FormatException {
+      _image = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final background = widget.background;
+    final image = _image;
+
+    if (!background.enabled || image == null) {
+      return ColoredBox(color: theme.colorScheme.surface, child: widget.child);
+    }
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              image: DecorationImage(
+                image: image,
+                fit: _fitFor(background.size),
+                alignment: _alignmentFor(background.position),
+                repeat: _repeatFor(background.repeat),
+                opacity: background.opacity.clamp(0.0, 1.0),
+              ),
+            ),
+          ),
+        ),
+        if (background.showOverlay)
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0x4DFFFFFF), Color(0x80FFFFFF)],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        widget.child,
+      ],
+    );
+  }
+}
+
+/// CSS `background-size` → [BoxFit] (`auto` keeps the natural size, like CSS).
+BoxFit _fitFor(ChatBackgroundSize size) => switch (size) {
+  ChatBackgroundSize.cover => BoxFit.cover,
+  ChatBackgroundSize.contain => BoxFit.contain,
+  ChatBackgroundSize.auto => BoxFit.none,
+};
+
+/// CSS `background-position` → [Alignment].
+Alignment _alignmentFor(ChatBackgroundPosition position) => switch (position) {
+  ChatBackgroundPosition.center => Alignment.center,
+  ChatBackgroundPosition.top => Alignment.topCenter,
+  ChatBackgroundPosition.bottom => Alignment.bottomCenter,
+  ChatBackgroundPosition.left => Alignment.centerLeft,
+  ChatBackgroundPosition.right => Alignment.centerRight,
+};
+
+/// CSS `background-repeat` → [ImageRepeat].
+ImageRepeat _repeatFor(ChatBackgroundRepeat repeat) => switch (repeat) {
+  ChatBackgroundRepeat.noRepeat => ImageRepeat.noRepeat,
+  ChatBackgroundRepeat.repeat => ImageRepeat.repeat,
+  ChatBackgroundRepeat.repeatX => ImageRepeat.repeatX,
+  ChatBackgroundRepeat.repeatY => ImageRepeat.repeatY,
+};
 
 /// The scrollable message region. Reflects the real read provider: loading →
 /// spinner, failure → error notice, empty → empty state, and a list of message
