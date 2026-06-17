@@ -78,41 +78,68 @@ class _SystemPromptBubbleState extends ConsumerState<SystemPromptBubble> {
             assistant: assistant,
             topic: topic,
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.ease,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
+          // Paper elevation={1}: a subtle drop shadow so the bubble reads as a
+          // distinct card above the message surface (the MUI elevation-1 box
+          // shadow, ported verbatim). The shadow lives on an outer box so it is
+          // not clipped by the rounded-corner ClipRRect below.
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x33000000),
+                  offset: Offset(0, 2),
+                  blurRadius: 1,
+                  spreadRadius: -1,
                 ),
-                decoration: BoxDecoration(
-                  color: background,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: borderColor),
+                BoxShadow(
+                  color: Color(0x24000000),
+                  offset: Offset(0, 1),
+                  blurRadius: 1,
                 ),
-                child: Row(
-                  children: [
-                    Icon(LucideIcons.brain, size: 20, color: brainColor),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        text,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          height: 1.3,
-                          color: textColor,
+                BoxShadow(
+                  color: Color(0x1F000000),
+                  offset: Offset(0, 1),
+                  blurRadius: 3,
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: BackdropFilter(
+                filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.ease,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: background,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: borderColor),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(LucideIcons.brain, size: 20, color: brainColor),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          text,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.3,
+                            color: textColor,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Icon(LucideIcons.squarePen, size: 18, color: editColor),
-                  ],
+                      const SizedBox(width: 8),
+                      Icon(LucideIcons.squarePen, size: 18, color: editColor),
+                    ],
+                  ),
                 ),
               ),
             ),
