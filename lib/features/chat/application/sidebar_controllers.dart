@@ -277,6 +277,9 @@ class Assistants extends _$Assistants {
       ref.read(currentTopicIdProvider.notifier).set(null);
     }
     await _reload();
+    // The 话题数 / 话题列表 views watch [Topics], not [Assistants], so refresh it
+    // here too — otherwise they only update on the next indirect rebuild (lag).
+    await ref.read(topicsProvider.notifier).reloadFromStore();
   }
 }
 
@@ -297,6 +300,11 @@ class Topics extends _$Topics {
   Future<void> _reload() async {
     state = AsyncData<List<Topic>>(await _repo.getAllTopics());
   }
+
+  /// Re-reads topics from the store after an external mutation made by another
+  /// notifier (e.g. [Assistants.clearTopics]), so the dependent views update
+  /// immediately instead of waiting for an indirect rebuild.
+  Future<void> reloadFromStore() => _reload();
 
   List<Topic> _topicsOf(String assistantId, List<Topic> all) {
     final mine = all.where((t) => t.assistantId == assistantId).toList();
