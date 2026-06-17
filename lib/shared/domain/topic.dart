@@ -9,8 +9,14 @@ part 'topic.g.dart';
 /// (`src/shared/types/index.ts`).
 ///
 /// Dropped per `docs/DOMAIN_MODEL.md` §5: the `@deprecated` `messages` /
-/// `title` / `prompt` fields. `lastMessageTime` stays a [String] (a free-form
-/// persisted preview timestamp, per the doc).
+/// `title` fields. `lastMessageTime` stays a [String] (a free-form persisted
+/// preview timestamp, per the doc).
+///
+/// [prompt] is the topic-level system prompt (话题提示词). The web `ChatTopic`
+/// marks it `@deprecated`, but the 系统提示词气泡 / 系统提示词设置 feature still
+/// reads and writes it (assistant prompt + topic prompt are combined at
+/// display time), so it is kept here. The whole topic persists as a JSON blob
+/// (`TopicConverter`), so this needs no Drift schema bump.
 @freezed
 abstract class Topic with _$Topic {
   const factory Topic({
@@ -24,6 +30,7 @@ abstract class Topic with _$Topic {
     String? lastMessageTime,
     String? lastMessagePreview,
     String? inputTemplate,
+    String? prompt,
     int? messageCount,
     int? tokenCount,
     bool? isDefault,
