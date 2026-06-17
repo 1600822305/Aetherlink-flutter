@@ -6,15 +6,17 @@ import 'package:aetherlink_flutter/app/theme/app_theme_extension.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_block_renderer.dart';
 import 'package:aetherlink_flutter/shared/domain/message_bubble_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/color_picker.dart';
 
 /// A single chat message rendered as a bubble.
 ///
-/// Renders the message's flattened view ([ChatMessageView]) owned by the
-/// [ChatController]: an optional 头像 + 名称 + 时间 header above the `thinking`
-/// trace (when present) and the `main_text` answer, all updated live as a reply
-/// streams in. A failed turn shows its error text in place of the answer.
+/// Renders the message view ([ChatMessageView]) owned by the [ChatController]:
+/// an optional 头像 + 名称 + 时间 header above the ordered blocks, which are
+/// dispatched to per-type widgets by [MessageBlockRenderer] (Markdown answer,
+/// thinking trace, code, image, error, …) and updated live as a reply streams
+/// in.
 ///
 /// The bubble's geometry and chrome follow 外观设置 → 信息气泡管理
 /// ([MessageBubbleSettings], read through [messageBubbleSettingsProvider]),
@@ -57,16 +59,14 @@ class ChatMessageBubble extends ConsumerWidget {
     final minWidthFactor = settings.messageBubbleMinWidth / 100;
 
     final hasError = view.status == MessageStatus.error;
-    final isStreaming = view.status == MessageStatus.streaming;
-    // A streaming assistant turn with no text yet shows a typing ellipsis so
-    // the bubble is visible the moment the reply starts.
-    final bodyText = view.text.isNotEmpty
-        ? view.text
-        : (isStreaming ? '…' : view.text);
+    final isStreaming =
+        view.status == MessageStatus.streaming ||
+        view.status == MessageStatus.processing;
 
-    // A message with neither answer, thinking nor error renders nothing rather
-    // than a fabricated empty bubble.
-    if (bodyText.isEmpty && view.thinking.isEmpty && !hasError) {
+    // A message with no blocks, that is neither streaming nor errored, renders
+    // nothing rather than a fabricated empty bubble. While streaming the
+    // renderer shows the 「正在生成回复...」 placeholder.
+    if (view.blocks.isEmpty && !isStreaming && !hasError) {
       return const SizedBox.shrink();
     }
 
@@ -119,36 +119,21 @@ class ChatMessageBubble extends ConsumerWidget {
                         hideBubble ? 0 : radius,
                       ),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (view.thinking.isNotEmpty) ...[
-                          Text(
-                            view.thinking,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                        ],
-                        if (bodyText.isNotEmpty)
-                          Text(
-                            bodyText,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: textColor,
-                            ),
-                          ),
-                        if (hasError && view.errorText != null)
-                          Text(
+                    child:
+                        (view.blocks.isEmpty &&
+                            hasError &&
+                            view.errorText != null)
+                        ? Text(
                             view.errorText!,
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: theme.colorScheme.error,
                             ),
+                          )
+                        : MessageBlockRenderer(
+                            blocks: view.blocks,
+                            messageStatus: view.status,
+                            textColor: textColor,
                           ),
-                      ],
-                    ),
                   ),
                 ),
               );

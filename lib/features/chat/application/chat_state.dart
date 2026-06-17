@@ -1,5 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 
@@ -7,16 +8,19 @@ part 'chat_state.freezed.dart';
 
 /// A single rendered message in the chat view.
 ///
-/// Flattens a [Message] and its blocks into the two text channels the page
-/// renders this milestone: [text] (the `main_text` block) and [thinking] (the
-/// `thinking` block). [status] drives the streaming indicator and [errorText]
-/// carries a transport/stream failure to show in place of the bubble.
+/// Carries the ordered [blocks] so the bubble can dispatch per-block-type
+/// rendering (Markdown, thinking, code, image, error, …) like the original
+/// `MessageBlockRenderer`. [text] / [thinking] are kept as flattened channels:
+/// [text] still feeds the outgoing request builder and both remain a fallback.
+/// [status] drives the streaming indicator and [errorText] carries a
+/// transport/stream failure to show in place of the bubble.
 @freezed
 abstract class ChatMessageView with _$ChatMessageView {
   const factory ChatMessageView({
     required String id,
     required MessageRole role,
     required MessageStatus status,
+    @Default(<MessageBlock>[]) List<MessageBlock> blocks,
     @Default('') String text,
     @Default('') String thinking,
     String? errorText,
