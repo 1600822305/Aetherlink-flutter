@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/core/database/app_database.dart';
@@ -136,12 +137,14 @@ void main() {
   );
 
   testWidgets(
-    'Opening the drawer reveals the sidebar shell: tabs + disabled search',
+    'Opening the drawer reveals the functional sidebar: tabs, 助手 header '
+    'actions, and a working search toggle',
     (tester) async {
       await pumpChatPage(tester);
 
-      // The menu button is the one wired control — it opens the drawer.
-      await tester.tap(find.widgetWithIcon(IconButton, Icons.menu));
+      // The menu button (a non-lucide SVG glyph) opens the drawer; find it by
+      // its tooltip rather than an icon.
+      await tester.tap(find.byTooltip('打开侧边栏'));
       await tester.pumpAndSettle();
 
       // Tab shell (助手 / 话题 / 设置).
@@ -149,11 +152,20 @@ void main() {
       expect(find.text('话题'), findsOneWidget);
       expect(find.text('设置'), findsOneWidget);
 
-      // Search box restored as a disabled shell.
+      // 助手 tab is shown first, wired with its real header + actions.
+      expect(find.text('所有助手'), findsOneWidget);
+      expect(find.text('创建分组'), findsOneWidget);
+      expect(find.text('添加助手'), findsOneWidget);
+
+      // Search is a toggle now: the field is built only after tapping the
+      // header search button, and it is enabled (not a disabled shell).
+      expect(find.widgetWithText(TextField, '搜索助手...'), findsNothing);
+      await tester.tap(find.widgetWithIcon(IconButton, LucideIcons.search));
+      await tester.pumpAndSettle();
       final searchField = tester.widget<TextField>(
-        find.widgetWithText(TextField, '搜索话题...').first,
+        find.widgetWithText(TextField, '搜索助手...'),
       );
-      expect(searchField.enabled, isFalse);
+      expect(searchField.enabled ?? true, isTrue);
     },
   );
 

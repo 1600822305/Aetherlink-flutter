@@ -274,26 +274,29 @@ final class DebugChatSeedProvider
 
 String _$debugChatSeedHash() => r'84e8af54f21c912ea3a3c54e185c2683a4e7a277';
 
-/// The topic whose conversation the page shows. The skeleton has no topic
-/// selection yet (M4.2.x), so it surfaces the most recent topic, or `null`
-/// when the database is empty — which it is on a fresh install. The debug seed
-/// runs first so a conversation exists to render in debug builds.
+/// The topic whose conversation the page shows. [Assistants] is the seed
+/// authority — awaiting it guarantees the default assistants and their topics
+/// exist on a fresh store before any topic is resolved. The selection (the
+/// 话题 tab's [currentTopicIdProvider]) wins; otherwise it falls back to the
+/// current assistant's most recent topic, then any recent topic, then `null`.
 
 @ProviderFor(currentTopic)
 final currentTopicProvider = CurrentTopicProvider._();
 
-/// The topic whose conversation the page shows. The skeleton has no topic
-/// selection yet (M4.2.x), so it surfaces the most recent topic, or `null`
-/// when the database is empty — which it is on a fresh install. The debug seed
-/// runs first so a conversation exists to render in debug builds.
+/// The topic whose conversation the page shows. [Assistants] is the seed
+/// authority — awaiting it guarantees the default assistants and their topics
+/// exist on a fresh store before any topic is resolved. The selection (the
+/// 话题 tab's [currentTopicIdProvider]) wins; otherwise it falls back to the
+/// current assistant's most recent topic, then any recent topic, then `null`.
 
 final class CurrentTopicProvider
     extends $FunctionalProvider<AsyncValue<Topic?>, Topic?, FutureOr<Topic?>>
     with $FutureModifier<Topic?>, $FutureProvider<Topic?> {
-  /// The topic whose conversation the page shows. The skeleton has no topic
-  /// selection yet (M4.2.x), so it surfaces the most recent topic, or `null`
-  /// when the database is empty — which it is on a fresh install. The debug seed
-  /// runs first so a conversation exists to render in debug builds.
+  /// The topic whose conversation the page shows. [Assistants] is the seed
+  /// authority — awaiting it guarantees the default assistants and their topics
+  /// exist on a fresh store before any topic is resolved. The selection (the
+  /// 话题 tab's [currentTopicIdProvider]) wins; otherwise it falls back to the
+  /// current assistant's most recent topic, then any recent topic, then `null`.
   CurrentTopicProvider._()
     : super(
         from: null,
@@ -319,7 +322,7 @@ final class CurrentTopicProvider
   }
 }
 
-String _$currentTopicHash() => r'c32b9672c82e0f9ddc34d454d0bf276d2aa2aa50';
+String _$currentTopicHash() => r'bf66369bcadac28cc0f3800ca5923184a162e4fc';
 
 /// Messages for the [currentTopic], as stored. No current topic (empty
 /// database) → an empty list → the page's empty state. This is the ChatPage's

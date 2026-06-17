@@ -2,16 +2,23 @@
 /// (`src/components/TopicManagement/`): the 助手 / 话题 / 设置 tab shell plus the
 /// per-tab content and the bottom 翻译 button.
 ///
-/// This slice is appearance-only ("功能先不接"): nothing is wired to providers.
-/// The lists are rendered from local, visual-only mock data ([_mockAssistants],
-/// [_mockTopics], [_mockSettingsSections]) that mirrors the original's default
-/// seed so the layout can be compared 1:1 against the web. Icons are migrated to
-/// their lucide counterparts (ADR-0009); every literal color/size below is the
-/// value measured from the live web DOM (`getComputedStyle`, light theme).
+/// The 助手 / 话题 tabs are wired to the real, Drift-backed application layer
+/// ([assistantsProvider] / [topicsProvider] / [groupsProvider] +
+/// [currentAssistantProvider] / [currentTopicIdProvider]); the 设置 tab is still
+/// appearance-only. Icons are migrated to their lucide counterparts
+/// (ADR-0009); every literal color/size below is the value measured from the
+/// live web DOM (`getComputedStyle`, light theme).
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+
+import 'package:aetherlink_flutter/features/chat/application/assistant_presets.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
+import 'package:aetherlink_flutter/shared/domain/assistant.dart';
+import 'package:aetherlink_flutter/shared/domain/group.dart';
+import 'package:aetherlink_flutter/shared/domain/topic.dart';
 
 // ── Static strings, ported verbatim ────────────────────────────────────────
 const String _assistantTabLabel = '助手';
@@ -27,6 +34,9 @@ const Color _mutedIconColor = Color(0x8A000000);
 
 /// 设置 entry leading gear, `#1976d2`.
 const Color _cogBlue = Color(0xFF1976D2);
+
+/// Destructive (删除) menu/text tint, MUI `error.main` `#d32f2f`.
+const Color _dangerColor = Color(0xFFD32F2F);
 
 /// 侧边栏宽度 toggle button background, `rgba(0,0,0,0.04)`.
 const Color _panelButtonBg = Color(0x0A000000);
@@ -47,14 +57,14 @@ const Color _chipBorderColor = Color(0xFFBDBDBD);
 /// The original mobile drawer is 350px wide (`AppSidebar.solid.tsx`).
 const double _sidebarWidth = 350;
 
-class ChatSidebar extends StatefulWidget {
+class ChatSidebar extends ConsumerStatefulWidget {
   const ChatSidebar({super.key});
 
   @override
-  State<ChatSidebar> createState() => _ChatSidebarState();
+  ConsumerState<ChatSidebar> createState() => _ChatSidebarState();
 }
 
-class _ChatSidebarState extends State<ChatSidebar>
+class _ChatSidebarState extends ConsumerState<ChatSidebar>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
@@ -99,7 +109,13 @@ class _ChatSidebarState extends State<ChatSidebar>
             Expanded(
               child: TabBarView(
                 controller: _tabController,
-                children: const [_AssistantTab(), _TopicTab(), _SettingsTab()],
+                children: [
+                  _AssistantTab(
+                    onGoToTopics: () => _tabController.animateTo(1),
+                  ),
+                  const _TopicTab(),
+                  const _SettingsTab(),
+                ],
               ),
             ),
             if (showTranslate) const _TranslateButton(),
@@ -202,8 +218,42 @@ class _SidebarTab extends StatelessWidget {
 }
 
 // ── 助手 tab ─────────────────────────────────────────────────────────────────
-class _AssistantTab extends StatelessWidget {
-  const _AssistantTab();
+class _AssistantTab extends ConsumerStatefulWidget {
+  const _AssistantTab({required this.onGoToTopics});
+
+  /// Switches the sidebar to the 话题 tab after selecting an assistant.
+  final VoidCallback onGoToTopics;
+
+  @override
+  ConsumerState<_AssistantTab> createState() => _AssistantTabState();
+}
+
+class _AssistantTabState extends ConsumerState<_AssistantTab> {
+  final TextEditingController _searchController = TextEditingController();
+  bool _searchOpen = false;
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _selectAssistant(String id) async {
+    ref.read(currentAssistantIdProvider.notifier).set(id);
+    widget.onGoToTopics();
+    await ref.read(topicsProvider.notifier).selectFirstOrCreate(id);
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _searchOpen = !_searchOpen;
+      if (!_searchOpen) {
+        _searchController.clear();
+        _query = '';
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -211,71 +261,103 @@ class _AssistantTab extends StatelessWidget {
     final textPrimary = theme.colorScheme.onSurface;
     final textSecondary = theme.colorScheme.onSurfaceVariant;
 
+    final all =
+        ref.watch(assistantsProvider).asData?.value ?? const <Assistant>[];
+    final current = ref.watch(currentAssistantProvider);
+    final counts = ref.watch(topicCountByAssistantProvider);
+    final groups = ref.watch(assistantGroupsProvider);
+    final ungrouped = ref.watch(ungroupedAssistantsProvider);
+    final byId = <String, Assistant>{for (final a in all) a.id: a};
+
+    final query = _query.trim().toLowerCase();
+    final searching = query.isNotEmpty;
+    final filtered = searching
+        ? all
+              .where(
+                (a) =>
+                    a.name.toLowerCase().contains(query) ||
+                    (a.systemPrompt ?? '').toLowerCase().contains(query),
+              )
+              .toList()
+        : const <Assistant>[];
+
+    Widget item(Assistant a) => _AssistantItem(
+      assistant: a,
+      selected: current?.id == a.id,
+      topicCount: counts[a.id] ?? 0,
+      onSelect: () => _selectAssistant(a.id),
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(10, 10, 10, 8),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
           child: _TabHeader(
             title: '所有助手',
             trailing: [
-              _MutedIconButton(icon: LucideIcons.search, size: 18, box: 28),
-              SizedBox(width: 8),
-              _OutlinedPillButton(icon: LucideIcons.folderPlus, label: '创建分组'),
-              SizedBox(width: 4),
-              _OutlinedPillButton(icon: LucideIcons.plus, label: '添加助手'),
+              _MutedIconButton(
+                icon: LucideIcons.search,
+                size: 18,
+                box: 28,
+                color: _searchOpen
+                    ? theme.colorScheme.primary
+                    : _mutedIconColor,
+                onPressed: _toggleSearch,
+              ),
+              const SizedBox(width: 8),
+              _OutlinedPillButton(
+                icon: LucideIcons.folderPlus,
+                label: '创建分组',
+                onPressed: () => _showCreateGroupDialog(
+                  context,
+                  ref,
+                  type: GroupType.assistant,
+                ),
+              ),
+              const SizedBox(width: 4),
+              _OutlinedPillButton(
+                icon: LucideIcons.plus,
+                label: '添加助手',
+                onPressed: () => _showAddAssistantDialog(context, ref),
+              ),
             ],
           ),
         ),
+        if (_searchOpen)
+          _SearchField(
+            controller: _searchController,
+            hint: '搜索助手...',
+            onChanged: (v) => setState(() => _query = v),
+          ),
         Expanded(
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             children: [
-              // VirtualizedAssistantGroups empty hint (centered, ~52px tall).
-              SizedBox(
-                height: 52,
-                child: Center(
-                  child: Text(
-                    '没有助手分组',
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1.43,
-                      color: textSecondary,
+              if (searching) ...[
+                if (filtered.isEmpty)
+                  _EmptyHint(text: '没有找到助手', color: textSecondary)
+                else
+                  for (final a in filtered) item(a),
+              ] else ...[
+                if (groups.isEmpty)
+                  _EmptyHint(text: '没有助手分组', color: textSecondary)
+                else
+                  for (final g in groups) ...[
+                    _GroupHeader(
+                      group: g,
+                      count: g.items.where(byId.containsKey).length,
+                      textPrimary: textPrimary,
+                      textSecondary: textSecondary,
                     ),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  '未分组助手',
-                  style: TextStyle(
-                    fontSize: 14,
-                    height: 1.43,
-                    color: textSecondary,
-                  ),
-                ),
-              ),
-              for (final a in _mockAssistants)
-                _AssistantItem(
-                  data: a,
-                  textPrimary: textPrimary,
-                  textSecondary: textSecondary,
-                  primaryColor: theme.colorScheme.primary,
-                ),
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Center(
-                  child: Text(
-                    '共 ${_mockAssistants.length} 个助手',
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.66,
-                      color: textSecondary,
-                    ),
-                  ),
-                ),
-              ),
+                    if (g.expanded)
+                      for (final id in g.items)
+                        if (byId[id] != null) item(byId[id]!),
+                  ],
+                _SectionLabel(text: '未分组助手', color: textSecondary),
+                for (final a in ungrouped) item(a),
+                _CountFooter(text: '共 ${all.length} 个助手', color: textSecondary),
+              ],
             ],
           ),
         ),
@@ -284,28 +366,71 @@ class _AssistantTab extends StatelessWidget {
   }
 }
 
-class _AssistantItem extends StatelessWidget {
+enum _AssistantMenu { addToGroup, copy, clearTopics, delete }
+
+class _AssistantItem extends ConsumerWidget {
   const _AssistantItem({
-    required this.data,
-    required this.textPrimary,
-    required this.textSecondary,
-    required this.primaryColor,
+    required this.assistant,
+    required this.selected,
+    required this.topicCount,
+    required this.onSelect,
   });
 
-  final _MockAssistant data;
-  final Color textPrimary;
-  final Color textSecondary;
-  final Color primaryColor;
+  final Assistant assistant;
+  final bool selected;
+  final int topicCount;
+  final VoidCallback onSelect;
+
+  Future<void> _onMenu(
+    BuildContext context,
+    WidgetRef ref,
+    _AssistantMenu value,
+  ) async {
+    final notifier = ref.read(assistantsProvider.notifier);
+    switch (value) {
+      case _AssistantMenu.addToGroup:
+        await _showAddToGroupDialog(
+          context,
+          ref,
+          type: GroupType.assistant,
+          itemId: assistant.id,
+        );
+      case _AssistantMenu.copy:
+        await notifier.copy(assistant);
+      case _AssistantMenu.clearTopics:
+        final ok = await _confirm(
+          context,
+          title: '清空话题',
+          message: '确定要清空「${assistant.name}」的所有话题吗？此操作不可撤销。',
+        );
+        if (ok) await notifier.clearTopics(assistant.id);
+      case _AssistantMenu.delete:
+        await _deleteAssistant(context, ref);
+    }
+  }
+
+  Future<void> _deleteAssistant(BuildContext context, WidgetRef ref) async {
+    final ok = await _confirm(
+      context,
+      title: '删除助手',
+      message: '确定要删除助手「${assistant.name}」吗？其所有话题也会被删除，此操作不可撤销。',
+    );
+    if (ok) await ref.read(assistantsProvider.notifier).delete(assistant.id);
+  }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final textPrimary = theme.colorScheme.onSurface;
+    final textSecondary = theme.colorScheme.onSurfaceVariant;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
-        color: data.selected ? _selectedItemBg : Colors.transparent,
+        color: selected ? _selectedItemBg : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
-          onTap: () {},
+          onTap: onSelect,
           borderRadius: BorderRadius.circular(8),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -317,9 +442,9 @@ class _AssistantItem extends StatelessWidget {
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: _Avatar(
-                      text: data.avatarText,
-                      background: data.selected
-                          ? primaryColor
+                      text: _assistantAvatarText(assistant),
+                      background: selected
+                          ? theme.colorScheme.primary
                           : _avatarUnselectedBg,
                       size: 32,
                       fontSize: 19.2,
@@ -332,20 +457,20 @@ class _AssistantItem extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        data.name,
+                        assistant.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 14,
                           height: 1.43,
-                          fontWeight: data.selected
+                          fontWeight: selected
                               ? FontWeight.w600
                               : FontWeight.w400,
                           color: textPrimary,
                         ),
                       ),
                       Text(
-                        '${data.topicCount} 个话题',
+                        '$topicCount 个话题',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -357,11 +482,29 @@ class _AssistantItem extends StatelessWidget {
                     ],
                   ),
                 ),
-                const _MutedIconButton(
-                  icon: LucideIcons.moreVertical,
+                _OverflowMenuButton<_AssistantMenu>(
                   size: 16,
                   box: 26,
-                  opacity: 0.6,
+                  itemBuilder: (context) => [
+                    _menuItem(
+                      _AssistantMenu.addToGroup,
+                      LucideIcons.folderPlus,
+                      '添加到分组',
+                    ),
+                    _menuItem(_AssistantMenu.copy, LucideIcons.copy, '复制助手'),
+                    _menuItem(
+                      _AssistantMenu.clearTopics,
+                      LucideIcons.trash2,
+                      '清空话题',
+                    ),
+                    _menuItem(
+                      _AssistantMenu.delete,
+                      LucideIcons.trash,
+                      '删除助手',
+                      danger: true,
+                    ),
+                  ],
+                  onSelected: (m) => _onMenu(context, ref, m),
                 ),
                 _MutedIconButton(
                   icon: LucideIcons.trash,
@@ -369,6 +512,7 @@ class _AssistantItem extends StatelessWidget {
                   box: 26,
                   opacity: 0.6,
                   color: textPrimary,
+                  onPressed: () => _deleteAssistant(context, ref),
                 ),
               ],
             ),
@@ -380,8 +524,38 @@ class _AssistantItem extends StatelessWidget {
 }
 
 // ── 话题 tab ─────────────────────────────────────────────────────────────────
-class _TopicTab extends StatelessWidget {
+class _TopicTab extends ConsumerStatefulWidget {
   const _TopicTab();
+
+  @override
+  ConsumerState<_TopicTab> createState() => _TopicTabState();
+}
+
+class _TopicTabState extends ConsumerState<_TopicTab> {
+  final TextEditingController _searchController = TextEditingController();
+  bool _searchOpen = false;
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _searchOpen = !_searchOpen;
+      if (!_searchOpen) {
+        _searchController.clear();
+        _query = '';
+      }
+    });
+  }
+
+  void _selectTopic(String id) {
+    ref.read(currentTopicIdProvider.notifier).set(id);
+    Scaffold.maybeOf(context)?.closeDrawer();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -389,18 +563,49 @@ class _TopicTab extends StatelessWidget {
     final textPrimary = theme.colorScheme.onSurface;
     final textSecondary = theme.colorScheme.onSurfaceVariant;
 
+    final current = ref.watch(currentAssistantProvider);
+    final topics = ref.watch(currentAssistantTopicsProvider);
+    final selectedTopicId = ref.watch(currentTopicIdProvider);
+    final multipleAssistants =
+        (ref.watch(assistantsProvider).asData?.value ?? const <Assistant>[])
+            .length >
+        1;
+
+    final query = _query.trim().toLowerCase();
+    final searching = query.isNotEmpty;
+    final filtered = searching
+        ? topics.where((t) => t.name.toLowerCase().contains(query)).toList()
+        : const <Topic>[];
+
+    final groups = current == null
+        ? const <Group>[]
+        : ref.watch(topicGroupsProvider(current.id));
+    final ungrouped = ref.watch(ungroupedTopicsProvider);
+    final byId = <String, Topic>{for (final t in topics) t.id: t};
+
+    Widget item(Topic t) => _TopicItem(
+      topic: t,
+      selected: selectedTopicId == t.id,
+      canMove: multipleAssistants,
+      onSelect: () => _selectTopic(t.id),
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
           child: _TabHeader(
-            title: '默认助手',
+            title: current?.name ?? '所有话题',
             trailing: [
-              const _MutedIconButton(
+              _MutedIconButton(
                 icon: LucideIcons.search,
                 size: 18,
                 box: 28,
+                color: _searchOpen
+                    ? theme.colorScheme.primary
+                    : _mutedIconColor,
+                onPressed: _toggleSearch,
               ),
               const SizedBox(width: 8),
               // 创建话题分组: bordered icon-only button (radius 6).
@@ -408,87 +613,151 @@ class _TopicTab extends StatelessWidget {
                 icon: LucideIcons.folderPlus,
                 borderColor: textSecondary,
                 color: textPrimary,
+                onTap: current == null
+                    ? null
+                    : () => _showCreateGroupDialog(
+                        context,
+                        ref,
+                        type: GroupType.topic,
+                        assistantId: current.id,
+                      ),
               ),
               const SizedBox(width: 4),
-              const _OutlinedPillButton(icon: LucideIcons.plus, label: '新建话题'),
+              _OutlinedPillButton(
+                icon: LucideIcons.plus,
+                label: '新建话题',
+                onPressed: current == null
+                    ? null
+                    : () =>
+                          ref.read(topicsProvider.notifier).create(current.id),
+              ),
             ],
           ),
         ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            children: [
-              SizedBox(
-                height: 52,
-                child: Center(
-                  child: Text(
-                    '没有话题分组',
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1.43,
-                      color: textSecondary,
-                    ),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  '未分组话题',
-                  style: TextStyle(
-                    fontSize: 14,
-                    height: 1.43,
-                    color: textSecondary,
-                  ),
-                ),
-              ),
-              for (final t in _mockTopics)
-                _TopicItem(
-                  data: t,
-                  textPrimary: textPrimary,
-                  textSecondary: textSecondary,
-                ),
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Center(
-                  child: Text(
-                    '共 ${_mockTopics.length} 个话题',
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.66,
-                      color: textSecondary,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+        if (_searchOpen)
+          _SearchField(
+            controller: _searchController,
+            hint: '搜索话题...',
+            onChanged: (v) => setState(() => _query = v),
           ),
+        Expanded(
+          child: current == null
+              ? _EmptyHint(text: '请先在「助手」标签选择一个助手', color: textSecondary)
+              : ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  children: [
+                    if (searching) ...[
+                      if (filtered.isEmpty)
+                        _EmptyHint(text: '没有找到话题', color: textSecondary)
+                      else
+                        for (final t in filtered) item(t),
+                    ] else ...[
+                      if (groups.isEmpty)
+                        _EmptyHint(text: '没有话题分组', color: textSecondary)
+                      else
+                        for (final g in groups) ...[
+                          _GroupHeader(
+                            group: g,
+                            count: g.items.where(byId.containsKey).length,
+                            textPrimary: textPrimary,
+                            textSecondary: textSecondary,
+                          ),
+                          if (g.expanded)
+                            for (final id in g.items)
+                              if (byId[id] != null) item(byId[id]!),
+                        ],
+                      _SectionLabel(text: '未分组话题', color: textSecondary),
+                      for (final t in ungrouped) item(t),
+                      _CountFooter(
+                        text: '共 ${topics.length} 个话题',
+                        color: textSecondary,
+                      ),
+                    ],
+                  ],
+                ),
         ),
       ],
     );
   }
 }
 
-class _TopicItem extends StatelessWidget {
+enum _TopicMenu { addToGroup, rename, togglePin, clearMessages, move, delete }
+
+class _TopicItem extends ConsumerWidget {
   const _TopicItem({
-    required this.data,
-    required this.textPrimary,
-    required this.textSecondary,
+    required this.topic,
+    required this.selected,
+    required this.canMove,
+    required this.onSelect,
   });
 
-  final _MockTopic data;
-  final Color textPrimary;
-  final Color textSecondary;
+  final Topic topic;
+  final bool selected;
+  final bool canMove;
+  final VoidCallback onSelect;
+
+  Future<void> _onMenu(
+    BuildContext context,
+    WidgetRef ref,
+    _TopicMenu value,
+  ) async {
+    final notifier = ref.read(topicsProvider.notifier);
+    switch (value) {
+      case _TopicMenu.addToGroup:
+        final assistantId = topic.assistantId;
+        await _showAddToGroupDialog(
+          context,
+          ref,
+          type: GroupType.topic,
+          assistantId: assistantId,
+          itemId: topic.id,
+        );
+      case _TopicMenu.rename:
+        final name = await _promptText(
+          context,
+          title: '编辑话题',
+          hint: '话题名称',
+          initial: topic.name,
+        );
+        if (name != null) await notifier.rename(topic.id, name);
+      case _TopicMenu.togglePin:
+        await notifier.togglePin(topic.id);
+      case _TopicMenu.clearMessages:
+        final ok = await _confirm(
+          context,
+          title: '清空消息',
+          message: '确定要清空此话题的所有消息吗？此操作不可撤销。',
+        );
+        if (ok) await notifier.clearMessages(topic.id);
+      case _TopicMenu.move:
+        await _showMoveTopicDialog(context, ref, topic: topic);
+      case _TopicMenu.delete:
+        await _deleteTopic(context, ref);
+    }
+  }
+
+  Future<void> _deleteTopic(BuildContext context, WidgetRef ref) async {
+    final ok = await _confirm(
+      context,
+      title: '删除话题',
+      message: '确定要删除此话题吗？此操作不可撤销。',
+    );
+    if (ok) await ref.read(topicsProvider.notifier).delete(topic.id);
+  }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final textPrimary = theme.colorScheme.onSurface;
+    final textSecondary = theme.colorScheme.onSurfaceVariant;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
-        color: data.selected ? _selectedItemBg : Colors.transparent,
+        color: selected ? _selectedItemBg : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
-          onTap: () {},
+          onTap: onSelect,
           borderRadius: BorderRadius.circular(8),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -500,21 +769,35 @@ class _TopicItem extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        data.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 14,
-                          height: 1.43,
-                          fontWeight: data.selected
-                              ? FontWeight.w600
-                              : FontWeight.w400,
-                          color: textPrimary,
-                        ),
+                      Row(
+                        children: [
+                          if (topic.pinned) ...[
+                            const Icon(
+                              LucideIcons.pin,
+                              size: 12,
+                              color: _mutedIconColor,
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                          Flexible(
+                            child: Text(
+                              topic.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14,
+                                height: 1.43,
+                                fontWeight: selected
+                                    ? FontWeight.w600
+                                    : FontWeight.w400,
+                                color: textPrimary,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       Text(
-                        data.preview,
+                        topic.lastMessagePreview ?? '无消息',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -532,7 +815,7 @@ class _TopicItem extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      data.time,
+                      _formatTopicTime(topic),
                       style: TextStyle(
                         fontSize: 11,
                         height: 1,
@@ -543,12 +826,47 @@ class _TopicItem extends StatelessWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const _MutedIconButton(
-                          icon: LucideIcons.moreVertical,
+                        _OverflowMenuButton<_TopicMenu>(
                           size: 16,
                           box: 20,
                           padding: 2,
-                          opacity: 0.6,
+                          itemBuilder: (context) => [
+                            _menuItem(
+                              _TopicMenu.addToGroup,
+                              LucideIcons.folderPlus,
+                              '添加到分组',
+                            ),
+                            _menuItem(
+                              _TopicMenu.rename,
+                              LucideIcons.edit3,
+                              '编辑话题',
+                            ),
+                            _menuItem(
+                              _TopicMenu.togglePin,
+                              topic.pinned
+                                  ? LucideIcons.pinOff
+                                  : LucideIcons.pin,
+                              topic.pinned ? '取消固定' : '固定话题',
+                            ),
+                            _menuItem(
+                              _TopicMenu.clearMessages,
+                              LucideIcons.trash2,
+                              '清空消息',
+                            ),
+                            if (canMove)
+                              _menuItem(
+                                _TopicMenu.move,
+                                LucideIcons.arrowRight,
+                                '移动到...',
+                              ),
+                            _menuItem(
+                              _TopicMenu.delete,
+                              LucideIcons.trash,
+                              '删除话题',
+                              danger: true,
+                            ),
+                          ],
+                          onSelected: (m) => _onMenu(context, ref, m),
                         ),
                         const SizedBox(width: 2),
                         _MutedIconButton(
@@ -558,6 +876,7 @@ class _TopicItem extends StatelessWidget {
                           padding: 2,
                           opacity: 0.6,
                           color: textPrimary,
+                          onPressed: () => _deleteTopic(context, ref),
                         ),
                       ],
                     ),
@@ -875,19 +1194,227 @@ class _TabHeader extends StatelessWidget {
   }
 }
 
+/// The per-tab search box, shown when the 搜索 toggle is on. Mirrors the
+/// original `TextField size="small"` (40px tall, 8px radius, `搜索…` hint).
+class _SearchField extends StatelessWidget {
+  const _SearchField({
+    required this.controller,
+    required this.hint,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final String hint;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+      child: TextField(
+        controller: controller,
+        autofocus: true,
+        onChanged: onChanged,
+        style: const TextStyle(fontSize: 14, height: 1.43),
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: hint,
+          prefixIcon: const Icon(LucideIcons.search, size: 18),
+          prefixIconConstraints: const BoxConstraints(minWidth: 40),
+          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: theme.dividerColor),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: theme.dividerColor),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A folder header for an assistant/topic group: expand toggle + name + count
+/// + a rename/delete overflow menu.
+class _GroupHeader extends ConsumerWidget {
+  const _GroupHeader({
+    required this.group,
+    required this.count,
+    required this.textPrimary,
+    required this.textSecondary,
+  });
+
+  final Group group;
+  final int count;
+  final Color textPrimary;
+  final Color textSecondary;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(groupsProvider.notifier);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: () => notifier.toggleExpanded(group.id),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              children: [
+                Icon(
+                  group.expanded
+                      ? LucideIcons.chevronDown
+                      : LucideIcons.chevronRight,
+                  size: 16,
+                  color: textSecondary,
+                ),
+                const SizedBox(width: 6),
+                Icon(LucideIcons.folder, size: 16, color: textSecondary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    group.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.43,
+                      fontWeight: FontWeight.w500,
+                      color: textPrimary,
+                    ),
+                  ),
+                ),
+                Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.66,
+                    color: textSecondary,
+                  ),
+                ),
+                _OverflowMenuButton<_GroupMenu>(
+                  size: 16,
+                  box: 26,
+                  itemBuilder: (context) => [
+                    _menuItem(_GroupMenu.rename, LucideIcons.edit3, '重命名分组'),
+                    _menuItem(
+                      _GroupMenu.delete,
+                      LucideIcons.trash,
+                      '删除分组',
+                      danger: true,
+                    ),
+                  ],
+                  onSelected: (m) async {
+                    switch (m) {
+                      case _GroupMenu.rename:
+                        final name = await _promptText(
+                          context,
+                          title: '重命名分组',
+                          hint: '分组名称',
+                          initial: group.name,
+                        );
+                        if (name != null) await notifier.rename(group.id, name);
+                      case _GroupMenu.delete:
+                        await notifier.deleteGroup(group.id);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+enum _GroupMenu { rename, delete }
+
+/// A centered, ~52px tall empty hint (matches the original's empty-list slot).
+class _EmptyHint extends StatelessWidget {
+  const _EmptyHint({required this.text, required this.color});
+
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 52,
+      child: Center(
+        child: Text(
+          text,
+          style: TextStyle(fontSize: 14, height: 1.43, color: color),
+        ),
+      ),
+    );
+  }
+}
+
+/// A "未分组助手 / 未分组话题" section label.
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.text, required this.color});
+
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Text(
+        text,
+        style: TextStyle(fontSize: 14, height: 1.43, color: color),
+      ),
+    );
+  }
+}
+
+/// The centered "共 N 个…" footer.
+class _CountFooter extends StatelessWidget {
+  const _CountFooter({required this.text, required this.color});
+
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Center(
+        child: Text(
+          text,
+          style: TextStyle(fontSize: 12, height: 1.66, color: color),
+        ),
+      ),
+    );
+  }
+}
+
 /// An outlined, pill-ish action button (创建分组 / 添加助手 / 新建话题):
 /// `border 1px text.secondary`, radius 8, label 14px / 600, 16px start icon.
 class _OutlinedPillButton extends StatelessWidget {
-  const _OutlinedPillButton({required this.icon, required this.label});
+  const _OutlinedPillButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
 
   final IconData icon;
   final String label;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return OutlinedButton.icon(
-      onPressed: () {},
+      onPressed: onPressed,
       icon: Icon(icon, size: 16),
       label: Text(label),
       style: OutlinedButton.styleFrom(
@@ -909,11 +1436,13 @@ class _BorderedIconButton extends StatelessWidget {
     required this.icon,
     required this.borderColor,
     required this.color,
+    required this.onTap,
   });
 
   final IconData icon;
   final Color borderColor;
   final Color color;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -924,7 +1453,7 @@ class _BorderedIconButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: InkWell(
-        onTap: () {},
+        onTap: onTap,
         borderRadius: BorderRadius.circular(6),
         child: SizedBox(
           width: 30,
@@ -1009,6 +1538,7 @@ class _MutedIconButton extends StatelessWidget {
     this.padding,
     this.opacity = 1,
     this.color = _mutedIconColor,
+    this.onPressed,
   });
 
   final IconData icon;
@@ -1017,11 +1547,14 @@ class _MutedIconButton extends StatelessWidget {
   final double? padding;
   final double opacity;
   final Color color;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     final button = IconButton(
-      onPressed: () {},
+      // Settings-tab icons stay appearance-only; default to an enabled no-op so
+      // they keep the original full-color tint (a null handler greys them out).
+      onPressed: onPressed ?? () {},
       iconSize: size,
       color: color,
       padding: EdgeInsets.all(padding ?? (box - size) / 2),
@@ -1034,49 +1567,343 @@ class _MutedIconButton extends StatelessWidget {
   }
 }
 
-// ── Visual-only mock data (mirrors the original default seed) ───────────────
-class _MockAssistant {
-  const _MockAssistant({
-    required this.name,
-    required this.avatarText,
-    required this.topicCount,
-    this.selected = false,
+/// A `PopupMenuButton` styled to match [_MutedIconButton]'s compact sizing,
+/// used for the per-row 更多 (`moreVertical`) menus.
+class _OverflowMenuButton<T> extends StatelessWidget {
+  const _OverflowMenuButton({
+    required this.itemBuilder,
+    required this.onSelected,
+    required this.size,
+    required this.box,
+    this.padding,
+    this.opacity = 0.6,
   });
 
-  final String name;
-  final String avatarText;
-  final int topicCount;
-  final bool selected;
+  final List<PopupMenuEntry<T>> Function(BuildContext) itemBuilder;
+  final ValueChanged<T> onSelected;
+  final double size;
+  final double box;
+  final double? padding;
+  final double opacity;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: opacity,
+      child: PopupMenuButton<T>(
+        itemBuilder: itemBuilder,
+        onSelected: onSelected,
+        tooltip: '',
+        padding: EdgeInsets.all(padding ?? (box - size) / 2),
+        iconSize: size,
+        constraints: BoxConstraints.tightFor(width: box, height: box),
+        icon: const Icon(LucideIcons.moreVertical, color: _mutedIconColor),
+      ),
+    );
+  }
 }
 
-const List<_MockAssistant> _mockAssistants = [
-  _MockAssistant(name: '默认助手', avatarText: '默', topicCount: 1, selected: true),
-  _MockAssistant(name: '网页分析助手', avatarText: '网', topicCount: 1),
-];
-
-class _MockTopic {
-  const _MockTopic({
-    required this.title,
-    required this.preview,
-    required this.time,
-    this.selected = false,
-  });
-
-  final String title;
-  final String preview;
-  final String time;
-  final bool selected;
+PopupMenuItem<T> _menuItem<T>(
+  T value,
+  IconData icon,
+  String label, {
+  bool danger = false,
+}) {
+  final color = danger ? _dangerColor : null;
+  return PopupMenuItem<T>(
+    value: value,
+    height: 40,
+    child: Row(
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 12),
+        Text(label, style: TextStyle(fontSize: 14, color: color)),
+      ],
+    ),
+  );
 }
 
-const List<_MockTopic> _mockTopics = [
-  _MockTopic(
-    title: '新的对话',
-    preview: '无消息',
-    time: '06/16 22:23',
-    selected: true,
-  ),
-];
+/// Web avatar fallback: the assistant's emoji if set, else its name's first
+/// character (`assistant.emoji || name.charAt(0)`).
+String _assistantAvatarText(Assistant a) {
+  final emoji = a.emoji;
+  if (emoji != null && emoji.isNotEmpty) return emoji;
+  if (a.name.isEmpty) return '?';
+  return String.fromCharCodes(a.name.runes.take(1));
+}
 
+/// `MM/DD HH:mm` from `lastMessageTime` (ISO) falling back to `updatedAt`.
+String _formatTopicTime(Topic t) {
+  final raw = t.lastMessageTime;
+  final dt = (raw != null ? DateTime.tryParse(raw) : null) ?? t.updatedAt;
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(dt.month)}/${two(dt.day)} ${two(dt.hour)}:${two(dt.minute)}';
+}
+
+// ── Dialogs ───────────────────────────────────────────────────────────────
+/// The 添加助手 picker: a scrollable list of the 17 [kAssistantPresets].
+Future<void> _showAddAssistantDialog(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      final theme = Theme.of(dialogContext);
+      return AlertDialog(
+        title: const Text('选择助手'),
+        contentPadding: const EdgeInsets.fromLTRB(0, 12, 0, 0),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                child: Text(
+                  '选择一个预设助手来添加到你的助手列表中',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: kAssistantPresets.length,
+                  itemBuilder: (context, index) {
+                    final preset = kAssistantPresets[index];
+                    return ListTile(
+                      leading: Text(
+                        preset.emoji ?? '🤖',
+                        style: const TextStyle(fontSize: 24),
+                      ),
+                      title: Text(preset.name),
+                      subtitle: preset.description == null
+                          ? null
+                          : Text(
+                              preset.description!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                      onTap: () {
+                        ref.read(assistantsProvider.notifier).addPreset(preset);
+                        Navigator.of(dialogContext).pop();
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+/// Prompts for a folder name and creates the group (创建分组 / 创建话题分组).
+Future<void> _showCreateGroupDialog(
+  BuildContext context,
+  WidgetRef ref, {
+  required GroupType type,
+  String? assistantId,
+}) async {
+  final name = await _promptText(
+    context,
+    title: type == GroupType.assistant ? '创建助手分组' : '创建话题分组',
+    hint: '分组名称',
+  );
+  if (name == null) return;
+  await ref
+      .read(groupsProvider.notifier)
+      .createGroup(type: type, name: name, assistantId: assistantId);
+}
+
+/// Lists same-scope folders to drop [itemId] into, plus a "新建分组" option.
+Future<void> _showAddToGroupDialog(
+  BuildContext context,
+  WidgetRef ref, {
+  required GroupType type,
+  String? assistantId,
+  required String itemId,
+}) async {
+  final groups = type == GroupType.assistant
+      ? ref.read(assistantGroupsProvider)
+      : ref.read(topicGroupsProvider(assistantId!));
+  final notifier = ref.read(groupsProvider.notifier);
+
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      return SimpleDialog(
+        title: const Text('添加到分组'),
+        children: [
+          for (final g in groups)
+            SimpleDialogOption(
+              onPressed: () {
+                notifier.addItemToGroup(g.id, itemId);
+                Navigator.of(dialogContext).pop();
+              },
+              child: Row(
+                children: [
+                  const Icon(LucideIcons.folder, size: 18),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(g.name)),
+                ],
+              ),
+            ),
+          if (groups.isEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 4, 24, 12),
+              child: Text('还没有分组，先新建一个吧'),
+            ),
+          const Divider(height: 1),
+          SimpleDialogOption(
+            onPressed: () async {
+              Navigator.of(dialogContext).pop();
+              final name = await _promptText(
+                context,
+                title: '新建分组',
+                hint: '分组名称',
+              );
+              if (name == null) return;
+              final id = await notifier.createGroup(
+                type: type,
+                name: name,
+                assistantId: assistantId,
+              );
+              if (id != null) await notifier.addItemToGroup(id, itemId);
+            },
+            child: const Row(
+              children: [
+                Icon(LucideIcons.folderPlus, size: 18),
+                SizedBox(width: 12),
+                Text('新建分组'),
+              ],
+            ),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+/// Lists the other assistants to move [topic] into (移动到…).
+Future<void> _showMoveTopicDialog(
+  BuildContext context,
+  WidgetRef ref, {
+  required Topic topic,
+}) async {
+  final all = ref.read(assistantsProvider).asData?.value ?? const <Assistant>[];
+  final others = all.where((a) => a.id != topic.assistantId).toList();
+  final notifier = ref.read(topicsProvider.notifier);
+
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      return SimpleDialog(
+        title: const Text('移动到...'),
+        children: [
+          for (final a in others)
+            SimpleDialogOption(
+              onPressed: () {
+                notifier.move(topic.id, a.id);
+                Navigator.of(dialogContext).pop();
+              },
+              child: Row(
+                children: [
+                  Text(
+                    _assistantAvatarText(a),
+                    style: const TextStyle(fontSize: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(a.name)),
+                ],
+              ),
+            ),
+        ],
+      );
+    },
+  );
+}
+
+/// A single-field text prompt; returns the trimmed text on 确定, else `null`.
+Future<String?> _promptText(
+  BuildContext context, {
+  required String title,
+  required String hint,
+  String? initial,
+}) async {
+  final controller = TextEditingController(text: initial);
+  final result = await showDialog<String>(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(hintText: hint),
+          onSubmitted: (v) => Navigator.of(dialogContext).pop(v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      );
+    },
+  );
+  controller.dispose();
+  if (result == null || result.isEmpty) return null;
+  return result;
+}
+
+/// A destructive confirm dialog; returns `true` only when 确定 is pressed.
+Future<bool> _confirm(
+  BuildContext context, {
+  required String title,
+  required String message,
+}) async {
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(foregroundColor: _dangerColor),
+            child: const Text('确定'),
+          ),
+        ],
+      );
+    },
+  );
+  return result ?? false;
+}
+
+// ── Settings-tab visual-only mock data (mirrors the original default seed) ──
 class _MockSettingsSection {
   const _MockSettingsSection({
     required this.title,
