@@ -971,7 +971,12 @@ class _TopicItem extends ConsumerWidget {
                           size: 16,
                           box: 20,
                           color: textPrimary,
-                          onConfirm: () => _deleteTopic(context, ref),
+                          // The two-click red state IS the confirmation (1:1
+                          // with the web `pendingDelete` flow), so delete
+                          // directly here instead of popping a dialog.
+                          onConfirm: () => unawaited(
+                            ref.read(topicsProvider.notifier).delete(topic.id),
+                          ),
                         ),
                       ],
                     ),
