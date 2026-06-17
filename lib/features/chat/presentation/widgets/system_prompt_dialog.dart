@@ -24,6 +24,11 @@ Future<void> showSystemPromptDialog(
   return showDialog<void>(
     context: context,
     barrierColor: const Color(0x80000000),
+    // The mobile layout is a full-screen sheet whose surface must reach behind
+    // the status bar and system navigation bar; the default useSafeArea would
+    // inset the whole dialog and leave those bands showing the page behind it.
+    // The inner SafeArea around the body still keeps content clear of the bars.
+    useSafeArea: false,
     builder: (_) => _SystemPromptDialog(assistant: assistant, topic: topic),
   );
 }
