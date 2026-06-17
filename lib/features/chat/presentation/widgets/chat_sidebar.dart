@@ -1697,9 +1697,18 @@ class _OverflowMenuButton<T> extends StatelessWidget {
         itemBuilder: itemBuilder,
         onSelected: onSelected,
         tooltip: '',
-        padding: EdgeInsets.all(padding ?? (box - size) / 2),
-        iconSize: size,
-        icon: const Icon(LucideIcons.moreVertical, color: _mutedIconColor),
+        // Using `child` instead of `icon` avoids PopupMenuButton's internal
+        // IconButton, whose 48x48 minimum tap target would inflate the row.
+        padding: EdgeInsets.zero,
+        child: SizedBox(
+          width: box,
+          height: box,
+          child: Icon(
+            LucideIcons.moreVertical,
+            size: size,
+            color: _mutedIconColor,
+          ),
+        ),
       ),
     );
   }
