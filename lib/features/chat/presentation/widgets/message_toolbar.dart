@@ -21,9 +21,9 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.da
 /// * AI 消息: 复制 · 编辑 · 导出/保存 · 重新生成 · 语音播放 · 翻译 · 版本历史 ·
 ///   创建分支 · 删除
 ///
-/// 复制 / 编辑 / 删除 / 导出·分享 are wired to real behaviour. The remaining
-/// buttons depend on the request layer or systems not yet ported (重新发送/
-/// 重新生成/语音播放/翻译/版本历史/创建分支) — they are drawn for UI parity but
+/// 复制 / 编辑 / 删除 / 导出·分享 / 重新生成 are wired to real behaviour. The
+/// remaining buttons depend on the request layer or systems not yet ported
+/// (重新发送/语音播放/翻译/版本历史/创建分支) — they are drawn for UI parity but
 /// surface a 「即将支持」 hint on tap rather than faking success.
 class MessageToolbar extends ConsumerStatefulWidget {
   const MessageToolbar({
@@ -78,6 +78,10 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
   }
 
   void _comingSoon() => _toast('即将支持');
+
+  void _regenerate() {
+    ref.read(chatControllerProvider.notifier).regenerate(_view.id);
+  }
 
   Future<void> _copyContent() async {
     final content = _mainText.trim();
@@ -236,7 +240,7 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
           icon: LucideIcons.refreshCw,
           tooltip: '重新生成',
           color: baseColor,
-          onTap: _comingSoon,
+          onTap: _regenerate,
         ),
       if (!_isUser && widget.showTtsButton)
         _ToolbarIconButton(
