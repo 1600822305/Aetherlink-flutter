@@ -5,6 +5,9 @@ import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'package:aetherlink_flutter/core/database/app_settings_dao.dart';
+import 'package:aetherlink_flutter/core/database/app_settings_table.dart';
+
 import 'package:aetherlink_flutter/features/chat/data/datasources/local/assistant_dao.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/local/assistants_table.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/local/group_dao.dart';
@@ -49,6 +52,7 @@ part 'app_database.g.dart';
     AssistantRows,
     ProviderRows,
     GroupRows,
+    AppSettingRows,
   ],
   daos: [
     TopicDao,
@@ -57,6 +61,7 @@ part 'app_database.g.dart';
     AssistantDao,
     ProviderDao,
     GroupDao,
+    AppSettingDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -67,12 +72,13 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.open() : super(_openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   // v1 → v2 adds the model-provider store ([ProviderRows]); v2 → v3 adds the
-  // sidebar group store ([GroupRows]). The one-time IndexedDB
-  // (`aetherlink-db-new` v9) → SQLite data import remains a separate
-  // cross-cutting task (see docs/ROADMAP.md).
+  // sidebar group store ([GroupRows]); v3 → v4 adds the key/value preferences
+  // store ([AppSettingRows], the port of the web `dexieStorage` settings). The
+  // one-time IndexedDB (`aetherlink-db-new` v9) → SQLite data import remains a
+  // separate cross-cutting task (see docs/ROADMAP.md).
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),
@@ -82,6 +88,9 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 3) {
         await m.createTable(groupRows);
+      }
+      if (from < 4) {
+        await m.createTable(appSettingRows);
       }
     },
   );

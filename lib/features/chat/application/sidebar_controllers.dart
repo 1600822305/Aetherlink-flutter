@@ -15,34 +15,105 @@ part 'sidebar_controllers.g.dart';
 /// `assistantsSlice` / `groupsSlice` / `newMessagesSlice`).
 ///
 /// Three persistent source-of-truth notifiers ([Assistants], [Topics], [Groups],
-/// all Drift-backed via [ChatRepository]) plus two in-memory selection notifiers
-/// ([CurrentAssistantId], [CurrentTopicId]). The web persists the current
-/// selection (`dexieStorage.saveSetting('currentAssistant', …)`); Flutter keeps
-/// it in `keepAlive` memory for now (mirrors [FontSizeController]), with the
-/// derived [currentAssistant] falling back to the first assistant — matching the
-/// web `setCurrentAssistant(defaultAssistants[0])`. Group membership maps are
-/// **derived** from [Group.items] (the web persists them separately).
+/// all Drift-backed via [ChatRepository]) plus two `keepAlive` selection
+/// notifiers ([CurrentAssistantId], [CurrentTopicId]) and the sidebar tab index
+/// ([SidebarTabIndex]). Like the web (`dexieStorage.saveSetting('currentAssistant',
+/// …)` / `setSidebarTabIndex`), these are persisted via [ChatRepository]'s
+/// key/value settings: each notifier hydrates from storage on first build and
+/// writes through on every change, so the selection and active tab survive both
+/// reopening the drawer and a full app restart. The derived [currentAssistant]
+/// still falls back to the first assistant when nothing is selected — matching
+/// the web `setCurrentAssistant(defaultAssistants[0])`. Group membership maps
+/// are **derived** from [Group.items] (the web persists them separately).
 
-// ── Selection (in-memory, keepAlive) ────────────────────────────────────────
+/// Storage keys for the persisted sidebar selection / tab (port of the web
+/// `dexieStorage` setting keys).
+const String kCurrentAssistantSettingKey = 'currentAssistant';
+const String kCurrentTopicSettingKey = 'currentTopic';
+const String kSidebarTabIndexSettingKey = 'sidebarTabIndex';
+
+// ── Selection (keepAlive, persisted) ─────────────────────────────────────────
 
 /// The selected assistant id, or `null` to mean "fall back to the first".
-/// In-memory like [FontSizeController]; the web persisted this in IndexedDB.
+/// Hydrated from persisted storage on build and written through on [set] —
+/// the port of the web `dexieStorage.saveSetting('currentAssistant', …)`.
 @Riverpod(keepAlive: true)
 class CurrentAssistantId extends _$CurrentAssistantId {
   @override
-  String? build() => null;
+  String? build() {
+    _hydrate();
+    return null;
+  }
 
-  void set(String? id) => state = id;
+  Future<void> _hydrate() async {
+    final stored = await ref
+        .read(chatRepositoryProvider)
+        .getSetting(kCurrentAssistantSettingKey);
+    if (stored != null && stored.isNotEmpty) state = stored;
+  }
+
+  void set(String? id) {
+    state = id;
+    ref
+        .read(chatRepositoryProvider)
+        .saveSetting(kCurrentAssistantSettingKey, id ?? '');
+  }
 }
 
 /// The selected topic id, or `null` to mean "fall back to the current
 /// assistant's most recent topic". Drives [currentTopic] and the chat view.
+/// Hydrated from / written through to persisted storage like
+/// [CurrentAssistantId].
 @Riverpod(keepAlive: true)
 class CurrentTopicId extends _$CurrentTopicId {
   @override
-  String? build() => null;
+  String? build() {
+    _hydrate();
+    return null;
+  }
 
-  void set(String? id) => state = id;
+  Future<void> _hydrate() async {
+    final stored = await ref
+        .read(chatRepositoryProvider)
+        .getSetting(kCurrentTopicSettingKey);
+    if (stored != null && stored.isNotEmpty) state = stored;
+  }
+
+  void set(String? id) {
+    state = id;
+    ref
+        .read(chatRepositoryProvider)
+        .saveSetting(kCurrentTopicSettingKey, id ?? '');
+  }
+}
+
+/// The active sidebar tab index (0 助手 / 1 话题 / 2 设置). Hydrated from / written
+/// through to persisted storage so the last tab is restored on reopening the
+/// drawer and on app restart — the port of the web `settings.sidebarTabIndex`
+/// (`setSidebarTabIndex`).
+@Riverpod(keepAlive: true)
+class SidebarTabIndex extends _$SidebarTabIndex {
+  @override
+  int build() {
+    _hydrate();
+    return 0;
+  }
+
+  Future<void> _hydrate() async {
+    final stored = await ref
+        .read(chatRepositoryProvider)
+        .getSetting(kSidebarTabIndexSettingKey);
+    final parsed = int.tryParse(stored ?? '');
+    if (parsed != null && parsed >= 0 && parsed <= 2) state = parsed;
+  }
+
+  void set(int index) {
+    if (index < 0 || index > 2) return;
+    state = index;
+    ref
+        .read(chatRepositoryProvider)
+        .saveSetting(kSidebarTabIndexSettingKey, '$index');
+  }
 }
 
 /// A monotonic tick the [ChatController] watches so topic-tab actions that

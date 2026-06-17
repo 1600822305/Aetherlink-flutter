@@ -123,4 +123,13 @@ class ChatRepositoryImpl implements ChatRepository {
 
   @override
   Future<void> deleteGroup(String id) => _db.groupDao.deleteById(id);
+
+  // --- Settings -------------------------------------------------------------
+
+  @override
+  Future<String?> getSetting(String key) => _db.appSettingDao.getValue(key);
+
+  @override
+  Future<void> saveSetting(String key, String value) =>
+      _db.appSettingDao.setValue(key, value);
 }
