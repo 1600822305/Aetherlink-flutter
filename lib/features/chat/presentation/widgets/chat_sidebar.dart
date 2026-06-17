@@ -364,44 +364,62 @@ class _AssistantTabState extends ConsumerState<_AssistantTab> {
             onChanged: (v) => setState(() => _query = v),
           ),
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            children: [
-              if (searching) ...[
-                if (filtered.isEmpty)
-                  _EmptyHint(text: '没有找到助手', color: textSecondary)
-                else
-                  for (final a in filtered) item(a),
-              ] else ...[
-                if (groups.isEmpty)
-                  _EmptyHint(text: '没有助手分组', color: textSecondary)
-                else
-                  for (final g in groups)
-                    _ListFrame(
-                      children: [
-                        _GroupHeader(
-                          group: g,
-                          count: g.items.where(byId.containsKey).length,
-                          textPrimary: textPrimary,
-                          textSecondary: textSecondary,
-                        ),
-                        if (g.expanded)
-                          for (final id in g.items)
-                            if (byId[id] != null) item(byId[id]!),
-                      ],
+          child: searching
+              ? ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  children: [
+                    if (filtered.isEmpty)
+                      _EmptyHint(text: '没有找到助手', color: textSecondary)
+                    else
+                      for (final a in filtered) item(a),
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: ListView(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        children: [
+                          if (groups.isEmpty)
+                            _EmptyHint(text: '没有助手分组', color: textSecondary)
+                          else
+                            for (final g in groups)
+                              _ListFrame(
+                                children: [
+                                  _GroupHeader(
+                                    group: g,
+                                    count: g.items
+                                        .where(byId.containsKey)
+                                        .length,
+                                    textPrimary: textPrimary,
+                                    textSecondary: textSecondary,
+                                  ),
+                                  if (g.expanded)
+                                    for (final id in g.items)
+                                      if (byId[id] != null) item(byId[id]!),
+                                ],
+                              ),
+                          _SectionLabel(text: '未分组助手', color: textSecondary),
+                          if (ungrouped.isEmpty)
+                            _EmptyHint(text: '暂无未分组助手', color: textSecondary)
+                          else
+                            _ListFrame(
+                              maxHeight: _ungroupedMaxHeight(context),
+                              children: [for (final a in ungrouped) item(a)],
+                            ),
+                        ],
+                      ),
                     ),
-                _SectionLabel(text: '未分组助手', color: textSecondary),
-                if (ungrouped.isEmpty)
-                  _EmptyHint(text: '暂无未分组助手', color: textSecondary)
-                else
-                  _ListFrame(
-                    maxHeight: _ungroupedMaxHeight(context),
-                    children: [for (final a in ungrouped) item(a)],
-                  ),
-                _CountFooter(text: '共 ${all.length} 个助手', color: textSecondary),
-              ],
-            ],
-          ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: _CountFooter(
+                        text: '共 ${all.length} 个助手',
+                        color: textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
         ),
       ],
     );
@@ -684,45 +702,60 @@ class _TopicTabState extends ConsumerState<_TopicTab> {
         Expanded(
           child: current == null
               ? _EmptyHint(text: '请先在「助手」标签选择一个助手', color: textSecondary)
-              : ListView(
+              : searching
+              ? ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   children: [
-                    if (searching) ...[
-                      if (filtered.isEmpty)
-                        _EmptyHint(text: '没有找到话题', color: textSecondary)
-                      else
-                        for (final t in filtered) item(t),
-                    ] else ...[
-                      if (groups.isEmpty)
-                        _EmptyHint(text: '没有话题分组', color: textSecondary)
-                      else
-                        for (final g in groups)
-                          _ListFrame(
-                            children: [
-                              _GroupHeader(
-                                group: g,
-                                count: g.items.where(byId.containsKey).length,
-                                textPrimary: textPrimary,
-                                textSecondary: textSecondary,
+                    if (filtered.isEmpty)
+                      _EmptyHint(text: '没有找到话题', color: textSecondary)
+                    else
+                      for (final t in filtered) item(t),
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: ListView(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        children: [
+                          if (groups.isEmpty)
+                            _EmptyHint(text: '没有话题分组', color: textSecondary)
+                          else
+                            for (final g in groups)
+                              _ListFrame(
+                                children: [
+                                  _GroupHeader(
+                                    group: g,
+                                    count: g.items
+                                        .where(byId.containsKey)
+                                        .length,
+                                    textPrimary: textPrimary,
+                                    textSecondary: textSecondary,
+                                  ),
+                                  if (g.expanded)
+                                    for (final id in g.items)
+                                      if (byId[id] != null) item(byId[id]!),
+                                ],
                               ),
-                              if (g.expanded)
-                                for (final id in g.items)
-                                  if (byId[id] != null) item(byId[id]!),
-                            ],
-                          ),
-                      _SectionLabel(text: '未分组话题', color: textSecondary),
-                      if (ungrouped.isEmpty)
-                        _EmptyHint(text: '暂无未分组话题', color: textSecondary)
-                      else
-                        _ListFrame(
-                          maxHeight: _ungroupedMaxHeight(context),
-                          children: [for (final t in ungrouped) item(t)],
-                        ),
-                      _CountFooter(
+                          _SectionLabel(text: '未分组话题', color: textSecondary),
+                          if (ungrouped.isEmpty)
+                            _EmptyHint(text: '暂无未分组话题', color: textSecondary)
+                          else
+                            _ListFrame(
+                              maxHeight: _ungroupedMaxHeight(context),
+                              children: [for (final t in ungrouped) item(t)],
+                            ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: _CountFooter(
                         text: '共 ${topics.length} 个话题',
                         color: textSecondary,
                       ),
-                    ],
+                    ),
                   ],
                 ),
         ),
