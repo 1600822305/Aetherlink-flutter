@@ -8,57 +8,21 @@ part of 'sidebar_controllers.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
-/// Application layer backing the chat sidebar's 助手 / 话题 tabs (functional port
-/// of the web `TopicManagement` `AssistantTab` / `TopicTab` + their Redux slices
-/// `assistantsSlice` / `groupsSlice` / `newMessagesSlice`).
-///
-/// Three persistent source-of-truth notifiers ([Assistants], [Topics], [Groups],
-/// all Drift-backed via [ChatRepository]) plus two in-memory selection notifiers
-/// ([CurrentAssistantId], [CurrentTopicId]). The web persists the current
-/// selection (`dexieStorage.saveSetting('currentAssistant', …)`); Flutter keeps
-/// it in `keepAlive` memory for now (mirrors [FontSizeController]), with the
-/// derived [currentAssistant] falling back to the first assistant — matching the
-/// web `setCurrentAssistant(defaultAssistants[0])`. Group membership maps are
-/// **derived** from [Group.items] (the web persists them separately).
-// ── Selection (in-memory, keepAlive) ────────────────────────────────────────
 /// The selected assistant id, or `null` to mean "fall back to the first".
-/// In-memory like [FontSizeController]; the web persisted this in IndexedDB.
+/// Hydrated from persisted storage on build and written through on [set] —
+/// the port of the web `dexieStorage.saveSetting('currentAssistant', …)`.
 
 @ProviderFor(CurrentAssistantId)
 final currentAssistantIdProvider = CurrentAssistantIdProvider._();
 
-/// Application layer backing the chat sidebar's 助手 / 话题 tabs (functional port
-/// of the web `TopicManagement` `AssistantTab` / `TopicTab` + their Redux slices
-/// `assistantsSlice` / `groupsSlice` / `newMessagesSlice`).
-///
-/// Three persistent source-of-truth notifiers ([Assistants], [Topics], [Groups],
-/// all Drift-backed via [ChatRepository]) plus two in-memory selection notifiers
-/// ([CurrentAssistantId], [CurrentTopicId]). The web persists the current
-/// selection (`dexieStorage.saveSetting('currentAssistant', …)`); Flutter keeps
-/// it in `keepAlive` memory for now (mirrors [FontSizeController]), with the
-/// derived [currentAssistant] falling back to the first assistant — matching the
-/// web `setCurrentAssistant(defaultAssistants[0])`. Group membership maps are
-/// **derived** from [Group.items] (the web persists them separately).
-// ── Selection (in-memory, keepAlive) ────────────────────────────────────────
 /// The selected assistant id, or `null` to mean "fall back to the first".
-/// In-memory like [FontSizeController]; the web persisted this in IndexedDB.
+/// Hydrated from persisted storage on build and written through on [set] —
+/// the port of the web `dexieStorage.saveSetting('currentAssistant', …)`.
 final class CurrentAssistantIdProvider
     extends $NotifierProvider<CurrentAssistantId, String?> {
-  /// Application layer backing the chat sidebar's 助手 / 话题 tabs (functional port
-  /// of the web `TopicManagement` `AssistantTab` / `TopicTab` + their Redux slices
-  /// `assistantsSlice` / `groupsSlice` / `newMessagesSlice`).
-  ///
-  /// Three persistent source-of-truth notifiers ([Assistants], [Topics], [Groups],
-  /// all Drift-backed via [ChatRepository]) plus two in-memory selection notifiers
-  /// ([CurrentAssistantId], [CurrentTopicId]). The web persists the current
-  /// selection (`dexieStorage.saveSetting('currentAssistant', …)`); Flutter keeps
-  /// it in `keepAlive` memory for now (mirrors [FontSizeController]), with the
-  /// derived [currentAssistant] falling back to the first assistant — matching the
-  /// web `setCurrentAssistant(defaultAssistants[0])`. Group membership maps are
-  /// **derived** from [Group.items] (the web persists them separately).
-  // ── Selection (in-memory, keepAlive) ────────────────────────────────────────
   /// The selected assistant id, or `null` to mean "fall back to the first".
-  /// In-memory like [FontSizeController]; the web persisted this in IndexedDB.
+  /// Hydrated from persisted storage on build and written through on [set] —
+  /// the port of the web `dexieStorage.saveSetting('currentAssistant', …)`.
   CurrentAssistantIdProvider._()
     : super(
         from: null,
@@ -87,23 +51,11 @@ final class CurrentAssistantIdProvider
 }
 
 String _$currentAssistantIdHash() =>
-    r'1b53affd18b2ed02131ad4ee9fa788e4a84bd237';
+    r'e3a04e9d5a28823d0d2b4eeac3d24646b0c1328f';
 
-/// Application layer backing the chat sidebar's 助手 / 话题 tabs (functional port
-/// of the web `TopicManagement` `AssistantTab` / `TopicTab` + their Redux slices
-/// `assistantsSlice` / `groupsSlice` / `newMessagesSlice`).
-///
-/// Three persistent source-of-truth notifiers ([Assistants], [Topics], [Groups],
-/// all Drift-backed via [ChatRepository]) plus two in-memory selection notifiers
-/// ([CurrentAssistantId], [CurrentTopicId]). The web persists the current
-/// selection (`dexieStorage.saveSetting('currentAssistant', …)`); Flutter keeps
-/// it in `keepAlive` memory for now (mirrors [FontSizeController]), with the
-/// derived [currentAssistant] falling back to the first assistant — matching the
-/// web `setCurrentAssistant(defaultAssistants[0])`. Group membership maps are
-/// **derived** from [Group.items] (the web persists them separately).
-// ── Selection (in-memory, keepAlive) ────────────────────────────────────────
 /// The selected assistant id, or `null` to mean "fall back to the first".
-/// In-memory like [FontSizeController]; the web persisted this in IndexedDB.
+/// Hydrated from persisted storage on build and written through on [set] —
+/// the port of the web `dexieStorage.saveSetting('currentAssistant', …)`.
 
 abstract class _$CurrentAssistantId extends $Notifier<String?> {
   String? build();
@@ -125,16 +77,22 @@ abstract class _$CurrentAssistantId extends $Notifier<String?> {
 
 /// The selected topic id, or `null` to mean "fall back to the current
 /// assistant's most recent topic". Drives [currentTopic] and the chat view.
+/// Hydrated from / written through to persisted storage like
+/// [CurrentAssistantId].
 
 @ProviderFor(CurrentTopicId)
 final currentTopicIdProvider = CurrentTopicIdProvider._();
 
 /// The selected topic id, or `null` to mean "fall back to the current
 /// assistant's most recent topic". Drives [currentTopic] and the chat view.
+/// Hydrated from / written through to persisted storage like
+/// [CurrentAssistantId].
 final class CurrentTopicIdProvider
     extends $NotifierProvider<CurrentTopicId, String?> {
   /// The selected topic id, or `null` to mean "fall back to the current
   /// assistant's most recent topic". Drives [currentTopic] and the chat view.
+  /// Hydrated from / written through to persisted storage like
+  /// [CurrentAssistantId].
   CurrentTopicIdProvider._()
     : super(
         from: null,
@@ -162,10 +120,12 @@ final class CurrentTopicIdProvider
   }
 }
 
-String _$currentTopicIdHash() => r'd4abe32dd6f1689c0a2b07636144f62b9ae973f7';
+String _$currentTopicIdHash() => r'515ffa84ced42de52354d5bfe33757092f05d7ff';
 
 /// The selected topic id, or `null` to mean "fall back to the current
 /// assistant's most recent topic". Drives [currentTopic] and the chat view.
+/// Hydrated from / written through to persisted storage like
+/// [CurrentAssistantId].
 
 abstract class _$CurrentTopicId extends $Notifier<String?> {
   String? build();
@@ -178,6 +138,76 @@ abstract class _$CurrentTopicId extends $Notifier<String?> {
             as $ClassProviderElement<
               AnyNotifier<String?, String?>,
               String?,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
+/// The active sidebar tab index (0 助手 / 1 话题 / 2 设置). Hydrated from / written
+/// through to persisted storage so the last tab is restored on reopening the
+/// drawer and on app restart — the port of the web `settings.sidebarTabIndex`
+/// (`setSidebarTabIndex`).
+
+@ProviderFor(SidebarTabIndex)
+final sidebarTabIndexProvider = SidebarTabIndexProvider._();
+
+/// The active sidebar tab index (0 助手 / 1 话题 / 2 设置). Hydrated from / written
+/// through to persisted storage so the last tab is restored on reopening the
+/// drawer and on app restart — the port of the web `settings.sidebarTabIndex`
+/// (`setSidebarTabIndex`).
+final class SidebarTabIndexProvider
+    extends $NotifierProvider<SidebarTabIndex, int> {
+  /// The active sidebar tab index (0 助手 / 1 话题 / 2 设置). Hydrated from / written
+  /// through to persisted storage so the last tab is restored on reopening the
+  /// drawer and on app restart — the port of the web `settings.sidebarTabIndex`
+  /// (`setSidebarTabIndex`).
+  SidebarTabIndexProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'sidebarTabIndexProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$sidebarTabIndexHash();
+
+  @$internal
+  @override
+  SidebarTabIndex create() => SidebarTabIndex();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(int value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<int>(value),
+    );
+  }
+}
+
+String _$sidebarTabIndexHash() => r'28771173d0cba39bdd9e7b5946ca17b15d18a904';
+
+/// The active sidebar tab index (0 助手 / 1 话题 / 2 设置). Hydrated from / written
+/// through to persisted storage so the last tab is restored on reopening the
+/// drawer and on app restart — the port of the web `settings.sidebarTabIndex`
+/// (`setSidebarTabIndex`).
+
+abstract class _$SidebarTabIndex extends $Notifier<int> {
+  int build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<int, int>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<int, int>,
+              int,
               Object?,
               Object?
             >;
@@ -394,7 +424,7 @@ final class GroupsProvider extends $AsyncNotifierProvider<Groups, List<Group>> {
   Groups create() => Groups();
 }
 
-String _$groupsHash() => r'52b35b8075df0f67e6b0b69efef79fb1e4cd988c';
+String _$groupsHash() => r'155f44482ec02f8e98d2892233f3516f733a46d4';
 
 /// Assistant folders and topic folders, persisted via Drift — the port of
 /// `groupsSlice`. Ungrouped membership is derived from [Group.items], so each
@@ -465,7 +495,7 @@ final class CurrentAssistantProvider
   }
 }
 
-String _$currentAssistantHash() => r'5cfa7c4d57069f2d7686fd81977eeb37409e0915';
+String _$currentAssistantHash() => r'5d45ec9a86bcc4ea87736fd92200028bfb89a5a8';
 
 /// The current assistant's topics, sorted pinned-first then most-recent.
 
@@ -512,7 +542,7 @@ final class CurrentAssistantTopicsProvider
 }
 
 String _$currentAssistantTopicsHash() =>
-    r'7b7b6ebe6e90fda7a1a3ff52214310f3468b6dac';
+    r'88d3e85a7910993e8eec59d0a71ea74fd62a3609';
 
 /// Topic count per assistant id, for the 助手 list's "N 个话题" subtitle.
 
@@ -564,7 +594,7 @@ final class TopicCountByAssistantProvider
 }
 
 String _$topicCountByAssistantHash() =>
-    r'135237358bbb3aa931c4ade81e4f525f4f83505d';
+    r'ddf4f1807171c38cdc585be7210abffb09b8fee6';
 
 /// Assistant folders, ascending by display order.
 
@@ -610,7 +640,7 @@ final class AssistantGroupsProvider
   }
 }
 
-String _$assistantGroupsHash() => r'840e3dae7baf5c20c58e7f056db356f78e001beb';
+String _$assistantGroupsHash() => r'84ba9deb5a6e4a7321e33b8efac8f80f3c2c4b07';
 
 /// Assistants not in any assistant folder ("未分组助手").
 
@@ -658,7 +688,7 @@ final class UngroupedAssistantsProvider
 }
 
 String _$ungroupedAssistantsHash() =>
-    r'ec867c6aca3f64b12d9f4bb26c7dfb345f0046c6';
+    r'6c09d58022b82f5792f3f9b92b697c0c676e2e51';
 
 /// Topic folders for [assistantId], ascending by display order.
 
@@ -722,7 +752,7 @@ final class TopicGroupsProvider
   }
 }
 
-String _$topicGroupsHash() => r'2c9af6d46e5583f0515c3e8135b7d7a267ff5ac6';
+String _$topicGroupsHash() => r'1ddbfa6558b6ff93fceab4ee9972f1b5ad86ab71';
 
 /// Topic folders for [assistantId], ascending by display order.
 

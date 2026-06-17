@@ -77,4 +77,15 @@ abstract interface class ChatRepository {
   Future<void> saveGroup(Group group);
 
   Future<void> deleteGroup(String id);
+
+  // --- Settings (key/value) -------------------------------------------------
+
+  /// Reads a persisted preference value, or `null` if unset. Port of the web
+  /// `dexieStorage.getSetting` (e.g. `currentAssistant`, the sidebar tab
+  /// index).
+  Future<String?> getSetting(String key);
+
+  /// Persists a single preference value under [key]. Port of the web
+  /// `dexieStorage.saveSetting`.
+  Future<void> saveSetting(String key, String value);
 }
