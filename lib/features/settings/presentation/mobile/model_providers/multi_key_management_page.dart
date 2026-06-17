@@ -458,7 +458,7 @@ class _KeyRow extends StatelessWidget {
                   ],
                 ),
               ),
-              Switch(value: config.isEnabled, onChanged: onToggle),
+              CustomSwitch(value: config.isEnabled, onChanged: onToggle),
             ],
           ),
           const SizedBox(height: 4),
