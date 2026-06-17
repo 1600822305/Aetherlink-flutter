@@ -65,3 +65,14 @@
   3. **图标锁 presentation**；`IconData` 不下沉 application/domain，domain 保持纯 Dart 过边界测试。
   4. 图标包**pin 明确版本**，升级当独立改动评估。
 - **未来若要推翻的触发条件**：所选 lucide 端口包长期失修 / 覆盖度跟不上上游 lucide（则换包或转「搬 SVG asset」方案，单独评估）；或产品决定整体换用非 lucide 的图标语言（则新开 ADR 标 `Supersedes: ADR-0009`）。
+
+## 补遗（2026-06-16）：非 lucide 的自定义 SVG 走 `flutter_svg` 资产
+
+逐页复刻输入框（PR #52/#53）与顶部工具栏（PR #55/#56）时遇到**原版本来就不是 lucide** 的图标——它们来自原项目自有的 `src/components/icons/iconData.ts`（如带星放大镜 search、网格状 settingsPanel、AI 辩论 aiDebate、快捷短语 quickPhrase、文档面板、折叠等）。这正命中划线规则一里「**除非原版该处本就不是 lucide，需在 PR 里点明**」的例外口子，本补遗把这条例外的**落地方式**定死：
+
+- **方案**：用 `flutter_svg`（`^2.3.0`，本就为 `lucide_github` 字形引入）+ `SvgPicture.asset(path, colorFilter: ColorFilter.mode(color, BlendMode.srcIn))`，把原始 SVG path 还原成项目 asset（`assets/icons/aether_*.svg`），**不拿 lucide 近似、更不拿 Material `Icons.*` 凑数**（与划线规则一精神一致：要么 lucide 同款，要么原版同款 SVG）。
+- **换色仍走主题 token**：`colorFilter` 的 `color` 取自主题（与 lucide 一致），保持「零硬编码色」（划线规则四）。
+- **边界不变**：SVG 资产是 presentation 资源，`SvgPicture` 是 Flutter 类型，**只待在 presentation**；domain/application 仍只用纯 Dart 语义标识（enum/key），由 presentation 映射成图标（划线规则三）。集中映射见 `lib/shared/widgets/top_toolbar_component_catalog.dart` / `input_box_button_catalog.dart`。
+- **依赖政策**：`flutter_svg` 是这条例外的承载依赖，口子仍只限「图标资产」，不等于 UI 层可随意加包（划线规则二不变）。
+
+> 一句话：**lucide 同款 → `LucideIcons.*`；原版非 lucide 的自定义图标 → `flutter_svg` 还原原始 SVG。两条都不接受「形似替代品」。**

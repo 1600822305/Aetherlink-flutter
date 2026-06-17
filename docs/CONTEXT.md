@@ -12,7 +12,7 @@
 - **原项目（要迁走的）**：`https://github.com/1600822305/Aetherlink`
   技术栈：React 19 + MUI v7 + @emotion + tailwind，跑在 Capacitor 8（移动 webview）+ Tauri 2（桌面 webview）上。状态用 Redux Toolkit（14 slice）+ zustand + signals，数据用 Dexie/IndexedDB，LLM 走 Vercel AI SDK。规模：**972 个 TS 文件 / 207 个目录**。
 - **新项目（本仓库，要迁到的）**：`https://github.com/1600822305/Aetherlink-flutter`
-  技术栈：Flutter（Dart）。已搭起 feature-first 骨架，并完成 **M0~M3**（领域模型 / Drift 数据层 / 网络·LLM 含 **E2E 验穿** / 平台能力层）、**M4.0 UI 地基**、**M4.1 欢迎页**、**M4.2.1 聊天消息渲染**、**M4.4.0 设置 hub + 关于页**、**M4.3 数据层 + M4.3.0 二级页 + M4.3.1 三级页 UI**、**M4.3.2 接线 + 发送/流式闭环**（地基最后一件已点亮 —— 「打字→发送→真流式→落库→渲染」在 app 里跑通，第一个可演示闭环）；**下一步 = M4 外围（聊天话题/助手抽屉、消息操作）+ M4.4 设置高频页（Appearance/Behavior…）**。M4 分子阶段逐页重写，详见 `ROADMAP.md` 进度看板。
+  技术栈：Flutter（Dart）。已搭起 feature-first 骨架，并完成 **M0~M3**（领域模型 / Drift 数据层 / 网络·LLM 含 **E2E 验穿** / 平台能力层）、**M4.0 UI 地基**、**M4.1 欢迎页**、**M4.2.1 聊天消息渲染**、**M4.4.0 设置 hub + 关于页**、**M4.3 数据层 + M4.3.0 二级页 + M4.3.1 三级页 UI（含单模型选择器对话框/编辑供应商弹窗等精修，PR #43–#48）**、**M4.3.2 接线 + 发送/流式闭环**（地基最后一件已点亮 —— 「打字→发送→真流式→落库→渲染」在 app 里跑通，第一个可演示闭环）、**M4.4 外观设置簇（PR #49–#56）**：外观设置二级页 1:1 + 全局字体大小接通 + 聊天输入框 1:1 复刻 + 输入框管理设置（风格/按钮布局接通）+ 顶部工具栏 DIY 设置并**接通真实聊天顶栏**；**下一步 = M4 外围（聊天话题/助手抽屉、消息操作）+ M4.4 余下设置高频页（Behavior / ChatInterface / 思考过程 / 信息气泡 等仍置灰的子页）**。M4 分子阶段逐页重写，详见 `ROADMAP.md` 进度看板。
 
 ---
 
@@ -81,7 +81,13 @@
 - ✅ **M2 流式已 E2E 验穿**（PR #33）：真 socket + 本地 mock SSE server 跑通「请求→SSE 分块→适配器→`LlmStreamChunk`」全链 + `bin/llm_smoke.dart` dev 冒烟入口（不依赖 UI / 真 key）。**地基体检里「M2 未在运行时端到端验证」这一最后风险已退。**
 - ✅ **M4.3.1 模型配置三级页 UI 已完成**（PR #35）：添加供应商 / 供应商详情（枢纽）/ 编辑模型 / 高级API 配置四页 1:1 复刻，需数据控件全置灰，test 112 全绿。
 - ✅ **M4.3.2 接线 + 发送/流式闭环已完成**（PR #37，地基最后一件点亮）：真 `ChatController`（application 编排）只依赖端口——`ChatRepository`、跨 feature 的 `appCurrentModelProvider`（取当前模型，仅 domain）、`LlmGatewayFactory`，全走 Riverpod 注入（DI 接缝 `app/di/model_access.dart` + `chat/application/chat_providers.dart`）。发送流：落用户消息（+`main_text` block）→ 落 streaming 态 assistant 消息 → 由当前模型+历史组 `LlmChatRequest` → 订阅 `gateway.streamChat`，`LlmTextDelta` 累进 `main_text`、`LlmReasoningDelta` 累进 `thinking`、逐块刷状态 → `LlmDone` 定稿落库；stream error → 错误态 + `error` block 落库。三级页控件解灰接 `ModelRepository`（添供应商/编辑模型/高级API 真落库）。**「打字→发送→真流式→落库→渲染」第一次在 app 里活**；M0(block)+M1(落库)+M2(流式) 真正咬合。验收链全绿：analyze 干净 / format 0 改 / build_runner 后 git 空 / **test 117 全过**（含边界测试 + 闭环测试走假网关，不要真 key）。
-- ⏭ **下一步 = M4 外围 + M4.4 设置高频页**：聊天外围（话题/助手抽屉、多话题切换、消息复制/重发/删除）+ 设置高频页（Appearance / Behavior / ChatInterface）。现在在 app 里填一组真 key 就能见证闭环真活（真 key 不入仓，运行时配置页输入）。
+- ✅ **M4.3 三级页精修已完成**（PR #43–#48）：单模型选择器对话框 1:1（#43）、设置·配置模型二级页 1:1（#44）、齿轮→编辑供应商弹窗（#46）、三级 provider-detail 页（顶部 Tab 配置/模型，风格对齐，#47）+ 底部安全区修复（#48）。相关页都在 `lib/features/settings/presentation/mobile/model_providers/`。
+- ✅ **M4.4 外观设置二级页已完成**（PR #49）：1:1 复刻外观设置二级页；主题下拉接通（浅色/深色/跟随系统实时切换），其余内联控件 1:1 静态还原，界面定制 6 个三级子页入口先置灰（Opacity 0.5 不跳转，后续逐个解灰）。
+- ✅ **全局字体大小已接通**（PR #50 → 崩溃修复 #51）：`FontSizeController`（内存态，12–24，默认 16）；缩放走 **`MediaQuery.textScaler`**（`fontSize/16`），**不要用主题 `fontSizeFactor`**——后者对 `Typography.material2018().black` 里 `fontSize==null` 的样式做缩放会触发 `TextStyle.apply` 断言、非默认字号即红屏崩溃（#50 的 bug，#51 修）。教训：滑块类全局缩放必须 debug 实跑拖动验证。
+- ✅ **聊天输入框 1:1 复刻已完成**（PR #52）：三段式纸面卡（边框 + `0 2px 8px` 阴影 + 圆角 8）；图标 1:1（lucide 原图标 + 非 lucide 的自定义 SVG 用 `flutter_svg` 资产还原，见 ADR-0009 补遗）；按钮行为先不实现但**接口（回调）已设计**，回调为 null 时保真渲染不触发（不做假按钮）。
+- ✅ **输入框管理设置子页已完成**（PR #53，长按拖拽修复 #54）：1:1 复刻（实时预览 + 拖拽按钮布局 + 风格下拉），并接通——风格（default/modern/minimal）与左右按钮布局实时驱动聊天输入框与预览。拖拽用 Flutter 原生 **`LongPressDraggable`**（即时 `Draggable` 易误触，#54 改长按）。
+- ✅ **顶部工具栏 DIY 设置 + 接通真实聊天顶栏已完成**（PR #55 设置页 / PR #56 接通顶栏）：`TopToolbarSettingsController` 存 `positions`（x%/y% 自由布局）+ `modelSelectorDisplayStyle`；聊天 `ChatTopBar` 按配置渲染——有放置组件→ DIY 绝对定位布局（`Stack` + `Positioned` + `FractionalTranslation(-0.5,-0.5)`），否则默认布局（菜单+话题 | 模型选择器+设置），与原版 `ChatPageUI` 的 `isDIYLayout` 一致。跨 feature 读取经组合根接缝 `app/di/top_toolbar_access.dart`（chat 不直接 import settings 内部）。
+- ⏭ **下一步 = M4 外围 + M4.4 余下设置高频页**：聊天外围（话题/助手抽屉、多话题切换、消息复制/重发/删除）+ 仍置灰的设置子页（界面定制里的主题风格/聊天界面/思考过程/信息气泡，以及 Behavior / ChatInterface）。现在在 app 里填一组真 key 就能见证闭环真活（真 key 不入仓，运行时配置页输入）。
 
 > 进度的**实时看板**在 `ROADMAP.md` 末尾（M0~M5 + 数据迁移，⬜/✅）。**每完成一个里程碑，就去把那张表对应行打勾**——它是「做到哪了」的唯一事实来源。
 
@@ -119,7 +125,7 @@ M5  桌面端 UI         复用下层，只做桌面 shell
 
 > 读 `1600822305/Aetherlink-flutter` 仓库的 `docs/CONTEXT.md` 了解全部前因后果，然后看 `docs/ROADMAP.md` 的进度看板，从当前**未完成的最靠前里程碑**接着做。严格遵守 `docs/PROJECT_STRUCTURE.md` 和 `docs/CONVENTIONS.md` 的死规矩。
 
-（当前进度：M0、M1、M2、M3、M4.0、M4.1 已完成，**下一个是 M4.2 ChatPage 聊天主界面**；M4 分子阶段逐页重写。）
+（当前进度：M0~M3 + M4.0/M4.1/M4.2.1 + M4.3 全套（数据层/二三级页/接线闭环/#43–#48 精修）+ M4.4 外观设置簇（#49–#56：外观二级页 / 全局字体 / 输入框 1:1 / 输入框管理设置 / 顶部工具栏 DIY+接通顶栏）均已完成。**下一个 = M4 聊天外围（话题/助手抽屉、消息操作）+ M4.4 余下仍置灰的设置子页**；M4 分子阶段逐页重写，逐 PR 合并。）
 
 ---
 

@@ -98,7 +98,23 @@
 | `Dialog`（确认弹窗） | `showDialog` + `AlertDialog`（title/content/actions） |
 | `Checkbox` | `Checkbox(visualDensity: compact, materialTapTargetSize: shrinkWrap)` |
 | 可拖拽列表（`reorder`） | `ReorderableListView.builder(buildDefaultDragHandles: false)` + `ReorderableDragStartListener`；用 `onReorderItem`（新 API，已自动校正 newIndex） |
+| 跨区拖拽 / DIY 放置（HTML5 `draggable` / dnd-kit） | **`LongPressDraggable<T>` + `DragTarget<T>`**（Flutter 原生，不引新依赖）。**必须用长按版**：即时 `Draggable` 手指一滑就触发移动/移除、极易误触（见坑⑧） |
 | `lucide-react` 图标 | `lucide_icons_flutter`（`LucideIcons.*`，见 ADR 0009） |
+| 原版**非 lucide** 的自定义 SVG（`iconData.ts`：settingsPanel/search-with-star/aiDebate/quickPhrase 等） | `flutter_svg` 的 `SvgPicture.asset(path, colorFilter: ColorFilter.mode(color, BlendMode.srcIn))` 还原原始 path；**不拿 lucide/Material 凑数**（见 ADR-0009 补遗 + 坑⑦） |
+| `Radio` / `RadioGroup`（单选） | **`RadioGroup<T>` 祖先 + `Radio<T>(value:)`**（Flutter 3.44+ 新 API）。`Radio.groupValue` / `onChanged` 已 **deprecated**，别再用（见坑⑨） |
+| 绝对定位自由布局（CSS `position:absolute; left:x%; top:y%; translate(-50%,-50%)`） | `Stack(clipBehavior: Clip.none)` + `Positioned(left: x/100*w, top: y/100*h)` + `FractionalTranslation(translation: Offset(-0.5,-0.5))`；宽高用 `LayoutBuilder` 取（见顶栏 DIY 布局 §3.7） |
+
+### 3.7 DIY 自由布局（顶部工具栏「拖拽 DIY」范式）
+
+原版顶栏支持把组件拖到画布任意位置（百分比坐标），样板见 `lib/features/chat/presentation/widgets/chat_top_bar.dart`（消费）+ `lib/features/settings/presentation/mobile/top_toolbar_settings_page.dart`（编辑）。要点：
+
+- **配置模型**：`TopToolbarSettings { List<TopToolbarComponentPosition> positions; ModelSelectorDisplayStyle modelSelectorDisplayStyle }`，每个 position 存 `component + x% + y%`（freezed，落 `shared/domain/`）。
+- **是否 DIY**：`isDiy = positions.isNotEmpty`，与原版 `isDIYLayout = Boolean(componentPositions?.length)` 对齐。DIY 态只渲染**已放置**的组件，未放置的默认按钮整体隐藏。
+- **渲染**：DIY → `Stack` + `Positioned(left: x/100*w, top: y/100*h)` + `FractionalTranslation(Offset(-0.5,-0.5))`（对齐 CSS `translate(-50%,-50%)`）；非 DIY → 默认 `leading | title | actions` 布局。
+- **放置**：拖放时 `box.globalToLocal(details.offset)` 换算 → `x% = dx/w*100`、`y% = dy/h*100`，落库前 clamp（`x∈[1,99]`、`y∈[0,100]`）。
+- **图标 catalog**：组件名/字形集中在 `lib/shared/widgets/top_toolbar_component_catalog.dart`（`topToolbarComponentIcon(component, color:, size:)`），编辑页与聊天页**共用同一份**，保证字形 1:1。
+
+> 同理可复用到任何「可视化拖拽配置 + 运行时按配置渲染」的页（输入框按钮布局也是这套：`shared/widgets/input_box_button_catalog.dart` + `input_box_composer.dart`）。
 
 ---
 
@@ -112,6 +128,9 @@
 | **④ `colorScheme.error` ≠ 原版红** | 本项目 error = Material `#B00020`，比原版 `#EF4444` 暗 | 工具栏红、弹窗红用字面 `Color(0xFFEF4444)` |
 | **⑤ MUI 16/14 缩放漏乘** | 默认字号（subtitle1/ListSubheader 等）偏小 | 未显式 px 的 MUI 默认字号要乘 `16/14` |
 | **⑥ 漏迁状态分支** | 多选/空态/弹窗没复刻，只做了「主态」 | §2 第 2 步先列全形态清单，逐个复刻 |
+| **⑦ 全局字号缩放红屏崩溃** | 用主题 `textTheme.apply(fontSizeFactor: x)` 做全局缩放，非默认字号即触发 `TextStyle.apply` 断言（`Typography.material2018().black` 多数样式 `fontSize==null`） | **不要碰 `TextStyle.apply` / 主题 `fontSizeFactor`**；全局缩放用 `MediaQuery(textScaler: TextScaler.linear(fontSize/16))` 包 `MaterialApp.router` 的 `builder`，对任意 `Text` 生效且不碰 null fontSize（PR #50 崩 → #51 修）。**断言只在 debug 触发，必须 debug 实跑拖动验证** |
+| **⑧ 拖拽误触** | 用即时 `Draggable`，手指一滑就移动/移除按钮，极易误触 | 改 `LongPressDraggable`（按住 ~0.5s 才进入拖拽）；普通点击/眼睛显隐切换不受影响（PR #53 → #54 修） |
+| **⑨ `Radio` 弃用 API** | `Radio(groupValue:, onChanged:)` 报 deprecated（Flutter 3.44+ 重构单选） | 外层包 `RadioGroup<T>(groupValue:, onChanged:)`，子项只写 `Radio<T>(value:)`，选中态/回调由祖先统一管 |
 
 ---
 

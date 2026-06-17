@@ -63,7 +63,7 @@
 - **M4.1 欢迎页（首屏进入页）**（✅ PR #19）：继关于页之后第二个验证「主题→`go_router` 导航→`Scaffold`」管线的低风险页——居中 logo + 渐变标题（`ShaderMask`，颜色全走主题 token）+ 副标题 + 「开始」按钮；首次进入门控做成内存态 `onboardingController` 接缝（`markStarted()`，持久化延后留 `restore()` 缝）。
 - **M4.2 ChatPage 聊天主界面**（重头，拆子阶段）：消息列表（block 渲染 main_text/thinking/code）、输入框、发送、流式增量、话题/助手抽屉。串起 M0(block)+M1(存储)+M2(流式)。子阶段：骨架 ✅ → **M4.2.1 消息渲染**（✅ PR #24，已存 `main_text` 真画成气泡）→ 发送/流式闭环（✅ = M4.3.2 / PR #37，与模型配置落库合并一刀）→ 外围功能逐个（话题/助手抽屉、消息操作…未做）。
 - **M4.3 模型/供应商设置**（拆子阶段）：DefaultModelSettings + AddProvider / EditModel / AdvancedAPIConfig + 配置持久化。子阶段：**M4.3-数据层**（✅ PR #34，Drift `ProviderRows` 表 + `ProviderDao` + `ModelRepository`）→ **M4.3.0 二级页「默认模型设置」UI**（✅ PR #31/#32）→ **M4.3.1 三级页 UI**（✅ PR #35，添加供应商 / 供应商详情枢纽 / 编辑模型 / 高级API，1:1 复刻、需数据控件置灰）→ **M4.3.2 接线 + 发送/流式闭环**（✅ PR #37：真 `ChatController` 只依赖端口（`ChatRepository`/`appCurrentModelProvider`/`LlmGatewayFactory`，Riverpod 注入），发送→订阅 `streamChat` 增量进 `main_text`/`thinking` block→`LlmDone` 定稿落库、stream error→错误态+error block；三级页控件解灰接 `ModelRepository`、`current_model` 选当前模型。DI 接缝 `app/di/model_access.dart`）。**M4.3.2 = 第一个可演示闭环 + 地基最后一件已点亮**（「打字→发送→真流式→落库→渲染」在 app 里跑通；真 key 由用户在配置页输入，本期用假网关/mock 验闭环）。
-- **M4.4 设置主页外壳 + 高频页**：**M4.4.0 设置 hub 外壳**（✅ PR #26，提前于 M4.3 做 —— hub 是导航父级）+ 关于页（✅ PR #27/#28）；后续 Appearance / Behavior / ChatInterface…（未做条目置灰）。
+- **M4.4 设置主页外壳 + 高频页**：**M4.4.0 设置 hub 外壳**（✅ PR #26，提前于 M4.3 做 —— hub 是导航父级）+ 关于页（✅ PR #27/#28）。**M4.4.1 外观设置簇**（✅ PR #49–#56）：外观设置二级页 1:1（#49，主题下拉接通、界面定制 6 子页先置灰）→ 全局字体大小接通（#50，崩溃修复 #51——缩放走 `MediaQuery.textScaler` 而非主题 `fontSizeFactor`）→ 聊天输入框 1:1 复刻（#52，按钮接口先留缝）→ 输入框管理设置子页（#53，风格 + 左右按钮布局接通；长按拖拽防误触 #54）→ 顶部工具栏 DIY 设置（#55）并**接通真实聊天顶栏**（#56，按 `positions` x%/y% 绝对布局渲染，跨 feature 经 `app/di/top_toolbar_access.dart`）。余下 Behavior / ChatInterface / 思考过程 / 信息气泡等仍置灰子页待做。
 - **M4.5+ 长尾**：KnowledgeBase、Voice（依赖 M3 延后能力）、MCP、WebSearch、AIDebate、ModelCombo、DataSettings…每页一阶段或小簇。
 
 **验收（每子阶段逐页适用）**
@@ -106,8 +106,11 @@
 | M4.3.0 默认模型设置（二级页 UI） | ✅ 已完成（PR #31/#32） |
 | M4.3.1 模型配置三级页 UI | ✅ 已完成（PR #35；含详情枢纽页） |
 | M4.3.2 接线 + 发送/流式闭环 | ✅ 已完成（PR #37；第一个可演示闭环、地基最后一件点亮；117 全绿） |
+| M4.3 三级页精修（选择器/编辑弹窗/Tab/安全区） | ✅ 已完成（PR #43 / #44 / #46 / #47 / #48） |
 | M4.4.0 设置 hub 外壳 + 关于页 | ✅ 已完成（PR #26 / #27 / #28，提前于 M4.3） |
-| M4.4 设置高频页（Appearance/Behavior…） | ⬜ |
+| M4.4.1 外观设置簇（外观二级页/全局字体/输入框 1:1/输入框管理/顶栏 DIY+接通顶栏） | ✅ 已完成（PR #49–#56） |
+| M4.4 余下设置高频页（Behavior/ChatInterface/思考过程/信息气泡…） | ⬜ |
+| M4 聊天外围（话题/助手抽屉、消息操作） | ⬜ |
 | M4.5+ 设置长尾 | ⬜ |
 | M5 桌面端 UI | ⬜ |
 | 数据迁移 | ⬜ |
