@@ -62,6 +62,14 @@ const Color _listFrameBg = Color(0xFFFFFFFF);
 /// The original mobile drawer is 350px wide (`AppSidebar.solid.tsx`).
 const double _sidebarWidth = 350;
 
+/// Max height of the ungrouped list box before it scrolls internally — the port
+/// of the web list `maxHeight: calc(100vh - 400px)` (clamped so it stays usable
+/// on short screens).
+double _ungroupedMaxHeight(BuildContext context) {
+  final h = MediaQuery.of(context).size.height - 400;
+  return h < 160 ? 160 : h;
+}
+
 class ChatSidebar extends ConsumerStatefulWidget {
   const ChatSidebar({super.key});
 
@@ -386,7 +394,10 @@ class _AssistantTabState extends ConsumerState<_AssistantTab> {
                 if (ungrouped.isEmpty)
                   _EmptyHint(text: '暂无未分组助手', color: textSecondary)
                 else
-                  _ListFrame(children: [for (final a in ungrouped) item(a)]),
+                  _ListFrame(
+                    maxHeight: _ungroupedMaxHeight(context),
+                    children: [for (final a in ungrouped) item(a)],
+                  ),
                 _CountFooter(text: '共 ${all.length} 个助手', color: textSecondary),
               ],
             ],
@@ -705,6 +716,7 @@ class _TopicTabState extends ConsumerState<_TopicTab> {
                         _EmptyHint(text: '暂无未分组话题', color: textSecondary)
                       else
                         _ListFrame(
+                          maxHeight: _ungroupedMaxHeight(context),
                           children: [for (final t in ungrouped) item(t)],
                         ),
                       _CountFooter(
@@ -1415,29 +1427,54 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
+/// Hides the scrollbar inside a [_ListFrame] — the web list box uses
+/// `scrollbar-width: none`.
+class _NoScrollbarBehavior extends ScrollBehavior {
+  const _NoScrollbarBehavior();
+
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) => child;
+}
+
 /// A rounded, 1px-bordered box that frames a list section — the port of the web
 /// `VirtualizedList` / group `Accordion` container (border `divider`, radius 8,
-/// `background.paper` background).
+/// `background.paper` background). When [maxHeight] is set the content scrolls
+/// internally with a hidden scrollbar (web `maxHeight: calc(100vh - 400px)`).
 class _ListFrame extends StatelessWidget {
-  const _ListFrame({required this.children});
+  const _ListFrame({required this.children, this.maxHeight});
 
   final List<Widget> children;
+  final double? maxHeight;
 
   @override
   Widget build(BuildContext context) {
+    Widget content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: children,
+    );
+    if (maxHeight != null) {
+      content = ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight!),
+        child: ScrollConfiguration(
+          behavior: const _NoScrollbarBehavior(),
+          child: SingleChildScrollView(child: content),
+        ),
+      );
+    }
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: _listFrameBg,
         border: Border.all(color: _listFrameBorder),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: children,
-      ),
+      child: content,
     );
   }
 }
