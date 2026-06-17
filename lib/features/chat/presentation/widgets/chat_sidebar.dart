@@ -10,6 +10,8 @@
 /// live web DOM (`getComputedStyle`, light theme).
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -970,14 +972,11 @@ class _TopicItem extends ConsumerWidget {
                           onSelected: (m) => _onMenu(context, ref, m),
                         ),
                         const SizedBox(width: 2),
-                        _MutedIconButton(
-                          icon: LucideIcons.trash,
+                        _ConfirmDeleteButton(
                           size: 16,
                           box: 20,
-                          padding: 2,
-                          opacity: 0.6,
                           color: textPrimary,
-                          onPressed: () => _deleteTopic(context, ref),
+                          onConfirm: () => _deleteTopic(context, ref),
                         ),
                       ],
                     ),
@@ -1681,6 +1680,74 @@ class _Chip extends StatelessWidget {
 }
 
 /// A compact icon button mirroring MUI's `IconButton` sizing (`box` = the
+/// 话题删除按钮:两次点击确认(1.5s 超时),像素级复刻原版
+/// `TopicItem.handleDeleteClick`。默认态 [`LucideIcons.trash`] / opacity 0.6;
+/// 确认态 [`LucideIcons.alertTriangle`] / opacity 1 / 红色。
+class _ConfirmDeleteButton extends StatefulWidget {
+  const _ConfirmDeleteButton({
+    required this.size,
+    required this.box,
+    required this.color,
+    required this.onConfirm,
+  });
+
+  final double size;
+  final double box;
+  final Color color;
+  final VoidCallback onConfirm;
+
+  @override
+  State<_ConfirmDeleteButton> createState() => _ConfirmDeleteButtonState();
+}
+
+class _ConfirmDeleteButtonState extends State<_ConfirmDeleteButton> {
+  bool _pending = false;
+  Timer? _timer;
+
+  void _handleTap() {
+    if (_pending) {
+      _reset();
+      widget.onConfirm();
+    } else {
+      setState(() => _pending = true);
+      _timer = Timer(const Duration(milliseconds: 1500), _reset);
+    }
+  }
+
+  void _reset() {
+    _timer?.cancel();
+    _timer = null;
+    if (mounted) setState(() => _pending = false);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final danger = _pending;
+    return IconButton(
+      onPressed: _handleTap,
+      iconSize: widget.size,
+      color: danger ? _dangerColor : widget.color,
+      padding: EdgeInsets.all((widget.box - widget.size) / 2),
+      constraints: BoxConstraints.tightFor(
+        width: widget.box,
+        height: widget.box,
+      ),
+      splashRadius: widget.box / 2,
+      icon: Opacity(
+        opacity: danger ? 1 : 0.6,
+        child: Icon(danger ? LucideIcons.alertTriangle : LucideIcons.trash),
+      ),
+    );
+  }
+}
+
+/// A compact icon button mirroring MUI's `IconButton` sizing (`box` = the
 /// square tap area, `size` = the glyph). [opacity] dims the whole control like
 /// the original's `opacity: 0.6` trailing actions.
 class _MutedIconButton extends StatelessWidget {
@@ -1688,7 +1755,6 @@ class _MutedIconButton extends StatelessWidget {
     required this.icon,
     required this.size,
     required this.box,
-    this.padding,
     this.opacity = 1,
     this.color = _mutedIconColor,
     this.onPressed,
@@ -1697,7 +1763,6 @@ class _MutedIconButton extends StatelessWidget {
   final IconData icon;
   final double size;
   final double box;
-  final double? padding;
   final double opacity;
   final Color color;
   final VoidCallback? onPressed;
@@ -1710,7 +1775,7 @@ class _MutedIconButton extends StatelessWidget {
       onPressed: onPressed ?? () {},
       iconSize: size,
       color: color,
-      padding: EdgeInsets.all(padding ?? (box - size) / 2),
+      padding: EdgeInsets.all((box - size) / 2),
       constraints: BoxConstraints.tightFor(width: box, height: box),
       splashRadius: box / 2,
       icon: Icon(icon),
