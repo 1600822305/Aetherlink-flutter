@@ -16,6 +16,7 @@ import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dar
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
+import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 
 part 'chat_controller.g.dart';
@@ -147,7 +148,7 @@ class ChatController extends _$ChatController {
       ],
       createdAt: now,
     );
-    var assistantView = ChatMessageView(
+    final assistantView = ChatMessageView(
       id: assistantMessageId,
       role: MessageRole.assistant,
       status: MessageStatus.streaming,
@@ -171,10 +172,123 @@ class ChatController extends _$ChatController {
       extraBody: effective.providerExtraBody,
     );
 
+    await _streamInto(
+      request: request,
+      effective: effective,
+      assistantMessageId: assistantMessageId,
+      assistantBlockId: assistantBlockId,
+      assistantTime: assistantTime,
+      views: views,
+      assistantView: assistantView,
+    );
+  }
+
+  /// Regenerates the assistant reply [messageId] in place.
+  ///
+  /// Port of the toolbar 重新生成 action (`regenerateResponse` with
+  /// `source: 'assistant'`): the message keeps its id but its old blocks are
+  /// dropped, it is reset to a streaming state re-pointed at the current model,
+  /// and a fresh reply is streamed from the conversation that preceded it.
+  /// Version history (`saveVersion`) is not ported yet (版本历史 → 即将支持), so
+  /// the previous reply is overwritten rather than archived. A no-op while a
+  /// reply is streaming, when the conversation has not loaded, when no model is
+  /// selected, or when [messageId] is not a loaded assistant message.
+  Future<void> regenerate(String messageId) async {
+    final snapshot = state.value;
+    if (snapshot == null || snapshot.isStreaming) return;
+
+    final index = snapshot.messages.indexWhere((view) => view.id == messageId);
+    if (index == -1) return;
+
+    final current = await ref.read(appCurrentModelProvider.future);
+    if (current == null) return;
+
+    final target = await _repo.getMessage(messageId);
+    if (target == null || target.role != MessageRole.assistant) return;
+
+    final now = DateTime.now();
+    final effective = effectiveModelFor(current);
+
+    // Reset the assistant message: drop its old blocks and attach a single
+    // fresh streaming main_text block, re-pointed at the current model.
+    final oldBlocks = await _repo.getMessageBlocksByMessageId(messageId);
+    for (final block in oldBlocks) {
+      await _repo.deleteMessageBlock(block.id);
+    }
+    final assistantBlockId = generateId('block');
+    await _repo.saveMessageBlock(
+      MessageBlock.mainText(
+        id: assistantBlockId,
+        messageId: messageId,
+        status: MessageBlockStatus.streaming,
+        createdAt: now,
+        content: '',
+      ),
+    );
+    await _repo.saveMessage(
+      target.copyWith(
+        status: MessageStatus.streaming,
+        updatedAt: now,
+        model: effective,
+        blocks: <String>[assistantBlockId],
+      ),
+    );
+
+    // Reset the view to a streaming placeholder; the request history is the
+    // conversation up to (excluding) this assistant message.
+    final views = List<ChatMessageView>.of(snapshot.messages);
+    final assistantView = ChatMessageView(
+      id: messageId,
+      role: MessageRole.assistant,
+      status: MessageStatus.streaming,
+      createdAt: target.createdAt,
+      modelName: effective.name,
+      providerName: current.provider.name,
+    );
+    views[index] = assistantView;
+    _emit(views, isStreaming: true);
+
+    final request = LlmChatRequest(
+      model: effective,
+      messages: [
+        for (final view in views.sublist(0, index))
+          if (view.role != MessageRole.assistant || view.text.isNotEmpty)
+            LlmMessage(role: view.role, content: view.text),
+      ],
+      extraHeaders: effective.providerExtraHeaders,
+      extraBody: effective.providerExtraBody,
+    );
+
+    await _streamInto(
+      request: request,
+      effective: effective,
+      assistantMessageId: messageId,
+      assistantBlockId: assistantBlockId,
+      assistantTime: now,
+      views: views,
+      assistantView: assistantView,
+    );
+  }
+
+  /// Subscribes to the gateway stream for [request], accumulating text into the
+  /// assistant's `main_text` and reasoning into its `thinking` while emitting a
+  /// streaming view per chunk, then finalizes: on [LlmDone] persists the blocks
+  /// and reloads the view; on a stream error marks the message errored and
+  /// persists an `error` block. Shared by [send] and [regenerate].
+  Future<void> _streamInto({
+    required LlmChatRequest request,
+    required Model effective,
+    required String assistantMessageId,
+    required String assistantBlockId,
+    required DateTime assistantTime,
+    required List<ChatMessageView> views,
+    required ChatMessageView assistantView,
+  }) async {
     final gateway = ref.read(llmGatewayFactoryProvider).forModel(effective);
 
     final buffer = StringBuffer();
     final thinking = StringBuffer();
+    var view = assistantView;
 
     void update() {
       // Synthesize streaming blocks from the live buffers so the renderer can
@@ -197,12 +311,12 @@ class ChatController extends _$ChatController {
           content: buffer.toString(),
         ),
       ];
-      assistantView = assistantView.copyWith(
+      view = view.copyWith(
         text: buffer.toString(),
         thinking: thinking.toString(),
         blocks: liveBlocks,
       );
-      _replace(views, assistantView);
+      _replace(views, view);
       _emit(views, isStreaming: true);
     }
 
@@ -226,8 +340,8 @@ class ChatController extends _$ChatController {
         text: buffer.toString(),
         thinking: thinking.toString(),
       );
-      assistantView = await _reloadView(assistantMessageId, assistantView);
-      _replace(views, assistantView);
+      view = await _reloadView(assistantMessageId, view);
+      _replace(views, view);
       _emit(views, isStreaming: false);
     } on Object catch (error) {
       final messageText = _errorMessage(error);
@@ -237,14 +351,11 @@ class ChatController extends _$ChatController {
         text: buffer.toString(),
         errorText: messageText,
       );
-      assistantView = await _reloadView(
+      view = await _reloadView(
         assistantMessageId,
-        assistantView.copyWith(
-          status: MessageStatus.error,
-          errorText: messageText,
-        ),
+        view.copyWith(status: MessageStatus.error, errorText: messageText),
       );
-      _replace(views, assistantView);
+      _replace(views, view);
       _emit(views, isStreaming: false);
     }
   }
