@@ -725,51 +725,11 @@ class _ModelProviderDetailPageState
   }
 
   Future<void> _customEndpoint(ModelProvider provider) async {
-    final controller = TextEditingController(
-      text: _baseUrlController.text.trim(),
-    );
     final endpoint = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text(
-          '自定义获取端点',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: controller,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: '端点 URL',
-                hintText: 'https://api.example.com/v1',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '用于本次「获取模型」的基础 URL，不会修改已保存的基础 URL。',
-              style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                fontSize: 12,
-                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('获取'),
-          ),
-        ],
-      ),
+      builder: (ctx) =>
+          _CustomEndpointDialog(initial: _baseUrlController.text.trim()),
     );
-    controller.dispose();
     if (endpoint == null || endpoint.isEmpty) return;
     await _fetchModels(provider, endpointOverride: endpoint);
   }
@@ -1318,6 +1278,76 @@ class _FetchedModelsSheetState extends State<_FetchedModelsSheet> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The 自定义获取端点 dialog. It owns the endpoint field's
+/// [TextEditingController] so the controller is disposed by the framework when
+/// the dialog route unmounts, not while the field is still being torn down.
+class _CustomEndpointDialog extends StatefulWidget {
+  const _CustomEndpointDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_CustomEndpointDialog> createState() => _CustomEndpointDialogState();
+}
+
+class _CustomEndpointDialogState extends State<_CustomEndpointDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initial);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text(
+        '自定义获取端点',
+        style: TextStyle(fontWeight: FontWeight.w600),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: '端点 URL',
+              hintText: 'https://api.example.com/v1',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '用于本次「获取模型」的基础 URL，不会修改已保存的基础 URL。',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontSize: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
+          child: const Text('获取'),
+        ),
+      ],
     );
   }
 }
