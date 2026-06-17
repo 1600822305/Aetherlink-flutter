@@ -75,33 +75,26 @@ void main() {
     expect(find.byIcon(LucideIcons.chevronRight), findsNWidgets(21));
   });
 
-  testWidgets(
-    'only the wired rows (关于我们, 配置模型) are enabled; the rest are disabled '
-    'placeholders',
-    (tester) async {
-      await pumpHub(tester);
+  testWidgets('only the wired rows (外观, 关于我们, 配置模型) are enabled; the rest are '
+      'disabled placeholders', (tester) async {
+    await pumpHub(tester);
 
-      final rows = tester
-          .widgetList<SettingItem>(find.byType(SettingItem))
-          .toList();
-      final enabled = rows.where((r) => r.enabled).toList();
+    final rows = tester
+        .widgetList<SettingItem>(find.byType(SettingItem))
+        .toList();
+    final enabled = rows.where((r) => r.enabled).toList();
 
-      const wiredTitles = {'关于我们', '配置模型'};
-      expect(enabled.map((r) => r.title).toSet(), wiredTitles);
-      for (final row in enabled) {
-        expect(row.onTap, isNotNull, reason: '${row.title} should be tappable');
-      }
+    const wiredTitles = {'外观', '关于我们', '配置模型'};
+    expect(enabled.map((r) => r.title).toSet(), wiredTitles);
+    for (final row in enabled) {
+      expect(row.onTap, isNotNull, reason: '${row.title} should be tappable');
+    }
 
-      for (final row in rows.where((r) => !wiredTitles.contains(r.title))) {
-        expect(row.enabled, isFalse, reason: '${row.title} should be disabled');
-        expect(
-          row.onTap,
-          isNull,
-          reason: '${row.title} should not be tappable',
-        );
-      }
-    },
-  );
+    for (final row in rows.where((r) => !wiredTitles.contains(r.title))) {
+      expect(row.enabled, isFalse, reason: '${row.title} should be disabled');
+      expect(row.onTap, isNull, reason: '${row.title} should not be tappable');
+    }
+  });
 
   testWidgets('compact/detailed toggle hides and shows descriptions', (
     tester,

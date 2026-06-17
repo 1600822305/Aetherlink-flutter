@@ -70,10 +70,9 @@ void main() {
   testWidgets('the add-provider entries carry tap handlers', (tester) async {
     await pumpPage(tester);
 
-    // Still-unwired controls render at full visual fidelity but are
-    // non-functional this milestone (the back button is an
-    // IconButton/InkResponse, not an InkWell).
-    for (final label in const ['批量删除', '辅助模型设置', '模型选择器样式']) {
+    // Still-unwired rows render at full visual fidelity but carry no handler
+    // this milestone (their destinations / toggles don't exist yet).
+    for (final label in const ['辅助模型设置', '模型选择器样式']) {
       expect(
         find.ancestor(of: find.text(label), matching: find.byType(InkWell)),
         findsNothing,
@@ -81,9 +80,9 @@ void main() {
       );
     }
 
-    // Both add-provider entries are wired and navigate to AddProviderPage: the
-    // toolbar 添加 action and the 添加模型服务商 row.
-    for (final label in const ['添加', '添加模型服务商']) {
+    // The wired entries are ink-tappable: 批量删除 enters the batch-delete flow,
+    // and both 添加 (toolbar) and 添加模型服务商 navigate to AddProviderPage.
+    for (final label in const ['批量删除', '添加', '添加模型服务商']) {
       expect(
         find.ancestor(of: find.text(label), matching: find.byType(InkWell)),
         findsOneWidget,
