@@ -384,7 +384,7 @@ final class AssistantsProvider
   Assistants create() => Assistants();
 }
 
-String _$assistantsHash() => r'f54c83b6555310ad12ed1be3203f50d55084e01e';
+String _$assistantsHash() => r'2c8e9da25492119b21ba8cadbc1dd8932b517367';
 
 /// All assistants, persisted via Drift. On a truly fresh store (no assistants
 /// and no topics) it seeds the two web defaults (默认助手 + 网页分析助手), each with a
@@ -438,7 +438,7 @@ final class TopicsProvider extends $AsyncNotifierProvider<Topics, List<Topic>> {
   Topics create() => Topics();
 }
 
-String _$topicsHash() => r'8222748f3f4462209654debe69cd53b0de0a0791';
+String _$topicsHash() => r'4766977f5bdcb3b9dc1077f88197e44cfca926c6';
 
 /// All topics, persisted via Drift. Depends on [Assistants] so seeding (which
 /// creates the default topics) always runs first.
