@@ -1580,6 +1580,214 @@ class GroupRowsCompanion extends UpdateCompanion<GroupRow> {
   }
 }
 
+class $AppSettingRowsTable extends AppSettingRows
+    with TableInfo<$AppSettingRowsTable, AppSettingRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AppSettingRowsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _keyMeta = const VerificationMeta('key');
+  @override
+  late final GeneratedColumn<String> key = GeneratedColumn<String>(
+    'key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _valueMeta = const VerificationMeta('value');
+  @override
+  late final GeneratedColumn<String> value = GeneratedColumn<String>(
+    'value',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [key, value];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'app_setting_rows';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<AppSettingRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('key')) {
+      context.handle(
+        _keyMeta,
+        key.isAcceptableOrUnknown(data['key']!, _keyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_keyMeta);
+    }
+    if (data.containsKey('value')) {
+      context.handle(
+        _valueMeta,
+        value.isAcceptableOrUnknown(data['value']!, _valueMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_valueMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {key};
+  @override
+  AppSettingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AppSettingRow(
+      key: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}key'],
+      )!,
+      value: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}value'],
+      )!,
+    );
+  }
+
+  @override
+  $AppSettingRowsTable createAlias(String alias) {
+    return $AppSettingRowsTable(attachedDatabase, alias);
+  }
+}
+
+class AppSettingRow extends DataClass implements Insertable<AppSettingRow> {
+  final String key;
+  final String value;
+  const AppSettingRow({required this.key, required this.value});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['key'] = Variable<String>(key);
+    map['value'] = Variable<String>(value);
+    return map;
+  }
+
+  AppSettingRowsCompanion toCompanion(bool nullToAbsent) {
+    return AppSettingRowsCompanion(key: Value(key), value: Value(value));
+  }
+
+  factory AppSettingRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AppSettingRow(
+      key: serializer.fromJson<String>(json['key']),
+      value: serializer.fromJson<String>(json['value']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'key': serializer.toJson<String>(key),
+      'value': serializer.toJson<String>(value),
+    };
+  }
+
+  AppSettingRow copyWith({String? key, String? value}) =>
+      AppSettingRow(key: key ?? this.key, value: value ?? this.value);
+  AppSettingRow copyWithCompanion(AppSettingRowsCompanion data) {
+    return AppSettingRow(
+      key: data.key.present ? data.key.value : this.key,
+      value: data.value.present ? data.value.value : this.value,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AppSettingRow(')
+          ..write('key: $key, ')
+          ..write('value: $value')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(key, value);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AppSettingRow &&
+          other.key == this.key &&
+          other.value == this.value);
+}
+
+class AppSettingRowsCompanion extends UpdateCompanion<AppSettingRow> {
+  final Value<String> key;
+  final Value<String> value;
+  final Value<int> rowid;
+  const AppSettingRowsCompanion({
+    this.key = const Value.absent(),
+    this.value = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  AppSettingRowsCompanion.insert({
+    required String key,
+    required String value,
+    this.rowid = const Value.absent(),
+  }) : key = Value(key),
+       value = Value(value);
+  static Insertable<AppSettingRow> custom({
+    Expression<String>? key,
+    Expression<String>? value,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (key != null) 'key': key,
+      if (value != null) 'value': value,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  AppSettingRowsCompanion copyWith({
+    Value<String>? key,
+    Value<String>? value,
+    Value<int>? rowid,
+  }) {
+    return AppSettingRowsCompanion(
+      key: key ?? this.key,
+      value: value ?? this.value,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (key.present) {
+      map['key'] = Variable<String>(key.value);
+    }
+    if (value.present) {
+      map['value'] = Variable<String>(value.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AppSettingRowsCompanion(')
+          ..write('key: $key, ')
+          ..write('value: $value, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -1591,6 +1799,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $AssistantRowsTable assistantRows = $AssistantRowsTable(this);
   late final $ProviderRowsTable providerRows = $ProviderRowsTable(this);
   late final $GroupRowsTable groupRows = $GroupRowsTable(this);
+  late final $AppSettingRowsTable appSettingRows = $AppSettingRowsTable(this);
   late final Index idxTopicsLastMessageTimeNum = Index(
     'idx_topics_last_message_time_num',
     'CREATE INDEX idx_topics_last_message_time_num ON topic_rows (last_message_time_num)',
@@ -1623,6 +1832,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final AssistantDao assistantDao = AssistantDao(this as AppDatabase);
   late final ProviderDao providerDao = ProviderDao(this as AppDatabase);
   late final GroupDao groupDao = GroupDao(this as AppDatabase);
+  late final AppSettingDao appSettingDao = AppSettingDao(this as AppDatabase);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1634,6 +1844,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     assistantRows,
     providerRows,
     groupRows,
+    appSettingRows,
     idxTopicsLastMessageTimeNum,
     idxMessagesTopicId,
     idxMessagesAssistantId,
@@ -2617,6 +2828,148 @@ typedef $$GroupRowsTableProcessedTableManager =
       GroupRow,
       PrefetchHooks Function()
     >;
+typedef $$AppSettingRowsTableCreateCompanionBuilder =
+    AppSettingRowsCompanion Function({
+      required String key,
+      required String value,
+      Value<int> rowid,
+    });
+typedef $$AppSettingRowsTableUpdateCompanionBuilder =
+    AppSettingRowsCompanion Function({
+      Value<String> key,
+      Value<String> value,
+      Value<int> rowid,
+    });
+
+class $$AppSettingRowsTableFilterComposer
+    extends Composer<_$AppDatabase, $AppSettingRowsTable> {
+  $$AppSettingRowsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get key => $composableBuilder(
+    column: $table.key,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get value => $composableBuilder(
+    column: $table.value,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$AppSettingRowsTableOrderingComposer
+    extends Composer<_$AppDatabase, $AppSettingRowsTable> {
+  $$AppSettingRowsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get key => $composableBuilder(
+    column: $table.key,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get value => $composableBuilder(
+    column: $table.value,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$AppSettingRowsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $AppSettingRowsTable> {
+  $$AppSettingRowsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get key =>
+      $composableBuilder(column: $table.key, builder: (column) => column);
+
+  GeneratedColumn<String> get value =>
+      $composableBuilder(column: $table.value, builder: (column) => column);
+}
+
+class $$AppSettingRowsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $AppSettingRowsTable,
+          AppSettingRow,
+          $$AppSettingRowsTableFilterComposer,
+          $$AppSettingRowsTableOrderingComposer,
+          $$AppSettingRowsTableAnnotationComposer,
+          $$AppSettingRowsTableCreateCompanionBuilder,
+          $$AppSettingRowsTableUpdateCompanionBuilder,
+          (
+            AppSettingRow,
+            BaseReferences<_$AppDatabase, $AppSettingRowsTable, AppSettingRow>,
+          ),
+          AppSettingRow,
+          PrefetchHooks Function()
+        > {
+  $$AppSettingRowsTableTableManager(
+    _$AppDatabase db,
+    $AppSettingRowsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$AppSettingRowsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$AppSettingRowsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$AppSettingRowsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> key = const Value.absent(),
+                Value<String> value = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) =>
+                  AppSettingRowsCompanion(key: key, value: value, rowid: rowid),
+          createCompanionCallback:
+              ({
+                required String key,
+                required String value,
+                Value<int> rowid = const Value.absent(),
+              }) => AppSettingRowsCompanion.insert(
+                key: key,
+                value: value,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$AppSettingRowsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $AppSettingRowsTable,
+      AppSettingRow,
+      $$AppSettingRowsTableFilterComposer,
+      $$AppSettingRowsTableOrderingComposer,
+      $$AppSettingRowsTableAnnotationComposer,
+      $$AppSettingRowsTableCreateCompanionBuilder,
+      $$AppSettingRowsTableUpdateCompanionBuilder,
+      (
+        AppSettingRow,
+        BaseReferences<_$AppDatabase, $AppSettingRowsTable, AppSettingRow>,
+      ),
+      AppSettingRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -2633,4 +2986,6 @@ class $AppDatabaseManager {
       $$ProviderRowsTableTableManager(_db, _db.providerRows);
   $$GroupRowsTableTableManager get groupRows =>
       $$GroupRowsTableTableManager(_db, _db.groupRows);
+  $$AppSettingRowsTableTableManager get appSettingRows =>
+      $$AppSettingRowsTableTableManager(_db, _db.appSettingRows);
 }
