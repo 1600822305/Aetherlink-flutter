@@ -90,6 +90,13 @@ ProviderContainer _container({
       llmGatewayFactoryProvider.overrideWithValue(_FakeFactory(gateway)),
       currentTopicProvider.overrideWith((ref) async => null),
       appCurrentModelProvider.overrideWith((ref) async => current),
+      // `_viewOf` reads this to resolve a message's provider name; override it
+      // so the view build stays in-memory instead of opening the real store.
+      appModelProvidersProvider.overrideWith(
+        (ref) async => current == null
+            ? const <ModelProvider>[]
+            : <ModelProvider>[current.provider],
+      ),
     ],
   );
   addTearDown(container.dispose);
