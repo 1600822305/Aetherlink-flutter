@@ -310,6 +310,21 @@ class Assistants extends _$Assistants {
     }
   }
 
+  /// Saves [prompt] as [assistantId]'s 助手提示词 (`assistant.systemPrompt`) —
+  /// the port of `SystemPromptDialog` assistant-mode save
+  /// (`dexieStorage.saveAssistant` + the `assistantUpdated` event). [_reload]
+  /// refreshes [currentAssistant], so the bubble re-renders with the new text.
+  Future<void> updateSystemPrompt(String assistantId, String prompt) async {
+    final assistant = await _repo.getAssistant(assistantId);
+    if (assistant == null) {
+      throw StateError('没有找到助手信息');
+    }
+    await _repo.saveAssistant(
+      assistant.copyWith(systemPrompt: prompt, updatedAt: DateTime.now()),
+    );
+    await _reload();
+  }
+
   /// Removes every topic of [assistantId] — the port of 清空话题.
   Future<void> clearTopics(String assistantId) async {
     final topics = await _repo.getAllTopics();
@@ -434,7 +449,42 @@ class Topics extends _$Topics {
     await _reload();
   }
 
-  /// Renames [id] (编辑话题, name only — Flutter's [Topic] has no `prompt`).
+  /// Saves [prompt] as a 话题提示词 (`topic.prompt`) — the port of
+  /// `SystemPromptDialog.handleSaveToTopic`. With no [topicId], creates a new
+  /// topic for [assistantId] first (`TopicService.createNewTopic`), then writes
+  /// the prompt onto it. Returns the saved topic. [_reload] refreshes the
+  /// topic-backed views so the bubble re-renders.
+  Future<Topic> setPrompt({
+    String? topicId,
+    String? assistantId,
+    required String prompt,
+  }) async {
+    if (topicId == null) {
+      if (assistantId == null) {
+        throw StateError('创建话题失败');
+      }
+      // `create` already saves, selects and reloads; layer the prompt on top.
+      final created = await create(assistantId);
+      final withPrompt = created.copyWith(
+        prompt: prompt,
+        updatedAt: DateTime.now(),
+      );
+      await _repo.saveTopic(withPrompt);
+      await _reload();
+      return withPrompt;
+    }
+    final topic = await _repo.getTopic(topicId);
+    if (topic == null) {
+      throw StateError('话题不存在');
+    }
+    final updated = topic.copyWith(prompt: prompt, updatedAt: DateTime.now());
+    await _repo.saveTopic(updated);
+    await _reload();
+    return updated;
+  }
+
+  /// Renames [id] (编辑话题, name only — the prompt is edited via
+  /// `SystemPromptDialog` → [setPrompt]).
   Future<void> rename(String id, String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return;
