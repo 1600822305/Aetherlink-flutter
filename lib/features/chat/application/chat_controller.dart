@@ -136,6 +136,15 @@ class ChatController extends _$ChatController {
       role: MessageRole.user,
       status: MessageStatus.success,
       text: trimmed,
+      blocks: <MessageBlock>[
+        MessageBlock.mainText(
+          id: userBlockId,
+          messageId: userMessageId,
+          status: MessageBlockStatus.success,
+          createdAt: now,
+          content: trimmed,
+        ),
+      ],
       createdAt: now,
     );
     var assistantView = ChatMessageView(
@@ -168,9 +177,30 @@ class ChatController extends _$ChatController {
     final thinking = StringBuffer();
 
     void update() {
+      // Synthesize streaming blocks from the live buffers so the renderer can
+      // dispatch them (thinking card + main_text Markdown) exactly as it will
+      // once the persisted blocks are reloaded on finalize.
+      final liveBlocks = <MessageBlock>[
+        if (thinking.isNotEmpty)
+          MessageBlock.thinking(
+            id: '$assistantMessageId::thinking',
+            messageId: assistantMessageId,
+            status: MessageBlockStatus.streaming,
+            createdAt: assistantTime,
+            content: thinking.toString(),
+          ),
+        MessageBlock.mainText(
+          id: assistantBlockId,
+          messageId: assistantMessageId,
+          status: MessageBlockStatus.streaming,
+          createdAt: assistantTime,
+          content: buffer.toString(),
+        ),
+      ];
       assistantView = assistantView.copyWith(
         text: buffer.toString(),
         thinking: thinking.toString(),
+        blocks: liveBlocks,
       );
       _replace(views, assistantView);
       _emit(views, isStreaming: true);
@@ -196,7 +226,7 @@ class ChatController extends _$ChatController {
         text: buffer.toString(),
         thinking: thinking.toString(),
       );
-      assistantView = assistantView.copyWith(status: MessageStatus.success);
+      assistantView = await _reloadView(assistantMessageId, assistantView);
       _replace(views, assistantView);
       _emit(views, isStreaming: false);
     } on Object catch (error) {
@@ -207,13 +237,87 @@ class ChatController extends _$ChatController {
         text: buffer.toString(),
         errorText: messageText,
       );
-      assistantView = assistantView.copyWith(
-        status: MessageStatus.error,
-        errorText: messageText,
+      assistantView = await _reloadView(
+        assistantMessageId,
+        assistantView.copyWith(
+          status: MessageStatus.error,
+          errorText: messageText,
+        ),
       );
       _replace(views, assistantView);
       _emit(views, isStreaming: false);
     }
+  }
+
+  /// Deletes [messageId] together with its blocks and drops it from the view.
+  ///
+  /// Port of the toolbar 删除 action (`MessageActions.handleToolbarDeleteClick`
+  /// → `onDelete`). The two-click confirmation lives in the UI; this performs
+  /// the actual removal once confirmed. A no-op while a reply is streaming or
+  /// when the conversation has not loaded.
+  Future<void> deleteMessage(String messageId) async {
+    final snapshot = state.value;
+    if (snapshot == null || snapshot.isStreaming) return;
+    await _repo.deleteMessage(messageId);
+    final views = snapshot.messages
+        .where((view) => view.id != messageId)
+        .toList();
+    _emit(views, isStreaming: false);
+  }
+
+  /// Writes [contentByBlockId] back to the message's `main_text` blocks and
+  /// persists them, then reloads the affected view.
+  ///
+  /// Port of the toolbar 编辑 action (`MessageEditor.handleSave`): each edited
+  /// `main_text` block is updated in place (content + `updatedAt`), the message
+  /// `updatedAt` is bumped, and the rendered view is refreshed from storage.
+  /// Blank entries and blocks that are not `main_text` are skipped. A no-op
+  /// while a reply is streaming.
+  Future<void> editMessageText(
+    String messageId,
+    Map<String, String> contentByBlockId,
+  ) async {
+    final snapshot = state.value;
+    if (snapshot == null || snapshot.isStreaming) return;
+    if (contentByBlockId.isEmpty) return;
+
+    final now = DateTime.now();
+    var changed = false;
+    for (final entry in contentByBlockId.entries) {
+      final trimmed = entry.value.trim();
+      if (trimmed.isEmpty) continue;
+      final existing = await _repo.getMessageBlock(entry.key);
+      if (existing is MainTextBlock && existing.content != trimmed) {
+        await _repo.saveMessageBlock(
+          existing.copyWith(content: trimmed, updatedAt: now),
+        );
+        changed = true;
+      }
+    }
+    if (!changed) return;
+
+    final message = await _repo.getMessage(messageId);
+    if (message == null) return;
+    await _repo.saveMessage(message.copyWith(updatedAt: now));
+
+    final reloaded = await _viewOf(message);
+    final views = List<ChatMessageView>.of(snapshot.messages);
+    final index = views.indexWhere((view) => view.id == messageId);
+    if (index != -1) {
+      views[index] = reloaded;
+      _emit(views, isStreaming: false);
+    }
+  }
+
+  /// Reloads the persisted view for [messageId] (real blocks in order) after
+  /// finalize; falls back to [fallback] if the message can't be read.
+  Future<ChatMessageView> _reloadView(
+    String messageId,
+    ChatMessageView fallback,
+  ) async {
+    final message = await _repo.getMessage(messageId);
+    if (message == null) return fallback;
+    return _viewOf(message);
   }
 
   Future<String> _ensureTopic() async {
@@ -312,7 +416,8 @@ class ChatController extends _$ChatController {
   }
 
   Future<ChatMessageView> _viewOf(Message message) async {
-    final blocks = await _repo.getMessageBlocksByMessageId(message.id);
+    final fetched = await _repo.getMessageBlocksByMessageId(message.id);
+    final blocks = _orderBlocks(message.blocks, fetched);
     final text = blocks
         .whereType<MainTextBlock>()
         .map((block) => block.content)
@@ -338,6 +443,7 @@ class ChatController extends _$ChatController {
       id: message.id,
       role: message.role,
       status: message.status,
+      blocks: blocks,
       text: text,
       thinking: thinking,
       errorText: error?.message ?? error?.content,
@@ -345,6 +451,23 @@ class ChatController extends _$ChatController {
       modelName: model?.name,
       providerName: providerName,
     );
+  }
+
+  /// Returns [blocks] sorted by the `message.blocks` id order (the canonical
+  /// render order); any block not referenced there is appended at the end.
+  List<MessageBlock> _orderBlocks(
+    List<String> order,
+    List<MessageBlock> blocks,
+  ) {
+    if (order.isEmpty) return blocks;
+    final byId = {for (final block in blocks) block.id: block};
+    final ordered = <MessageBlock>[];
+    for (final id in order) {
+      final block = byId.remove(id);
+      if (block != null) ordered.add(block);
+    }
+    ordered.addAll(byId.values);
+    return ordered;
   }
 
   void _emit(List<ChatMessageView> views, {required bool isStreaming}) {

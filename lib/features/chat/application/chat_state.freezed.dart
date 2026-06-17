@@ -14,7 +14,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$ChatMessageView {
 
- String get id; MessageRole get role; MessageStatus get status; String get text; String get thinking; String? get errorText; DateTime? get createdAt; String? get modelName; String? get providerName;
+ String get id; MessageRole get role; MessageStatus get status; List<MessageBlock> get blocks; String get text; String get thinking; String? get errorText; DateTime? get createdAt; String? get modelName; String? get providerName;
 /// Create a copy of ChatMessageView
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -25,16 +25,16 @@ $ChatMessageViewCopyWith<ChatMessageView> get copyWith => _$ChatMessageViewCopyW
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ChatMessageView&&(identical(other.id, id) || other.id == id)&&(identical(other.role, role) || other.role == role)&&(identical(other.status, status) || other.status == status)&&(identical(other.text, text) || other.text == text)&&(identical(other.thinking, thinking) || other.thinking == thinking)&&(identical(other.errorText, errorText) || other.errorText == errorText)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.modelName, modelName) || other.modelName == modelName)&&(identical(other.providerName, providerName) || other.providerName == providerName));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ChatMessageView&&(identical(other.id, id) || other.id == id)&&(identical(other.role, role) || other.role == role)&&(identical(other.status, status) || other.status == status)&&const DeepCollectionEquality().equals(other.blocks, blocks)&&(identical(other.text, text) || other.text == text)&&(identical(other.thinking, thinking) || other.thinking == thinking)&&(identical(other.errorText, errorText) || other.errorText == errorText)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.modelName, modelName) || other.modelName == modelName)&&(identical(other.providerName, providerName) || other.providerName == providerName));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,id,role,status,text,thinking,errorText,createdAt,modelName,providerName);
+int get hashCode => Object.hash(runtimeType,id,role,status,const DeepCollectionEquality().hash(blocks),text,thinking,errorText,createdAt,modelName,providerName);
 
 @override
 String toString() {
-  return 'ChatMessageView(id: $id, role: $role, status: $status, text: $text, thinking: $thinking, errorText: $errorText, createdAt: $createdAt, modelName: $modelName, providerName: $providerName)';
+  return 'ChatMessageView(id: $id, role: $role, status: $status, blocks: $blocks, text: $text, thinking: $thinking, errorText: $errorText, createdAt: $createdAt, modelName: $modelName, providerName: $providerName)';
 }
 
 
@@ -45,7 +45,7 @@ abstract mixin class $ChatMessageViewCopyWith<$Res>  {
   factory $ChatMessageViewCopyWith(ChatMessageView value, $Res Function(ChatMessageView) _then) = _$ChatMessageViewCopyWithImpl;
 @useResult
 $Res call({
- String id, MessageRole role, MessageStatus status, String text, String thinking, String? errorText, DateTime? createdAt, String? modelName, String? providerName
+ String id, MessageRole role, MessageStatus status, List<MessageBlock> blocks, String text, String thinking, String? errorText, DateTime? createdAt, String? modelName, String? providerName
 });
 
 
@@ -62,12 +62,13 @@ class _$ChatMessageViewCopyWithImpl<$Res>
 
 /// Create a copy of ChatMessageView
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? role = null,Object? status = null,Object? text = null,Object? thinking = null,Object? errorText = freezed,Object? createdAt = freezed,Object? modelName = freezed,Object? providerName = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? role = null,Object? status = null,Object? blocks = null,Object? text = null,Object? thinking = null,Object? errorText = freezed,Object? createdAt = freezed,Object? modelName = freezed,Object? providerName = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,role: null == role ? _self.role : role // ignore: cast_nullable_to_non_nullable
 as MessageRole,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
-as MessageStatus,text: null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
+as MessageStatus,blocks: null == blocks ? _self.blocks : blocks // ignore: cast_nullable_to_non_nullable
+as List<MessageBlock>,text: null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
 as String,thinking: null == thinking ? _self.thinking : thinking // ignore: cast_nullable_to_non_nullable
 as String,errorText: freezed == errorText ? _self.errorText : errorText // ignore: cast_nullable_to_non_nullable
 as String?,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
@@ -158,10 +159,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  MessageRole role,  MessageStatus status,  String text,  String thinking,  String? errorText,  DateTime? createdAt,  String? modelName,  String? providerName)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  MessageRole role,  MessageStatus status,  List<MessageBlock> blocks,  String text,  String thinking,  String? errorText,  DateTime? createdAt,  String? modelName,  String? providerName)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ChatMessageView() when $default != null:
-return $default(_that.id,_that.role,_that.status,_that.text,_that.thinking,_that.errorText,_that.createdAt,_that.modelName,_that.providerName);case _:
+return $default(_that.id,_that.role,_that.status,_that.blocks,_that.text,_that.thinking,_that.errorText,_that.createdAt,_that.modelName,_that.providerName);case _:
   return orElse();
 
 }
@@ -179,10 +180,10 @@ return $default(_that.id,_that.role,_that.status,_that.text,_that.thinking,_that
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  MessageRole role,  MessageStatus status,  String text,  String thinking,  String? errorText,  DateTime? createdAt,  String? modelName,  String? providerName)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  MessageRole role,  MessageStatus status,  List<MessageBlock> blocks,  String text,  String thinking,  String? errorText,  DateTime? createdAt,  String? modelName,  String? providerName)  $default,) {final _that = this;
 switch (_that) {
 case _ChatMessageView():
-return $default(_that.id,_that.role,_that.status,_that.text,_that.thinking,_that.errorText,_that.createdAt,_that.modelName,_that.providerName);case _:
+return $default(_that.id,_that.role,_that.status,_that.blocks,_that.text,_that.thinking,_that.errorText,_that.createdAt,_that.modelName,_that.providerName);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -199,10 +200,10 @@ return $default(_that.id,_that.role,_that.status,_that.text,_that.thinking,_that
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  MessageRole role,  MessageStatus status,  String text,  String thinking,  String? errorText,  DateTime? createdAt,  String? modelName,  String? providerName)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  MessageRole role,  MessageStatus status,  List<MessageBlock> blocks,  String text,  String thinking,  String? errorText,  DateTime? createdAt,  String? modelName,  String? providerName)?  $default,) {final _that = this;
 switch (_that) {
 case _ChatMessageView() when $default != null:
-return $default(_that.id,_that.role,_that.status,_that.text,_that.thinking,_that.errorText,_that.createdAt,_that.modelName,_that.providerName);case _:
+return $default(_that.id,_that.role,_that.status,_that.blocks,_that.text,_that.thinking,_that.errorText,_that.createdAt,_that.modelName,_that.providerName);case _:
   return null;
 
 }
@@ -214,12 +215,19 @@ return $default(_that.id,_that.role,_that.status,_that.text,_that.thinking,_that
 
 
 class _ChatMessageView implements ChatMessageView {
-  const _ChatMessageView({required this.id, required this.role, required this.status, this.text = '', this.thinking = '', this.errorText, this.createdAt, this.modelName, this.providerName});
+  const _ChatMessageView({required this.id, required this.role, required this.status, final  List<MessageBlock> blocks = const <MessageBlock>[], this.text = '', this.thinking = '', this.errorText, this.createdAt, this.modelName, this.providerName}): _blocks = blocks;
   
 
 @override final  String id;
 @override final  MessageRole role;
 @override final  MessageStatus status;
+ final  List<MessageBlock> _blocks;
+@override@JsonKey() List<MessageBlock> get blocks {
+  if (_blocks is EqualUnmodifiableListView) return _blocks;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_blocks);
+}
+
 @override@JsonKey() final  String text;
 @override@JsonKey() final  String thinking;
 @override final  String? errorText;
@@ -237,16 +245,16 @@ _$ChatMessageViewCopyWith<_ChatMessageView> get copyWith => __$ChatMessageViewCo
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ChatMessageView&&(identical(other.id, id) || other.id == id)&&(identical(other.role, role) || other.role == role)&&(identical(other.status, status) || other.status == status)&&(identical(other.text, text) || other.text == text)&&(identical(other.thinking, thinking) || other.thinking == thinking)&&(identical(other.errorText, errorText) || other.errorText == errorText)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.modelName, modelName) || other.modelName == modelName)&&(identical(other.providerName, providerName) || other.providerName == providerName));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ChatMessageView&&(identical(other.id, id) || other.id == id)&&(identical(other.role, role) || other.role == role)&&(identical(other.status, status) || other.status == status)&&const DeepCollectionEquality().equals(other._blocks, _blocks)&&(identical(other.text, text) || other.text == text)&&(identical(other.thinking, thinking) || other.thinking == thinking)&&(identical(other.errorText, errorText) || other.errorText == errorText)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.modelName, modelName) || other.modelName == modelName)&&(identical(other.providerName, providerName) || other.providerName == providerName));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,id,role,status,text,thinking,errorText,createdAt,modelName,providerName);
+int get hashCode => Object.hash(runtimeType,id,role,status,const DeepCollectionEquality().hash(_blocks),text,thinking,errorText,createdAt,modelName,providerName);
 
 @override
 String toString() {
-  return 'ChatMessageView(id: $id, role: $role, status: $status, text: $text, thinking: $thinking, errorText: $errorText, createdAt: $createdAt, modelName: $modelName, providerName: $providerName)';
+  return 'ChatMessageView(id: $id, role: $role, status: $status, blocks: $blocks, text: $text, thinking: $thinking, errorText: $errorText, createdAt: $createdAt, modelName: $modelName, providerName: $providerName)';
 }
 
 
@@ -257,7 +265,7 @@ abstract mixin class _$ChatMessageViewCopyWith<$Res> implements $ChatMessageView
   factory _$ChatMessageViewCopyWith(_ChatMessageView value, $Res Function(_ChatMessageView) _then) = __$ChatMessageViewCopyWithImpl;
 @override @useResult
 $Res call({
- String id, MessageRole role, MessageStatus status, String text, String thinking, String? errorText, DateTime? createdAt, String? modelName, String? providerName
+ String id, MessageRole role, MessageStatus status, List<MessageBlock> blocks, String text, String thinking, String? errorText, DateTime? createdAt, String? modelName, String? providerName
 });
 
 
@@ -274,12 +282,13 @@ class __$ChatMessageViewCopyWithImpl<$Res>
 
 /// Create a copy of ChatMessageView
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? role = null,Object? status = null,Object? text = null,Object? thinking = null,Object? errorText = freezed,Object? createdAt = freezed,Object? modelName = freezed,Object? providerName = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? role = null,Object? status = null,Object? blocks = null,Object? text = null,Object? thinking = null,Object? errorText = freezed,Object? createdAt = freezed,Object? modelName = freezed,Object? providerName = freezed,}) {
   return _then(_ChatMessageView(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,role: null == role ? _self.role : role // ignore: cast_nullable_to_non_nullable
 as MessageRole,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
-as MessageStatus,text: null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
+as MessageStatus,blocks: null == blocks ? _self._blocks : blocks // ignore: cast_nullable_to_non_nullable
+as List<MessageBlock>,text: null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
 as String,thinking: null == thinking ? _self.thinking : thinking // ignore: cast_nullable_to_non_nullable
 as String,errorText: freezed == errorText ? _self.errorText : errorText // ignore: cast_nullable_to_non_nullable
 as String?,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
