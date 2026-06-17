@@ -596,7 +596,6 @@ class _TopicTabState extends ConsumerState<_TopicTab> {
 
   void _selectTopic(String id) {
     ref.read(currentTopicIdProvider.notifier).set(id);
-    Scaffold.maybeOf(context)?.closeDrawer();
   }
 
   @override
