@@ -59,14 +59,6 @@ const Color _chipBorderColor = Color(0xFFBDBDBD);
 /// The original mobile drawer is 350px wide (`AppSidebar.solid.tsx`).
 const double _sidebarWidth = 350;
 
-/// Max height of the ungrouped list box before it scrolls internally — the port
-/// of the web list `maxHeight: calc(100vh - 400px)` (clamped so it stays usable
-/// on short screens).
-double _ungroupedMaxHeight(BuildContext context) {
-  final h = MediaQuery.of(context).size.height - 400;
-  return h < 160 ? 160 : h;
-}
-
 class ChatSidebar extends ConsumerStatefulWidget {
   const ChatSidebar({super.key});
 
@@ -372,7 +364,7 @@ class _AssistantTabState extends ConsumerState<_AssistantTab> {
                   ],
                 )
               // The tab is a non-scrolling column; only the ungrouped list box
-              // scrolls internally (Flexible + maxHeight) and the "共 N 个"
+              // scrolls internally (Expanded + internal scroll) and the "共 N 个"
               // count is glued directly below it — 1:1 with the web
               // `VirtualizedAssistantList`, where the count sits right under the
               // box (`mt:1`) inside a container that does not scroll as a whole.
@@ -412,9 +404,9 @@ class _AssistantTabState extends ConsumerState<_AssistantTab> {
                       if (ungrouped.isEmpty)
                         _EmptyHint(text: '暂无未分组助手', color: textSecondary)
                       else
-                        Flexible(
+                        Expanded(
                           child: _ListFrame(
-                            maxHeight: _ungroupedMaxHeight(context),
+                            scrollable: true,
                             children: [for (final a in ungrouped) item(a)],
                           ),
                         ),
@@ -776,9 +768,9 @@ class _TopicTabState extends ConsumerState<_TopicTab> {
                       if (ungrouped.isEmpty)
                         _EmptyHint(text: '暂无未分组话题', color: textSecondary)
                       else
-                        Flexible(
+                        Expanded(
                           child: _ListFrame(
-                            maxHeight: _ungroupedMaxHeight(context),
+                            scrollable: true,
                             children: [for (final t in ungrouped) item(t)],
                           ),
                         ),
@@ -1507,13 +1499,16 @@ class _NoScrollbarBehavior extends ScrollBehavior {
 
 /// A rounded, 1px-bordered box that frames a list section — the port of the web
 /// `VirtualizedList` / group `Accordion` container (border `divider`, radius 8,
-/// `background.paper` background). When [maxHeight] is set the content scrolls
-/// internally with a hidden scrollbar (web `maxHeight: calc(100vh - 400px)`).
+/// `background.paper` background). When [scrollable] is true the box fills the
+/// height handed to it by its parent (an `Expanded`) and scrolls internally with
+/// a hidden scrollbar — the port of the web list `maxHeight: calc(100vh - 400px)`
+/// + `overflow: auto`. Filling the parent keeps the ungrouped box a consistent
+/// height across the assistant and topic tabs regardless of item count.
 class _ListFrame extends StatelessWidget {
-  const _ListFrame({required this.children, this.maxHeight});
+  const _ListFrame({required this.children, this.scrollable = false});
 
   final List<Widget> children;
-  final double? maxHeight;
+  final bool scrollable;
 
   @override
   Widget build(BuildContext context) {
@@ -1523,13 +1518,10 @@ class _ListFrame extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: children,
     );
-    if (maxHeight != null) {
-      content = ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxHeight!),
-        child: ScrollConfiguration(
-          behavior: const _NoScrollbarBehavior(),
-          child: SingleChildScrollView(child: content),
-        ),
+    if (scrollable) {
+      content = ScrollConfiguration(
+        behavior: const _NoScrollbarBehavior(),
+        child: SingleChildScrollView(child: content),
       );
     }
     return Container(
