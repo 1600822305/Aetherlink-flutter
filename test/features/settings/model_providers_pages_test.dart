@@ -128,7 +128,7 @@ void main() {
   });
 
   group('ModelProviderDetailPage', () {
-    testWidgets('renders the API-config card and empty model list', (
+    testWidgets('renders the config tab cards and an empty model tab', (
       tester,
     ) async {
       await pumpAt(
@@ -138,19 +138,27 @@ void main() {
       );
 
       expect(find.byType(ModelProviderDetailPage), findsOneWidget);
-      expect(find.text('模型供应商'), findsOneWidget);
-      expect(find.text('API配置'), findsOneWidget);
-      expect(find.text('API密钥'), findsOneWidget);
-      expect(find.text('基础URL (可选)'), findsOneWidget);
-      expect(find.text('配置高级参数'), findsOneWidget);
-      expect(find.text('模型列表'), findsOneWidget);
-      expect(find.text('尚未添加任何模型'), findsOneWidget);
+      // AppBar shows the provider name; the page splits into 配置 / 模型 tabs.
+      expect(find.text('测试供应商'), findsWidgets);
+      expect(find.text('配置'), findsOneWidget);
+      expect(find.text('模型'), findsOneWidget);
 
-      // Data fields are now editable (wired to the repository).
+      // 配置 tab: the API-key + base-URL cards and the advanced-config entry.
+      expect(find.text('API 密钥'), findsWidgets);
+      expect(find.text('基础 URL'), findsOneWidget);
+      expect(find.text('基础 URL (可选)'), findsOneWidget);
+      expect(find.text('配置高级参数'), findsOneWidget);
+
+      // The API-key field is editable (wired to the repository).
       final apiKeyField = tester.widget<TextField>(
         find.byType(TextField).first,
       );
       expect(apiKeyField.enabled, isTrue);
+
+      // 模型 tab: empty model list (no fabricated rows).
+      await tester.tap(find.text('模型'));
+      await tester.pumpAndSettle();
+      expect(find.text('尚未添加任何模型'), findsOneWidget);
     });
 
     testWidgets('renders the provider models and the current-model marker', (
@@ -173,6 +181,10 @@ void main() {
           ),
         ],
       );
+
+      // The models live on the 模型 tab.
+      await tester.tap(find.text('模型'));
+      await tester.pumpAndSettle();
 
       expect(find.text('尚未添加任何模型'), findsNothing);
       expect(find.text('GPT-4o'), findsOneWidget);
@@ -207,8 +219,11 @@ void main() {
         catalog: catalog,
       );
 
+      // Enter the key on the 配置 tab, then fetch from the 模型 tab.
       await tester.enterText(find.byType(TextField).first, 'sk-secret');
-      await tester.tap(find.text('获取'));
+      await tester.tap(find.text('模型'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('自动获取'));
       await tester.pumpAndSettle();
 
       // The sheet lists the fetched models; query carried the entered key.

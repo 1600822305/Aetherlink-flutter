@@ -1596,7 +1596,6 @@ class _OverflowMenuButton<T> extends StatelessWidget {
         tooltip: '',
         padding: EdgeInsets.all(padding ?? (box - size) / 2),
         iconSize: size,
-        constraints: BoxConstraints.tightFor(width: box, height: box),
         icon: const Icon(LucideIcons.moreVertical, color: _mutedIconColor),
       ),
     );
