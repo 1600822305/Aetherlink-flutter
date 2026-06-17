@@ -249,6 +249,66 @@ class ChatController extends _$ChatController {
     }
   }
 
+  /// Deletes [messageId] together with its blocks and drops it from the view.
+  ///
+  /// Port of the toolbar 删除 action (`MessageActions.handleToolbarDeleteClick`
+  /// → `onDelete`). The two-click confirmation lives in the UI; this performs
+  /// the actual removal once confirmed. A no-op while a reply is streaming or
+  /// when the conversation has not loaded.
+  Future<void> deleteMessage(String messageId) async {
+    final snapshot = state.value;
+    if (snapshot == null || snapshot.isStreaming) return;
+    await _repo.deleteMessage(messageId);
+    final views = snapshot.messages
+        .where((view) => view.id != messageId)
+        .toList();
+    _emit(views, isStreaming: false);
+  }
+
+  /// Writes [contentByBlockId] back to the message's `main_text` blocks and
+  /// persists them, then reloads the affected view.
+  ///
+  /// Port of the toolbar 编辑 action (`MessageEditor.handleSave`): each edited
+  /// `main_text` block is updated in place (content + `updatedAt`), the message
+  /// `updatedAt` is bumped, and the rendered view is refreshed from storage.
+  /// Blank entries and blocks that are not `main_text` are skipped. A no-op
+  /// while a reply is streaming.
+  Future<void> editMessageText(
+    String messageId,
+    Map<String, String> contentByBlockId,
+  ) async {
+    final snapshot = state.value;
+    if (snapshot == null || snapshot.isStreaming) return;
+    if (contentByBlockId.isEmpty) return;
+
+    final now = DateTime.now();
+    var changed = false;
+    for (final entry in contentByBlockId.entries) {
+      final trimmed = entry.value.trim();
+      if (trimmed.isEmpty) continue;
+      final existing = await _repo.getMessageBlock(entry.key);
+      if (existing is MainTextBlock && existing.content != trimmed) {
+        await _repo.saveMessageBlock(
+          existing.copyWith(content: trimmed, updatedAt: now),
+        );
+        changed = true;
+      }
+    }
+    if (!changed) return;
+
+    final message = await _repo.getMessage(messageId);
+    if (message == null) return;
+    await _repo.saveMessage(message.copyWith(updatedAt: now));
+
+    final reloaded = await _viewOf(message);
+    final views = List<ChatMessageView>.of(snapshot.messages);
+    final index = views.indexWhere((view) => view.id == messageId);
+    if (index != -1) {
+      views[index] = reloaded;
+      _emit(views, isStreaming: false);
+    }
+  }
+
   /// Reloads the persisted view for [messageId] (real blocks in order) after
   /// finalize; falls back to [fallback] if the message can't be read.
   Future<ChatMessageView> _reloadView(

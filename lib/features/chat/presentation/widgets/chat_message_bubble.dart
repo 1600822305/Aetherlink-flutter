@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_block_renderer.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_toolbar.dart';
 import 'package:aetherlink_flutter/shared/domain/message_bubble_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/color_picker.dart';
 
@@ -46,9 +47,10 @@ class ChatMessageBubble extends ConsumerWidget {
         : (colorFromHex(colors.aiBubbleColor) ??
               ext?.bubbleAi ??
               theme.colorScheme.surface);
-    final textColor = isUser
-        ? (colorFromHex(colors.userTextColor) ?? theme.colorScheme.onSurface)
-        : (colorFromHex(colors.aiTextColor) ?? theme.colorScheme.onSurface);
+    final customTextColor = isUser
+        ? colorFromHex(colors.userTextColor)
+        : colorFromHex(colors.aiTextColor);
+    final textColor = customTextColor ?? theme.colorScheme.onSurface;
     final radius = ext?.borderRadius ?? 8.0;
 
     final maxWidthFactor =
@@ -139,6 +141,16 @@ class ChatMessageBubble extends ConsumerWidget {
               );
             },
           ),
+          if (settings.messageActionMode == MessageActionMode.toolbar &&
+              !isStreaming &&
+              view.blocks.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            MessageToolbar(
+              view: view,
+              showTtsButton: settings.showTTSButton,
+              customTextColor: customTextColor,
+            ),
+          ],
         ],
       ),
     );
