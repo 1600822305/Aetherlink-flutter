@@ -3,6 +3,8 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/assistant_presets.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
@@ -398,6 +400,99 @@ class Topics extends _$Topics {
     await _reload();
     ref.read(currentTopicIdProvider.notifier).set(topic.id);
     return topic;
+  }
+
+  /// Forks the conversation into a new topic, cloning every message from the
+  /// start up to and including [branchPointMessageId], then selects the new
+  /// topic — the port of `TopicService.createTopicBranch` (工具栏 创建分支).
+  /// Each cloned message and block gets a fresh id, `askId` is remapped to the
+  /// cloned user message so intra-branch links survive, and version history is
+  /// dropped (the branch is a new starting point). A no-op (returns null) when
+  /// the branch-point message or its topic can't be resolved.
+  Future<Topic?> createBranch(String branchPointMessageId) async {
+    final branchMessage = await _repo.getMessage(branchPointMessageId);
+    if (branchMessage == null) return null;
+    final source = await _repo.getTopic(branchMessage.topicId);
+    if (source == null) return null;
+
+    final ordered = await _repo.getMessagesByTopicId(source.id)
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final branchIndex = ordered.indexWhere((m) => m.id == branchPointMessageId);
+    if (branchIndex == -1) return null;
+
+    final now = DateTime.now();
+    final toClone = ordered.sublist(0, branchIndex + 1);
+    final newTopicId = generateId('topic');
+
+    // Pass 1: map every cloned message's old id to a fresh one so intra-branch
+    // references (askId) can be remapped in pass 2.
+    final idMap = <String, String>{
+      for (final message in toClone) message.id: generateId('msg'),
+    };
+
+    // Pass 2: clone each message with its blocks (fresh ids), remap askId, and
+    // drop version history.
+    final clonedMessages = <Message>[];
+    final clonedBlocks = <MessageBlock>[];
+    for (final message in toClone) {
+      final newId = idMap[message.id]!;
+      final originalBlocks = await _repo.getMessageBlocksByIds(message.blocks);
+      final newBlocks = originalBlocks
+          .map(
+            (block) => block.copyWith(
+              id: generateId('block'),
+              messageId: newId,
+              createdAt: now,
+              updatedAt: now,
+            ),
+          )
+          .toList();
+      clonedBlocks.addAll(newBlocks);
+      clonedMessages.add(
+        message.copyWith(
+          id: newId,
+          topicId: newTopicId,
+          askId: message.askId == null ? null : idMap[message.askId],
+          blocks: newBlocks.map((b) => b.id).toList(),
+          versions: null,
+          currentVersionId: null,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+    }
+
+    final newTopic =
+        newDefaultTopic(
+          id: newTopicId,
+          assistantId: source.assistantId,
+          now: now,
+        ).copyWith(
+          name: '${source.name} (分支)',
+          messageIds: clonedMessages.map((m) => m.id).toList(),
+          lastMessageTime: clonedMessages.isEmpty
+              ? now.toIso8601String()
+              : clonedMessages.last.createdAt.toIso8601String(),
+        );
+
+    await _repo.saveTopic(newTopic);
+    if (clonedBlocks.isNotEmpty) {
+      await _repo.saveMessageBlocks(clonedBlocks);
+    }
+    await _repo.saveMessages(clonedMessages);
+
+    final assistant = await _repo.getAssistant(source.assistantId);
+    if (assistant != null) {
+      await _repo.saveAssistant(
+        assistant.copyWith(
+          topicIds: <String>[newTopic.id, ...assistant.topicIds],
+        ),
+      );
+    }
+
+    await _reload();
+    ref.read(currentTopicIdProvider.notifier).set(newTopic.id);
+    return newTopic;
   }
 
   /// Selects [assistantId]'s most recent topic, creating one if it has none.
