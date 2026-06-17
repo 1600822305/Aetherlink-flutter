@@ -68,8 +68,11 @@ void main() {
       expect(find.text('你好'), findsOneWidget);
 
       // ...but with no model configured a tap surfaces the hint instead of
-      // sending: the button handles taps but does not send.
-      await tester.tap(find.widgetWithIcon(IconButton, Icons.send));
+      // sending: the button handles taps but does not send. The send glyph is
+      // a lucide icon, so the button is matched by its tooltip.
+      await tester.tap(
+        find.byWidgetPredicate((w) => w is IconButton && w.tooltip == '发送消息'),
+      );
       await tester.pump();
       expect(find.text('请先配置模型'), findsOneWidget);
     },
@@ -81,56 +84,63 @@ void main() {
     (tester) async {
       await pumpChatPage(tester);
 
-      // Model selector ("full" style) shows the "未配置模型" placeholder while no
-      // model is configured — never a fabricated model name. It is now wired:
-      // tapping it opens the model-settings page, so it is enabled.
-      expect(find.text('未配置模型'), findsOneWidget);
-      final modelSelector = tester.widget<OutlinedButton>(
-        find.ancestor(
-          of: find.text('未配置模型'),
-          matching: find.byType(OutlinedButton),
-        ),
+      // The default (icon-style) model selector carries the "未配置模型"
+      // placeholder as its tooltip while no model is configured — never a
+      // fabricated model name. It is now wired: tapping it opens the picker /
+      // model settings, so it is enabled.
+      final modelSelector = tester.widget<IconButton>(
+        find.byWidgetPredicate((w) => w is IconButton && w.tooltip == '未配置模型'),
       );
       expect(modelSelector.onPressed, isNotNull);
 
       // Settings action is now wired (the settings hub exists) — it navigates
       // to `/settings`, so it is enabled.
       final settingsButton = tester.widget<IconButton>(
-        find.widgetWithIcon(IconButton, Icons.settings),
+        find.byWidgetPredicate((w) => w is IconButton && w.tooltip == '设置'),
       );
       expect(settingsButton.onPressed, isNotNull);
     },
   );
 
   testWidgets(
-    'Input button toolbar restores each feature button; placeholders disabled, '
+    'Input button toolbar renders the default buttons; placeholders disabled, '
     'send wired',
     (tester) async {
       await pumpChatPage(tester);
 
-      // The feature buttons remain disabled placeholders (later slices).
-      const placeholderIcons = <IconData>[
-        Icons.public, // 网络搜索
-        Icons.build, // MCP 工具
-        Icons.menu_book, // 知识库
-        Icons.image, // 图片
-        Icons.mic, // 语音
-        Icons.swap_horiz, // 多模型
+      // The default toolbar layout (InputBoxSettings defaults): left
+      // tools/clear/search, right upload/voice/send. The feature buttons are
+      // disabled placeholders (later slices). They are matched by tooltip
+      // because several glyphs are bespoke SVGs, not Material/lucide icons.
+      const placeholderTooltips = <String>[
+        '扩展', // tools
+        '清空内容', // clear
+        '网络搜索', // search
+        '添加内容', // upload
+        '切换到语音输入模式', // voice
       ];
 
-      for (final icon in placeholderIcons) {
-        final finder = find.widgetWithIcon(IconButton, icon);
-        expect(finder, findsOneWidget, reason: 'missing toolbar icon $icon');
+      for (final tooltip in placeholderTooltips) {
+        final finder = find.byWidgetPredicate(
+          (w) => w is IconButton && w.tooltip == tooltip,
+        );
+        expect(
+          finder,
+          findsOneWidget,
+          reason: 'missing toolbar button $tooltip',
+        );
         expect(
           tester.widget<IconButton>(finder).onPressed,
           isNull,
-          reason: 'toolbar icon $icon should be disabled',
+          reason: 'toolbar button $tooltip should be disabled',
         );
       }
 
       // Send is wired: with no model configured it stays greyed but a tap
       // surfaces the "configure a model first" hint, so it handles taps.
-      final sendFinder = find.widgetWithIcon(IconButton, Icons.send);
+      final sendFinder = find.byWidgetPredicate(
+        (w) => w is IconButton && w.tooltip == '发送消息',
+      );
       expect(sendFinder, findsOneWidget);
       expect(tester.widget<IconButton>(sendFinder).onPressed, isNotNull);
     },
@@ -166,6 +176,31 @@ void main() {
         find.widgetWithText(TextField, '搜索助手...'),
       );
       expect(searchField.enabled ?? true, isTrue);
+    },
+  );
+
+  testWidgets(
+    'Per-assistant overflow menu opens and lists its actions (regression for '
+    'the empty-menu bug where PopupMenuButton.constraints clipped the menu)',
+    (tester) async {
+      await pumpChatPage(tester);
+
+      await tester.tap(find.byTooltip('打开侧边栏'));
+      await tester.pumpAndSettle();
+
+      // Each seeded assistant row carries a ⋮ overflow button. Opening one must
+      // actually reveal its menu items: the regressed code passed
+      // `constraints` to PopupMenuButton, which sizes the *menu* (not the
+      // button) and shrank it to a 16px box that clipped every item away.
+      final overflow = find.byIcon(LucideIcons.moreVertical);
+      expect(overflow, findsWidgets);
+      await tester.tap(overflow.first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('添加到分组'), findsOneWidget);
+      expect(find.text('复制助手'), findsOneWidget);
+      expect(find.text('清空话题'), findsOneWidget);
+      expect(find.text('删除助手'), findsOneWidget);
     },
   );
 
