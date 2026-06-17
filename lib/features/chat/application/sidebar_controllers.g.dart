@@ -215,6 +215,76 @@ abstract class _$SidebarTabIndex extends $Notifier<int> {
   }
 }
 
+/// The persisted 未分组助手 pinyin sort order. Hydrated from / written through to
+/// the key/value store so the chosen order survives reopening the drawer and a
+/// full app restart.
+
+@ProviderFor(AssistantSortOrderController)
+final assistantSortOrderControllerProvider =
+    AssistantSortOrderControllerProvider._();
+
+/// The persisted 未分组助手 pinyin sort order. Hydrated from / written through to
+/// the key/value store so the chosen order survives reopening the drawer and a
+/// full app restart.
+final class AssistantSortOrderControllerProvider
+    extends
+        $NotifierProvider<AssistantSortOrderController, AssistantSortOrder> {
+  /// The persisted 未分组助手 pinyin sort order. Hydrated from / written through to
+  /// the key/value store so the chosen order survives reopening the drawer and a
+  /// full app restart.
+  AssistantSortOrderControllerProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'assistantSortOrderControllerProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$assistantSortOrderControllerHash();
+
+  @$internal
+  @override
+  AssistantSortOrderController create() => AssistantSortOrderController();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(AssistantSortOrder value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<AssistantSortOrder>(value),
+    );
+  }
+}
+
+String _$assistantSortOrderControllerHash() =>
+    r'4ff9b21f24fc3b1fb428708869ccbd788b62c4b1';
+
+/// The persisted 未分组助手 pinyin sort order. Hydrated from / written through to
+/// the key/value store so the chosen order survives reopening the drawer and a
+/// full app restart.
+
+abstract class _$AssistantSortOrderController
+    extends $Notifier<AssistantSortOrder> {
+  AssistantSortOrder build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<AssistantSortOrder, AssistantSortOrder>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<AssistantSortOrder, AssistantSortOrder>,
+              AssistantSortOrder,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
 /// A monotonic tick the [ChatController] watches so topic-tab actions that
 /// mutate the *current* conversation in place (清空消息) force a reload without
 /// changing the selected topic id.
@@ -314,7 +384,7 @@ final class AssistantsProvider
   Assistants create() => Assistants();
 }
 
-String _$assistantsHash() => r'260cab87a774003f1ea47af12d94ae3573056dae';
+String _$assistantsHash() => r'f54c83b6555310ad12ed1be3203f50d55084e01e';
 
 /// All assistants, persisted via Drift. On a truly fresh store (no assistants
 /// and no topics) it seeds the two web defaults (默认助手 + 网页分析助手), each with a
@@ -688,7 +758,7 @@ final class UngroupedAssistantsProvider
 }
 
 String _$ungroupedAssistantsHash() =>
-    r'6c09d58022b82f5792f3f9b92b697c0c676e2e51';
+    r'985a30a8bfd49cc43788b4e35d23be2b21b5561d';
 
 /// Topic folders for [assistantId], ascending by display order.
 

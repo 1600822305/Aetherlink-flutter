@@ -56,6 +56,7 @@ dependencies:
   # Renders the lucide GitHub glyph, which lucide_icons_flutter dropped along
   # with the other brand icons — used only for the About page's GitHub row.
   flutter_svg: ^2.3.0
+  lpinyin: ^2.0.3
 
 dev_dependencies:
   flutter_test:
