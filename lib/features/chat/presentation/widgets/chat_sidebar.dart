@@ -573,13 +573,15 @@ class _AssistantItem extends ConsumerWidget {
                   ],
                   onSelected: (m) => _onMenu(context, ref, m),
                 ),
-                _MutedIconButton(
-                  icon: LucideIcons.trash,
+                _ConfirmDeleteButton(
                   size: 16,
                   box: 26,
-                  opacity: 0.6,
                   color: textPrimary,
-                  onPressed: () => _deleteAssistant(context, ref),
+                  // Two-click red state IS the confirmation (same as the topic
+                  // delete), so delete directly instead of popping a dialog.
+                  onConfirm: () => unawaited(
+                    ref.read(assistantsProvider.notifier).delete(assistant.id),
+                  ),
                 ),
               ],
             ),
@@ -1735,14 +1737,12 @@ class _ConfirmDeleteButtonState extends State<_ConfirmDeleteButton> {
 }
 
 /// A compact icon button mirroring MUI's `IconButton` sizing (`box` = the
-/// square tap area, `size` = the glyph). [opacity] dims the whole control like
-/// the original's `opacity: 0.6` trailing actions.
+/// square tap area, `size` = the glyph).
 class _MutedIconButton extends StatelessWidget {
   const _MutedIconButton({
     required this.icon,
     required this.size,
     required this.box,
-    this.opacity = 1,
     this.color = _mutedIconColor,
     this.onPressed,
   });
@@ -1750,13 +1750,12 @@ class _MutedIconButton extends StatelessWidget {
   final IconData icon;
   final double size;
   final double box;
-  final double opacity;
   final Color color;
   final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
-    final button = IconButton(
+    return IconButton(
       // Settings-tab icons stay appearance-only; default to an enabled no-op so
       // they keep the original full-color tint (a null handler greys them out).
       onPressed: onPressed ?? () {},
@@ -1767,8 +1766,6 @@ class _MutedIconButton extends StatelessWidget {
       splashRadius: box / 2,
       icon: Icon(icon),
     );
-    if (opacity == 1) return button;
-    return Opacity(opacity: opacity, child: button);
   }
 }
 
