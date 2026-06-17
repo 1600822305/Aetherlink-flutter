@@ -376,29 +376,32 @@ class _AssistantTabState extends ConsumerState<_AssistantTab> {
                       if (groups.isEmpty)
                         _EmptyHint(text: '没有助手分组', color: textSecondary)
                       else
-                        Flexible(
-                          child: ListView(
-                            padding: EdgeInsets.zero,
-                            shrinkWrap: true,
-                            children: [
-                              for (final g in groups)
-                                _ListFrame(
-                                  children: [
-                                    _GroupHeader(
-                                      group: g,
-                                      count: g.items
-                                          .where(byId.containsKey)
-                                          .length,
-                                      textPrimary: textPrimary,
-                                      textSecondary: textSecondary,
-                                    ),
-                                    if (g.expanded)
-                                      for (final id in g.items)
-                                        if (byId[id] != null) item(byId[id]!),
-                                  ],
-                                ),
-                            ],
-                          ),
+                        // Groups flow at their natural height so the ungrouped
+                        // box below can `Expanded`-fill the rest of the column —
+                        // a flex group area would split the height 50/50 and
+                        // halve the ungrouped box.
+                        ListView(
+                          padding: EdgeInsets.zero,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          children: [
+                            for (final g in groups)
+                              _ListFrame(
+                                children: [
+                                  _GroupHeader(
+                                    group: g,
+                                    count: g.items
+                                        .where(byId.containsKey)
+                                        .length,
+                                    textPrimary: textPrimary,
+                                    textSecondary: textSecondary,
+                                  ),
+                                  if (g.expanded)
+                                    for (final id in g.items)
+                                      if (byId[id] != null) item(byId[id]!),
+                                ],
+                              ),
+                          ],
                         ),
                       _SectionLabel(text: '未分组助手', color: textSecondary),
                       if (ungrouped.isEmpty)
@@ -740,29 +743,32 @@ class _TopicTabState extends ConsumerState<_TopicTab> {
                       if (groups.isEmpty)
                         _EmptyHint(text: '没有话题分组', color: textSecondary)
                       else
-                        Flexible(
-                          child: ListView(
-                            padding: EdgeInsets.zero,
-                            shrinkWrap: true,
-                            children: [
-                              for (final g in groups)
-                                _ListFrame(
-                                  children: [
-                                    _GroupHeader(
-                                      group: g,
-                                      count: g.items
-                                          .where(byId.containsKey)
-                                          .length,
-                                      textPrimary: textPrimary,
-                                      textSecondary: textSecondary,
-                                    ),
-                                    if (g.expanded)
-                                      for (final id in g.items)
-                                        if (byId[id] != null) item(byId[id]!),
-                                  ],
-                                ),
-                            ],
-                          ),
+                        // Groups flow at their natural height so the ungrouped
+                        // box below can `Expanded`-fill the rest of the column —
+                        // a flex group area would split the height 50/50 and
+                        // halve the ungrouped box.
+                        ListView(
+                          padding: EdgeInsets.zero,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          children: [
+                            for (final g in groups)
+                              _ListFrame(
+                                children: [
+                                  _GroupHeader(
+                                    group: g,
+                                    count: g.items
+                                        .where(byId.containsKey)
+                                        .length,
+                                    textPrimary: textPrimary,
+                                    textSecondary: textSecondary,
+                                  ),
+                                  if (g.expanded)
+                                    for (final id in g.items)
+                                      if (byId[id] != null) item(byId[id]!),
+                                ],
+                              ),
+                          ],
                         ),
                       _SectionLabel(text: '未分组话题', color: textSecondary),
                       if (ungrouped.isEmpty)
