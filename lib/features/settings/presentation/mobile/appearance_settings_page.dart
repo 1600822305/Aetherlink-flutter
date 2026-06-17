@@ -849,6 +849,7 @@ class _CustomizationCard extends StatelessWidget {
       accent: Color(0xFF8B5CF6), // violet
       title: '信息气泡管理',
       description: '调整消息气泡的样式和宽度设置',
+      route: AppRouter.messageBubbleSettingsPath,
     ),
     _CustomizationItem(
       icon: LucideIcons.edit3,
