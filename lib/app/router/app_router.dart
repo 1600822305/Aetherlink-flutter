@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/appearance_settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/chat_interface_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/default_model_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/input_box_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/add_provider_page.dart';
@@ -32,6 +33,8 @@ abstract final class AppRouter {
   static const String inputBoxSettingsPath = '/settings/appearance/input-box';
   static const String topToolbarSettingsPath =
       '/settings/appearance/top-toolbar';
+  static const String chatInterfaceSettingsPath =
+      '/settings/appearance/chat-interface';
   static const String welcomePath = '/welcome';
 
   /// The model-provider third-level pages (M4.3.1). The detail / edit / advanced
@@ -96,6 +99,11 @@ abstract final class AppRouter {
         path: topToolbarSettingsPath,
         name: 'top-toolbar-settings',
         builder: (context, state) => const TopToolbarSettingsPage(),
+      ),
+      GoRoute(
+        path: chatInterfaceSettingsPath,
+        name: 'chat-interface-settings',
+        builder: (context, state) => const ChatInterfaceSettingsPage(),
       ),
       GoRoute(
         path: addProviderPath,
