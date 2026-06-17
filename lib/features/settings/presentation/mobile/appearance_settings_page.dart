@@ -836,6 +836,7 @@ class _CustomizationCard extends StatelessWidget {
       accent: Color(0xFF6366F1), // indigo
       title: '聊天界面设置',
       description: '自定义聊天界面布局和显示选项',
+      route: AppRouter.chatInterfaceSettingsPath,
     ),
     _CustomizationItem(
       icon: LucideIcons.sparkles,
