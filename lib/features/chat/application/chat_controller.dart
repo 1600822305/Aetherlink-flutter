@@ -5,6 +5,7 @@ import 'package:aetherlink_flutter/core/error/failure.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
@@ -45,6 +46,9 @@ class ChatController extends _$ChatController {
 
   @override
   Future<ChatState> build() async {
+    // In-place mutations of the current conversation (清空消息) bump this so the
+    // view reloads without changing the selected topic id.
+    ref.watch(chatRefreshProvider);
     final topic = await ref.watch(currentTopicProvider.future);
     if (topic == null) {
       _topicId = null;
