@@ -843,6 +843,7 @@ class _CustomizationCard extends StatelessWidget {
       accent: Color(0xFFF59E0B), // amber
       title: '思考过程设置',
       description: '自定义AI思考过程的显示方式和自动折叠行为',
+      route: AppRouter.thinkingSettingsPath,
     ),
     _CustomizationItem(
       icon: LucideIcons.messageCircle,
