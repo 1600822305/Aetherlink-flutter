@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/chat_in
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/default_model_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/input_box_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/message_bubble_settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/thinking_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/add_provider_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/advanced_api_config_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/edit_model_page.dart';
@@ -38,6 +39,7 @@ abstract final class AppRouter {
       '/settings/appearance/chat-interface';
   static const String messageBubbleSettingsPath =
       '/settings/appearance/message-bubble';
+  static const String thinkingSettingsPath = '/settings/appearance/thinking';
   static const String welcomePath = '/welcome';
 
   /// The model-provider third-level pages (M4.3.1). The detail / edit / advanced
@@ -112,6 +114,11 @@ abstract final class AppRouter {
         path: messageBubbleSettingsPath,
         name: 'message-bubble-settings',
         builder: (context, state) => const MessageBubbleSettingsPage(),
+      ),
+      GoRoute(
+        path: thinkingSettingsPath,
+        name: 'thinking-settings',
+        builder: (context, state) => const ThinkingSettingsPage(),
       ),
       GoRoute(
         path: addProviderPath,
