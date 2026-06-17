@@ -136,11 +136,15 @@ class ChatController extends _$ChatController {
       role: MessageRole.user,
       status: MessageStatus.success,
       text: trimmed,
+      createdAt: now,
     );
     var assistantView = ChatMessageView(
       id: assistantMessageId,
       role: MessageRole.assistant,
       status: MessageStatus.streaming,
+      createdAt: assistantTime,
+      modelName: effective.name,
+      providerName: current.provider.name,
     );
     final views = [...snapshot.messages, userView, assistantView];
     _emit(views, isStreaming: true);
@@ -319,6 +323,17 @@ class ChatController extends _$ChatController {
         .join('\n\n');
     final errors = blocks.whereType<ErrorBlock>();
     final error = errors.isEmpty ? null : errors.first;
+    final model = message.model;
+    String? providerName;
+    if (model != null) {
+      final providers = await ref.read(appModelProvidersProvider.future);
+      for (final provider in providers) {
+        if (provider.id == model.provider) {
+          providerName = provider.name;
+          break;
+        }
+      }
+    }
     return ChatMessageView(
       id: message.id,
       role: message.role,
@@ -326,6 +341,9 @@ class ChatController extends _$ChatController {
       text: text,
       thinking: thinking,
       errorText: error?.message ?? error?.content,
+      createdAt: message.createdAt,
+      modelName: model?.name,
+      providerName: providerName,
     );
   }
 
