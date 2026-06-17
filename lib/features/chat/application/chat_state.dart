@@ -20,6 +20,9 @@ abstract class ChatMessageView with _$ChatMessageView {
     @Default('') String text,
     @Default('') String thinking,
     String? errorText,
+    DateTime? createdAt,
+    String? modelName,
+    String? providerName,
   }) = _ChatMessageView;
 }
 
