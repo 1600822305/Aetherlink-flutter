@@ -2,34 +2,34 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aetherlink_flutter/app/di/thinking_settings_access.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
+import 'package:aetherlink_flutter/shared/domain/thinking_settings.dart';
+import 'package:aetherlink_flutter/shared/widgets/thinking_styled_view.dart';
 
-/// Renders a `THINKING` block in the default 「紧凑」 style, mirroring
-/// `ThinkingBlock.tsx` + `ThinkingCompactStyle.tsx`.
+/// Renders a `THINKING` block, mirroring `ThinkingBlock.tsx`.
 ///
-/// A rounded, glassy card: a Lightbulb (amber while thinking) + 「思考过程」 +
-/// a duration chip (思考中 / 已深度思考), a copy button and a chevron. Collapsed
-/// while thinking it shows a scrolling preview of the latest content; tapping
-/// expands the full reasoning. The duration ticks live while the block streams
-/// and freezes at the recorded `thinking_millsec` (or createdAt→updatedAt) once
-/// terminal.
-///
-/// The 16 alternative display styles and inline-tool grouping are later slices.
-class ThinkingBlockView extends StatefulWidget {
+/// Owns the live timer, the expanded / copied state and the duration, then
+/// delegates the visual to [ThinkingStyledView] in the chosen display style.
+/// Reads 思考过程设置 ([ThinkingSettings]) via the app/di seam so the style and
+/// the auto-collapse behaviour follow 外观设置 → 思考过程设置 live. The practical
+/// subset of the original's 17 styles is ported — 紧凑 (default) / 完整 / 极简 /
+/// 气泡 / 卡片 / 隐藏; the novelty styles are intentionally dropped.
+class ThinkingBlockView extends ConsumerStatefulWidget {
   const ThinkingBlockView({required this.block, super.key});
 
   final ThinkingBlock block;
 
   @override
-  State<ThinkingBlockView> createState() => _ThinkingBlockViewState();
+  ConsumerState<ThinkingBlockView> createState() => _ThinkingBlockViewState();
 }
 
-class _ThinkingBlockViewState extends State<ThinkingBlockView> {
-  bool _expanded = false;
+class _ThinkingBlockViewState extends ConsumerState<ThinkingBlockView> {
+  late bool _expanded;
   bool _copied = false;
   Timer? _timer;
 
@@ -38,6 +38,8 @@ class _ThinkingBlockViewState extends State<ThinkingBlockView> {
   @override
   void initState() {
     super.initState();
+    // Seed the expanded state from 自动折叠 (mirrors the web `useState(!auto)`).
+    _expanded = !ref.read(thinkingSettingsProvider).thoughtAutoCollapse;
     _syncTimer();
   }
 
@@ -63,6 +65,8 @@ class _ThinkingBlockViewState extends State<ThinkingBlockView> {
     _timer?.cancel();
     super.dispose();
   }
+
+  void _toggleExpanded() => setState(() => _expanded = !_expanded);
 
   double _thinkingSeconds() {
     final ms = widget.block.thinkingMillsec;
@@ -101,132 +105,21 @@ class _ThinkingBlockViewState extends State<ThinkingBlockView> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final isThinking = _isThinking;
-    final amber = Colors.amber.shade700;
-    final seconds = _thinkingSeconds().toStringAsFixed(1);
-    final chipLabel = isThinking ? '思考中… ${seconds}s' : '已深度思考 ${seconds}s';
-    final glassBg = isDark
-        ? Colors.white.withValues(alpha: 0.04)
-        : Colors.white.withValues(alpha: 0.85);
-    final border = isDark ? Colors.white12 : Colors.black12;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: glassBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  Icon(
-                    LucideIcons.lightbulb,
-                    size: 16,
-                    color: isThinking
-                        ? amber
-                        : theme.colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '思考过程',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w500,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 1,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(9),
-                      border: Border.all(
-                        color: isThinking ? amber : theme.dividerColor,
-                      ),
-                    ),
-                    child: Text(
-                      chipLabel,
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        color: isThinking
-                            ? amber
-                            : theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
-                  InkWell(
-                    onTap: _copy,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.all(4),
-                      child: Icon(
-                        _copied ? LucideIcons.check : LucideIcons.copy,
-                        size: 14,
-                        color: _copied
-                            ? Colors.green
-                            : theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                  AnimatedRotation(
-                    turns: _expanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 250),
-                    child: Icon(
-                      LucideIcons.chevronDown,
-                      size: 16,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (_expanded)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: AppMarkdown(content: widget.block.content),
-            )
-          else if (isThinking)
-            Container(
-              width: double.infinity,
-              constraints: const BoxConstraints(maxHeight: 160),
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-              color: isDark
-                  ? Colors.black.withValues(alpha: 0.2)
-                  : Colors.black.withValues(alpha: 0.02),
-              child: SingleChildScrollView(
-                reverse: true,
-                child: DefaultTextStyle.merge(
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  child: AppMarkdown(
-                    content: _previewContent(),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
+    final style = ref.watch(
+      thinkingSettingsProvider.select((s) => s.displayStyle),
+    );
+    return ThinkingStyledView(
+      style: style,
+      content: widget.block.content,
+      isThinking: _isThinking,
+      seconds: _thinkingSeconds(),
+      expanded: _expanded,
+      copied: _copied,
+      onToggleExpanded: _toggleExpanded,
+      onCopy: _copy,
+      previewContent: _previewContent(),
+      markdownBuilder: (context, content, style) =>
+          AppMarkdown(content: content, style: style),
     );
   }
 }
