@@ -131,6 +131,8 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
             Expanded(
               child: TabBarView(
                 controller: _tabController,
+                // 禁止左右滑动切换 tab，只能点 tab 切换。
+                physics: const NeverScrollableScrollPhysics(),
                 children: [
                   _AssistantTab(
                     onGoToTopics: () => _tabController.animateTo(1),
