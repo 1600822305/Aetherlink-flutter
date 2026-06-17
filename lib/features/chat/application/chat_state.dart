@@ -3,6 +3,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_version.dart';
 
 part 'chat_state.freezed.dart';
 
@@ -14,6 +15,10 @@ part 'chat_state.freezed.dart';
 /// [text] still feeds the outgoing request builder and both remain a fallback.
 /// [status] drives the streaming indicator and [errorText] carries a
 /// transport/stream failure to show in place of the bubble.
+///
+/// [versions] / [currentVersionId] mirror the message's saved version history
+/// (`MessageVersion`) so the toolbar can show the 版本历史 button and popover;
+/// [currentVersionId] is `null` while the newest (live) content is displayed.
 @freezed
 abstract class ChatMessageView with _$ChatMessageView {
   const factory ChatMessageView({
@@ -27,6 +32,8 @@ abstract class ChatMessageView with _$ChatMessageView {
     DateTime? createdAt,
     String? modelName,
     String? providerName,
+    @Default(<MessageVersion>[]) List<MessageVersion> versions,
+    String? currentVersionId,
   }) = _ChatMessageView;
 }
 
