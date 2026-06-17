@@ -338,7 +338,7 @@ class _ModelTypeSection extends StatelessWidget {
             const SizedBox(width: 8),
             // autoDetect defaults on; persisting it needs the data layer, so
             // the switch is disabled this milestone.
-            const Switch(value: true, onChanged: null),
+            const CustomSwitch(value: true, onChanged: null),
             const IconButton(
               icon: Icon(LucideIcons.settings, size: 16),
               onPressed: null,

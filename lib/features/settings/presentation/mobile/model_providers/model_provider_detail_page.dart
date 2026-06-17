@@ -139,7 +139,7 @@ class _ModelProviderDetailPageState
           Center(
             child: Row(
               children: [
-                Switch(
+                CustomSwitch(
                   value: _isEnabled,
                   onChanged: (v) => setState(() => _isEnabled = v),
                 ),
@@ -245,7 +245,7 @@ class _ModelProviderDetailPageState
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
-                  Switch(
+                  CustomSwitch(
                     value: _useMultiKey,
                     onChanged: (v) => setState(() => _useMultiKey = v),
                   ),
@@ -327,7 +327,7 @@ class _ModelProviderDetailPageState
                     const SizedBox(width: 8),
                     const _ComingSoonChip(),
                     const Spacer(),
-                    Switch(
+                    CustomSwitch(
                       value: _useResponsesAPI,
                       onChanged: (v) => setState(() => _useResponsesAPI = v),
                     ),
@@ -442,7 +442,7 @@ class _ModelProviderDetailPageState
                       style: theme.textTheme.bodyMedium?.copyWith(fontSize: 14),
                     ),
                   ),
-                  Switch(
+                  CustomSwitch(
                     value: _alwaysShowTestButton,
                     onChanged: (v) => setState(() => _alwaysShowTestButton = v),
                   ),
