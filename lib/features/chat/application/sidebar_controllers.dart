@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_reposi
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
+import 'package:aetherlink_flutter/shared/utils/pinyin_sort.dart';
 
 part 'sidebar_controllers.g.dart';
 
@@ -31,6 +32,7 @@ part 'sidebar_controllers.g.dart';
 const String kCurrentAssistantSettingKey = 'currentAssistant';
 const String kCurrentTopicSettingKey = 'currentTopic';
 const String kSidebarTabIndexSettingKey = 'sidebarTabIndex';
+const String kAssistantSortOrderSettingKey = 'assistantSortOrder';
 
 // ── Selection (keepAlive, persisted) ─────────────────────────────────────────
 
@@ -113,6 +115,53 @@ class SidebarTabIndex extends _$SidebarTabIndex {
     ref
         .read(chatRepositoryProvider)
         .saveSetting(kSidebarTabIndexSettingKey, '$index');
+  }
+}
+
+/// The 未分组助手 list ordering: [none] keeps the persisted insertion order,
+/// while [asc] / [desc] sort by pinyin — the port of the web's
+/// 按拼音升序排列 / 按拼音降序排列 (`handleSortByPinyinAsc` / `…Desc`).
+enum AssistantSortOrder {
+  none('none'),
+  asc('asc'),
+  desc('desc');
+
+  const AssistantSortOrder(this.id);
+  final String id;
+
+  static AssistantSortOrder fromId(String? id) {
+    for (final order in values) {
+      if (order.id == id) return order;
+    }
+    return none;
+  }
+}
+
+/// The persisted 未分组助手 pinyin sort order. Hydrated from / written through to
+/// the key/value store so the chosen order survives reopening the drawer and a
+/// full app restart.
+@Riverpod(keepAlive: true)
+class AssistantSortOrderController extends _$AssistantSortOrderController {
+  @override
+  AssistantSortOrder build() {
+    _hydrate();
+    return AssistantSortOrder.none;
+  }
+
+  Future<void> _hydrate() async {
+    final stored = await ref
+        .read(chatRepositoryProvider)
+        .getSetting(kAssistantSortOrderSettingKey);
+    if (stored != null && stored.isNotEmpty) {
+      state = AssistantSortOrder.fromId(stored);
+    }
+  }
+
+  void set(AssistantSortOrder order) {
+    state = order;
+    ref
+        .read(chatRepositoryProvider)
+        .saveSetting(kAssistantSortOrderSettingKey, order.id);
   }
 }
 
@@ -660,7 +709,16 @@ List<Assistant> ungroupedAssistants(Ref ref) {
   final grouped = <String>{
     for (final g in ref.watch(assistantGroupsProvider)) ...g.items,
   };
-  return assistants.where((a) => !grouped.contains(a.id)).toList();
+  final ungrouped = assistants.where((a) => !grouped.contains(a.id)).toList();
+
+  final order = ref.watch(assistantSortOrderControllerProvider);
+  if (order != AssistantSortOrder.none) {
+    ungrouped.sort((a, b) {
+      final cmp = pinyinSortKey(a.name).compareTo(pinyinSortKey(b.name));
+      return order == AssistantSortOrder.asc ? cmp : -cmp;
+    });
+  }
+  return ungrouped;
 }
 
 /// Topic folders for [assistantId], ascending by display order.

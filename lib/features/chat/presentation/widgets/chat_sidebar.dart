@@ -426,7 +426,7 @@ class _AssistantTabState extends ConsumerState<_AssistantTab> {
   }
 }
 
-enum _AssistantMenu { addToGroup, copy, clearTopics, delete }
+enum _AssistantMenu { addToGroup, copy, clearTopics, sortAsc, sortDesc, delete }
 
 class _AssistantItem extends ConsumerWidget {
   const _AssistantItem({
@@ -464,6 +464,14 @@ class _AssistantItem extends ConsumerWidget {
           message: '确定要清空「${assistant.name}」的所有话题吗？此操作不可撤销。',
         );
         if (ok) await notifier.clearTopics(assistant.id);
+      case _AssistantMenu.sortAsc:
+        ref
+            .read(assistantSortOrderControllerProvider.notifier)
+            .set(AssistantSortOrder.asc);
+      case _AssistantMenu.sortDesc:
+        ref
+            .read(assistantSortOrderControllerProvider.notifier)
+            .set(AssistantSortOrder.desc);
       case _AssistantMenu.delete:
         await _deleteAssistant(context, ref);
     }
@@ -556,6 +564,16 @@ class _AssistantItem extends ConsumerWidget {
                       _AssistantMenu.clearTopics,
                       LucideIcons.trash2,
                       '清空话题',
+                    ),
+                    _menuItem(
+                      _AssistantMenu.sortAsc,
+                      LucideIcons.arrowUpAZ,
+                      '按拼音升序排列',
+                    ),
+                    _menuItem(
+                      _AssistantMenu.sortDesc,
+                      LucideIcons.arrowDownAZ,
+                      '按拼音降序排列',
                     ),
                     _menuItem(
                       _AssistantMenu.delete,
