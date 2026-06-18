@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
+import 'package:aetherlink_flutter/shared/domain/quick_phrase.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 import 'package:aetherlink_flutter/shared/utils/pinyin_sort.dart';
 
@@ -311,6 +312,36 @@ class Assistants extends _$Assistants {
     }
     await _repo.saveAssistant(
       assistant.copyWith(systemPrompt: prompt, updatedAt: DateTime.now()),
+    );
+    await _reload();
+  }
+
+  /// Appends a 助手快捷短语 to [assistantId]'s `regularPhrases` and persists — the
+  /// assistant-scoped counterpart of `GlobalQuickPhrases.add` (the web
+  /// `QuickPhraseService.add` for the 助手提示词 location). A no-op when the
+  /// assistant can't be resolved.
+  Future<void> addRegularPhrase(
+    String assistantId, {
+    required String title,
+    required String content,
+  }) async {
+    final assistant = await _repo.getAssistant(assistantId);
+    if (assistant == null) return;
+    final now = DateTime.now();
+    final existing = assistant.regularPhrases ?? const <QuickPhrase>[];
+    final phrase = QuickPhrase(
+      id: generateId('phrase'),
+      title: title,
+      content: content,
+      createdAt: now.millisecondsSinceEpoch,
+      updatedAt: now.millisecondsSinceEpoch,
+      order: existing.length,
+    );
+    await _repo.saveAssistant(
+      assistant.copyWith(
+        regularPhrases: <QuickPhrase>[...existing, phrase],
+        updatedAt: now,
+      ),
     );
     await _reload();
   }
