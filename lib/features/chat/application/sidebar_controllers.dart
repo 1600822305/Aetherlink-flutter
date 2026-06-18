@@ -19,12 +19,14 @@ part 'sidebar_controllers.g.dart';
 ///
 /// Three persistent source-of-truth notifiers ([Assistants], [Topics], [Groups],
 /// all Drift-backed via [ChatRepository]) plus two `keepAlive` selection
-/// notifiers ([CurrentAssistantId], [CurrentTopicId]) and the sidebar tab index
-/// ([SidebarTabIndex]). Like the web (`dexieStorage.saveSetting('currentAssistant',
-/// …)` / `setSidebarTabIndex`), these are persisted via [ChatRepository]'s
-/// key/value settings: each notifier hydrates from storage on first build and
-/// writes through on every change, so the selection and active tab survive both
-/// reopening the drawer and a full app restart. The derived [currentAssistant]
+/// notifiers ([CurrentAssistantId], [CurrentTopicId]). Like the web
+/// (`dexieStorage.saveSetting('currentAssistant', …)`), these are persisted via
+/// [ChatRepository]'s key/value settings: each notifier hydrates from storage on
+/// first build and writes through on every change, so the selection survives both
+/// reopening the drawer and a full app restart. The sidebar tab index
+/// ([SidebarTabIndex]) is deliberately session-only (in-memory): it is remembered
+/// while the app runs but resets to the default 助手 tab on restart. The derived
+/// [currentAssistant]
 /// still falls back to the first assistant when nothing is selected — matching
 /// the web `setCurrentAssistant(defaultAssistants[0])`. Group membership maps
 /// are **derived** from [Group.items] (the web persists them separately).
@@ -33,7 +35,6 @@ part 'sidebar_controllers.g.dart';
 /// `dexieStorage` setting keys).
 const String kCurrentAssistantSettingKey = 'currentAssistant';
 const String kCurrentTopicSettingKey = 'currentTopic';
-const String kSidebarTabIndexSettingKey = 'sidebarTabIndex';
 const String kAssistantSortOrderSettingKey = 'assistantSortOrder';
 
 // ── Selection (keepAlive, persisted) ─────────────────────────────────────────
@@ -91,32 +92,19 @@ class CurrentTopicId extends _$CurrentTopicId {
   }
 }
 
-/// The active sidebar tab index (0 助手 / 1 话题 / 2 设置). Hydrated from / written
-/// through to persisted storage so the last tab is restored on reopening the
-/// drawer and on app restart — the port of the web `settings.sidebarTabIndex`
-/// (`setSidebarTabIndex`).
+/// The active sidebar tab index (0 助手 / 1 话题 / 2 设置). Session-only and held
+/// purely in memory: it remembers the last tab while the app runs (so reopening
+/// the drawer keeps the same tab), but it is **not** persisted, so a full app
+/// restart resets to the default 助手 tab. We deliberately diverge from the web
+/// (`settings.sidebarTabIndex`), which persisted it across restarts.
 @Riverpod(keepAlive: true)
 class SidebarTabIndex extends _$SidebarTabIndex {
   @override
-  int build() {
-    _hydrate();
-    return 0;
-  }
-
-  Future<void> _hydrate() async {
-    final stored = await ref
-        .read(chatRepositoryProvider)
-        .getSetting(kSidebarTabIndexSettingKey);
-    final parsed = int.tryParse(stored ?? '');
-    if (parsed != null && parsed >= 0 && parsed <= 2) state = parsed;
-  }
+  int build() => 0;
 
   void set(int index) {
     if (index < 0 || index > 2) return;
     state = index;
-    ref
-        .read(chatRepositoryProvider)
-        .saveSetting(kSidebarTabIndexSettingKey, '$index');
   }
 }
 
