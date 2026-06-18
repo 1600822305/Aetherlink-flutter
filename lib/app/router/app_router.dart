@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/behavio
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/chat_interface_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/default_model_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/input_box_settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_server_detail_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_server_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/message_bubble_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/quick_phrases_settings_page.dart';
@@ -127,6 +128,14 @@ abstract final class AppRouter {
         name: 'mcp-server',
         pageBuilder: (context, state) =>
             _instant(state, const McpServerSettingsPage()),
+      ),
+      GoRoute(
+        path: '/settings/mcp-server/:id',
+        name: 'mcp-server-detail',
+        pageBuilder: (context, state) => _instant(
+          state,
+          McpServerDetailPage(serverId: state.pathParameters['id'] ?? ''),
+        ),
       ),
       GoRoute(
         path: agentPromptsPath,
