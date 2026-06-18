@@ -140,8 +140,14 @@ class InputBoxComposer extends StatelessWidget {
       ),
     );
 
+    // The original input container is transparent (`backgroundColor:
+    // 'transparent'`, `ChatPageUI.tsx`): only the inner card paints the paper
+    // surface, so the chat wallpaper shows through around it and the `modern`
+    // backdrop blur reads as glass over the messages. A transparency-typed
+    // [Material] keeps ink and text-style inheritance for the field and toolbar
+    // without painting an opaque block behind the card.
     return Material(
-      color: theme.colorScheme.surface,
+      type: MaterialType.transparency,
       child: Padding(
         // The original centers the card with an 8px horizontal gutter on mobile.
         padding: const EdgeInsets.all(8),
