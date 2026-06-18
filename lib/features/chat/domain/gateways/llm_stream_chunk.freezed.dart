@@ -55,12 +55,13 @@ extension LlmStreamChunkPatterns on LlmStreamChunk {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( LlmTextDelta value)?  textDelta,TResult Function( LlmReasoningDelta value)?  reasoningDelta,TResult Function( LlmDone value)?  done,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( LlmTextDelta value)?  textDelta,TResult Function( LlmReasoningDelta value)?  reasoningDelta,TResult Function( LlmToolCallChunk value)?  toolCall,TResult Function( LlmDone value)?  done,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case LlmTextDelta() when textDelta != null:
 return textDelta(_that);case LlmReasoningDelta() when reasoningDelta != null:
-return reasoningDelta(_that);case LlmDone() when done != null:
+return reasoningDelta(_that);case LlmToolCallChunk() when toolCall != null:
+return toolCall(_that);case LlmDone() when done != null:
 return done(_that);case _:
   return orElse();
 
@@ -79,12 +80,13 @@ return done(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( LlmTextDelta value)  textDelta,required TResult Function( LlmReasoningDelta value)  reasoningDelta,required TResult Function( LlmDone value)  done,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( LlmTextDelta value)  textDelta,required TResult Function( LlmReasoningDelta value)  reasoningDelta,required TResult Function( LlmToolCallChunk value)  toolCall,required TResult Function( LlmDone value)  done,}){
 final _that = this;
 switch (_that) {
 case LlmTextDelta():
 return textDelta(_that);case LlmReasoningDelta():
-return reasoningDelta(_that);case LlmDone():
+return reasoningDelta(_that);case LlmToolCallChunk():
+return toolCall(_that);case LlmDone():
 return done(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
@@ -99,12 +101,13 @@ return done(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( LlmTextDelta value)?  textDelta,TResult? Function( LlmReasoningDelta value)?  reasoningDelta,TResult? Function( LlmDone value)?  done,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( LlmTextDelta value)?  textDelta,TResult? Function( LlmReasoningDelta value)?  reasoningDelta,TResult? Function( LlmToolCallChunk value)?  toolCall,TResult? Function( LlmDone value)?  done,}){
 final _that = this;
 switch (_that) {
 case LlmTextDelta() when textDelta != null:
 return textDelta(_that);case LlmReasoningDelta() when reasoningDelta != null:
-return reasoningDelta(_that);case LlmDone() when done != null:
+return reasoningDelta(_that);case LlmToolCallChunk() when toolCall != null:
+return toolCall(_that);case LlmDone() when done != null:
 return done(_that);case _:
   return null;
 
@@ -122,11 +125,12 @@ return done(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text)?  textDelta,TResult Function( String text)?  reasoningDelta,TResult Function( Usage? usage,  String? finishReason)?  done,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text)?  textDelta,TResult Function( String text)?  reasoningDelta,TResult Function( LlmToolCall call)?  toolCall,TResult Function( Usage? usage,  String? finishReason)?  done,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case LlmTextDelta() when textDelta != null:
 return textDelta(_that.text);case LlmReasoningDelta() when reasoningDelta != null:
-return reasoningDelta(_that.text);case LlmDone() when done != null:
+return reasoningDelta(_that.text);case LlmToolCallChunk() when toolCall != null:
+return toolCall(_that.call);case LlmDone() when done != null:
 return done(_that.usage,_that.finishReason);case _:
   return orElse();
 
@@ -145,11 +149,12 @@ return done(_that.usage,_that.finishReason);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text)  textDelta,required TResult Function( String text)  reasoningDelta,required TResult Function( Usage? usage,  String? finishReason)  done,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text)  textDelta,required TResult Function( String text)  reasoningDelta,required TResult Function( LlmToolCall call)  toolCall,required TResult Function( Usage? usage,  String? finishReason)  done,}) {final _that = this;
 switch (_that) {
 case LlmTextDelta():
 return textDelta(_that.text);case LlmReasoningDelta():
-return reasoningDelta(_that.text);case LlmDone():
+return reasoningDelta(_that.text);case LlmToolCallChunk():
+return toolCall(_that.call);case LlmDone():
 return done(_that.usage,_that.finishReason);}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -164,11 +169,12 @@ return done(_that.usage,_that.finishReason);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text)?  textDelta,TResult? Function( String text)?  reasoningDelta,TResult? Function( Usage? usage,  String? finishReason)?  done,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text)?  textDelta,TResult? Function( String text)?  reasoningDelta,TResult? Function( LlmToolCall call)?  toolCall,TResult? Function( Usage? usage,  String? finishReason)?  done,}) {final _that = this;
 switch (_that) {
 case LlmTextDelta() when textDelta != null:
 return textDelta(_that.text);case LlmReasoningDelta() when reasoningDelta != null:
-return reasoningDelta(_that.text);case LlmDone() when done != null:
+return reasoningDelta(_that.text);case LlmToolCallChunk() when toolCall != null:
+return toolCall(_that.call);case LlmDone() when done != null:
 return done(_that.usage,_that.finishReason);case _:
   return null;
 
@@ -303,6 +309,72 @@ class _$LlmReasoningDeltaCopyWithImpl<$Res>
   return _then(LlmReasoningDelta(
 null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
 as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class LlmToolCallChunk implements LlmStreamChunk {
+  const LlmToolCallChunk(this.call);
+  
+
+ final  LlmToolCall call;
+
+/// Create a copy of LlmStreamChunk
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$LlmToolCallChunkCopyWith<LlmToolCallChunk> get copyWith => _$LlmToolCallChunkCopyWithImpl<LlmToolCallChunk>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LlmToolCallChunk&&(identical(other.call, call) || other.call == call));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,call);
+
+@override
+String toString() {
+  return 'LlmStreamChunk.toolCall(call: $call)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $LlmToolCallChunkCopyWith<$Res> implements $LlmStreamChunkCopyWith<$Res> {
+  factory $LlmToolCallChunkCopyWith(LlmToolCallChunk value, $Res Function(LlmToolCallChunk) _then) = _$LlmToolCallChunkCopyWithImpl;
+@useResult
+$Res call({
+ LlmToolCall call
+});
+
+
+
+
+}
+/// @nodoc
+class _$LlmToolCallChunkCopyWithImpl<$Res>
+    implements $LlmToolCallChunkCopyWith<$Res> {
+  _$LlmToolCallChunkCopyWithImpl(this._self, this._then);
+
+  final LlmToolCallChunk _self;
+  final $Res Function(LlmToolCallChunk) _then;
+
+/// Create a copy of LlmStreamChunk
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? call = null,}) {
+  return _then(LlmToolCallChunk(
+null == call ? _self.call : call // ignore: cast_nullable_to_non_nullable
+as LlmToolCall,
   ));
 }
 

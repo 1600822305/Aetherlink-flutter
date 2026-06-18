@@ -6,7 +6,9 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.da
 import 'package:aetherlink_flutter/features/chat/domain/entities/usage.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
 import 'package:dio/dio.dart';
 
 /// Speaks the Gemini wire protocol: `POST
@@ -27,15 +29,10 @@ class GeminiAdapter implements LlmGateway {
 
     final contents = <Map<String, dynamic>>[
       for (final m in request.messages)
-        if (m.role != MessageRole.system)
-          {
-            'role': _roleValue(m.role),
-            'parts': [
-              {'text': m.content},
-            ],
-          },
+        if (m.role != MessageRole.system) _toWireContent(m),
     ];
 
+    final tools = request.tools;
     final body = <String, dynamic>{
       'contents': contents,
       if (request.system != null)
@@ -49,6 +46,19 @@ class GeminiAdapter implements LlmGateway {
         if (request.maxTokens != null) 'maxOutputTokens': request.maxTokens,
         if (request.topP != null) 'topP': request.topP,
       },
+      if (tools != null && tools.isNotEmpty)
+        'tools': [
+          {
+            'functionDeclarations': [
+              for (final t in tools)
+                {
+                  'name': t.name,
+                  'description': t.description,
+                  'parameters': t.inputSchema,
+                },
+            ],
+          },
+        ],
       ...?request.extraBody,
     };
 
@@ -79,6 +89,24 @@ class GeminiAdapter implements LlmGateway {
         if (parts != null) {
           for (final raw in parts) {
             final part = raw as Map<String, dynamic>;
+            // Gemini emits a function call as a complete object in one part
+            // (never streamed incrementally) and issues no call id, so results
+            // are matched back by name.
+            final fn = part['functionCall'];
+            if (fn is Map<String, dynamic>) {
+              final name = fn['name'];
+              if (name is String && name.isNotEmpty) {
+                final args = fn['args'];
+                yield LlmStreamChunk.toolCall(
+                  LlmToolCall(
+                    id: '',
+                    name: name,
+                    arguments: jsonEncode(args ?? const <String, dynamic>{}),
+                  ),
+                );
+              }
+              continue;
+            }
             final text = part['text'];
             if (text is! String || text.isEmpty) continue;
             if (part['thought'] == true) {
@@ -120,6 +148,59 @@ class GeminiAdapter implements LlmGateway {
     } on DioException catch (e) {
       throw networkFailureFromDio(e);
     }
+  }
+
+  /// Translates an [LlmMessage] into a Gemini `contents` entry. Tool round-trip
+  /// turns map onto Gemini's part shapes: an assistant turn carrying
+  /// [LlmMessage.toolCalls] becomes `functionCall` parts (arguments string
+  /// decoded back to the `args` object); a tool-result turn
+  /// ([LlmMessage.toolCallId] set) becomes a `user` turn with a
+  /// `functionResponse` part keyed by [LlmMessage.toolName]. Plain turns carry
+  /// a single `text` part.
+  static Map<String, dynamic> _toWireContent(LlmMessage m) {
+    if (m.toolCallId != null) {
+      return {
+        'role': 'user',
+        'parts': [
+          {
+            'functionResponse': {
+              'name': m.toolName ?? '',
+              'response': {'result': m.content},
+            },
+          },
+        ],
+      };
+    }
+    final calls = m.toolCalls;
+    if (calls != null && calls.isNotEmpty) {
+      return {
+        'role': 'model',
+        'parts': [
+          if (m.content.isNotEmpty) {'text': m.content},
+          for (final c in calls)
+            {
+              'functionCall': {
+                'name': c.name,
+                'args': _decodeArguments(c.arguments),
+              },
+            },
+        ],
+      };
+    }
+    return {
+      'role': _roleValue(m.role),
+      'parts': [
+        {'text': m.content},
+      ],
+    };
+  }
+
+  /// Decodes a tool-call arguments string into the object Gemini's `args`
+  /// expects, tolerating an empty/blank string (→ `{}`) or non-object JSON.
+  static Map<String, dynamic> _decodeArguments(String arguments) {
+    if (arguments.trim().isEmpty) return const {};
+    final decoded = jsonDecode(arguments);
+    return decoded is Map<String, dynamic> ? decoded : const {};
   }
 
   static String _roleValue(MessageRole role) => switch (role) {

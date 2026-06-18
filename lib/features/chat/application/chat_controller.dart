@@ -1,11 +1,13 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/system_prompt_variables_access.dart';
 import 'package:aetherlink_flutter/core/error/failure.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/translate_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
@@ -17,11 +19,16 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_version
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
+import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/mcp_prompt.dart';
 import 'package:aetherlink_flutter/shared/utils/system_prompt_variables.dart';
 
 part 'chat_controller.g.dart';
@@ -167,14 +174,16 @@ class ChatController extends _$ChatController {
 
     // 3. Build the request from the current model + history (the user turn we
     // just added included; the empty assistant placeholder excluded).
+    final mcp = await _mcpSetup();
     final request = LlmChatRequest(
       model: effective,
-      system: await _buildSystemPrompt(),
+      system: _systemFor(mcp, await _buildSystemPrompt()),
       messages: [
         for (final view in views)
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
             LlmMessage(role: view.role, content: view.text),
       ],
+      tools: mcp.useFunctionTools ? mcp.tools : null,
       extraHeaders: effective.providerExtraHeaders,
       extraBody: effective.providerExtraBody,
     );
@@ -187,6 +196,7 @@ class ChatController extends _$ChatController {
       assistantTime: assistantTime,
       views: views,
       assistantView: assistantView,
+      mcp: mcp,
     );
   }
 
@@ -260,14 +270,16 @@ class ChatController extends _$ChatController {
     views[index] = assistantView;
     _emit(views, isStreaming: true);
 
+    final mcp = await _mcpSetup();
     final request = LlmChatRequest(
       model: effective,
-      system: await _buildSystemPrompt(),
+      system: _systemFor(mcp, await _buildSystemPrompt()),
       messages: [
         for (final view in views.sublist(0, index))
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
             LlmMessage(role: view.role, content: view.text),
       ],
+      tools: mcp.useFunctionTools ? mcp.tools : null,
       extraHeaders: effective.providerExtraHeaders,
       extraBody: effective.providerExtraBody,
     );
@@ -280,6 +292,7 @@ class ChatController extends _$ChatController {
       assistantTime: now,
       views: views,
       assistantView: assistantView,
+      mcp: mcp,
     );
   }
 
@@ -349,14 +362,16 @@ class ChatController extends _$ChatController {
     final views = [...snapshot.messages, assistantView];
     _emit(views, isStreaming: true);
 
+    final mcp = await _mcpSetup();
     final request = LlmChatRequest(
       model: effective,
-      system: await _buildSystemPrompt(),
+      system: _systemFor(mcp, await _buildSystemPrompt()),
       messages: [
         for (final view in snapshot.messages)
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
             LlmMessage(role: view.role, content: view.text),
       ],
+      tools: mcp.useFunctionTools ? mcp.tools : null,
       extraHeaders: effective.providerExtraHeaders,
       extraBody: effective.providerExtraBody,
     );
@@ -369,6 +384,7 @@ class ChatController extends _$ChatController {
       assistantTime: now,
       views: views,
       assistantView: assistantView,
+      mcp: mcp,
     );
   }
 
@@ -396,11 +412,20 @@ class ChatController extends _$ChatController {
     return null;
   }
 
-  /// Subscribes to the gateway stream for [request], accumulating text into the
-  /// assistant's `main_text` and reasoning into its `thinking` while emitting a
-  /// streaming view per chunk, then finalizes: on [LlmDone] persists the blocks
-  /// and reloads the view; on a stream error marks the message errored and
-  /// persists an `error` block. Shared by [send], [regenerate] and [resend].
+  /// The most rounds the tool-call loop will run before forcing a final answer,
+  /// mirroring the web `maxToolCallRounds` guard against runaway tool loops.
+  static const int _kMaxToolRounds = 5;
+
+  /// Subscribes to the gateway stream for [request] and drives the MCP tool-call
+  /// loop. Each round accumulates assistant text into a `main_text` block and
+  /// reasoning into a single `thinking` card; if the model asks for a tool
+  /// ([mcp] decides whether that arrives as a function-calling [LlmToolCall] or
+  /// as parsed `<tool_use>` XML in 提示词注入 mode), each runnable built-in is
+  /// executed locally, rendered as a `tool` block, and its result is appended to
+  /// the conversation so the model can continue — up to [_kMaxToolRounds]. When
+  /// no (more) tools are requested the turn finalizes: blocks are persisted and
+  /// the view reloaded; a stream error keeps any completed blocks and appends an
+  /// `error` block. Shared by [send], [regenerate] and [resend].
   Future<void> _streamInto({
     required LlmChatRequest request,
     required Model effective,
@@ -409,17 +434,36 @@ class ChatController extends _$ChatController {
     required DateTime assistantTime,
     required List<ChatMessageView> views,
     required ChatMessageView assistantView,
+    required _McpSetup mcp,
   }) async {
     final gateway = ref.read(llmGatewayFactoryProvider).forModel(effective);
 
-    final buffer = StringBuffer();
+    // Reasoning is aggregated across rounds into one 思考 card; [completed] holds
+    // the blocks earlier rounds finalized (the model's prose plus the 工具 blocks
+    // it triggered) in render order; [messages] is the running conversation that
+    // grows by an assistant turn + tool-result turns each time a tool runs.
     final thinking = StringBuffer();
+    final completed = <MessageBlock>[];
+    var messages = List<LlmMessage>.of(request.messages);
     var view = assistantView;
 
+    // The first round streams into the placeholder block already attached to the
+    // message; later rounds mint a fresh id.
+    var roundBlockId = assistantBlockId;
+    final buffer = StringBuffer();
+
+    String roundDisplay() => mcp.usePromptInjection
+        ? removeToolUseTags(buffer.toString())
+        : buffer.toString();
+
+    String aggregateText(String current) => <String>[
+      for (final block in completed)
+        if (block is MainTextBlock && block.content.isNotEmpty) block.content,
+      if (current.isNotEmpty) current,
+    ].join('\n\n');
+
     void update() {
-      // Synthesize streaming blocks from the live buffers so the renderer can
-      // dispatch them (thinking card + main_text Markdown) exactly as it will
-      // once the persisted blocks are reloaded on finalize.
+      final current = roundDisplay();
       final liveBlocks = <MessageBlock>[
         if (thinking.isNotEmpty)
           MessageBlock.thinking(
@@ -429,16 +473,17 @@ class ChatController extends _$ChatController {
             createdAt: assistantTime,
             content: thinking.toString(),
           ),
+        ...completed,
         MessageBlock.mainText(
-          id: assistantBlockId,
+          id: roundBlockId,
           messageId: assistantMessageId,
           status: MessageBlockStatus.streaming,
           createdAt: assistantTime,
-          content: buffer.toString(),
+          content: current,
         ),
       ];
       view = view.copyWith(
-        text: buffer.toString(),
+        text: aggregateText(current),
         thinking: thinking.toString(),
         blocks: liveBlocks,
       );
@@ -447,35 +492,182 @@ class ChatController extends _$ChatController {
     }
 
     try {
-      await for (final chunk in gateway.streamChat(request)) {
-        switch (chunk) {
-          case LlmTextDelta(:final text):
-            buffer.write(text);
-            update();
-          case LlmReasoningDelta(:final text):
-            thinking.write(text);
-            update();
-          case LlmDone():
-            break;
+      for (var round = 0; ; round++) {
+        buffer.clear();
+        final structuredCalls = <LlmToolCall>[];
+        await for (final chunk in gateway.streamChat(
+          request.copyWith(messages: messages),
+        )) {
+          switch (chunk) {
+            case LlmTextDelta(:final text):
+              buffer.write(text);
+              update();
+            case LlmReasoningDelta(:final text):
+              thinking.write(text);
+              update();
+            case LlmToolCallChunk(:final call):
+              structuredCalls.add(call);
+            case LlmDone():
+              break;
+          }
         }
+
+        final roundText = buffer.toString();
+        // 提示词注入 mode parses the model's XML; function mode gets the calls as
+        // structured stream events.
+        final requested = mcp.usePromptInjection
+            ? [
+                for (final use in parseToolUseBlocks(roundText, mcp.tools))
+                  LlmToolCall(id: '', name: use.name, arguments: use.arguments),
+              ]
+            : structuredCalls;
+        final runnable = <LlmToolCall>[
+          for (final call in requested)
+            if (mcp.serverByToolName.containsKey(call.name)) call,
+        ];
+
+        // No (more) tools to run, or the round budget is spent: this round's
+        // prose is the final answer.
+        if (runnable.isEmpty || round >= _kMaxToolRounds - 1) {
+          final display = roundDisplay();
+          if (display.isNotEmpty || completed.isEmpty) {
+            completed.add(
+              _mainTextBlock(
+                id: roundBlockId,
+                messageId: assistantMessageId,
+                createdAt: assistantTime,
+                content: display,
+              ),
+            );
+          }
+          break;
+        }
+
+        // Persist this round's prose (if any) before the tool blocks so the
+        // render order is prose → tool result → next round.
+        final display = roundDisplay();
+        if (display.isNotEmpty) {
+          completed.add(
+            _mainTextBlock(
+              id: roundBlockId,
+              messageId: assistantMessageId,
+              createdAt: assistantTime,
+              content: display,
+            ),
+          );
+        }
+
+        // Run each requested built-in locally and render a 工具 block per call.
+        final results = <({LlmToolCall call, McpToolResult result})>[];
+        for (final call in runnable) {
+          final serverName = mcp.serverByToolName[call.name]!;
+          final args = decodeToolArguments(call.arguments);
+          final result =
+              runBuiltinTool(serverName, call.name, args) ??
+              McpToolResult('工具 ${call.name} 无法在本地执行', isError: true);
+          results.add((call: call, result: result));
+          completed.add(
+            MessageBlock.tool(
+              id: generateId('block'),
+              messageId: assistantMessageId,
+              status: result.isError
+                  ? MessageBlockStatus.error
+                  : MessageBlockStatus.success,
+              createdAt: assistantTime,
+              updatedAt: DateTime.now(),
+              toolId: call.id.isEmpty ? call.name : call.id,
+              toolName: call.name,
+              arguments: args,
+              content: result.text,
+            ),
+          );
+        }
+
+        // Feed the assistant turn + tool results back so the model can continue.
+        if (mcp.usePromptInjection) {
+          messages = <LlmMessage>[
+            ...messages,
+            LlmMessage(role: MessageRole.assistant, content: roundText),
+            for (final entry in results)
+              LlmMessage(
+                role: MessageRole.user,
+                content: formatToolUseResult(
+                  entry.call.name,
+                  entry.result.text,
+                ),
+              ),
+          ];
+        } else {
+          messages = <LlmMessage>[
+            ...messages,
+            LlmMessage(
+              role: MessageRole.assistant,
+              content: roundText,
+              toolCalls: runnable,
+            ),
+            for (final entry in results)
+              LlmMessage(
+                role: MessageRole.user,
+                content: entry.result.text,
+                toolCallId: entry.call.id.isEmpty
+                    ? entry.call.name
+                    : entry.call.id,
+                toolName: entry.call.name,
+              ),
+          ];
+        }
+
+        roundBlockId = generateId('block');
+        update();
       }
-      await _finalizeSuccess(
+
+      await _persistMessageBlocks(
         messageId: assistantMessageId,
-        mainBlockId: assistantBlockId,
-        createdAt: assistantTime,
-        text: buffer.toString(),
-        thinking: thinking.toString(),
+        status: MessageStatus.success,
+        blocks: [
+          if (thinking.isNotEmpty)
+            _thinkingBlock(
+              messageId: assistantMessageId,
+              createdAt: assistantTime,
+              content: thinking.toString(),
+            ),
+          ...completed,
+        ],
       );
       view = await _reloadView(assistantMessageId, view);
       _replace(views, view);
       _emit(views, isStreaming: false);
     } on Object catch (error) {
       final messageText = _errorMessage(error);
-      await _finalizeError(
+      final partial = roundDisplay();
+      await _persistMessageBlocks(
         messageId: assistantMessageId,
-        createdAt: assistantTime,
-        text: buffer.toString(),
-        errorText: messageText,
+        status: MessageStatus.error,
+        blocks: [
+          if (thinking.isNotEmpty)
+            _thinkingBlock(
+              messageId: assistantMessageId,
+              createdAt: assistantTime,
+              content: thinking.toString(),
+            ),
+          ...completed,
+          if (partial.isNotEmpty)
+            _mainTextBlock(
+              id: roundBlockId,
+              messageId: assistantMessageId,
+              createdAt: assistantTime,
+              content: partial,
+            ),
+          MessageBlock.error(
+            id: generateId('block'),
+            messageId: assistantMessageId,
+            status: MessageBlockStatus.error,
+            createdAt: assistantTime,
+            updatedAt: DateTime.now(),
+            content: partial,
+            message: messageText,
+          ),
+        ],
       );
       view = await _reloadView(
         assistantMessageId,
@@ -483,6 +675,62 @@ class ChatController extends _$ChatController {
       );
       _replace(views, view);
       _emit(views, isStreaming: false);
+    }
+  }
+
+  MessageBlock _mainTextBlock({
+    required String id,
+    required String messageId,
+    required DateTime createdAt,
+    required String content,
+  }) => MessageBlock.mainText(
+    id: id,
+    messageId: messageId,
+    status: MessageBlockStatus.success,
+    createdAt: createdAt,
+    updatedAt: DateTime.now(),
+    content: content,
+  );
+
+  MessageBlock _thinkingBlock({
+    required String messageId,
+    required DateTime createdAt,
+    required String content,
+  }) => MessageBlock.thinking(
+    id: generateId('block'),
+    messageId: messageId,
+    status: MessageBlockStatus.success,
+    createdAt: createdAt,
+    updatedAt: DateTime.now(),
+    content: content,
+  );
+
+  /// Replaces every block of [messageId] with [blocks] (in order) and stamps the
+  /// message [status]. Deleting first keeps the streaming placeholder and any
+  /// stale blocks from leaking into the rendered order ([_orderBlocks] appends
+  /// unreferenced blocks), so the persisted set is exactly what was streamed.
+  Future<void> _persistMessageBlocks({
+    required String messageId,
+    required MessageStatus status,
+    required List<MessageBlock> blocks,
+  }) async {
+    final now = DateTime.now();
+    final existing = await _repo.getMessageBlocksByMessageId(messageId);
+    for (final block in existing) {
+      await _repo.deleteMessageBlock(block.id);
+    }
+    for (final block in blocks) {
+      await _repo.saveMessageBlock(block);
+    }
+    final message = await _repo.getMessage(messageId);
+    if (message != null) {
+      await _repo.saveMessage(
+        message.copyWith(
+          status: status,
+          updatedAt: now,
+          blocks: [for (final block in blocks) block.id],
+        ),
+      );
     }
   }
 
@@ -621,6 +869,8 @@ class ChatController extends _$ChatController {
               MessageBlockStatus.streaming,
             );
           case LlmReasoningDelta():
+            break;
+          case LlmToolCallChunk():
             break;
           case LlmDone():
             break;
@@ -1101,6 +1351,43 @@ class ChatController extends _$ChatController {
     return injected.isEmpty ? null : injected;
   }
 
+  /// Assembles the [_McpSetup] for the current turn from the persisted MCP 工具
+  /// 总开关 + 调用模式 ([McpToolsController]) and the active configured servers
+  /// ([McpServers]). Only 启用 servers whose name is a locally-runnable built-in
+  /// ([kLocallyRunnableBuiltins]) contribute tools, and a server's
+  /// `disabledTools` are skipped. Returns a disabled setup when the master
+  /// toggle is off, so non-MCP turns stream exactly as before.
+  Future<_McpSetup> _mcpSetup() async {
+    final toolsState = ref.read(mcpToolsControllerProvider);
+    if (!toolsState.enabled) return const _McpSetup.disabled();
+
+    final servers = await ref.read(mcpServersProvider.future);
+    final tools = <McpToolDefinition>[];
+    final serverByToolName = <String, String>{};
+    for (final server in servers) {
+      if (!server.isActive) continue;
+      if (!kLocallyRunnableBuiltins.contains(server.name)) continue;
+      final disabled = server.disabledTools?.toSet() ?? const <String>{};
+      for (final tool in builtinToolsFor(server.name)) {
+        if (disabled.contains(tool.name)) continue;
+        if (serverByToolName.containsKey(tool.name)) continue;
+        tools.add(tool);
+        serverByToolName[tool.name] = server.name;
+      }
+    }
+    return _McpSetup(
+      mode: toolsState.mode,
+      tools: tools,
+      serverByToolName: serverByToolName,
+    );
+  }
+
+  /// The system prompt for a turn: in 提示词注入 mode the tool catalogue is woven
+  /// into [base] (web `buildSystemPrompt`); otherwise [base] is used as-is and
+  /// tools ride the native `tools` field.
+  String? _systemFor(_McpSetup mcp, String? base) =>
+      mcp.usePromptInjection ? buildMcpSystemPrompt(base, mcp.tools) : base;
+
   Future<String> _ensureTopic() async {
     final existing = _topicId;
     if (existing != null) return existing;
@@ -1117,83 +1404,6 @@ class ChatController extends _$ChatController {
     );
     _topicId = topicId;
     return topicId;
-  }
-
-  Future<void> _finalizeSuccess({
-    required String messageId,
-    required String mainBlockId,
-    required DateTime createdAt,
-    required String text,
-    required String thinking,
-  }) async {
-    final now = DateTime.now();
-    final blockIds = <String>[];
-    if (thinking.isNotEmpty) {
-      final thinkingBlockId = generateId('block');
-      blockIds.add(thinkingBlockId);
-      await _repo.saveMessageBlock(
-        MessageBlock.thinking(
-          id: thinkingBlockId,
-          messageId: messageId,
-          status: MessageBlockStatus.success,
-          createdAt: createdAt,
-          updatedAt: now,
-          content: thinking,
-        ),
-      );
-    }
-    blockIds.add(mainBlockId);
-    await _repo.saveMessageBlock(
-      MessageBlock.mainText(
-        id: mainBlockId,
-        messageId: messageId,
-        status: MessageBlockStatus.success,
-        createdAt: createdAt,
-        updatedAt: now,
-        content: text,
-      ),
-    );
-    final message = await _repo.getMessage(messageId);
-    if (message != null) {
-      await _repo.saveMessage(
-        message.copyWith(
-          status: MessageStatus.success,
-          updatedAt: now,
-          blocks: blockIds,
-        ),
-      );
-    }
-  }
-
-  Future<void> _finalizeError({
-    required String messageId,
-    required DateTime createdAt,
-    required String text,
-    required String errorText,
-  }) async {
-    final now = DateTime.now();
-    final errorBlockId = generateId('block');
-    await _repo.saveMessageBlock(
-      MessageBlock.error(
-        id: errorBlockId,
-        messageId: messageId,
-        status: MessageBlockStatus.error,
-        createdAt: createdAt,
-        updatedAt: now,
-        content: text,
-        message: errorText,
-      ),
-    );
-    final message = await _repo.getMessage(messageId);
-    if (message != null) {
-      await _repo.saveMessage(
-        message.copyWith(
-          status: MessageStatus.error,
-          updatedAt: now,
-          blocks: <String>[errorBlockId],
-        ),
-      );
-    }
   }
 
   Future<ChatMessageView> _viewOf(Message message) async {
@@ -1281,4 +1491,34 @@ class _LatestSnapshot {
 
   final List<String> blockIds;
   final Model? model;
+}
+
+/// The MCP tool context assembled for one chat turn: the resolved [mode], the
+/// [tools] to expose (only 启用 + locally-runnable built-ins) and the
+/// [serverByToolName] routing map used to dispatch a call back to its built-in
+/// server. [tools] is empty when MCP 工具 is off or no eligible server is active,
+/// in which case the turn streams plain text exactly as before.
+class _McpSetup {
+  const _McpSetup({
+    required this.mode,
+    required this.tools,
+    required this.serverByToolName,
+  });
+
+  const _McpSetup.disabled()
+    : mode = McpMode.function,
+      tools = const <McpToolDefinition>[],
+      serverByToolName = const <String, String>{};
+
+  final McpMode mode;
+  final List<McpToolDefinition> tools;
+  final Map<String, String> serverByToolName;
+
+  bool get hasTools => tools.isNotEmpty;
+
+  /// Expose tools via the model's native function-calling API (`tools` field).
+  bool get useFunctionTools => hasTools && mode == McpMode.function;
+
+  /// Describe tools in the system prompt and parse XML `<tool_use>` locally.
+  bool get usePromptInjection => hasTools && mode == McpMode.prompt;
 }
