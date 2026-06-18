@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/appeara
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/chat_interface_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/default_model_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/input_box_settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_server_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/message_bubble_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/thinking_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/add_provider_page.dart';
@@ -45,6 +46,7 @@ abstract final class AppRouter {
   static const String thinkingSettingsPath = '/settings/appearance/thinking';
   static const String themeStyleSettingsPath =
       '/settings/appearance/theme-style';
+  static const String mcpServerPath = '/settings/mcp-server';
   static const String welcomePath = '/welcome';
   static const String translatePath = '/translate';
 
@@ -111,6 +113,12 @@ abstract final class AppRouter {
         path: aboutPath,
         name: 'about',
         pageBuilder: (context, state) => _instant(state, const AboutPage()),
+      ),
+      GoRoute(
+        path: mcpServerPath,
+        name: 'mcp-server',
+        pageBuilder: (context, state) =>
+            _instant(state, const McpServerSettingsPage()),
       ),
       GoRoute(
         path: defaultModelPath,

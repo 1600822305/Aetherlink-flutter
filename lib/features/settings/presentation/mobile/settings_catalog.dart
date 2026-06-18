@@ -131,6 +131,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.settings,
         title: 'MCP 服务器',
         description: '高级服务器配置',
+        route: AppRouter.mcpServerPath,
       ),
     ],
   ),
