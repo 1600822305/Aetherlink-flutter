@@ -61,7 +61,9 @@ const Color _avatarUnselectedBg = Color(0xFFE0E0E0);
 const Color _chipBorderColor = Color(0xFFBDBDBD);
 
 class ChatSidebar extends ConsumerStatefulWidget {
-  const ChatSidebar({super.key});
+  const ChatSidebar({super.key, this.onClose});
+
+  final VoidCallback? onClose;
 
   @override
   ConsumerState<ChatSidebar> createState() => _ChatSidebarState();
@@ -128,7 +130,7 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
         top: false,
         child: Column(
           children: [
-            const _CloseRow(),
+            _CloseRow(onClose: widget.onClose),
             _SidebarTabBar(controller: _tabController),
             Expanded(
               child: TabBarView(
@@ -156,7 +158,9 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
 /// The drawer's top close affordance: `justify-content: flex-end; padding: 8px;
 /// min-height: 48px` with a lucide `X` (size 20) button.
 class _CloseRow extends StatelessWidget {
-  const _CloseRow();
+  const _CloseRow({this.onClose});
+
+  final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -166,7 +170,7 @@ class _CloseRow extends StatelessWidget {
       constraints: const BoxConstraints(minHeight: 48),
       padding: const EdgeInsets.all(8),
       child: IconButton(
-        onPressed: () => Scaffold.maybeOf(context)?.closeDrawer(),
+        onPressed: onClose,
         iconSize: 20,
         color: theme.colorScheme.onSurface,
         padding: EdgeInsets.zero,

@@ -45,7 +45,9 @@ const String _modelPlaceholderLabel = '未配置模型';
 /// name once configured, otherwise the "未配置模型" placeholder — never a
 /// fabricated model name.
 class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
-  const ChatTopBar({super.key});
+  const ChatTopBar({super.key, this.onMenuPressed});
+
+  final VoidCallback? onMenuPressed;
 
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
@@ -181,7 +183,7 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
               color: theme.colorScheme.onSurface,
             ),
             tooltip: _menuTooltip,
-            onPressed: () => Scaffold.of(context).openDrawer(),
+            onPressed: onMenuPressed,
           ),
         );
       case TopToolbarComponent.topicName:
