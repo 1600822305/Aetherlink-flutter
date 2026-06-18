@@ -116,16 +116,13 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
     final maxWidth = safeMaxSidebarWidth(MediaQuery.sizeOf(context).width);
     final drawerWidth = rawWidth.clamp(kSidebarWidthMin, maxWidth);
 
-    return Drawer(
-      width: drawerWidth,
-      backgroundColor: theme.colorScheme.surface,
-      // Original mobile drawer: `border-radius: 0 16px 16px 0`.
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.only(
-          topRight: Radius.circular(16),
-          bottomRight: Radius.circular(16),
-        ),
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: const BorderRadius.only(
+        topRight: Radius.circular(16),
+        bottomRight: Radius.circular(16),
       ),
+      clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,
         child: Column(
