@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/translate_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/agent_prompts_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/appearance_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/chat_interface_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/default_model_settings_page.dart';
@@ -47,6 +48,7 @@ abstract final class AppRouter {
   static const String themeStyleSettingsPath =
       '/settings/appearance/theme-style';
   static const String mcpServerPath = '/settings/mcp-server';
+  static const String agentPromptsPath = '/settings/agent-prompts';
   static const String welcomePath = '/welcome';
   static const String translatePath = '/translate';
 
@@ -119,6 +121,12 @@ abstract final class AppRouter {
         name: 'mcp-server',
         pageBuilder: (context, state) =>
             _instant(state, const McpServerSettingsPage()),
+      ),
+      GoRoute(
+        path: agentPromptsPath,
+        name: 'agent-prompts',
+        pageBuilder: (context, state) =>
+            _instant(state, const AgentPromptsSettingsPage()),
       ),
       GoRoute(
         path: defaultModelPath,
