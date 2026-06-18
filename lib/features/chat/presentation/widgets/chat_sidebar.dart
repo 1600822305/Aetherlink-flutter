@@ -20,6 +20,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/assistant_presets.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
@@ -57,9 +59,6 @@ const Color _avatarUnselectedBg = Color(0xFFE0E0E0);
 
 /// 兼容 API chip outline, MUI `grey.400` `#bdbdbd`.
 const Color _chipBorderColor = Color(0xFFBDBDBD);
-
-/// The original mobile drawer is 350px wide (`AppSidebar.solid.tsx`).
-const double _sidebarWidth = 350;
 
 class ChatSidebar extends ConsumerStatefulWidget {
   const ChatSidebar({super.key});
@@ -113,9 +112,16 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
       }
     });
     final showTranslate = _tabController.index != 2;
+    // 设置 tab 的「侧边栏宽度」对话框驱动这里；按当前屏宽 clamp 到安全范围
+    // (`getSafeMaxSidebarWidth`)，对话框拖动时实时预览。
+    final rawWidth = ref.watch(
+      sidebarSettingsControllerProvider.select((s) => s.sidebarWidth),
+    );
+    final maxWidth = safeMaxSidebarWidth(MediaQuery.sizeOf(context).width);
+    final drawerWidth = rawWidth.clamp(kSidebarWidthMin, maxWidth);
 
     return Drawer(
-      width: _sidebarWidth,
+      width: drawerWidth,
       backgroundColor: theme.colorScheme.surface,
       // Original mobile drawer: `border-radius: 0 16px 16px 0`.
       shape: const RoundedRectangleBorder(
@@ -1010,36 +1016,253 @@ class _TopicItem extends ConsumerWidget {
 }
 
 // ── 设置 tab ─────────────────────────────────────────────────────────────────
-class _SettingsTab extends StatelessWidget {
+class _SettingsTab extends ConsumerWidget {
   const _SettingsTab();
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final textPrimary = theme.colorScheme.onSurface;
-    final textSecondary = theme.colorScheme.onSurfaceVariant;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(sidebarSettingsControllerProvider);
+    final c = ref.read(sidebarSettingsControllerProvider.notifier);
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 10),
       children: [
-        _SettingsEntryRow(
-          textPrimary: textPrimary,
-          textSecondary: textSecondary,
+        const _SettingsEntryRow(),
+        const _SettingsDivider(),
+        const _UserAvatarRow(),
+        const _SettingsDivider(),
+        // 常规设置 (7 项) — fully migrated. 消息分割线 / 代码块可复制 drive the chat
+        // view now; the rest persist and light up as their chat widgets land.
+        _SettingsGroup(
+          title: '常规设置',
+          subtitle: '7 个基础功能设置',
+          children: [
+            _SwitchSettingRow(
+              title: '消息分割线',
+              description: '在消息之间显示分割线',
+              value: s.showMessageDivider,
+              onChanged: c.setShowMessageDivider,
+            ),
+            _SwitchSettingRow(
+              title: '代码块可复制',
+              description: '允许复制代码块的内容',
+              value: s.copyableCodeBlocks,
+              onChanged: c.setCopyableCodeBlocks,
+            ),
+            _SwitchSettingRow(
+              title: '渲染用户输入',
+              description: '渲染用户输入的 Markdown 格式（关闭后用户消息显示为纯文本）',
+              value: s.renderUserInputAsMarkdown,
+              onChanged: c.setRenderUserInputAsMarkdown,
+              comingSoon: true,
+            ),
+            _SwitchSettingRow(
+              title: '自动下滑',
+              description: '新消息时自动滚动到聊天底部',
+              value: s.autoScrollToBottom,
+              onChanged: c.setAutoScrollToBottom,
+              comingSoon: true,
+            ),
+            _SelectSettingRow<MessageStyle>(
+              title: '消息样式',
+              description: '选择聊天消息的显示样式',
+              value: s.messageStyle,
+              options: [for (final v in MessageStyle.values) (v, v.label)],
+              onChanged: c.setMessageStyle,
+              comingSoon: true,
+            ),
+            _SelectSettingRow<MessageNavigation>(
+              title: '对话导航',
+              description: '显示上下按钮快速跳转到上一条/下一条消息',
+              value: s.messageNavigation,
+              options: [for (final v in MessageNavigation.values) (v, v.label)],
+              onChanged: c.setMessageNavigation,
+              comingSoon: true,
+            ),
+            _SwitchSettingRow(
+              title: 'Token 用量指示',
+              description: '在右侧显示上下文 Token 用量呼吸灯',
+              value: s.showContextTokenIndicator,
+              onChanged: c.setShowContextTokenIndicator,
+              comingSoon: true,
+            ),
+          ],
         ),
         const _SettingsDivider(),
-        _UserAvatarRow(textPrimary: textPrimary, textSecondary: textSecondary),
+        // 上下文设置 — UI + persist; consumed by the request layer later.
+        _SettingsGroup(
+          title: '上下文设置',
+          subtitle:
+              '窗口: ${_formatInt(s.contextWindowSize)} | 输出: ${s.maxOutputTokens}',
+          chipLabel: '兼容 API',
+          comingSoon: true,
+          children: [
+            const _ComingSoonNote(text: '设置会先保存，接入请求层后生效。'),
+            _NumberSettingRow(
+              title: '上下文窗口大小',
+              description: '单位 token',
+              value: s.contextWindowSize,
+              min: 1000,
+              max: 2000000,
+              onChanged: c.setContextWindowSize,
+            ),
+            _SliderSettingRow(
+              title: '上下文消息数量',
+              description: '携带的历史消息条数',
+              value: s.contextCount.toDouble(),
+              min: 0,
+              max: 100,
+              divisions: 100,
+              valueLabel: '${s.contextCount}',
+              onChanged: (v) => c.setContextCount(v.round()),
+            ),
+            _SwitchSettingRow(
+              title: '启用最大输出限制',
+              description: '限制单次回复的最大 token 数',
+              value: s.enableMaxOutputTokens,
+              onChanged: c.setEnableMaxOutputTokens,
+            ),
+            if (s.enableMaxOutputTokens)
+              _NumberSettingRow(
+                title: '最大输出 Token',
+                description: '单次回复的 token 上限',
+                value: s.maxOutputTokens,
+                min: 256,
+                max: 200000,
+                onChanged: c.setMaxOutputTokens,
+              ),
+          ],
+        ),
         const _SettingsDivider(),
-        for (var i = 0; i < _mockSettingsSections.length; i++) ...[
-          _SettingsSectionRow(
-            data: _mockSettingsSections[i],
-            textPrimary: textPrimary,
-            textSecondary: textSecondary,
-          ),
-          if (i != _mockSettingsSections.length - 1) const _SettingsDivider(),
-        ],
+        // 输入设置 — UI + persist.
+        _SettingsGroup(
+          title: '输入设置',
+          subtitle: '粘贴和输入相关的功能设置',
+          comingSoon: true,
+          children: [
+            const _ComingSoonNote(text: '设置会先保存，接入输入框后生效。'),
+            _SwitchSettingRow(
+              title: '长文本粘贴为文件',
+              description: '粘贴超长文本时自动转为文件附件',
+              value: s.pasteLongTextAsFile,
+              onChanged: c.setPasteLongTextAsFile,
+            ),
+            if (s.pasteLongTextAsFile)
+              _NumberSettingRow(
+                title: '触发阈值',
+                description: '超过该字符数转为文件',
+                value: s.pasteLongTextThreshold,
+                min: 100,
+                max: 10000,
+                onChanged: c.setPasteLongTextThreshold,
+              ),
+          ],
+        ),
+        const _SettingsDivider(),
+        // 代码块设置 — UI + persist; consumed by 代码块视图 later.
+        _SettingsGroup(
+          title: '代码块设置',
+          subtitle: '配置代码显示和编辑功能',
+          comingSoon: true,
+          children: [
+            const _ComingSoonNote(text: '设置会先保存，接入代码块视图后生效。'),
+            _SwitchSettingRow(
+              title: '显示行号',
+              description: '在代码块左侧显示行号',
+              value: s.codeShowLineNumbers,
+              onChanged: c.setCodeShowLineNumbers,
+            ),
+            _SwitchSettingRow(
+              title: '可折叠',
+              description: '允许折叠/展开代码块',
+              value: s.codeCollapsible,
+              onChanged: c.setCodeCollapsible,
+            ),
+            _SwitchSettingRow(
+              title: '自动换行',
+              description: '过长的代码行自动换行',
+              value: s.codeWrappable,
+              onChanged: c.setCodeWrappable,
+            ),
+            _SwitchSettingRow(
+              title: '默认折叠',
+              description: '代码块默认以折叠状态显示',
+              value: s.codeDefaultCollapsed,
+              onChanged: c.setCodeDefaultCollapsed,
+            ),
+            _SwitchSettingRow(
+              title: 'Mermaid 图表',
+              description: '渲染 Mermaid 流程图 / 时序图',
+              value: s.mermaidEnabled,
+              onChanged: c.setMermaidEnabled,
+            ),
+            // 高亮主题：Flutter 暂无 Shiki 同款高亮器，主题列表无法复刻；先展示占位。
+            const _StaticSettingRow(
+              title: '代码高亮主题',
+              value: '自动（跟随应用主题）',
+              comingSoon: true,
+            ),
+          ],
+        ),
+        const _SettingsDivider(),
+        // 数学公式设置 — 引擎下拉删除（Flutter 用 flutter_math 原生渲染）。
+        _SettingsGroup(
+          title: '数学公式设置',
+          subtitle: '渲染引擎: KaTeX',
+          comingSoon: true,
+          children: [
+            const _ComingSoonNote(text: '设置会先保存，接入渲染后生效。'),
+            const _StaticSettingRow(
+              title: '渲染引擎',
+              value: 'KaTeX（flutter_math，原生渲染）',
+            ),
+            _SwitchSettingRow(
+              title: '单美元符号',
+              description: r'识别 $...$ 作为行内公式',
+              value: s.mathEnableSingleDollar,
+              onChanged: c.setMathEnableSingleDollar,
+            ),
+          ],
+        ),
+        const _SettingsDivider(),
+        // MCP 工具 — 子系统未移植，仅占位。
+        const _SettingsGroup(
+          title: 'MCP 工具',
+          subtitle: '模型上下文协议工具',
+          comingSoon: true,
+          children: [
+            _ComingSoonNote(
+              text: 'MCP 工具子系统即将支持：启用开关、函数调用 / 提示词注入模式与服务器管理将在后续接入。',
+            ),
+          ],
+        ),
       ],
     );
   }
+}
+
+/// Formats an int with thousands separators, e.g. `100000` → `100,000`.
+String _formatInt(int value) {
+  final digits = value.toString();
+  final buffer = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    if (i != 0 && (digits.length - i) % 3 == 0) buffer.write(',');
+    buffer.write(digits[i]);
+  }
+  return buffer.toString();
+}
+
+/// Shows a transient 即将支持 toast for affordances whose subsystem is not yet
+/// ported (e.g. 头像上传).
+void _showComingSoon(BuildContext context, String what) {
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        content: Text('$what即将支持'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
 }
 
 class _SettingsDivider extends StatelessWidget {
@@ -1052,60 +1275,67 @@ class _SettingsDivider extends StatelessWidget {
   }
 }
 
-class _SettingsEntryRow extends StatelessWidget {
-  const _SettingsEntryRow({
-    required this.textPrimary,
-    required this.textSecondary,
-  });
-
-  final Color textPrimary;
-  final Color textSecondary;
+class _SettingsEntryRow extends ConsumerWidget {
+  const _SettingsEntryRow();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final textPrimary = theme.colorScheme.onSurface;
+    final textSecondary = theme.colorScheme.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: Row(
         children: [
-          const Icon(LucideIcons.cog, size: 20, color: _cogBlue),
-          const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '设置',
-                  style: TextStyle(
-                    fontSize: 15.2,
-                    height: 1.2,
-                    fontWeight: FontWeight.w500,
-                    color: textPrimary,
+            child: InkWell(
+              onTap: () => context.push(AppRouter.settingsPath),
+              borderRadius: BorderRadius.circular(8),
+              child: Row(
+                children: [
+                  const Icon(LucideIcons.cog, size: 20, color: _cogBlue),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '设置',
+                          style: TextStyle(
+                            fontSize: 15.2,
+                            height: 1.2,
+                            fontWeight: FontWeight.w500,
+                            color: textPrimary,
+                          ),
+                        ),
+                        Text(
+                          '进入完整设置页面',
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.2,
+                            color: textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                Text(
-                  '进入完整设置页面',
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.2,
-                    color: textSecondary,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           Container(
             width: 1,
             height: 24,
-            color: Theme.of(context).dividerColor,
+            color: theme.dividerColor,
             margin: const EdgeInsets.symmetric(horizontal: 4),
           ),
-          // 侧边栏宽度 toggle.
+          // 侧边栏宽度 toggle → 打开宽度对话框。
           Material(
             color: _panelButtonBg,
             shape: const CircleBorder(),
             child: InkWell(
-              onTap: () {},
+              onTap: () => _showSidebarWidthDialog(context, ref),
               customBorder: const CircleBorder(),
               child: const SizedBox(
                 width: 28,
@@ -1125,16 +1355,13 @@ class _SettingsEntryRow extends StatelessWidget {
 }
 
 class _UserAvatarRow extends StatelessWidget {
-  const _UserAvatarRow({
-    required this.textPrimary,
-    required this.textSecondary,
-  });
-
-  final Color textPrimary;
-  final Color textSecondary;
+  const _UserAvatarRow();
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textPrimary = theme.colorScheme.onSurface;
+    final textSecondary = theme.colorScheme.onSurfaceVariant;
     return Container(
       decoration: const BoxDecoration(
         color: _userRowBg,
@@ -1175,28 +1402,151 @@ class _UserAvatarRow extends StatelessWidget {
               ],
             ),
           ),
-          const _MutedIconButton(icon: LucideIcons.user, size: 16, box: 28),
+          // 头像上传 / 裁剪子系统未移植。
+          _MutedIconButton(
+            icon: LucideIcons.user,
+            size: 16,
+            box: 28,
+            onPressed: () => _showComingSoon(context, '头像上传'),
+          ),
         ],
       ),
     );
   }
 }
 
-class _SettingsSectionRow extends StatelessWidget {
-  const _SettingsSectionRow({
-    required this.data,
-    required this.textPrimary,
-    required this.textSecondary,
+// ── 设置 tab 控件 ─────────────────────────────────────────────────────────────
+/// A collapsible 设置 group: a tappable header (title + subtitle + optional chip
+/// / 即将支持 badge + rotating chevron) over an expandable body. Mirrors the web
+/// `SettingGroup` accordion; collapsed by default.
+class _SettingsGroup extends StatefulWidget {
+  const _SettingsGroup({
+    required this.title,
+    required this.subtitle,
+    required this.children,
+    this.chipLabel,
+    this.comingSoon = false,
   });
 
-  final _MockSettingsSection data;
-  final Color textPrimary;
-  final Color textSecondary;
+  final String title;
+  final String subtitle;
+  final List<Widget> children;
+  final String? chipLabel;
+  final bool comingSoon;
+
+  @override
+  State<_SettingsGroup> createState() => _SettingsGroupState();
+}
+
+class _SettingsGroupState extends State<_SettingsGroup> {
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+    final theme = Theme.of(context);
+    final textPrimary = theme.colorScheme.onSurface;
+    final textSecondary = theme.colorScheme.onSurfaceVariant;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              widget.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 15.2,
+                                height: 1.2,
+                                fontWeight: FontWeight.w500,
+                                color: textPrimary,
+                              ),
+                            ),
+                          ),
+                          if (widget.chipLabel != null) ...[
+                            const SizedBox(width: 6),
+                            _Chip(label: widget.chipLabel!, color: textPrimary),
+                          ],
+                        ],
+                      ),
+                      Text(
+                        widget.subtitle,
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.2,
+                          color: textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (widget.comingSoon) ...[
+                  const _ComingSoonChip(),
+                  const SizedBox(width: 4),
+                ],
+                AnimatedRotation(
+                  turns: _expanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 150),
+                  child: const Icon(
+                    LucideIcons.chevronDown,
+                    size: 16,
+                    color: _mutedIconColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_expanded)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: widget.children,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Shared layout for a 设置 item (web `SettingItem`): title (+ 即将支持 chip) and an
+/// optional description on the left, a [trailing] control on the right. When
+/// [onTap] is set the whole row is tappable (used by the numeric rows).
+class _SettingItemShell extends StatelessWidget {
+  const _SettingItemShell({
+    required this.title,
+    required this.trailing,
+    this.description,
+    this.comingSoon = false,
+    this.onTap,
+  });
+
+  final String title;
+  final String? description;
+  final Widget trailing;
+  final bool comingSoon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textPrimary = theme.colorScheme.onSurface;
+    final textSecondary = theme.colorScheme.onSurfaceVariant;
+    final row = Padding(
+      padding: const EdgeInsets.fromLTRB(24, 6, 16, 6),
       child: Row(
         children: [
           Expanded(
@@ -1208,45 +1558,514 @@ class _SettingsSectionRow extends StatelessWidget {
                   children: [
                     Flexible(
                       child: Text(
-                        data.title,
+                        title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 15.2,
-                          height: 1.2,
-                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
+                          height: 1.3,
                           color: textPrimary,
                         ),
                       ),
                     ),
-                    if (data.chipLabel != null) ...[
+                    if (comingSoon) ...[
                       const SizedBox(width: 6),
-                      _Chip(label: data.chipLabel!, color: textPrimary),
+                      const _ComingSoonChip(),
                     ],
                   ],
                 ),
-                Text(
-                  data.subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.2,
-                    color: textSecondary,
+                if (description != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      description!,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        height: 1.3,
+                        color: textSecondary,
+                      ),
+                    ),
                   ),
-                ),
               ],
             ),
           ),
-          if (data.hasGear) ...[
-            const _MutedIconButton(
-              icon: LucideIcons.settings,
-              size: 16,
-              box: 28,
-            ),
-            const SizedBox(width: 4),
-          ],
-          const Icon(LucideIcons.chevronDown, size: 16, color: _mutedIconColor),
+          const SizedBox(width: 8),
+          trailing,
         ],
       ),
+    );
+    if (onTap == null) return row;
+    return InkWell(onTap: onTap, child: row);
+  }
+}
+
+/// A boolean 设置 item with a trailing [Switch].
+class _SwitchSettingRow extends StatelessWidget {
+  const _SwitchSettingRow({
+    required this.title,
+    required this.description,
+    required this.value,
+    required this.onChanged,
+    this.comingSoon = false,
+  });
+
+  final String title;
+  final String description;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final bool comingSoon;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingItemShell(
+      title: title,
+      description: description,
+      comingSoon: comingSoon,
+      trailing: Switch(value: value, onChanged: onChanged),
+    );
+  }
+}
+
+/// A 设置 item whose value is chosen from a dropdown of [options] `(value, 标签)`.
+class _SelectSettingRow<T> extends StatelessWidget {
+  const _SelectSettingRow({
+    required this.title,
+    required this.description,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+    this.comingSoon = false,
+  });
+
+  final String title;
+  final String description;
+  final T value;
+  final List<(T, String)> options;
+  final ValueChanged<T> onChanged;
+  final bool comingSoon;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingItemShell(
+      title: title,
+      description: description,
+      comingSoon: comingSoon,
+      trailing: DropdownButton<T>(
+        value: value,
+        isDense: true,
+        underline: const SizedBox.shrink(),
+        borderRadius: BorderRadius.circular(8),
+        style: TextStyle(
+          fontSize: 13,
+          color: Theme.of(context).colorScheme.onSurface,
+        ),
+        items: [
+          for (final (v, label) in options)
+            DropdownMenuItem<T>(value: v, child: Text(label)),
+        ],
+        onChanged: (v) {
+          if (v != null) onChanged(v);
+        },
+      ),
+    );
+  }
+}
+
+/// A numeric 设置 item: shows the current value and opens a number prompt on tap.
+class _NumberSettingRow extends StatelessWidget {
+  const _NumberSettingRow({
+    required this.title,
+    required this.description,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String description;
+  final int value;
+  final int min;
+  final int max;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return _SettingItemShell(
+      title: title,
+      description: description,
+      onTap: () async {
+        final result = await _promptNumber(
+          context,
+          title: title,
+          initial: value,
+          min: min,
+          max: max,
+        );
+        if (result != null) onChanged(result);
+      },
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _formatInt(value),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: 4),
+          const Icon(LucideIcons.pencil, size: 14, color: _mutedIconColor),
+        ],
+      ),
+    );
+  }
+}
+
+/// A 设置 item rendered as a labelled slider over `[min, max]`.
+class _SliderSettingRow extends StatelessWidget {
+  const _SliderSettingRow({
+    required this.title,
+    required this.description,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.valueLabel,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String description;
+  final double value;
+  final double min;
+  final double max;
+  final int divisions;
+  final String valueLabel;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textPrimary = theme.colorScheme.onSurface;
+    final textSecondary = theme.colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 6, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.3,
+                    color: textPrimary,
+                  ),
+                ),
+              ),
+              Text(
+                valueLabel,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+          Text(
+            description,
+            style: TextStyle(fontSize: 11.5, height: 1.3, color: textSecondary),
+          ),
+          Slider(
+            value: value.clamp(min, max),
+            min: min,
+            max: max,
+            divisions: divisions,
+            label: valueLabel,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A read-only 设置 item: a label and a fixed value (e.g. 渲染引擎 / 高亮主题占位).
+class _StaticSettingRow extends StatelessWidget {
+  const _StaticSettingRow({
+    required this.title,
+    required this.value,
+    this.comingSoon = false,
+  });
+
+  final String title;
+  final String value;
+  final bool comingSoon;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingItemShell(
+      title: title,
+      comingSoon: comingSoon,
+      trailing: Text(
+        value,
+        style: TextStyle(
+          fontSize: 13,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+/// The amber 即将支持 badge. Re-declared here (rather than reusing the settings
+/// feature's chip) because the chat feature must not import another feature's
+/// presentation layer — `import_boundaries_test` Rule 3.
+class _ComingSoonChip extends StatelessWidget {
+  const _ComingSoonChip();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: const Color(0x1FFFA000),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0x66FFA000)),
+      ),
+      child: const Text(
+        '即将支持',
+        style: TextStyle(
+          fontSize: 10,
+          height: 1.2,
+          fontWeight: FontWeight.w500,
+          color: Color(0xFFB07400),
+        ),
+      ),
+    );
+  }
+}
+
+/// A compact info note at the top of an 即将支持 group body, explaining the
+/// settings persist now and take effect once the subsystem lands.
+class _ComingSoonNote extends StatelessWidget {
+  const _ComingSoonNote({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(24, 2, 16, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.dividerColor),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            LucideIcons.info,
+            size: 14,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 11.5,
+                height: 1.4,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Prompts for an integer in `[min, max]`, returning the clamped value or null
+/// on 取消.
+Future<int?> _promptNumber(
+  BuildContext context, {
+  required String title,
+  required int initial,
+  required int min,
+  required int max,
+}) {
+  final controller = TextEditingController(text: initial.toString());
+  int? read() {
+    final parsed = int.tryParse(controller.text.trim());
+    if (parsed == null) return null;
+    return parsed.clamp(min, max);
+  }
+
+  return showDialog<int>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(title),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        keyboardType: TextInputType.number,
+        decoration: InputDecoration(
+          helperText: '范围 ${_formatInt(min)} – ${_formatInt(max)}',
+        ),
+        onSubmitted: (_) => Navigator.of(dialogContext).pop(read()),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(read()),
+          child: const Text('确定'),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Opens the 侧边栏宽度 dialog. Dragging live-previews the drawer; 保存 commits,
+/// 取消 restores the original width.
+Future<void> _showSidebarWidthDialog(BuildContext context, WidgetRef ref) {
+  return showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const _SidebarWidthDialog(),
+  );
+}
+
+class _SidebarWidthDialog extends ConsumerStatefulWidget {
+  const _SidebarWidthDialog();
+
+  @override
+  ConsumerState<_SidebarWidthDialog> createState() =>
+      _SidebarWidthDialogState();
+}
+
+class _SidebarWidthDialogState extends ConsumerState<_SidebarWidthDialog> {
+  late final double _original;
+  late double _draft;
+  final TextEditingController _field = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _original = ref.read(sidebarSettingsControllerProvider).sidebarWidth;
+    _draft = _original;
+    _field.text = _draft.round().toString();
+  }
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
+
+  void _apply(double value, double maxWidth) {
+    final clamped = value.clamp(kSidebarWidthMin, maxWidth).toDouble();
+    setState(() => _draft = clamped);
+    _field.text = clamped.round().toString();
+    ref
+        .read(sidebarSettingsControllerProvider.notifier)
+        .previewSidebarWidth(clamped);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final maxWidth = safeMaxSidebarWidth(MediaQuery.sizeOf(context).width);
+    final display = _draft.clamp(kSidebarWidthMin, maxWidth).toDouble();
+    final presets = [
+      for (final p in kSidebarWidthPresets)
+        if (p <= maxWidth) p,
+    ];
+    final controller = ref.read(sidebarSettingsControllerProvider.notifier);
+    return AlertDialog(
+      title: const Text('侧边栏宽度'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '当前: ${display.round()}px',
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
+              ),
+              Text(
+                '${kSidebarWidthMin.round()} – ${maxWidth.round()}px',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: display,
+            min: kSidebarWidthMin,
+            max: maxWidth,
+            onChanged: (v) => _apply(v, maxWidth),
+          ),
+          TextField(
+            controller: _field,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              isDense: true,
+              suffixText: 'px',
+              labelText: '自定义宽度',
+            ),
+            onSubmitted: (raw) {
+              final parsed = double.tryParse(raw.trim());
+              if (parsed != null) _apply(parsed, maxWidth);
+            },
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final p in presets)
+                ChoiceChip(
+                  label: Text('${p.round()}'),
+                  selected: display.round() == p.round(),
+                  onSelected: (_) => _apply(p, maxWidth),
+                ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            // 取消恢复原宽度（预览未持久化）。
+            controller.previewSidebarWidth(_original);
+            Navigator.of(context).pop();
+          },
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: () {
+            controller.setSidebarWidth(display);
+            Navigator.of(context).pop();
+          },
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }
@@ -2180,33 +2999,3 @@ Future<bool> _confirm(
   );
   return result ?? false;
 }
-
-// ── Settings-tab visual-only mock data (mirrors the original default seed) ──
-class _MockSettingsSection {
-  const _MockSettingsSection({
-    required this.title,
-    required this.subtitle,
-    this.chipLabel,
-    this.hasGear = false,
-  });
-
-  final String title;
-  final String subtitle;
-  final String? chipLabel;
-  final bool hasGear;
-}
-
-const List<_MockSettingsSection> _mockSettingsSections = [
-  _MockSettingsSection(title: '常规设置', subtitle: '8 个基础功能设置'),
-  _MockSettingsSection(
-    title: '上下文设置',
-    subtitle: '窗口: 100,000 | 输出: 8192',
-    chipLabel: '兼容 API',
-    hasGear: true,
-  ),
-  _MockSettingsSection(title: '输入设置', subtitle: '粘贴和输入相关的功能设置'),
-  _MockSettingsSection(title: '性能节流强度', subtitle: '当前: 中度节流'),
-  _MockSettingsSection(title: '代码块设置', subtitle: '配置代码显示和编辑功能'),
-  _MockSettingsSection(title: '数学公式设置', subtitle: '渲染引擎: KaTeX'),
-  _MockSettingsSection(title: 'MCP 工具', subtitle: '模式: 函数调用'),
-];
