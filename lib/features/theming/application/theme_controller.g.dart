@@ -11,12 +11,13 @@ part of 'theme_controller.dart';
 /// Holds the currently active [ThemeSpec] and supports hot-swapping it at
 /// runtime (ADR-0008: Riverpod `themeSpecProvider` drives `MaterialApp`).
 ///
-/// The app shell watches this and rebuilds its `ThemeData` whenever [use] is
-/// called, so switching themes is instant and side-effect free.
+/// The app shell watches this and rebuilds its `ThemeData` whenever [use] /
+/// [useStyle] is called, so switching themes is instant and side-effect free.
 ///
-/// Persistence is intentionally a seam only for M4.0: the controller seeds with
-/// [defaultThemeSpec] and exposes [use] / [reset]. Loading the last-applied
-/// theme from M1 Drift is wired in a later theme sub-stage — see [restore].
+/// The selected built-in preset is persisted through the Drift key/value store
+/// (the port of the web `dexieStorage.saveSetting('themeStyle', …)`): [build]
+/// seeds with [defaultThemeSpec] and hydrates the last-applied style on first
+/// build, and [useStyle] writes the choice through so it survives a restart.
 
 @ProviderFor(ThemeController)
 final themeControllerProvider = ThemeControllerProvider._();
@@ -24,23 +25,25 @@ final themeControllerProvider = ThemeControllerProvider._();
 /// Holds the currently active [ThemeSpec] and supports hot-swapping it at
 /// runtime (ADR-0008: Riverpod `themeSpecProvider` drives `MaterialApp`).
 ///
-/// The app shell watches this and rebuilds its `ThemeData` whenever [use] is
-/// called, so switching themes is instant and side-effect free.
+/// The app shell watches this and rebuilds its `ThemeData` whenever [use] /
+/// [useStyle] is called, so switching themes is instant and side-effect free.
 ///
-/// Persistence is intentionally a seam only for M4.0: the controller seeds with
-/// [defaultThemeSpec] and exposes [use] / [reset]. Loading the last-applied
-/// theme from M1 Drift is wired in a later theme sub-stage — see [restore].
+/// The selected built-in preset is persisted through the Drift key/value store
+/// (the port of the web `dexieStorage.saveSetting('themeStyle', …)`): [build]
+/// seeds with [defaultThemeSpec] and hydrates the last-applied style on first
+/// build, and [useStyle] writes the choice through so it survives a restart.
 final class ThemeControllerProvider
     extends $NotifierProvider<ThemeController, ThemeSpec> {
   /// Holds the currently active [ThemeSpec] and supports hot-swapping it at
   /// runtime (ADR-0008: Riverpod `themeSpecProvider` drives `MaterialApp`).
   ///
-  /// The app shell watches this and rebuilds its `ThemeData` whenever [use] is
-  /// called, so switching themes is instant and side-effect free.
+  /// The app shell watches this and rebuilds its `ThemeData` whenever [use] /
+  /// [useStyle] is called, so switching themes is instant and side-effect free.
   ///
-  /// Persistence is intentionally a seam only for M4.0: the controller seeds with
-  /// [defaultThemeSpec] and exposes [use] / [reset]. Loading the last-applied
-  /// theme from M1 Drift is wired in a later theme sub-stage — see [restore].
+  /// The selected built-in preset is persisted through the Drift key/value store
+  /// (the port of the web `dexieStorage.saveSetting('themeStyle', …)`): [build]
+  /// seeds with [defaultThemeSpec] and hydrates the last-applied style on first
+  /// build, and [useStyle] writes the choice through so it survives a restart.
   ThemeControllerProvider._()
     : super(
         from: null,
@@ -68,17 +71,18 @@ final class ThemeControllerProvider
   }
 }
 
-String _$themeControllerHash() => r'8060191d0fc8eb14607c491df0c0f98ebd8cb10e';
+String _$themeControllerHash() => r'0bf2a580550a7141c7c758fd9a772d2c38984c09';
 
 /// Holds the currently active [ThemeSpec] and supports hot-swapping it at
 /// runtime (ADR-0008: Riverpod `themeSpecProvider` drives `MaterialApp`).
 ///
-/// The app shell watches this and rebuilds its `ThemeData` whenever [use] is
-/// called, so switching themes is instant and side-effect free.
+/// The app shell watches this and rebuilds its `ThemeData` whenever [use] /
+/// [useStyle] is called, so switching themes is instant and side-effect free.
 ///
-/// Persistence is intentionally a seam only for M4.0: the controller seeds with
-/// [defaultThemeSpec] and exposes [use] / [reset]. Loading the last-applied
-/// theme from M1 Drift is wired in a later theme sub-stage — see [restore].
+/// The selected built-in preset is persisted through the Drift key/value store
+/// (the port of the web `dexieStorage.saveSetting('themeStyle', …)`): [build]
+/// seeds with [defaultThemeSpec] and hydrates the last-applied style on first
+/// build, and [useStyle] writes the choice through so it survives a restart.
 
 abstract class _$ThemeController extends $Notifier<ThemeSpec> {
   ThemeSpec build();
