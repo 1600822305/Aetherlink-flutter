@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aetherlink_flutter/app/di/chat_interface_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_message_bubble.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_sidebar.dart';
@@ -412,7 +413,7 @@ class _ErrorNotice extends StatelessWidget {
 /// the other 14 block variants, sending and streaming are later slices that
 /// extend the bubble without changing this scrollable-list shape. With a fresh
 /// database this list is empty, so the empty state shows instead.
-class _MessageListView extends StatelessWidget {
+class _MessageListView extends ConsumerWidget {
   const _MessageListView(this.messages, {this.bottomReserve = 0});
 
   final List<ChatMessageView> messages;
@@ -422,11 +423,26 @@ class _MessageListView extends StatelessWidget {
   final double bottomReserve;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 消息分割线 (设置 tab 常规设置)：开启时在相邻消息之间画一条分割线。
+    final showDivider = ref.watch(
+      sidebarSettingsControllerProvider.select((s) => s.showMessageDivider),
+    );
     return ListView.builder(
       padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + bottomReserve),
       itemCount: messages.length,
-      itemBuilder: (context, index) => ChatMessageBubble(view: messages[index]),
+      itemBuilder: (context, index) {
+        final bubble = ChatMessageBubble(view: messages[index]);
+        if (!showDivider || index == messages.length - 1) return bubble;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            bubble,
+            const Divider(height: 17, thickness: 1, indent: 12, endIndent: 12),
+          ],
+        );
+      },
     );
   }
 }
