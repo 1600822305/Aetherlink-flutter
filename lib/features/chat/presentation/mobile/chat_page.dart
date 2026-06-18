@@ -49,41 +49,22 @@ class ChatPage extends ConsumerStatefulWidget {
 
 class _ChatPageState extends ConsumerState<ChatPage>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _drawerCtrl = AnimationController(
+  late final AnimationController _drawer = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 200),
   );
 
   @override
   void dispose() {
-    _drawerCtrl.dispose();
+    _drawer.dispose();
     super.dispose();
   }
 
-  void _toggleDrawer() =>
-      _drawerCtrl.isCompleted ? _drawerCtrl.reverse() : _drawerCtrl.forward();
+  void _open() => _drawer.forward();
+  void _close() => _drawer.reverse();
+  void _toggle() => _drawer.isCompleted ? _close() : _open();
 
-  double _dragStart = 0;
-
-  void _onDragStart(DragStartDetails d) {
-    _dragStart = _drawerCtrl.value * drawerWidth;
-  }
-
-  void _onDragUpdate(DragUpdateDetails d) {
-    final pos = (_dragStart + d.globalPosition.dx).clamp(0.0, drawerWidth);
-    _drawerCtrl.value = pos / drawerWidth;
-  }
-
-  void _onDragEnd(DragEndDetails d) {
-    final velocity = d.primaryVelocity ?? 0;
-    if (velocity > 200 || _drawerCtrl.value > 0.5) {
-      _drawerCtrl.forward();
-    } else {
-      _drawerCtrl.reverse();
-    }
-  }
-
-  late double drawerWidth;
+  double _dragX = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -97,65 +78,71 @@ class _ChatPageState extends ConsumerState<ChatPage>
     final rawWidth = ref.watch(
       sidebarSettingsControllerProvider.select((s) => s.sidebarWidth),
     );
-    drawerWidth = rawWidth.clamp(
+    final drawerWidth = rawWidth.clamp(
       kSidebarWidthMin,
       safeMaxSidebarWidth(MediaQuery.sizeOf(context).width),
     );
 
-    return GestureDetector(
-      onHorizontalDragStart: _onDragStart,
-      onHorizontalDragUpdate: _onDragUpdate,
-      onHorizontalDragEnd: _onDragEnd,
-      behavior: HitTestBehavior.translucent,
-      child: Stack(
-        children: [
-          // Bottom layer: sidebar (fixed, revealed when content is pushed right).
-          Positioned(
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: drawerWidth,
-            child: ChatSidebar(onClose: _toggleDrawer),
-          ),
-          // Top layer: main content + scrim, translated right to reveal sidebar.
-          AnimatedBuilder(
-            animation: _drawerCtrl,
-            builder: (_, child) {
-              final t = _drawerCtrl.value;
-              return Transform.translate(
-                offset: Offset(t * drawerWidth, 0),
-                child: child,
-              );
-            },
-            child: Stack(
-              children: [
-                Scaffold(
-                  appBar: ChatTopBar(onMenuPressed: _toggleDrawer),
-                  body: _ChatBackground(
-                    background: background,
-                    child: _ChatBody(
-                      showSystemPromptBubble: showSystemPromptBubble,
-                      stateAsync: stateAsync,
-                    ),
-                  ),
-                ),
-                // Scrim: darkens the content as the drawer opens.
-                AnimatedBuilder(
-                  animation: _drawerCtrl,
-                  builder: (_, __) => IgnorePointer(
-                    child: ColoredBox(
-                      color: Colors.black.withValues(
-                        alpha: _drawerCtrl.value * 0.3,
+    return Stack(
+      children: [
+        // Sidebar (bottom layer, fixed).
+        Positioned(
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: drawerWidth,
+          child: ChatSidebar(onClose: _close),
+        ),
+        // Content (top layer, pushed right + scrim).
+        AnimatedBuilder(
+          animation: _drawer,
+          builder: (_, content) {
+            final t = _drawer.value;
+            return Transform.translate(
+              offset: Offset(t * drawerWidth, 0),
+              child: Stack(
+                children: [
+                  content!,
+                  // Scrim: tap or drag to close when open.
+                  if (t > 0)
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _close,
+                      onHorizontalDragStart: (_) => _dragX = t * drawerWidth,
+                      onHorizontalDragUpdate: (d) {
+                        _drawer.value =
+                            (_dragX + d.globalPosition.dx)
+                                .clamp(0.0, drawerWidth) /
+                            drawerWidth;
+                      },
+                      onHorizontalDragEnd: (d) {
+                        final v = d.primaryVelocity ?? 0;
+                        if (v < -200 || _drawer.value < 0.5)
+                          _close();
+                        else
+                          _open();
+                      },
+                      child: ColoredBox(
+                        color: Colors.black.withValues(alpha: t * 0.3),
+                        child: const SizedBox.expand(),
                       ),
-                      child: const SizedBox.expand(),
                     ),
-                  ),
-                ),
-              ],
+                ],
+              ),
+            );
+          },
+          child: Scaffold(
+            appBar: ChatTopBar(onMenuPressed: _toggle),
+            body: _ChatBackground(
+              background: background,
+              child: _ChatBody(
+                showSystemPromptBubble: showSystemPromptBubble,
+                stateAsync: stateAsync,
+              ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
