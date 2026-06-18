@@ -18,6 +18,11 @@ import 'package:aetherlink_flutter/shared/domain/chat_interface_settings.dart';
 /// effort and out of scope.
 const String _emptyConversationLabel = '对话开始了，请输入您的问题';
 
+/// Extra height above the reserved input gap over which the message list fades
+/// into the background, so messages dissolve under the floating composer rather
+/// than meeting it at a hard line (the kelivo-style fusion).
+const double _kBottomFadeBand = 96;
+
 /// The chat home page (mobile). After M4.2.0 stood up the real layout shell and
 /// proved the presentation → application → repository → Drift pipeline, M4.2.0b
 /// restores the visual chrome 1:1 to the original Aetherlink: a full top bar
@@ -51,26 +56,156 @@ class ChatPage extends ConsumerWidget {
     return Scaffold(
       appBar: const ChatTopBar(),
       drawer: const ChatSidebar(),
-      body: SafeArea(
-        top: false,
-        // Background layer. The original (`ChatPageUI.tsx`) layers a
-        // chat-background image (opacity applied directly) and an optional
-        // white readability gradient behind the message area; [_ChatBackground]
-        // ports that 1:1 and falls back to a solid themed surface when disabled.
-        child: _ChatBackground(
-          background: background,
-          child: Column(
-            children: [
-              if (showSystemPromptBubble) ...const [
-                SizedBox(height: 8),
-                SystemPromptBubble(),
-              ],
-              Expanded(child: _MessageList(stateAsync: stateAsync)),
-              const ChatInputBar(),
-            ],
-          ),
+      // Background layer. The original (`ChatPageUI.tsx`) anchors the
+      // chat-background image to the full viewport (`position: fixed; inset: 0`)
+      // and floats a transparent input container above the scrollable message
+      // area (`position: fixed; bottom`), so the wallpaper bleeds edge-to-edge
+      // behind both the messages and the composer. [_ChatBackground] fills the
+      // whole body and [_ChatBody] floats the input over the list, applying the
+      // bottom safe-area to the composer alone (never clipping the background).
+      body: _ChatBackground(
+        background: background,
+        child: _ChatBody(
+          showSystemPromptBubble: showSystemPromptBubble,
+          stateAsync: stateAsync,
         ),
       ),
+    );
+  }
+}
+
+/// The chat content over the background: the optional system-prompt bubble, the
+/// scrollable message list and the composer floating over its bottom — a 1:1
+/// port of the original `ChatPageUI` content area, where the input container is
+/// `position: fixed` and transparent above the message list (which reserves
+/// bottom room so its tail clears the composer) and only the input carries the
+/// bottom safe-area inset.
+class _ChatBody extends StatefulWidget {
+  const _ChatBody({
+    required this.showSystemPromptBubble,
+    required this.stateAsync,
+  });
+
+  final bool showSystemPromptBubble;
+  final AsyncValue<ChatState> stateAsync;
+
+  @override
+  State<_ChatBody> createState() => _ChatBodyState();
+}
+
+class _ChatBodyState extends State<_ChatBody> {
+  final GlobalKey _inputKey = GlobalKey();
+  double _inputHeight = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureInput());
+  }
+
+  /// Reads the composer's rendered height so the list reserves matching bottom
+  /// room (its tail must clear the floating input). Re-run after every frame
+  /// that resizes the input — e.g. the field growing to multiple lines —
+  /// surfaced by the [SizeChangedLayoutNotifier] wrapping it.
+  void _measureInput() {
+    if (!mounted) return;
+    final box = _inputKey.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return;
+    final height = box.size.height;
+    if ((height - _inputHeight).abs() > 0.5) {
+      setState(() => _inputHeight = height);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        if (widget.showSystemPromptBubble) ...const [
+          SizedBox(height: 8),
+          SystemPromptBubble(),
+        ],
+        Expanded(
+          child: NotificationListener<SizeChangedLayoutNotification>(
+            onNotification: (_) {
+              WidgetsBinding.instance.addPostFrameCallback(
+                (_) => _measureInput(),
+              );
+              return false;
+            },
+            child: Stack(
+              children: [
+                // Fuse the list into the composer (kelivo style): the list fills
+                // the body and reserves `inputHeight + 16` at the bottom so its
+                // tail clears the floating input, while a bottom gradient fades
+                // the messages out into the background behind the transparent
+                // input — no hard seam between the scroll area and the composer.
+                Positioned.fill(
+                  child: _FadeToBottom(
+                    fadeHeight: _inputHeight + _kBottomFadeBand,
+                    child: _MessageList(
+                      stateAsync: widget.stateAsync,
+                      bottomReserve: _inputHeight + 16,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: SizeChangedLayoutNotifier(
+                    child: KeyedSubtree(
+                      key: _inputKey,
+                      // Only the composer carries the bottom safe-area inset, so
+                      // the wallpaper behind it still reaches the screen edge.
+                      child: const SafeArea(top: false, child: ChatInputBar()),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Fades its child's bottom [fadeHeight] pixels to transparent so the message
+/// list dissolves into the background ([_ChatBackground], which fills the body
+/// behind this) under the floating transparent composer — the kelivo-style
+/// fusion. A [BlendMode.dstIn] mask keeps the child fully opaque above the band
+/// and ramps it out toward the bottom (the curve mirrors kelivo's overlay fade,
+/// expressed here as the complementary keep-alpha).
+class _FadeToBottom extends StatelessWidget {
+  const _FadeToBottom({required this.fadeHeight, required this.child});
+
+  final double fadeHeight;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (fadeHeight <= 0) return child;
+    return ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (rect) {
+        final height = rect.height;
+        final fraction = height <= 0
+            ? 0.0
+            : (fadeHeight / height).clamp(0.0, 1.0);
+        return LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          stops: [0.0, 1.0 - fraction, 1.0 - 0.52 * fraction, 1.0],
+          colors: const [
+            Color(0xFFFFFFFF), // keep fully
+            Color(0xFFFFFFFF), // …up to where the fade band begins
+            Color(0x2EFFFFFF), // ~0.18 keep (≈ kelivo's 0.82 cover at 48%)
+            Color(0x05FFFFFF), // ~0.02 keep (≈ kelivo's 0.98 cover at the foot)
+          ],
+        ).createShader(rect);
+      },
+      child: child,
     );
   }
 }
@@ -207,9 +342,13 @@ ImageRepeat _repeatFor(ChatBackgroundRepeat repeat) => switch (repeat) {
 /// spinner, failure → error notice, empty → empty state, and a list of message
 /// bubbles otherwise.
 class _MessageList extends StatelessWidget {
-  const _MessageList({required this.stateAsync});
+  const _MessageList({required this.stateAsync, this.bottomReserve = 0});
 
   final AsyncValue<ChatState> stateAsync;
+
+  /// Extra bottom padding so the list's tail clears the composer floating over
+  /// it (the composer's measured height; see [_ChatBodyState]).
+  final double bottomReserve;
 
   @override
   Widget build(BuildContext context) {
@@ -218,7 +357,7 @@ class _MessageList extends StatelessWidget {
       error: (error, _) => const _ErrorNotice(),
       data: (state) => state.messages.isEmpty
           ? const _EmptyState()
-          : _MessageListView(state.messages),
+          : _MessageListView(state.messages, bottomReserve: bottomReserve),
     );
   }
 }
@@ -274,14 +413,18 @@ class _ErrorNotice extends StatelessWidget {
 /// extend the bubble without changing this scrollable-list shape. With a fresh
 /// database this list is empty, so the empty state shows instead.
 class _MessageListView extends StatelessWidget {
-  const _MessageListView(this.messages);
+  const _MessageListView(this.messages, {this.bottomReserve = 0});
 
   final List<ChatMessageView> messages;
+
+  /// Reserves room under the last bubble for the composer floating over the
+  /// list (mirrors the original `messageContainer` `paddingBottom`).
+  final double bottomReserve;
 
   @override
   Widget build(BuildContext context) {
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + bottomReserve),
       itemCount: messages.length,
       itemBuilder: (context, index) => ChatMessageBubble(view: messages[index]),
     );
