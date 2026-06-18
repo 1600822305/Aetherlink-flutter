@@ -48,6 +48,7 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
       title: 'Aetherlink',
       theme: AppTheme.light(spec),
       darkTheme: AppTheme.dark(spec),
+      scrollBehavior: const ScrollBehavior().copyWith(overscroll: false),
       themeMode: switch (mode) {
         AppThemeMode.system => ThemeMode.system,
         AppThemeMode.light => ThemeMode.light,
