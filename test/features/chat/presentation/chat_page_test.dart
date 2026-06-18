@@ -156,15 +156,16 @@ void main() {
       );
       await tester.pump();
 
-      // 扩展 opens the data-driven aggregator menu; tapping a not-yet-wired row
-      // (新建话题) surfaces 即将支持 rather than faking a behavior.
+      // 扩展 opens the data-driven aggregator menu; the local rows (新建话题) are
+      // wired, while a not-yet-wired row (知识库) still surfaces 即将支持 rather
+      // than faking a behavior.
       await tester.tap(
         find.byWidgetPredicate((w) => w is IconButton && w.tooltip == '扩展'),
       );
       await tester.pumpAndSettle();
       expect(find.text('新建话题'), findsOneWidget);
       expect(find.text('知识库'), findsOneWidget);
-      await tester.tap(find.text('新建话题'));
+      await tester.tap(find.text('知识库'));
       await tester.pumpAndSettle();
       expect(find.text('即将支持'), findsOneWidget);
 

@@ -264,8 +264,9 @@ class _Toolbar extends StatelessWidget {
     }
 
     // Every other button is keyed by its action so the port drives its
-    // active state: 网络搜索/语音 light up, and 图像/视频 (when placed standalone) flip
-    // to their accent and "退出…模式" tooltip while their session mode is on.
+    // active state: 网络搜索/语音 light up, 图像/视频 (when placed standalone) flip to
+    // their accent and "退出…模式" tooltip while their session mode is on, and
+    // 清空内容 swaps to a red 确认清空 / AlertTriangle while armed for its second tap.
     final action = inputBoxButtonAction(id)!;
     final active = actions.isActive(action);
     final restColor = inputBoxToolbarRestColor(id, iconColor);
@@ -273,6 +274,7 @@ class _Toolbar extends StatelessWidget {
       icon: inputBoxToolbarIcon(
         id,
         color: active ? inputBoxToolbarActiveColor(id, restColor) : restColor,
+        active: active,
       ),
       tooltip: inputBoxToolbarTooltip(id, active: active),
       active: active,

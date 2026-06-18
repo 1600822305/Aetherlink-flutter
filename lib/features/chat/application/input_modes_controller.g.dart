@@ -94,3 +94,89 @@ abstract class _$InputModeController extends $Notifier<InputMode?> {
     return element.handleCreate(ref, build);
   }
 }
+
+/// The standalone 清空内容 button's two-step confirm latch — the port of the web
+/// `clearConfirmMode` `useState` shared by `ButtonToolbar` / `ToolsMenu`.
+///
+/// `true` while the button is armed: the first tap arms it (the glyph swaps to a
+/// red `AlertTriangle` and the label to 确认清空) and a second tap within 3 seconds
+/// performs the clear; otherwise it disarms itself. Held in memory only — a
+/// restart leaves it disarmed. The 扩展 menu runs its own independent confirm
+/// (sheet-local) so opening the menu never arms the toolbar button.
+
+@ProviderFor(InputClearConfirm)
+final inputClearConfirmProvider = InputClearConfirmProvider._();
+
+/// The standalone 清空内容 button's two-step confirm latch — the port of the web
+/// `clearConfirmMode` `useState` shared by `ButtonToolbar` / `ToolsMenu`.
+///
+/// `true` while the button is armed: the first tap arms it (the glyph swaps to a
+/// red `AlertTriangle` and the label to 确认清空) and a second tap within 3 seconds
+/// performs the clear; otherwise it disarms itself. Held in memory only — a
+/// restart leaves it disarmed. The 扩展 menu runs its own independent confirm
+/// (sheet-local) so opening the menu never arms the toolbar button.
+final class InputClearConfirmProvider
+    extends $NotifierProvider<InputClearConfirm, bool> {
+  /// The standalone 清空内容 button's two-step confirm latch — the port of the web
+  /// `clearConfirmMode` `useState` shared by `ButtonToolbar` / `ToolsMenu`.
+  ///
+  /// `true` while the button is armed: the first tap arms it (the glyph swaps to a
+  /// red `AlertTriangle` and the label to 确认清空) and a second tap within 3 seconds
+  /// performs the clear; otherwise it disarms itself. Held in memory only — a
+  /// restart leaves it disarmed. The 扩展 menu runs its own independent confirm
+  /// (sheet-local) so opening the menu never arms the toolbar button.
+  InputClearConfirmProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'inputClearConfirmProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$inputClearConfirmHash();
+
+  @$internal
+  @override
+  InputClearConfirm create() => InputClearConfirm();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$inputClearConfirmHash() => r'd69e2c4c21b296ae2df298a25640c52a95b6d662';
+
+/// The standalone 清空内容 button's two-step confirm latch — the port of the web
+/// `clearConfirmMode` `useState` shared by `ButtonToolbar` / `ToolsMenu`.
+///
+/// `true` while the button is armed: the first tap arms it (the glyph swaps to a
+/// red `AlertTriangle` and the label to 确认清空) and a second tap within 3 seconds
+/// performs the clear; otherwise it disarms itself. Held in memory only — a
+/// restart leaves it disarmed. The 扩展 menu runs its own independent confirm
+/// (sheet-local) so opening the menu never arms the toolbar button.
+
+abstract class _$InputClearConfirm extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
