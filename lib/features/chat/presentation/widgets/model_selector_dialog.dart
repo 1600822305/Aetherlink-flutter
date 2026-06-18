@@ -292,7 +292,7 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
                 // </span>
                 const SizedBox(width: 8),
                 const Text(
-                  '⚡ SolidJS',
+                  '⚡ Flutter',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w400,
