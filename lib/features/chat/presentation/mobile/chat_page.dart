@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/app/di/chat_interface_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/controllers/chat_auto_scroll_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_message_bubble.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_sidebar.dart';
@@ -409,11 +410,19 @@ class _ErrorNotice extends StatelessWidget {
 }
 
 /// One bubble per message (M4.2.1). Each [ChatMessageBubble] reads its own
-/// `main_text` blocks through the real provider and aligns by role. Markdown,
-/// the other 14 block variants, sending and streaming are later slices that
-/// extend the bubble without changing this scrollable-list shape. With a fresh
-/// database this list is empty, so the empty state shows instead.
-class _MessageListView extends ConsumerWidget {
+/// `main_text` blocks through the real provider and aligns by role. With a
+/// fresh database this list is empty, so the empty state shows instead.
+///
+/// 自动下滑 (设置 tab 常规设置 → [SidebarSettings.autoScrollToBottom]) lives in
+/// [ChatAutoScrollController] (the port of the web `ChatScrollController`); this
+/// widget only owns the [ScrollController], feeds the controller user/content
+/// events and decides which message change is an explicit pin:
+/// * initial entry / switching topics (first-message id changes) / the user
+///   sending (message count grows) → [ChatAutoScrollController.pinToBottom];
+/// * in-place growth such as streaming → [ChatAutoScrollController.onContentResized],
+///   also fired from [ScrollMetricsNotification] for growth that lands without
+///   rebuilding this widget (async-loaded blocks).
+class _MessageListView extends ConsumerStatefulWidget {
   const _MessageListView(this.messages, {this.bottomReserve = 0});
 
   final List<ChatMessageView> messages;
@@ -423,26 +432,91 @@ class _MessageListView extends ConsumerWidget {
   final double bottomReserve;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_MessageListView> createState() => _MessageListViewState();
+}
+
+class _MessageListViewState extends ConsumerState<_MessageListView> {
+  final ScrollController _scrollController = ScrollController();
+  late final ChatAutoScrollController _autoScroll;
+
+  /// Identifies the loaded conversation so a topic switch (first-message change)
+  /// can be told apart from appends / in-place content growth.
+  String? _firstId;
+  int _count = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _autoScroll = ChatAutoScrollController(
+      scrollController: _scrollController,
+      isEnabled: () =>
+          ref.read(sidebarSettingsControllerProvider).autoScrollToBottom,
+    );
+    _firstId = widget.messages.isEmpty ? null : widget.messages.first.id;
+    _count = widget.messages.length;
+    // Initial entry pins to the bottom (latest message), like the web's mount.
+    _autoScroll.pinToBottom();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MessageListView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final messages = widget.messages;
+    final firstId = messages.isEmpty ? null : messages.first.id;
+    final count = messages.length;
+    final topicSwitched = firstId != _firstId;
+    final appended = !topicSwitched && count > _count;
+    _firstId = firstId;
+    _count = count;
+
+    if (topicSwitched || appended) {
+      _autoScroll.pinToBottom();
+    } else {
+      _autoScroll.onContentResized();
+    }
+  }
+
+  @override
+  void dispose() {
+    _autoScroll.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final messages = widget.messages;
     // 消息分割线 (设置 tab 常规设置)：开启时在相邻消息之间画一条分割线。
     final showDivider = ref.watch(
       sidebarSettingsControllerProvider.select((s) => s.showMessageDivider),
     );
-    return ListView.builder(
-      padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + bottomReserve),
-      itemCount: messages.length,
-      itemBuilder: (context, index) {
-        final bubble = ChatMessageBubble(view: messages[index]);
-        if (!showDivider || index == messages.length - 1) return bubble;
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            bubble,
-            const Divider(height: 17, thickness: 1, indent: 12, endIndent: 12),
-          ],
-        );
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: (_) {
+        _autoScroll.onContentResized();
+        return false;
       },
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + widget.bottomReserve),
+        itemCount: messages.length,
+        itemBuilder: (context, index) {
+          final bubble = ChatMessageBubble(view: messages[index]);
+          if (!showDivider || index == messages.length - 1) return bubble;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              bubble,
+              const Divider(
+                height: 17,
+                thickness: 1,
+                indent: 12,
+                endIndent: 12,
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
