@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -53,12 +54,32 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
         AppThemeMode.dark => ThemeMode.dark,
       },
       routerConfig: _router,
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(
-          context,
-        ).copyWith(textScaler: TextScaler.linear(textScale)),
-        child: child ?? const SizedBox.shrink(),
-      ),
+      builder: (context, child) {
+        // Keep the system bars transparent with no contrast scrim, and flip the
+        // icon brightness with the active theme so the status / navigation bar
+        // glyphs stay legible. Mirrors kelivo's app-wide AnnotatedRegion.
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final overlay = SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+          statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarDividerColor: Colors.transparent,
+          systemNavigationBarIconBrightness: isDark
+              ? Brightness.light
+              : Brightness.dark,
+          systemNavigationBarContrastEnforced: false,
+        );
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: overlay,
+          child: MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(textScale)),
+            child: child ?? const SizedBox.shrink(),
+          ),
+        );
+      },
     );
   }
 }
