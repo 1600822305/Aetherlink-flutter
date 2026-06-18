@@ -23,44 +23,12 @@ const String _noModelHint = '请先配置模型';
 /// [ChatController.send]. With no model configured it stays disabled and a tap
 /// surfaces the "configure a model first" hint.
 ///
-/// The remaining feature buttons are full-fidelity visuals with their behaviors
-/// not yet implemented; their actions are exposed as the [onToolsMenu] /
-/// [onClearTopic] / [onToggleWebSearch] / [onAddContent] / [onToggleVoice]
-/// callbacks (null ⇒ the button renders but does nothing), so a later slice can
-/// wire them without touching this widget. [webSearchActive] / [voiceActive]
-/// drive the active-state styling those buttons take once wired.
+/// The remaining feature buttons are full-fidelity visuals whose behaviors are
+/// routed through the composer's [InputBoxActions] port; until a behavior slice
+/// supplies a chat implementation they fall back to the inert
+/// [NoInputBoxActions], so they render but do nothing — exactly as before.
 class ChatInputBar extends ConsumerStatefulWidget {
-  const ChatInputBar({
-    super.key,
-    this.onToolsMenu,
-    this.onClearTopic,
-    this.onToggleWebSearch,
-    this.onAddContent,
-    this.onToggleVoice,
-    this.webSearchActive = false,
-    this.voiceActive = false,
-  });
-
-  /// Opens the "扩展" (tools/extensions) menu.
-  final VoidCallback? onToolsMenu;
-
-  /// Clears the current topic's content.
-  final VoidCallback? onClearTopic;
-
-  /// Toggles web-search mode.
-  final VoidCallback? onToggleWebSearch;
-
-  /// Opens the "添加内容" (upload) menu.
-  final VoidCallback? onAddContent;
-
-  /// Toggles voice-input mode.
-  final VoidCallback? onToggleVoice;
-
-  /// Whether web-search mode is active (drives the search button's blue tint).
-  final bool webSearchActive;
-
-  /// Whether voice-input mode is active (drives the voice button's red glyph).
-  final bool voiceActive;
+  const ChatInputBar({super.key});
 
   @override
   ConsumerState<ChatInputBar> createState() => _ChatInputBarState();
@@ -164,13 +132,6 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
       // No model ⇒ a tap surfaces the hint; otherwise the field/streaming state
       // decides whether the send action fires.
       onSend: canSend ? _send : (modelReady ? null : _showNoModelHint),
-      onToolsMenu: widget.onToolsMenu,
-      onClearTopic: widget.onClearTopic,
-      onToggleWebSearch: widget.onToggleWebSearch,
-      onAddContent: widget.onAddContent,
-      onToggleVoice: widget.onToggleVoice,
-      webSearchActive: widget.webSearchActive,
-      voiceActive: widget.voiceActive,
     );
   }
 }
