@@ -13,6 +13,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/default
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/input_box_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_server_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/message_bubble_settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/quick_phrases_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/thinking_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/add_provider_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/advanced_api_config_page.dart';
@@ -51,6 +52,7 @@ abstract final class AppRouter {
       '/settings/appearance/theme-style';
   static const String mcpServerPath = '/settings/mcp-server';
   static const String agentPromptsPath = '/settings/agent-prompts';
+  static const String quickPhrasesPath = '/settings/quick-phrases';
   static const String behaviorPath = '/settings/behavior';
   static const String welcomePath = '/welcome';
   static const String translatePath = '/translate';
@@ -131,6 +133,12 @@ abstract final class AppRouter {
         name: 'agent-prompts',
         pageBuilder: (context, state) =>
             _instant(state, const AgentPromptsSettingsPage()),
+      ),
+      GoRoute(
+        path: quickPhrasesPath,
+        name: 'quick-phrases',
+        pageBuilder: (context, state) =>
+            _instant(state, const QuickPhrasesSettingsPage()),
       ),
       GoRoute(
         path: behaviorPath,

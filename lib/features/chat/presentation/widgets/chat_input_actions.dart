@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aetherlink_flutter/app/di/quick_phrases_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
@@ -118,6 +119,12 @@ class ChatInputActions implements InputBoxActions {
   /// direct clear); every other row pops its action to be re-dispatched through
   /// [invoke] (a row is never an aggregator, so this never recurses).
   Future<void> _openMenu(InputBoxMenu menu, BuildContext context) async {
+    // 在输入框显示快捷短语按钮 gates only the 添加内容 menu's quick-phrase row (the
+    // port of `UploadMenu`'s `showQuickPhrase`); the standalone toolbar button
+    // and the 扩展 menu are unaffected.
+    final hidden = <InputBoxAction>{
+      if (!_ref.read(showQuickPhraseButtonProvider)) InputBoxAction.quickPhrase,
+    };
     final selected = await showModalBottomSheet<InputBoxAction>(
       context: context,
       isScrollControlled: true,
@@ -125,7 +132,8 @@ class ChatInputActions implements InputBoxActions {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (_) => InputBoxMenuSheet(menu: menu, actions: this),
+      builder: (_) =>
+          InputBoxMenuSheet(menu: menu, actions: this, hidden: hidden),
     );
     if (selected == null || !context.mounted) return;
     if (selected == InputBoxAction.clearTopic) {

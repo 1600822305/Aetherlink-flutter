@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import 'package:aetherlink_flutter/features/chat/application/quick_phrases_controller.dart';
+import 'package:aetherlink_flutter/app/di/quick_phrases_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/shared/domain/input_box_settings.dart';
 import 'package:aetherlink_flutter/shared/domain/quick_phrase.dart';
