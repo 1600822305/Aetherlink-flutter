@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/app/di/chat_interface_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/controllers/chat_auto_scroll_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_message_bubble.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_sidebar.dart';
@@ -412,16 +413,15 @@ class _ErrorNotice extends StatelessWidget {
 /// `main_text` blocks through the real provider and aligns by role. With a
 /// fresh database this list is empty, so the empty state shows instead.
 ///
-/// 自动下滑 (设置 tab 常规设置 → [SidebarSettings.autoScrollToBottom])：a 1:1 port of
-/// the web `ChatScrollController` stick-to-bottom state machine. [_stick] is the
-/// single source of truth for "follow the bottom"; only a user scroll flips it
-/// (scroll up past [_kStickThreshold] → stop following; scroll back within it →
-/// resume). Content growth (streaming text / async-loaded blocks) is followed
-/// passively via [ScrollMetricsNotification] (Flutter's analogue of the web's
-/// `ResizeObserver`), gated by [_stick] and the setting. Explicit intents —
-/// initial entry, switching topics, and the user sending — pin to the bottom
-/// unconditionally (regardless of the setting), backed by a short [_pinnedUntil]
-/// window so content rendered just after the pin still lands at the bottom.
+/// 自动下滑 (设置 tab 常规设置 → [SidebarSettings.autoScrollToBottom]) lives in
+/// [ChatAutoScrollController] (the port of the web `ChatScrollController`); this
+/// widget only owns the [ScrollController], feeds the controller user/content
+/// events and decides which message change is an explicit pin:
+/// * initial entry / switching topics (first-message id changes) / the user
+///   sending (message count grows) → [ChatAutoScrollController.pinToBottom];
+/// * in-place growth such as streaming → [ChatAutoScrollController.onContentResized],
+///   also fired from [ScrollMetricsNotification] for growth that lands without
+///   rebuilding this widget (async-loaded blocks).
 class _MessageListView extends ConsumerStatefulWidget {
   const _MessageListView(this.messages, {this.bottomReserve = 0});
 
@@ -436,28 +436,8 @@ class _MessageListView extends ConsumerStatefulWidget {
 }
 
 class _MessageListViewState extends ConsumerState<_MessageListView> {
-  /// Distance from the bottom (px) within which we are considered "stuck"
-  /// (web `DEFAULT_THRESHOLD`).
-  static const double _kStickThreshold = 80;
-
-  /// How long after an explicit pin content growth keeps following the bottom
-  /// unconditionally (web `DEFAULT_PIN_WINDOW_MS`).
-  static const Duration _kPinWindow = Duration(milliseconds: 500);
-
-  final ScrollController _controller = ScrollController();
-
-  /// Single source of truth: whether the list is following the bottom.
-  bool _stick = true;
-
-  /// Until this instant, content growth follows the bottom even when the
-  /// setting is off — covers async renders right after an explicit pin.
-  DateTime _pinnedUntil = DateTime.fromMillisecondsSinceEpoch(0);
-
-  /// Last observed scroll offset, used to detect scroll direction.
-  double _lastPixels = 0;
-
-  /// Coalesces multiple follow requests within a single frame.
-  bool _followScheduled = false;
+  final ScrollController _scrollController = ScrollController();
+  late final ChatAutoScrollController _autoScroll;
 
   /// Identifies the loaded conversation so a topic switch (first-message change)
   /// can be told apart from appends / in-place content growth.
@@ -467,11 +447,15 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   @override
   void initState() {
     super.initState();
-    _controller.addListener(_onUserScroll);
+    _autoScroll = ChatAutoScrollController(
+      scrollController: _scrollController,
+      isEnabled: () =>
+          ref.read(sidebarSettingsControllerProvider).autoScrollToBottom,
+    );
     _firstId = widget.messages.isEmpty ? null : widget.messages.first.id;
     _count = widget.messages.length;
     // Initial entry pins to the bottom (latest message), like the web's mount.
-    _pinToBottom();
+    _autoScroll.pinToBottom();
   }
 
   @override
@@ -486,77 +470,17 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     _count = count;
 
     if (topicSwitched || appended) {
-      // Switching topics or the user sending a message → unconditional pin.
-      _pinToBottom();
+      _autoScroll.pinToBottom();
     } else {
-      // In-place growth (streaming) → follow only while stuck (and enabled, or
-      // inside the pin window). [ScrollMetricsNotification] also covers growth
-      // that lands without rebuilding this widget.
-      _scheduleFollow();
+      _autoScroll.onContentResized();
     }
   }
 
   @override
   void dispose() {
-    _controller.removeListener(_onUserScroll);
-    _controller.dispose();
+    _autoScroll.dispose();
+    _scrollController.dispose();
     super.dispose();
-  }
-
-  bool get _autoScrollEnabled =>
-      ref.read(sidebarSettingsControllerProvider).autoScrollToBottom;
-
-  /// User scroll is the only input that flips [_stick] (web `handleScroll`):
-  /// back within the threshold → follow; an explicit upward scroll → stop.
-  void _onUserScroll() {
-    if (!_controller.hasClients) return;
-    final position = _controller.position;
-    final pixels = position.pixels;
-    final scrolledUp = pixels < _lastPixels - 0.5;
-    _lastPixels = pixels;
-    final distanceFromBottom = position.maxScrollExtent - pixels;
-    if (distanceFromBottom <= _kStickThreshold) {
-      _stick = true;
-    } else if (scrolledUp) {
-      _stick = false;
-      _pinnedUntil = DateTime.fromMillisecondsSinceEpoch(0);
-    }
-  }
-
-  /// Explicit pin-to-bottom intent (web `pinToBottom`): override [_stick] and
-  /// the setting, open the pin window, then jump after layout.
-  void _pinToBottom() {
-    _stick = true;
-    _pinnedUntil = DateTime.now().add(_kPinWindow);
-    _scheduleFollow();
-  }
-
-  void _scheduleFollow() {
-    if (_followScheduled) return;
-    _followScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _followScheduled = false;
-      _maybeJumpToBottom();
-    });
-  }
-
-  /// Passive follow (web `handleContentResize`): jump to the bottom while stuck
-  /// and either the pin window is open or the setting is on.
-  void _maybeJumpToBottom() {
-    if (!_controller.hasClients) return;
-    final pinned = DateTime.now().isBefore(_pinnedUntil);
-    if (!_stick || !(pinned || _autoScrollEnabled)) return;
-    final position = _controller.position;
-    if (position.pixels < position.maxScrollExtent) {
-      _controller.jumpTo(position.maxScrollExtent);
-    }
-    // Pre-set so the jump's own scroll callback is not misread as a user scroll.
-    _lastPixels = _controller.position.pixels;
-  }
-
-  bool _onScrollMetrics(ScrollMetricsNotification notification) {
-    _scheduleFollow();
-    return false;
   }
 
   @override
@@ -567,9 +491,12 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       sidebarSettingsControllerProvider.select((s) => s.showMessageDivider),
     );
     return NotificationListener<ScrollMetricsNotification>(
-      onNotification: _onScrollMetrics,
+      onNotification: (_) {
+        _autoScroll.onContentResized();
+        return false;
+      },
       child: ListView.builder(
-        controller: _controller,
+        controller: _scrollController,
         padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + widget.bottomReserve),
         itemCount: messages.length,
         itemBuilder: (context, index) {
