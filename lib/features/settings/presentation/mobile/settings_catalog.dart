@@ -75,6 +75,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.settings,
         title: '行为',
         description: '消息发送和通知设置',
+        route: AppRouter.behaviorPath,
       ),
     ],
   ),

@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -55,11 +56,24 @@ class InputBoxComposer extends StatelessWidget {
     this.onToggleVoice,
     this.webSearchActive = false,
     this.voiceActive = false,
+    this.sendWithEnter = false,
+    this.enterAsNewline = false,
   });
 
   final InputBoxSettings settings;
   final TextEditingController controller;
   final FocusNode? focusNode;
+
+  /// Whether a plain Enter sends (port of `settings.sendWithEnter`). On a mobile
+  /// soft keyboard this is honored via the keyboard action (Enter ⇒ 发送);
+  /// hardware Enter is intercepted by the owner's [focusNode]. The preview
+  /// (appearance page) leaves it `false` so the field just inserts newlines.
+  final bool sendWithEnter;
+
+  /// Whether a mobile soft-keyboard Enter inserts a newline instead of sending
+  /// (port of `settings.mobileInputMethodEnterAsNewline`); takes precedence over
+  /// [sendWithEnter] on the soft keyboard.
+  final bool enterAsNewline;
 
   /// A non-interactive preview (the appearance page) sets this so the card is
   /// shown for layout/style only.
@@ -75,6 +89,20 @@ class InputBoxComposer extends StatelessWidget {
   final VoidCallback? onToggleVoice;
   final bool webSearchActive;
   final bool voiceActive;
+
+  /// On a mobile soft keyboard, surface a 发送 action key when Enter should send
+  /// (`sendWithEnter` on and not forced to newline); otherwise the return key
+  /// inserts a newline. Desktop always uses newline — hardware Enter is handled
+  /// by the owner's [focusNode] key interceptor before a newline is inserted.
+  TextInputAction get _softKeyboardAction {
+    final isMobile =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+    if (isMobile && sendWithEnter && !enterAsNewline) {
+      return TextInputAction.send;
+    }
+    return TextInputAction.newline;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -108,7 +136,8 @@ class InputBoxComposer extends StatelessWidget {
                   readOnly: readOnly,
                   minLines: 1,
                   maxLines: 5,
-                  textInputAction: TextInputAction.newline,
+                  textInputAction: _softKeyboardAction,
+                  onSubmitted: readOnly ? null : (_) => onSend?.call(),
                   style: const TextStyle(fontSize: 16, height: 1.4),
                   decoration: const InputDecoration(
                     hintText: _inputHint,

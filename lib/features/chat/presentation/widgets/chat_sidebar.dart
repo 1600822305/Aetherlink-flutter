@@ -25,6 +25,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_setting
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
+import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 
 // ── Static strings, ported verbatim ────────────────────────────────────────
 const String _assistantTabLabel = '助手';
@@ -266,6 +267,7 @@ class _AssistantTabState extends ConsumerState<_AssistantTab> {
   }
 
   Future<void> _selectAssistant(String id) async {
+    Haptics.instance.onListItem();
     ref.read(currentAssistantIdProvider.notifier).set(id);
     widget.onGoToTopics();
     await ref.read(topicsProvider.notifier).selectFirstOrCreate(id);
@@ -637,6 +639,7 @@ class _TopicTabState extends ConsumerState<_TopicTab> {
   }
 
   void _selectTopic(String id) {
+    Haptics.instance.onListItem();
     ref.read(currentTopicIdProvider.notifier).set(id);
   }
 

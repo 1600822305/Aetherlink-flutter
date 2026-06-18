@@ -1,11 +1,13 @@
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/translate_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/agent_prompts_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/appearance_settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/behavior_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/chat_interface_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/default_model_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/input_box_settings_page.dart';
@@ -49,6 +51,7 @@ abstract final class AppRouter {
       '/settings/appearance/theme-style';
   static const String mcpServerPath = '/settings/mcp-server';
   static const String agentPromptsPath = '/settings/agent-prompts';
+  static const String behaviorPath = '/settings/behavior';
   static const String welcomePath = '/welcome';
   static const String translatePath = '/translate';
 
@@ -90,6 +93,7 @@ abstract final class AppRouter {
   /// landing on the chat home.
   static GoRouter create({bool startAtWelcome = false}) => GoRouter(
     initialLocation: startAtWelcome ? welcomePath : chatPath,
+    observers: [_HapticNavObserver()],
     routes: [
       GoRoute(
         path: chatPath,
@@ -127,6 +131,12 @@ abstract final class AppRouter {
         name: 'agent-prompts',
         pageBuilder: (context, state) =>
             _instant(state, const AgentPromptsSettingsPage()),
+      ),
+      GoRoute(
+        path: behaviorPath,
+        name: 'behavior',
+        pageBuilder: (context, state) =>
+            _instant(state, const BehaviorSettingsPage()),
       ),
       GoRoute(
         path: defaultModelPath,
@@ -225,4 +235,15 @@ abstract final class AppRouter {
       ),
     ],
   );
+}
+
+/// Fires a gated haptic on forward navigation (port of the web
+/// `hapticFeedback.enableOnNavigation`). The initial route (no previous route)
+/// is skipped so launching the app doesn't buzz. Gating against the master /
+/// 导航 sub-toggle lives in [Haptics.onNavigation].
+class _HapticNavObserver extends NavigatorObserver {
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (previousRoute != null) Haptics.instance.onNavigation();
+  }
 }

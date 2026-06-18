@@ -14,6 +14,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_sideb
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_top_bar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/system_prompt_bubble.dart';
 import 'package:aetherlink_flutter/shared/domain/chat_interface_settings.dart';
+import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 
 /// Static UI strings. The original ran these through i18n; they are ported
 /// verbatim as constants per the M4.1 approach — wiring up i18n is a separate
@@ -55,6 +56,11 @@ class ChatPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: const ChatTopBar(),
+      // Buzz when the sidebar opens (gated by the 触觉反馈 master + 侧边栏 toggle),
+      // matching the original drawer-open haptic.
+      onDrawerChanged: (isOpened) {
+        if (isOpened) Haptics.instance.onSidebar();
+      },
       drawer: const ChatSidebar(),
       body: _ChatBackground(
         background: background,

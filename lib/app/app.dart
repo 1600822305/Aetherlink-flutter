@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:aetherlink_flutter/app/di/behavior_settings_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme.dart';
+import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 import 'package:aetherlink_flutter/features/settings/application/font_size_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/theme_mode_controller.dart';
 import 'package:aetherlink_flutter/features/settings/domain/app_theme_mode.dart';
@@ -34,7 +36,25 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
   );
 
   @override
+  void initState() {
+    super.initState();
+    // Seed the global haptic service with the current config (defaults at
+    // startup; the listener below pushes the hydrated value once Drift
+    // resolves). Done here rather than in build so a toggle never rebuilds the
+    // whole app.
+    Haptics.instance.updateSettings(
+      ref.read(appBehaviorSettingsProvider).hapticFeedback,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Keep the global haptic service in sync with the persisted config without
+    // rebuilding the whole app on every toggle.
+    ref.listen(appBehaviorSettingsProvider, (_, next) {
+      Haptics.instance.updateSettings(next.hapticFeedback);
+    });
+
     final spec = ref.watch(themeControllerProvider);
     final mode = ref.watch(themeModeControllerProvider);
     final fontSize = ref.watch(fontSizeControllerProvider);
