@@ -116,6 +116,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.wand2,
         title: '智能体提示词集合',
         description: '浏览和使用内置的丰富提示词模板',
+        route: AppRouter.agentPromptsPath,
       ),
       SettingItemData(
         icon: LucideIcons.zap,

@@ -1,6 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/app/di/system_prompt_variables_access.dart';
 import 'package:aetherlink_flutter/core/error/failure.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
@@ -21,6 +22,7 @@ import 'package:aetherlink_flutter/features/chat/domain/translate/translate_lang
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
+import 'package:aetherlink_flutter/shared/utils/system_prompt_variables.dart';
 
 part 'chat_controller.g.dart';
 
@@ -167,6 +169,7 @@ class ChatController extends _$ChatController {
     // just added included; the empty assistant placeholder excluded).
     final request = LlmChatRequest(
       model: effective,
+      system: await _buildSystemPrompt(),
       messages: [
         for (final view in views)
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
@@ -259,6 +262,7 @@ class ChatController extends _$ChatController {
 
     final request = LlmChatRequest(
       model: effective,
+      system: await _buildSystemPrompt(),
       messages: [
         for (final view in views.sublist(0, index))
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
@@ -347,6 +351,7 @@ class ChatController extends _$ChatController {
 
     final request = LlmChatRequest(
       model: effective,
+      system: await _buildSystemPrompt(),
       messages: [
         for (final view in snapshot.messages)
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
@@ -1066,6 +1071,34 @@ class ChatController extends _$ChatController {
     final message = await _repo.getMessage(messageId);
     if (message == null) return fallback;
     return _viewOf(message);
+  }
+
+  /// Assembles the system prompt for a conversation turn: the assistant's
+  /// 系统提示词 combined with the 话题提示词 (the port of apiPreparation's
+  /// `assistantPrompt [+ '\n\n' + topicPrompt]`), then appends the enabled
+  /// 系统提示词变量 (time / location / OS). Returns `null` when the assembled
+  /// prompt is empty, so requests with no system prompt stay system-less
+  /// (variables are append-only and never injected into an empty prompt,
+  /// matching the web `injectSystemPromptVariables`).
+  Future<String?> _buildSystemPrompt() async {
+    final assistant = await _repo.getAssistant(_assistantId);
+    final assistantPrompt = assistant?.systemPrompt ?? '';
+    final topicId = _topicId;
+    final topic = topicId == null ? null : await _repo.getTopic(topicId);
+    final topicPrompt = (topic?.prompt?.trim().isNotEmpty ?? false)
+        ? topic!.prompt!
+        : '';
+
+    var base = assistantPrompt;
+    if (topicPrompt.isNotEmpty) {
+      base = base.isNotEmpty ? '$base\n\n$topicPrompt' : topicPrompt;
+    }
+
+    final injected = injectSystemPromptVariables(
+      base,
+      ref.read(systemPromptVariablesProvider),
+    );
+    return injected.isEmpty ? null : injected;
   }
 
   Future<String> _ensureTopic() async {
