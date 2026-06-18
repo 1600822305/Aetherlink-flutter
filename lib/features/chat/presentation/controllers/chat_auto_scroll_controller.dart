@@ -1,40 +1,104 @@
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
-/// Stick-to-bottom state machine for the chat message list — a 1:1 port of the
-/// web `ChatScrollController` (`src/shared/services/chat/ChatScrollController.ts`).
+/// A [ScrollController] whose position pins to the bottom *during layout*
+/// (inside [ScrollPosition.applyContentDimensions], before paint) whenever
+/// [shouldAutoFollow] returns true and the user is not actively scrolling.
 ///
-/// It drives an externally-owned [ScrollController]: [isSticking] (mirroring the
-/// web `stick`) is the single source of truth for "follow the bottom". Only a
-/// user scroll flips it ([_handleUserScroll]): scrolling up past [threshold]
-/// stops following, scrolling back within it resumes. Content growth (streaming
-/// text, async-loaded blocks) is followed passively via [onContentResized] (the
-/// web's `ResizeObserver` → `handleContentResize`), gated by [isSticking] and
-/// [isEnabled]. Explicit intents — initial entry, switching topics, the user
-/// sending — call [pinToBottom] to override both the stick flag and the setting,
-/// backed by a short [pinWindow] so content rendered just after the pin still
-/// lands at the bottom.
+/// Following at layout time — rather than via a post-frame `jumpTo` — lets
+/// streaming content grow with zero visible lag and without the one-frame
+/// flicker a post-frame jump leaves behind. Ported from kelivo's
+/// `ChatAutoFollowScrollController`.
+class ChatAutoFollowScrollController extends ScrollController {
+  /// Checked during layout to decide whether to pin to the bottom.
+  bool Function() shouldAutoFollow = () => false;
+
+  @override
+  ScrollPosition createScrollPosition(
+    ScrollPhysics physics,
+    ScrollContext context,
+    ScrollPosition? oldPosition,
+  ) {
+    return _AutoFollowScrollPosition(
+      physics: physics,
+      context: context,
+      oldPosition: oldPosition,
+      controller: this,
+    );
+  }
+}
+
+class _AutoFollowScrollPosition extends ScrollPositionWithSingleContext {
+  _AutoFollowScrollPosition({
+    required super.physics,
+    required super.context,
+    super.oldPosition,
+    required this.controller,
+  });
+
+  final ChatAutoFollowScrollController controller;
+
+  @override
+  bool applyContentDimensions(double minScrollExtent, double maxScrollExtent) {
+    final result = super.applyContentDimensions(
+      minScrollExtent,
+      maxScrollExtent,
+    );
+    // Guard on userScrollDirection (updated by the scroll activity, earlier than
+    // any controller listener): correcting pixels mid-drag would override the
+    // user's scroll for one frame and feel "stuck / can't scroll up".
+    if (controller.shouldAutoFollow() &&
+        userScrollDirection == ScrollDirection.idle) {
+      final gap = this.maxScrollExtent - pixels;
+      if (gap > 0.5) {
+        correctPixels(this.maxScrollExtent);
+        return false; // Re-run layout with the corrected position.
+      }
+    }
+    return result;
+  }
+}
+
+/// Stick-to-bottom state machine over a [ChatAutoFollowScrollController] — the
+/// Flutter analogue of the web `ChatScrollController`
+/// (`src/shared/services/chat/ChatScrollController.ts`), following kelivo's
+/// design.
+///
+/// [isSticking] (web `stick`) is the single source of truth for "follow the
+/// bottom"; the scroll listener flips it from position alone: within [threshold]
+/// of the bottom → follow, an active scroll away from the bottom → stop. The
+/// actual following is done by the controller's custom [ScrollPosition] during
+/// layout; this class only decides *whether* to follow through
+/// [ChatAutoFollowScrollController.shouldAutoFollow] — it never reacts to scroll
+/// notifications, so plain scrolling can no longer drag the list back down.
+///
+/// Explicit intents — initial entry, switching topics, the user sending — call
+/// [pinToBottom], which re-sticks and opens a short [pinWindow] so the list
+/// follows even while the setting is off, covering the renders right after.
 ///
 /// The controller never owns the [ScrollController]; the host widget creates and
 /// disposes it. [dispose] only detaches this controller's own listener.
 class ChatAutoScrollController {
   ChatAutoScrollController({
-    required ScrollController scrollController,
+    required ChatAutoFollowScrollController scrollController,
     required this.isEnabled,
     this.threshold = _kDefaultThreshold,
     this.pinWindow = _kDefaultPinWindow,
   }) : _scrollController = scrollController {
-    _scrollController.addListener(_handleUserScroll);
+    _scrollController.addListener(_onScroll);
+    _scrollController.shouldAutoFollow = () =>
+        _stick && (isEnabled() || _isPinned);
   }
 
   /// Distance from the bottom (px) within which the list is "stuck"
   /// (web `DEFAULT_THRESHOLD`).
   static const double _kDefaultThreshold = 80;
 
-  /// How long after an explicit pin content growth keeps following the bottom
-  /// unconditionally (web `DEFAULT_PIN_WINDOW_MS`).
+  /// How long after an explicit pin the list keeps following the bottom even
+  /// when the setting is off (web `DEFAULT_PIN_WINDOW_MS`).
   static const Duration _kDefaultPinWindow = Duration(milliseconds: 500);
 
-  final ScrollController _scrollController;
+  final ChatAutoFollowScrollController _scrollController;
 
   /// Reads the live 自动下滑 setting (`SidebarSettings.autoScrollToBottom`); the
   /// web equivalent is `options.isEnabled`.
@@ -45,69 +109,49 @@ class ChatAutoScrollController {
 
   bool _stick = true;
   DateTime _pinnedUntil = DateTime.fromMillisecondsSinceEpoch(0);
-  double _lastPixels = 0;
-  bool _followScheduled = false;
   bool _disposed = false;
 
   /// Whether the list is currently following the bottom (web `stick`).
   bool get isSticking => _stick;
 
+  bool get _isPinned => DateTime.now().isBefore(_pinnedUntil);
+
   /// User scroll is the only input that flips [_stick] (web `handleScroll`):
-  /// back within [threshold] → follow; an explicit upward scroll → stop.
-  void _handleUserScroll() {
+  /// within [threshold] → follow; an active scroll away from the bottom → stop.
+  void _onScroll() {
     if (_disposed || !_scrollController.hasClients) return;
     final position = _scrollController.position;
-    final pixels = position.pixels;
-    final scrolledUp = pixels < _lastPixels - 0.5;
-    _lastPixels = pixels;
-    final distanceFromBottom = position.maxScrollExtent - pixels;
-    if (distanceFromBottom <= threshold) {
+    final atBottom = position.maxScrollExtent - position.pixels <= threshold;
+    if (atBottom) {
       _stick = true;
-    } else if (scrolledUp) {
+    } else if (position.userScrollDirection != ScrollDirection.idle) {
       _stick = false;
       _pinnedUntil = DateTime.fromMillisecondsSinceEpoch(0);
     }
   }
 
-  /// Explicit pin-to-bottom intent (web `pinToBottom`): override [_stick] and the
-  /// setting, open the pin window, then jump after layout.
+  /// Explicit pin-to-bottom intent (web `pinToBottom`): re-stick, jump after
+  /// layout and keep following for [pinWindow] even while the setting is off.
   void pinToBottom() {
     if (_disposed) return;
     _stick = true;
     _pinnedUntil = DateTime.now().add(pinWindow);
-    _scheduleFollow();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToBottom());
   }
 
-  /// Content grew (streaming / async render) — web `handleContentResize`. Follows
-  /// the bottom only while stuck and either inside the pin window or enabled.
-  void onContentResized() {
-    if (_disposed) return;
-    _scheduleFollow();
-  }
-
-  void _scheduleFollow() {
-    if (_followScheduled) return;
-    _followScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _followScheduled = false;
-      _maybeJumpToBottom();
-    });
-  }
-
-  void _maybeJumpToBottom() {
+  void _jumpToBottom() {
     if (_disposed || !_scrollController.hasClients) return;
-    final pinned = DateTime.now().isBefore(_pinnedUntil);
-    if (!_stick || !(pinned || isEnabled())) return;
+    // Guard against the controller being briefly attached to two lists during a
+    // route/topic transition.
+    if (_scrollController.positions.length != 1) return;
     final position = _scrollController.position;
     if (position.pixels < position.maxScrollExtent) {
-      _scrollController.jumpTo(position.maxScrollExtent);
+      position.jumpTo(position.maxScrollExtent);
     }
-    // Pre-set so the jump's own scroll callback is not misread as a user scroll.
-    _lastPixels = _scrollController.position.pixels;
   }
 
   void dispose() {
     _disposed = true;
-    _scrollController.removeListener(_handleUserScroll);
+    _scrollController.removeListener(_onScroll);
   }
 }
