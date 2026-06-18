@@ -173,21 +173,23 @@ class _ThemeGrid extends StatelessWidget {
           final end = math.min(start + columns, themePresets.length);
           final rowItems = themePresets.sublist(start, end);
           rows.add(
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var column = 0; column < columns; column++) ...[
-                  if (column > 0) const SizedBox(width: _gap),
-                  Expanded(
-                    child: column < rowItems.length
-                        ? _ThemeCard(
-                            preset: rowItems[column],
-                            isSelected: rowItems[column].id == currentStyleId,
-                          )
-                        : const SizedBox.shrink(),
-                  ),
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var column = 0; column < columns; column++) ...[
+                    if (column > 0) const SizedBox(width: _gap),
+                    Expanded(
+                      child: column < rowItems.length
+                          ? _ThemeCard(
+                              preset: rowItems[column],
+                              isSelected: rowItems[column].id == currentStyleId,
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           );
           if (end < themePresets.length) {
