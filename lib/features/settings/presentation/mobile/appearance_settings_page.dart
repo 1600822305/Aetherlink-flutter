@@ -823,6 +823,7 @@ class _CustomizationCard extends StatelessWidget {
       accent: Color(0xFF9333EA), // purple
       title: '主题风格',
       description: '选择应用的整体设计风格和色彩主题',
+      route: AppRouter.themeStyleSettingsPath,
     ),
     _CustomizationItem(
       icon: LucideIcons.layoutDashboard,

@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_p
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/multi_key_management_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/top_toolbar_settings_page.dart';
+import 'package:aetherlink_flutter/features/theming/presentation/mobile/theme_style_settings_page.dart';
 import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
 
 /// Declarative application route table (go_router).
@@ -40,6 +41,8 @@ abstract final class AppRouter {
   static const String messageBubbleSettingsPath =
       '/settings/appearance/message-bubble';
   static const String thinkingSettingsPath = '/settings/appearance/thinking';
+  static const String themeStyleSettingsPath =
+      '/settings/appearance/theme-style';
   static const String welcomePath = '/welcome';
 
   /// The model-provider third-level pages (M4.3.1). The detail / edit / advanced
@@ -119,6 +122,11 @@ abstract final class AppRouter {
         path: thinkingSettingsPath,
         name: 'thinking-settings',
         builder: (context, state) => const ThinkingSettingsPage(),
+      ),
+      GoRoute(
+        path: themeStyleSettingsPath,
+        name: 'theme-style-settings',
+        builder: (context, state) => const ThemeStyleSettingsPage(),
       ),
       GoRoute(
         path: addProviderPath,
