@@ -40,34 +40,11 @@ const double _kBottomFadeBand = 96;
 /// Nothing is wired this round: sending, streaming, message-block rendering, the
 /// model selector, the sidebar's real lists, search and the rest are disabled
 /// placeholders (later slices), so the tree keeps its final shape.
-class ChatPage extends ConsumerStatefulWidget {
+class ChatPage extends ConsumerWidget {
   const ChatPage({super.key});
 
   @override
-  ConsumerState<ChatPage> createState() => _ChatPageState();
-}
-
-class _ChatPageState extends ConsumerState<ChatPage>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _drawer = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 200),
-  );
-
-  @override
-  void dispose() {
-    _drawer.dispose();
-    super.dispose();
-  }
-
-  void _open() => _drawer.forward();
-  void _close() => _drawer.reverse();
-  void _toggle() => _drawer.isCompleted ? _close() : _open();
-
-  double _dragX = 0;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final stateAsync = ref.watch(chatControllerProvider);
     final showSystemPromptBubble = ref.watch(
       chatInterfaceSettingsProvider.select((s) => s.showSystemPromptBubble),
@@ -75,74 +52,17 @@ class _ChatPageState extends ConsumerState<ChatPage>
     final background = ref.watch(
       chatInterfaceSettingsProvider.select((s) => s.background),
     );
-    final rawWidth = ref.watch(
-      sidebarSettingsControllerProvider.select((s) => s.sidebarWidth),
-    );
-    final drawerWidth = rawWidth.clamp(
-      kSidebarWidthMin,
-      safeMaxSidebarWidth(MediaQuery.sizeOf(context).width),
-    );
 
-    return Stack(
-      children: [
-        // Sidebar (bottom layer, fixed).
-        Positioned(
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: drawerWidth,
-          child: ChatSidebar(onClose: _close),
+    return Scaffold(
+      appBar: const ChatTopBar(),
+      drawer: const ChatSidebar(),
+      body: _ChatBackground(
+        background: background,
+        child: _ChatBody(
+          showSystemPromptBubble: showSystemPromptBubble,
+          stateAsync: stateAsync,
         ),
-        // Content (top layer, pushed right + scrim).
-        AnimatedBuilder(
-          animation: _drawer,
-          builder: (_, content) {
-            final t = _drawer.value;
-            return Transform.translate(
-              offset: Offset(t * drawerWidth, 0),
-              child: Stack(
-                children: [
-                  content!,
-                  // Scrim: tap or drag to close when open.
-                  if (t > 0)
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _close,
-                      onHorizontalDragStart: (_) => _dragX = t * drawerWidth,
-                      onHorizontalDragUpdate: (d) {
-                        _drawer.value =
-                            (_dragX + d.globalPosition.dx)
-                                .clamp(0.0, drawerWidth) /
-                            drawerWidth;
-                      },
-                      onHorizontalDragEnd: (d) {
-                        final v = d.primaryVelocity ?? 0;
-                        if (v < -200 || _drawer.value < 0.5)
-                          _close();
-                        else
-                          _open();
-                      },
-                      child: ColoredBox(
-                        color: Colors.black.withValues(alpha: t * 0.3),
-                        child: const SizedBox.expand(),
-                      ),
-                    ),
-                ],
-              ),
-            );
-          },
-          child: Scaffold(
-            appBar: ChatTopBar(onMenuPressed: _toggle),
-            body: _ChatBackground(
-              background: background,
-              child: _ChatBody(
-                showSystemPromptBubble: showSystemPromptBubble,
-                stateAsync: stateAsync,
-              ),
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

@@ -61,9 +61,7 @@ const Color _avatarUnselectedBg = Color(0xFFE0E0E0);
 const Color _chipBorderColor = Color(0xFFBDBDBD);
 
 class ChatSidebar extends ConsumerStatefulWidget {
-  const ChatSidebar({super.key, this.onClose});
-
-  final VoidCallback? onClose;
+  const ChatSidebar({super.key});
 
   @override
   ConsumerState<ChatSidebar> createState() => _ChatSidebarState();
@@ -116,18 +114,21 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
     final maxWidth = safeMaxSidebarWidth(MediaQuery.sizeOf(context).width);
     final drawerWidth = rawWidth.clamp(kSidebarWidthMin, maxWidth);
 
-    return Material(
-      color: theme.colorScheme.surface,
-      borderRadius: const BorderRadius.only(
-        topRight: Radius.circular(16),
-        bottomRight: Radius.circular(16),
+    return Drawer(
+      width: drawerWidth,
+      backgroundColor: theme.colorScheme.surface,
+      // Original mobile drawer: `border-radius: 0 16px 16px 0`.
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topRight: Radius.circular(16),
+          bottomRight: Radius.circular(16),
+        ),
       ),
-      clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,
         child: Column(
           children: [
-            _CloseRow(onClose: widget.onClose),
+            const _CloseRow(),
             _SidebarTabBar(controller: _tabController),
             Expanded(
               child: TabBarView(
@@ -155,9 +156,7 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
 /// The drawer's top close affordance: `justify-content: flex-end; padding: 8px;
 /// min-height: 48px` with a lucide `X` (size 20) button.
 class _CloseRow extends StatelessWidget {
-  const _CloseRow({this.onClose});
-
-  final VoidCallback? onClose;
+  const _CloseRow();
 
   @override
   Widget build(BuildContext context) {
@@ -167,7 +166,7 @@ class _CloseRow extends StatelessWidget {
       constraints: const BoxConstraints(minHeight: 48),
       padding: const EdgeInsets.all(8),
       child: IconButton(
-        onPressed: onClose,
+        onPressed: () => Scaffold.maybeOf(context)?.closeDrawer(),
         iconSize: 20,
         color: theme.colorScheme.onSurface,
         padding: EdgeInsets.zero,
