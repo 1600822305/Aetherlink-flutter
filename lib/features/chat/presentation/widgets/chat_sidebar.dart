@@ -916,7 +916,11 @@ class _TopicItem extends ConsumerWidget {
                         ],
                       ),
                       Text(
-                        topic.lastMessagePreview ?? '无消息',
+                        topic.messageIds.isEmpty
+                            ? '无消息'
+                            : (topic.lastMessagePreview?.isNotEmpty == true
+                                  ? topic.lastMessagePreview!
+                                  : '无文本内容'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(

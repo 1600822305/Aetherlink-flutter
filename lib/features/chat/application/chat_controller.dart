@@ -469,6 +469,7 @@ class ChatController extends _$ChatController {
       view = await _reloadView(assistantMessageId, view);
       _replace(views, view);
       _emit(views, isStreaming: false);
+      await _refreshTopicPreview();
     } on Object catch (error) {
       final messageText = _errorMessage(error);
       await _finalizeError(
@@ -483,6 +484,7 @@ class ChatController extends _$ChatController {
       );
       _replace(views, view);
       _emit(views, isStreaming: false);
+      await _refreshTopicPreview();
     }
   }
 
@@ -500,6 +502,7 @@ class ChatController extends _$ChatController {
         .where((view) => view.id != messageId)
         .toList();
     _emit(views, isStreaming: false);
+    await _refreshTopicPreview();
   }
 
   /// Writes [contentByBlockId] back to the message's `main_text` blocks and
@@ -1163,6 +1166,45 @@ class ChatController extends _$ChatController {
         ),
       );
     }
+  }
+
+  /// Recomputes the current topic's `lastMessagePreview` / `messageCount` /
+  /// `lastMessageTime` from persisted messages and saves them so the sidebar
+  /// topic list shows a real preview instead of「无消息」.
+  Future<void> _refreshTopicPreview() async {
+    final topicId = _topicId;
+    if (topicId == null) return;
+    final topic = await _repo.getTopic(topicId);
+    if (topic == null) return;
+    final messages = await _repo.getMessagesByTopicId(topicId)
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final count = messages.length;
+    String preview = '';
+    String? lastTime = topic.lastMessageTime;
+    if (messages.isNotEmpty) {
+      final last = messages.last;
+      lastTime = last.createdAt.toIso8601String();
+      final blocks = await _repo.getMessageBlocksByMessageId(last.id);
+      for (final block in blocks) {
+        if (block is MainTextBlock && block.content.trim().isNotEmpty) {
+          final normalized =
+              block.content.replaceAll(RegExp(r'\s+'), ' ').trim();
+          preview = normalized.length > 50
+              ? '${normalized.substring(0, 50)}…'
+              : normalized;
+          break;
+        }
+      }
+    }
+    await _repo.saveTopic(
+      topic.copyWith(
+        messageIds: messages.map((m) => m.id).toList(),
+        messageCount: count,
+        lastMessagePreview: preview,
+        lastMessageTime: lastTime,
+        updatedAt: DateTime.now(),
+      ),
+    );
   }
 
   Future<void> _finalizeError({
