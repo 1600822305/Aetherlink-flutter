@@ -229,6 +229,7 @@ class _MessageHeader extends StatelessWidget {
               Text(
                 name,
                 style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -236,7 +237,7 @@ class _MessageHeader extends StatelessWidget {
               Text(
                 time,
                 style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+                  color: theme.colorScheme.onSurface,
                 ),
               ),
           ],
