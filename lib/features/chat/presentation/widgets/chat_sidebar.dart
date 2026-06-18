@@ -1061,7 +1061,6 @@ class _SettingsTab extends ConsumerWidget {
               description: '新消息时自动滚动到聊天底部',
               value: s.autoScrollToBottom,
               onChanged: c.setAutoScrollToBottom,
-              comingSoon: true,
             ),
             _SelectSettingRow<MessageStyle>(
               title: '消息样式',
