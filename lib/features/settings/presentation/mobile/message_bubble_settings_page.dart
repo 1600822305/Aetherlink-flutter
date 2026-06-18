@@ -744,25 +744,37 @@ class _PreviewMessage extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxBubbleWidth = constraints.maxWidth * maxWidthFactor;
-        return Column(
-          crossAxisAlignment: align,
-          children: [
-            if (showAvatar || showName) ...[header, const SizedBox(height: 6)],
-            ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: maxBubbleWidth),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: hideBubble ? Colors.transparent : bubbleColor,
-                  borderRadius: BorderRadius.circular(hideBubble ? 0 : 12),
-                ),
-                child: Text(
-                  sampleText,
-                  style: theme.textTheme.bodyMedium?.copyWith(color: textColor),
+        // Fill the row so [align] can push the user bubble to the right and the
+        // AI bubble to the left (mirroring the original `alignItems: flex-end` /
+        // `flex-start`); without the full width the column shrink-wraps to its
+        // content and every bubble hugs the left edge.
+        return SizedBox(
+          width: double.infinity,
+          child: Column(
+            crossAxisAlignment: align,
+            children: [
+              if (showAvatar || showName) ...[
+                header,
+                const SizedBox(height: 6),
+              ],
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: hideBubble ? Colors.transparent : bubbleColor,
+                    borderRadius: BorderRadius.circular(hideBubble ? 0 : 12),
+                  ),
+                  child: Text(
+                    sampleText,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: textColor,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         );
       },
     );
