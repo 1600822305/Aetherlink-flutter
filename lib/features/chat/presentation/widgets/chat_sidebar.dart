@@ -14,8 +14,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/assistant_presets.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
@@ -1262,7 +1264,7 @@ class _TranslateButton extends StatelessWidget {
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
-          onTap: () {},
+          onTap: () => context.push(AppRouter.translatePath),
           borderRadius: BorderRadius.circular(12),
           child: SizedBox(
             width: 44,
