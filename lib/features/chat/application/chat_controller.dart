@@ -120,6 +120,7 @@ class ChatController extends _$ChatController {
       createdAt: assistantTime,
       status: MessageStatus.streaming,
       model: effective,
+      askId: userMessageId,
       blocks: <String>[assistantBlockId],
     );
     await _repo.saveMessage(assistantMessage);
@@ -276,11 +277,123 @@ class ChatController extends _$ChatController {
     );
   }
 
+  /// Resends user message [messageId]: re-runs the assistant reply tied to it.
+  ///
+  /// Port of the toolbar 重新发送 action (`regenerateResponse` with
+  /// `source: 'user'`): finds the assistant message whose `askId` points at this
+  /// user message and regenerates it in place (archiving its previous content as
+  /// a version, exactly like 重新生成); if no reply exists yet, a fresh assistant
+  /// message linked via `askId` is created and streamed from the conversation so
+  /// far. A no-op while a reply is streaming, when the conversation has not
+  /// loaded, when no model is selected, or when [messageId] is not a loaded user
+  /// message.
+  Future<void> resend(String messageId) async {
+    final snapshot = state.value;
+    if (snapshot == null || snapshot.isStreaming) return;
+
+    final current = await ref.read(appCurrentModelProvider.future);
+    if (current == null) return;
+
+    final userMessage = await _repo.getMessage(messageId);
+    if (userMessage == null || userMessage.role != MessageRole.user) return;
+
+    // Reuse 重新生成 when this user message already has a reply.
+    final replyId = await _findAssistantReplyId(userMessage, snapshot.messages);
+    if (replyId != null) {
+      await regenerate(replyId);
+      return;
+    }
+
+    // No reply yet: create a fresh assistant message linked via askId and stream
+    // it from the conversation so far (the user turn is already in the view).
+    final now = DateTime.now();
+    final effective = effectiveModelFor(current);
+    final assistantMessageId = generateId('msg');
+    final assistantBlockId = generateId('block');
+    final assistantMessage = Message(
+      id: assistantMessageId,
+      role: MessageRole.assistant,
+      assistantId: _assistantId,
+      topicId: userMessage.topicId,
+      createdAt: now,
+      status: MessageStatus.streaming,
+      model: effective,
+      askId: messageId,
+      blocks: <String>[assistantBlockId],
+    );
+    await _repo.saveMessage(assistantMessage);
+    await _repo.saveMessageBlock(
+      MessageBlock.mainText(
+        id: assistantBlockId,
+        messageId: assistantMessageId,
+        status: MessageBlockStatus.streaming,
+        createdAt: now,
+        content: '',
+      ),
+    );
+
+    final assistantView = ChatMessageView(
+      id: assistantMessageId,
+      role: MessageRole.assistant,
+      status: MessageStatus.streaming,
+      createdAt: now,
+      modelName: effective.name,
+      providerName: current.provider.name,
+    );
+    final views = [...snapshot.messages, assistantView];
+    _emit(views, isStreaming: true);
+
+    final request = LlmChatRequest(
+      model: effective,
+      messages: [
+        for (final view in snapshot.messages)
+          if (view.role != MessageRole.assistant || view.text.isNotEmpty)
+            LlmMessage(role: view.role, content: view.text),
+      ],
+      extraHeaders: effective.providerExtraHeaders,
+      extraBody: effective.providerExtraBody,
+    );
+
+    await _streamInto(
+      request: request,
+      effective: effective,
+      assistantMessageId: assistantMessageId,
+      assistantBlockId: assistantBlockId,
+      assistantTime: now,
+      views: views,
+      assistantView: assistantView,
+    );
+  }
+
+  /// Finds the assistant reply for user message [userMessage], or null if it has
+  /// none. Mirrors the original `source:'user'` lookup
+  /// (`msg.role === 'assistant' && msg.askId === messageId`); falls back to the
+  /// assistant view that directly follows the user message in display order for
+  /// messages persisted before `askId` was recorded.
+  Future<String?> _findAssistantReplyId(
+    Message userMessage,
+    List<ChatMessageView> views,
+  ) async {
+    final topicMessages = await _repo.getMessagesByTopicId(userMessage.topicId);
+    for (final message in topicMessages) {
+      if (message.role == MessageRole.assistant &&
+          message.askId == userMessage.id) {
+        return message.id;
+      }
+    }
+    final index = views.indexWhere((view) => view.id == userMessage.id);
+    if (index != -1 && index + 1 < views.length) {
+      final next = views[index + 1];
+      if (next.role == MessageRole.assistant) return next.id;
+    }
+    return null;
+  }
+
   /// Subscribes to the gateway stream for [request], accumulating text into the
   /// assistant's `main_text` and reasoning into its `thinking` while emitting a
   /// streaming view per chunk, then finalizes: on [LlmDone] persists the blocks
   /// and reloads the view; on a stream error marks the message errored and
-  /// persists an `error` block. Shared by [send] and [regenerate].
+  /// persists an `error` block. Shared by [send], [regenerate] and [resend].
   Future<void> _streamInto({
     required LlmChatRequest request,
     required Model effective,
