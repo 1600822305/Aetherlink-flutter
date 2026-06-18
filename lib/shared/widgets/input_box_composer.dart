@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/shared/domain/input_box_settings.dart';
+import 'package:aetherlink_flutter/shared/widgets/input_box_actions.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_button_catalog.dart';
 
 /// Static UI strings, ported verbatim from the original (i18n is a later
@@ -35,10 +36,10 @@ const Color _activeTint = Color(0x1A3B82F6); // rgba(59,130,246,0.1)
 /// from [settings], so both the chat page and the appearance 输入框管理设置 preview
 /// render from the same configuration. The text field is driven by the supplied
 /// [controller]; the send button's run-time state comes from [canSend] /
-/// [isStreaming] / [onSend]. The remaining default buttons expose their actions
-/// as the [onToolsMenu] / [onClearTopic] / [onToggleWebSearch] / [onAddContent]
-/// / [onToggleVoice] callbacks (null ⇒ renders but does nothing); any other
-/// configured button renders full-fidelity with no handler yet.
+/// [isStreaming] / [onSend]. Every other button is routed through the single
+/// [actions] port (`invoke` / `isActive` / `isEnabled`); the default
+/// [NoInputBoxActions] leaves them full-fidelity but inert, so a behavior slice
+/// can supply a host implementation without touching this view.
 class InputBoxComposer extends StatelessWidget {
   const InputBoxComposer({
     super.key,
@@ -49,13 +50,7 @@ class InputBoxComposer extends StatelessWidget {
     this.canSend = false,
     this.isStreaming = false,
     this.onSend,
-    this.onToolsMenu,
-    this.onClearTopic,
-    this.onToggleWebSearch,
-    this.onAddContent,
-    this.onToggleVoice,
-    this.webSearchActive = false,
-    this.voiceActive = false,
+    this.actions = const NoInputBoxActions(),
     this.sendWithEnter = false,
     this.enterAsNewline = false,
   });
@@ -82,13 +77,11 @@ class InputBoxComposer extends StatelessWidget {
   final bool canSend;
   final bool isStreaming;
   final VoidCallback? onSend;
-  final VoidCallback? onToolsMenu;
-  final VoidCallback? onClearTopic;
-  final VoidCallback? onToggleWebSearch;
-  final VoidCallback? onAddContent;
-  final VoidCallback? onToggleVoice;
-  final bool webSearchActive;
-  final bool voiceActive;
+
+  /// The behavior port for every non-send toolbar button. Defaults to the inert
+  /// [NoInputBoxActions] (the appearance preview and the not-yet-wired chat
+  /// composer).
+  final InputBoxActions actions;
 
   /// On a mobile soft keyboard, surface a 发送 action key when Enter should send
   /// (`sendWithEnter` on and not forced to newline); otherwise the return key
@@ -155,13 +148,7 @@ class InputBoxComposer extends StatelessWidget {
                 canSend: canSend,
                 isStreaming: isStreaming,
                 onSend: onSend,
-                onToolsMenu: onToolsMenu,
-                onClearTopic: onClearTopic,
-                onToggleWebSearch: onToggleWebSearch,
-                onAddContent: onAddContent,
-                onToggleVoice: onToggleVoice,
-                webSearchActive: webSearchActive,
-                voiceActive: voiceActive,
+                actions: actions,
               ),
             ],
           ),
@@ -208,13 +195,7 @@ class _Toolbar extends StatelessWidget {
     required this.canSend,
     required this.isStreaming,
     required this.onSend,
-    required this.onToolsMenu,
-    required this.onClearTopic,
-    required this.onToggleWebSearch,
-    required this.onAddContent,
-    required this.onToggleVoice,
-    required this.webSearchActive,
-    required this.voiceActive,
+    required this.actions,
   });
 
   final InputBoxSettings settings;
@@ -222,24 +203,12 @@ class _Toolbar extends StatelessWidget {
   final bool canSend;
   final bool isStreaming;
   final VoidCallback? onSend;
-  final VoidCallback? onToolsMenu;
-  final VoidCallback? onClearTopic;
-  final VoidCallback? onToggleWebSearch;
-  final VoidCallback? onAddContent;
-  final VoidCallback? onToggleVoice;
-  final bool webSearchActive;
-  final bool voiceActive;
+  final InputBoxActions actions;
 
-  /// The callback wired for [id] today; `null` ⇒ the button renders but does
-  /// nothing (its behavior is a later slice).
-  VoidCallback? _handlerFor(InputBoxButtonId id) => switch (id) {
-    InputBoxButtonId.tools => onToolsMenu,
-    InputBoxButtonId.clear => onClearTopic,
-    InputBoxButtonId.search => onToggleWebSearch,
-    InputBoxButtonId.upload => onAddContent,
-    InputBoxButtonId.voice => onToggleVoice,
-    _ => null,
-  };
+  /// The tap handler for [id]: dispatches through [actions] when that button is
+  /// wired, else `null` so it renders full-fidelity but stays inert.
+  VoidCallback? _onPressed(InputBoxButtonId id, BuildContext context) =>
+      actions.isEnabled(id) ? () => actions.invoke(id, context) : null;
 
   @override
   Widget build(BuildContext context) {
@@ -255,13 +224,15 @@ class _Toolbar extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (final id in settings.leftButtons) _button(id, iconColor),
+              for (final id in settings.leftButtons)
+                _button(id, iconColor, context),
             ],
           ),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (final id in settings.rightButtons) _button(id, iconColor),
+              for (final id in settings.rightButtons)
+                _button(id, iconColor, context),
             ],
           ),
         ],
@@ -269,7 +240,7 @@ class _Toolbar extends StatelessWidget {
     );
   }
 
-  Widget _button(InputBoxButtonId id, Color iconColor) {
+  Widget _button(InputBoxButtonId id, Color iconColor, BuildContext context) {
     switch (id) {
       case InputBoxButtonId.send:
         final sendColor = canSend
@@ -287,24 +258,23 @@ class _Toolbar extends StatelessWidget {
           onPressed: isStreaming ? null : onSend,
         );
       case InputBoxButtonId.voice:
+        final active = actions.isActive(id);
         return _ToolbarButton(
-          icon: inputBoxToolbarIcon(
-            id,
-            color: voiceActive ? _activeRed : iconColor,
-          ),
+          icon: inputBoxToolbarIcon(id, color: active ? _activeRed : iconColor),
           tooltip: inputBoxToolbarTooltip(id),
-          active: voiceActive,
-          onPressed: _handlerFor(id),
+          active: active,
+          onPressed: _onPressed(id, context),
         );
       case InputBoxButtonId.search:
+        final active = actions.isActive(id);
         return _ToolbarButton(
           icon: inputBoxToolbarIcon(
             id,
-            color: webSearchActive ? _webSearchActiveBlue : iconColor,
+            color: active ? _webSearchActiveBlue : iconColor,
           ),
           tooltip: inputBoxToolbarTooltip(id),
-          active: webSearchActive,
-          onPressed: _handlerFor(id),
+          active: active,
+          onPressed: _onPressed(id, context),
         );
       default:
         return _ToolbarButton(
@@ -313,7 +283,7 @@ class _Toolbar extends StatelessWidget {
             color: inputBoxToolbarRestColor(id, iconColor),
           ),
           tooltip: inputBoxToolbarTooltip(id),
-          onPressed: _handlerFor(id),
+          onPressed: _onPressed(id, context),
         );
     }
   }
