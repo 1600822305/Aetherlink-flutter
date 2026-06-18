@@ -17,13 +17,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/assistant_presets.dart';
+import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
+import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 
@@ -1221,16 +1224,61 @@ class _SettingsTab extends ConsumerWidget {
           ],
         ),
         const _SettingsDivider(),
-        // MCP 工具 — 子系统未移植，仅占位。
-        const _SettingsGroup(
-          title: 'MCP 工具',
-          subtitle: '模型上下文协议工具',
-          comingSoon: true,
-          children: [
-            _ComingSoonNote(
-              text: 'MCP 工具子系统即将支持：启用开关、函数调用 / 提示词注入模式与服务器管理将在后续接入。',
-            ),
-          ],
+        // MCP 工具 — 总开关 / 调用模式持久化（接对话后生效），服务器管理进设置页。
+        const _McpToolsGroup(),
+      ],
+    );
+  }
+}
+
+/// The 设置 tab's MCP 工具 group (port of `MCPSidebarControls`): the 启用 MCP 工具
+/// 总开关 and 工具调用模式 (函数调用 / 提示词注入) — both persisted now — plus a
+/// 管理服务器 row into the MCP 服务器 settings page. The toggles' effect on the
+/// conversation (actually exposing tools to the model) needs the request layer
+/// (Phase C), so the group is flagged 即将支持 and notes that the settings save
+/// now and take effect once the chat integration lands.
+class _McpToolsGroup extends ConsumerWidget {
+  const _McpToolsGroup();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tools = ref.watch(mcpToolsControllerProvider);
+    final controller = ref.read(mcpToolsControllerProvider.notifier);
+    final servers =
+        ref.watch(mcpServersProvider).asData?.value ?? const <McpServer>[];
+    final activeCount = servers.where((s) => s.isActive).length;
+    final modeLabel = tools.mode.label;
+
+    return _SettingsGroup(
+      title: 'MCP 工具',
+      subtitle: activeCount > 0
+          ? '$activeCount 个服务器运行中 | 模式: $modeLabel'
+          : '模式: $modeLabel',
+      comingSoon: true,
+      children: [
+        const _ComingSoonNote(text: '开关与模式会先保存，接入对话（工具调用）后生效。'),
+        _SwitchSettingRow(
+          title: '启用 MCP 工具',
+          description: '在对话中向模型提供已激活服务器的工具',
+          value: tools.enabled,
+          onChanged: (v) => controller.setEnabled(enabled: v),
+        ),
+        _SelectSettingRow<McpMode>(
+          title: '工具调用模式',
+          description: '函数调用：模型自动调用工具（推荐）；提示词注入：通过提示词指导 AI 使用工具',
+          value: tools.mode,
+          options: [for (final m in McpMode.values) (m, m.label)],
+          onChanged: controller.setMode,
+        ),
+        _SettingItemShell(
+          title: '管理服务器',
+          description: '添加、导入与配置 MCP 服务器',
+          onTap: () => context.push(AppRouter.mcpServerPath),
+          trailing: const Icon(
+            LucideIcons.chevronRight,
+            size: 16,
+            color: _mutedIconColor,
+          ),
         ),
       ],
     );
