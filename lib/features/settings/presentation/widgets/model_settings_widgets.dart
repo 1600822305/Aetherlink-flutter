@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 
 /// Shared chrome for the model-provider third-level pages (M4.3.1).
 ///
@@ -271,11 +272,22 @@ class ModelTonalButton extends StatelessWidget {
 /// When [onChanged] is null the switch is non-interactive but still renders its
 /// [value] state at full fidelity (the original only changes the cursor when
 /// `disabled`, not the appearance).
+///
+/// Toggling fires [Haptics.onSwitch] (gated by the 触觉反馈 master + 开关
+/// sub-toggle), matching the original `CustomSwitch`. Pass [disableHaptics] to
+/// opt out (e.g. on the 行为 page's own 触觉反馈 toggles, to avoid a buzz that
+/// would feel like a misfire while configuring it).
 class CustomSwitch extends StatelessWidget {
-  const CustomSwitch({super.key, required this.value, this.onChanged});
+  const CustomSwitch({
+    super.key,
+    required this.value,
+    this.onChanged,
+    this.disableHaptics = false,
+  });
 
   final bool value;
   final ValueChanged<bool>? onChanged;
+  final bool disableHaptics;
 
   static const double _trackWidth = 32;
   static const double _trackHeight = 16;
@@ -330,7 +342,10 @@ class CustomSwitch extends StatelessWidget {
     if (onChanged == null) return pill;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => onChanged!(!value),
+      onTap: () {
+        if (!disableHaptics) Haptics.instance.onSwitch();
+        onChanged!(!value);
+      },
       child: pill,
     );
   }

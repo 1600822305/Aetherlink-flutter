@@ -1,6 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aetherlink_flutter/app/di/behavior_settings_access.dart';
 import 'package:aetherlink_flutter/app/di/input_box_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
@@ -65,12 +68,45 @@ class ChatInputBar extends ConsumerStatefulWidget {
 
 class _ChatInputBarState extends ConsumerState<ChatInputBar> {
   final TextEditingController _controller = TextEditingController();
+  late final FocusNode _focusNode = FocusNode(onKeyEvent: _handleKeyEvent);
   bool _hasText = false;
+
+  /// Cached in [build] so the synchronous [_handleKeyEvent] can decide whether a
+  /// hardware Enter should fire a send without re-deriving model/stream state.
+  bool _canSend = false;
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(_onTextChanged);
+  }
+
+  /// Hardware-keyboard Enter handling (port of `useChatInputLogic.handleKeyDown`):
+  /// Shift+Enter always inserts a newline; a plain Enter sends when
+  /// `sendWithEnter` is on (and, on mobile, 回车换行 isn't forced). When sending
+  /// is enabled we always consume the key so no stray newline is inserted, even
+  /// if the field can't send yet (empty / no model / streaming) — matching the
+  /// original's unconditional `preventDefault`. The mobile soft keyboard is
+  /// handled separately via [InputBoxComposer]'s text input action.
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final isEnter =
+        event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter;
+    if (!isEnter) return KeyEventResult.ignored;
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      return KeyEventResult.ignored;
+    }
+    final behavior = ref.read(appBehaviorSettingsProvider);
+    final isMobile =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+    if (isMobile && behavior.mobileInputMethodEnterAsNewline) {
+      return KeyEventResult.ignored;
+    }
+    if (!behavior.sendWithEnter) return KeyEventResult.ignored;
+    if (_canSend) _send();
+    return KeyEventResult.handled;
   }
 
   void _onTextChanged() {
@@ -84,6 +120,7 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
   void dispose() {
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -104,6 +141,7 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(appInputBoxSettingsProvider);
+    final behavior = ref.watch(appBehaviorSettingsProvider);
 
     final CurrentModel? current = ref.watch(appCurrentModelProvider).value;
     final hasApiKey =
@@ -113,10 +151,14 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
     final isStreaming =
         ref.watch(chatControllerProvider).value?.isStreaming ?? false;
     final canSend = modelReady && _hasText && !isStreaming;
+    _canSend = canSend;
 
     return InputBoxComposer(
       settings: settings,
       controller: _controller,
+      focusNode: _focusNode,
+      sendWithEnter: behavior.sendWithEnter,
+      enterAsNewline: behavior.mobileInputMethodEnterAsNewline,
       canSend: canSend,
       isStreaming: isStreaming,
       // No model ⇒ a tap surfaces the hint; otherwise the field/streaming state
