@@ -74,8 +74,8 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
   @override
   void initState() {
     super.initState();
-    // Restore the last active tab (persisted via [SidebarTabIndex]); the web
-    // does the same with `settings.sidebarTabIndex`.
+    // Open on the session's last tab (in-memory [SidebarTabIndex]); it is not
+    // persisted, so a fresh app launch starts on the default 助手 tab.
     _tabController = TabController(
       length: 3,
       vsync: this,
@@ -86,7 +86,8 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
 
   void _onTabChanged() {
     if (_tabController.indexIsChanging) return;
-    // Persist the active tab so it survives reopening the drawer / a restart.
+    // Remember the active tab for this session so reopening the drawer keeps it
+    // (in-memory only — a restart resets to the default tab).
     final index = _tabController.index;
     if (ref.read(sidebarTabIndexProvider) != index) {
       ref.read(sidebarTabIndexProvider.notifier).set(index);
@@ -104,13 +105,6 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // The persisted index can hydrate from storage after [initState] built the
-    // controller (cold start), so keep the controller in sync with it.
-    ref.listen<int>(sidebarTabIndexProvider, (previous, next) {
-      if (_tabController.index != next) {
-        _tabController.index = next;
-      }
-    });
     final showTranslate = _tabController.index != 2;
     // 设置 tab 的「侧边栏宽度」对话框驱动这里；按当前屏宽 clamp 到安全范围
     // (`getSafeMaxSidebarWidth`)，对话框拖动时实时预览。
