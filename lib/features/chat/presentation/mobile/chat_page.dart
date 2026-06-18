@@ -415,13 +415,12 @@ class _ErrorNotice extends StatelessWidget {
 ///
 /// 自动下滑 (设置 tab 常规设置 → [SidebarSettings.autoScrollToBottom]) lives in
 /// [ChatAutoScrollController] (the port of the web `ChatScrollController`); this
-/// widget only owns the [ScrollController], feeds the controller user/content
-/// events and decides which message change is an explicit pin:
+/// widget only owns the [ChatAutoFollowScrollController] and tells the state
+/// machine which message change is an explicit pin:
 /// * initial entry / switching topics (first-message id changes) / the user
-///   sending (message count grows) → [ChatAutoScrollController.pinToBottom];
-/// * in-place growth such as streaming → [ChatAutoScrollController.onContentResized],
-///   also fired from [ScrollMetricsNotification] for growth that lands without
-///   rebuilding this widget (async-loaded blocks).
+///   sending (message count grows) → [ChatAutoScrollController.pinToBottom].
+/// In-place growth such as streaming needs nothing here — the custom
+/// [ChatAutoFollowScrollController] follows it during layout when sticking.
 class _MessageListView extends ConsumerStatefulWidget {
   const _MessageListView(this.messages, {this.bottomReserve = 0});
 
@@ -436,7 +435,8 @@ class _MessageListView extends ConsumerStatefulWidget {
 }
 
 class _MessageListViewState extends ConsumerState<_MessageListView> {
-  final ScrollController _scrollController = ScrollController();
+  final ChatAutoFollowScrollController _scrollController =
+      ChatAutoFollowScrollController();
   late final ChatAutoScrollController _autoScroll;
 
   /// Identifies the loaded conversation so a topic switch (first-message change)
@@ -471,8 +471,6 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
 
     if (topicSwitched || appended) {
       _autoScroll.pinToBottom();
-    } else {
-      _autoScroll.onContentResized();
     }
   }
 
@@ -490,33 +488,22 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     final showDivider = ref.watch(
       sidebarSettingsControllerProvider.select((s) => s.showMessageDivider),
     );
-    return NotificationListener<ScrollMetricsNotification>(
-      onNotification: (_) {
-        _autoScroll.onContentResized();
-        return false;
+    return ListView.builder(
+      controller: _scrollController,
+      padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + widget.bottomReserve),
+      itemCount: messages.length,
+      itemBuilder: (context, index) {
+        final bubble = ChatMessageBubble(view: messages[index]);
+        if (!showDivider || index == messages.length - 1) return bubble;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            bubble,
+            const Divider(height: 17, thickness: 1, indent: 12, endIndent: 12),
+          ],
+        );
       },
-      child: ListView.builder(
-        controller: _scrollController,
-        padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + widget.bottomReserve),
-        itemCount: messages.length,
-        itemBuilder: (context, index) {
-          final bubble = ChatMessageBubble(view: messages[index]);
-          if (!showDivider || index == messages.length - 1) return bubble;
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              bubble,
-              const Divider(
-                height: 17,
-                thickness: 1,
-                indent: 12,
-                endIndent: 12,
-              ),
-            ],
-          );
-        },
-      ),
     );
   }
 }
