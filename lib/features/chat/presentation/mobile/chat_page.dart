@@ -63,6 +63,28 @@ class _ChatPageState extends ConsumerState<ChatPage>
   void _toggleDrawer() =>
       _drawerCtrl.isCompleted ? _drawerCtrl.reverse() : _drawerCtrl.forward();
 
+  double _dragStart = 0;
+
+  void _onDragStart(DragStartDetails d) {
+    _dragStart = _drawerCtrl.value * drawerWidth;
+  }
+
+  void _onDragUpdate(DragUpdateDetails d) {
+    final pos = (_dragStart + d.globalPosition.dx).clamp(0.0, drawerWidth);
+    _drawerCtrl.value = pos / drawerWidth;
+  }
+
+  void _onDragEnd(DragEndDetails d) {
+    final velocity = d.primaryVelocity ?? 0;
+    if (velocity > 200 || _drawerCtrl.value > 0.5) {
+      _drawerCtrl.forward();
+    } else {
+      _drawerCtrl.reverse();
+    }
+  }
+
+  late double drawerWidth;
+
   @override
   Widget build(BuildContext context) {
     final stateAsync = ref.watch(chatControllerProvider);
@@ -75,40 +97,65 @@ class _ChatPageState extends ConsumerState<ChatPage>
     final rawWidth = ref.watch(
       sidebarSettingsControllerProvider.select((s) => s.sidebarWidth),
     );
-    final drawerWidth = rawWidth.clamp(
+    drawerWidth = rawWidth.clamp(
       kSidebarWidthMin,
       safeMaxSidebarWidth(MediaQuery.sizeOf(context).width),
     );
 
-    return Stack(
-      children: [
-        // Bottom layer: sidebar (fixed, revealed when content is pushed right).
-        Positioned(
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: drawerWidth,
-          child: ChatSidebar(onClose: _toggleDrawer),
-        ),
-        // Top layer: main content, translated right to reveal the sidebar.
-        AnimatedBuilder(
-          animation: _drawerCtrl,
-          builder: (_, child) => Transform.translate(
-            offset: Offset(_drawerCtrl.value * drawerWidth, 0),
-            child: child,
+    return GestureDetector(
+      onHorizontalDragStart: _onDragStart,
+      onHorizontalDragUpdate: _onDragUpdate,
+      onHorizontalDragEnd: _onDragEnd,
+      behavior: HitTestBehavior.translucent,
+      child: Stack(
+        children: [
+          // Bottom layer: sidebar (fixed, revealed when content is pushed right).
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: drawerWidth,
+            child: ChatSidebar(onClose: _toggleDrawer),
           ),
-          child: Scaffold(
-            appBar: ChatTopBar(onMenuPressed: _toggleDrawer),
-            body: _ChatBackground(
-              background: background,
-              child: _ChatBody(
-                showSystemPromptBubble: showSystemPromptBubble,
-                stateAsync: stateAsync,
-              ),
+          // Top layer: main content + scrim, translated right to reveal sidebar.
+          AnimatedBuilder(
+            animation: _drawerCtrl,
+            builder: (_, child) {
+              final t = _drawerCtrl.value;
+              return Transform.translate(
+                offset: Offset(t * drawerWidth, 0),
+                child: child,
+              );
+            },
+            child: Stack(
+              children: [
+                Scaffold(
+                  appBar: ChatTopBar(onMenuPressed: _toggleDrawer),
+                  body: _ChatBackground(
+                    background: background,
+                    child: _ChatBody(
+                      showSystemPromptBubble: showSystemPromptBubble,
+                      stateAsync: stateAsync,
+                    ),
+                  ),
+                ),
+                // Scrim: darkens the content as the drawer opens.
+                AnimatedBuilder(
+                  animation: _drawerCtrl,
+                  builder: (_, __) => IgnorePointer(
+                    child: ColoredBox(
+                      color: Colors.black.withValues(
+                        alpha: _drawerCtrl.value * 0.3,
+                      ),
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
