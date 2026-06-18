@@ -40,38 +40,75 @@ const double _kBottomFadeBand = 96;
 /// Nothing is wired this round: sending, streaming, message-block rendering, the
 /// model selector, the sidebar's real lists, search and the rest are disabled
 /// placeholders (later slices), so the tree keeps its final shape.
-class ChatPage extends ConsumerWidget {
+class ChatPage extends ConsumerStatefulWidget {
   const ChatPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ChatPage> createState() => _ChatPageState();
+}
+
+class _ChatPageState extends ConsumerState<ChatPage>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _drawerCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 200),
+  );
+
+  @override
+  void dispose() {
+    _drawerCtrl.dispose();
+    super.dispose();
+  }
+
+  void _toggleDrawer() =>
+      _drawerCtrl.isCompleted ? _drawerCtrl.reverse() : _drawerCtrl.forward();
+
+  @override
+  Widget build(BuildContext context) {
     final stateAsync = ref.watch(chatControllerProvider);
-    // 系统提示词气泡显隐响应 聊天界面设置 的开关（PR #71 的「系统提示词气泡」）。
     final showSystemPromptBubble = ref.watch(
       chatInterfaceSettingsProvider.select((s) => s.showSystemPromptBubble),
     );
-    // 聊天背景（图片/透明度/渐变遮罩/尺寸·位置·重复）接 聊天界面设置（PR #71）。
     final background = ref.watch(
       chatInterfaceSettingsProvider.select((s) => s.background),
     );
+    final rawWidth = ref.watch(
+      sidebarSettingsControllerProvider.select((s) => s.sidebarWidth),
+    );
+    final drawerWidth = rawWidth.clamp(
+      kSidebarWidthMin,
+      safeMaxSidebarWidth(MediaQuery.sizeOf(context).width),
+    );
 
-    return Scaffold(
-      appBar: const ChatTopBar(),
-      drawer: const ChatSidebar(),
-      // Background layer. The original (`ChatPageUI.tsx`) anchors the
-      // chat-background image to the full viewport (`position: fixed; inset: 0`)
-      // and floats a transparent input container above the scrollable message
-      // area (`position: fixed; bottom`), so the wallpaper bleeds edge-to-edge
-      // behind both the messages and the composer. [_ChatBackground] fills the
-      // whole body and [_ChatBody] floats the input over the list, applying the
-      // bottom safe-area to the composer alone (never clipping the background).
-      body: _ChatBackground(
-        background: background,
-        child: _ChatBody(
-          showSystemPromptBubble: showSystemPromptBubble,
-          stateAsync: stateAsync,
+    return Stack(
+      children: [
+        // Bottom layer: sidebar (fixed, revealed when content is pushed right).
+        Positioned(
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: drawerWidth,
+          child: ChatSidebar(onClose: _toggleDrawer),
         ),
-      ),
+        // Top layer: main content, translated right to reveal the sidebar.
+        AnimatedBuilder(
+          animation: _drawerCtrl,
+          builder: (_, child) => Transform.translate(
+            offset: Offset(_drawerCtrl.value * drawerWidth, 0),
+            child: child,
+          ),
+          child: Scaffold(
+            appBar: ChatTopBar(onMenuPressed: _toggleDrawer),
+            body: _ChatBackground(
+              background: background,
+              child: _ChatBody(
+                showSystemPromptBubble: showSystemPromptBubble,
+                stateAsync: stateAsync,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
