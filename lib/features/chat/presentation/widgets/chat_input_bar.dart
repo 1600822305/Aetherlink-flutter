@@ -7,6 +7,8 @@ import 'package:aetherlink_flutter/app/di/behavior_settings_access.dart';
 import 'package:aetherlink_flutter/app/di/input_box_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_actions.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_composer.dart';
 
@@ -23,10 +25,10 @@ const String _noModelHint = '请先配置模型';
 /// [ChatController.send]. With no model configured it stays disabled and a tap
 /// surfaces the "configure a model first" hint.
 ///
-/// The remaining feature buttons are full-fidelity visuals whose behaviors are
-/// routed through the composer's [InputBoxActions] port; until a behavior slice
-/// supplies a chat implementation they fall back to the inert
-/// [NoInputBoxActions], so they render but do nothing — exactly as before.
+/// The remaining feature buttons route through a [ChatInputActions]: the 扩展 /
+/// 添加内容 buttons open their aggregator menus and 网络搜索 / 图像生成 / 视频生成 toggle
+/// their mutually-exclusive session mode; everything else still surfaces
+/// 即将支持 until its behavior slice lands.
 class ChatInputBar extends ConsumerStatefulWidget {
   const ChatInputBar({super.key});
 
@@ -110,6 +112,9 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
   Widget build(BuildContext context) {
     final settings = ref.watch(appInputBoxSettingsProvider);
     final behavior = ref.watch(appBehaviorSettingsProvider);
+    // Watched so toggling a session mode rebuilds the toolbar (re-tinting any
+    // standalone 网络搜索/图像/视频 button); [ChatInputActions] reads the value lazily.
+    ref.watch(inputModeControllerProvider);
 
     final CurrentModel? current = ref.watch(appCurrentModelProvider).value;
     final hasApiKey =
@@ -129,6 +134,7 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
       enterAsNewline: behavior.mobileInputMethodEnterAsNewline,
       canSend: canSend,
       isStreaming: isStreaming,
+      actions: ChatInputActions(ref),
       // No model ⇒ a tap surfaces the hint; otherwise the field/streaming state
       // decides whether the send action fires.
       onSend: canSend ? _send : (modelReady ? null : _showNoModelHint),
