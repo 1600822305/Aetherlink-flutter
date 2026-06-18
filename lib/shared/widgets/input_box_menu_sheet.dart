@@ -30,10 +30,16 @@ class InputBoxMenuSheet extends StatefulWidget {
     super.key,
     required this.menu,
     required this.actions,
+    this.hidden = const <InputBoxAction>{},
   });
 
   final InputBoxMenu menu;
   final InputBoxActions actions;
+
+  /// Menu rows omitted by a host-level display toggle — currently just the
+  /// quick-phrase row when 在输入框显示快捷短语按钮 is off (`UploadMenu`'s
+  /// `showQuickPhrase`).
+  final Set<InputBoxAction> hidden;
 
   @override
   State<InputBoxMenuSheet> createState() => _InputBoxMenuSheetState();
@@ -67,7 +73,9 @@ class _InputBoxMenuSheetState extends State<InputBoxMenuSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final items = inputBoxMenuActions(widget.menu);
+    final items = inputBoxMenuActions(
+      widget.menu,
+    ).where((a) => !widget.hidden.contains(a)).toList();
 
     return SafeArea(
       top: false,

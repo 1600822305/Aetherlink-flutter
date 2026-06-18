@@ -144,6 +144,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.keyboard,
         title: '快捷短语',
         description: '创建常用短语模板',
+        route: AppRouter.quickPhrasesPath,
       ),
     ],
   ),
