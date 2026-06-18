@@ -52,7 +52,12 @@ const Color _amber = Color(0xFFF59E0B);
 const Color _indigo = Color(0xFF1976D2);
 const Color _sky = Color(0xFF2196F3);
 const Color _orange = Color(0xFFFF9800);
-const Color _red = Color(0xFFF44336);
+const Color _red = kInputBoxClearConfirmColor;
+
+/// The 清空内容 confirm-armed accent (`#f44336`, MUI `error.main`): the red of the
+/// `AlertTriangle` glyph / 确认清空 label / active tint shown after the first tap,
+/// shared by the standalone toolbar button and the 扩展 menu row.
+const Color kInputBoxClearConfirmColor = Color(0xFFF44336);
 
 InputBoxButtonInfo inputBoxButtonInfo(InputBoxButtonId id) => switch (id) {
   InputBoxButtonId.tools => const InputBoxButtonInfo(
@@ -187,10 +192,13 @@ Widget inputBoxListIcon(
 /// The live-toolbar glyph (`buttonConfigs` icons, `ButtonToolbar.tsx`), tinted
 /// [color]. `send` / `voice` are rendered by the composer itself because their
 /// glyph and color swap with run-time state.
+/// When [active] the 清空内容 button shows its confirm-armed `AlertTriangle`
+/// instead of `Trash2` (`ButtonToolbar`'s `clearConfirmMode`).
 Widget inputBoxToolbarIcon(
   InputBoxButtonId id, {
   required Color color,
   double size = 20,
+  bool active = false,
 }) => switch (id) {
   InputBoxButtonId.tools => _svg(kSettingsPanelIcon, color, size),
   InputBoxButtonId.mcpTools => Icon(
@@ -198,7 +206,11 @@ Widget inputBoxToolbarIcon(
     size: size,
     color: color,
   ),
-  InputBoxButtonId.clear => Icon(LucideIcons.trash2, size: size, color: color),
+  InputBoxButtonId.clear => Icon(
+    active ? LucideIcons.alertTriangle : LucideIcons.trash2,
+    size: size,
+    color: color,
+  ),
   InputBoxButtonId.image => Icon(LucideIcons.image, size: size, color: color),
   InputBoxButtonId.video => Icon(LucideIcons.video, size: size, color: color),
   InputBoxButtonId.knowledge => Icon(
@@ -252,6 +264,7 @@ Color inputBoxToolbarActiveColor(InputBoxButtonId id, Color fallback) =>
       InputBoxButtonId.video => _red,
       InputBoxButtonId.voice => _red,
       InputBoxButtonId.mcpTools => _green,
+      InputBoxButtonId.clear => _red,
       _ => fallback,
     };
 
@@ -262,7 +275,7 @@ String inputBoxToolbarTooltip(InputBoxButtonId id, {bool active = false}) =>
     switch (id) {
       InputBoxButtonId.tools => '扩展',
       InputBoxButtonId.mcpTools => 'MCP工具',
-      InputBoxButtonId.clear => '清空内容',
+      InputBoxButtonId.clear => active ? '确认清空' : '清空内容',
       InputBoxButtonId.image => active ? '退出图像生成模式' : '图像生成',
       InputBoxButtonId.video => active ? '退出视频生成模式' : '视频生成',
       InputBoxButtonId.knowledge => '知识库',
@@ -379,15 +392,18 @@ InputBoxMenuItemInfo inputBoxMenuItemInfo(InputBoxAction action) =>
 /// The aggregator-menu glyph for [action], tinted [color] at [size]
 /// (`ToolsMenu` / `UploadMenu` `ListItemIcon` icons). The mode items reuse the
 /// composer's toolbar glyphs (`search` SVG, `image`/`video` lucide) for parity.
+/// When [active] the 清空内容 row shows its confirm-armed `AlertTriangle`
+/// instead of `Trash2` (`ToolsMenu`'s `clearConfirmMode`).
 Widget inputBoxMenuIcon(
   InputBoxAction action, {
   required Color color,
   double size = 20,
+  bool active = false,
 }) => switch (action) {
   InputBoxAction.mcpTools => Icon(LucideIcons.wrench, size: size, color: color),
   InputBoxAction.newTopic => Icon(LucideIcons.plus, size: size, color: color),
   InputBoxAction.clearTopic => Icon(
-    LucideIcons.trash2,
+    active ? LucideIcons.alertTriangle : LucideIcons.trash2,
     size: size,
     color: color,
   ),

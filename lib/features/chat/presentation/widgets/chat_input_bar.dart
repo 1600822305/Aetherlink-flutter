@@ -108,6 +108,23 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
       ..showSnackBar(const SnackBar(content: Text(_noModelHint)));
   }
 
+  /// Inserts a 快捷短语's content at the caret and leaves the caret just after it
+  /// (port of `handleInsertPhrase`). Falls back to appending when the field has
+  /// never held a selection.
+  void _insertPhrase(String content) {
+    final value = _controller.value;
+    final text = value.text;
+    final selection = value.selection;
+    final start = selection.isValid ? selection.start : text.length;
+    final end = selection.isValid ? selection.end : text.length;
+    final next = text.replaceRange(start, end, content);
+    _controller.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: start + content.length),
+    );
+    _focusNode.requestFocus();
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(appInputBoxSettingsProvider);
@@ -115,6 +132,9 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
     // Watched so toggling a session mode rebuilds the toolbar (re-tinting any
     // standalone 网络搜索/图像/视频 button); [ChatInputActions] reads the value lazily.
     ref.watch(inputModeControllerProvider);
+    // Watched so arming/disarming 清空内容's confirm repaints the standalone button
+    // (确认清空 / red AlertTriangle); the action reads the latch lazily.
+    ref.watch(inputClearConfirmProvider);
 
     final CurrentModel? current = ref.watch(appCurrentModelProvider).value;
     final hasApiKey =
@@ -134,7 +154,7 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
       enterAsNewline: behavior.mobileInputMethodEnterAsNewline,
       canSend: canSend,
       isStreaming: isStreaming,
-      actions: ChatInputActions(ref),
+      actions: ChatInputActions(ref, insertText: _insertPhrase),
       // No model ⇒ a tap surfaces the hint; otherwise the field/streaming state
       // decides whether the send action fires.
       onSend: canSend ? _send : (modelReady ? null : _showNoModelHint),
