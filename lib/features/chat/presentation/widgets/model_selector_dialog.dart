@@ -35,11 +35,15 @@ Future<void> showModelSelectorDialog(
     ),
     transitionBuilder: (context, animation, _, child) {
       // CSS: fadeIn (backdrop, handled by barrier) + slideUp on the dialog —
-      // translateY(20px)->0 with opacity 0->1, 0.2s ease-out.
+      // translateY(20px)->0, 0.2s ease-out. Opacity is intentionally omitted:
+      // wrapping the whole dialog (including its opaque bgPaper) in Opacity
+      // makes the background semi-transparent during the transition, causing a
+      // brief flash where the page behind shows through. The barrier already
+      // provides the fade-in effect.
       final t = CurvedAnimation(parent: animation, curve: Curves.easeOut).value;
-      return Opacity(
-        opacity: t,
-        child: Transform.translate(offset: Offset(0, (1 - t) * 20), child: child),
+      return Transform.translate(
+        offset: Offset(0, (1 - t) * 20),
+        child: child,
       );
     },
     transitionDuration: const Duration(milliseconds: 200),
