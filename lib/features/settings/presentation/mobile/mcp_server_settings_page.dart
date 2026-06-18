@@ -1,32 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/settings/application/mcp_servers_controller.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_server_detail_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/config/builtin_mcp_servers.dart';
+import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 
-/// The "MCP 服务器" settings page (提示词与工具 → this page), a UI-only port of
-/// the original `src/pages/Settings/MCPServerSettings.tsx`.
+/// The "MCP 服务器" settings page (提示词与工具 → this page), a port of the
+/// original `src/pages/Settings/MCPServerSettings.tsx`.
 ///
-/// Reproduces the original's three-tab layout (外部服务器 / 内置工具 / 智能助手),
-/// the empty-state card, the import quick-action and the built-in template list
-/// rows (avatar + type chip + description + tags + 添加 button). The whole MCP
-/// subsystem (connecting servers, persistence, tool discovery) is **not** ported
-/// — every action (添加 / 导入 / 启用) surfaces a 「即将支持」 hint instead of
-/// faking success, matching the project's UI-complete-but-unwired convention.
-///
-/// The built-in / assistant templates are the original's static
-/// `BUILTIN_MCP_SERVERS` catalog (`src/shared/config/builtinMCPServers.ts`),
-/// lifted to const data here the same way [kSettingsGroups] lifts the hub — no
-/// service layer, no fabricated runtime state.
-class McpServerSettingsPage extends StatefulWidget {
+/// Reproduces the original's three-tab layout (外部服务器 / 内置工具 / 智能助手)
+/// and wires it to the persisted [McpServers] store (Phase A): external servers
+/// can be added / imported (JSON) / toggled / opened for editing, and built-in /
+/// assistant templates can be added & toggled. Opening or running a connection
+/// (tool discovery, execution, chat integration) needs the request layer
+/// (Phase C); until then the 测试 / 工具发现 surfaces stay 「即将支持」.
+class McpServerSettingsPage extends ConsumerStatefulWidget {
   const McpServerSettingsPage({super.key});
 
   @override
-  State<McpServerSettingsPage> createState() => _McpServerSettingsPageState();
+  ConsumerState<McpServerSettingsPage> createState() =>
+      _McpServerSettingsPageState();
 }
 
-class _McpServerSettingsPageState extends State<McpServerSettingsPage>
+class _McpServerSettingsPageState extends ConsumerState<McpServerSettingsPage>
     with SingleTickerProviderStateMixin {
   static const String _title = 'MCP 服务器';
 
@@ -89,7 +90,7 @@ class _McpServerSettingsPageState extends State<McpServerSettingsPage>
               child: ModelTonalButton(
                 label: '添加',
                 icon: LucideIcons.plus,
-                onPressed: () => _comingSoon(context),
+                onPressed: () => _openAddServer(context, ref),
               ),
             ),
         ],
@@ -109,13 +110,52 @@ class _McpServerSettingsPageState extends State<McpServerSettingsPage>
   }
 }
 
-/// Shows the project's standard 「即将支持」 toast (`message_toolbar` convention).
-void _comingSoon(BuildContext context) {
+void _toast(BuildContext context, String message) {
   ScaffoldMessenger.maybeOf(context)
     ?..clearSnackBars()
     ..showSnackBar(
-      const SnackBar(content: Text('即将支持'), duration: Duration(seconds: 2)),
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
     );
+}
+
+/// Opens the 添加 MCP 服务器 form and, on confirm, validates and persists the
+/// new external server (port of `handleAddServer`).
+Future<void> _openAddServer(BuildContext context, WidgetRef ref) async {
+  final draft = await showDialog<McpServer>(
+    context: context,
+    builder: (_) => const _AddServerDialog(),
+  );
+  if (draft == null) return;
+  await ref.read(mcpServersProvider.notifier).add(draft);
+  if (context.mounted) _toast(context, '服务器添加成功');
+}
+
+/// Opens the 导入 MCP 服务器配置 dialog and, on confirm, imports the JSON,
+/// reporting the count / partial failures (port of `handleImportJson`).
+Future<void> _openImport(BuildContext context, WidgetRef ref) async {
+  final json = await showDialog<String>(
+    context: context,
+    builder: (_) => const _ImportJsonDialog(),
+  );
+  if (json == null) return;
+  try {
+    final result = await ref
+        .read(mcpServersProvider.notifier)
+        .importFromJson(json);
+    if (!context.mounted) return;
+    if (result.errors.isEmpty) {
+      _toast(context, '成功导入 ${result.imported} 个服务器');
+    } else {
+      _toast(
+        context,
+        '成功导入 ${result.imported} 个服务器，${result.errors.length} 个失败',
+      );
+    }
+  } on FormatException catch (e) {
+    if (context.mounted) _toast(context, '导入失败：${e.message}');
+  } catch (e) {
+    if (context.mounted) _toast(context, '导入失败：$e');
+  }
 }
 
 /// The full-width tab strip below the app bar (icon + label, 1px bottom
@@ -177,14 +217,23 @@ class _IconTab extends StatelessWidget {
 
 // ─────────────────────────── Tab 0: 外部服务器 ───────────────────────────
 
-/// The 外部服务器 tab. With no MCP backend there are genuinely no configured
-/// servers, so it renders the original's empty state plus the 导入配置 quick
-/// action; both buttons surface 「即将支持」.
-class _ExternalTab extends StatelessWidget {
+/// The 外部服务器 tab: the configured external servers (everything not in the
+/// built-in / assistant catalog) plus the 导入配置 quick action. Empty until the
+/// user adds or imports one.
+class _ExternalTab extends ConsumerWidget {
   const _ExternalTab();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final servers =
+        ref.watch(mcpServersProvider).asData?.value ?? const <McpServer>[];
+    // The 外部服务器 tab is every configured server whose name is not in the
+    // built-in catalog (port of `externalServers = servers.filter(s =>
+    // !isBuiltinServer(s.name))`); added built-ins live under their own tabs.
+    final external = servers
+        .where((s) => !isBuiltinMcpServerName(s.name))
+        .toList();
+
     return ListView(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -193,16 +242,35 @@ class _ExternalTab extends StatelessWidget {
         16 + MediaQuery.paddingOf(context).bottom,
       ),
       children: [
-        const _EmptyState(),
+        if (external.isEmpty)
+          const _EmptyState()
+        else
+          _Card(
+            padding: EdgeInsets.zero,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < external.length; i++) ...[
+                  _ExternalServerRow(server: external[i]),
+                  if (i < external.length - 1)
+                    Divider(
+                      height: 1,
+                      indent: 16,
+                      color: Theme.of(context).dividerColor,
+                    ),
+                ],
+              ],
+            ),
+          ),
         const SizedBox(height: 16),
         _Card(
           padding: EdgeInsets.zero,
           child: _ServerRowTile(
-            icon: LucideIcons.plus,
+            icon: LucideIcons.import,
             iconColor: const Color(0xFF06B6D4),
             title: '导入配置',
             description: '从 JSON 文件导入 MCP 服务器配置',
-            onTap: () => _comingSoon(context),
+            onTap: () => _openImport(context, ref),
           ),
         ),
       ],
@@ -212,11 +280,11 @@ class _ExternalTab extends StatelessWidget {
 
 /// The original empty-state `Paper`: a centered server glyph, title, hint and
 /// the 添加服务器 / 导入配置 button pair.
-class _EmptyState extends StatelessWidget {
+class _EmptyState extends ConsumerWidget {
   const _EmptyState();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     return _Card(
       child: Column(
@@ -242,18 +310,96 @@ class _EmptyState extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               FilledButton.icon(
-                onPressed: () => _comingSoon(context),
+                onPressed: () => _openAddServer(context, ref),
                 icon: const Icon(LucideIcons.plus, size: 18),
                 label: const Text('添加服务器'),
               ),
               const SizedBox(width: 12),
               OutlinedButton(
-                onPressed: () => _comingSoon(context),
+                onPressed: () => _openImport(context, ref),
                 child: const Text('导入配置'),
               ),
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A configured external server row: tinted avatar, name + type chip + 运行中
+/// chip, the active switch, and a tap target opening the detail / edit page.
+class _ExternalServerRow extends ConsumerWidget {
+  const _ExternalServerRow({required this.server});
+
+  final McpServer server;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    const color = Color(0xFF2196F3);
+    return InkWell(
+      onTap: () => context.push('${AppRouter.mcpServerPath}/${server.id}'),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(LucideIcons.server, size: 20, color: color),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        server.name,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      _Chip(
+                        label: mcpServerTypeLabel(server.type),
+                        color: color,
+                        filled: true,
+                      ),
+                    ],
+                  ),
+                  if ((server.description ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      server.description!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        height: 1.4,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            CustomSwitch(
+              value: server.isActive,
+              onChanged: (v) => ref
+                  .read(mcpServersProvider.notifier)
+                  .toggleActive(server.id, isActive: v),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -266,10 +412,12 @@ class _BuiltinTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _TemplateList(
+    return _TemplateList(
       title: '添加内置 MCP 服务器',
       description: '选择并启用内置工具，无需配置即可使用',
-      templates: _kBuiltinTools,
+      templates: kBuiltinMcpServers
+          .where((s) => s.category == McpServerCategory.builtin)
+          .toList(),
     );
   }
 }
@@ -281,10 +429,12 @@ class _AssistantTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _TemplateList(
+    return _TemplateList(
       title: '智能助手',
       description: 'AI 智能助手可以在对话中直接管理应用设置，敏感操作需要用户确认',
-      templates: _kAssistantTemplates,
+      templates: kBuiltinMcpServers
+          .where((s) => s.category == McpServerCategory.assistant)
+          .toList(),
     );
   }
 }
@@ -300,7 +450,7 @@ class _TemplateList extends StatelessWidget {
 
   final String title;
   final String description;
-  final List<_McpTemplate> templates;
+  final List<McpServer> templates;
 
   @override
   Widget build(BuildContext context) {
@@ -354,20 +504,28 @@ class _TemplateList extends StatelessWidget {
 }
 
 /// A built-in template row: tinted avatar, name + 内存服务器 type chip, the
-/// 2-line description, tag chips and the green 添加 button (→ 「即将支持」).
-class _TemplateRow extends StatelessWidget {
+/// 2-line description, tag chips and either the green 添加 button (not yet added)
+/// or — once added — a 运行中 chip, an active switch and a tap target to the
+/// detail page (port of `BuiltinServerListItem`).
+class _TemplateRow extends ConsumerWidget {
   const _TemplateRow({required this.template});
 
-  final _McpTemplate template;
+  final McpServer template;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final color = template.isAssistant
+    final isAssistant = template.category == McpServerCategory.assistant;
+    final color = isAssistant
         ? const Color(0xFF8B5CF6)
         : const Color(0xFF4CAF50);
 
-    return Padding(
+    final servers =
+        ref.watch(mcpServersProvider).asData?.value ?? const <McpServer>[];
+    final added = _firstWhereOrNull(servers, (s) => s.name == template.name);
+    final tags = template.tags ?? const <String>[];
+
+    final row = Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -380,7 +538,7 @@ class _TemplateRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
             ),
             child: Icon(
-              template.isAssistant ? LucideIcons.bot : LucideIcons.cpu,
+              isAssistant ? LucideIcons.bot : LucideIcons.cpu,
               size: 20,
               color: color,
             ),
@@ -402,11 +560,13 @@ class _TemplateRow extends StatelessWidget {
                       ),
                     ),
                     _Chip(label: '内存服务器', color: color, filled: true),
+                    if (added?.isActive ?? false)
+                      const _Chip(label: '运行中', color: Color(0xFF22C55E)),
                   ],
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  template.description,
+                  template.description ?? '',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall?.copyWith(
@@ -414,13 +574,13 @@ class _TemplateRow extends StatelessWidget {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
-                if (template.tags.isNotEmpty) ...[
+                if (tags.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 6,
                     runSpacing: 6,
                     children: [
-                      for (final tag in template.tags)
+                      for (final tag in tags)
                         _Chip(
                           label: tag,
                           color: theme.colorScheme.onSurfaceVariant,
@@ -432,14 +592,44 @@ class _TemplateRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: _AddButton(onPressed: () => _comingSoon(context)),
-          ),
+          if (added == null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: _AddButton(
+                onPressed: () async {
+                  await ref
+                      .read(mcpServersProvider.notifier)
+                      .addBuiltin(template);
+                  if (context.mounted) {
+                    _toast(context, '内置服务器 ${template.name} 添加成功');
+                  }
+                },
+              ),
+            )
+          else
+            CustomSwitch(
+              value: added.isActive,
+              onChanged: (v) => ref
+                  .read(mcpServersProvider.notifier)
+                  .toggleActive(added.id, isActive: v),
+            ),
         ],
       ),
     );
+
+    if (added == null) return row;
+    return InkWell(
+      onTap: () => context.push('${AppRouter.mcpServerPath}/${added.id}'),
+      child: row,
+    );
   }
+}
+
+T? _firstWhereOrNull<T>(List<T> list, bool Function(T) test) {
+  for (final item in list) {
+    if (test(item)) return item;
+  }
+  return null;
 }
 
 /// The green contained 添加 button from `BuiltinServerListItem`.
@@ -591,86 +781,269 @@ class _Card extends StatelessWidget {
   }
 }
 
-/// A built-in MCP template (UI-only mirror of `BUILTIN_MCP_SERVERS`).
-@immutable
-class _McpTemplate {
-  const _McpTemplate({
-    required this.name,
-    required this.description,
-    required this.tags,
-    this.isAssistant = false,
-  });
+/// The 添加 MCP 服务器 form (port of `AddServerDialog`): name + type with
+/// type-specific URL / 命令 / 参数 fields + description. 添加 stays disabled until
+/// the required fields for the chosen type are filled.
+class _AddServerDialog extends StatefulWidget {
+  const _AddServerDialog();
 
-  final String name;
-  final String description;
-  final List<String> tags;
-  final bool isAssistant;
+  @override
+  State<_AddServerDialog> createState() => _AddServerDialogState();
 }
 
-/// The original 内置工具 (`category: 'builtin'`) templates, verbatim from
-/// `src/shared/config/builtinMCPServers.ts`.
-const List<_McpTemplate> _kBuiltinTools = [
-  _McpTemplate(
-    name: '@aether/time',
-    description: '获取当前时间和日期，支持多种格式（本地化、ISO 8601、时间戳）和时区设置',
-    tags: ['时间', '日期', '工具'],
-  ),
-  _McpTemplate(
-    name: '@aether/fetch',
-    description: '获取网页内容，支持 HTML、JSON 和纯文本格式，可自定义请求头',
-    tags: ['网页', '抓取', 'HTTP', 'API'],
-  ),
-  _McpTemplate(
-    name: '@aether/calculator',
-    description: '高级计算器，支持基本运算、科学计算、进制转换、单位转换和统计计算',
-    tags: ['计算', '数学', '转换', '统计', '工具'],
-  ),
-  _McpTemplate(
-    name: '@aether/calendar',
-    description: '日历管理工具，支持创建、查询、修改和删除日历事件，查看日历列表',
-    tags: ['日历', '事件', '提醒', '时间管理', '工具'],
-  ),
-  _McpTemplate(
-    name: '@aether/alarm',
-    description: '闹钟和提醒工具，支持设置单次或重复闹钟，管理所有提醒',
-    tags: ['闹钟', '提醒', '通知', '时间管理', '工具'],
-  ),
-  _McpTemplate(
-    name: '@aether/metaso-search',
-    description: '秘塔AI官方API，提供网页搜索、内容阅读器和AI智能对话。支持5种知识范围、3种模型、引用来源和关键要点提取',
-    tags: ['搜索', 'AI', '对话', '阅读器', '工具'],
-  ),
-  _McpTemplate(
-    name: '@aether/file-editor',
-    description: 'AI 文件编辑工具，支持读取、写入、插入、替换、应用 diff 等操作。可用于工作区和笔记文件的编辑。',
-    tags: ['文件', '编辑', 'AI', '工作区', '笔记', '工具'],
-  ),
-  _McpTemplate(
-    name: '@aether/dex-editor',
-    description:
-        'DEX 文件编辑工具，让 AI 可以浏览、搜索、查看和修改 APK 中的 Smali 代码。支持列出类、获取方法、搜索代码、编辑保存和签名。',
-    tags: ['DEX', 'Smali', 'APK', '逆向', '编辑', 'Android', '工具'],
-  ),
-  _McpTemplate(
-    name: '@aether/grok-search',
-    description:
-        'Grok AI 搜索工具，支持任何 OpenAI 兼容 API 进行联网搜索。支持多维度搜索（自动拆分复杂查询并行搜索）、智能重试、思考内容过滤',
-    tags: ['搜索', 'AI', '联网', '工具'],
-  ),
-  _McpTemplate(
-    name: '@aether/searxng',
-    description:
-        '基于自部署 SearXNG 的元搜索引擎，聚合 Google、Bing、DuckDuckGo 等 70+ 搜索引擎。支持互联网搜索和网页内容抓取',
-    tags: ['搜索', '网页', '抓取', '工具'],
-  ),
-];
+class _AddServerDialogState extends State<_AddServerDialog> {
+  final _name = TextEditingController();
+  final _baseUrl = TextEditingController();
+  final _command = TextEditingController();
+  final _args = TextEditingController();
+  final _description = TextEditingController();
+  McpServerType _type = McpServerType.sse;
 
-/// The original 智能助手 (`category: 'assistant'`) templates.
-const List<_McpTemplate> _kAssistantTemplates = [
-  _McpTemplate(
-    name: '@aether/settings',
-    description: '智能设置助手，让 AI 管理知识库（创建、编辑、删除、搜索）和应用设置。支持自然语言操作，危险操作需用户确认。',
-    tags: ['设置', '知识库', '管理', 'AI', '工具'],
-    isAssistant: true,
-  ),
-];
+  @override
+  void initState() {
+    super.initState();
+    for (final c in [_name, _baseUrl, _command]) {
+      c.addListener(_onChanged);
+    }
+  }
+
+  void _onChanged() => setState(() {});
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _baseUrl.dispose();
+    _command.dispose();
+    _args.dispose();
+    _description.dispose();
+    super.dispose();
+  }
+
+  bool get _isHttp =>
+      _type == McpServerType.sse ||
+      _type == McpServerType.streamableHttp ||
+      _type == McpServerType.httpStream;
+
+  bool get _canAdd {
+    if (_name.text.trim().isEmpty) return false;
+    if (_isHttp) return _baseUrl.text.trim().isNotEmpty;
+    if (_type == McpServerType.stdio) return _command.text.trim().isNotEmpty;
+    return true;
+  }
+
+  void _submit() {
+    if (!_canAdd) return;
+    final argsText = _args.text.trim();
+    Navigator.of(context).pop(
+      McpServer(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        name: _name.text.trim(),
+        type: _type,
+        description: _description.text.trim(),
+        baseUrl: _isHttp ? _baseUrl.text.trim() : null,
+        command: _type == McpServerType.stdio ? _command.text.trim() : null,
+        args: _type == McpServerType.stdio && argsText.isNotEmpty
+            ? argsText.split(RegExp(r'\s+'))
+            : null,
+        headers: const {},
+        env: const {},
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('添加 MCP 服务器'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _name,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: '服务器名称',
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<McpServerType>(
+              initialValue: _type,
+              isDense: true,
+              decoration: const InputDecoration(
+                labelText: '服务器类型',
+                isDense: true,
+              ),
+              items:
+                  const [
+                    McpServerType.sse,
+                    McpServerType.streamableHttp,
+                    McpServerType.inMemory,
+                    McpServerType.stdio,
+                  ].map((t) {
+                    return DropdownMenuItem<McpServerType>(
+                      value: t,
+                      child: Text(mcpServerTypeLabel(t)),
+                    );
+                  }).toList(),
+              onChanged: (v) => setState(() => _type = v ?? _type),
+            ),
+            if (_isHttp) ...[
+              const SizedBox(height: 16),
+              TextField(
+                controller: _baseUrl,
+                decoration: const InputDecoration(
+                  labelText: '服务器 URL',
+                  hintText: 'https://example.com/mcp',
+                  isDense: true,
+                ),
+              ),
+            ],
+            if (_type == McpServerType.stdio) ...[
+              const SizedBox(height: 16),
+              TextField(
+                controller: _command,
+                decoration: const InputDecoration(
+                  labelText: '命令',
+                  hintText: 'npx, node, python, uvx...',
+                  helperText: '要执行的命令程序，如 npx、node、python 等',
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _args,
+                decoration: const InputDecoration(
+                  labelText: '命令参数',
+                  hintText: '-y @anthropic/mcp-server-fetch',
+                  helperText: '命令参数，用空格分隔',
+                  isDense: true,
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            TextField(
+              controller: _description,
+              minLines: 2,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: '描述（可选）',
+                alignLabelWithHint: true,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _canAdd ? _submit : null,
+          child: const Text('添加'),
+        ),
+      ],
+    );
+  }
+}
+
+/// The 导入 MCP 服务器配置 dialog (port of `ImportJsonDialog`): a format example
+/// plus a multiline JSON field; 导入 disabled until non-blank.
+class _ImportJsonDialog extends StatefulWidget {
+  const _ImportJsonDialog();
+
+  @override
+  State<_ImportJsonDialog> createState() => _ImportJsonDialogState();
+}
+
+class _ImportJsonDialogState extends State<_ImportJsonDialog> {
+  final _json = TextEditingController();
+
+  static const String _example = '''{
+  "mcpServers": {
+    "fetch": {
+      "type": "sse",
+      "url": "https://example.com/sse"
+    }
+  }
+}''';
+
+  @override
+  void initState() {
+    super.initState();
+    _json.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _json.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('导入 MCP 服务器配置'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '粘贴包含 MCP 服务器配置的 JSON 内容。支持的格式示例：',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.5,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                _example,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontFamily: 'monospace',
+                  height: 1.4,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _json,
+              autofocus: true,
+              minLines: 8,
+              maxLines: 12,
+              decoration: const InputDecoration(
+                labelText: 'JSON 配置',
+                hintText: '在此粘贴 JSON 配置...',
+                alignLabelWithHint: true,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _json.text.trim().isEmpty
+              ? null
+              : () => Navigator.of(context).pop(_json.text),
+          child: const Text('导入'),
+        ),
+      ],
+    );
+  }
+}
