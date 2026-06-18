@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
@@ -63,6 +64,22 @@ abstract final class AppRouter {
   static String multiKeyPath(String providerId) =>
       '/settings/model-provider/$providerId/multi-key';
 
+  /// Wraps [child] in a zero-duration [CustomTransitionPage] so route changes
+  /// (push *and* pop) are truly instant. The app intentionally has no page
+  /// transitions; a no-op [PageTransitionsBuilder] only removes the visual
+  /// animation while leaving `MaterialPageRoute`'s 300ms `transitionDuration` in
+  /// place — that lingering window is what made every navigation feel laggy.
+  /// Setting both durations to [Duration.zero] also disposes the previous route
+  /// immediately instead of keeping it mounted for the transition.
+  static Page<void> _instant(GoRouterState state, Widget child) =>
+      CustomTransitionPage<void>(
+        key: state.pageKey,
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        transitionsBuilder: (_, _, _, child) => child,
+        child: child,
+      );
+
   /// Builds the router. [startAtWelcome] decides the first landing page: M4.1
   /// passes the in-memory onboarding state (first-time user → [welcomePath],
   /// otherwise → [chatPath]). It defaults to `false` so existing callers keep
@@ -73,100 +90,121 @@ abstract final class AppRouter {
       GoRoute(
         path: chatPath,
         name: 'chat',
-        builder: (context, state) => const ChatPage(),
+        pageBuilder: (context, state) => _instant(state, const ChatPage()),
       ),
       GoRoute(
         path: welcomePath,
         name: 'welcome',
-        builder: (context, state) => const WelcomePage(),
+        pageBuilder: (context, state) => _instant(state, const WelcomePage()),
       ),
       GoRoute(
         path: translatePath,
         name: 'translate',
-        builder: (context, state) => const TranslatePage(),
+        pageBuilder: (context, state) => _instant(state, const TranslatePage()),
       ),
       GoRoute(
         path: settingsPath,
         name: 'settings',
-        builder: (context, state) => const SettingsPage(),
+        pageBuilder: (context, state) => _instant(state, const SettingsPage()),
       ),
       GoRoute(
         path: aboutPath,
         name: 'about',
-        builder: (context, state) => const AboutPage(),
+        pageBuilder: (context, state) => _instant(state, const AboutPage()),
       ),
       GoRoute(
         path: defaultModelPath,
         name: 'default-model',
-        builder: (context, state) => const DefaultModelSettingsPage(),
+        pageBuilder: (context, state) =>
+            _instant(state, const DefaultModelSettingsPage()),
       ),
       GoRoute(
         path: appearancePath,
         name: 'appearance',
-        builder: (context, state) => const AppearanceSettingsPage(),
+        pageBuilder: (context, state) =>
+            _instant(state, const AppearanceSettingsPage()),
       ),
       GoRoute(
         path: inputBoxSettingsPath,
         name: 'input-box-settings',
-        builder: (context, state) => const InputBoxSettingsPage(),
+        pageBuilder: (context, state) =>
+            _instant(state, const InputBoxSettingsPage()),
       ),
       GoRoute(
         path: topToolbarSettingsPath,
         name: 'top-toolbar-settings',
-        builder: (context, state) => const TopToolbarSettingsPage(),
+        pageBuilder: (context, state) =>
+            _instant(state, const TopToolbarSettingsPage()),
       ),
       GoRoute(
         path: chatInterfaceSettingsPath,
         name: 'chat-interface-settings',
-        builder: (context, state) => const ChatInterfaceSettingsPage(),
+        pageBuilder: (context, state) =>
+            _instant(state, const ChatInterfaceSettingsPage()),
       ),
       GoRoute(
         path: messageBubbleSettingsPath,
         name: 'message-bubble-settings',
-        builder: (context, state) => const MessageBubbleSettingsPage(),
+        pageBuilder: (context, state) =>
+            _instant(state, const MessageBubbleSettingsPage()),
       ),
       GoRoute(
         path: thinkingSettingsPath,
         name: 'thinking-settings',
-        builder: (context, state) => const ThinkingSettingsPage(),
+        pageBuilder: (context, state) =>
+            _instant(state, const ThinkingSettingsPage()),
       ),
       GoRoute(
         path: themeStyleSettingsPath,
         name: 'theme-style-settings',
-        builder: (context, state) => const ThemeStyleSettingsPage(),
+        pageBuilder: (context, state) =>
+            _instant(state, const ThemeStyleSettingsPage()),
       ),
       GoRoute(
         path: addProviderPath,
         name: 'add-provider',
-        builder: (context, state) => const AddProviderPage(),
+        pageBuilder: (context, state) =>
+            _instant(state, const AddProviderPage()),
       ),
       GoRoute(
         path: '/settings/model-provider/:providerId',
         name: 'model-provider',
-        builder: (context, state) => ModelProviderDetailPage(
-          providerId: state.pathParameters['providerId'] ?? '',
+        pageBuilder: (context, state) => _instant(
+          state,
+          ModelProviderDetailPage(
+            providerId: state.pathParameters['providerId'] ?? '',
+          ),
         ),
       ),
       GoRoute(
         path: '/settings/model-provider/:providerId/edit-model',
         name: 'edit-model',
-        builder: (context, state) => EditModelPage(
-          providerId: state.pathParameters['providerId'] ?? '',
-          modelId: state.uri.queryParameters['modelId'],
+        pageBuilder: (context, state) => _instant(
+          state,
+          EditModelPage(
+            providerId: state.pathParameters['providerId'] ?? '',
+            modelId: state.uri.queryParameters['modelId'],
+          ),
         ),
       ),
       GoRoute(
         path: '/settings/model-provider/:providerId/advanced-api',
         name: 'advanced-api',
-        builder: (context, state) => AdvancedApiConfigPage(
-          providerId: state.pathParameters['providerId'] ?? '',
+        pageBuilder: (context, state) => _instant(
+          state,
+          AdvancedApiConfigPage(
+            providerId: state.pathParameters['providerId'] ?? '',
+          ),
         ),
       ),
       GoRoute(
         path: '/settings/model-provider/:providerId/multi-key',
         name: 'multi-key',
-        builder: (context, state) => MultiKeyManagementPage(
-          providerId: state.pathParameters['providerId'] ?? '',
+        pageBuilder: (context, state) => _instant(
+          state,
+          MultiKeyManagementPage(
+            providerId: state.pathParameters['providerId'] ?? '',
+          ),
         ),
       ),
     ],
