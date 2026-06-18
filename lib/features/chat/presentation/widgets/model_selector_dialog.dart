@@ -11,14 +11,28 @@ import 'package:aetherlink_flutter/shared/utils/provider_icons.dart';
 /// (`src/solid/components/ModelSelector/DialogModelSelector.solid.tsx` +
 /// `.solid.css`). Colours, spacing, font sizes, radii and behaviours mirror the
 /// original's design tokens (`src/shared/design-tokens`, default theme) and CSS.
-Future<void> showModelSelectorDialog(BuildContext context) {
+///
+/// By default selecting a model sets the app-level current chat model. Callers
+/// that pick a model for a different purpose (e.g. the 翻译 page's model button)
+/// pass [onSelect] to receive the chosen `(provider, model)` instead, with
+/// [selectedProviderId] / [selectedModelId] highlighting the current choice.
+Future<void> showModelSelectorDialog(
+  BuildContext context, {
+  void Function(ModelProvider provider, Model model)? onSelect,
+  String? selectedProviderId,
+  String? selectedModelId,
+}) {
   return showGeneralDialog<void>(
     context: context,
     // CSS: .solid-dialog-backdrop background-color: rgba(0, 0, 0, 0.5)
     barrierColor: const Color(0x80000000),
     barrierDismissible: true,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-    pageBuilder: (context, _, _) => const _ModelSelectorView(),
+    pageBuilder: (context, _, _) => _ModelSelectorView(
+      onSelect: onSelect,
+      selectedProviderId: selectedProviderId,
+      selectedModelId: selectedModelId,
+    ),
     transitionBuilder: (context, animation, _, child) {
       // CSS: fadeIn (backdrop, handled by barrier) + slideUp on the dialog —
       // translateY(20px)->0 with opacity 0->1, 0.2s ease-out.
@@ -94,7 +108,15 @@ class _DragScrollBehavior extends MaterialScrollBehavior {
 }
 
 class _ModelSelectorView extends ConsumerStatefulWidget {
-  const _ModelSelectorView();
+  const _ModelSelectorView({
+    this.onSelect,
+    this.selectedProviderId,
+    this.selectedModelId,
+  });
+
+  final void Function(ModelProvider provider, Model model)? onSelect;
+  final String? selectedProviderId;
+  final String? selectedModelId;
 
   @override
   ConsumerState<_ModelSelectorView> createState() => _ModelSelectorViewState();
@@ -159,10 +181,19 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
       groups[id]!.add(e);
     }
 
-    final currentProviderId = current?.provider.id;
-    final selectedKey = current == null
-        ? null
-        : _identity(current.provider.id, current.model.id);
+    // When [onSelect] is set the dialog highlights the caller's pre-selected
+    // model instead of the app current chat model.
+    final useExternalSelection = widget.onSelect != null;
+    final currentProviderId = useExternalSelection
+        ? widget.selectedProviderId
+        : current?.provider.id;
+    final selectedKey = useExternalSelection
+        ? (widget.selectedProviderId != null && widget.selectedModelId != null
+              ? _identity(widget.selectedProviderId!, widget.selectedModelId!)
+              : null)
+        : (current == null
+              ? null
+              : _identity(current.provider.id, current.model.id));
 
     // Open-time default: 'frequently-used' when a current model exists. Defer
     // until both providers and current model have resolved, otherwise the first
@@ -448,9 +479,14 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
   }
 
   Future<void> _select(ModelProvider provider, Model model) async {
-    await ref
-        .read(modelStoreProvider.notifier)
-        .selectCurrentModel(providerId: provider.id, modelId: model.id);
+    final onSelect = widget.onSelect;
+    if (onSelect != null) {
+      onSelect(provider, model);
+    } else {
+      await ref
+          .read(modelStoreProvider.notifier)
+          .selectCurrentModel(providerId: provider.id, modelId: model.id);
+    }
     if (mounted) Navigator.of(context).pop();
   }
 

@@ -9,9 +9,11 @@ import 'package:share_plus/share_plus.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
+import 'package:aetherlink_flutter/features/chat/application/translate_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_version.dart';
+import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
 
 /// The message bubble bottom toolbar (`MessageActions` `renderMode === 'toolbar'`).
 ///
@@ -23,10 +25,11 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_version
 /// * AI 消息: 复制 · 编辑 · 导出/保存 · 重新生成 · 语音播放 · 翻译 · 版本历史 ·
 ///   创建分支 · 删除
 ///
-/// 复制 / 编辑 / 删除 / 导出·分享 / 重新发送 / 重新生成 / 创建分支 / 版本历史 are
-/// wired to real behaviour (版本历史 only appears once a message has saved
-/// versions, e.g. after 重新生成). The remaining buttons depend on systems not
-/// yet ported (语音播放/翻译) — they are drawn for UI parity but surface a
+/// 复制 / 编辑 / 删除 / 导出·分享 / 重新发送 / 重新生成 / 创建分支 / 版本历史 /
+/// 翻译 are wired to real behaviour (版本历史 only appears once a message has
+/// saved versions, e.g. after 重新生成; 翻译 opens a language picker and streams
+/// a TranslationBlock onto the message). The remaining button depends on a
+/// system not yet ported (语音播放) — it is drawn for UI parity but surfaces a
 /// 「即将支持」 hint on tap rather than faking success.
 class MessageToolbar extends ConsumerStatefulWidget {
   const MessageToolbar({
@@ -95,6 +98,35 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
         .read(topicsProvider.notifier)
         .createBranch(_view.id);
     _toast(created == null ? '创建分支失败' : '已创建分支');
+  }
+
+  /// Opens the 翻译 language picker and translates this message into the chosen
+  /// language. Port of `MessageTranslateButton` (anchored Menu → bottom sheet on
+  /// mobile). Guards on empty content / no configured model before opening.
+  Future<void> _openTranslateMenu() async {
+    if (_mainText.trim().isEmpty) {
+      _toast('没有可翻译的内容');
+      return;
+    }
+    final model = await ref.read(translateModelProvider.future);
+    if (!mounted) return;
+    if (model == null) {
+      _toast('请先在「模型」中配置可用模型');
+      return;
+    }
+    final language = await showModalBottomSheet<TranslateLanguage>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => const _TranslateLanguageSheet(),
+    );
+    if (language == null || !mounted) return;
+    await ref
+        .read(chatControllerProvider.notifier)
+        .translateMessage(_view.id, language);
   }
 
   Future<void> _openVersionHistory() async {
@@ -280,7 +312,7 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
           icon: LucideIcons.languages,
           tooltip: '翻译',
           color: baseColor,
-          onTap: _comingSoon,
+          onTap: _openTranslateMenu,
         ),
       if (!_isUser && _view.versions.isNotEmpty)
         _ToolbarIconButton(
@@ -648,6 +680,68 @@ class _ExportSheet extends StatelessWidget {
             color: theme.colorScheme.onSurfaceVariant,
             fontWeight: FontWeight.bold,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The 翻译 language picker (`MessageTranslateButton`'s anchored Menu, rendered
+/// as a bottom sheet). Lists the builtin languages with emoji + label and pops
+/// the chosen [TranslateLanguage].
+class _TranslateLanguageSheet extends StatelessWidget {
+  const _TranslateLanguageSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      top: false,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.6,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 8),
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                '翻译为',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                children: [
+                  for (final lang in builtinTranslateLanguages)
+                    ListTile(
+                      leading: Text(
+                        lang.emoji,
+                        style: const TextStyle(fontSize: 20),
+                      ),
+                      title: Text(lang.label),
+                      onTap: () => Navigator.of(context).pop(lang),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

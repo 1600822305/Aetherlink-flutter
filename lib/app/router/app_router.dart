@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/mobile/translate_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/appearance_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/chat_interface_settings_page.dart';
@@ -44,6 +45,7 @@ abstract final class AppRouter {
   static const String themeStyleSettingsPath =
       '/settings/appearance/theme-style';
   static const String welcomePath = '/welcome';
+  static const String translatePath = '/translate';
 
   /// The model-provider third-level pages (M4.3.1). The detail / edit / advanced
   /// routes are parameterized by `:providerId`; the helpers below build a
@@ -77,6 +79,11 @@ abstract final class AppRouter {
         path: welcomePath,
         name: 'welcome',
         builder: (context, state) => const WelcomePage(),
+      ),
+      GoRoute(
+        path: translatePath,
+        name: 'translate',
+        builder: (context, state) => const TranslatePage(),
       ),
       GoRoute(
         path: settingsPath,
