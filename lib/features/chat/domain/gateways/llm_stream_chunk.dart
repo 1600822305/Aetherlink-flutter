@@ -1,4 +1,5 @@
 import 'package:aetherlink_flutter/features/chat/domain/entities/usage.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 part 'llm_stream_chunk.freezed.dart';
@@ -15,6 +16,12 @@ sealed class LlmStreamChunk with _$LlmStreamChunk {
 
   /// Incremental reasoning / thinking text (→ `thinking`).
   const factory LlmStreamChunk.reasoningDelta(String text) = LlmReasoningDelta;
+
+  /// A fully-accumulated function-calling tool invocation. Adapters merge the
+  /// streamed fragments (OpenAI per-`index` arg chunks, Anthropic
+  /// `input_json_delta`, Gemini `functionCall`) and emit one event per call
+  /// before [LlmDone]; the controller runs the tool and loops the result back.
+  const factory LlmStreamChunk.toolCall(LlmToolCall call) = LlmToolCallChunk;
 
   /// Terminal event carrying optional token [usage] and provider
   /// [finishReason].

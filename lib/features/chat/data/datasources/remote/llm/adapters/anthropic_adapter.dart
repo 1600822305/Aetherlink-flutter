@@ -6,7 +6,9 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.da
 import 'package:aetherlink_flutter/features/chat/domain/entities/usage.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
 import 'package:dio/dio.dart';
 
 /// Speaks the Anthropic Messages wire protocol: `POST /v1/messages` with
@@ -28,10 +30,10 @@ class AnthropicAdapter implements LlmGateway {
 
     final messages = <Map<String, dynamic>>[
       for (final m in request.messages)
-        if (m.role != MessageRole.system)
-          {'role': _roleValue(m.role), 'content': m.content},
+        if (m.role != MessageRole.system) _toWireMessage(m),
     ];
 
+    final tools = request.tools;
     final body = <String, dynamic>{
       'model': model.id,
       // Anthropic requires max_tokens; fall back to a sane default.
@@ -41,6 +43,15 @@ class AnthropicAdapter implements LlmGateway {
       'stream': request.stream,
       if (request.temperature != null) 'temperature': request.temperature,
       if (request.topP != null) 'top_p': request.topP,
+      if (tools != null && tools.isNotEmpty)
+        'tools': [
+          for (final t in tools)
+            {
+              'name': t.name,
+              'description': t.description,
+              'input_schema': t.inputSchema,
+            },
+        ],
       ...?request.extraBody,
     };
 
@@ -60,6 +71,9 @@ class AnthropicAdapter implements LlmGateway {
     int? inputTokens;
     int? outputTokens;
     String? finishReason;
+    // `tool_use` blocks stream as content_block_start (id + name) then a run of
+    // `input_json_delta` fragments (partial JSON), keyed by the block `index`.
+    final toolCalls = <int, _ToolCallBuilder>{};
 
     await for (final event in decodeSse(byteStream)) {
       if (event.data.isEmpty) continue;
@@ -70,6 +84,16 @@ class AnthropicAdapter implements LlmGateway {
           final message = json['message'] as Map<String, dynamic>?;
           final u = message?['usage'] as Map<String, dynamic>?;
           inputTokens = (u?['input_tokens'] as num?)?.toInt();
+        case 'content_block_start':
+          final block = json['content_block'] as Map<String, dynamic>?;
+          if (block?['type'] == 'tool_use') {
+            final index = (json['index'] as num?)?.toInt() ?? 0;
+            final builder = toolCalls.putIfAbsent(index, _ToolCallBuilder.new);
+            final id = block?['id'];
+            if (id is String) builder.id = id;
+            final name = block?['name'];
+            if (name is String) builder.name = name;
+          }
         case 'content_block_delta':
           final delta = json['delta'] as Map<String, dynamic>?;
           switch (delta?['type'] as String?) {
@@ -83,6 +107,15 @@ class AnthropicAdapter implements LlmGateway {
               if (thinking is String && thinking.isNotEmpty) {
                 yield LlmStreamChunk.reasoningDelta(thinking);
               }
+            case 'input_json_delta':
+              final partial = delta?['partial_json'];
+              if (partial is String) {
+                final index = (json['index'] as num?)?.toInt() ?? 0;
+                toolCalls
+                    .putIfAbsent(index, _ToolCallBuilder.new)
+                    .arguments
+                    .write(partial);
+              }
           }
         case 'message_delta':
           final delta = json['delta'] as Map<String, dynamic>?;
@@ -92,6 +125,18 @@ class AnthropicAdapter implements LlmGateway {
           final out = (u?['output_tokens'] as num?)?.toInt();
           if (out != null) outputTokens = out;
       }
+    }
+
+    for (final index in toolCalls.keys.toList()..sort()) {
+      final call = toolCalls[index]!;
+      if (call.name.isEmpty) continue;
+      yield LlmStreamChunk.toolCall(
+        LlmToolCall(
+          id: call.id,
+          name: call.name,
+          arguments: call.arguments.toString(),
+        ),
+      );
     }
 
     final usage = (inputTokens != null || outputTokens != null)
@@ -121,6 +166,53 @@ class AnthropicAdapter implements LlmGateway {
     }
   }
 
+  /// Translates an [LlmMessage] into an Anthropic wire message. Tool round-trip
+  /// turns use block content: an assistant turn carrying [LlmMessage.toolCalls]
+  /// becomes optional `text` + `tool_use` blocks (with the arguments string
+  /// decoded back to the `input` object); a tool-result turn
+  /// ([LlmMessage.toolCallId] set) becomes a `user` message holding a
+  /// `tool_result` block linked by `tool_use_id`. Plain turns stay a string.
+  static Map<String, dynamic> _toWireMessage(LlmMessage m) {
+    final toolCallId = m.toolCallId;
+    if (toolCallId != null) {
+      return {
+        'role': 'user',
+        'content': [
+          {
+            'type': 'tool_result',
+            'tool_use_id': toolCallId,
+            'content': m.content,
+          },
+        ],
+      };
+    }
+    final calls = m.toolCalls;
+    if (calls != null && calls.isNotEmpty) {
+      return {
+        'role': 'assistant',
+        'content': [
+          if (m.content.isNotEmpty) {'type': 'text', 'text': m.content},
+          for (final c in calls)
+            {
+              'type': 'tool_use',
+              'id': c.id,
+              'name': c.name,
+              'input': _decodeArguments(c.arguments),
+            },
+        ],
+      };
+    }
+    return {'role': _roleValue(m.role), 'content': m.content};
+  }
+
+  /// Decodes a tool-call arguments string into the object Anthropic's `input`
+  /// expects, tolerating an empty/blank string (→ `{}`) or non-object JSON.
+  static Map<String, dynamic> _decodeArguments(String arguments) {
+    if (arguments.trim().isEmpty) return const {};
+    final decoded = jsonDecode(arguments);
+    return decoded is Map<String, dynamic> ? decoded : const {};
+  }
+
   static String _roleValue(MessageRole role) => switch (role) {
     MessageRole.assistant => 'assistant',
     _ => 'user',
@@ -132,4 +224,13 @@ class AnthropicAdapter implements LlmGateway {
         : baseUrl.replaceAll(RegExp(r'/+$'), '');
     return '$base/v1/messages';
   }
+}
+
+/// Mutable scratch for merging a single streamed Anthropic `tool_use` block
+/// across events (id + name from content_block_start, arguments from the run of
+/// `input_json_delta` fragments).
+class _ToolCallBuilder {
+  String id = '';
+  String name = '';
+  final StringBuffer arguments = StringBuffer();
 }
