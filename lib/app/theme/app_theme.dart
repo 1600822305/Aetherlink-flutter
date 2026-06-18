@@ -10,6 +10,9 @@ import 'package:aetherlink_flutter/features/theming/domain/theme_spec.dart';
 ///
 /// `useMaterial3` is intentionally `false` to keep a 1:1 port of the original
 /// MUI v7 look (see `docs/CONTEXT.md`).
+///
+/// Page transition animations are globally disabled via [_NoTransitionsBuilder]
+/// so route changes are instant.
 abstract final class AppTheme {
   static ThemeData light(ThemeSpec spec) =>
       _build(spec, spec.colors.light, Brightness.light);
@@ -69,6 +72,12 @@ abstract final class AppTheme {
       fontFamily: spec.typography.fontFamily,
       textTheme: textTheme,
       visualDensity: _density(spec.density),
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: _NoTransitionsBuilder(),
+          TargetPlatform.iOS: _NoTransitionsBuilder(),
+        },
+      ),
       extensions: <ThemeExtension<dynamic>>[
         AppThemeExtension(
           bubbleUser: Color(roles.bubbleUser),
@@ -89,4 +98,20 @@ abstract final class AppTheme {
   /// [color] stays legible.
   static Color _onColor(Color color) =>
       color.computeLuminance() > 0.5 ? Colors.black : Colors.white;
+}
+
+/// A [PageTransitionsBuilder] that returns the page instantly with no animation.
+class _NoTransitionsBuilder extends PageTransitionsBuilder {
+  const _NoTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return child;
+  }
 }
