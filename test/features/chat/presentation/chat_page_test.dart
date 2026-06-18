@@ -103,24 +103,25 @@ void main() {
   );
 
   testWidgets(
-    'Input button toolbar renders the default buttons; placeholders disabled, '
-    'send wired',
+    'Input button toolbar wires every default button: aggregators open menus, '
+    '网络搜索 toggles its session mode, the rest surface 即将支持, send wired',
     (tester) async {
       await pumpChatPage(tester);
 
       // The default toolbar layout (InputBoxSettings defaults): left
-      // tools/clear/search, right upload/voice/send. The feature buttons are
-      // disabled placeholders (later slices). They are matched by tooltip
-      // because several glyphs are bespoke SVGs, not Material/lucide icons.
-      const placeholderTooltips = <String>[
-        '扩展', // tools
+      // tools/clear/search, right upload/voice/send. Every feature button now
+      // routes through ChatInputActions, so all are enabled (interactive).
+      // They are matched by tooltip because several glyphs are bespoke SVGs,
+      // not Material/lucide icons.
+      const toolbarTooltips = <String>[
+        '扩展', // tools (aggregator)
         '清空内容', // clear
-        '网络搜索', // search
-        '添加内容', // upload
+        '网络搜索', // search (session mode)
+        '添加内容', // upload (aggregator)
         '切换到语音输入模式', // voice
       ];
 
-      for (final tooltip in placeholderTooltips) {
+      for (final tooltip in toolbarTooltips) {
         final finder = find.byWidgetPredicate(
           (w) => w is IconButton && w.tooltip == tooltip,
         );
@@ -131,10 +132,41 @@ void main() {
         );
         expect(
           tester.widget<IconButton>(finder).onPressed,
-          isNull,
-          reason: 'toolbar button $tooltip should be disabled',
+          isNotNull,
+          reason: 'toolbar button $tooltip should be enabled',
         );
       }
+
+      // 网络搜索 is a mutually-exclusive session mode: tapping it lights the
+      // button (its tooltip flips to the "退出…模式" form); tapping again clears.
+      await tester.tap(
+        find.byWidgetPredicate((w) => w is IconButton && w.tooltip == '网络搜索'),
+      );
+      await tester.pump();
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is IconButton && w.tooltip == '退出网络搜索模式',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byWidgetPredicate(
+          (w) => w is IconButton && w.tooltip == '退出网络搜索模式',
+        ),
+      );
+      await tester.pump();
+
+      // 扩展 opens the data-driven aggregator menu; tapping a not-yet-wired row
+      // (新建话题) surfaces 即将支持 rather than faking a behavior.
+      await tester.tap(
+        find.byWidgetPredicate((w) => w is IconButton && w.tooltip == '扩展'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('新建话题'), findsOneWidget);
+      expect(find.text('知识库'), findsOneWidget);
+      await tester.tap(find.text('新建话题'));
+      await tester.pumpAndSettle();
+      expect(find.text('即将支持'), findsOneWidget);
 
       // Send is wired: with no model configured it stays greyed but a tap
       // surfaces the "configure a model first" hint, so it handles taps.

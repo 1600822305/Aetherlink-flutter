@@ -51,6 +51,8 @@ const Color _blue = Color(0xFF3B82F6);
 const Color _amber = Color(0xFFF59E0B);
 const Color _indigo = Color(0xFF1976D2);
 const Color _sky = Color(0xFF2196F3);
+const Color _orange = Color(0xFFFF9800);
+const Color _red = Color(0xFFF44336);
 
 InputBoxButtonInfo inputBoxButtonInfo(InputBoxButtonId id) => switch (id) {
   InputBoxButtonId.tools => const InputBoxButtonInfo(
@@ -239,24 +241,194 @@ Color inputBoxToolbarRestColor(InputBoxButtonId id, Color iconColor) =>
       _ => iconColor,
     };
 
-/// The live-toolbar resting tooltip for [id] (`buttonConfigs` `tooltip`).
-String inputBoxToolbarTooltip(InputBoxButtonId id) => switch (id) {
-  InputBoxButtonId.tools => '扩展',
-  InputBoxButtonId.mcpTools => 'MCP工具',
-  InputBoxButtonId.clear => '清空内容',
-  InputBoxButtonId.image => '图像生成',
-  InputBoxButtonId.video => '视频生成',
-  InputBoxButtonId.knowledge => '知识库',
-  InputBoxButtonId.search => '网络搜索',
-  InputBoxButtonId.upload => '添加内容',
-  InputBoxButtonId.camera => '拍摄照片',
-  InputBoxButtonId.photoSelect => '选择图片',
-  InputBoxButtonId.fileUpload => '上传文件',
-  InputBoxButtonId.aiDebate => '开始AI辩论',
-  InputBoxButtonId.quickPhrase => '快捷短语',
-  InputBoxButtonId.multiModel => '多模型发送',
-  InputBoxButtonId.send => '发送消息',
-  InputBoxButtonId.voice => '切换到语音输入模式',
+/// The live-toolbar active accent for [id] (`buttonConfigs` active `color`):
+/// 网络搜索 blue / 图像生成 purple / 视频生成 · 语音 red / 工具 green. Only used when the
+/// button is active; every other button falls back to [fallback] (its resting
+/// color), so this is a no-op for buttons that never light up.
+Color inputBoxToolbarActiveColor(InputBoxButtonId id, Color fallback) =>
+    switch (id) {
+      InputBoxButtonId.search => _blue,
+      InputBoxButtonId.image => _purple,
+      InputBoxButtonId.video => _red,
+      InputBoxButtonId.voice => _red,
+      InputBoxButtonId.mcpTools => _green,
+      _ => fallback,
+    };
+
+/// The live-toolbar tooltip for [id] (`buttonConfigs` `tooltip`). The three
+/// session modes flip to an "exit mode" label while [active] (`ButtonToolbar`'s
+/// `imageGenerationMode ? '退出图像生成模式' : '图像生成'`).
+String inputBoxToolbarTooltip(InputBoxButtonId id, {bool active = false}) =>
+    switch (id) {
+      InputBoxButtonId.tools => '扩展',
+      InputBoxButtonId.mcpTools => 'MCP工具',
+      InputBoxButtonId.clear => '清空内容',
+      InputBoxButtonId.image => active ? '退出图像生成模式' : '图像生成',
+      InputBoxButtonId.video => active ? '退出视频生成模式' : '视频生成',
+      InputBoxButtonId.knowledge => '知识库',
+      InputBoxButtonId.search => active ? '退出网络搜索模式' : '网络搜索',
+      InputBoxButtonId.upload => '添加内容',
+      InputBoxButtonId.camera => '拍摄照片',
+      InputBoxButtonId.photoSelect => '选择图片',
+      InputBoxButtonId.fileUpload => '上传文件',
+      InputBoxButtonId.aiDebate => '开始AI辩论',
+      InputBoxButtonId.quickPhrase => '快捷短语',
+      InputBoxButtonId.multiModel => '多模型发送',
+      InputBoxButtonId.send => '发送消息',
+      InputBoxButtonId.voice => '切换到语音输入模式',
+    };
+
+/// Visual metadata for one aggregator-menu row (`ToolsMenu` / `UploadMenu`
+/// `ListItemText` + `ListItemIcon`): the brand [color] (a `null` color mirrors
+/// the original's `currentColor`, rendered in the on-surface text color), the
+/// [label] and an optional [subtitle] (`secondary`). [dimWhenInactive] flags the
+/// three session modes, whose icon renders at 60% opacity while the mode is off
+/// (the original's `alpha(color, 0.6)`).
+class InputBoxMenuItemInfo {
+  const InputBoxMenuItemInfo({
+    required this.label,
+    this.subtitle,
+    this.color,
+    this.dimWhenInactive = false,
+  });
+
+  final String label;
+  final String? subtitle;
+  final Color? color;
+  final bool dimWhenInactive;
+}
+
+/// The title shown above [menu]'s items (the aggregator button's label).
+String inputBoxMenuTitle(InputBoxMenu menu) => switch (menu) {
+  InputBoxMenu.tools => '扩展',
+  InputBoxMenu.upload => '添加内容',
+};
+
+/// Per-item metadata for the two aggregator menus, ported 1:1 from the original
+/// `ToolsMenu.tsx` / `UploadMenu.tsx` item configs (labels / secondary text /
+/// icon colors). [toolsMenu] / [uploadMenu] never appear inside a menu, so they
+/// fall back to a neutral entry.
+InputBoxMenuItemInfo inputBoxMenuItemInfo(InputBoxAction action) =>
+    switch (action) {
+      InputBoxAction.mcpTools => const InputBoxMenuItemInfo(
+        label: '工具',
+        color: _green,
+        dimWhenInactive: true,
+      ),
+      InputBoxAction.newTopic => const InputBoxMenuItemInfo(
+        label: '新建话题',
+        color: _green,
+      ),
+      InputBoxAction.clearTopic => const InputBoxMenuItemInfo(
+        label: '清空内容',
+        color: _blue,
+      ),
+      InputBoxAction.generateImage => const InputBoxMenuItemInfo(
+        label: '生成图片',
+        color: _purple,
+        dimWhenInactive: true,
+      ),
+      InputBoxAction.generateVideo => const InputBoxMenuItemInfo(
+        label: '生成视频',
+        color: _red,
+        dimWhenInactive: true,
+      ),
+      InputBoxAction.knowledge => const InputBoxMenuItemInfo(
+        label: '知识库',
+        color: _sky,
+      ),
+      InputBoxAction.webSearch => const InputBoxMenuItemInfo(
+        label: '网络搜索',
+        color: _blue,
+        dimWhenInactive: true,
+      ),
+      InputBoxAction.photoSelect => const InputBoxMenuItemInfo(
+        label: '从相册选择图片',
+        color: _indigo,
+      ),
+      InputBoxAction.camera => const InputBoxMenuItemInfo(
+        label: '拍摄照片',
+        color: _purple,
+      ),
+      InputBoxAction.fileUpload => const InputBoxMenuItemInfo(
+        label: '上传文件',
+        color: _green,
+      ),
+      InputBoxAction.note => const InputBoxMenuItemInfo(
+        label: '添加笔记',
+        subtitle: '从笔记中选择内容发送',
+        color: _orange,
+      ),
+      InputBoxAction.aiDebate => const InputBoxMenuItemInfo(
+        label: '开始AI辩论',
+        subtitle: '多AI角色辩论功能',
+      ),
+      InputBoxAction.quickPhrase => const InputBoxMenuItemInfo(
+        label: '快捷短语',
+        subtitle: '插入预设的文本短语',
+      ),
+      InputBoxAction.multiModel => const InputBoxMenuItemInfo(
+        label: '发送到多个模型',
+        subtitle: '同时向多个AI模型发送消息',
+      ),
+      InputBoxAction.toolsMenu => const InputBoxMenuItemInfo(label: '扩展'),
+      InputBoxAction.uploadMenu => const InputBoxMenuItemInfo(label: '添加内容'),
+      InputBoxAction.voice => const InputBoxMenuItemInfo(label: '语音输入'),
+    };
+
+/// The aggregator-menu glyph for [action], tinted [color] at [size]
+/// (`ToolsMenu` / `UploadMenu` `ListItemIcon` icons). The mode items reuse the
+/// composer's toolbar glyphs (`search` SVG, `image`/`video` lucide) for parity.
+Widget inputBoxMenuIcon(
+  InputBoxAction action, {
+  required Color color,
+  double size = 20,
+}) => switch (action) {
+  InputBoxAction.mcpTools => Icon(LucideIcons.wrench, size: size, color: color),
+  InputBoxAction.newTopic => Icon(LucideIcons.plus, size: size, color: color),
+  InputBoxAction.clearTopic => Icon(
+    LucideIcons.trash2,
+    size: size,
+    color: color,
+  ),
+  InputBoxAction.generateImage => Icon(
+    LucideIcons.image,
+    size: size,
+    color: color,
+  ),
+  InputBoxAction.generateVideo => Icon(
+    LucideIcons.video,
+    size: size,
+    color: color,
+  ),
+  InputBoxAction.knowledge => Icon(
+    LucideIcons.bookOpen,
+    size: size,
+    color: color,
+  ),
+  InputBoxAction.webSearch => _svg(kSearchIcon, color, size),
+  InputBoxAction.photoSelect => Icon(
+    LucideIcons.image,
+    size: size,
+    color: color,
+  ),
+  InputBoxAction.camera => Icon(LucideIcons.camera, size: size, color: color),
+  InputBoxAction.fileUpload => Icon(
+    LucideIcons.fileText,
+    size: size,
+    color: color,
+  ),
+  InputBoxAction.note => Icon(LucideIcons.bookOpen, size: size, color: color),
+  InputBoxAction.aiDebate => _svg(kAiDebateIcon, color, size),
+  InputBoxAction.quickPhrase => _svg(kQuickPhraseIcon, color, size),
+  InputBoxAction.multiModel => Icon(
+    LucideIcons.arrowLeftRight,
+    size: size,
+    color: color,
+  ),
+  InputBoxAction.toolsMenu => _svg(kSettingsPanelIcon, color, size),
+  InputBoxAction.uploadMenu => Icon(LucideIcons.plus, size: size, color: color),
+  InputBoxAction.voice => Icon(LucideIcons.mic, size: size, color: color),
 };
 
 /// Renders a bespoke (non-lucide) SVG glyph tinted to [color], matching the

@@ -13,27 +13,30 @@ import 'package:aetherlink_flutter/shared/domain/input_box_settings.dart';
 /// state once, so the standalone toolbar buttons and (later) the two aggregator
 /// menus all dispatch through the same place.
 ///
-/// The composer asks the port three things per button [id]:
-///   * [isEnabled] — whether tapping does anything (a not-yet-wired button is
-///     shown full-fidelity but is inert, matching the original's "即将支持");
+/// The composer (and the two aggregator menus) ask the port three things per
+/// [InputBoxAction]:
+///   * [isEnabled] — whether tapping does anything (a host with no wiring keeps
+///     every action inert, matching the original's "即将支持");
 ///   * [isActive] — whether to paint the active-state styling (网络搜索 blue,
-///     语音 red);
+///     图像/视频 mode lit);
 ///   * [invoke] — run the action (only called when [isEnabled]).
 ///
-/// The send button is intrinsic to the composer (its glyph/color swap with the
-/// live send/stream state) and is not routed through this port.
+/// Actions are keyed by [InputBoxAction] rather than [InputBoxButtonId] so the
+/// standalone toolbar buttons and the menu-only items (新建话题 / 添加笔记) share one
+/// dispatch path. The send button is intrinsic to the composer (its glyph/color
+/// swap with the live send/stream state) and is not routed through this port.
 abstract class InputBoxActions {
-  /// Runs the action bound to [id]. Only called when [isEnabled] is true.
-  /// [context] is the tapped button's element, for opening menus / sheets.
-  void invoke(InputBoxButtonId id, BuildContext context);
+  /// Runs [action]. Only called when [isEnabled] is true. [context] is the
+  /// tapped element, used to open menus / sheets and surface snackbars.
+  void invoke(InputBoxAction action, BuildContext context);
 
-  /// Whether [id] currently shows its active-state styling (e.g. 网络搜索 lit
-  /// blue, 语音 lit red).
-  bool isActive(InputBoxButtonId id);
+  /// Whether [action] currently shows its active-state styling (e.g. 网络搜索 lit
+  /// blue, 图像生成 lit).
+  bool isActive(InputBoxAction action);
 
-  /// Whether tapping [id] does anything yet. A `false` button renders at full
-  /// fidelity but is non-interactive.
-  bool isEnabled(InputBoxButtonId id);
+  /// Whether tapping [action] does anything yet. A `false` action renders at
+  /// full fidelity but is non-interactive.
+  bool isEnabled(InputBoxAction action);
 }
 
 /// The inert port used by hosts with no wired behavior — the appearance
@@ -43,11 +46,11 @@ class NoInputBoxActions implements InputBoxActions {
   const NoInputBoxActions();
 
   @override
-  void invoke(InputBoxButtonId id, BuildContext context) {}
+  void invoke(InputBoxAction action, BuildContext context) {}
 
   @override
-  bool isActive(InputBoxButtonId id) => false;
+  bool isActive(InputBoxAction action) => false;
 
   @override
-  bool isEnabled(InputBoxButtonId id) => false;
+  bool isEnabled(InputBoxAction action) => false;
 }
