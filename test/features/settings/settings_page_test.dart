@@ -75,8 +75,8 @@ void main() {
     expect(find.byIcon(LucideIcons.chevronRight), findsNWidgets(21));
   });
 
-  testWidgets('only the wired rows (外观, 关于我们, 配置模型) are enabled; the rest are '
-      'disabled placeholders', (tester) async {
+  testWidgets('only the wired rows (外观, 关于我们, 配置模型, MCP 服务器) are enabled; the '
+      'rest are disabled placeholders', (tester) async {
     await pumpHub(tester);
 
     final rows = tester
@@ -84,7 +84,7 @@ void main() {
         .toList();
     final enabled = rows.where((r) => r.enabled).toList();
 
-    const wiredTitles = {'外观', '关于我们', '配置模型'};
+    const wiredTitles = {'外观', '关于我们', '配置模型', 'MCP 服务器'};
     expect(enabled.map((r) => r.title).toSet(), wiredTitles);
     for (final row in enabled) {
       expect(row.onTap, isNotNull, reason: '${row.title} should be tappable');
