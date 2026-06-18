@@ -23,11 +23,11 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_version
 /// * AI 消息: 复制 · 编辑 · 导出/保存 · 重新生成 · 语音播放 · 翻译 · 版本历史 ·
 ///   创建分支 · 删除
 ///
-/// 复制 / 编辑 / 删除 / 导出·分享 / 重新生成 / 创建分支 / 版本历史 are wired to
-/// real behaviour (版本历史 only appears once a message has saved versions, e.g.
-/// after 重新生成). The remaining buttons depend on the request layer or systems
-/// not yet ported (重新发送/语音播放/翻译) — they are drawn for UI parity but
-/// surface a 「即将支持」 hint on tap rather than faking success.
+/// 复制 / 编辑 / 删除 / 导出·分享 / 重新发送 / 重新生成 / 创建分支 / 版本历史 are
+/// wired to real behaviour (版本历史 only appears once a message has saved
+/// versions, e.g. after 重新生成). The remaining buttons depend on systems not
+/// yet ported (语音播放/翻译) — they are drawn for UI parity but surface a
+/// 「即将支持」 hint on tap rather than faking success.
 class MessageToolbar extends ConsumerStatefulWidget {
   const MessageToolbar({
     required this.view,
@@ -84,6 +84,10 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
 
   void _regenerate() {
     ref.read(chatControllerProvider.notifier).regenerate(_view.id);
+  }
+
+  void _resend() {
+    ref.read(chatControllerProvider.notifier).resend(_view.id);
   }
 
   Future<void> _createBranch() async {
@@ -255,7 +259,7 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
           icon: LucideIcons.refreshCw,
           tooltip: '重新发送',
           color: baseColor,
-          onTap: _comingSoon,
+          onTap: _resend,
         )
       else
         _ToolbarIconButton(
