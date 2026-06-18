@@ -23,10 +23,9 @@ const Color _disabledLight = Color(0xFFCCCCCC);
 const Color _disabledDark = Color(0xFF555555);
 const Color _stopRed = Color(0xFFFF4D4F);
 
-/// Active-state colors (web-search blue / voice red) and the active-button tint.
-const Color _webSearchActiveBlue = Color(0xFF3B82F6);
-const Color _activeRed = Color(0xFFF44336);
-const Color _activeTint = Color(0x1A3B82F6); // rgba(59,130,246,0.1)
+/// The active-button background tint (`rgba(59,130,246,0.1)`); the per-button
+/// active accent colors live in [inputBoxToolbarActiveColor].
+const Color _activeTint = Color(0x1A3B82F6);
 
 /// The bottom composer: a 1:1 port of the original `IntegratedChatInput` — a
 /// rounded, paper-surfaced card holding the text field on top and a
@@ -205,10 +204,16 @@ class _Toolbar extends StatelessWidget {
   final VoidCallback? onSend;
   final InputBoxActions actions;
 
-  /// The tap handler for [id]: dispatches through [actions] when that button is
-  /// wired, else `null` so it renders full-fidelity but stays inert.
-  VoidCallback? _onPressed(InputBoxButtonId id, BuildContext context) =>
-      actions.isEnabled(id) ? () => actions.invoke(id, context) : null;
+  /// The tap handler for [id]: maps it to its [InputBoxAction] and dispatches
+  /// through [actions] when that action is wired, else `null` so the button
+  /// renders full-fidelity but stays inert (and `send`, which has no action).
+  VoidCallback? _onPressed(InputBoxButtonId id, BuildContext context) {
+    final action = inputBoxButtonAction(id);
+    if (action == null) return null;
+    return actions.isEnabled(action)
+        ? () => actions.invoke(action, context)
+        : null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -241,51 +246,38 @@ class _Toolbar extends StatelessWidget {
   }
 
   Widget _button(InputBoxButtonId id, Color iconColor, BuildContext context) {
-    switch (id) {
-      case InputBoxButtonId.send:
-        final sendColor = canSend
-            ? (isDark ? _sendGreenDark : _sendGreenLight)
-            : (isDark ? _disabledDark : _disabledLight);
-        return _ToolbarButton(
-          icon: Icon(
-            isStreaming ? LucideIcons.square : LucideIcons.send,
-            size: 18,
-            color: isStreaming ? _stopRed : sendColor,
-          ),
-          tooltip: isStreaming ? _stopTooltip : _sendTooltip,
-          // Stopping a stream is a later slice; during streaming the button
-          // shows the stop glyph but does not act.
-          onPressed: isStreaming ? null : onSend,
-        );
-      case InputBoxButtonId.voice:
-        final active = actions.isActive(id);
-        return _ToolbarButton(
-          icon: inputBoxToolbarIcon(id, color: active ? _activeRed : iconColor),
-          tooltip: inputBoxToolbarTooltip(id),
-          active: active,
-          onPressed: _onPressed(id, context),
-        );
-      case InputBoxButtonId.search:
-        final active = actions.isActive(id);
-        return _ToolbarButton(
-          icon: inputBoxToolbarIcon(
-            id,
-            color: active ? _webSearchActiveBlue : iconColor,
-          ),
-          tooltip: inputBoxToolbarTooltip(id),
-          active: active,
-          onPressed: _onPressed(id, context),
-        );
-      default:
-        return _ToolbarButton(
-          icon: inputBoxToolbarIcon(
-            id,
-            color: inputBoxToolbarRestColor(id, iconColor),
-          ),
-          tooltip: inputBoxToolbarTooltip(id),
-          onPressed: _onPressed(id, context),
-        );
+    if (id == InputBoxButtonId.send) {
+      final sendColor = canSend
+          ? (isDark ? _sendGreenDark : _sendGreenLight)
+          : (isDark ? _disabledDark : _disabledLight);
+      return _ToolbarButton(
+        icon: Icon(
+          isStreaming ? LucideIcons.square : LucideIcons.send,
+          size: 18,
+          color: isStreaming ? _stopRed : sendColor,
+        ),
+        tooltip: isStreaming ? _stopTooltip : _sendTooltip,
+        // Stopping a stream is a later slice; during streaming the button
+        // shows the stop glyph but does not act.
+        onPressed: isStreaming ? null : onSend,
+      );
     }
+
+    // Every other button is keyed by its action so the port drives its
+    // active state: 网络搜索/语音 light up, and 图像/视频 (when placed standalone) flip
+    // to their accent and "退出…模式" tooltip while their session mode is on.
+    final action = inputBoxButtonAction(id)!;
+    final active = actions.isActive(action);
+    final restColor = inputBoxToolbarRestColor(id, iconColor);
+    return _ToolbarButton(
+      icon: inputBoxToolbarIcon(
+        id,
+        color: active ? inputBoxToolbarActiveColor(id, restColor) : restColor,
+      ),
+      tooltip: inputBoxToolbarTooltip(id, active: active),
+      active: active,
+      onPressed: _onPressed(id, context),
+    );
   }
 }
 
