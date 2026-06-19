@@ -36,9 +36,28 @@ class _McpServerSettingsPageState extends ConsumerState<McpServerSettingsPage>
     vsync: this,
   )..addListener(_onTabChanged);
 
+  // The original swaps tab content instantly ({activeTab === N && ...}) with no
+  // sliding page transition, so the shown tab is driven straight off the
+  // controller via an [IndexedStack] — updated the moment a tab is tapped or
+  // swiped, while the tab strip's indicator still slides.
+  int _index = 0;
+
+  // Horizontal swipe accumulator. The original switches tab on a >60px
+  // horizontal drag (a jump, not finger-following paging).
+  double _swipeDx = 0;
+
   void _onTabChanged() {
-    // The original only shows the 添加 app-bar action on the 外部服务器 tab.
-    if (!_tabController.indexIsChanging) setState(() {});
+    // [TabController.index] jumps to the destination as soon as a tab is
+    // tapped, so the content swaps immediately (the indicator still animates).
+    if (_tabController.index != _index) {
+      setState(() => _index = _tabController.index);
+    }
+  }
+
+  void _onSwipeEnd() {
+    if (_swipeDx.abs() <= 60) return;
+    final next = (_tabController.index + (_swipeDx < 0 ? 1 : -1)).clamp(0, 2);
+    if (next != _tabController.index) _tabController.animateTo(next);
   }
 
   @override
@@ -52,7 +71,7 @@ class _McpServerSettingsPageState extends ConsumerState<McpServerSettingsPage>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final onExternalTab = _tabController.index == 0;
+    final onExternalTab = _index == 0;
 
     return Scaffold(
       appBar: AppBar(
@@ -99,9 +118,23 @@ class _McpServerSettingsPageState extends ConsumerState<McpServerSettingsPage>
         children: [
           _TabBarHeader(controller: _tabController),
           Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: const [_ExternalTab(), _BuiltinTab(), _AssistantTab()],
+            // Match the original: tab content swaps instantly (no sliding page
+            // animation — that animation is what dropped frames on the first
+            // switch), with a horizontal swipe (>60px) jumping to the adjacent
+            // tab.
+            child: GestureDetector(
+              onHorizontalDragStart: (_) => _swipeDx = 0,
+              onHorizontalDragUpdate: (d) => _swipeDx += d.delta.dx,
+              onHorizontalDragEnd: (_) => _onSwipeEnd(),
+              child: IndexedStack(
+                index: _index,
+                sizing: StackFit.expand,
+                children: const [
+                  _ExternalTab(),
+                  _BuiltinTab(),
+                  _AssistantTab(),
+                ],
+              ),
             ),
           ),
         ],
