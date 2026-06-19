@@ -25,8 +25,8 @@ import 'package:aetherlink_flutter/shared/utils/provider_icons.dart';
 ///  * AppBar: dynamic provider name + 启用 switch + 保存.
 ///  * Tab 配置: header block (avatar + name + `{type} API` + edit/delete),
 ///    single/multi-key mode, key input, multi-key entry point, base-URL
-///    completion preview, Responses-API toggle (即将支持) and the advanced-API
-///    entry point.
+///    completion preview, Responses-API toggle (wired into the request layer)
+///    and the advanced-API entry point.
 ///  * Tab 模型: 测试模式 toggle + 长期显示测试按钮, search, the 自动获取 / 自定义端点 /
 ///    手动添加 tool row and the grouped model list (edit / delete / test per
 ///    row, 2-step group delete).
@@ -324,8 +324,6 @@ class _ModelProviderDetailPageState
                 Row(
                   children: [
                     const ModelSectionTitle('Responses API'),
-                    const SizedBox(width: 8),
-                    const _ComingSoonChip(),
                     const Spacer(),
                     CustomSwitch(
                       value: _useResponsesAPI,
@@ -335,8 +333,8 @@ class _ModelProviderDetailPageState
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '使用 OpenAI 的 /responses 端点替代 /chat/completions。'
-                  '设置会保存，但请求层暂未接入（即将支持）。',
+                  '使用 OpenAI 的 /responses 端点替代 /chat/completions，'
+                  '开启后聊天请求按 Responses 协议发送。',
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontSize: 12,
                     color: theme.colorScheme.onSurfaceVariant,
@@ -976,31 +974,6 @@ class _UrlPreview extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// A small amber 「即将支持」 chip for not-yet-wired toggles.
-class _ComingSoonChip extends StatelessWidget {
-  const _ComingSoonChip();
-
-  @override
-  Widget build(BuildContext context) {
-    const accent = Color(0xFFED6C02); // MUI warning.main
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: const Text(
-        '即将支持',
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: accent,
-        ),
       ),
     );
   }

@@ -15,6 +15,10 @@ import 'package:dio/dio.dart';
 /// with `stream: true`, an SSE body of `data: {json}` chunks terminated by
 /// `data: [DONE]`.
 ///
+/// When [LlmChatRequest.useResponsesAPI] is set it instead speaks OpenAI's
+/// `/responses` protocol (typed `input` items + `response.*` stream events);
+/// see [_streamResponses].
+///
 /// One adapter serves every OpenAI-compatible vendor (OpenAI, DashScope, Grok,
 /// DeepSeek, Moonshot, OpenRouter, Ollama, …); they vary only by
 /// [Model.baseUrl] / model id / params and ride on [LlmChatRequest.extraBody]
@@ -27,6 +31,11 @@ class OpenAiCompatibleAdapter implements LlmGateway {
 
   @override
   Stream<LlmStreamChunk> streamChat(LlmChatRequest request) async* {
+    if (request.useResponsesAPI) {
+      yield* _streamResponses(request);
+      return;
+    }
+
     final model = request.model;
 
     final messages = <Map<String, dynamic>>[
@@ -129,6 +138,142 @@ class OpenAiCompatibleAdapter implements LlmGateway {
     yield LlmStreamChunk.done(usage: usage, finishReason: finishReason);
   }
 
+  /// Streams a chat turn over OpenAI's `/responses` endpoint.
+  ///
+  /// Differs from Chat Completions in three places: messages become typed
+  /// `input` items (`_toResponsesInput`), the body uses `instructions` /
+  /// `max_output_tokens` / flat function `tools`, and the SSE carries
+  /// `response.*` event objects (`{type, ...}`) rather than `choices[].delta`.
+  /// Text/reasoning deltas map straight through; `function_call` items are
+  /// accumulated across `output_item.added` → `function_call_arguments.delta`
+  /// → `output_item.done` and emitted once each, mirroring the
+  /// Chat-Completions tool-call merge.
+  Stream<LlmStreamChunk> _streamResponses(LlmChatRequest request) async* {
+    final model = request.model;
+
+    final input = <Map<String, dynamic>>[
+      for (final m in request.messages) ..._toResponsesInput(m),
+    ];
+
+    final tools = request.tools;
+    final hasTools = tools != null && tools.isNotEmpty;
+    final system = request.system;
+    final body = <String, dynamic>{
+      'model': model.id,
+      'input': input,
+      'stream': request.stream,
+      if (system != null && system.isNotEmpty) 'instructions': system,
+      if (request.temperature != null) 'temperature': request.temperature,
+      if (request.topP != null) 'top_p': request.topP,
+      if (request.maxTokens != null) 'max_output_tokens': request.maxTokens,
+      if (hasTools) ...{
+        'tools': [
+          for (final t in tools)
+            {
+              'type': 'function',
+              'name': t.name,
+              'description': t.description,
+              'parameters': t.inputSchema,
+            },
+        ],
+        'tool_choice': 'auto',
+        'parallel_tool_calls': true,
+      },
+      ...?request.extraBody,
+    };
+
+    final headers = <String, dynamic>{
+      'Authorization': 'Bearer ${model.apiKey ?? ''}',
+      ...?model.extraHeaders,
+      ...?request.extraHeaders,
+    };
+
+    final byteStream = await _openStream(
+      _responsesUrl(model.baseUrl),
+      headers: headers,
+      body: body,
+    );
+
+    Usage? usage;
+    String? finishReason;
+    // function_call items keyed by their `output_index` (one entry per parallel
+    // call), accumulating call_id + name + arguments across the stream.
+    final toolCalls = <String, _ToolCallBuilder>{};
+
+    await for (final event in decodeSse(byteStream)) {
+      final data = event.data;
+      if (data.isEmpty) continue;
+      if (data == '[DONE]') break;
+
+      final json = jsonDecode(data) as Map<String, dynamic>;
+
+      switch (json['type']) {
+        case 'response.output_text.delta':
+          final delta = json['delta'];
+          if (delta is String && delta.isNotEmpty) {
+            yield LlmStreamChunk.textDelta(delta);
+          }
+        case 'response.reasoning.delta':
+        case 'response.reasoning_text.delta':
+        case 'response.reasoning_summary_text.delta':
+          final delta = json['delta'];
+          if (delta is String && delta.isNotEmpty) {
+            yield LlmStreamChunk.reasoningDelta(delta);
+          }
+        case 'response.output_item.added':
+          _responsesItemBoundary(toolCalls, json);
+        case 'response.function_call_arguments.delta':
+          final delta = json['delta'];
+          if (delta is String) {
+            toolCalls
+                .putIfAbsent(_responsesItemKey(json), _ToolCallBuilder.new)
+                .arguments
+                .write(delta);
+          }
+        case 'response.function_call_arguments.done':
+          final args = json['arguments'];
+          if (args is String) {
+            final builder = toolCalls.putIfAbsent(
+              _responsesItemKey(json),
+              _ToolCallBuilder.new,
+            );
+            builder.arguments
+              ..clear()
+              ..write(args);
+          }
+        case 'response.output_item.done':
+          _responsesItemBoundary(toolCalls, json);
+        case 'response.function_call.delta':
+          _responsesInlineFunctionCall(toolCalls, json, replaceArgs: false);
+        case 'response.function_call.done':
+          _responsesInlineFunctionCall(toolCalls, json, replaceArgs: true);
+        case 'response.completed':
+          final response = json['response'];
+          if (response is Map<String, dynamic>) {
+            usage = _responsesUsage(response['usage']) ?? usage;
+          }
+          finishReason ??= 'stop';
+      }
+
+      // Some gateways attach usage at the top level of any event.
+      usage = _responsesUsage(json['usage']) ?? usage;
+    }
+
+    for (final key in toolCalls.keys.toList()..sort()) {
+      final call = toolCalls[key]!;
+      if (call.name.isEmpty) continue;
+      yield LlmStreamChunk.toolCall(
+        LlmToolCall(
+          id: call.id,
+          name: call.name,
+          arguments: call.arguments.toString(),
+        ),
+      );
+    }
+
+    yield LlmStreamChunk.done(usage: usage, finishReason: finishReason);
+  }
+
   Future<Stream<List<int>>> _openStream(
     String url, {
     required Map<String, dynamic> headers,
@@ -174,6 +319,129 @@ class OpenAiCompatibleAdapter implements LlmGateway {
     return {'role': _roleValue(m.role), 'content': m.content};
   }
 
+  /// Translates an [LlmMessage] into one or more `/responses` `input` items.
+  ///
+  /// A tool-result turn ([LlmMessage.toolCallId] set) becomes a
+  /// `function_call_output` item linked by `call_id`; an assistant turn
+  /// carrying [LlmMessage.toolCalls] emits one typed `function_call` item per
+  /// call (plus an `assistant` message when it also has text). Plain turns map
+  /// to a role message — assistant as a string, user/system as an
+  /// `input_text` content part (a stray system turn is folded to `user`, since
+  /// the real system prompt rides in `instructions`).
+  static List<Map<String, dynamic>> _toResponsesInput(LlmMessage m) {
+    final toolCallId = m.toolCallId;
+    if (toolCallId != null) {
+      return [
+        {
+          'type': 'function_call_output',
+          'call_id': toolCallId,
+          'output': m.content,
+        },
+      ];
+    }
+    final calls = m.toolCalls;
+    if (calls != null && calls.isNotEmpty) {
+      return [
+        if (m.content.isNotEmpty) {'role': 'assistant', 'content': m.content},
+        for (final c in calls)
+          {
+            'type': 'function_call',
+            'call_id': c.id,
+            'name': c.name,
+            'arguments': c.arguments,
+          },
+      ];
+    }
+    if (m.role == MessageRole.assistant) {
+      return [
+        {'role': 'assistant', 'content': m.content},
+      ];
+    }
+    return [
+      {
+        'role': 'user',
+        'content': [
+          {'type': 'input_text', 'text': m.content},
+        ],
+      },
+    ];
+  }
+
+  /// Stable per-call key for a `/responses` function-call event, preferring the
+  /// `output_index` (shared by `output_item.*` and `function_call_arguments.*`)
+  /// and falling back to the item id.
+  static String _responsesItemKey(Map<String, dynamic> json) {
+    final outputIndex = json['output_index'];
+    if (outputIndex is num) return 'idx:${outputIndex.toInt()}';
+    final item = json['item'];
+    final itemId =
+        json['item_id'] ?? (item is Map<String, dynamic> ? item['id'] : null);
+    if (itemId is String && itemId.isNotEmpty) return 'item:$itemId';
+    return 'idx:0';
+  }
+
+  /// Folds a `response.output_item.{added,done}` event into [acc] when its item
+  /// is a `function_call` (capturing call_id / name / arguments).
+  static void _responsesItemBoundary(
+    Map<String, _ToolCallBuilder> acc,
+    Map<String, dynamic> json,
+  ) {
+    final item = json['item'];
+    if (item is! Map<String, dynamic> || item['type'] != 'function_call') {
+      return;
+    }
+    final builder = acc.putIfAbsent(
+      _responsesItemKey(json),
+      _ToolCallBuilder.new,
+    );
+    final callId = item['call_id'] ?? item['id'];
+    if (callId is String && callId.isNotEmpty) builder.id = callId;
+    final name = item['name'];
+    if (name is String && name.isNotEmpty) builder.name = name;
+    final args = item['arguments'];
+    if (args is String && args.isNotEmpty) {
+      builder.arguments
+        ..clear()
+        ..write(args);
+    }
+  }
+
+  /// Folds the non-standard `response.function_call.{delta,done}` variant (a
+  /// bare `function_call` object) into [acc]. [replaceArgs] overwrites the
+  /// accumulated arguments with the complete value carried by the `done` event.
+  static void _responsesInlineFunctionCall(
+    Map<String, _ToolCallBuilder> acc,
+    Map<String, dynamic> json, {
+    required bool replaceArgs,
+  }) {
+    final fc = json['function_call'];
+    if (fc is! Map<String, dynamic>) return;
+    final builder = acc.putIfAbsent(
+      _responsesItemKey(json),
+      _ToolCallBuilder.new,
+    );
+    final callId = fc['call_id'] ?? fc['id'];
+    if (callId is String && callId.isNotEmpty) builder.id = callId;
+    final name = fc['name'];
+    if (name is String && name.isNotEmpty) builder.name = name;
+    final args = fc['arguments'];
+    if (args is String && args.isNotEmpty) {
+      if (replaceArgs) builder.arguments.clear();
+      builder.arguments.write(args);
+    }
+  }
+
+  /// Parses a `/responses` usage block (`input_tokens` / `output_tokens` /
+  /// `total_tokens`) into [Usage], or null if absent.
+  static Usage? _responsesUsage(Object? raw) {
+    if (raw is! Map<String, dynamic>) return null;
+    return Usage(
+      promptTokens: (raw['input_tokens'] as num?)?.toInt() ?? 0,
+      completionTokens: (raw['output_tokens'] as num?)?.toInt() ?? 0,
+      totalTokens: (raw['total_tokens'] as num?)?.toInt() ?? 0,
+    );
+  }
+
   /// Merges one delta's `tool_calls` fragments into [acc] by their `index`.
   static void _accumulateToolCalls(
     Map<int, _ToolCallBuilder> acc,
@@ -206,6 +474,13 @@ class OpenAiCompatibleAdapter implements LlmGateway {
         ? 'https://api.openai.com/v1'
         : baseUrl.replaceAll(RegExp(r'/+$'), '');
     return '$base/chat/completions';
+  }
+
+  static String _responsesUrl(String? baseUrl) {
+    final base = (baseUrl == null || baseUrl.isEmpty)
+        ? 'https://api.openai.com/v1'
+        : baseUrl.replaceAll(RegExp(r'/+$'), '');
+    return '$base/responses';
   }
 }
 

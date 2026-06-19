@@ -16,6 +16,10 @@ part 'llm_chat_request.freezed.dart';
 /// native function-calling shape (`tools` / `functionDeclarations`) so the
 /// model can emit structured `tool_calls`. In 提示词注入 mode it stays null and
 /// the tools ride in [system] as an XML protocol instead.
+///
+/// [useResponsesAPI] flips the OpenAI-compatible adapter from `/chat/completions`
+/// to the `/responses` endpoint (different request/stream schema). It is sourced
+/// from `ModelProvider.useResponsesAPI` and ignored by non-OpenAI adapters.
 @freezed
 abstract class LlmChatRequest with _$LlmChatRequest {
   const factory LlmChatRequest({
@@ -26,6 +30,7 @@ abstract class LlmChatRequest with _$LlmChatRequest {
     int? maxTokens,
     double? topP,
     @Default(true) bool stream,
+    @Default(false) bool useResponsesAPI,
     List<McpToolDefinition>? tools,
     Map<String, String>? extraHeaders,
     Map<String, dynamic>? extraBody,
