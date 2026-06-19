@@ -4,10 +4,13 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
+import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/shared/config/builtin_mcp_servers.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
+import 'package:aetherlink_flutter/shared/domain/skill.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 
 /// Port of the web `MCPServerQuickPanel`
@@ -23,10 +26,11 @@ import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 ///   • 内置/助手「添加」→ [McpServers.addBuiltin]
 ///   • 「管理 MCP 服务器」/「前往配置」→ [AppRouter.mcpServerPath]
 ///
-/// Features whose request-layer backing does not exist yet are surfaced but
-/// labelled 即将支持 (no fake buttons): 桥梁模式 (disabled toggle) and the whole
-/// 技能 tab (skills subsystem unported). The 智能助手 rows are UI-only — adding /
-/// toggling works, but tapping a row does not navigate to a detail page yet.
+/// 桥梁模式 → [McpToolsController.setBridgeMode]; the 技能 总开关 →
+/// [McpToolsController.setSkillsEnabled]; the 技能 tab lists 启用 skills and binds
+/// them to the current assistant ([Assistants.toggleSkill]). The 智能助手 rows are
+/// UI-only — adding / toggling works, but tapping a row does not navigate to a
+/// detail page yet.
 Future<void> showMcpQuickPanel(BuildContext context) {
   // Drop the chat input's focus first so the modal route has no node to restore
   // on pop — otherwise closing this full-screen panel re-focuses the input box
@@ -193,7 +197,7 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
     final safeRight = fullScreen ? mq.padding.right : 0.0;
 
     final content = _mainTab == 0
-        ? _toolsTab(t, servers, loading)
+        ? _toolsTab(t, toolsState.bridgeMode, servers, loading)
         : _skillsTab(t);
 
     final column = Column(
@@ -256,9 +260,12 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
                 .setEnabled(enabled: v),
           )
         else
-          // 技能 master switch — skills subsystem unported, so it is shown but
-          // disabled (即将支持), matching the 别做假按钮 rule.
-          const _McpSwitch(value: false, onChanged: null),
+          _McpSwitch(
+            value: toolsState.skillsEnabled,
+            onChanged: (v) => ref
+                .read(mcpToolsControllerProvider.notifier)
+                .setSkillsEnabled(enabled: v),
+          ),
         const SizedBox(width: 4),
         _CloseButton(tokens: t, onTap: _close),
       ],
@@ -297,11 +304,16 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
 
   // ─────────────────────────── Tab 0: 工具 ───────────────────────────
 
-  Widget _toolsTab(_Tokens t, List<McpServer> servers, bool loading) {
+  Widget _toolsTab(
+    _Tokens t,
+    bool bridgeMode,
+    List<McpServer> servers,
+    bool loading,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _bridgeModeBox(t),
+        _bridgeModeBox(t, bridgeMode),
         Expanded(
           child: loading
               ? const Center(child: _LoadingSpinner())
@@ -313,14 +325,19 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
     );
   }
 
-  Widget _bridgeModeBox(_Tokens t) {
+  Widget _bridgeModeBox(_Tokens t, bool bridgeMode) {
+    const accent = _Tokens.violet;
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: _Tokens.violet.withValues(alpha: t.dark ? 0.12 : 0.06),
+        color: bridgeMode
+            ? accent.withValues(alpha: t.dark ? 0.12 : 0.06)
+            : t.textPrimary.withValues(alpha: t.dark ? 0.03 : 0.02),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _Tokens.violet.withValues(alpha: 0.3)),
+        border: Border.all(
+          color: bridgeMode ? accent.withValues(alpha: 0.3) : t.border,
+        ),
       ),
       child: Row(
         children: [
@@ -328,29 +345,28 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Row(
-                  children: [
-                    Text(
-                      '🔌 桥梁模式',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13.5,
-                        color: _Tokens.violet,
-                      ),
-                    ),
-                    SizedBox(width: 6),
-                    _ComingSoonBadge(),
-                  ],
+                Text(
+                  '🔌 桥梁模式',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13.5,
+                    color: bridgeMode ? accent : t.textPrimary,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '1 个工具替代全部，按需动态调用',
+                  bridgeMode ? '已启用 — 1 个工具替代全部，按需动态调用' : '关闭 — 传统模式注入所有工具',
                   style: TextStyle(fontSize: 12, color: t.textSecondary),
                 ),
               ],
             ),
           ),
-          const _McpSwitch(value: false, onChanged: null),
+          _McpSwitch(
+            value: bridgeMode,
+            onChanged: (v) => ref
+                .read(mcpToolsControllerProvider.notifier)
+                .setBridgeMode(enabled: v),
+          ),
         ],
       ),
     );
@@ -543,41 +559,73 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
   // ─────────────────────────── Tab 1: 技能 ───────────────────────────
 
   Widget _skillsTab(_Tokens t) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              LucideIcons.zap,
-              size: 56,
-              color: t.textSecondary.withValues(alpha: 0.3),
+    final skillsAsync = ref.watch(skillsProvider);
+    final loading = skillsAsync.isLoading && !skillsAsync.hasValue;
+    final enabled = (skillsAsync.asData?.value ?? const <Skill>[])
+        .where((s) => s.enabled)
+        .toList();
+    final assistant = ref.watch(currentAssistantProvider);
+    final boundIds = assistant?.skillIds?.toSet() ?? const <String>{};
+
+    if (loading) return const Center(child: _LoadingSpinner());
+    if (enabled.isEmpty) {
+      return _EmptyState(
+        tokens: t,
+        icon: LucideIcons.zap,
+        title: '还没有启用任何技能',
+        subtitle: '在设置 → 技能管理中启用技能后，在这里绑定给当前助手',
+        buttonLabel: '前往技能管理',
+        onPressed: () {
+          _close();
+          context.push(AppRouter.skillsPath);
+        },
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      itemCount: enabled.length + 1,
+      separatorBuilder: (context, i) =>
+          i < enabled.length - 1 ? _rowDivider(t) : const SizedBox.shrink(),
+      itemBuilder: (context, i) {
+        if (i == enabled.length) return _skillsHowItWorks(t);
+        final skill = enabled[i];
+        final bound = boundIds.contains(skill.id);
+        return Opacity(
+          opacity: bound ? 1 : 0.6,
+          child: _ServerRow(
+            tokens: t,
+            avatar: _EmojiAvatar(
+              emoji: skill.emoji ?? '🔧',
+              color: _Tokens.amber,
             ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '技能',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: t.textPrimary,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const _ComingSoonBadge(),
-              ],
+            title: skill.name,
+            subtitle: _DescText(text: skill.description, tokens: t),
+            trailing: _McpSwitch(
+              value: bound,
+              onChanged: assistant == null
+                  ? null
+                  : (v) => ref
+                        .read(assistantsProvider.notifier)
+                        .toggleSkill(assistant.id, skill.id),
             ),
-            const SizedBox(height: 6),
-            Text(
-              '技能系统正在迁移中，敬请期待',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: t.textSecondary),
-            ),
-          ],
-        ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _skillsHowItWorks(_Tokens t) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _Tokens.amber.withValues(alpha: t.dark ? 0.06 : 0.04),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _Tokens.amber.withValues(alpha: 0.15)),
+      ),
+      child: Text(
+        '开关控制技能是否绑定到当前助手。绑定后 AI 会自动匹配，并通过 read_skill 读取技能的完整指令。',
+        style: TextStyle(fontSize: 12, height: 1.5, color: t.textSecondary),
       ),
     );
   }
@@ -601,12 +649,10 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
             width: double.infinity,
             child: FilledButton.icon(
               onPressed: () {
-                if (isTools) {
-                  _close();
-                  context.push(AppRouter.mcpServerPath);
-                } else {
-                  _comingSoon('技能管理');
-                }
+                _close();
+                context.push(
+                  isTools ? AppRouter.mcpServerPath : AppRouter.skillsPath,
+                );
               },
               style: FilledButton.styleFrom(
                 backgroundColor: isTools ? _Tokens.success : _Tokens.amber,
@@ -845,30 +891,6 @@ class _CountChip extends StatelessWidget {
           fontSize: 12,
           fontWeight: FontWeight.w500,
           color: dark ? color : const Color(0xFF166534),
-        ),
-      ),
-    );
-  }
-}
-
-/// The small amber 即将支持 pill used to mark unported features.
-class _ComingSoonBadge extends StatelessWidget {
-  const _ComingSoonBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: _Tokens.amber.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: const Text(
-        '即将支持',
-        style: TextStyle(
-          fontSize: 10.5,
-          fontWeight: FontWeight.w600,
-          color: Color(0xFFB45309),
         ),
       ),
     );
