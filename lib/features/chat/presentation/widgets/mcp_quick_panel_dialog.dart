@@ -28,6 +28,10 @@ import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 /// 技能 tab (skills subsystem unported). The 智能助手 rows are UI-only — adding /
 /// toggling works, but tapping a row does not navigate to a detail page yet.
 Future<void> showMcpQuickPanel(BuildContext context) {
+  // Drop the chat input's focus first so the modal route has no node to restore
+  // on pop — otherwise closing this full-screen panel re-focuses the input box
+  // (and re-raises the keyboard) on the way back to the chat screen.
+  FocusManager.instance.primaryFocus?.unfocus();
   return showGeneralDialog<void>(
     context: context,
     barrierColor: const Color(0x80000000),
