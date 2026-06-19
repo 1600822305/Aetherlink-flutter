@@ -160,6 +160,8 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
     );
   }
 
+  void _onDragStart(DragStartDetails details) => _ac.stop();
+
   void _onDragEnd(DragEndDetails details) {
     final velocity = details.primaryVelocity ?? 0.0;
     final bool open;
@@ -196,6 +198,12 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
             onPopInvokedWithResult: (didPop, _) {
               if (!didPop) closeSidebar();
             },
+            // Fixed child set (no conditional children): the gesture layers
+            // stay mounted across the whole animation, so an open-drag started
+            // at t==0 is never torn down the instant t becomes > 0 (that
+            // teardown was what made opening need two swipes). Each layer is
+            // toggled via IgnorePointer / z-order instead of being added or
+            // removed.
             child: Stack(
               children: [
                 // 1. Chat page — shifted right by the drawer width in push mode.
@@ -204,13 +212,15 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
                   child: widget.child,
                 ),
 
-                // 2. Scrim over the chat page; tap or drag to close. Absent
-                //    (and non-blocking) while fully closed.
-                if (t > 0)
-                  Positioned.fill(
+                // 2. Scrim over the chat page; tap or drag to close. Mounted
+                //    always but ignored (pass-through to the chat) while closed.
+                Positioned.fill(
+                  child: IgnorePointer(
+                    ignoring: t <= 0,
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: closeSidebar,
+                      onHorizontalDragStart: _onDragStart,
                       onHorizontalDragUpdate: _onDragUpdate,
                       onHorizontalDragEnd: _onDragEnd,
                       child: ColoredBox(
@@ -220,9 +230,28 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
                       ),
                     ),
                   ),
+                ),
 
-                // 3. The drawer, sliding in from the left edge. Rendered above
-                //    the scrim so it stays fully opaque in both modes.
+                // 3. Left-edge open-drag strip — always mounted. Narrow +
+                //    translucent so it never steals the chat's own horizontal
+                //    gestures; while open it sits under the drawer (next layer)
+                //    and is effectively shadowed.
+                Positioned(
+                  top: 0,
+                  bottom: 0,
+                  left: 0,
+                  width: _edgeDragWidth,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onHorizontalDragStart: _onDragStart,
+                    onHorizontalDragUpdate: _onDragUpdate,
+                    onHorizontalDragEnd: _onDragEnd,
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+
+                // 4. The drawer, sliding in from the left edge. Topmost so it
+                //    stays fully opaque and owns gestures over its own area.
                 Positioned(
                   top: 0,
                   bottom: 0,
@@ -232,28 +261,13 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
                     offset: Offset(-w * (1 - t), 0),
                     child: GestureDetector(
                       behavior: HitTestBehavior.translucent,
+                      onHorizontalDragStart: _onDragStart,
                       onHorizontalDragUpdate: _onDragUpdate,
                       onHorizontalDragEnd: _onDragEnd,
                       child: widget.drawer,
                     ),
                   ),
                 ),
-
-                // 4. Left-edge open-drag strip — only while closed, so it never
-                //    competes with the chat's own horizontal gestures.
-                if (t <= 0)
-                  Positioned(
-                    top: 0,
-                    bottom: 0,
-                    left: 0,
-                    width: _edgeDragWidth,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onHorizontalDragUpdate: _onDragUpdate,
-                      onHorizontalDragEnd: _onDragEnd,
-                      child: const SizedBox.expand(),
-                    ),
-                  ),
               ],
             ),
           );
