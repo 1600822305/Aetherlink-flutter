@@ -38,40 +38,40 @@ Future<void> showModelSelectorDialog(
   );
 }
 
-/// Default-theme design tokens (`src/shared/design-tokens/index.ts`) resolved
-/// per brightness — the exact values the original injects into the CSS
-/// variables the selector reads.
+/// Structural design tokens resolved from the active [ThemeData] so the
+/// selector follows the selected 主题风格 preset (its `ColorScheme`) rather than
+/// fixed light/dark values. The neutral primary/hover/active/selected tints are
+/// derived from `colorScheme.primary`; the inline title [badge] stays the
+/// original's fixed accent.
 class _Tokens {
-  _Tokens(this.brightness);
+  _Tokens(this.theme);
 
-  final Brightness brightness;
+  final ThemeData theme;
+  ColorScheme get _cs => theme.colorScheme;
+  Brightness get brightness => theme.brightness;
   bool get _dark => brightness == Brightness.dark;
 
   // --theme-bg-paper
-  Color get bgPaper => _dark ? const Color(0xFF2A2A2A) : const Color(0xFFFFFFFF);
-  // --theme-bg-elevated
-  Color get bgElevated =>
-      _dark ? const Color(0xFF333333) : const Color(0xFFFAFAFA);
+  Color get bgPaper => _cs.surface;
+  // --theme-bg-elevated : a subtle tint over the surface.
+  Color get bgElevated => Color.alphaBlend(
+    _cs.onSurface.withValues(alpha: _dark ? 0.06 : 0.03),
+    _cs.surface,
+  );
   // --theme-text-primary
-  Color get textPrimary =>
-      _dark ? const Color(0xFFF0F0F0) : const Color(0xFF1E293B);
+  Color get textPrimary => _cs.onSurface;
   // --theme-text-secondary
-  Color get textSecondary =>
-      _dark ? const Color(0xFFB0B0B0) : const Color(0xFF64748B);
+  Color get textSecondary => _cs.onSurfaceVariant;
   // --theme-border-default
-  Color get border =>
-      _dark ? const Color(0x1FFFFFFF) : const Color(0x1F000000);
-  // --theme-primary (mode-independent: tokens.primary.value)
-  Color get primary => const Color(0xFF64748B);
-  // --theme-hover-bg : rgba(100,116,139, 0.08 light / 0.16 dark)
-  Color get hover =>
-      _dark ? const Color(0x2964748B) : const Color(0x1464748B);
-  // --theme-active-bg : rgba(100,116,139, 0.12 light / 0.24 dark)
-  Color get active =>
-      _dark ? const Color(0x3D64748B) : const Color(0x1F64748B);
-  // --theme-selected-bg : rgba(100,116,139, 0.16 light / 0.32 dark)
-  Color get selected =>
-      _dark ? const Color(0x5264748B) : const Color(0x2964748B);
+  Color get border => _cs.onSurface.withValues(alpha: 0.12);
+  // --theme-primary
+  Color get primary => _cs.primary;
+  // --theme-hover-bg : primary @ 0.08 light / 0.16 dark
+  Color get hover => _cs.primary.withValues(alpha: _dark ? 0.16 : 0.08);
+  // --theme-active-bg : primary @ 0.12 light / 0.24 dark
+  Color get active => _cs.primary.withValues(alpha: _dark ? 0.24 : 0.12);
+  // --theme-selected-bg : primary @ 0.16 light / 0.32 dark
+  Color get selected => _cs.primary.withValues(alpha: _dark ? 0.32 : 0.16);
 
   // Inline badge colour from the title's <span style="color:#90caf9">.
   static const Color badge = Color(0xFF90CAF9);
@@ -143,7 +143,7 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
 
   @override
   Widget build(BuildContext context) {
-    final t = _Tokens(Theme.of(context).brightness);
+    final t = _Tokens(Theme.of(context));
     final mq = MediaQuery.of(context);
     // useMediaQuery(theme.breakpoints.down('sm')) -> width < 600px.
     final fullScreen = mq.size.width < 600;
@@ -192,13 +192,19 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
     // (still-loading) frame locks the tab to 'all'.
     if (!_didInitTab && !providersAsync.isLoading && !currentAsync.isLoading) {
       _didInitTab = true;
-      _activeTab = (currentProviderId != null && groups.containsKey(currentProviderId))
+      _activeTab =
+          (currentProviderId != null && groups.containsKey(currentProviderId))
           ? 'frequently-used'
           : 'all';
     }
     final activeTab = _activeTab ?? 'all';
 
-    final displayed = _displayed(available, groups, currentProviderId, activeTab);
+    final displayed = _displayed(
+      available,
+      groups,
+      currentProviderId,
+      activeTab,
+    );
 
     _scheduleArrowUpdate();
     _scrollSelectedIntoView(displayed, selectedKey, activeTab);
@@ -208,7 +214,14 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
       fullScreen: fullScreen,
       mediaQuery: mq,
       header: _header(t),
-      tabs: _tabs(t, fullScreen, groups, orderedProviders, currentProviderId, activeTab),
+      tabs: _tabs(
+        t,
+        fullScreen,
+        groups,
+        orderedProviders,
+        currentProviderId,
+        activeTab,
+      ),
       content: _content(t, fullScreen, mq, displayed, selectedKey),
     );
 
@@ -337,7 +350,13 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
         ),
       for (final p in orderedProviders)
         if (p.id != currentProviderId)
-          _tab(t, label: p.name, id: p.id, activeTab: activeTab, compact: compact),
+          _tab(
+            t,
+            label: p.name,
+            id: p.id,
+            activeTab: activeTab,
+            compact: compact,
+          ),
     ];
 
     return Container(
@@ -436,14 +455,18 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
 
     return ListView.separated(
       controller: _listController,
-      padding: EdgeInsets.fromLTRB(horizontal, 8, horizontal, fullScreen ? bottom : topBottomDefault),
+      padding: EdgeInsets.fromLTRB(
+        horizontal,
+        8,
+        horizontal,
+        fullScreen ? bottom : topBottomDefault,
+      ),
       itemCount: displayed.length,
       // .solid-model-list gap: 4px
       separatorBuilder: (_, _) => const SizedBox(height: 4),
       itemBuilder: (context, i) {
         final e = displayed[i];
-        final isSelected =
-            selectedKey == _identity(e.provider.id, e.model.id);
+        final isSelected = selectedKey == _identity(e.provider.id, e.model.id);
         return _ModelItem(
           tokens: t,
           provider: e.provider,
@@ -626,7 +649,11 @@ class _CloseButtonState extends State<_CloseButton> {
             color: _hover ? widget.tokens.hover : Colors.transparent,
           ),
           // X icon: svg 24x24, stroke-width 2.
-          child: Icon(Icons.close, size: 24, color: widget.tokens.textSecondary),
+          child: Icon(
+            Icons.close,
+            size: 24,
+            color: widget.tokens.textSecondary,
+          ),
         ),
       ),
     );
@@ -721,12 +748,8 @@ class _ScrollArrow extends StatelessWidget {
         decoration: BoxDecoration(
           color: tokens.bgPaper,
           border: Border(
-            left: isLeft
-                ? BorderSide.none
-                : BorderSide(color: tokens.border),
-            right: isLeft
-                ? BorderSide(color: tokens.border)
-                : BorderSide.none,
+            left: isLeft ? BorderSide.none : BorderSide(color: tokens.border),
+            right: isLeft ? BorderSide(color: tokens.border) : BorderSide.none,
           ),
           boxShadow: const [
             BoxShadow(
@@ -830,8 +853,9 @@ class _ModelItemState extends State<_ModelItem> {
                       style: TextStyle(
                         fontSize: 16, // 1rem
                         // selected -> font-weight 500, else 400
-                        fontWeight:
-                            selected ? FontWeight.w500 : FontWeight.w400,
+                        fontWeight: selected
+                            ? FontWeight.w500
+                            : FontWeight.w400,
                         color: t.textPrimary,
                         height: 1.2,
                       ),
@@ -880,8 +904,7 @@ class _ProviderIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = tokens.brightness == Brightness.dark;
-    final providerId =
-        model.provider.isNotEmpty ? model.provider : provider.id;
+    final providerId = model.provider.isNotEmpty ? model.provider : provider.id;
     final asset = getModelOrProviderIcon(model.id, providerId, isDark: isDark);
 
     // .solid-model-icon : 28x28; img object-fit contain, 4px radius, soft shadow.
