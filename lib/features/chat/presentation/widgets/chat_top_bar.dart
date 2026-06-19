@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/app/di/top_toolbar_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/domain/top_toolbar_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/top_toolbar_component_catalog.dart';
@@ -181,7 +182,7 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
               color: theme.colorScheme.onSurface,
             ),
             tooltip: _menuTooltip,
-            onPressed: () => Scaffold.of(context).openDrawer(),
+            onPressed: () => SidebarScope.of(context).openSidebar(),
           ),
         );
       case TopToolbarComponent.topicName:

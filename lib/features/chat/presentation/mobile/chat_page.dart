@@ -12,6 +12,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_message_bubble.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_sidebar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_top_bar.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/system_prompt_bubble.dart';
 import 'package:aetherlink_flutter/shared/domain/chat_interface_settings.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
@@ -64,20 +65,23 @@ class ChatPage extends ConsumerWidget {
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final isTopRoute = ModalRoute.of(context)?.isCurrent ?? true;
 
-    return Scaffold(
-      resizeToAvoidBottomInset: isTopRoute || keyboardInset == 0,
-      appBar: const ChatTopBar(),
-      // Buzz when the sidebar opens (gated by the 触觉反馈 master + 侧边栏 toggle),
-      // matching the original drawer-open haptic.
-      onDrawerChanged: (isOpened) {
-        if (isOpened) Haptics.instance.onSidebar();
-      },
+    // The sidebar is hosted by [SidebarHost] (not `Scaffold.drawer`) so its
+    // display style can switch between overlay and push (侧边栏显示方式); the
+    // chat page itself stays a plain Scaffold behind it. Buzz when the sidebar
+    // opens (gated by the 触觉反馈 master + 侧边栏 toggle), matching the original
+    // drawer-open haptic.
+    return SidebarHost(
       drawer: const ChatSidebar(),
-      body: _ChatBackground(
-        background: background,
-        child: _ChatBody(
-          showSystemPromptBubble: showSystemPromptBubble,
-          stateAsync: stateAsync,
+      onOpened: Haptics.instance.onSidebar,
+      child: Scaffold(
+        resizeToAvoidBottomInset: isTopRoute || keyboardInset == 0,
+        appBar: const ChatTopBar(),
+        body: _ChatBackground(
+          background: background,
+          child: _ChatBody(
+            showSystemPromptBubble: showSystemPromptBubble,
+            stateAsync: stateAsync,
+          ),
         ),
       ),
     );

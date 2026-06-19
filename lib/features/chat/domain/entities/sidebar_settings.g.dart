@@ -24,6 +24,12 @@ _SidebarSettings _$SidebarSettingsFromJson(
       MessageNavigation.none,
   showContextTokenIndicator: json['showContextTokenIndicator'] as bool? ?? true,
   sidebarWidth: (json['sidebarWidth'] as num?)?.toDouble() ?? 350.0,
+  sidebarDisplayMode:
+      $enumDecodeNullable(
+        _$SidebarDisplayModeEnumMap,
+        json['sidebarDisplayMode'],
+      ) ??
+      SidebarDisplayMode.overlay,
   contextWindowSize: (json['contextWindowSize'] as num?)?.toInt() ?? 100000,
   contextCount: (json['contextCount'] as num?)?.toInt() ?? 20,
   maxOutputTokens: (json['maxOutputTokens'] as num?)?.toInt() ?? 8192,
@@ -50,6 +56,8 @@ Map<String, dynamic> _$SidebarSettingsToJson(
   'messageNavigation': _$MessageNavigationEnumMap[instance.messageNavigation]!,
   'showContextTokenIndicator': instance.showContextTokenIndicator,
   'sidebarWidth': instance.sidebarWidth,
+  'sidebarDisplayMode':
+      _$SidebarDisplayModeEnumMap[instance.sidebarDisplayMode]!,
   'contextWindowSize': instance.contextWindowSize,
   'contextCount': instance.contextCount,
   'maxOutputTokens': instance.maxOutputTokens,
@@ -72,4 +80,9 @@ const _$MessageStyleEnumMap = {
 const _$MessageNavigationEnumMap = {
   MessageNavigation.none: 'none',
   MessageNavigation.buttons: 'buttons',
+};
+
+const _$SidebarDisplayModeEnumMap = {
+  SidebarDisplayMode.overlay: 'overlay',
+  SidebarDisplayMode.push: 'push',
 };

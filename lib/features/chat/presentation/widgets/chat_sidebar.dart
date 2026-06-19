@@ -25,6 +25,7 @@ import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/edit_assistant_dialog.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
@@ -171,7 +172,7 @@ class _CloseRow extends StatelessWidget {
       constraints: const BoxConstraints(minHeight: 48),
       padding: const EdgeInsets.all(8),
       child: IconButton(
-        onPressed: () => Scaffold.maybeOf(context)?.closeDrawer(),
+        onPressed: () => SidebarScope.maybeOf(context)?.closeSidebar(),
         iconSize: 20,
         color: theme.colorScheme.onSurface,
         padding: EdgeInsets.zero,
@@ -1048,11 +1049,11 @@ class _SettingsTab extends ConsumerWidget {
         const _SettingsDivider(),
         const _UserAvatarRow(),
         const _SettingsDivider(),
-        // 常规设置 (7 项) — fully migrated. 消息分割线 / 代码块可复制 drive the chat
+        // 常规设置 (8 项) — fully migrated. 消息分割线 / 代码块可复制 drive the chat
         // view now; the rest persist and light up as their chat widgets land.
         _SettingsGroup(
           title: '常规设置',
-          subtitle: '7 个基础功能设置',
+          subtitle: '8 个基础功能设置',
           children: [
             _SwitchSettingRow(
               title: '消息分割线',
@@ -1078,6 +1079,15 @@ class _SettingsTab extends ConsumerWidget {
               description: '新消息时自动滚动到聊天底部',
               value: s.autoScrollToBottom,
               onChanged: c.setAutoScrollToBottom,
+            ),
+            _SelectSettingRow<SidebarDisplayMode>(
+              title: '侧边栏显示方式',
+              description: '覆盖：抽屉滑入盖在聊天页上；推开：抽屉滑入时把聊天页向右推开',
+              value: s.sidebarDisplayMode,
+              options: [
+                for (final v in SidebarDisplayMode.values) (v, v.label),
+              ],
+              onChanged: c.setSidebarDisplayMode,
             ),
             _SelectSettingRow<MessageStyle>(
               title: '消息样式',

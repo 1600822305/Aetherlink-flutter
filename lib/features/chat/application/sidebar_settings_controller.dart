@@ -108,6 +108,11 @@ class SidebarSettingsController extends _$SidebarSettingsController
   void setSidebarWidth(double value) =>
       persist(state.copyWith(sidebarWidth: value));
 
+  // ── 侧边栏显示方式 ──────────────────────────────────────────────────────
+  /// Sets 侧边栏显示方式 (wired: [SidebarHost] switches between overlay/push).
+  void setSidebarDisplayMode(SidebarDisplayMode value) =>
+      persist(state.copyWith(sidebarDisplayMode: value));
+
   // ── 上下文设置 (即将支持) ─────────────────────────────────────────────────
   void setContextWindowSize(int value) =>
       persist(state.copyWith(contextWindowSize: value));
