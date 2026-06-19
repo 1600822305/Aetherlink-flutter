@@ -22,6 +22,23 @@ class NetworkProxyConfig {
   bool get isValid => enabled && host.trim().isNotEmpty && port > 0;
 
   bool shouldBypass(String host) => shouldBypassNetworkProxy(host, bypassRules);
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is NetworkProxyConfig &&
+            enabled == other.enabled &&
+            type == other.type &&
+            host == other.host &&
+            port == other.port &&
+            username == other.username &&
+            password == other.password &&
+            bypassRules == other.bypassRules;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(enabled, type, host, port, username, password, bypassRules);
 }
 
 enum NetworkProxyType {
