@@ -52,6 +52,16 @@ enum InputBoxButtonId {
 
   /// The original's persisted button id (e.g. `mcp-tools`).
   final String id;
+
+  /// Resolves a persisted [id] back to its button, or `null` when the token is
+  /// unknown (a forward-compatible no-op so a stale stored id is dropped rather
+  /// than throwing).
+  static InputBoxButtonId? fromId(String id) {
+    for (final button in InputBoxButtonId.values) {
+      if (button.id == id) return button;
+    }
+    return null;
+  }
 }
 
 /// Every dispatchable input-box behavior — the single registry the toolbar
