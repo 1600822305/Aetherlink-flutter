@@ -135,6 +135,7 @@ class ModelFormField extends StatelessWidget {
     this.suffixIcon,
     this.maxLines = 1,
     this.onChanged,
+    this.onSubmitted,
   });
 
   final String label;
@@ -146,6 +147,7 @@ class ModelFormField extends StatelessWidget {
   final Widget? suffixIcon;
   final int maxLines;
   final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
 
   @override
   Widget build(BuildContext context) {
@@ -170,6 +172,7 @@ class ModelFormField extends StatelessWidget {
           obscureText: obscureText,
           maxLines: obscureText ? 1 : maxLines,
           onChanged: onChanged,
+          onSubmitted: onSubmitted,
           style: theme.textTheme.bodyMedium?.copyWith(fontSize: 14),
           decoration: InputDecoration(
             isDense: true,
