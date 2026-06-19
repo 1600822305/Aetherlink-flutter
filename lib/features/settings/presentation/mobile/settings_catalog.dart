@@ -123,6 +123,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.zap,
         title: '技能管理 Skills',
         description: '管理AI技能，增强助手能力',
+        route: AppRouter.skillsPath,
       ),
       SettingItemData(
         icon: LucideIcons.globe,
