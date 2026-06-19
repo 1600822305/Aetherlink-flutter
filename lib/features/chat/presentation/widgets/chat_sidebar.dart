@@ -119,17 +119,26 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
     );
     final maxWidth = safeMaxSidebarWidth(MediaQuery.sizeOf(context).width);
     final drawerWidth = rawWidth.clamp(kSidebarWidthMin, maxWidth);
+    // 推开模式下聊天页紧贴抽屉右边缘，圆角会露出深色遮罩（黑缺口），故改直角；
+    // 覆盖模式保留原版 `0 16px 16px 0` 圆角。
+    final pushed = ref.watch(
+      sidebarSettingsControllerProvider.select(
+        (s) => s.sidebarDisplayMode == SidebarDisplayMode.push,
+      ),
+    );
 
     return Drawer(
       width: drawerWidth,
       backgroundColor: theme.colorScheme.surface,
-      // Original mobile drawer: `border-radius: 0 16px 16px 0`.
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.only(
-          topRight: Radius.circular(16),
-          bottomRight: Radius.circular(16),
-        ),
-      ),
+      // Original mobile drawer: `border-radius: 0 16px 16px 0` (覆盖模式)。
+      shape: pushed
+          ? const RoundedRectangleBorder()
+          : const RoundedRectangleBorder(
+              borderRadius: BorderRadius.only(
+                topRight: Radius.circular(16),
+                bottomRight: Radius.circular(16),
+              ),
+            ),
       child: SafeArea(
         top: false,
         child: Column(
