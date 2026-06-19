@@ -215,6 +215,72 @@ final class LlmGatewayFactoryProvider
 
 String _$llmGatewayFactoryHash() => r'68cc9fbd6419097c4c41772c43542368e4c310c2';
 
+/// The live MCP connection pool for remote (sse / streamableHttp) servers,
+/// shared across chat turns. Kept alive so connections are reused; closed when
+/// the container disposes. The chat tool-call loop and the 设置 详情页「测试」
+/// button both dispatch tool discovery / execution through it (the latter via
+/// the `app/di` re-export, since settings may not import chat internals).
+
+@ProviderFor(remoteMcpConnectionManager)
+final remoteMcpConnectionManagerProvider =
+    RemoteMcpConnectionManagerProvider._();
+
+/// The live MCP connection pool for remote (sse / streamableHttp) servers,
+/// shared across chat turns. Kept alive so connections are reused; closed when
+/// the container disposes. The chat tool-call loop and the 设置 详情页「测试」
+/// button both dispatch tool discovery / execution through it (the latter via
+/// the `app/di` re-export, since settings may not import chat internals).
+
+final class RemoteMcpConnectionManagerProvider
+    extends
+        $FunctionalProvider<
+          RemoteMcpConnectionManager,
+          RemoteMcpConnectionManager,
+          RemoteMcpConnectionManager
+        >
+    with $Provider<RemoteMcpConnectionManager> {
+  /// The live MCP connection pool for remote (sse / streamableHttp) servers,
+  /// shared across chat turns. Kept alive so connections are reused; closed when
+  /// the container disposes. The chat tool-call loop and the 设置 详情页「测试」
+  /// button both dispatch tool discovery / execution through it (the latter via
+  /// the `app/di` re-export, since settings may not import chat internals).
+  RemoteMcpConnectionManagerProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'remoteMcpConnectionManagerProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$remoteMcpConnectionManagerHash();
+
+  @$internal
+  @override
+  $ProviderElement<RemoteMcpConnectionManager> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
+
+  @override
+  RemoteMcpConnectionManager create(Ref ref) {
+    return remoteMcpConnectionManager(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(RemoteMcpConnectionManager value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<RemoteMcpConnectionManager>(value),
+    );
+  }
+}
+
+String _$remoteMcpConnectionManagerHash() =>
+    r'37e639330d2a11ee0dabaf275840c390a511a2f6';
+
 /// Debug-only seed so message rendering is visible before send/streaming exist
 /// (M4.2.2+). In release builds ([kDebugMode] false) this is a no-op, so the
 /// read pipeline behaves exactly as before. It is idempotent — it writes
