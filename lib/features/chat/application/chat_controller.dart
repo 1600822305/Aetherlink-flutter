@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
@@ -35,8 +37,10 @@ import 'package:aetherlink_flutter/shared/domain/skill.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/mcp_bridge_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_prompt.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
 import 'package:aetherlink_flutter/shared/utils/system_prompt_variables.dart';
 
 part 'chat_controller.g.dart';
@@ -1501,24 +1505,49 @@ class ChatController extends _$ChatController {
     ];
   }
 
-  /// Assembles the [_McpSetup] for the current turn from the persisted MCP 工具
-  /// 总开关 + 调用模式 ([McpToolsController]) and the active configured servers
-  /// ([McpServers]). Two sources contribute tools, each minus its
-  /// `disabledTools`: 启用 built-in servers (the static, locally-runnable
-  /// calculator / time catalogue) and 启用 remote servers (sse / streamableHttp),
-  /// whose tools are discovered over a live connection via
-  /// [RemoteMcpConnectionManager]. A remote server that is unreachable degrades
-  /// gracefully — it simply contributes no tools this turn. Returns a disabled
-  /// setup when the master toggle is off, so non-MCP turns stream exactly as
-  /// before.
+  /// Assembles the [_McpSetup] for the current turn — the port of the web
+  /// `fetchMcpTools(toolsEnabled, hasSkills)`. Three switches drive it
+  /// ([McpToolsController]): the 工具 总开关, 桥梁模式, and the 技能 独立开关.
+  ///
+  /// `read_skill` is injected (and only it) whenever 技能开关 is on AND the
+  /// assistant has bound, enabled skills — independent of the 工具 总开关 and 桥梁
+  /// 模式, exactly like the web. With the 工具 总开关 on: 桥梁模式 replaces every
+  /// server's tools with the single `mcp_bridge` tool; otherwise built-in
+  /// (locally-runnable) + remote (discovered live) server tools are injected as
+  /// before, each minus its `disabledTools`. A remote server that is unreachable
+  /// degrades gracefully — it simply contributes no tools this turn.
   Future<_McpSetup> _mcpSetup() async {
     final toolsState = ref.read(mcpToolsControllerProvider);
-    if (!toolsState.enabled) return const _McpSetup.disabled();
 
-    final servers = await ref.read(mcpServersProvider.future);
+    final assistant = await _repo.getAssistant(_assistantId);
+    final boundSkills = await _enabledSkillsFor(assistant?.skillIds);
+    final injectReadSkill = toolsState.skillsEnabled && boundSkills.isNotEmpty;
+
     final tools = <McpToolDefinition>[];
     final routes = <String, _ToolRoute>{};
 
+    void addReadSkill() {
+      if (!injectReadSkill) return;
+      tools.add(kReadSkillToolDefinition);
+      routes[kReadSkillToolName] = const _SkillReadToolRoute();
+    }
+
+    // 工具 总开关 off: only read_skill may ride along (web parity).
+    if (!toolsState.enabled) {
+      addReadSkill();
+      if (tools.isEmpty) return const _McpSetup.disabled();
+      return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
+    }
+
+    // 桥梁模式: 1 个 mcp_bridge 工具替代注入全部服务器工具。
+    if (toolsState.bridgeMode) {
+      tools.add(kMcpBridgeToolDefinition);
+      routes[kMcpBridgeToolName] = const _BridgeToolRoute();
+      addReadSkill();
+      return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
+    }
+
+    final servers = await ref.read(mcpServersProvider.future);
     for (final server in servers) {
       if (!server.isActive) continue;
 
@@ -1554,6 +1583,7 @@ class ChatController extends _$ChatController {
       }
     }
 
+    addReadSkill();
     return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
   }
 
@@ -1582,7 +1612,176 @@ class ChatController extends _$ChatController {
             isError: true,
           );
         }
+      case _SkillReadToolRoute():
+        final skills = await ref.read(skillsProvider.future);
+        return executeReadSkill(skills, args);
+      case _BridgeToolRoute():
+        return _runBridgeTool(args);
     }
+  }
+
+  /// Executes one `mcp_bridge` call — the port of `executeBridgeToolCall`.
+  /// Dispatches by `action`: list every configured server, list one server's
+  /// tools, or call a tool on a server (built-in run in-process, remote over a
+  /// live connection). Errors become error results fed back to the model.
+  Future<McpToolResult> _runBridgeTool(Map<String, Object?> args) async {
+    final action = args['action'] as String?;
+    final server = args['server'] as String?;
+    final tool = args['tool'] as String?;
+    final toolArgs =
+        (args['arguments'] as Map?)?.cast<String, Object?>() ??
+        const <String, Object?>{};
+    try {
+      switch (action) {
+        case 'list_servers':
+          return _bridgeListServers();
+        case 'list_tools':
+          return _bridgeListTools(server);
+        case 'call':
+          return _bridgeCallTool(server, tool, toolArgs);
+        default:
+          return McpToolResult(
+            '未知操作: $action。支持的操作: list_servers, list_tools, call',
+            isError: true,
+          );
+      }
+    } on Object catch (error) {
+      return McpToolResult(
+        'Bridge 执行失败: ${_errorMessage(error)}',
+        isError: true,
+      );
+    }
+  }
+
+  Future<McpToolResult> _bridgeListServers() async {
+    final servers = await ref.read(mcpServersProvider.future);
+    if (servers.isEmpty) {
+      return const McpToolResult('当前没有配置任何 MCP 服务器。请在设置中添加 MCP 服务器。');
+    }
+    final summary = servers
+        .map(
+          (s) =>
+              '- ${s.name} [${s.isActive ? '✅ 已启用' : '⬚ 未启用'}] ${s.description ?? ''}',
+        )
+        .join('\n');
+    final detail = const JsonEncoder.withIndent('  ').convert([
+      for (final s in servers)
+        {
+          'name': s.name,
+          'id': s.id,
+          'type': s.type.name,
+          'isActive': s.isActive,
+          'description': s.description ?? '',
+        },
+    ]);
+    return McpToolResult(
+      '可用的 MCP 服务器（${servers.length} 个）：\n$summary\n\n'
+      '提示：使用 list_tools 查看具体服务器的工具列表，使用 call 调用工具。\n'
+      '注意：仅已启用（✅）的服务器可以调用，未启用的服务器需先在设置中手动启用。\n\n'
+      '详细数据：\n$detail',
+    );
+  }
+
+  Future<McpToolResult> _bridgeListTools(String? serverName) async {
+    if (serverName == null || serverName.isEmpty) {
+      return const McpToolResult(
+        'list_tools 需要提供 server 参数（服务器名称）',
+        isError: true,
+      );
+    }
+    final servers = await ref.read(mcpServersProvider.future);
+    final server = _findServerByName(servers, serverName);
+    if (server == null) {
+      final available = servers.map((s) => s.name).join(', ');
+      return McpToolResult(
+        '未找到服务器: "$serverName"。可用的服务器: ${available.isEmpty ? '无' : available}',
+        isError: true,
+      );
+    }
+    try {
+      final tools = await _bridgeServerTools(server);
+      if (tools.isEmpty) {
+        return McpToolResult('服务器 "${server.name}" 没有提供任何工具。');
+      }
+      final summary = tools
+          .map(
+            (t) =>
+                '- ${t.name}: ${t.description.isEmpty ? '无描述' : t.description}',
+          )
+          .join('\n');
+      final detail = const JsonEncoder.withIndent('  ').convert([
+        for (final t in tools)
+          {
+            'name': t.name,
+            'description': t.description,
+            'parameters': t.inputSchema,
+          },
+      ]);
+      return McpToolResult(
+        '服务器 "${server.name}" 提供 ${tools.length} 个工具：\n$summary\n\n详细参数：\n$detail',
+      );
+    } on Object catch (error) {
+      return McpToolResult(
+        '获取服务器 "${server.name}" 的工具列表失败: ${_errorMessage(error)}',
+        isError: true,
+      );
+    }
+  }
+
+  Future<McpToolResult> _bridgeCallTool(
+    String? serverName,
+    String? toolName,
+    Map<String, Object?> toolArgs,
+  ) async {
+    if (serverName == null || serverName.isEmpty) {
+      return const McpToolResult('call 需要提供 server 参数（服务器名称）', isError: true);
+    }
+    if (toolName == null || toolName.isEmpty) {
+      return const McpToolResult('call 需要提供 tool 参数（工具名称）', isError: true);
+    }
+    final servers = await ref.read(mcpServersProvider.future);
+    final server = _findServerByName(servers, serverName);
+    if (server == null) {
+      final available = servers.map((s) => s.name).join(', ');
+      return McpToolResult(
+        '未找到服务器: "$serverName"。可用的服务器: ${available.isEmpty ? '无' : available}',
+        isError: true,
+      );
+    }
+    if (kLocallyRunnableBuiltins.contains(server.name)) {
+      return runBuiltinTool(server.name, toolName, toolArgs) ??
+          McpToolResult('工具 $toolName 无法在本地执行', isError: true);
+    }
+    return ref
+        .read(remoteMcpConnectionManagerProvider)
+        .callTool(server, toolName, toolArgs);
+  }
+
+  /// The tools a server exposes for the bridge: built-ins use the static
+  /// catalogue (minus `disabledTools`); remote servers are discovered live.
+  Future<List<McpToolDefinition>> _bridgeServerTools(McpServer server) async {
+    if (kBuiltinMcpTools.containsKey(server.name)) {
+      final disabled = server.disabledTools?.toSet() ?? const <String>{};
+      return builtinToolsFor(
+        server.name,
+      ).where((t) => !disabled.contains(t.name)).toList();
+    }
+    if (RemoteMcpConnectionManager.isRemote(server)) {
+      final discovered = await ref
+          .read(remoteMcpConnectionManagerProvider)
+          .listTools(server);
+      return [for (final t in discovered) t.definition];
+    }
+    return const <McpToolDefinition>[];
+  }
+
+  /// Finds a server by name — exact → case-insensitive → substring, the port of
+  /// the bridge's `findServerByName`.
+  McpServer? _findServerByName(List<McpServer> servers, String name) {
+    final lower = name.toLowerCase();
+    return servers.where((s) => s.name == name).firstOrNull ??
+        servers.where((s) => s.name.toLowerCase() == lower).firstOrNull ??
+        servers.where((s) => s.name.toLowerCase().contains(lower)).firstOrNull;
   }
 
   /// The system prompt for a turn: in 提示词注入 mode the tool catalogue is woven
@@ -1752,6 +1951,17 @@ class _BuiltinToolRoute extends _ToolRoute {
   const _BuiltinToolRoute(this.serverName, super.toolName);
 
   final String serverName;
+}
+
+/// The synthetic `read_skill` tool, run in-process against the skills store.
+class _SkillReadToolRoute extends _ToolRoute {
+  const _SkillReadToolRoute() : super(kReadSkillToolName);
+}
+
+/// The synthetic `mcp_bridge` tool, dispatched in-process to the configured
+/// servers (built-in or remote) on demand.
+class _BridgeToolRoute extends _ToolRoute {
+  const _BridgeToolRoute() : super(kMcpBridgeToolName);
 }
 
 /// A tool executed over a live connection to [server] via
