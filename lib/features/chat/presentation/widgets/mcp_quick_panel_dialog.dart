@@ -39,24 +39,26 @@ Future<void> showMcpQuickPanel(BuildContext context) {
   );
 }
 
-/// Default-theme design tokens resolved per brightness — the same values the
-/// model selector dialog injects, so the two panels share a look.
+/// Structural design tokens resolved from the active [ThemeData] so the panel
+/// follows the selected 主题风格 preset (its `ColorScheme`) instead of fixed
+/// light/dark values — the same derivation the model selector dialog uses, so
+/// the two 全屏对话框 stay in sync. Only the semantic accents ([success] /
+/// [amber] / [violet]) stay fixed, matching the web's intentional status colors.
 class _Tokens {
-  _Tokens(this.brightness);
+  _Tokens(this.theme);
 
-  final Brightness brightness;
+  final ThemeData theme;
+  ColorScheme get _cs => theme.colorScheme;
+  Brightness get brightness => theme.brightness;
   bool get dark => brightness == Brightness.dark;
 
-  Color get bgPaper => dark ? const Color(0xFF2A2A2A) : const Color(0xFFFFFFFF);
-  Color get textPrimary =>
-      dark ? const Color(0xFFF0F0F0) : const Color(0xFF1E293B);
-  Color get textSecondary =>
-      dark ? const Color(0xFFB0B0B0) : const Color(0xFF64748B);
-  Color get textDisabled =>
-      dark ? const Color(0x61FFFFFF) : const Color(0x61000000);
-  Color get border => dark ? const Color(0x1FFFFFFF) : const Color(0x1F000000);
-  Color get primary => const Color(0xFF64748B);
-  Color get hover => dark ? const Color(0x2964748B) : const Color(0x1464748B);
+  Color get bgPaper => _cs.surface;
+  Color get textPrimary => _cs.onSurface;
+  Color get textSecondary => _cs.onSurfaceVariant;
+  Color get textDisabled => _cs.onSurface.withValues(alpha: 0.38);
+  Color get border => _cs.onSurface.withValues(alpha: 0.12);
+  Color get primary => _cs.primary;
+  Color get hover => _cs.primary.withValues(alpha: dark ? 0.16 : 0.08);
 
   // 运行中 chip / 管理服务器 button accent (web #10b981).
   static const Color success = Color(0xFF10B981);
@@ -121,7 +123,7 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
 
   @override
   Widget build(BuildContext context) {
-    final t = _Tokens(Theme.of(context).brightness);
+    final t = _Tokens(Theme.of(context));
     final mq = MediaQuery.of(context);
     final fullScreen = mq.size.width < 600;
 
