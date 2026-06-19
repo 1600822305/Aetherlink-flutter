@@ -22,6 +22,10 @@ Future<void> showModelSelectorDialog(
   String? selectedProviderId,
   String? selectedModelId,
 }) {
+  // Drop the chat input's focus first so the modal route has no node to restore
+  // on pop — otherwise closing this full-screen dialog re-focuses the input box
+  // (and re-raises the keyboard) on the way back to the chat screen.
+  FocusManager.instance.primaryFocus?.unfocus();
   return showGeneralDialog<void>(
     context: context,
     // CSS: .solid-dialog-backdrop background-color: rgba(0, 0, 0, 0.5)
