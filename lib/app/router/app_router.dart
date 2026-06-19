@@ -22,6 +22,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_p
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/model_provider_detail_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/multi_key_management_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/skills_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/top_toolbar_settings_page.dart';
 import 'package:aetherlink_flutter/features/theming/presentation/mobile/theme_style_settings_page.dart';
 import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
@@ -53,6 +54,7 @@ abstract final class AppRouter {
       '/settings/appearance/theme-style';
   static const String mcpServerPath = '/settings/mcp-server';
   static const String agentPromptsPath = '/settings/agent-prompts';
+  static const String skillsPath = '/settings/skills';
   static const String quickPhrasesPath = '/settings/quick-phrases';
   static const String behaviorPath = '/settings/behavior';
   static const String welcomePath = '/welcome';
@@ -142,6 +144,12 @@ abstract final class AppRouter {
         name: 'agent-prompts',
         pageBuilder: (context, state) =>
             _instant(state, const AgentPromptsSettingsPage()),
+      ),
+      GoRoute(
+        path: skillsPath,
+        name: 'skills',
+        pageBuilder: (context, state) =>
+            _instant(state, const SkillsSettingsPage()),
       ),
       GoRoute(
         path: quickPhrasesPath,
