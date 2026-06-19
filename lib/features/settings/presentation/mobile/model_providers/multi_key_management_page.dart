@@ -13,9 +13,10 @@ import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 /// `src/components/settings/MultiKeyManager.tsx`. Lists / adds / edits the
 /// provider's `apiKeys` pool and its `keyManagement` load-balancing strategy.
 ///
-/// UI + persistence only: the request layer still authenticates with the single
-/// [ModelProvider.apiKey], so the page is fronted by a 「调度即将支持」 notice and
-/// the per-key usage stats stay at zero until scheduling is wired.
+/// The request layer (`ChatController._streamInto` via `ApiKeyManager`) now
+/// strategy-selects a key from this pool per request, fails over on error and
+/// persists per-key usage/status back here, so the stats below reflect real
+/// traffic.
 class MultiKeyManagementPage extends ConsumerStatefulWidget {
   const MultiKeyManagementPage({super.key, required this.providerId});
 
@@ -178,10 +179,10 @@ class _MultiKeyManagementPageState
           16 + MediaQuery.paddingOf(context).bottom,
         ),
         children: [
-          const _ComingSoonNotice(
+          const _InfoNotice(
             text:
-                '多 Key 已可配置并持久化，但调度（轮询/配额/故障转移）即将支持，'
-                '当前请求仍使用单一 API 密钥。',
+                '发送时按下方策略从启用的 Key 中自动选择，连续失败会标为错误并冷却 5 分钟，'
+                '冷却期过后自动恢复；以下统计会随真实请求更新。',
           ),
           const SizedBox(height: 16),
           // 统计卡片
@@ -308,9 +309,9 @@ Color _successColor(ThemeData theme) => theme.brightness == Brightness.dark
     ? const Color(0xFF66BB6A)
     : const Color(0xFF2E7D32);
 
-/// The leading 即将支持 notice banner — an info-tinted rounded box.
-class _ComingSoonNotice extends StatelessWidget {
-  const _ComingSoonNotice({required this.text});
+/// A leading info banner — an info-tinted rounded box.
+class _InfoNotice extends StatelessWidget {
+  const _InfoNotice({required this.text});
 
   final String text;
 
