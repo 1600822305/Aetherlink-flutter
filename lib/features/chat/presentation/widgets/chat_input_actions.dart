@@ -5,6 +5,7 @@ import 'package:aetherlink_flutter/app/di/quick_phrases_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/mcp_quick_panel_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/quick_phrase_sheet.dart';
 import 'package:aetherlink_flutter/shared/domain/input_box_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_actions.dart';
@@ -79,6 +80,7 @@ class ChatInputActions implements InputBoxActions {
       case InputBoxAction.quickPhrase:
         _openQuickPhrase(context);
       case InputBoxAction.mcpTools:
+        showMcpQuickPanel(context);
       case InputBoxAction.knowledge:
       case InputBoxAction.photoSelect:
       case InputBoxAction.camera:
