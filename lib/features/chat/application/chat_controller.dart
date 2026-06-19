@@ -186,6 +186,7 @@ class ChatController extends _$ChatController {
             LlmMessage(role: view.role, content: view.text),
       ],
       tools: mcp.useFunctionTools ? mcp.tools : null,
+      useResponsesAPI: current.provider.useResponsesAPI ?? false,
       extraHeaders: effective.providerExtraHeaders,
       extraBody: effective.providerExtraBody,
     );
@@ -282,6 +283,7 @@ class ChatController extends _$ChatController {
             LlmMessage(role: view.role, content: view.text),
       ],
       tools: mcp.useFunctionTools ? mcp.tools : null,
+      useResponsesAPI: current.provider.useResponsesAPI ?? false,
       extraHeaders: effective.providerExtraHeaders,
       extraBody: effective.providerExtraBody,
     );
@@ -374,6 +376,7 @@ class ChatController extends _$ChatController {
             LlmMessage(role: view.role, content: view.text),
       ],
       tools: mcp.useFunctionTools ? mcp.tools : null,
+      useResponsesAPI: current.provider.useResponsesAPI ?? false,
       extraHeaders: effective.providerExtraHeaders,
       extraBody: effective.providerExtraBody,
     );
@@ -852,6 +855,7 @@ class ChatController extends _$ChatController {
           content: buildTranslatePrompt(language, content),
         ),
       ],
+      useResponsesAPI: current.provider.useResponsesAPI ?? false,
       extraHeaders: effective.providerExtraHeaders,
       extraBody: effective.providerExtraBody,
     );
