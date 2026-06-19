@@ -316,6 +316,33 @@ class Assistants extends _$Assistants {
     await _reload();
   }
 
+  /// Persists the quick-wired fields edited in 编辑助手 (`EditAssistantDialog`):
+  /// 名称 / 系统提示词 / 记忆开关 / 技能绑定 — the port of the web `handleSave`
+  /// (`dexieStorage.saveAssistant` + the `assistantUpdated` event). [_reload]
+  /// refreshes [currentAssistant] so dependents re-render.
+  Future<void> applyEdits(
+    String id, {
+    required String name,
+    required String systemPrompt,
+    required bool memoryEnabled,
+    required List<String> skillIds,
+  }) async {
+    final assistant = await _repo.getAssistant(id);
+    if (assistant == null) {
+      throw StateError('没有找到助手信息');
+    }
+    await _repo.saveAssistant(
+      assistant.copyWith(
+        name: name,
+        systemPrompt: systemPrompt,
+        memoryEnabled: memoryEnabled,
+        skillIds: skillIds,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    await _reload();
+  }
+
   /// Appends a 助手快捷短语 to [assistantId]'s `regularPhrases` and persists — the
   /// assistant-scoped counterpart of `GlobalQuickPhrases.add` (the web
   /// `QuickPhraseService.add` for the 助手提示词 location). A no-op when the
