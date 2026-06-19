@@ -106,20 +106,20 @@ class _AgentPromptsSettingsPageState extends State<AgentPromptsSettingsPage> {
         title: const Text('智能体提示词集合'),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         children: [
           const _SystemPromptVariablesPanel(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _searchCard(theme),
           if (query.isNotEmpty) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             if (results.isNotEmpty)
               _searchResultsCard(theme, results)
             else
               _noResultsCard(theme),
           ] else
             for (final category in _categories) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               _categoryCard(theme, category),
             ],
         ],
@@ -157,7 +157,7 @@ class _AgentPromptsSettingsPageState extends State<AgentPromptsSettingsPage> {
           ),
           Divider(height: 1, color: theme.dividerColor),
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(14),
             child: TextField(
               controller: _searchController,
               onChanged: (value) => setState(() => _query = value),
@@ -216,7 +216,7 @@ class _AgentPromptsSettingsPageState extends State<AgentPromptsSettingsPage> {
           ),
           Divider(height: 1, color: theme.dividerColor),
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(14),
             child: Column(
               children: [
                 for (var i = 0; i < results.length; i++) ...[
@@ -256,7 +256,7 @@ class _AgentPromptsSettingsPageState extends State<AgentPromptsSettingsPage> {
           InkWell(
             onTap: () => _toggleCategory(category.id),
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(14),
               child: Row(
                 children: [
                   Expanded(
@@ -292,7 +292,7 @@ class _AgentPromptsSettingsPageState extends State<AgentPromptsSettingsPage> {
           if (isExpanded) ...[
             Divider(height: 1, color: theme.dividerColor),
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -432,39 +432,43 @@ class _SystemPromptVariablesPanelState
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
             child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
+                  // 标题 + 状态（时间等）+ 展开箭头同一行
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
                           '🔧 系统提示词变量注入',
                           style: theme.textTheme.titleMedium?.copyWith(
-                            fontSize: 16,
+                            fontSize: 15,
                             fontWeight: FontWeight.w600,
                             color: theme.colorScheme.onSurface,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '为系统提示词自动注入时间、位置等动态变量',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontSize: 13,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 8),
+                      _statusIndicator(theme, config),
+                      const SizedBox(width: 4),
+                      Icon(
+                        _expanded
+                            ? LucideIcons.chevronUp
+                            : LucideIcons.chevronDown,
+                        size: 20,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  _statusIndicator(theme, config),
-                  const SizedBox(width: 4),
-                  Icon(
-                    _expanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
-                    size: 20,
-                    color: theme.colorScheme.onSurfaceVariant,
+                  const SizedBox(height: 2),
+                  // 说明文字单独一行
+                  Text(
+                    '为系统提示词自动注入时间、位置等动态变量',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 12.5,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
@@ -473,12 +477,12 @@ class _SystemPromptVariablesPanelState
           if (_expanded) ...[
             Divider(height: 1, color: theme.dividerColor),
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _infoBanner(theme),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 14),
                   _variableRow(
                     theme: theme,
                     icon: LucideIcons.clock,
@@ -490,7 +494,7 @@ class _SystemPromptVariablesPanelState
                         ? _hintBox(theme, '将在系统提示词末尾自动追加时间信息')
                         : null,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 14),
                   _variableRow(
                     theme: theme,
                     icon: LucideIcons.mapPin,
@@ -503,7 +507,7 @@ class _SystemPromptVariablesPanelState
                         ? _locationField(theme, controller)
                         : null,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 14),
                   _variableRow(
                     theme: theme,
                     icon: LucideIcons.monitor,
@@ -725,7 +729,7 @@ class _CardHeader extends StatelessWidget {
     final theme = Theme.of(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       color: theme.colorScheme.onSurface.withValues(alpha: 0.015),
       child: child,
     );
