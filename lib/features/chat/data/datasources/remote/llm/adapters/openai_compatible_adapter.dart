@@ -97,7 +97,6 @@ class OpenAiCompatibleAdapter implements LlmGateway {
       if (choices != null && choices.isNotEmpty) {
         final choice = choices.first as Map<String, dynamic>;
         final delta = choice['delta'] as Map<String, dynamic>?;
-        var emittedDeltaText = false;
         if (delta != null) {
           final reasoning = delta['reasoning_content'] ?? delta['reasoning'];
           if (reasoning is String && reasoning.isNotEmpty) {
@@ -105,35 +104,32 @@ class OpenAiCompatibleAdapter implements LlmGateway {
           }
           final content = _extractOpenAiTextDelta(delta);
           if (content.isNotEmpty) {
-            emittedDeltaText = true;
             yield LlmStreamChunk.textDelta(content);
           }
           final calls = delta['tool_calls'];
           if (calls is List) _accumulateToolCalls(toolCalls, calls);
-        }
-
-        // Some compatible gateways send a non-stream-shaped `message` object
-        // inside SSE chunks, or use content parts instead of a plain string.
-        // Treat it as a fallback so those responses do not finalize as blank.
-        final message = choice['message'];
-        if (message is Map<String, dynamic>) {
-          final reasoning =
-              message['reasoning_content'] ?? message['reasoning'];
-          if (reasoning is String && reasoning.isNotEmpty) {
-            yield LlmStreamChunk.reasoningDelta(reasoning);
-          }
-          if (!emittedDeltaText) {
+        } else {
+          // No `delta` in this chunk. Some compatible gateways instead send a
+          // non-stream-shaped `message` object (or content parts), or a legacy
+          // `text` field. Treat these as fallbacks so those responses do not
+          // finalize as blank. Only used when `delta` is absent so a single
+          // chunk never double-counts the same text / tool-call fragments.
+          final message = choice['message'];
+          if (message is Map<String, dynamic>) {
+            final reasoning =
+                message['reasoning_content'] ?? message['reasoning'];
+            if (reasoning is String && reasoning.isNotEmpty) {
+              yield LlmStreamChunk.reasoningDelta(reasoning);
+            }
             final content = _extractTextContent(message['content']);
             if (content.isNotEmpty) yield LlmStreamChunk.textDelta(content);
-          }
-          final calls = message['tool_calls'];
-          if (calls is List) _accumulateToolCalls(toolCalls, calls);
-        }
-
-        if (!emittedDeltaText && message == null) {
-          final text = choice['text'];
-          if (text is String && text.isNotEmpty) {
-            yield LlmStreamChunk.textDelta(text);
+            final calls = message['tool_calls'];
+            if (calls is List) _accumulateToolCalls(toolCalls, calls);
+          } else {
+            final text = choice['text'];
+            if (text is String && text.isNotEmpty) {
+              yield LlmStreamChunk.textDelta(text);
+            }
           }
         }
 
