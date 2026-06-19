@@ -1224,7 +1224,7 @@ class _SettingsTab extends ConsumerWidget {
           ],
         ),
         const _SettingsDivider(),
-        // MCP 工具 — 总开关 / 调用模式持久化（接对话后生效），服务器管理进设置页。
+        // MCP 工具 — 总开关 / 调用模式 / 内联服务器列表，均已接入对话（工具调用）。
         const _McpToolsGroup(),
       ],
     );
@@ -1232,11 +1232,11 @@ class _SettingsTab extends ConsumerWidget {
 }
 
 /// The 设置 tab's MCP 工具 group (port of `MCPSidebarControls`): the 启用 MCP 工具
-/// 总开关 and 工具调用模式 (函数调用 / 提示词注入) — both persisted now — plus a
-/// 管理服务器 row into the MCP 服务器 settings page. The toggles' effect on the
-/// conversation (actually exposing tools to the model) needs the request layer
-/// (Phase C), so the group is flagged 即将支持 and notes that the settings save
-/// now and take effect once the chat integration lands.
+/// 总开关, the 工具调用模式 (函数调用 / 提示词注入), an inline list of configured
+/// servers — each with its own active switch — and a 管理服务器 row into the MCP
+/// 服务器 settings page. All of these are live: the toggle / mode feed
+/// `ChatController._mcpSetup`, which exposes the active servers' tools to the
+/// model and runs the tool-call loop (Phase C/D).
 class _McpToolsGroup extends ConsumerWidget {
   const _McpToolsGroup();
 
@@ -1254,9 +1254,7 @@ class _McpToolsGroup extends ConsumerWidget {
       subtitle: activeCount > 0
           ? '$activeCount 个服务器运行中 | 模式: $modeLabel'
           : '模式: $modeLabel',
-      comingSoon: true,
       children: [
-        const _ComingSoonNote(text: '开关与模式会先保存，接入对话（工具调用）后生效。'),
         _SwitchSettingRow(
           title: '启用 MCP 工具',
           description: '在对话中向模型提供已激活服务器的工具',
@@ -1270,6 +1268,17 @@ class _McpToolsGroup extends ConsumerWidget {
           options: [for (final m in McpMode.values) (m, m.label)],
           onChanged: controller.setMode,
         ),
+        if (servers.isEmpty)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 6, 16, 6),
+            child: Text(
+              '还没有配置 MCP 服务器',
+              style: TextStyle(fontSize: 12, color: _mutedIconColor),
+            ),
+          )
+        else
+          for (final server in servers)
+            _McpServerRow(server: server, toolsEnabled: tools.enabled),
         _SettingItemShell(
           title: '管理服务器',
           description: '添加、导入与配置 MCP 服务器',
@@ -1284,6 +1293,103 @@ class _McpToolsGroup extends ConsumerWidget {
     );
   }
 }
+
+/// A single configured-server row inside [_McpToolsGroup]: a type-tinted glyph,
+/// the server name + short transport label, and an active switch that flips the
+/// server's `isActive` via [McpServers.toggleActive] (disabled until 启用 MCP
+/// 工具 is on). Tapping the row opens the server's 详情 page. Mirrors the inline
+/// server list of the web `MCPSidebarControls`.
+class _McpServerRow extends ConsumerWidget {
+  const _McpServerRow({required this.server, required this.toolsEnabled});
+
+  final McpServer server;
+  final bool toolsEnabled;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final color = _mcpTypeColor(server.type);
+    return InkWell(
+      onTap: () => context.push('${AppRouter.mcpServerPath}/${server.id}'),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 6, 16, 6),
+        child: Row(
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(_mcpTypeIcon(server.type), size: 15, color: color),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    server.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      height: 1.3,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  Text(
+                    _mcpTypeShortLabel(server.type),
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.3,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Switch(
+              value: server.isActive,
+              onChanged: toolsEnabled
+                  ? (v) => ref
+                        .read(mcpServersProvider.notifier)
+                        .toggleActive(server.id, isActive: v)
+                  : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+IconData _mcpTypeIcon(McpServerType type) => switch (type) {
+  McpServerType.sse ||
+  McpServerType.streamableHttp ||
+  McpServerType.httpStream => LucideIcons.globe,
+  McpServerType.stdio => LucideIcons.terminal,
+  McpServerType.inMemory => LucideIcons.database,
+};
+
+Color _mcpTypeColor(McpServerType type) => switch (type) {
+  McpServerType.sse => const Color(0xFF2196F3),
+  McpServerType.streamableHttp => const Color(0xFF00BCD4),
+  McpServerType.httpStream => const Color(0xFF9C27B0),
+  McpServerType.stdio => const Color(0xFFFF9800),
+  McpServerType.inMemory => const Color(0xFF4CAF50),
+};
+
+String _mcpTypeShortLabel(McpServerType type) => switch (type) {
+  McpServerType.sse => 'SSE',
+  McpServerType.streamableHttp => 'Streamable HTTP',
+  McpServerType.httpStream => 'HTTP Stream',
+  McpServerType.stdio => 'stdio',
+  McpServerType.inMemory => '内存',
+};
 
 /// Formats an int with thousands separators, e.g. `100000` → `100,000`.
 String _formatInt(int value) {
