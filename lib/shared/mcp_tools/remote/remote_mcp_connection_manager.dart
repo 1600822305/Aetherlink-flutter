@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 
+import 'package:aetherlink_flutter/core/network/dio_client.dart';
+import 'package:aetherlink_flutter/core/network/network_proxy_config.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/mcp_transport.dart';
@@ -11,8 +13,11 @@ import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_client.dar
 /// connect timeout (so an unreachable active server fails fast instead of
 /// stalling the turn), and no global receive timeout (the legacy SSE GET stream
 /// is long-lived; per-request liveness is enforced by [RemoteMcpClient]).
-Dio buildMcpDio() =>
-    Dio(BaseOptions(connectTimeout: const Duration(seconds: 15)));
+Dio buildMcpDio({NetworkProxyConfig? proxy}) {
+  final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 15)));
+  configureDioProxy(dio, proxy);
+  return dio;
+}
 
 /// Caches one live [RemoteMcpClient] per configured server — the Flutter port of
 /// the web `MCPConnectionManager`, minus the in-memory / stdio paths (those are
@@ -20,7 +25,8 @@ Dio buildMcpDio() =>
 /// HTTP/SSE connections lazily and reuses them across chat turns; the chat loop
 /// and the 设置 详情页「测试」 button both dispatch through it.
 class RemoteMcpConnectionManager {
-  RemoteMcpConnectionManager({Dio? dio}) : _dio = dio ?? buildMcpDio();
+  RemoteMcpConnectionManager({Dio? dio, NetworkProxyConfig? proxy})
+    : _dio = dio ?? buildMcpDio(proxy: proxy);
 
   final Dio _dio;
   final _clients = <String, RemoteMcpClient>{};

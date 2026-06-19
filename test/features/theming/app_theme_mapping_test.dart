@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:aetherlink_flutter/app/theme/app_chinese_fonts.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme_extension.dart';
 import 'package:aetherlink_flutter/features/theming/application/default_theme_spec.dart';
@@ -36,5 +37,34 @@ void main() {
       expect(ext.bubbleAi, const Color(0xFFF1F5F9));
       expect(ext.borderRadius, 8.0);
     });
+
+    test('text theme keeps Roboto and adds system Chinese fallbacks', () {
+      final theme = AppTheme.light(defaultThemeSpec);
+      final title = theme.textTheme.titleLarge!;
+
+      expect(title.fontFamily, 'Roboto');
+      expect(
+        title.fontFamilyFallback,
+        containsAllInOrder(kSystemChineseFontFallback),
+      );
+      expect(
+        theme.primaryTextTheme.titleLarge?.fontFamilyFallback,
+        containsAllInOrder(kSystemChineseFontFallback),
+      );
+    });
+
+    test(
+      'weighted text styles include a matching variable font weight axis',
+      () {
+        final theme = AppTheme.light(defaultThemeSpec);
+        final title = theme.textTheme.titleLarge!;
+
+        expect(title.fontWeight, FontWeight.w500);
+        expect(
+          title.fontVariations,
+          contains(const FontVariation.weight(500.0)),
+        );
+      },
+    );
   });
 }

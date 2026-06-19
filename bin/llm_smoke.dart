@@ -82,6 +82,8 @@ Future<bool> _smokeOne(LlmFixtureCase fx) async {
           deltaCount++;
         case LlmReasoningDelta(text: final delta):
           reasoning.write(delta);
+        case LlmToolCallChunk():
+          break;
         case LlmDone(usage: final usage, finishReason: final reason):
           finishReason = reason;
           if (usage != null) {
