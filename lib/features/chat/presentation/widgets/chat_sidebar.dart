@@ -1058,11 +1058,12 @@ class _SettingsTab extends ConsumerWidget {
         const _SettingsDivider(),
         const _UserAvatarRow(),
         const _SettingsDivider(),
-        // 常规设置 (8 项) — fully migrated. 消息分割线 / 代码块可复制 drive the chat
+        // 常规设置 (7 项) — fully migrated. 消息分割线 / 代码块可复制 drive the chat
         // view now; the rest persist and light up as their chat widgets land.
+        // 「侧边栏显示方式」已并入底部「侧边栏布局」对话框（与宽度同管）。
         _SettingsGroup(
           title: '常规设置',
-          subtitle: '8 个基础功能设置',
+          subtitle: '7 个基础功能设置',
           children: [
             _SwitchSettingRow(
               title: '消息分割线',
@@ -1088,15 +1089,6 @@ class _SettingsTab extends ConsumerWidget {
               description: '新消息时自动滚动到聊天底部',
               value: s.autoScrollToBottom,
               onChanged: c.setAutoScrollToBottom,
-            ),
-            _SelectSettingRow<SidebarDisplayMode>(
-              title: '侧边栏显示方式',
-              description: '覆盖：抽屉滑入盖在聊天页上；推开：抽屉滑入时把聊天页向右推开',
-              value: s.sidebarDisplayMode,
-              options: [
-                for (final v in SidebarDisplayMode.values) (v, v.label),
-              ],
-              onChanged: c.setSidebarDisplayMode,
             ),
             _SelectSettingRow<MessageStyle>(
               title: '消息样式',
@@ -1516,12 +1508,12 @@ class _SettingsEntryRow extends ConsumerWidget {
             color: theme.dividerColor,
             margin: const EdgeInsets.symmetric(horizontal: 4),
           ),
-          // 侧边栏宽度 toggle → 打开宽度对话框。
+          // 侧边栏布局 toggle → 打开布局对话框（显示方式 + 宽度）。
           Material(
             color: _panelButtonBg,
             shape: const CircleBorder(),
             child: InkWell(
-              onTap: () => _showSidebarWidthDialog(context, ref),
+              onTap: () => _showSidebarLayoutDialog(context, ref),
               customBorder: const CircleBorder(),
               child: const SizedBox(
                 width: 28,
@@ -2123,34 +2115,37 @@ Future<int?> _promptNumber(
   );
 }
 
-/// Opens the 侧边栏宽度 dialog. Dragging live-previews the drawer; 保存 commits,
-/// 取消 restores the original width.
-Future<void> _showSidebarWidthDialog(BuildContext context, WidgetRef ref) {
+/// Opens the 侧边栏布局 dialog (显示方式 + 宽度). 显示方式切换即时预览（且持久化）；
+/// 宽度拖动实时预览，保存提交、取消恢复原宽度与原显示方式。
+Future<void> _showSidebarLayoutDialog(BuildContext context, WidgetRef ref) {
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => const _SidebarWidthDialog(),
+    builder: (_) => const _SidebarLayoutDialog(),
   );
 }
 
-class _SidebarWidthDialog extends ConsumerStatefulWidget {
-  const _SidebarWidthDialog();
+class _SidebarLayoutDialog extends ConsumerStatefulWidget {
+  const _SidebarLayoutDialog();
 
   @override
-  ConsumerState<_SidebarWidthDialog> createState() =>
-      _SidebarWidthDialogState();
+  ConsumerState<_SidebarLayoutDialog> createState() =>
+      _SidebarLayoutDialogState();
 }
 
-class _SidebarWidthDialogState extends ConsumerState<_SidebarWidthDialog> {
-  late final double _original;
+class _SidebarLayoutDialogState extends ConsumerState<_SidebarLayoutDialog> {
+  late final double _originalWidth;
+  late final SidebarDisplayMode _originalMode;
   late double _draft;
   final TextEditingController _field = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _original = ref.read(sidebarSettingsControllerProvider).sidebarWidth;
-    _draft = _original;
+    final settings = ref.read(sidebarSettingsControllerProvider);
+    _originalWidth = settings.sidebarWidth;
+    _originalMode = settings.sidebarDisplayMode;
+    _draft = _originalWidth;
     _field.text = _draft.round().toString();
   }
 
@@ -2179,12 +2174,43 @@ class _SidebarWidthDialogState extends ConsumerState<_SidebarWidthDialog> {
         if (p <= maxWidth) p,
     ];
     final controller = ref.read(sidebarSettingsControllerProvider.notifier);
+    final mode = ref.watch(
+      sidebarSettingsControllerProvider.select((s) => s.sidebarDisplayMode),
+    );
     return AlertDialog(
-      title: const Text('侧边栏宽度'),
+      title: const Text('侧边栏布局'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _DialogSectionLabel(text: '显示方式', color: theme.colorScheme.onSurface),
+          const SizedBox(height: 8),
+          SegmentedButton<SidebarDisplayMode>(
+            showSelectedIcon: false,
+            segments: [
+              for (final v in SidebarDisplayMode.values)
+                ButtonSegment<SidebarDisplayMode>(
+                  value: v,
+                  label: Text(v.label),
+                ),
+            ],
+            selected: {mode},
+            // 即时切换（持久化），用户立刻看到覆盖/推开效果；取消时再恢复原值。
+            onSelectionChanged: (sel) =>
+                controller.setSidebarDisplayMode(sel.first),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '覆盖：抽屉滑入盖在聊天页上；推开：抽屉滑入时把聊天页向右推开',
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.3,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _DialogSectionLabel(text: '宽度', color: theme.colorScheme.onSurface),
+          const SizedBox(height: 4),
           Row(
             children: [
               Expanded(
@@ -2238,8 +2264,9 @@ class _SidebarWidthDialogState extends ConsumerState<_SidebarWidthDialog> {
       actions: [
         TextButton(
           onPressed: () {
-            // 取消恢复原宽度（预览未持久化）。
-            controller.previewSidebarWidth(_original);
+            // 取消恢复原宽度（预览未持久化）与原显示方式。
+            controller.previewSidebarWidth(_originalWidth);
+            controller.setSidebarDisplayMode(_originalMode);
             Navigator.of(context).pop();
           },
           child: const Text('取消'),
@@ -2252,6 +2279,22 @@ class _SidebarWidthDialogState extends ConsumerState<_SidebarWidthDialog> {
           child: const Text('保存'),
         ),
       ],
+    );
+  }
+}
+
+/// 小节标题（侧边栏布局对话框内的「显示方式 / 宽度」分组标签）。
+class _DialogSectionLabel extends StatelessWidget {
+  const _DialogSectionLabel({required this.text, required this.color});
+
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color),
     );
   }
 }
