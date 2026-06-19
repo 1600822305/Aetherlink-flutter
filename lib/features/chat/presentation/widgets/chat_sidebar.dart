@@ -24,6 +24,7 @@ import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controlle
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/mobile/edit_assistant_dialog.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
@@ -435,7 +436,15 @@ class _AssistantTabState extends ConsumerState<_AssistantTab> {
   }
 }
 
-enum _AssistantMenu { addToGroup, copy, clearTopics, sortAsc, sortDesc, delete }
+enum _AssistantMenu {
+  edit,
+  addToGroup,
+  copy,
+  clearTopics,
+  sortAsc,
+  sortDesc,
+  delete,
+}
 
 class _AssistantItem extends ConsumerWidget {
   const _AssistantItem({
@@ -457,6 +466,8 @@ class _AssistantItem extends ConsumerWidget {
   ) async {
     final notifier = ref.read(assistantsProvider.notifier);
     switch (value) {
+      case _AssistantMenu.edit:
+        await showEditAssistantDialog(context, assistant);
       case _AssistantMenu.addToGroup:
         await _showAddToGroupDialog(
           context,
@@ -564,6 +575,11 @@ class _AssistantItem extends ConsumerWidget {
                   box: 26,
                   title: assistant.name,
                   actions: const [
+                    _SheetAction(
+                      _AssistantMenu.edit,
+                      LucideIcons.squarePen,
+                      '编辑助手',
+                    ),
                     _SheetAction(
                       _AssistantMenu.addToGroup,
                       LucideIcons.folderPlus,
