@@ -1,8 +1,8 @@
-import 'dart:convert';
-
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
+import 'package:aetherlink_flutter/app/di/json_kv_notifier.dart';
+import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/shared/domain/system_prompt_variables.dart';
 
 part 'system_prompt_variables_controller.g.dart';
@@ -20,47 +20,37 @@ const String kSystemPromptVariablesKey = 'systemPromptVariables';
 /// and written through on every change — the port of the web
 /// `dexieStorage.saveSetting` — so the configuration survives a full restart.
 @Riverpod(keepAlive: true)
-class SystemPromptVariablesController
-    extends _$SystemPromptVariablesController {
+class SystemPromptVariablesController extends _$SystemPromptVariablesController
+    with JsonKvNotifier<SystemPromptVariables> {
   @override
-  SystemPromptVariables build() {
-    _hydrate();
-    return const SystemPromptVariables();
-  }
+  ChatRepository get kvStore => ref.read(appSettingsStoreProvider);
 
-  Future<void> _hydrate() async {
-    final stored = await ref
-        .read(appSettingsStoreProvider)
-        .getSetting(kSystemPromptVariablesKey);
-    if (stored == null || stored.isEmpty) return;
-    try {
-      final json = jsonDecode(stored) as Map<String, dynamic>;
-      state = SystemPromptVariables.fromJson(json);
-    } on FormatException {
-      // Corrupt value — keep the defaults.
-    }
-  }
+  @override
+  String get storageKey => kSystemPromptVariablesKey;
 
-  void _persist(SystemPromptVariables next) {
-    state = next;
-    ref
-        .read(appSettingsStoreProvider)
-        .saveSetting(kSystemPromptVariablesKey, jsonEncode(next.toJson()));
-  }
+  @override
+  SystemPromptVariables fromStored(Map<String, dynamic> json) =>
+      SystemPromptVariables.fromJson(json);
+
+  @override
+  Map<String, dynamic> toStored(SystemPromptVariables value) => value.toJson();
+
+  @override
+  SystemPromptVariables build() => hydrate(const SystemPromptVariables());
 
   /// Toggles 时间变量 injection.
   void setEnableTimeVariable(bool value) =>
-      _persist(state.copyWith(enableTimeVariable: value));
+      persist(state.copyWith(enableTimeVariable: value));
 
   /// Toggles 位置变量 injection.
   void setEnableLocationVariable(bool value) =>
-      _persist(state.copyWith(enableLocationVariable: value));
+      persist(state.copyWith(enableLocationVariable: value));
 
   /// Sets the 自定义位置 override.
   void setCustomLocation(String value) =>
-      _persist(state.copyWith(customLocation: value));
+      persist(state.copyWith(customLocation: value));
 
   /// Toggles 操作系统变量 injection.
   void setEnableOSVariable(bool value) =>
-      _persist(state.copyWith(enableOSVariable: value));
+      persist(state.copyWith(enableOSVariable: value));
 }

@@ -1,8 +1,8 @@
-import 'dart:convert';
-
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
+import 'package:aetherlink_flutter/app/di/json_kv_notifier.dart';
+import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/shared/domain/thinking_settings.dart';
 
 part 'thinking_settings_controller.g.dart';
@@ -20,42 +20,33 @@ const String kThinkingSettingKey = 'thinkingSettings';
 /// through on every change — the port of the web `dexieStorage.saveSetting` — so
 /// the configuration survives a full restart.
 @Riverpod(keepAlive: true)
-class ThinkingSettingsController extends _$ThinkingSettingsController {
+class ThinkingSettingsController extends _$ThinkingSettingsController
+    with JsonKvNotifier<ThinkingSettings> {
   @override
-  ThinkingSettings build() {
-    _hydrate();
-    return const ThinkingSettings();
-  }
+  ChatRepository get kvStore => ref.read(appSettingsStoreProvider);
 
-  Future<void> _hydrate() async {
-    final stored = await ref
-        .read(appSettingsStoreProvider)
-        .getSetting(kThinkingSettingKey);
-    if (stored == null || stored.isEmpty) return;
-    try {
-      final json = jsonDecode(stored) as Map<String, dynamic>;
-      state = ThinkingSettings.fromJson(json);
-    } on FormatException {
-      // Corrupt value — keep the defaults.
-    }
-  }
+  @override
+  String get storageKey => kThinkingSettingKey;
 
-  void _persist(ThinkingSettings next) {
-    state = next;
-    ref
-        .read(appSettingsStoreProvider)
-        .saveSetting(kThinkingSettingKey, jsonEncode(next.toJson()));
-  }
+  @override
+  ThinkingSettings fromStored(Map<String, dynamic> json) =>
+      ThinkingSettings.fromJson(json);
+
+  @override
+  Map<String, dynamic> toStored(ThinkingSettings value) => value.toJson();
+
+  @override
+  ThinkingSettings build() => hydrate(const ThinkingSettings());
 
   /// Sets 思考过程显示样式.
   void setDisplayStyle(ThinkingDisplayStyle style) =>
-      _persist(state.copyWith(displayStyle: style));
+      persist(state.copyWith(displayStyle: style));
 
   /// Toggles 思考完成后自动折叠.
   void setThoughtAutoCollapse(bool value) =>
-      _persist(state.copyWith(thoughtAutoCollapse: value));
+      persist(state.copyWith(thoughtAutoCollapse: value));
 
   /// Toggles 思考过程内显示工具调用 (saved only — not wired to the chat view yet).
   void setThinkingToolInline(bool value) =>
-      _persist(state.copyWith(thinkingToolInline: value));
+      persist(state.copyWith(thinkingToolInline: value));
 }

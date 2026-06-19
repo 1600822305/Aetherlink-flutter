@@ -1,8 +1,8 @@
-import 'dart:convert';
-
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
+import 'package:aetherlink_flutter/app/di/json_kv_notifier.dart';
+import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/shared/domain/message_bubble_settings.dart';
 
 part 'message_bubble_settings_controller.g.dart';
@@ -21,91 +21,81 @@ const String kMessageBubbleSettingKey = 'messageBubbleSettings';
 /// through on every change — the port of the web `dexieStorage.saveSetting` — so
 /// the configuration survives a full restart.
 @Riverpod(keepAlive: true)
-class MessageBubbleSettingsController
-    extends _$MessageBubbleSettingsController {
+class MessageBubbleSettingsController extends _$MessageBubbleSettingsController
+    with JsonKvNotifier<MessageBubbleSettings> {
   @override
-  MessageBubbleSettings build() {
-    _hydrate();
-    return const MessageBubbleSettings();
-  }
+  ChatRepository get kvStore => ref.read(appSettingsStoreProvider);
 
-  Future<void> _hydrate() async {
-    final stored = await ref
-        .read(appSettingsStoreProvider)
-        .getSetting(kMessageBubbleSettingKey);
-    if (stored == null || stored.isEmpty) return;
-    try {
-      final json = jsonDecode(stored) as Map<String, dynamic>;
-      state = MessageBubbleSettings.fromJson(json);
-    } on FormatException {
-      // Corrupt value — keep the defaults.
-    }
-  }
+  @override
+  String get storageKey => kMessageBubbleSettingKey;
 
-  void _persist(MessageBubbleSettings next) {
-    state = next;
-    ref
-        .read(appSettingsStoreProvider)
-        .saveSetting(kMessageBubbleSettingKey, jsonEncode(next.toJson()));
-  }
+  @override
+  MessageBubbleSettings fromStored(Map<String, dynamic> json) =>
+      MessageBubbleSettings.fromJson(json);
+
+  @override
+  Map<String, dynamic> toStored(MessageBubbleSettings value) => value.toJson();
+
+  @override
+  MessageBubbleSettings build() => hydrate(const MessageBubbleSettings());
 
   /// Sets 消息操作显示模式 (bubbles / toolbar).
   void setMessageActionMode(MessageActionMode mode) =>
-      _persist(state.copyWith(messageActionMode: mode));
+      persist(state.copyWith(messageActionMode: mode));
 
   /// Toggles 显示功能气泡.
   void setShowMicroBubbles(bool value) =>
-      _persist(state.copyWith(showMicroBubbles: value));
+      persist(state.copyWith(showMicroBubbles: value));
 
   /// Toggles 显示播放按钮 (TTS).
   void setShowTTSButton(bool value) =>
-      _persist(state.copyWith(showTTSButton: value));
+      persist(state.copyWith(showTTSButton: value));
 
   /// Sets 版本切换样式 (popup / arrows).
   void setVersionSwitchStyle(VersionSwitchStyle style) =>
-      _persist(state.copyWith(versionSwitchStyle: style));
+      persist(state.copyWith(versionSwitchStyle: style));
 
   /// Sets AI 消息最大宽度（%）.
   void setMessageBubbleMaxWidth(int value) =>
-      _persist(state.copyWith(messageBubbleMaxWidth: value));
+      persist(state.copyWith(messageBubbleMaxWidth: value));
 
   /// Sets 用户消息最大宽度（%）.
   void setUserMessageMaxWidth(int value) =>
-      _persist(state.copyWith(userMessageMaxWidth: value));
+      persist(state.copyWith(userMessageMaxWidth: value));
 
   /// Sets 消息最小宽度（%）.
   void setMessageBubbleMinWidth(int value) =>
-      _persist(state.copyWith(messageBubbleMinWidth: value));
+      persist(state.copyWith(messageBubbleMinWidth: value));
 
   /// Toggles 显示用户头像.
   void setShowUserAvatar(bool value) =>
-      _persist(state.copyWith(showUserAvatar: value));
+      persist(state.copyWith(showUserAvatar: value));
 
   /// Toggles 显示用户名称.
   void setShowUserName(bool value) =>
-      _persist(state.copyWith(showUserName: value));
+      persist(state.copyWith(showUserName: value));
 
   /// Toggles 显示模型头像.
   void setShowModelAvatar(bool value) =>
-      _persist(state.copyWith(showModelAvatar: value));
+      persist(state.copyWith(showModelAvatar: value));
 
   /// Toggles 显示模型名称.
   void setShowModelName(bool value) =>
-      _persist(state.copyWith(showModelName: value));
+      persist(state.copyWith(showModelName: value));
 
   /// Toggles 隐藏用户气泡.
   void setHideUserBubble(bool value) =>
-      _persist(state.copyWith(hideUserBubble: value));
+      persist(state.copyWith(hideUserBubble: value));
 
   /// Toggles 隐藏AI气泡.
   void setHideAIBubble(bool value) =>
-      _persist(state.copyWith(hideAIBubble: value));
+      persist(state.copyWith(hideAIBubble: value));
 
   /// Replaces the whole 自定义气泡颜色 block.
   void setCustomBubbleColors(CustomBubbleColors colors) =>
-      _persist(state.copyWith(customBubbleColors: colors));
+      persist(state.copyWith(customBubbleColors: colors));
 
   /// Resets 自定义气泡颜色 back to empty (use the theme defaults).
   void resetCustomBubbleColors() =>
-      _persist(state.copyWith(customBubbleColors: const CustomBubbleColors()));
+      persist(state.copyWith(customBubbleColors: const CustomBubbleColors()));
 }

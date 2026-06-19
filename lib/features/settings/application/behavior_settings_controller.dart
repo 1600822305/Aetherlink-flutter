@@ -1,8 +1,8 @@
-import 'dart:convert';
-
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
+import 'package:aetherlink_flutter/app/di/json_kv_notifier.dart';
+import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/shared/domain/behavior_settings.dart';
 
 part 'behavior_settings_controller.g.dart';
@@ -20,75 +20,66 @@ const String kBehaviorSettingsKey = 'behaviorSettings';
 /// the Drift key/value store on first build and written through on every change
 /// so the configuration survives a full restart.
 @Riverpod(keepAlive: true)
-class BehaviorSettingsController extends _$BehaviorSettingsController {
+class BehaviorSettingsController extends _$BehaviorSettingsController
+    with JsonKvNotifier<BehaviorSettings> {
   @override
-  BehaviorSettings build() {
-    _hydrate();
-    return const BehaviorSettings();
-  }
+  ChatRepository get kvStore => ref.read(appSettingsStoreProvider);
 
-  Future<void> _hydrate() async {
-    final stored = await ref
-        .read(appSettingsStoreProvider)
-        .getSetting(kBehaviorSettingsKey);
-    if (stored == null || stored.isEmpty) return;
-    try {
-      final json = jsonDecode(stored) as Map<String, dynamic>;
-      state = BehaviorSettings.fromJson(json);
-    } on FormatException {
-      // Corrupt value — keep the defaults.
-    }
-  }
+  @override
+  String get storageKey => kBehaviorSettingsKey;
 
-  void _persist(BehaviorSettings next) {
-    state = next;
-    ref
-        .read(appSettingsStoreProvider)
-        .saveSetting(kBehaviorSettingsKey, jsonEncode(next.toJson()));
-  }
+  @override
+  BehaviorSettings fromStored(Map<String, dynamic> json) =>
+      BehaviorSettings.fromJson(json);
+
+  @override
+  Map<String, dynamic> toStored(BehaviorSettings value) => value.toJson();
+
+  @override
+  BehaviorSettings build() => hydrate(const BehaviorSettings());
 
   /// Toggles Enter 发送消息.
   void setSendWithEnter(bool value) =>
-      _persist(state.copyWith(sendWithEnter: value));
+      persist(state.copyWith(sendWithEnter: value));
 
   /// Toggles 通知 (UI-only for now).
   void setEnableNotifications(bool value) =>
-      _persist(state.copyWith(enableNotifications: value));
+      persist(state.copyWith(enableNotifications: value));
 
   /// Toggles 输入法回车换行 (mobile soft-keyboard Enter inserts a newline).
   void setMobileInputMethodEnterAsNewline(bool value) =>
-      _persist(state.copyWith(mobileInputMethodEnterAsNewline: value));
+      persist(state.copyWith(mobileInputMethodEnterAsNewline: value));
 
   /// Toggles the 触觉反馈 master switch.
-  void setHapticEnabled(bool value) => _persist(
+  void setHapticEnabled(bool value) => persist(
     state.copyWith(
       hapticFeedback: state.hapticFeedback.copyWith(enabled: value),
     ),
   );
 
   /// Toggles 侧边栏 haptics.
-  void setHapticOnSidebar(bool value) => _persist(
+  void setHapticOnSidebar(bool value) => persist(
     state.copyWith(
       hapticFeedback: state.hapticFeedback.copyWith(enableOnSidebar: value),
     ),
   );
 
   /// Toggles 开关 haptics.
-  void setHapticOnSwitch(bool value) => _persist(
+  void setHapticOnSwitch(bool value) => persist(
     state.copyWith(
       hapticFeedback: state.hapticFeedback.copyWith(enableOnSwitch: value),
     ),
   );
 
   /// Toggles 列表项 haptics.
-  void setHapticOnListItem(bool value) => _persist(
+  void setHapticOnListItem(bool value) => persist(
     state.copyWith(
       hapticFeedback: state.hapticFeedback.copyWith(enableOnListItem: value),
     ),
   );
 
   /// Toggles 导航 haptics.
-  void setHapticOnNavigation(bool value) => _persist(
+  void setHapticOnNavigation(bool value) => persist(
     state.copyWith(
       hapticFeedback: state.hapticFeedback.copyWith(enableOnNavigation: value),
     ),
