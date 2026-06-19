@@ -195,6 +195,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.shield,
         title: '网络代理',
         description: '配置HTTP/SOCKS代理服务器',
+        route: AppRouter.networkProxyPath,
       ),
       SettingItemData(
         icon: LucideIcons.info,

@@ -14,6 +14,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/input_b
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_server_detail_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_server_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/message_bubble_settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/network_proxy_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/quick_phrases_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/thinking_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/add_provider_page.dart';
@@ -54,6 +55,7 @@ abstract final class AppRouter {
   static const String mcpServerPath = '/settings/mcp-server';
   static const String agentPromptsPath = '/settings/agent-prompts';
   static const String quickPhrasesPath = '/settings/quick-phrases';
+  static const String networkProxyPath = '/settings/network-proxy';
   static const String behaviorPath = '/settings/behavior';
   static const String welcomePath = '/welcome';
   static const String translatePath = '/translate';
@@ -148,6 +150,12 @@ abstract final class AppRouter {
         name: 'quick-phrases',
         pageBuilder: (context, state) =>
             _instant(state, const QuickPhrasesSettingsPage()),
+      ),
+      GoRoute(
+        path: networkProxyPath,
+        name: 'network-proxy',
+        pageBuilder: (context, state) =>
+            _instant(state, const NetworkProxySettingsPage()),
       ),
       GoRoute(
         path: behaviorPath,

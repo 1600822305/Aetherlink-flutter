@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/app/di/network_proxy_access.dart';
 import 'package:aetherlink_flutter/core/database/app_database.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/provider_factory.dart';
 import 'package:aetherlink_flutter/features/chat/data/repositories/chat_repository_impl.dart';
@@ -54,7 +55,8 @@ ChatRepository chatRepository(Ref ref) =>
 /// a fake factory (and a fake gateway) so the closed loop runs without a
 /// network or a real key.
 @Riverpod(keepAlive: true)
-LlmGatewayFactory llmGatewayFactory(Ref ref) => LlmProviderFactory();
+LlmGatewayFactory llmGatewayFactory(Ref ref) =>
+    LlmProviderFactory(proxy: ref.watch(appNetworkProxyConfigProvider));
 
 /// The live MCP connection pool for remote (sse / streamableHttp) servers,
 /// shared across chat turns. Kept alive so connections are reused; closed when
@@ -63,7 +65,9 @@ LlmGatewayFactory llmGatewayFactory(Ref ref) => LlmProviderFactory();
 /// the `app/di` re-export, since settings may not import chat internals).
 @Riverpod(keepAlive: true)
 RemoteMcpConnectionManager remoteMcpConnectionManager(Ref ref) {
-  final manager = RemoteMcpConnectionManager();
+  final manager = RemoteMcpConnectionManager(
+    proxy: ref.watch(appNetworkProxyConfigProvider),
+  );
   ref.onDispose(manager.dispose);
   return manager;
 }

@@ -37,6 +37,7 @@ dependencies:
   flutter_riverpod: ^3.3.2
   riverpod_annotation: ^4.0.3
   dio: ^5.9.2
+  socks5_proxy: ^2.1.1
   drift: ^2.34.0
   sqlite3_flutter_libs: ^0.6.0+eol
   path: ^1.9.1
