@@ -11,6 +11,7 @@ part of 'top_toolbar_settings.dart';
 
 // dart format off
 T _$identity<T>(T value) => value;
+
 /// @nodoc
 mixin _$TopToolbarComponentPosition {
 
@@ -21,6 +22,8 @@ mixin _$TopToolbarComponentPosition {
 @pragma('vm:prefer-inline')
 $TopToolbarComponentPositionCopyWith<TopToolbarComponentPosition> get copyWith => _$TopToolbarComponentPositionCopyWithImpl<TopToolbarComponentPosition>(this as TopToolbarComponentPosition, _$identity);
 
+  /// Serializes this TopToolbarComponentPosition to a JSON map.
+  Map<String, dynamic> toJson();
 
 
 @override
@@ -28,7 +31,7 @@ bool operator ==(Object other) {
   return identical(this, other) || (other.runtimeType == runtimeType&&other is TopToolbarComponentPosition&&(identical(other.component, component) || other.component == component)&&(identical(other.x, x) || other.x == x)&&(identical(other.y, y) || other.y == y));
 }
 
-
+@JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode => Object.hash(runtimeType,component,x,y);
 
@@ -205,11 +208,11 @@ return $default(_that.component,_that.x,_that.y);case _:
 }
 
 /// @nodoc
-
+@JsonSerializable()
 
 class _TopToolbarComponentPosition implements TopToolbarComponentPosition {
   const _TopToolbarComponentPosition({required this.component, required this.x, required this.y});
-  
+  factory _TopToolbarComponentPosition.fromJson(Map<String, dynamic> json) => _$TopToolbarComponentPositionFromJson(json);
 
 @override final  TopToolbarComponent component;
 @override final  double x;
@@ -221,14 +224,17 @@ class _TopToolbarComponentPosition implements TopToolbarComponentPosition {
 @pragma('vm:prefer-inline')
 _$TopToolbarComponentPositionCopyWith<_TopToolbarComponentPosition> get copyWith => __$TopToolbarComponentPositionCopyWithImpl<_TopToolbarComponentPosition>(this, _$identity);
 
-
+@override
+Map<String, dynamic> toJson() {
+  return _$TopToolbarComponentPositionToJson(this, );
+}
 
 @override
 bool operator ==(Object other) {
   return identical(this, other) || (other.runtimeType == runtimeType&&other is _TopToolbarComponentPosition&&(identical(other.component, component) || other.component == component)&&(identical(other.x, x) || other.x == x)&&(identical(other.y, y) || other.y == y));
 }
 
-
+@JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode => Object.hash(runtimeType,component,x,y);
 
@@ -274,6 +280,7 @@ as double,
 
 }
 
+
 /// @nodoc
 mixin _$TopToolbarSettings {
 
@@ -284,6 +291,8 @@ mixin _$TopToolbarSettings {
 @pragma('vm:prefer-inline')
 $TopToolbarSettingsCopyWith<TopToolbarSettings> get copyWith => _$TopToolbarSettingsCopyWithImpl<TopToolbarSettings>(this as TopToolbarSettings, _$identity);
 
+  /// Serializes this TopToolbarSettings to a JSON map.
+  Map<String, dynamic> toJson();
 
 
 @override
@@ -291,7 +300,7 @@ bool operator ==(Object other) {
   return identical(this, other) || (other.runtimeType == runtimeType&&other is TopToolbarSettings&&const DeepCollectionEquality().equals(other.positions, positions)&&(identical(other.modelSelectorDisplayStyle, modelSelectorDisplayStyle) || other.modelSelectorDisplayStyle == modelSelectorDisplayStyle));
 }
 
-
+@JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(positions),modelSelectorDisplayStyle);
 
@@ -467,11 +476,11 @@ return $default(_that.positions,_that.modelSelectorDisplayStyle);case _:
 }
 
 /// @nodoc
-
+@JsonSerializable()
 
 class _TopToolbarSettings implements TopToolbarSettings {
   const _TopToolbarSettings({final  List<TopToolbarComponentPosition> positions = const [], this.modelSelectorDisplayStyle = ModelSelectorDisplayStyle.icon}): _positions = positions;
-  
+  factory _TopToolbarSettings.fromJson(Map<String, dynamic> json) => _$TopToolbarSettingsFromJson(json);
 
  final  List<TopToolbarComponentPosition> _positions;
 @override@JsonKey() List<TopToolbarComponentPosition> get positions {
@@ -488,14 +497,17 @@ class _TopToolbarSettings implements TopToolbarSettings {
 @pragma('vm:prefer-inline')
 _$TopToolbarSettingsCopyWith<_TopToolbarSettings> get copyWith => __$TopToolbarSettingsCopyWithImpl<_TopToolbarSettings>(this, _$identity);
 
-
+@override
+Map<String, dynamic> toJson() {
+  return _$TopToolbarSettingsToJson(this, );
+}
 
 @override
 bool operator ==(Object other) {
   return identical(this, other) || (other.runtimeType == runtimeType&&other is _TopToolbarSettings&&const DeepCollectionEquality().equals(other._positions, _positions)&&(identical(other.modelSelectorDisplayStyle, modelSelectorDisplayStyle) || other.modelSelectorDisplayStyle == modelSelectorDisplayStyle));
 }
 
-
+@JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_positions),modelSelectorDisplayStyle);
 

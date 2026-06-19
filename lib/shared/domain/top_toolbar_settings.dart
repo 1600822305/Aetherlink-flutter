@@ -1,6 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 part 'top_toolbar_settings.freezed.dart';
+part 'top_toolbar_settings.g.dart';
 
 /// The eight configurable chat top-toolbar components (`componentConfig`,
 /// `TopToolbarDIYSettings.tsx`), declared in the original panel order so
@@ -52,6 +53,9 @@ abstract class TopToolbarComponentPosition with _$TopToolbarComponentPosition {
     required double x,
     required double y,
   }) = _TopToolbarComponentPosition;
+
+  factory TopToolbarComponentPosition.fromJson(Map<String, dynamic> json) =>
+      _$TopToolbarComponentPositionFromJson(json);
 }
 
 /// The top-toolbar DIY configuration the appearance 顶部工具栏设置 sub-page edits:
@@ -67,4 +71,7 @@ abstract class TopToolbarSettings with _$TopToolbarSettings {
     @Default(ModelSelectorDisplayStyle.icon)
     ModelSelectorDisplayStyle modelSelectorDisplayStyle,
   }) = _TopToolbarSettings;
+
+  factory TopToolbarSettings.fromJson(Map<String, dynamic> json) =>
+      _$TopToolbarSettingsFromJson(json);
 }
