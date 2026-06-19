@@ -230,7 +230,7 @@ class _ModelProviderDetailPageState
                 children: [
                   const Expanded(child: ModelSectionTitle('API 密钥')),
                   Tooltip(
-                    message: '开启后可配置多个 API Key 做负载均衡（调度即将支持）',
+                    message: '开启后可配置多个 API Key，发送时按所选策略自动负载均衡与故障转移',
                     child: Icon(
                       LucideIcons.info,
                       size: 16,
@@ -261,7 +261,7 @@ class _ModelProviderDetailPageState
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '多 Key 可配置并持久化，调度（轮询/配额/故障转移）即将支持。',
+                  '已启用多 Key 负载均衡：发送时按策略（轮询/优先级/最少使用/随机）自动选 Key，失败自动切换并冷却。',
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontSize: 12,
                     color: theme.colorScheme.onSurfaceVariant,
