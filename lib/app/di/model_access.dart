@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_model_catal
 import 'package:aetherlink_flutter/features/models/application/model_providers.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/features/models/domain/repositories/model_repository.dart';
+import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 
@@ -121,6 +122,26 @@ class ModelStore extends _$ModelStore {
         await _repo.saveProvider(updated[i]);
       }
     }
+    ref.invalidate(appModelProvidersProvider);
+  }
+
+  /// Persists multi-key usage/status changes for [providerId] after a request.
+  ///
+  /// Reads the latest provider so concurrent edits elsewhere are not clobbered,
+  /// replaces each key in [keys] (matched by id) and saves. Used by the chat
+  /// request layer to record per-key load-balancing stats and cooldowns; a no-op
+  /// when the provider is gone or has no multi-key pool.
+  Future<void> updateApiKeys({
+    required String providerId,
+    required List<ApiKeyConfig> keys,
+  }) async {
+    if (keys.isEmpty) return;
+    final provider = await _repo.getProvider(providerId);
+    final existing = provider?.apiKeys;
+    if (provider == null || existing == null || existing.isEmpty) return;
+    final byId = {for (final key in keys) key.id: key};
+    final merged = [for (final key in existing) byId[key.id] ?? key];
+    await _repo.saveProvider(provider.copyWith(apiKeys: merged));
     ref.invalidate(appModelProvidersProvider);
   }
 

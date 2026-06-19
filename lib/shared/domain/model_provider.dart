@@ -20,10 +20,11 @@ part 'model_provider.g.dart';
 ///
 /// [useResponsesAPI] is consumed by the request layer: when set, the OpenAI
 /// adapter posts to `/responses` (via [LlmChatRequest.useResponsesAPI]) instead
-/// of `/chat/completions`. [apiKeys] and [keyManagement] are modelled for UI +
-/// persistence (the 三级页 配置 Tab edits them and they round-trip through the
-/// JSON blob), but the request layer does **not** consume them yet, so the UI
-/// marks multi-key scheduling as 即将支持. See `docs/DOMAIN_MODEL.md` §4.
+/// of `/chat/completions`. [apiKeys] and [keyManagement] drive multi-key load
+/// balancing: when the pool is non-empty the request layer
+/// (`ChatController._streamInto` via `ApiKeyManager`) strategy-selects a key per
+/// request, fails over to the next key on error and persists per-key
+/// usage/status back. See `docs/DOMAIN_MODEL.md` §4.
 @freezed
 abstract class ModelProvider with _$ModelProvider {
   const factory ModelProvider({
@@ -44,8 +45,8 @@ abstract class ModelProvider with _$ModelProvider {
     // by the OpenAI adapter via [LlmChatRequest.useResponsesAPI].
     bool? useResponsesAPI,
     // The multi-key pool + its load-balancing config. Edited by the multi-key
-    // manager page and persisted, but not yet consumed by request scheduling
-    // (即将支持); chat / model-fetch still use the single [apiKey].
+    // manager page, persisted, and consumed by request scheduling
+    // (`ApiKeyManager`); model-fetch still uses the single [apiKey].
     List<ApiKeyConfig>? apiKeys,
     KeyManagementConfig? keyManagement,
   }) = _ModelProvider;
