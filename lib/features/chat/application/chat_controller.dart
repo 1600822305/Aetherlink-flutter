@@ -2,6 +2,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/app/di/system_prompt_variables_access.dart';
 import 'package:aetherlink_flutter/core/error/failure.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
@@ -24,11 +25,13 @@ import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.d
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
+import 'package:aetherlink_flutter/shared/config/skill_prompt_builder.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
+import 'package:aetherlink_flutter/shared/domain/skill.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tools.dart';
@@ -1466,16 +1469,36 @@ class ChatController extends _$ChatController {
         ? topic!.prompt!
         : '';
 
-    var base = assistantPrompt;
-    if (topicPrompt.isNotEmpty) {
-      base = base.isNotEmpty ? '$base\n\n$topicPrompt' : topicPrompt;
-    }
+    final enabledSkills = await _enabledSkillsFor(assistant?.skillIds);
+    final base = enabledSkills.isNotEmpty
+        ? assembleSkillSystemPrompt(
+            assistantPrompt: assistantPrompt,
+            enabledSkills: enabledSkills,
+            topicPrompt: topicPrompt,
+          )
+        : (topicPrompt.isNotEmpty
+              ? (assistantPrompt.isNotEmpty
+                    ? '$assistantPrompt\n\n$topicPrompt'
+                    : topicPrompt)
+              : assistantPrompt);
 
     final injected = injectSystemPromptVariables(
       base,
       ref.read(systemPromptVariablesProvider),
     );
     return injected.isEmpty ? null : injected;
+  }
+
+  /// The skills bound to the assistant ([skillIds]) that are currently enabled,
+  /// in binding order — the port of `SkillManager.getSkillsForAssistant`.
+  Future<List<Skill>> _enabledSkillsFor(List<String>? skillIds) async {
+    if (skillIds == null || skillIds.isEmpty) return const <Skill>[];
+    final skills = await ref.read(skillsProvider.future);
+    final byId = {for (final s in skills) s.id: s};
+    return [
+      for (final id in skillIds)
+        if (byId[id]?.enabled ?? false) byId[id]!,
+    ];
   }
 
   /// Assembles the [_McpSetup] for the current turn from the persisted MCP 工具
