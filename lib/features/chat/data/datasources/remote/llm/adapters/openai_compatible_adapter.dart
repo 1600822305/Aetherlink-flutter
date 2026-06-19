@@ -97,18 +97,46 @@ class OpenAiCompatibleAdapter implements LlmGateway {
       if (choices != null && choices.isNotEmpty) {
         final choice = choices.first as Map<String, dynamic>;
         final delta = choice['delta'] as Map<String, dynamic>?;
+        var emittedDeltaText = false;
         if (delta != null) {
           final reasoning = delta['reasoning_content'] ?? delta['reasoning'];
           if (reasoning is String && reasoning.isNotEmpty) {
             yield LlmStreamChunk.reasoningDelta(reasoning);
           }
-          final content = delta['content'];
-          if (content is String && content.isNotEmpty) {
+          final content = _extractOpenAiTextDelta(delta);
+          if (content.isNotEmpty) {
+            emittedDeltaText = true;
             yield LlmStreamChunk.textDelta(content);
           }
           final calls = delta['tool_calls'];
           if (calls is List) _accumulateToolCalls(toolCalls, calls);
         }
+
+        // Some compatible gateways send a non-stream-shaped `message` object
+        // inside SSE chunks, or use content parts instead of a plain string.
+        // Treat it as a fallback so those responses do not finalize as blank.
+        final message = choice['message'];
+        if (message is Map<String, dynamic>) {
+          final reasoning =
+              message['reasoning_content'] ?? message['reasoning'];
+          if (reasoning is String && reasoning.isNotEmpty) {
+            yield LlmStreamChunk.reasoningDelta(reasoning);
+          }
+          if (!emittedDeltaText) {
+            final content = _extractTextContent(message['content']);
+            if (content.isNotEmpty) yield LlmStreamChunk.textDelta(content);
+          }
+          final calls = message['tool_calls'];
+          if (calls is List) _accumulateToolCalls(toolCalls, calls);
+        }
+
+        if (!emittedDeltaText && message == null) {
+          final text = choice['text'];
+          if (text is String && text.isNotEmpty) {
+            yield LlmStreamChunk.textDelta(text);
+          }
+        }
+
         final reason = choice['finish_reason'];
         if (reason is String) finishReason = reason;
       }
@@ -196,6 +224,7 @@ class OpenAiCompatibleAdapter implements LlmGateway {
 
     Usage? usage;
     String? finishReason;
+    var emittedText = false;
     // function_call items keyed by their `output_index` (one entry per parallel
     // call), accumulating call_id + name + arguments across the stream.
     final toolCalls = <String, _ToolCallBuilder>{};
@@ -211,6 +240,7 @@ class OpenAiCompatibleAdapter implements LlmGateway {
         case 'response.output_text.delta':
           final delta = json['delta'];
           if (delta is String && delta.isNotEmpty) {
+            emittedText = true;
             yield LlmStreamChunk.textDelta(delta);
           }
         case 'response.reasoning.delta':
@@ -251,6 +281,13 @@ class OpenAiCompatibleAdapter implements LlmGateway {
           final response = json['response'];
           if (response is Map<String, dynamic>) {
             usage = _responsesUsage(response['usage']) ?? usage;
+            if (!emittedText) {
+              final content = _extractResponsesOutputText(response);
+              if (content.isNotEmpty) {
+                emittedText = true;
+                yield LlmStreamChunk.textDelta(content);
+              }
+            }
           }
           finishReason ??= 'stop';
       }
@@ -440,6 +477,71 @@ class OpenAiCompatibleAdapter implements LlmGateway {
       completionTokens: (raw['output_tokens'] as num?)?.toInt() ?? 0,
       totalTokens: (raw['total_tokens'] as num?)?.toInt() ?? 0,
     );
+  }
+
+  /// Extracts assistant text from the shapes returned by OpenAI-compatible
+  /// stream deltas. Besides the common string value, a few vendors send
+  /// content parts such as `{type:"text", text:"..."}`.
+  static String _extractOpenAiTextDelta(Map<String, dynamic>? delta) {
+    if (delta == null) return '';
+    if (delta['type'] == 'response.audio.delta') return '';
+    return _extractTextContent(delta['content']);
+  }
+
+  /// Extracts text from string content, content-part arrays, or a single
+  /// content-part map. This intentionally ignores image/audio/tool parts.
+  static String _extractTextContent(Object? raw) {
+    if (raw is String) return raw;
+    if (raw is List) {
+      final buffer = StringBuffer();
+      for (final item in raw) {
+        final text = _extractTextContent(item);
+        if (text.isNotEmpty) buffer.write(text);
+      }
+      return buffer.toString();
+    }
+    if (raw is Map) {
+      final type = (raw['type'] ?? '').toString();
+      if (!_isTextContentType(type)) return '';
+      final text = raw['text'] ?? raw['delta'];
+      if (text is String) return text;
+      final content = raw['content'];
+      if (content != null) return _extractTextContent(content);
+    }
+    return '';
+  }
+
+  static bool _isTextContentType(String type) =>
+      type.isEmpty ||
+      type == 'text' ||
+      type == 'output_text' ||
+      type == 'input_text';
+
+  /// Extracts the final text from a `/responses` completion event. Some
+  /// gateways only send the completed response object and never emit
+  /// `response.output_text.delta`, so this is a last-resort fallback.
+  static String _extractResponsesOutputText(Object? raw) {
+    if (raw is List) {
+      final buffer = StringBuffer();
+      for (final item in raw) {
+        final text = _extractResponsesOutputText(item);
+        if (text.isNotEmpty) buffer.write(text);
+      }
+      return buffer.toString();
+    }
+    if (raw is! Map) return '';
+
+    final outputText = raw['output_text'];
+    if (outputText is String && outputText.isNotEmpty) return outputText;
+
+    final type = (raw['type'] ?? '').toString();
+    if (type == 'output_text') return _extractTextContent(raw);
+    if (type == 'message' || type.isEmpty) {
+      final content = _extractTextContent(raw['content']);
+      if (content.isNotEmpty) return content;
+    }
+
+    return _extractResponsesOutputText(raw['output']);
   }
 
   /// Merges one delta's `tool_calls` fragments into [acc] by their `index`.

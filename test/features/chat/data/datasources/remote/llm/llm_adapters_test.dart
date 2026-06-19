@@ -145,6 +145,55 @@ data: [DONE]
       expect(adapter.requestBody, contains('"stream":true'));
       expect(adapter.requestBody, contains('"model":"test-model"'));
     });
+
+    test('extracts text from content parts and message fallback', () async {
+      const partsAndMessageSse = '''
+data: {"choices":[{"delta":{"content":[{"type":"text","text":"Hello"},{"type":"image_url","image_url":{"url":"data:image/png;base64,AA=="}},{"type":"text","delta":", parts"}]},"finish_reason":null}]}
+
+data: {"choices":[{"message":{"role":"assistant","content":[{"type":"text","text":" and message"}]},"finish_reason":"stop"}]}
+
+data: [DONE]
+''';
+      final adapter = _ReplayAdapter(partsAndMessageSse);
+      final gateway = OpenAiCompatibleAdapter(_dioWith(adapter));
+
+      final chunks = await gateway
+          .streamChat(_request(_model(provider: 'openai')))
+          .toList();
+
+      expect(_text(chunks), 'Hello, parts and message');
+      expect(_done(chunks).finishReason, 'stop');
+    });
+
+    test('extracts Responses text from completed event fallback', () async {
+      const completedOnlySse = '''
+data: {"type":"response.completed","response":{"output":[{"type":"message","content":[{"type":"output_text","text":"completed text"}]}],"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}}
+
+data: [DONE]
+''';
+      final adapter = _ReplayAdapter(completedOnlySse);
+      final gateway = OpenAiCompatibleAdapter(_dioWith(adapter));
+
+      final chunks = await gateway
+          .streamChat(
+            _request(
+              _model(
+                provider: 'openai',
+                baseUrl: 'https://api.example.test/v1',
+              ),
+            ).copyWith(useResponsesAPI: true),
+          )
+          .toList();
+
+      expect(_text(chunks), 'completed text');
+      final done = _done(chunks);
+      expect(done.finishReason, 'stop');
+      expect(done.usage?.totalTokens, 5);
+      expect(
+        adapter.request!.uri.toString(),
+        'https://api.example.test/v1/responses',
+      );
+    });
   });
 
   group('AnthropicAdapter', () {
