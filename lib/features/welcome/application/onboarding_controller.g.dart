@@ -11,14 +11,10 @@ part of 'onboarding_controller.dart';
 /// Tracks whether the first-time welcome page still needs to be shown.
 ///
 /// The state is `true` for a first-time user (show the welcome page) and `false`
-/// once onboarding is done. It seeds `true` and lives in memory only for M4.1 —
-/// mirroring the M4.0 theme controller's "seam, not yet persisted" approach.
-///
-/// The original gated this on a persisted `first-time-user` flag. Persistence
-/// here is a deliberate seam (see [restore]): where app preferences live
-/// (shared_preferences vs a Drift settings table) is a separate decision, and
-/// M4.1 adds no new dependencies — so the welcome page reappears on each cold
-/// start until persistence is wired.
+/// once onboarding is done. It hydrates from the Drift key/value store: the web
+/// gated `/welcome` on whether `first-time-user` was absent
+/// (`firstTimeUserValue === null`), so a missing key → still needs onboarding,
+/// and any stored value → done.
 ///
 /// `keepAlive: true`: this is an app-level flag, not screen-scoped state — it
 /// must survive the welcome page being disposed after navigation, so it is not
@@ -30,31 +26,23 @@ final onboardingControllerProvider = OnboardingControllerProvider._();
 /// Tracks whether the first-time welcome page still needs to be shown.
 ///
 /// The state is `true` for a first-time user (show the welcome page) and `false`
-/// once onboarding is done. It seeds `true` and lives in memory only for M4.1 —
-/// mirroring the M4.0 theme controller's "seam, not yet persisted" approach.
-///
-/// The original gated this on a persisted `first-time-user` flag. Persistence
-/// here is a deliberate seam (see [restore]): where app preferences live
-/// (shared_preferences vs a Drift settings table) is a separate decision, and
-/// M4.1 adds no new dependencies — so the welcome page reappears on each cold
-/// start until persistence is wired.
+/// once onboarding is done. It hydrates from the Drift key/value store: the web
+/// gated `/welcome` on whether `first-time-user` was absent
+/// (`firstTimeUserValue === null`), so a missing key → still needs onboarding,
+/// and any stored value → done.
 ///
 /// `keepAlive: true`: this is an app-level flag, not screen-scoped state — it
 /// must survive the welcome page being disposed after navigation, so it is not
 /// auto-disposed.
 final class OnboardingControllerProvider
-    extends $NotifierProvider<OnboardingController, bool> {
+    extends $AsyncNotifierProvider<OnboardingController, bool> {
   /// Tracks whether the first-time welcome page still needs to be shown.
   ///
   /// The state is `true` for a first-time user (show the welcome page) and `false`
-  /// once onboarding is done. It seeds `true` and lives in memory only for M4.1 —
-  /// mirroring the M4.0 theme controller's "seam, not yet persisted" approach.
-  ///
-  /// The original gated this on a persisted `first-time-user` flag. Persistence
-  /// here is a deliberate seam (see [restore]): where app preferences live
-  /// (shared_preferences vs a Drift settings table) is a separate decision, and
-  /// M4.1 adds no new dependencies — so the welcome page reappears on each cold
-  /// start until persistence is wired.
+  /// once onboarding is done. It hydrates from the Drift key/value store: the web
+  /// gated `/welcome` on whether `first-time-user` was absent
+  /// (`firstTimeUserValue === null`), so a missing key → still needs onboarding,
+  /// and any stored value → done.
   ///
   /// `keepAlive: true`: this is an app-level flag, not screen-scoped state — it
   /// must survive the welcome page being disposed after navigation, so it is not
@@ -76,46 +64,34 @@ final class OnboardingControllerProvider
   @$internal
   @override
   OnboardingController create() => OnboardingController();
-
-  /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(bool value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<bool>(value),
-    );
-  }
 }
 
 String _$onboardingControllerHash() =>
-    r'9ca48f1e3eebe611470b0ebf068e649131c8ed38';
+    r'dd98b0fe6e593157639c1073a13e328e82641640';
 
 /// Tracks whether the first-time welcome page still needs to be shown.
 ///
 /// The state is `true` for a first-time user (show the welcome page) and `false`
-/// once onboarding is done. It seeds `true` and lives in memory only for M4.1 —
-/// mirroring the M4.0 theme controller's "seam, not yet persisted" approach.
-///
-/// The original gated this on a persisted `first-time-user` flag. Persistence
-/// here is a deliberate seam (see [restore]): where app preferences live
-/// (shared_preferences vs a Drift settings table) is a separate decision, and
-/// M4.1 adds no new dependencies — so the welcome page reappears on each cold
-/// start until persistence is wired.
+/// once onboarding is done. It hydrates from the Drift key/value store: the web
+/// gated `/welcome` on whether `first-time-user` was absent
+/// (`firstTimeUserValue === null`), so a missing key → still needs onboarding,
+/// and any stored value → done.
 ///
 /// `keepAlive: true`: this is an app-level flag, not screen-scoped state — it
 /// must survive the welcome page being disposed after navigation, so it is not
 /// auto-disposed.
 
-abstract class _$OnboardingController extends $Notifier<bool> {
-  bool build();
+abstract class _$OnboardingController extends $AsyncNotifier<bool> {
+  FutureOr<bool> build();
   @$mustCallSuper
   @override
   WhenComplete runBuild() {
-    final ref = this.ref as $Ref<bool, bool>;
+    final ref = this.ref as $Ref<AsyncValue<bool>, bool>;
     final element =
         ref.element
             as $ClassProviderElement<
-              AnyNotifier<bool, bool>,
-              bool,
+              AnyNotifier<AsyncValue<bool>, bool>,
+              AsyncValue<bool>,
               Object?,
               Object?
             >;

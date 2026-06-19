@@ -28,12 +28,11 @@ class AetherlinkApp extends ConsumerStatefulWidget {
 }
 
 class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
-  /// Created once for the app's lifetime so theme rebuilds never recreate it
-  /// (which would reset navigation state). First-time users land on the welcome
-  /// page; the decision is read once here from the in-memory onboarding seam.
-  late final GoRouter _router = AppRouter.create(
-    startAtWelcome: ref.read(onboardingControllerProvider),
-  );
+  /// Created once, the moment the persisted onboarding flag first resolves, so
+  /// theme rebuilds (and the later `markStarted()` flip) never recreate it and
+  /// reset navigation. First-time users land on the welcome page; the decision
+  /// is read from the now-persisted `first-time-user` flag.
+  GoRouter? _router;
 
   @override
   void initState() {
@@ -64,17 +63,43 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
     // `TextStyle.apply` asserts a non-1.0 factor is only used on a set size, so
     // scaling through the theme would crash off the default size.
     final textScale = fontSize / FontSizeController.defaultSize;
+    final lightTheme = AppTheme.light(spec);
+    final darkTheme = AppTheme.dark(spec);
+    final themeMode = switch (mode) {
+      AppThemeMode.system => ThemeMode.system,
+      AppThemeMode.light => ThemeMode.light,
+      AppThemeMode.dark => ThemeMode.dark,
+    };
+
+    // Resolve the persisted first-time-user gate before building the router so
+    // we land on the right page without flashing the welcome page (mirrors the
+    // web's loading gate). On error, default to the chat home like the web did.
+    final onboarding = ref.watch(onboardingControllerProvider);
+    if (_router == null && (onboarding.hasValue || onboarding.hasError)) {
+      _router = AppRouter.create(
+        startAtWelcome: onboarding.value ?? false,
+      );
+    }
+    final router = _router;
+    if (router == null) {
+      // First-frame splash while the flag resolves: a themed blank surface, no
+      // spinner flash (the read settles within a frame on a real store).
+      return MaterialApp(
+        title: 'Aetherlink',
+        theme: lightTheme,
+        darkTheme: darkTheme,
+        themeMode: themeMode,
+        debugShowCheckedModeBanner: false,
+        home: const Scaffold(),
+      );
+    }
     return MaterialApp.router(
       title: 'Aetherlink',
-      theme: AppTheme.light(spec),
-      darkTheme: AppTheme.dark(spec),
+      theme: lightTheme,
+      darkTheme: darkTheme,
       scrollBehavior: const ScrollBehavior().copyWith(overscroll: false),
-      themeMode: switch (mode) {
-        AppThemeMode.system => ThemeMode.system,
-        AppThemeMode.light => ThemeMode.light,
-        AppThemeMode.dark => ThemeMode.dark,
-      },
-      routerConfig: _router,
+      themeMode: themeMode,
+      routerConfig: router,
       builder: (context, child) {
         // Keep the system bars transparent with no contrast scrim, and flip the
         // icon brightness with the active theme so the status / navigation bar
