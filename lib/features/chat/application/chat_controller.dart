@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/translate_controller.dart';
+import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/api_key_manager.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
@@ -23,9 +24,11 @@ import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.d
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
+import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
+import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tools.dart';
@@ -194,6 +197,7 @@ class ChatController extends _$ChatController {
     await _streamInto(
       request: request,
       effective: effective,
+      provider: current.provider,
       assistantMessageId: assistantMessageId,
       assistantBlockId: assistantBlockId,
       assistantTime: assistantTime,
@@ -291,6 +295,7 @@ class ChatController extends _$ChatController {
     await _streamInto(
       request: request,
       effective: effective,
+      provider: current.provider,
       assistantMessageId: messageId,
       assistantBlockId: assistantBlockId,
       assistantTime: now,
@@ -384,6 +389,7 @@ class ChatController extends _$ChatController {
     await _streamInto(
       request: request,
       effective: effective,
+      provider: current.provider,
       assistantMessageId: assistantMessageId,
       assistantBlockId: assistantBlockId,
       assistantTime: now,
@@ -421,6 +427,10 @@ class ChatController extends _$ChatController {
   /// mirroring the web `maxToolCallRounds` guard against runaway tool loops.
   static const int _kMaxToolRounds = 5;
 
+  /// The most keys a single send tries before giving up, when the provider has a
+  /// multi-key pool. Mirrors the web `EnhancedApiProvider` `maxRetries = 3`.
+  static const int _kMaxKeyAttempts = 3;
+
   /// Subscribes to the gateway stream for [request] and drives the MCP tool-call
   /// loop. Each round accumulates assistant text into a `main_text` block and
   /// reasoning into a single `thinking` card; if the model asks for a tool
@@ -434,6 +444,7 @@ class ChatController extends _$ChatController {
   Future<void> _streamInto({
     required LlmChatRequest request,
     required Model effective,
+    required ModelProvider provider,
     required String assistantMessageId,
     required String assistantBlockId,
     required DateTime assistantTime,
@@ -441,7 +452,42 @@ class ChatController extends _$ChatController {
     required ChatMessageView assistantView,
     required _McpSetup mcp,
   }) async {
-    final gateway = ref.read(llmGatewayFactoryProvider).forModel(effective);
+    // Multi-key load balancing + failover. When the provider carries a multi-key
+    // pool, each attempt strategy-selects a usable key ([ApiKeyManager]); a
+    // connection-time failure (before anything streamed) fails over to the next
+    // usable key, and per-key usage/cooldown is recorded then persisted through
+    // the model store so the multi-key UI's stats reflect real traffic. With no
+    // pool this collapses to a single attempt on [effective]'s key — the
+    // original single-key behaviour. Mirrors the web `EnhancedApiProvider`.
+    final keyManager = ApiKeyManager.instance;
+    final keyPool = provider.apiKeys ?? const <ApiKeyConfig>[];
+    final useKeyPool = keyPool.isNotEmpty;
+    final keyStrategy = provider.keyManagement?.strategy ?? 'round_robin';
+    final hasSingleKeyFallback = (effective.apiKey ?? '').trim().isNotEmpty;
+    final maxAttempts = useKeyPool ? _kMaxKeyAttempts : 1;
+    final workingKeys = List<ApiKeyConfig>.of(keyPool);
+    final keyUpdates = <String, ApiKeyConfig>{};
+
+    Future<void> persistKeyUpdates() async {
+      if (keyUpdates.isEmpty) return;
+      await ref
+          .read(modelStoreProvider.notifier)
+          .updateApiKeys(
+            providerId: provider.id,
+            keys: keyUpdates.values.toList(),
+          );
+    }
+
+    void recordKeyOutcome(int index, {required bool success, String? error}) {
+      if (index < 0 || index >= workingKeys.length) return;
+      final updated = keyManager.updateKeyStatus(
+        workingKeys[index],
+        success: success,
+        error: error,
+      );
+      workingKeys[index] = updated;
+      keyUpdates[updated.id] = updated;
+    }
 
     // Reasoning is aggregated across rounds into one 思考 card; [completed] holds
     // the blocks earlier rounds finalized (the model's prose plus the 工具 blocks
@@ -496,46 +542,105 @@ class ChatController extends _$ChatController {
       _emit(views, isStreaming: true);
     }
 
-    try {
-      for (var round = 0; ; round++) {
-        buffer.clear();
-        final structuredCalls = <LlmToolCall>[];
-        await for (final chunk in gateway.streamChat(
-          request.copyWith(messages: messages),
-        )) {
-          switch (chunk) {
-            case LlmTextDelta(:final text):
-              buffer.write(text);
-              update();
-            case LlmReasoningDelta(:final text):
-              thinking.write(text);
-              update();
-            case LlmToolCallChunk(:final call):
-              structuredCalls.add(call);
-            case LlmDone():
-              break;
-          }
+    Object? lastError;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      // Pick the key for this attempt. With a pool: strategy-select a usable
+      // key; if none is usable, fall back once to the single [effective] key
+      // (mirroring the web `enableFallback`), else surface 没有可用的 Key.
+      var effectiveForAttempt = effective;
+      var selectedIndex = -1;
+      if (useKeyPool) {
+        final selected = keyManager.selectApiKey(workingKeys, keyStrategy);
+        if (selected != null) {
+          selectedIndex = workingKeys.indexWhere((k) => k.id == selected.id);
+          effectiveForAttempt = effective.copyWith(apiKey: selected.key);
+        } else if (hasSingleKeyFallback) {
+          effectiveForAttempt = effective;
+        } else {
+          lastError ??= const _NoUsableApiKeyException();
+          break;
         }
+      }
 
-        final roundText = buffer.toString();
-        // 提示词注入 mode parses the model's XML; function mode gets the calls as
-        // structured stream events.
-        final requested = mcp.usePromptInjection
-            ? [
-                for (final use in parseToolUseBlocks(roundText, mcp.tools))
-                  LlmToolCall(id: '', name: use.name, arguments: use.arguments),
-              ]
-            : structuredCalls;
-        final runnable = <LlmToolCall>[
-          for (final call in requested)
-            if (mcp.routes.containsKey(call.name)) call,
-        ];
+      final gateway = ref
+          .read(llmGatewayFactoryProvider)
+          .forModel(effectiveForAttempt);
 
-        // No (more) tools to run, or the round budget is spent: this round's
-        // prose is the final answer.
-        if (runnable.isEmpty || round >= _kMaxToolRounds - 1) {
+      // Reset the per-attempt accumulators so a failover retry starts clean.
+      thinking.clear();
+      completed.clear();
+      buffer.clear();
+      messages = List<LlmMessage>.of(request.messages);
+      view = assistantView;
+      roundBlockId = assistantBlockId;
+      // Once any chunk has streamed we are committed to this attempt: failing
+      // over would duplicate already-rendered output, so we only retry on a
+      // failure that happens before the first chunk.
+      var committed = false;
+
+      try {
+        for (var round = 0; ; round++) {
+          buffer.clear();
+          final structuredCalls = <LlmToolCall>[];
+          await for (final chunk in gateway.streamChat(
+            request.copyWith(messages: messages, model: effectiveForAttempt),
+          )) {
+            switch (chunk) {
+              case LlmTextDelta(:final text):
+                committed = true;
+                buffer.write(text);
+                update();
+              case LlmReasoningDelta(:final text):
+                committed = true;
+                thinking.write(text);
+                update();
+              case LlmToolCallChunk(:final call):
+                committed = true;
+                structuredCalls.add(call);
+              case LlmDone():
+                break;
+            }
+          }
+
+          final roundText = buffer.toString();
+          // 提示词注入 mode parses the model's XML; function mode gets the calls as
+          // structured stream events.
+          final requested = mcp.usePromptInjection
+              ? [
+                  for (final use in parseToolUseBlocks(roundText, mcp.tools))
+                    LlmToolCall(
+                      id: '',
+                      name: use.name,
+                      arguments: use.arguments,
+                    ),
+                ]
+              : structuredCalls;
+          final runnable = <LlmToolCall>[
+            for (final call in requested)
+              if (mcp.routes.containsKey(call.name)) call,
+          ];
+
+          // No (more) tools to run, or the round budget is spent: this round's
+          // prose is the final answer.
+          if (runnable.isEmpty || round >= _kMaxToolRounds - 1) {
+            final display = roundDisplay();
+            if (display.isNotEmpty || completed.isEmpty) {
+              completed.add(
+                _mainTextBlock(
+                  id: roundBlockId,
+                  messageId: assistantMessageId,
+                  createdAt: assistantTime,
+                  content: display,
+                ),
+              );
+            }
+            break;
+          }
+
+          // Persist this round's prose (if any) before the tool blocks so the
+          // render order is prose → tool result → next round.
           final display = roundDisplay();
-          if (display.isNotEmpty || completed.isEmpty) {
+          if (display.isNotEmpty) {
             completed.add(
               _mainTextBlock(
                 id: roundBlockId,
@@ -545,142 +650,159 @@ class ChatController extends _$ChatController {
               ),
             );
           }
-          break;
-        }
 
-        // Persist this round's prose (if any) before the tool blocks so the
-        // render order is prose → tool result → next round.
-        final display = roundDisplay();
-        if (display.isNotEmpty) {
-          completed.add(
-            _mainTextBlock(
-              id: roundBlockId,
-              messageId: assistantMessageId,
-              createdAt: assistantTime,
-              content: display,
-            ),
-          );
-        }
+          // Run each requested tool — built-ins in-process, remote tools over a
+          // live connection — and render a 工具 block per call.
+          final results = <({LlmToolCall call, McpToolResult result})>[];
+          for (final call in runnable) {
+            final route = mcp.routes[call.name]!;
+            final args = decodeToolArguments(call.arguments);
+            final result = await _runTool(route, call.name, args);
+            results.add((call: call, result: result));
+            completed.add(
+              MessageBlock.tool(
+                id: generateId('block'),
+                messageId: assistantMessageId,
+                status: result.isError
+                    ? MessageBlockStatus.error
+                    : MessageBlockStatus.success,
+                createdAt: assistantTime,
+                updatedAt: DateTime.now(),
+                toolId: call.id.isEmpty ? call.name : call.id,
+                toolName: call.name,
+                arguments: args,
+                content: result.text,
+              ),
+            );
+          }
 
-        // Run each requested tool — built-ins in-process, remote tools over a
-        // live connection — and render a 工具 block per call.
-        final results = <({LlmToolCall call, McpToolResult result})>[];
-        for (final call in runnable) {
-          final route = mcp.routes[call.name]!;
-          final args = decodeToolArguments(call.arguments);
-          final result = await _runTool(route, call.name, args);
-          results.add((call: call, result: result));
-          completed.add(
-            MessageBlock.tool(
-              id: generateId('block'),
-              messageId: assistantMessageId,
-              status: result.isError
-                  ? MessageBlockStatus.error
-                  : MessageBlockStatus.success,
-              createdAt: assistantTime,
-              updatedAt: DateTime.now(),
-              toolId: call.id.isEmpty ? call.name : call.id,
-              toolName: call.name,
-              arguments: args,
-              content: result.text,
-            ),
-          );
-        }
-
-        // Feed the assistant turn + tool results back so the model can continue.
-        if (mcp.usePromptInjection) {
-          messages = <LlmMessage>[
-            ...messages,
-            LlmMessage(role: MessageRole.assistant, content: roundText),
-            for (final entry in results)
-              LlmMessage(
-                role: MessageRole.user,
-                content: formatToolUseResult(
-                  entry.call.name,
-                  entry.result.text,
+          // Feed the assistant turn + tool results back so the model can continue.
+          if (mcp.usePromptInjection) {
+            messages = <LlmMessage>[
+              ...messages,
+              LlmMessage(role: MessageRole.assistant, content: roundText),
+              for (final entry in results)
+                LlmMessage(
+                  role: MessageRole.user,
+                  content: formatToolUseResult(
+                    entry.call.name,
+                    entry.result.text,
+                  ),
                 ),
-              ),
-          ];
-        } else {
-          messages = <LlmMessage>[
-            ...messages,
-            LlmMessage(
-              role: MessageRole.assistant,
-              content: roundText,
-              toolCalls: runnable,
-            ),
-            for (final entry in results)
+            ];
+          } else {
+            messages = <LlmMessage>[
+              ...messages,
               LlmMessage(
-                role: MessageRole.user,
-                content: entry.result.text,
-                toolCallId: entry.call.id.isEmpty
-                    ? entry.call.name
-                    : entry.call.id,
-                toolName: entry.call.name,
+                role: MessageRole.assistant,
+                content: roundText,
+                toolCalls: runnable,
               ),
-          ];
+              for (final entry in results)
+                LlmMessage(
+                  role: MessageRole.user,
+                  content: entry.result.text,
+                  toolCallId: entry.call.id.isEmpty
+                      ? entry.call.name
+                      : entry.call.id,
+                  toolName: entry.call.name,
+                ),
+            ];
+          }
+
+          roundBlockId = generateId('block');
+          update();
         }
 
-        roundBlockId = generateId('block');
-        update();
+        await _persistMessageBlocks(
+          messageId: assistantMessageId,
+          status: MessageStatus.success,
+          blocks: [
+            if (thinking.isNotEmpty)
+              _thinkingBlock(
+                messageId: assistantMessageId,
+                createdAt: assistantTime,
+                content: thinking.toString(),
+              ),
+            ...completed,
+          ],
+        );
+        if (selectedIndex != -1) {
+          recordKeyOutcome(selectedIndex, success: true);
+        }
+        await persistKeyUpdates();
+        view = await _reloadView(assistantMessageId, view);
+        _replace(views, view);
+        _emit(views, isStreaming: false);
+        return;
+      } on Object catch (error) {
+        lastError = error;
+        if (selectedIndex != -1) {
+          recordKeyOutcome(
+            selectedIndex,
+            success: false,
+            error: _errorMessage(error),
+          );
+        }
+        // Fail over to the next key only if nothing streamed yet and another
+        // attempt remains; otherwise fall through to the terminal error below.
+        if (useKeyPool && !committed && attempt < maxAttempts - 1) {
+          await Future<void>.delayed(_keyRetryDelay(attempt));
+          continue;
+        }
+        break;
       }
-
-      await _persistMessageBlocks(
-        messageId: assistantMessageId,
-        status: MessageStatus.success,
-        blocks: [
-          if (thinking.isNotEmpty)
-            _thinkingBlock(
-              messageId: assistantMessageId,
-              createdAt: assistantTime,
-              content: thinking.toString(),
-            ),
-          ...completed,
-        ],
-      );
-      view = await _reloadView(assistantMessageId, view);
-      _replace(views, view);
-      _emit(views, isStreaming: false);
-    } on Object catch (error) {
-      final messageText = _errorMessage(error);
-      final partial = roundDisplay();
-      await _persistMessageBlocks(
-        messageId: assistantMessageId,
-        status: MessageStatus.error,
-        blocks: [
-          if (thinking.isNotEmpty)
-            _thinkingBlock(
-              messageId: assistantMessageId,
-              createdAt: assistantTime,
-              content: thinking.toString(),
-            ),
-          ...completed,
-          if (partial.isNotEmpty)
-            _mainTextBlock(
-              id: roundBlockId,
-              messageId: assistantMessageId,
-              createdAt: assistantTime,
-              content: partial,
-            ),
-          MessageBlock.error(
-            id: generateId('block'),
-            messageId: assistantMessageId,
-            status: MessageBlockStatus.error,
-            createdAt: assistantTime,
-            updatedAt: DateTime.now(),
-            content: partial,
-            message: messageText,
-          ),
-        ],
-      );
-      view = await _reloadView(
-        assistantMessageId,
-        view.copyWith(status: MessageStatus.error, errorText: messageText),
-      );
-      _replace(views, view);
-      _emit(views, isStreaming: false);
     }
+
+    // Terminal failure: persist any key stat changes, then mark the message
+    // errored — keeping whatever the last attempt streamed — exactly like the
+    // original single-key error path.
+    await persistKeyUpdates();
+    final messageText = _errorMessage(
+      lastError ?? const _NoUsableApiKeyException(),
+    );
+    final partial = roundDisplay();
+    await _persistMessageBlocks(
+      messageId: assistantMessageId,
+      status: MessageStatus.error,
+      blocks: [
+        if (thinking.isNotEmpty)
+          _thinkingBlock(
+            messageId: assistantMessageId,
+            createdAt: assistantTime,
+            content: thinking.toString(),
+          ),
+        ...completed,
+        if (partial.isNotEmpty)
+          _mainTextBlock(
+            id: roundBlockId,
+            messageId: assistantMessageId,
+            createdAt: assistantTime,
+            content: partial,
+          ),
+        MessageBlock.error(
+          id: generateId('block'),
+          messageId: assistantMessageId,
+          status: MessageBlockStatus.error,
+          createdAt: assistantTime,
+          updatedAt: DateTime.now(),
+          content: partial,
+          message: messageText,
+        ),
+      ],
+    );
+    view = await _reloadView(
+      assistantMessageId,
+      view.copyWith(status: MessageStatus.error, errorText: messageText),
+    );
+    _replace(views, view);
+    _emit(views, isStreaming: false);
   }
+
+  /// Exponential-ish backoff between multi-key failover attempts, mirroring the
+  /// web `retryDelay * (attempt + 1)` (base 1s).
+  Duration _keyRetryDelay(int attempt) =>
+      Duration(milliseconds: 1000 * (attempt + 1));
 
   MessageBlock _mainTextBlock({
     required String id,
@@ -1549,6 +1671,16 @@ class _LatestSnapshot {
 
   final List<String> blockIds;
   final Model? model;
+}
+
+/// Raised when a provider has a multi-key pool but every key is disabled,
+/// errored or still cooling down and there is no single-key fallback — surfaced
+/// as the assistant message's error so the user knows to re-enable / add a key.
+class _NoUsableApiKeyException implements Exception {
+  const _NoUsableApiKeyException();
+
+  @override
+  String toString() => '没有可用的 API Key：所有 Key 已禁用、失败或处于冷却中。';
 }
 
 /// The MCP tool context assembled for one chat turn: the resolved [mode], the
