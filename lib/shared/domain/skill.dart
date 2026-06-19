@@ -1,71 +1,61 @@
 /// Skills domain model — the port of the web `Skill`
 /// (`src/shared/types/Skill.ts`). A skill is a lightweight, structured
 /// instruction pack (a SKILL.md body) that gives the assistant on-demand
-/// expertise. Pure Dart value type with a `const` constructor so the built-in
-/// catalog ([kBuiltinSkills]) can be `const` static data.
-///
-/// UI-only milestone: enable/CRUD/import-export/binding aren't wired yet, so
-/// the persistence-only fields (`usageCount`, `lastUsedAt`, timestamps) are
-/// carried for parity but not yet mutated.
+/// expertise. Freezed value type with `toJson`/`fromJson` so the
+/// [SkillsController] can persist the whole library as a single JSON blob; the
+/// `const` factory keeps the built-in catalog ([kBuiltinSkills]) `const`.
 library;
 
-/// Where a skill comes from. Mirrors the web `SkillSource`; the string values
+import 'package:freezed_annotation/freezed_annotation.dart';
+
+part 'skill.freezed.dart';
+part 'skill.g.dart';
+
+/// Where a skill comes from. Mirrors the web `SkillSource`; the JSON values
 /// match the source verbatim so configs round-trip with the web app.
-enum SkillSource { builtin, user, community }
+enum SkillSource {
+  @JsonValue('builtin')
+  builtin,
+  @JsonValue('user')
+  user,
+  @JsonValue('community')
+  community,
+}
 
 /// A single skill. Mirrors the web `Skill` interface field-for-field.
-class Skill {
-  const Skill({
-    required this.id,
-    required this.name,
-    required this.description,
-    required this.source,
-    this.emoji,
-    this.tags = const <String>[],
-    this.content = '',
-    this.triggerPhrases = const <String>[],
-    this.mcpServerId,
-    this.modelOverride,
-    this.temperatureOverride,
-    this.version,
-    this.author,
-    this.enabled = false,
-    this.usageCount,
-    this.lastUsedAt,
-    this.createdAt,
-    this.updatedAt,
-  });
+@freezed
+abstract class Skill with _$Skill {
+  const factory Skill({
+    required String id,
+    required String name,
+    required String description,
+    required SkillSource source,
+    String? emoji,
+    @Default(<String>[]) List<String> tags,
 
-  final String id;
-  final String name;
-  final String description;
-  final SkillSource source;
+    /// SKILL.md body (Markdown instructions). Consumed by the editor, not the
+    /// list page.
+    @Default('') String content,
 
-  final String? emoji;
-  final List<String> tags;
+    /// Trigger phrase examples, e.g. `['审查代码', 'review PR']`.
+    @Default(<String>[]) List<String> triggerPhrases,
 
-  /// SKILL.md body (Markdown instructions). Consumed by the editor, not the
-  /// list page.
-  final String content;
+    /// Associated MCP server id.
+    String? mcpServerId,
 
-  /// Trigger phrase examples, e.g. `['审查代码', 'review PR']`.
-  final List<String> triggerPhrases;
+    /// Recommended model / temperature.
+    String? modelOverride,
+    double? temperatureOverride,
+    String? version,
+    String? author,
+    @Default(false) bool enabled,
 
-  /// Associated MCP server id.
-  final String? mcpServerId;
+    /// Usage statistics.
+    int? usageCount,
+    String? lastUsedAt,
+    String? createdAt,
+    String? updatedAt,
+  }) = _Skill;
 
-  /// Recommended model / temperature.
-  final String? modelOverride;
-  final double? temperatureOverride;
-
-  final String? version;
-  final String? author;
-  final bool enabled;
-
-  /// Usage statistics.
-  final int? usageCount;
-  final String? lastUsedAt;
-
-  final String? createdAt;
-  final String? updatedAt;
+  factory Skill.fromJson(Map<String, dynamic> json) => _$SkillFromJson(json);
 }

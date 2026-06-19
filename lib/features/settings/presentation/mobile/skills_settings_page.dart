@@ -1,10 +1,16 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/assistants_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
+import 'package:aetherlink_flutter/features/settings/application/skills_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
-import 'package:aetherlink_flutter/shared/config/builtin_skills.dart';
+import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
 
 /// The "技能管理 Skills" settings page (提示词与工具 → this page), a port of the
@@ -18,17 +24,18 @@ import 'package:aetherlink_flutter/shared/domain/skill.dart';
 /// search + stats header pinned above the tab strip (same instant-swap +
 /// horizontal-swipe tab mechanic as the MCP 服务器 page).
 ///
-/// UI-only milestone: the catalog ([kBuiltinSkills]) renders faithfully, but
-/// enable / create / delete / import / export / bind aren't wired yet, so those
-/// surfaces show 「即将支持」 rather than acting (no fake buttons).
-class SkillsSettingsPage extends StatefulWidget {
+/// The library is read from / mutated through [Skills] (the skill store):
+/// enable / disable, delete, create (→ 技能编辑器), import / export JSON, 检查更新,
+/// and 绑定助手 are wired. Per-skill 导出 SKILL.md is the only remaining
+/// 「即将支持」 (the Markdown serializer is deferred).
+class SkillsSettingsPage extends ConsumerStatefulWidget {
   const SkillsSettingsPage({super.key});
 
   @override
-  State<SkillsSettingsPage> createState() => _SkillsSettingsPageState();
+  ConsumerState<SkillsSettingsPage> createState() => _SkillsSettingsPageState();
 }
 
-class _SkillsSettingsPageState extends State<SkillsSettingsPage>
+class _SkillsSettingsPageState extends ConsumerState<SkillsSettingsPage>
     with SingleTickerProviderStateMixin {
   static const String _title = '技能管理 Skills';
 
@@ -71,9 +78,6 @@ class _SkillsSettingsPageState extends State<SkillsSettingsPage>
 
   // —— derived data ——
 
-  List<Skill> get _builtin => kBuiltinSkills;
-  List<Skill> get _custom => const <Skill>[];
-
   List<Skill> _filter(List<Skill> list) {
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) return list;
@@ -87,17 +91,130 @@ class _SkillsSettingsPageState extends State<SkillsSettingsPage>
         .toList();
   }
 
-  void _comingSoon() {
+  void _toast(String message) {
     ScaffoldMessenger.maybeOf(context)
       ?..clearSnackBars()
       ..showSnackBar(
-        const SnackBar(content: Text('即将支持'), duration: Duration(seconds: 2)),
+        SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
       );
+  }
+
+  void _comingSoon() => _toast('即将支持');
+
+  Skills get _skills => ref.read(skillsProvider.notifier);
+
+  // —— actions ——
+
+  /// Creates a blank user skill and jumps straight into the 技能编辑器 (port of
+  /// the web 新建技能 → navigate to `/settings/skills/:id`).
+  Future<void> _create() async {
+    final skill = await _skills.create();
+    if (!mounted) return;
+    context.push(AppRouter.skillEditorPath(skill.id));
+  }
+
+  Future<void> _toggle(Skill skill, bool enabled) async {
+    final ok = await _skills.toggle(skill.id, enabled: enabled);
+    if (!ok && mounted) _toast('最多同时启用 $kMaxEnabledSkills 个技能');
+  }
+
+  Future<void> _delete(Skill skill) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除技能'),
+        content: Text('确定删除「${skill.name}」吗？此操作无法撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              '删除',
+              style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _skills.remove(skill.id);
+    if (mounted) _toast('已删除');
+  }
+
+  /// Re-runs the skill store's build (re-merges any newly-shipped built-in).
+  void _refresh() {
+    ref.invalidate(skillsProvider);
+    _toast('已刷新');
+  }
+
+  /// Merges built-in catalog upgrades, preserving the user's enabled state
+  /// (port of 检查更新 → `SkillManager.upgradeBuiltinSkills`).
+  Future<void> _checkUpdates() async {
+    final upgraded = await _skills.upgradeBuiltins();
+    if (!mounted) return;
+    _toast(upgraded > 0 ? '已更新 $upgraded 个内置技能' : '内置技能已是最新');
+  }
+
+  /// Picks a JSON file and imports every skill it holds (port of 导入技能).
+  Future<void> _import() async {
+    final picked = await ref
+        .read(fileSystemApiProvider)
+        .pickFile(allowedExtensions: const ['json']);
+    if (picked == null) return;
+    try {
+      final raw = await ref
+          .read(fileSystemApiProvider)
+          .readAsString(picked.path);
+      final result = await _skills.importFromJson(raw);
+      if (!mounted) return;
+      _toast(
+        result.skipped > 0
+            ? '导入 ${result.imported} 个技能，跳过 ${result.skipped} 个'
+            : '成功导入 ${result.imported} 个技能',
+      );
+    } on FormatException catch (e) {
+      if (mounted) _toast('导入失败：${e.message}');
+    } catch (e) {
+      if (mounted) _toast('导入失败：$e');
+    }
+  }
+
+  /// Writes the whole library to a temp JSON file and opens the share sheet
+  /// (port of 导出全部).
+  Future<void> _exportAll() async {
+    final fs = ref.read(fileSystemApiProvider);
+    final doc = _skills.exportToJson();
+    final dir = await fs.temporaryDirectoryPath();
+    final path =
+        '$dir/aetherlink-skills-${DateTime.now().millisecondsSinceEpoch}.json';
+    await fs.writeAsString(
+      path,
+      const JsonEncoder.withIndent('  ').convert(doc),
+    );
+    await ref.read(shareApiProvider).shareFiles([path], subject: '技能库导出');
+  }
+
+  Future<void> _bind(Skill skill) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => _BindAssistantsSheet(skill: skill),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final all = ref.watch(skillsProvider).asData?.value ?? const <Skill>[];
+    final builtin = all.where((s) => s.source == SkillSource.builtin).toList();
+    final custom = all.where((s) => s.source != SkillSource.builtin).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -132,12 +249,12 @@ class _SkillsSettingsPageState extends State<SkillsSettingsPage>
           IconButton(
             tooltip: '导入技能',
             icon: const Icon(LucideIcons.upload, size: 18),
-            onPressed: _comingSoon,
+            onPressed: _import,
           ),
           IconButton(
             tooltip: '导出全部',
             icon: const Icon(LucideIcons.download, size: 18),
-            onPressed: _comingSoon,
+            onPressed: _exportAll,
           ),
           Padding(
             padding: const EdgeInsets.only(right: 4),
@@ -145,14 +262,14 @@ class _SkillsSettingsPageState extends State<SkillsSettingsPage>
               tooltip: '新建技能',
               icon: const Icon(LucideIcons.plus, size: 20),
               color: theme.colorScheme.primary,
-              onPressed: _comingSoon,
+              onPressed: _create,
             ),
           ),
         ],
       ),
       body: Column(
         children: [
-          _searchHeader(theme),
+          _searchHeader(theme, builtin, custom),
           _TabBarHeader(controller: _tabController),
           Expanded(
             child: GestureDetector(
@@ -163,8 +280,8 @@ class _SkillsSettingsPageState extends State<SkillsSettingsPage>
                 index: _index,
                 sizing: StackFit.expand,
                 children: [
-                  _builtinTab(theme),
-                  _customTab(theme),
+                  _builtinTab(theme, builtin),
+                  _customTab(theme, custom),
                   const _TutorialTab(),
                 ],
               ),
@@ -177,9 +294,13 @@ class _SkillsSettingsPageState extends State<SkillsSettingsPage>
 
   // —— search + stats header (pinned above the tab strip) ——
 
-  Widget _searchHeader(ThemeData theme) {
-    final total = _builtin.length + _custom.length;
-    final enabled = [..._builtin, ..._custom].where((s) => s.enabled).length;
+  Widget _searchHeader(
+    ThemeData theme,
+    List<Skill> builtin,
+    List<Skill> custom,
+  ) {
+    final total = builtin.length + custom.length;
+    final enabled = [...builtin, ...custom].where((s) => s.enabled).length;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -219,7 +340,7 @@ class _SkillsSettingsPageState extends State<SkillsSettingsPage>
               IconButton(
                 tooltip: '刷新',
                 icon: const Icon(LucideIcons.refreshCw, size: 18),
-                onPressed: _comingSoon,
+                onPressed: _refresh,
               ),
             ],
           ),
@@ -235,7 +356,7 @@ class _SkillsSettingsPageState extends State<SkillsSettingsPage>
                 ),
               ),
               TextButton.icon(
-                onPressed: _comingSoon,
+                onPressed: _checkUpdates,
                 icon: const Icon(LucideIcons.refreshCw, size: 14),
                 label: const Text('检查更新'),
                 style: TextButton.styleFrom(
@@ -254,20 +375,19 @@ class _SkillsSettingsPageState extends State<SkillsSettingsPage>
 
   // —— tab bodies ——
 
-  Widget _builtinTab(ThemeData theme) {
-    final skills = _filter(_builtin);
+  Widget _builtinTab(ThemeData theme, List<Skill> builtin) {
+    final skills = _filter(builtin);
     if (skills.isEmpty) return _noResults(theme);
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       itemCount: skills.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (_, i) =>
-          _SkillCard(skill: skills[i], onComingSoon: _comingSoon),
+      itemBuilder: (_, i) => _card(skills[i]),
     );
   }
 
-  Widget _customTab(ThemeData theme) {
-    final skills = _filter(_custom);
+  Widget _customTab(ThemeData theme, List<Skill> custom) {
+    final skills = _filter(custom);
     if (skills.isEmpty) {
       return _query.trim().isNotEmpty ? _noResults(theme) : _customEmpty(theme);
     }
@@ -275,10 +395,18 @@ class _SkillsSettingsPageState extends State<SkillsSettingsPage>
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       itemCount: skills.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (_, i) =>
-          _SkillCard(skill: skills[i], onComingSoon: _comingSoon),
+      itemBuilder: (_, i) => _card(skills[i]),
     );
   }
+
+  Widget _card(Skill skill) => _SkillCard(
+    skill: skill,
+    onTap: () => context.push(AppRouter.skillEditorPath(skill.id)),
+    onBind: () => _bind(skill),
+    onExport: _comingSoon,
+    onToggle: (enabled) => _toggle(skill, enabled),
+    onDelete: skill.source == SkillSource.user ? () => _delete(skill) : null,
+  );
 
   Widget _customEmpty(ThemeData theme) {
     return Center(
@@ -293,7 +421,7 @@ class _SkillsSettingsPageState extends State<SkillsSettingsPage>
           ),
           const SizedBox(height: 16),
           OutlinedButton.icon(
-            onPressed: _comingSoon,
+            onPressed: _create,
             icon: const Icon(LucideIcons.plus, size: 16),
             label: const Text('创建第一个技能'),
           ),
@@ -370,10 +498,21 @@ class _IconTab extends StatelessWidget {
 /// description on the left; bind / export / delete (user-only) / enable switch /
 /// chevron on the right; tags + usage chips below.
 class _SkillCard extends StatelessWidget {
-  const _SkillCard({required this.skill, required this.onComingSoon});
+  const _SkillCard({
+    required this.skill,
+    required this.onTap,
+    required this.onBind,
+    required this.onExport,
+    required this.onToggle,
+    this.onDelete,
+  });
 
   final Skill skill;
-  final VoidCallback onComingSoon;
+  final VoidCallback onTap;
+  final VoidCallback onBind;
+  final VoidCallback onExport;
+  final ValueChanged<bool> onToggle;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -390,7 +529,7 @@ class _SkillCard extends StatelessWidget {
       color: bg,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
-        onTap: onComingSoon,
+        onTap: onTap,
         borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.all(12),
@@ -442,26 +581,26 @@ class _SkillCard extends StatelessWidget {
                     icon: LucideIcons.users,
                     size: 14,
                     tooltip: '绑定助手',
+                    onPressed: onBind,
                   ),
                   _iconAction(
                     theme,
                     icon: LucideIcons.download,
                     size: 14,
                     tooltip: '导出为 SKILL.md',
+                    onPressed: onExport,
                   ),
-                  if (skill.source == SkillSource.user)
+                  if (onDelete != null)
                     _iconAction(
                       theme,
                       icon: LucideIcons.trash2,
                       size: 16,
                       color: theme.colorScheme.error,
                       tooltip: '删除',
+                      onPressed: onDelete!,
                     ),
                   const SizedBox(width: 4),
-                  CustomSwitch(
-                    value: skill.enabled,
-                    onChanged: (_) => onComingSoon(),
-                  ),
+                  CustomSwitch(value: skill.enabled, onChanged: onToggle),
                   const SizedBox(width: 4),
                   Icon(
                     LucideIcons.chevronRight,
@@ -500,6 +639,7 @@ class _SkillCard extends StatelessWidget {
     ThemeData theme, {
     required IconData icon,
     required double size,
+    required VoidCallback onPressed,
     String? tooltip,
     Color? color,
   }) {
@@ -510,7 +650,7 @@ class _SkillCard extends StatelessWidget {
       constraints: const BoxConstraints.tightFor(width: 32, height: 32),
       icon: Icon(icon, size: size),
       color: color ?? theme.colorScheme.onSurfaceVariant,
-      onPressed: onComingSoon,
+      onPressed: onPressed,
     );
   }
 }
@@ -741,6 +881,96 @@ class _TutorialTab extends StatelessWidget {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The 绑定助手 bottom sheet — lists every assistant with a checkbox per
+/// [skill]. Toggling persists through [Assistants.toggleSkill] (add/remove the
+/// skill id on `assistant.skillIds`); the sheet rebuilds off [assistantsProvider]
+/// so checkboxes reflect the new binding instantly.
+class _BindAssistantsSheet extends ConsumerWidget {
+  const _BindAssistantsSheet({required this.skill});
+
+  final Skill skill;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final assistants =
+        ref.watch(assistantsProvider).asData?.value ?? const <Assistant>[];
+
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                Text(skill.emoji ?? '🔧', style: const TextStyle(fontSize: 18)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '绑定到助手 · ${skill.name}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          if (assistants.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              child: Text(
+                '暂无助手',
+                style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            )
+          else
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                itemCount: assistants.length,
+                itemBuilder: (_, i) {
+                  final assistant = assistants[i];
+                  final bound = (assistant.skillIds ?? const <String>[])
+                      .contains(skill.id);
+                  return CheckboxListTile(
+                    value: bound,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    dense: true,
+                    secondary: Text(
+                      assistant.emoji ?? '🤖',
+                      style: const TextStyle(fontSize: 18),
+                    ),
+                    title: Text(
+                      assistant.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontSize: 14,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                    onChanged: (_) => ref
+                        .read(assistantsProvider.notifier)
+                        .toggleSkill(assistant.id, skill.id),
+                  );
+                },
+              ),
+            ),
+          const SizedBox(height: 8),
         ],
       ),
     );
