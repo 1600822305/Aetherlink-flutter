@@ -206,10 +206,23 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
             // removed.
             child: Stack(
               children: [
-                // 1. Chat page — shifted right by the drawer width in push mode.
+                // 1. Chat page — shifted right by the drawer width in push
+                //    mode. In push mode the whole page is a drag handle so a
+                //    right-swipe anywhere opens the drawer (kelivo-style); the
+                //    chat's own inner horizontal scrollables (code blocks, …)
+                //    still win the gesture arena since they sit deeper. overlay
+                //    keeps edge-only opening (the strip below) unchanged.
                 Transform.translate(
                   offset: Offset(pushed ? w * t : 0, 0),
-                  child: widget.child,
+                  child: pushed
+                      ? GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onHorizontalDragStart: _onDragStart,
+                          onHorizontalDragUpdate: _onDragUpdate,
+                          onHorizontalDragEnd: _onDragEnd,
+                          child: widget.child,
+                        )
+                      : widget.child,
                 ),
 
                 // 2. Scrim over the chat page; tap or drag to close. Mounted
