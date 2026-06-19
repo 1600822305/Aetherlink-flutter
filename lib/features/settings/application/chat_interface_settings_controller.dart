@@ -1,8 +1,8 @@
-import 'dart:convert';
-
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
+import 'package:aetherlink_flutter/app/di/json_kv_notifier.dart';
+import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/shared/domain/chat_interface_settings.dart';
 
 part 'chat_interface_settings_controller.g.dart';
@@ -20,51 +20,41 @@ const String kChatInterfaceSettingKey = 'chatInterfaceSettings';
 /// build and written through on every change — the port of the web
 /// `dexieStorage.saveSetting` — so the configuration survives a full restart.
 @Riverpod(keepAlive: true)
-class ChatInterfaceSettingsController
-    extends _$ChatInterfaceSettingsController {
+class ChatInterfaceSettingsController extends _$ChatInterfaceSettingsController
+    with JsonKvNotifier<ChatInterfaceSettings> {
   @override
-  ChatInterfaceSettings build() {
-    _hydrate();
-    return const ChatInterfaceSettings();
-  }
+  ChatRepository get kvStore => ref.read(appSettingsStoreProvider);
 
-  Future<void> _hydrate() async {
-    final stored = await ref
-        .read(appSettingsStoreProvider)
-        .getSetting(kChatInterfaceSettingKey);
-    if (stored == null || stored.isEmpty) return;
-    try {
-      final json = jsonDecode(stored) as Map<String, dynamic>;
-      state = ChatInterfaceSettings.fromJson(json);
-    } on FormatException {
-      // Corrupt value — keep the defaults.
-    }
-  }
+  @override
+  String get storageKey => kChatInterfaceSettingKey;
 
-  void _persist(ChatInterfaceSettings next) {
-    state = next;
-    ref
-        .read(appSettingsStoreProvider)
-        .saveSetting(kChatInterfaceSettingKey, jsonEncode(next.toJson()));
-  }
+  @override
+  ChatInterfaceSettings fromStored(Map<String, dynamic> json) =>
+      ChatInterfaceSettings.fromJson(json);
+
+  @override
+  Map<String, dynamic> toStored(ChatInterfaceSettings value) => value.toJson();
+
+  @override
+  ChatInterfaceSettings build() => hydrate(const ChatInterfaceSettings());
 
   /// Sets the 多模型对比显示 layout.
   void setMultiModelDisplayStyle(MultiModelDisplayStyle style) =>
-      _persist(state.copyWith(multiModelDisplayStyle: style));
+      persist(state.copyWith(multiModelDisplayStyle: style));
 
   /// Toggles 显示工具调用详情.
   void setShowToolDetails(bool value) =>
-      _persist(state.copyWith(showToolDetails: value));
+      persist(state.copyWith(showToolDetails: value));
 
   /// Toggles 显示引用详情.
   void setShowCitationDetails(bool value) =>
-      _persist(state.copyWith(showCitationDetails: value));
+      persist(state.copyWith(showCitationDetails: value));
 
   /// Toggles 系统提示词气泡显示.
   void setShowSystemPromptBubble(bool value) =>
-      _persist(state.copyWith(showSystemPromptBubble: value));
+      persist(state.copyWith(showSystemPromptBubble: value));
 
   /// Replaces the whole 聊天背景 block.
   void setBackground(ChatBackgroundSettings background) =>
-      _persist(state.copyWith(background: background));
+      persist(state.copyWith(background: background));
 }
