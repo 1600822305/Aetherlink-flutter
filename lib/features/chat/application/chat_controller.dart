@@ -23,12 +23,14 @@ import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.d
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
+import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_prompt.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/utils/system_prompt_variables.dart';
 
 part 'chat_controller.g.dart';
@@ -523,7 +525,7 @@ class ChatController extends _$ChatController {
             : structuredCalls;
         final runnable = <LlmToolCall>[
           for (final call in requested)
-            if (mcp.serverByToolName.containsKey(call.name)) call,
+            if (mcp.routes.containsKey(call.name)) call,
         ];
 
         // No (more) tools to run, or the round budget is spent: this round's
@@ -557,14 +559,13 @@ class ChatController extends _$ChatController {
           );
         }
 
-        // Run each requested built-in locally and render a 工具 block per call.
+        // Run each requested tool — built-ins in-process, remote tools over a
+        // live connection — and render a 工具 block per call.
         final results = <({LlmToolCall call, McpToolResult result})>[];
         for (final call in runnable) {
-          final serverName = mcp.serverByToolName[call.name]!;
+          final route = mcp.routes[call.name]!;
           final args = decodeToolArguments(call.arguments);
-          final result =
-              runBuiltinTool(serverName, call.name, args) ??
-              McpToolResult('工具 ${call.name} 无法在本地执行', isError: true);
+          final result = await _runTool(route, call.name, args);
           results.add((call: call, result: result));
           completed.add(
             MessageBlock.tool(
@@ -1353,33 +1354,86 @@ class ChatController extends _$ChatController {
 
   /// Assembles the [_McpSetup] for the current turn from the persisted MCP 工具
   /// 总开关 + 调用模式 ([McpToolsController]) and the active configured servers
-  /// ([McpServers]). Only 启用 servers whose name is a locally-runnable built-in
-  /// ([kLocallyRunnableBuiltins]) contribute tools, and a server's
-  /// `disabledTools` are skipped. Returns a disabled setup when the master
-  /// toggle is off, so non-MCP turns stream exactly as before.
+  /// ([McpServers]). Two sources contribute tools, each minus its
+  /// `disabledTools`: 启用 built-in servers (the static, locally-runnable
+  /// calculator / time catalogue) and 启用 remote servers (sse / streamableHttp),
+  /// whose tools are discovered over a live connection via
+  /// [RemoteMcpConnectionManager]. A remote server that is unreachable degrades
+  /// gracefully — it simply contributes no tools this turn. Returns a disabled
+  /// setup when the master toggle is off, so non-MCP turns stream exactly as
+  /// before.
   Future<_McpSetup> _mcpSetup() async {
     final toolsState = ref.read(mcpToolsControllerProvider);
     if (!toolsState.enabled) return const _McpSetup.disabled();
 
     final servers = await ref.read(mcpServersProvider.future);
     final tools = <McpToolDefinition>[];
-    final serverByToolName = <String, String>{};
+    final routes = <String, _ToolRoute>{};
+
     for (final server in servers) {
       if (!server.isActive) continue;
-      if (!kLocallyRunnableBuiltins.contains(server.name)) continue;
-      final disabled = server.disabledTools?.toSet() ?? const <String>{};
-      for (final tool in builtinToolsFor(server.name)) {
-        if (disabled.contains(tool.name)) continue;
-        if (serverByToolName.containsKey(tool.name)) continue;
-        tools.add(tool);
-        serverByToolName[tool.name] = server.name;
+
+      // Built-in (locally-runnable) servers: static catalogue, run in-process.
+      if (kLocallyRunnableBuiltins.contains(server.name)) {
+        final disabled = server.disabledTools?.toSet() ?? const <String>{};
+        for (final tool in builtinToolsFor(server.name)) {
+          if (disabled.contains(tool.name)) continue;
+          if (routes.containsKey(tool.name)) continue;
+          tools.add(tool);
+          routes[tool.name] = _BuiltinToolRoute(server.name, tool.name);
+        }
+        continue;
+      }
+
+      // Remote (sse / streamableHttp) servers: discover tools live; the manager
+      // already filters out `disabledTools` and prefixes names for collision
+      // safety. First-wins on duplicate exposed names.
+      if (RemoteMcpConnectionManager.isRemote(server)) {
+        try {
+          final discovered = await ref
+              .read(remoteMcpConnectionManagerProvider)
+              .listTools(server);
+          for (final tool in discovered) {
+            final exposed = tool.definition.name;
+            if (routes.containsKey(exposed)) continue;
+            tools.add(tool.definition);
+            routes[exposed] = _RemoteToolRoute(server, tool.toolName);
+          }
+        } on Object {
+          // Unreachable / failing server: skip it for this turn.
+        }
       }
     }
-    return _McpSetup(
-      mode: toolsState.mode,
-      tools: tools,
-      serverByToolName: serverByToolName,
-    );
+
+    return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
+  }
+
+  /// Executes one tool call along its [route]: a built-in runs in-process via
+  /// [runBuiltinTool]; a remote tool is dispatched to its server through
+  /// [RemoteMcpConnectionManager]. A remote failure becomes an error result (fed
+  /// back to the model) rather than aborting the whole turn. [exposedName] is the
+  /// model-facing name, used only for messages.
+  Future<McpToolResult> _runTool(
+    _ToolRoute route,
+    String exposedName,
+    Map<String, Object?> args,
+  ) async {
+    switch (route) {
+      case _BuiltinToolRoute(:final serverName):
+        return runBuiltinTool(serverName, route.toolName, args) ??
+            McpToolResult('工具 $exposedName 无法在本地执行', isError: true);
+      case _RemoteToolRoute(:final server):
+        try {
+          return await ref
+              .read(remoteMcpConnectionManagerProvider)
+              .callTool(server, route.toolName, args);
+        } on Object catch (error) {
+          return McpToolResult(
+            '工具 $exposedName 调用失败: ${_errorMessage(error)}',
+            isError: true,
+          );
+        }
+    }
   }
 
   /// The system prompt for a turn: in 提示词注入 mode the tool catalogue is woven
@@ -1494,25 +1548,26 @@ class _LatestSnapshot {
 }
 
 /// The MCP tool context assembled for one chat turn: the resolved [mode], the
-/// [tools] to expose (only 启用 + locally-runnable built-ins) and the
-/// [serverByToolName] routing map used to dispatch a call back to its built-in
-/// server. [tools] is empty when MCP 工具 is off or no eligible server is active,
-/// in which case the turn streams plain text exactly as before.
+/// [tools] to expose (启用 built-ins + 启用 remote servers' discovered tools) and
+/// the [routes] map that dispatches each exposed tool name back to its source —
+/// a locally-runnable built-in ([_BuiltinToolRoute]) or a remote server
+/// ([_RemoteToolRoute]). [tools] is empty when MCP 工具 is off or no eligible
+/// server is active, in which case the turn streams plain text exactly as before.
 class _McpSetup {
   const _McpSetup({
     required this.mode,
     required this.tools,
-    required this.serverByToolName,
+    required this.routes,
   });
 
   const _McpSetup.disabled()
     : mode = McpMode.function,
       tools = const <McpToolDefinition>[],
-      serverByToolName = const <String, String>{};
+      routes = const <String, _ToolRoute>{};
 
   final McpMode mode;
   final List<McpToolDefinition> tools;
-  final Map<String, String> serverByToolName;
+  final Map<String, _ToolRoute> routes;
 
   bool get hasTools => tools.isNotEmpty;
 
@@ -1521,4 +1576,29 @@ class _McpSetup {
 
   /// Describe tools in the system prompt and parse XML `<tool_use>` locally.
   bool get usePromptInjection => hasTools && mode == McpMode.prompt;
+}
+
+/// How an exposed tool name dispatches back to its source. [toolName] is the
+/// original (un-prefixed) wire name; the map key it is stored under is the
+/// model-facing exposed name (identical for built-ins, function-call-safe for
+/// remote — see `buildFunctionCallToolName`).
+sealed class _ToolRoute {
+  const _ToolRoute(this.toolName);
+
+  final String toolName;
+}
+
+/// A tool run in-process by [runBuiltinTool] (calculator / time).
+class _BuiltinToolRoute extends _ToolRoute {
+  const _BuiltinToolRoute(this.serverName, super.toolName);
+
+  final String serverName;
+}
+
+/// A tool executed over a live connection to [server] via
+/// [RemoteMcpConnectionManager].
+class _RemoteToolRoute extends _ToolRoute {
+  const _RemoteToolRoute(this.server, super.toolName);
+
+  final McpServer server;
 }
