@@ -1,10 +1,11 @@
-import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/app/di/json_kv_notifier.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
+import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 
 part 'sidebar_settings_controller.g.dart';
 
@@ -48,61 +49,52 @@ double safeMaxSidebarWidth(double screenWidth) {
 /// `dexieStorage.saveSetting` / `localStorage` `appSettings`), so it survives a
 /// full restart.
 @Riverpod(keepAlive: true)
-class SidebarSettingsController extends _$SidebarSettingsController {
+class SidebarSettingsController extends _$SidebarSettingsController
+    with JsonKvNotifier<SidebarSettings> {
   @override
-  SidebarSettings build() {
-    _hydrate();
-    return const SidebarSettings();
-  }
+  ChatRepository get kvStore => ref.read(chatRepositoryProvider);
 
-  Future<void> _hydrate() async {
-    final stored = await ref
-        .read(chatRepositoryProvider)
-        .getSetting(kSidebarSettingsKey);
-    if (stored == null || stored.isEmpty) return;
-    try {
-      final json = jsonDecode(stored) as Map<String, dynamic>;
-      state = SidebarSettings.fromJson(json);
-    } on FormatException {
-      // Corrupt value — keep the defaults.
-    }
-  }
+  @override
+  String get storageKey => kSidebarSettingsKey;
 
-  void _persist(SidebarSettings next) {
-    state = next;
-    ref
-        .read(chatRepositoryProvider)
-        .saveSetting(kSidebarSettingsKey, jsonEncode(next.toJson()));
-  }
+  @override
+  SidebarSettings fromStored(Map<String, dynamic> json) =>
+      SidebarSettings.fromJson(json);
+
+  @override
+  Map<String, dynamic> toStored(SidebarSettings value) => value.toJson();
+
+  @override
+  SidebarSettings build() => hydrate(const SidebarSettings());
 
   // ── 常规设置 ────────────────────────────────────────────────────────────
   /// Toggles 消息分割线 (wired: [_MessageListView] draws a divider between bubbles).
   void setShowMessageDivider(bool value) =>
-      _persist(state.copyWith(showMessageDivider: value));
+      persist(state.copyWith(showMessageDivider: value));
 
   /// Toggles 代码块可复制 (wired: [CodeBlockView] hides its copy button when off).
   void setCopyableCodeBlocks(bool value) =>
-      _persist(state.copyWith(copyableCodeBlocks: value));
+      persist(state.copyWith(copyableCodeBlocks: value));
 
   /// Toggles 渲染用户输入 (persisted; chat-view effect 即将支持).
   void setRenderUserInputAsMarkdown(bool value) =>
-      _persist(state.copyWith(renderUserInputAsMarkdown: value));
+      persist(state.copyWith(renderUserInputAsMarkdown: value));
 
   /// Toggles 自动下滑 (persisted; chat-view effect 即将支持).
   void setAutoScrollToBottom(bool value) =>
-      _persist(state.copyWith(autoScrollToBottom: value));
+      persist(state.copyWith(autoScrollToBottom: value));
 
   /// Sets 消息样式 (persisted; chat-view effect 即将支持).
   void setMessageStyle(MessageStyle value) =>
-      _persist(state.copyWith(messageStyle: value));
+      persist(state.copyWith(messageStyle: value));
 
   /// Sets 对话导航 (persisted; chat-view effect 即将支持).
   void setMessageNavigation(MessageNavigation value) =>
-      _persist(state.copyWith(messageNavigation: value));
+      persist(state.copyWith(messageNavigation: value));
 
   /// Toggles Token用量指示 (persisted; chat-view effect 即将支持).
   void setShowContextTokenIndicator(bool value) =>
-      _persist(state.copyWith(showContextTokenIndicator: value));
+      persist(state.copyWith(showContextTokenIndicator: value));
 
   // ── 侧边栏宽度 ──────────────────────────────────────────────────────────
   /// Live-previews 侧边栏宽度 without persisting — the dialog drives this on every
@@ -114,45 +106,45 @@ class SidebarSettingsController extends _$SidebarSettingsController {
   /// Commits 侧边栏宽度; the value is clamped against the live screen width by the
   /// dialog before it reaches here.
   void setSidebarWidth(double value) =>
-      _persist(state.copyWith(sidebarWidth: value));
+      persist(state.copyWith(sidebarWidth: value));
 
   // ── 上下文设置 (即将支持) ─────────────────────────────────────────────────
   void setContextWindowSize(int value) =>
-      _persist(state.copyWith(contextWindowSize: value));
+      persist(state.copyWith(contextWindowSize: value));
 
   void setContextCount(int value) =>
-      _persist(state.copyWith(contextCount: value));
+      persist(state.copyWith(contextCount: value));
 
   void setMaxOutputTokens(int value) =>
-      _persist(state.copyWith(maxOutputTokens: value));
+      persist(state.copyWith(maxOutputTokens: value));
 
   void setEnableMaxOutputTokens(bool value) =>
-      _persist(state.copyWith(enableMaxOutputTokens: value));
+      persist(state.copyWith(enableMaxOutputTokens: value));
 
   // ── 输入设置 (即将支持) ───────────────────────────────────────────────────
   void setPasteLongTextAsFile(bool value) =>
-      _persist(state.copyWith(pasteLongTextAsFile: value));
+      persist(state.copyWith(pasteLongTextAsFile: value));
 
   void setPasteLongTextThreshold(int value) =>
-      _persist(state.copyWith(pasteLongTextThreshold: value));
+      persist(state.copyWith(pasteLongTextThreshold: value));
 
   // ── 代码块设置 (即将支持) ─────────────────────────────────────────────────
   void setCodeShowLineNumbers(bool value) =>
-      _persist(state.copyWith(codeShowLineNumbers: value));
+      persist(state.copyWith(codeShowLineNumbers: value));
 
   void setCodeCollapsible(bool value) =>
-      _persist(state.copyWith(codeCollapsible: value));
+      persist(state.copyWith(codeCollapsible: value));
 
   void setCodeWrappable(bool value) =>
-      _persist(state.copyWith(codeWrappable: value));
+      persist(state.copyWith(codeWrappable: value));
 
   void setCodeDefaultCollapsed(bool value) =>
-      _persist(state.copyWith(codeDefaultCollapsed: value));
+      persist(state.copyWith(codeDefaultCollapsed: value));
 
   void setMermaidEnabled(bool value) =>
-      _persist(state.copyWith(mermaidEnabled: value));
+      persist(state.copyWith(mermaidEnabled: value));
 
   // ── 数学公式设置 ─────────────────────────────────────────────────────────
   void setMathEnableSingleDollar(bool value) =>
-      _persist(state.copyWith(mathEnableSingleDollar: value));
+      persist(state.copyWith(mathEnableSingleDollar: value));
 }
