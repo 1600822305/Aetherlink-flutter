@@ -2178,6 +2178,8 @@ class _SidebarLayoutDialogState extends ConsumerState<_SidebarLayoutDialog> {
       sidebarSettingsControllerProvider.select((s) => s.sidebarDisplayMode),
     );
     return AlertDialog(
+      // M2 默认对话框背景写死为白/grey[800]、不跟随主题，故显式取 surface。
+      backgroundColor: theme.colorScheme.surface,
       title: const Text('侧边栏布局'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
