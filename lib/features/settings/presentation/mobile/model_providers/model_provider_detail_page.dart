@@ -200,73 +200,78 @@ class _ModelProviderDetailPageState
     final theme = Theme.of(context);
     final isOpenAI = isOpenAIProvider(provider.providerType);
     final keyCount = provider.apiKeys?.length ?? 0;
+    final canEdit = provider.isSystem != true;
+    final labelStyle = theme.textTheme.bodyMedium?.copyWith(
+      fontSize: 14,
+      fontWeight: FontWeight.w600,
+      color: theme.colorScheme.onSurface,
+    );
+    final hintStyle = theme.textTheme.bodySmall?.copyWith(
+      fontSize: 12,
+      color: theme.colorScheme.onSurfaceVariant,
+    );
 
+    // 整个配置 Tab 收进单张卡片，内部用分隔线/小标题分段，避免卡片套卡片、
+    // 减少留白；API 密钥不再「区标题 + 字段标签」重复显示。
     return ListView(
       padding: EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        16 + MediaQuery.paddingOf(context).bottom,
+        12,
+        12,
+        12,
+        12 + MediaQuery.paddingOf(context).bottom,
       ),
       children: [
-        _ProviderHeaderCard(
-          provider: provider,
-          typeLabel: _typeLabel(provider.providerType),
-          onEdit: provider.isSystem == true
-              ? null
-              : () => _editProvider(provider),
-          onDelete: provider.isSystem == true
-              ? null
-              : () => _confirmDelete(provider),
-        ),
-        const SizedBox(height: 16),
-        // API Key 卡片
         ModelSettingsCard(
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
+              _ProviderHeader(
+                provider: provider,
+                typeLabel: _typeLabel(provider.providerType),
+                onEdit: canEdit ? () => _editProvider(provider) : null,
+                onDelete: canEdit ? () => _confirmDelete(provider) : null,
+              ),
+              const Divider(height: 24),
+
+              // API Key 管理模式（单 / 多 Key 切换）
               Row(
                 children: [
-                  const Expanded(child: ModelSectionTitle('API 密钥')),
+                  Text('API Key 管理模式', style: labelStyle),
+                  const SizedBox(width: 6),
                   Tooltip(
-                    message: '开启后可配置多个 API Key，发送时按所选策略自动负载均衡与故障转移',
+                    message: _useMultiKey
+                        ? '多个 API Key 按策略自动负载均衡与故障转移'
+                        : '使用单个 API Key（传统方式）',
                     child: Icon(
                       LucideIcons.info,
-                      size: 16,
+                      size: 15,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
+                  const Spacer(),
+                  Text(_useMultiKey ? '多 Key' : '单 Key', style: hintStyle),
                   const SizedBox(width: 8),
-                  Text(
-                    '多 Key',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontSize: 12,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
                   CustomSwitch(
                     value: _useMultiKey,
                     onChanged: (v) => setState(() => _useMultiKey = v),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               if (_useMultiKey) ...[
-                ModelTonalButton(
-                  label: '管理多 Key（$keyCount 个密钥）',
-                  icon: LucideIcons.keyRound,
-                  onPressed: () =>
-                      context.push(AppRouter.multiKeyPath(provider.id)),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '已启用多 Key 负载均衡：发送时按策略（轮询/优先级/最少使用/随机）自动选 Key，失败自动切换并冷却。',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontSize: 12,
-                    color: theme.colorScheme.onSurfaceVariant,
+                SizedBox(
+                  width: double.infinity,
+                  child: ModelTonalButton(
+                    label: '管理多 Key（$keyCount 个密钥）',
+                    icon: LucideIcons.keyRound,
+                    onPressed: () =>
+                        context.push(AppRouter.multiKeyPath(provider.id)),
                   ),
                 ),
+                const SizedBox(height: 6),
+                Text('按策略（轮询/优先级/最少使用/随机）自动选 Key，失败自动切换并冷却。', style: hintStyle),
               ] else
                 ModelFormField(
                   label: 'API 密钥',
@@ -281,18 +286,9 @@ class _ModelProviderDetailPageState
                     onPressed: () => setState(() => _obscureKey = !_obscureKey),
                   ),
                 ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        // 基础 URL 卡片
-        ModelSettingsCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const ModelSectionTitle('基础 URL'),
+
               const SizedBox(height: 16),
+              // 基础 URL
               ModelFormField(
                 label: '基础 URL (可选)',
                 hint: '输入基础URL，例如: https://api.openai.com',
@@ -301,7 +297,7 @@ class _ModelProviderDetailPageState
                 onChanged: (_) => setState(() {}),
               ),
               if (isOpenAI && _baseUrlController.text.trim().isNotEmpty) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 _UrlPreview(
                   url: getCompleteApiUrl(
                     _baseUrlController.text,
@@ -310,20 +306,13 @@ class _ModelProviderDetailPageState
                   ),
                 ),
               ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        // Responses API（仅 OpenAI 类）
-        if (isOpenAI)
-          ModelSettingsCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
+
+              // Responses API（仅 OpenAI 类）
+              if (isOpenAI) ...[
+                const SizedBox(height: 16),
                 Row(
                   children: [
-                    const ModelSectionTitle('Responses API'),
+                    Text('Responses API', style: labelStyle),
                     const Spacer(),
                     CustomSwitch(
                       value: _useResponsesAPI,
@@ -331,40 +320,20 @@ class _ModelProviderDetailPageState
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 Text(
-                  '使用 OpenAI 的 /responses 端点替代 /chat/completions，'
-                  '开启后聊天请求按 Responses 协议发送。',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontSize: 12,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                  '使用 /responses 端点替代 /chat/completions（仅官方 OpenAI 建议开启）。',
+                  style: hintStyle,
                 ),
               ],
-            ),
-          ),
-        if (isOpenAI) const SizedBox(height: 16),
-        // 高级 API 配置入口
-        ModelSettingsCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const ModelSectionTitle('高级 API 配置'),
-              const SizedBox(height: 8),
-              Text(
-                '额外请求头与请求体（已接入聊天与模型获取，真实生效）。',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontSize: 12,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 12),
-              ModelTonalButton(
-                label: '配置高级参数',
+
+              const Divider(height: 24),
+              // 高级 API 配置入口
+              _NavRow(
                 icon: LucideIcons.settings,
-                accent: theme.colorScheme.secondary,
-                onPressed: () =>
+                title: '高级 API 配置',
+                subtitle: '额外请求头与请求体（聊天与模型获取均生效）',
+                onTap: () =>
                     context.push(AppRouter.advancedApiPath(provider.id)),
               ),
             ],
@@ -828,11 +797,12 @@ class _ModelProviderDetailPageState
   }
 }
 
-/// The header block of the 配置 Tab: a 56px brand avatar, the provider name, a
+/// The header block of the 配置 Tab — rendered inline at the top of the shared
+/// config card (no card of its own): a 48px brand avatar, the provider name, a
 /// `{type} API` subtitle and (for non-system providers) edit-name / delete
 /// icon buttons.
-class _ProviderHeaderCard extends StatelessWidget {
-  const _ProviderHeaderCard({
+class _ProviderHeader extends StatelessWidget {
+  const _ProviderHeader({
     required this.provider,
     required this.typeLabel,
     required this.onEdit,
@@ -857,78 +827,134 @@ class _ProviderHeaderCard extends StatelessWidget {
         ? provider.name.substring(0, 1).toUpperCase()
         : '?';
 
-    return ModelSettingsCard(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            clipBehavior: Clip.antiAlias,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.transparent,
-              boxShadow: [
-                BoxShadow(
-                  color: Color(0x0D000000),
-                  blurRadius: 6,
-                  offset: Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Image.asset(
-              assetPath,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stack) => Center(
-                child: Text(
-                  fallback,
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+    return Row(
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          clipBehavior: Clip.antiAlias,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.transparent,
+          ),
+          child: Image.asset(
+            assetPath,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stack) => Center(
+              child: Text(
+                fallback,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  provider.name,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                provider.name,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '$typeLabel API',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontSize: 13,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '$typeLabel API',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 13,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          if (onEdit != null)
-            IconButton(
-              icon: const Icon(LucideIcons.pencil, size: 18),
-              color: theme.colorScheme.secondary,
-              tooltip: '编辑名称 / 类型',
-              onPressed: onEdit,
+        ),
+        if (onEdit != null)
+          IconButton(
+            icon: const Icon(LucideIcons.pencil, size: 18),
+            color: theme.colorScheme.secondary,
+            tooltip: '编辑名称 / 类型',
+            visualDensity: VisualDensity.compact,
+            onPressed: onEdit,
+          ),
+        if (onDelete != null)
+          IconButton(
+            icon: const Icon(LucideIcons.trash2, size: 18),
+            color: theme.colorScheme.error,
+            tooltip: '删除供应商',
+            visualDensity: VisualDensity.compact,
+            onPressed: onDelete,
+          ),
+      ],
+    );
+  }
+}
+
+/// A compact tappable navigation row (icon + title + subtitle + chevron) used
+/// inside the config card — e.g. the 高级 API 配置 entry — so a sub-page link
+/// no longer needs its own heading + helper + button stack.
+class _NavRow extends StatelessWidget {
+  const _NavRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: theme.colorScheme.secondary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          if (onDelete != null)
-            IconButton(
-              icon: const Icon(LucideIcons.trash2, size: 18),
-              color: theme.colorScheme.error,
-              tooltip: '删除供应商',
-              onPressed: onDelete,
+            Icon(
+              LucideIcons.chevronRight,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
