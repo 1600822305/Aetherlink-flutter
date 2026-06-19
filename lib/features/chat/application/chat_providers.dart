@@ -13,6 +13,7 @@ import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway_fac
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
 
 part 'chat_providers.g.dart';
 
@@ -54,6 +55,18 @@ ChatRepository chatRepository(Ref ref) =>
 /// network or a real key.
 @Riverpod(keepAlive: true)
 LlmGatewayFactory llmGatewayFactory(Ref ref) => LlmProviderFactory();
+
+/// The live MCP connection pool for remote (sse / streamableHttp) servers,
+/// shared across chat turns. Kept alive so connections are reused; closed when
+/// the container disposes. The chat tool-call loop and the 设置 详情页「测试」
+/// button both dispatch tool discovery / execution through it (the latter via
+/// the `app/di` re-export, since settings may not import chat internals).
+@Riverpod(keepAlive: true)
+RemoteMcpConnectionManager remoteMcpConnectionManager(Ref ref) {
+  final manager = RemoteMcpConnectionManager();
+  ref.onDispose(manager.dispose);
+  return manager;
+}
 
 /// Debug-only seed so message rendering is visible before send/streaming exist
 /// (M4.2.2+). In release builds ([kDebugMode] false) this is a no-op, so the
