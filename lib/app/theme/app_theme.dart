@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:aetherlink_flutter/app/theme/app_chinese_fonts.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme_extension.dart';
 import 'package:aetherlink_flutter/features/theming/domain/theme_spec.dart';
 
@@ -85,7 +86,7 @@ abstract final class AppTheme {
           borderRadius: spec.shape.borderRadius,
         ),
       ],
-    );
+    ).useSystemChineseFallback();
   }
 
   static VisualDensity _density(ThemeDensity density) => switch (density) {
