@@ -343,6 +343,23 @@ class Assistants extends _$Assistants {
     await _reload();
   }
 
+  /// Toggles whether [skillId] is bound to [assistantId] — the port of
+  /// `useSkillBinding.toggleSkillForAssistant` (add/remove the id on
+  /// `assistant.skillIds`, then persist). Used by the 技能管理 page's 绑定助手
+  /// dialog. A no-op when the assistant can't be resolved.
+  Future<void> toggleSkill(String assistantId, String skillId) async {
+    final assistant = await _repo.getAssistant(assistantId);
+    if (assistant == null) return;
+    final current = assistant.skillIds ?? const <String>[];
+    final next = current.contains(skillId)
+        ? current.where((id) => id != skillId).toList()
+        : <String>[...current, skillId];
+    await _repo.saveAssistant(
+      assistant.copyWith(skillIds: next, updatedAt: DateTime.now()),
+    );
+    await _reload();
+  }
+
   /// Appends a 助手快捷短语 to [assistantId]'s `regularPhrases` and persists — the
   /// assistant-scoped counterpart of `GlobalQuickPhrases.add` (the web
   /// `QuickPhraseService.add` for the 助手提示词 location). A no-op when the

@@ -18,9 +18,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/agent_prompt_selector.dart';
-import 'package:aetherlink_flutter/shared/config/builtin_skills.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
 
@@ -573,16 +573,18 @@ class _MemoryTab extends StatelessWidget {
 
 // ── 技能 ─────────────────────────────────────────────────────────────────────
 
-class _SkillsTab extends StatelessWidget {
+class _SkillsTab extends ConsumerWidget {
   const _SkillsTab({required this.skillIds, required this.onToggle});
 
   final List<String> skillIds;
   final ValueChanged<String> onToggle;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final skills = kBuiltinSkills;
+    final skills = (ref.watch(skillsProvider).asData?.value ?? const <Skill>[])
+        .where((s) => s.enabled)
+        .toList();
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -620,7 +622,21 @@ class _SkillsTab extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        for (final skill in skills) _skillRow(theme, skill),
+        if (skills.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Center(
+              child: Text(
+                '暂无可用技能，请先在设置 → 技能管理中启用技能',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          )
+        else
+          for (final skill in skills) _skillRow(theme, skill),
         const SizedBox(height: 8),
         Center(
           child: Text(
