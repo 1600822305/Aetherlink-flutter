@@ -1,5 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/app/di/network_proxy_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/model_catalog.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway_factory.dart';
@@ -64,7 +65,8 @@ Future<CurrentModel?> appCurrentModel(Ref ref) async {
 /// pure-Dart port without importing `chat`'s `data`. Tests override it with a
 /// fake catalog.
 @Riverpod(keepAlive: true)
-LlmModelCatalog appModelCatalog(Ref ref) => LlmModelCatalogImpl();
+LlmModelCatalog appModelCatalog(Ref ref) =>
+    LlmModelCatalogImpl(proxy: ref.watch(appNetworkProxyConfigProvider));
 
 /// The LLM gateway factory for the settings 测试模式 (per-model connectivity
 /// test). Re-exposed from `chat`'s composed factory so the settings UI can run
