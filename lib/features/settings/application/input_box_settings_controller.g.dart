@@ -13,11 +13,11 @@ part of 'input_box_settings_controller.dart';
 /// appearance 输入框管理设置 sub-page stays a pure view and the chat composer can
 /// follow the same source of truth.
 ///
-/// Like [ThemeModeController] / [FontSizeController] it lives in memory only for
-/// now: the original persisted these in the `settings` slice, but where app
-/// preferences live (shared_preferences vs a Drift settings table) is a
-/// separate decision, so the config resets to [InputBoxSettings]'s defaults on
-/// each cold start until persistence is wired.
+/// Each field persists under its own Drift key/value entry — the visual preset
+/// as its raw id and each toolbar layout as a JSON array of button ids — so the
+/// configuration is hydrated on first build and written through on every change,
+/// surviving a full restart (the same pattern as [BehaviorSettingsController],
+/// reaching the KV store via the `app/` [appSettingsStoreProvider] seam).
 ///
 /// `keepAlive: true`: an app-level preference shared by the chat page and the
 /// settings page that must survive either being disposed when navigating away.
@@ -31,11 +31,11 @@ final inputBoxSettingsControllerProvider =
 /// appearance 输入框管理设置 sub-page stays a pure view and the chat composer can
 /// follow the same source of truth.
 ///
-/// Like [ThemeModeController] / [FontSizeController] it lives in memory only for
-/// now: the original persisted these in the `settings` slice, but where app
-/// preferences live (shared_preferences vs a Drift settings table) is a
-/// separate decision, so the config resets to [InputBoxSettings]'s defaults on
-/// each cold start until persistence is wired.
+/// Each field persists under its own Drift key/value entry — the visual preset
+/// as its raw id and each toolbar layout as a JSON array of button ids — so the
+/// configuration is hydrated on first build and written through on every change,
+/// surviving a full restart (the same pattern as [BehaviorSettingsController],
+/// reaching the KV store via the `app/` [appSettingsStoreProvider] seam).
 ///
 /// `keepAlive: true`: an app-level preference shared by the chat page and the
 /// settings page that must survive either being disposed when navigating away.
@@ -46,11 +46,11 @@ final class InputBoxSettingsControllerProvider
   /// appearance 输入框管理设置 sub-page stays a pure view and the chat composer can
   /// follow the same source of truth.
   ///
-  /// Like [ThemeModeController] / [FontSizeController] it lives in memory only for
-  /// now: the original persisted these in the `settings` slice, but where app
-  /// preferences live (shared_preferences vs a Drift settings table) is a
-  /// separate decision, so the config resets to [InputBoxSettings]'s defaults on
-  /// each cold start until persistence is wired.
+  /// Each field persists under its own Drift key/value entry — the visual preset
+  /// as its raw id and each toolbar layout as a JSON array of button ids — so the
+  /// configuration is hydrated on first build and written through on every change,
+  /// surviving a full restart (the same pattern as [BehaviorSettingsController],
+  /// reaching the KV store via the `app/` [appSettingsStoreProvider] seam).
   ///
   /// `keepAlive: true`: an app-level preference shared by the chat page and the
   /// settings page that must survive either being disposed when navigating away.
@@ -82,18 +82,18 @@ final class InputBoxSettingsControllerProvider
 }
 
 String _$inputBoxSettingsControllerHash() =>
-    r'ff234ccf1e054dec7705f9804f8f5226ed3e89ad';
+    r'b2f4fd53182a9c0be043780573fed290ba4e084b';
 
 /// Holds the input-box configuration (the original `settings.inputBoxStyle` +
 /// `integratedInputLeftButtons` / `integratedInputRightButtons`), so the
 /// appearance 输入框管理设置 sub-page stays a pure view and the chat composer can
 /// follow the same source of truth.
 ///
-/// Like [ThemeModeController] / [FontSizeController] it lives in memory only for
-/// now: the original persisted these in the `settings` slice, but where app
-/// preferences live (shared_preferences vs a Drift settings table) is a
-/// separate decision, so the config resets to [InputBoxSettings]'s defaults on
-/// each cold start until persistence is wired.
+/// Each field persists under its own Drift key/value entry — the visual preset
+/// as its raw id and each toolbar layout as a JSON array of button ids — so the
+/// configuration is hydrated on first build and written through on every change,
+/// surviving a full restart (the same pattern as [BehaviorSettingsController],
+/// reaching the KV store via the `app/` [appSettingsStoreProvider] seam).
 ///
 /// `keepAlive: true`: an app-level preference shared by the chat page and the
 /// settings page that must survive either being disposed when navigating away.
