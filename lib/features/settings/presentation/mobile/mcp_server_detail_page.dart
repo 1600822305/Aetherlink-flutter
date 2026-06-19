@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/remote_mcp_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/settings/application/mcp_servers_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
@@ -27,9 +28,10 @@ String mcpServerTypeLabel(McpServerType type) => switch (type) {
 /// Edits the persisted [McpServer] config — 基本信息 (启用 / 名称 / 类型 /
 /// URL·命令·参数 / 描述 / 超时) plus the 高级设置 请求头 / 环境变量 key-value
 /// editors — committing through [McpServers.edit]. Built-in servers list their
-/// static tool catalog (`builtin_tool_catalog.dart`) under 可用工具; external
-/// servers discover tools over a live connection (the request layer, Phase C),
-/// so they — and the 测试 button — still surface 「即将支持」 instead of faking it.
+/// static tool catalog (`builtin_tool_catalog.dart`) under 可用工具; remote
+/// (sse / streamableHttp) servers discover their tools over a live connection —
+/// the 测试 button opens one through the remote MCP connection pool (via the
+/// `app/di` re-export) and lists what `tools/list` returns.
 class McpServerDetailPage extends ConsumerStatefulWidget {
   const McpServerDetailPage({required this.serverId, super.key});
 
@@ -54,6 +56,12 @@ class _McpServerDetailPageState extends ConsumerState<McpServerDetailPage> {
   bool _isActive = false;
   List<_KvPair> _headers = const [];
   List<_KvPair> _env = const [];
+
+  // 测试连接 (remote servers): the tools discovered on the last successful run,
+  // the in-flight flag, and the last error.
+  List<McpToolDefinition>? _discovered;
+  bool _testing = false;
+  String? _testError;
 
   @override
   void initState() {
@@ -140,6 +148,54 @@ class _McpServerDetailPageState extends ConsumerState<McpServerDetailPage> {
     if (!mounted) return;
     setState(() => _server = updated);
     _toast('保存成功');
+  }
+
+  /// Opens a live connection to the server using the *current* form values
+  /// (URL / 类型 / 请求头 / 超时, no save required) and runs `tools/list`,
+  /// surfacing the discovered tools — the real connection behind the 测试 button.
+  Future<void> _testConnection() async {
+    final base = _server;
+    if (base == null || !_isHttp) return;
+    final url = _baseUrl.text.trim();
+    if (url.isEmpty) {
+      _toast('请先填写服务器 URL');
+      return;
+    }
+    setState(() {
+      _testing = true;
+      _testError = null;
+    });
+    final snapshot = base.copyWith(
+      type: _type,
+      baseUrl: url,
+      headers: _mapFrom(_headers),
+      timeout: int.tryParse(_timeout.text.trim()) ?? 60,
+    );
+    try {
+      final tools = await ref
+          .read(remoteMcpConnectionManagerProvider)
+          .listTools(snapshot);
+      if (!mounted) return;
+      setState(() {
+        _discovered = [for (final tool in tools) tool.definition];
+        _testing = false;
+      });
+      _toast('连接成功，发现 ${tools.length} 个工具');
+    } on Object catch (error) {
+      if (!mounted) return;
+      final message = _describeError(error);
+      setState(() {
+        _testing = false;
+        _testError = message;
+      });
+      _toast('连接失败: $message');
+    }
+  }
+
+  static String _describeError(Object error) {
+    final text = error.toString();
+    final colon = text.indexOf(': ');
+    return colon == -1 ? text : text.substring(colon + 2);
   }
 
   Future<void> _delete() async {
@@ -479,9 +535,6 @@ class _McpServerDetailPageState extends ConsumerState<McpServerDetailPage> {
   }
 
   Widget _toolsCard(BuildContext context) {
-    final theme = Theme.of(context);
-    final tools = builtinToolsFor(_server?.name ?? '');
-    final runnable = kLocallyRunnableBuiltins.contains(_server?.name);
     return ModelSettingsCard(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -492,36 +545,98 @@ class _McpServerDetailPageState extends ConsumerState<McpServerDetailPage> {
               Expanded(
                 child: _sectionTitle(context, LucideIcons.blocks, '可用工具'),
               ),
-              OutlinedButton.icon(
-                onPressed: () => _toast('即将支持'),
-                icon: const Icon(LucideIcons.plug, size: 16),
-                label: const Text('测试'),
-              ),
+              if (_isHttp)
+                OutlinedButton.icon(
+                  onPressed: _testing ? null : _testConnection,
+                  icon: _testing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(LucideIcons.plug, size: 16),
+                  label: Text(_testing ? '连接中' : '测试'),
+                ),
             ],
           ),
           const SizedBox(height: 12),
-          if (tools.isEmpty)
-            Text(
-              '连接服务器后即可发现可用工具（即将支持）',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            )
-          else ...[
-            for (var i = 0; i < tools.length; i++) ...[
-              if (i > 0) const SizedBox(height: 12),
-              _toolRow(context, tools[i]),
-            ],
-            const SizedBox(height: 12),
-            Text(
-              runnable ? '工具调用接入对话后生效（即将支持）。' : '工具调用需接入设备插件后生效（即将支持）。',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
+          if (_isHttp) _remoteTools(context) else _builtinTools(context),
         ],
       ),
+    );
+  }
+
+  /// 可用工具 body for remote (sse / streamableHttp) servers: the live discovery
+  /// result from the last 测试 — the discovered tools, an error, or a hint to run
+  /// it.
+  Widget _remoteTools(BuildContext context) {
+    final theme = Theme.of(context);
+    final error = _testError;
+    if (error != null) {
+      return Text(
+        '连接失败：$error',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.error,
+        ),
+      );
+    }
+    final tools = _discovered;
+    if (tools == null) {
+      return Text(
+        '点击「测试」连接服务器并发现可用工具。',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
+    if (tools.isEmpty) {
+      return Text(
+        '连接成功，但该服务器未声明任何工具。',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < tools.length; i++) ...[
+          if (i > 0) const SizedBox(height: 12),
+          _toolRow(context, tools[i]),
+        ],
+      ],
+    );
+  }
+
+  /// 可用工具 body for built-in servers: the static catalog
+  /// (`builtin_tool_catalog.dart`); calculator / time run in-process.
+  Widget _builtinTools(BuildContext context) {
+    final theme = Theme.of(context);
+    final tools = builtinToolsFor(_server?.name ?? '');
+    final runnable = kLocallyRunnableBuiltins.contains(_server?.name);
+    if (tools.isEmpty) {
+      return Text(
+        '该服务器暂无可用工具。',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < tools.length; i++) ...[
+          if (i > 0) const SizedBox(height: 12),
+          _toolRow(context, tools[i]),
+        ],
+        const SizedBox(height: 12),
+        Text(
+          runnable ? '已接入对话，工具调用即时生效。' : '工具调用需接入设备插件后生效（即将支持）。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
     );
   }
 
