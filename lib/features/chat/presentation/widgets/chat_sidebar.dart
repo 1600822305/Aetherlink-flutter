@@ -562,29 +562,30 @@ class _AssistantItem extends ConsumerWidget {
                 _OverflowMenuButton<_AssistantMenu>(
                   size: 16,
                   box: 26,
-                  itemBuilder: (context) => [
-                    _menuItem(
+                  title: assistant.name,
+                  actions: const [
+                    _SheetAction(
                       _AssistantMenu.addToGroup,
                       LucideIcons.folderPlus,
                       '添加到分组',
                     ),
-                    _menuItem(_AssistantMenu.copy, LucideIcons.copy, '复制助手'),
-                    _menuItem(
+                    _SheetAction(_AssistantMenu.copy, LucideIcons.copy, '复制助手'),
+                    _SheetAction(
                       _AssistantMenu.clearTopics,
                       LucideIcons.trash2,
                       '清空话题',
                     ),
-                    _menuItem(
+                    _SheetAction(
                       _AssistantMenu.sortAsc,
                       LucideIcons.arrowUpAZ,
                       '按拼音升序排列',
                     ),
-                    _menuItem(
+                    _SheetAction(
                       _AssistantMenu.sortDesc,
                       LucideIcons.arrowDownAZ,
                       '按拼音降序排列',
                     ),
-                    _menuItem(
+                    _SheetAction(
                       _AssistantMenu.delete,
                       LucideIcons.trash,
                       '删除助手',
@@ -951,37 +952,37 @@ class _TopicItem extends ConsumerWidget {
                         _OverflowMenuButton<_TopicMenu>(
                           size: 16,
                           box: 20,
-                          padding: 2,
-                          itemBuilder: (context) => [
-                            _menuItem(
+                          title: topic.name,
+                          actions: [
+                            const _SheetAction(
                               _TopicMenu.addToGroup,
                               LucideIcons.folderPlus,
                               '添加到分组',
                             ),
-                            _menuItem(
+                            const _SheetAction(
                               _TopicMenu.rename,
                               LucideIcons.edit3,
                               '编辑话题',
                             ),
-                            _menuItem(
+                            _SheetAction(
                               _TopicMenu.togglePin,
                               topic.pinned
                                   ? LucideIcons.pinOff
                                   : LucideIcons.pin,
                               topic.pinned ? '取消固定' : '固定话题',
                             ),
-                            _menuItem(
+                            const _SheetAction(
                               _TopicMenu.clearMessages,
                               LucideIcons.trash2,
                               '清空消息',
                             ),
                             if (canMove)
-                              _menuItem(
+                              const _SheetAction(
                                 _TopicMenu.move,
                                 LucideIcons.arrowRight,
                                 '移动到...',
                               ),
-                            _menuItem(
+                            const _SheetAction(
                               _TopicMenu.delete,
                               LucideIcons.trash,
                               '删除话题',
@@ -2388,9 +2389,10 @@ class _GroupHeader extends ConsumerWidget {
                 _OverflowMenuButton<_GroupMenu>(
                   size: 16,
                   box: 26,
-                  itemBuilder: (context) => [
-                    _menuItem(_GroupMenu.rename, LucideIcons.edit3, '重命名分组'),
-                    _menuItem(
+                  title: group.name,
+                  actions: const [
+                    _SheetAction(_GroupMenu.rename, LucideIcons.edit3, '重命名分组'),
+                    _SheetAction(
                       _GroupMenu.delete,
                       LucideIcons.trash,
                       '删除分组',
@@ -2771,36 +2773,54 @@ class _MutedIconButton extends StatelessWidget {
   }
 }
 
-/// A `PopupMenuButton` styled to match [_MutedIconButton]'s compact sizing,
-/// used for the per-row 更多 (`moreVertical`) menus.
+/// One row in the per-item action sheet opened by [_OverflowMenuButton].
+class _SheetAction<T> {
+  const _SheetAction(this.value, this.icon, this.label, {this.danger = false});
+
+  final T value;
+  final IconData icon;
+  final String label;
+  final bool danger;
+}
+
+/// The per-row 更多 (`moreVertical`) trigger. Tapping opens a bottom action
+/// sheet ([_showActionSheet]) rather than an anchored dropdown — far easier to
+/// reach on a phone (large targets, never clipped at the screen edge) than the
+/// cramped `PopupMenu` it replaces. Sized to match [_MutedIconButton] so the
+/// row height is unchanged.
 class _OverflowMenuButton<T> extends StatelessWidget {
   const _OverflowMenuButton({
-    required this.itemBuilder,
+    required this.actions,
     required this.onSelected,
     required this.size,
     required this.box,
-    this.padding,
+    this.title,
     this.opacity = 0.6,
   });
 
-  final List<PopupMenuEntry<T>> Function(BuildContext) itemBuilder;
+  final List<_SheetAction<T>> actions;
   final ValueChanged<T> onSelected;
   final double size;
   final double box;
-  final double? padding;
+  final String? title;
   final double opacity;
+
+  Future<void> _open(BuildContext context) async {
+    final selected = await _showActionSheet<T>(
+      context,
+      title: title,
+      actions: actions,
+    );
+    if (selected != null && context.mounted) onSelected(selected);
+  }
 
   @override
   Widget build(BuildContext context) {
     return Opacity(
       opacity: opacity,
-      child: PopupMenuButton<T>(
-        itemBuilder: itemBuilder,
-        onSelected: onSelected,
-        tooltip: '',
-        // Using `child` instead of `icon` avoids PopupMenuButton's internal
-        // IconButton, whose 48x48 minimum tap target would inflate the row.
-        padding: EdgeInsets.zero,
+      child: InkResponse(
+        onTap: () => _open(context),
+        radius: box * 0.6,
         child: SizedBox(
           width: box,
           height: box,
@@ -2815,23 +2835,60 @@ class _OverflowMenuButton<T> extends StatelessWidget {
   }
 }
 
-PopupMenuItem<T> _menuItem<T>(
-  T value,
-  IconData icon,
-  String label, {
-  bool danger = false,
+/// A bottom action sheet listing [actions], optionally headed by [title]. Pops
+/// with the chosen action's value, or `null` when dismissed. Replaces the
+/// per-row anchored dropdown menus throughout the sidebar.
+Future<T?> _showActionSheet<T>(
+  BuildContext context, {
+  required List<_SheetAction<T>> actions,
+  String? title,
 }) {
-  final color = danger ? _dangerColor : null;
-  return PopupMenuItem<T>(
-    value: value,
-    height: 40,
-    child: Row(
-      children: [
-        Icon(icon, size: 18, color: color),
-        const SizedBox(width: 12),
-        Text(label, style: TextStyle(fontSize: 14, color: color)),
-      ],
-    ),
+  return showModalBottomSheet<T>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) {
+      final theme = Theme.of(sheetContext);
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (title != null && title.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            for (final action in actions)
+              ListTile(
+                leading: Icon(
+                  action.icon,
+                  size: 20,
+                  color: action.danger ? _dangerColor : null,
+                ),
+                title: Text(
+                  action.label,
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: action.danger ? _dangerColor : null,
+                  ),
+                ),
+                onTap: () => Navigator.of(sheetContext).pop(action.value),
+              ),
+          ],
+        ),
+      );
+    },
   );
 }
 
