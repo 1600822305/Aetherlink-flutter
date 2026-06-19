@@ -96,10 +96,26 @@ class _ChatBodyState extends State<_ChatBody> {
   final GlobalKey _inputKey = GlobalKey();
   double _inputHeight = 0;
 
+  /// Guards against queuing more than one pending measure: the composer's
+  /// [SizeChangedLayoutNotifier] fires on several consecutive frames while the
+  /// keyboard animates the bottom safe-area inset to zero, and scheduling a
+  /// fresh post-frame callback for each one would rebuild [_ChatBody] repeatedly
+  /// mid-animation. Collapsing them to a single pending measure cuts that churn.
+  bool _measureScheduled = false;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _measureInput());
+    _scheduleMeasure();
+  }
+
+  void _scheduleMeasure() {
+    if (_measureScheduled) return;
+    _measureScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _measureScheduled = false;
+      _measureInput();
+    });
   }
 
   /// Reads the composer's rendered height so the list reserves matching bottom
@@ -127,9 +143,7 @@ class _ChatBodyState extends State<_ChatBody> {
         Expanded(
           child: NotificationListener<SizeChangedLayoutNotification>(
             onNotification: (_) {
-              WidgetsBinding.instance.addPostFrameCallback(
-                (_) => _measureInput(),
-              );
+              _scheduleMeasure();
               return false;
             },
             child: Stack(
@@ -184,7 +198,12 @@ class _FadeToBottom extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (fadeHeight <= 0) return child;
+    // Isolate the list as a single cached raster layer so the keyboard
+    // animation's per-frame mask recomposite samples that texture instead of
+    // replaying every bubble's paint — closing part of the gap with the web's
+    // GPU-composited CSS gradient mask.
+    final isolated = RepaintBoundary(child: child);
+    if (fadeHeight <= 0) return isolated;
     return ShaderMask(
       blendMode: BlendMode.dstIn,
       shaderCallback: (rect) {
@@ -204,7 +223,7 @@ class _FadeToBottom extends StatelessWidget {
           ],
         ).createShader(rect);
       },
-      child: child,
+      child: isolated,
     );
   }
 }
