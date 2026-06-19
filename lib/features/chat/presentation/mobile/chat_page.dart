@@ -54,7 +54,18 @@ class ChatPage extends ConsumerWidget {
       chatInterfaceSettingsProvider.select((s) => s.background),
     );
 
+    // Freeze the chat behind any pushed dialog / bottom sheet. When this page is
+    // no longer the top-most route, ignore the keyboard inset so focusing a text
+    // field inside an overlay (创建分组 prompt, 编辑消息 sheet, …) doesn't shove the
+    // composer + message list upward — that keyboard belongs to the overlay, not
+    // the chat. Reading the inset here is what makes the Scaffold re-evaluate the
+    // instant an overlay opens/closes the keyboard (a pushed route alone wouldn't
+    // rebuild this page).
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final isTopRoute = ModalRoute.of(context)?.isCurrent ?? true;
+
     return Scaffold(
+      resizeToAvoidBottomInset: isTopRoute || keyboardInset == 0,
       appBar: const ChatTopBar(),
       // Buzz when the sidebar opens (gated by the 触觉反馈 master + 侧边栏 toggle),
       // matching the original drawer-open haptic.
