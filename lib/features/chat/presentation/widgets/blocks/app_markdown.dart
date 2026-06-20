@@ -107,20 +107,40 @@ class AppMarkdown extends StatelessWidget {
   }
 }
 
-/// A Markdown table mirroring Kelivo's renderer: columns flex to fill the
-/// available width (cells wrap) so typical tables never scroll horizontally,
-/// switching to fixed-width columns inside a plain horizontal scroll view only
-/// when there are many columns that would otherwise be too cramped.
-///
-/// Colours come from the Material [ColorScheme]: a soft [ColorScheme.outlineVariant]
-/// border, a primary-tinted header and a very faint primary-tinted body, all
-/// inside a rounded, clipped frame. There is deliberately no overlay
-/// [Scrollbar] — it would otherwise paint over the last row of short tables.
-class MarkdownTable extends StatelessWidget {
+/// A Markdown table styled after Kelivo (soft [ColorScheme.outlineVariant]
+/// border, primary-tinted header, faint primary-tinted body, rounded/clipped
+/// frame), but with the original web table's scroll behaviour: columns size to
+/// their content, and when the table is wider than the bubble it scrolls
+/// horizontally with a persistent scrollbar that sits in a reserved bottom
+/// gutter (so it never paints over the last row). Narrow tables that fit show
+/// no scrollbar and no gutter.
+class MarkdownTable extends StatefulWidget {
   const MarkdownTable({required this.rows, required this.baseStyle, super.key});
 
   final List<CustomTableRow> rows;
   final TextStyle baseStyle;
+
+  @override
+  State<MarkdownTable> createState() => _MarkdownTableState();
+}
+
+class _MarkdownTableState extends State<MarkdownTable> {
+  final ScrollController _controller = ScrollController();
+  bool _scrollable = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _syncScrollable() {
+    if (!mounted || !_controller.hasClients) return;
+    final scrollable = _controller.position.maxScrollExtent > 0.5;
+    if (scrollable != _scrollable) {
+      setState(() => _scrollable = scrollable);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -139,7 +159,7 @@ class MarkdownTable extends StatelessWidget {
       cs.surface,
     );
 
-    final colCount = rows.fold<int>(
+    final colCount = widget.rows.fold<int>(
       0,
       (max, row) => math.max(max, row.fields.length),
     );
@@ -150,18 +170,18 @@ class MarkdownTable extends StatelessWidget {
         final maxWidth = constraints.maxWidth.isFinite
             ? constraints.maxWidth
             : MediaQuery.sizeOf(context).width;
-        final columnWidth = _columnWidth(maxWidth, colCount);
-        final scrollHorizontally =
-            colCount >= 4 && columnWidth * colCount > maxWidth;
 
         final table = _buildTable(
           context,
           colCount: colCount,
           borderColor: borderColor,
           headerBg: headerBg,
-          columnWidth: columnWidth,
-          fixedColumns: scrollHorizontally,
+          maxColWidth: maxWidth,
         );
+
+        // The scrollable state is known only after layout; re-sync once the
+        // frame settles so the scrollbar/gutter appears only when needed.
+        WidgetsBinding.instance.addPostFrameCallback((_) => _syncScrollable());
 
         final frame = Container(
           decoration: BoxDecoration(
@@ -173,14 +193,20 @@ class MarkdownTable extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
           ),
           clipBehavior: Clip.antiAlias,
-          child: scrollHorizontally
-              ? SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  physics: const ClampingScrollPhysics(),
-                  clipBehavior: Clip.hardEdge,
-                  child: table,
-                )
-              : table,
+          child: Scrollbar(
+            controller: _controller,
+            thumbVisibility: _scrollable,
+            interactive: true,
+            child: SingleChildScrollView(
+              controller: _controller,
+              scrollDirection: Axis.horizontal,
+              physics: const ClampingScrollPhysics(),
+              // Reserve a strip below the table for the horizontal scrollbar so
+              // it sits in the bottom gutter instead of overlaying the last row.
+              padding: EdgeInsets.only(bottom: _scrollable ? 12 : 0),
+              child: table,
+            ),
+          ),
         );
 
         return Padding(
@@ -196,22 +222,19 @@ class MarkdownTable extends StatelessWidget {
     required int colCount,
     required Color borderColor,
     required Color headerBg,
-    required double columnWidth,
-    required bool fixedColumns,
+    required double maxColWidth,
   }) {
-    final columnWidth0 = fixedColumns
-        ? FixedColumnWidth(columnWidth)
-        : const FlexColumnWidth();
+    final columnWidth = _ContentColumnWidth(maxWidth: maxColWidth);
     return Table(
-      defaultColumnWidth: columnWidth0,
-      columnWidths: {for (var i = 0; i < colCount; i++) i: columnWidth0},
+      defaultColumnWidth: columnWidth,
+      columnWidths: {for (var i = 0; i < colCount; i++) i: columnWidth},
       defaultVerticalAlignment: TableCellVerticalAlignment.middle,
       border: TableBorder(
         horizontalInside: BorderSide(color: borderColor, width: 0.5),
         verticalInside: BorderSide(color: borderColor, width: 0.5),
       ),
       children: [
-        for (final row in rows)
+        for (final row in widget.rows)
           TableRow(
             decoration: row.isHeader ? BoxDecoration(color: headerBg) : null,
             children: [
@@ -236,8 +259,8 @@ class MarkdownTable extends StatelessWidget {
     final data = field?.data ?? '';
     final align = field?.alignment ?? TextAlign.left;
 
-    final cellStyle = baseStyle.copyWith(
-      fontWeight: isHeader ? FontWeight.w600 : baseStyle.fontWeight,
+    final cellStyle = widget.baseStyle.copyWith(
+      fontWeight: isHeader ? FontWeight.w600 : widget.baseStyle.fontWeight,
       color: isHeader ? cs.onSurface : cs.onSurface.withValues(alpha: 0.90),
     );
 
@@ -260,16 +283,31 @@ class MarkdownTable extends StatelessWidget {
       ),
     );
   }
+}
 
-  /// Per-column width for the fixed-column horizontal-scroll fallback, mirroring
-  /// Kelivo's compact sizing (`(width - 16) / visibleColumns`, clamped). Only
-  /// used when [colCount] >= 4 and the columns would overflow the viewport.
-  double _columnWidth(double maxWidth, int colCount) {
-    final safeMax = maxWidth.isFinite && maxWidth > 0 ? maxWidth : 360.0;
-    if (colCount <= 1) {
-      return (safeMax - 16).clamp(220.0, 360.0).toDouble();
+/// Sizes a column to the natural (unwrapped) width of its widest cell, with a
+/// lower bound of [_minWidth] and capped at [maxWidth] (the bubble width) so a
+/// single long cell wraps instead of stretching the table indefinitely. Tables
+/// whose columns sum wider than the viewport then overflow and scroll.
+class _ContentColumnWidth extends TableColumnWidth {
+  const _ContentColumnWidth({required this.maxWidth});
+
+  static const double _minWidth = 72;
+
+  final double maxWidth;
+
+  @override
+  double maxIntrinsicWidth(Iterable<RenderBox> cells, double containerWidth) {
+    var width = _minWidth;
+    for (final cell in cells) {
+      cell.layout(const BoxConstraints(), parentUsesSize: true);
+      width = math.max(width, cell.size.width);
     }
-    final visibleColumns = colCount >= 4 ? 2.45 : colCount.toDouble();
-    return ((safeMax - 16) / visibleColumns).clamp(112.0, 178.0).toDouble();
+    return math.min(maxWidth, width);
+  }
+
+  @override
+  double minIntrinsicWidth(Iterable<RenderBox> cells, double containerWidth) {
+    return math.min(maxWidth, _minWidth);
   }
 }
