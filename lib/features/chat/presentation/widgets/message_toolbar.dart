@@ -348,17 +348,18 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
       ],
     );
 
-    // Token usage chip: to the right of the buttons for AI replies, to the left
-    // for user messages (matching `MessageActions`' toolbar layout). The whole
-    // row hugs its content (`min`) so the enclosing bubble keeps shrink-wrapping
-    // to the message width instead of stretching to its max width.
+    // Token usage chip: pushed flush against the far edge of the toolbar — the
+    // right for AI replies, the left for user messages — with the button group
+    // hugging the opposite edge (matching `MessageActions`' toolbar layout,
+    // where the button group is `flex: 1`). The row fills the bubble width
+    // ([BubbleFooterLayout] stretches the footer), so a [Spacer] separates the
+    // two groups.
     final tokenDisplay = TokenDisplay(view: _view, baseColor: baseColor);
 
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: _isUser
-          ? [tokenDisplay, const SizedBox(width: 4), buttonGroup]
-          : [buttonGroup, const SizedBox(width: 4), tokenDisplay],
+          ? [tokenDisplay, const Spacer(), buttonGroup]
+          : [buttonGroup, const Spacer(), tokenDisplay],
     );
   }
 }
