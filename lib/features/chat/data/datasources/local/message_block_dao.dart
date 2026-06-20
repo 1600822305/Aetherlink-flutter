@@ -14,6 +14,11 @@ class MessageBlockDao extends DatabaseAccessor<AppDatabase>
     with _$MessageBlockDaoMixin {
   MessageBlockDao(super.db);
 
+  Future<List<MessageBlock>> getAll() async {
+    final rows = await select(messageBlockRows).get();
+    return rows.map((row) => row.data).toList();
+  }
+
   Future<MessageBlock?> getById(String id) async {
     final row = await (select(
       messageBlockRows,

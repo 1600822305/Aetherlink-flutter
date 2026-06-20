@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/app/di/top_toolbar_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_search_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
@@ -46,10 +47,11 @@ const String _modelPlaceholderLabel = '未配置模型';
 /// selector opens the picker (or jumps to model settings when none exist), 新建话题
 /// creates a fresh topic for the current assistant ([Topics.create]) and 清空内容
 /// clears the current topic's messages ([Topics.clearMessages]) behind a
-/// two-click confirm (port of the original `handleClearTopicWithConfirm`). The
-/// remaining buttons (search / condense) are full-fidelity glyphs whose
-/// behaviors are a later slice, so they render disabled rather than as fake
-/// buttons. The selector shows the current model's name once configured,
+/// two-click confirm (port of the original `handleClearTopicWithConfirm`), and
+/// 搜索 opens the 聊天搜索 modal (port of `ChatSearchInterface`). 压缩上下文 is a
+/// full-fidelity glyph whose behavior is a later slice, so it renders disabled
+/// rather than as a fake button. The selector shows the current model's name
+/// once configured,
 /// otherwise the "未配置模型" placeholder — never a fabricated model name.
 class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
   const ChatTopBar({super.key});
@@ -213,9 +215,12 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
         return const _ClearTopicButton();
       case TopToolbarComponent.searchButton:
         return _ToolbarIconButton(
-          icon: topToolbarComponentIcon(component, color: theme.disabledColor),
+          icon: topToolbarComponentIcon(
+            component,
+            color: theme.colorScheme.onSurface,
+          ),
           tooltip: _searchTooltip,
-          onPressed: null,
+          onPressed: () => showChatSearchDialog(context),
         );
       case TopToolbarComponent.modelSelector:
         return _ModelSelector(

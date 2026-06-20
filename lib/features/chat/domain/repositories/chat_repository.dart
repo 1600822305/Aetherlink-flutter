@@ -30,6 +30,10 @@ abstract interface class ChatRepository {
 
   Future<Message?> getMessage(String id);
 
+  /// Every stored message, across all topics. Used by full-database scans such
+  /// as 聊天搜索 (port of the web `dexieStorage.messages.toArray()`).
+  Future<List<Message>> getAllMessages();
+
   Future<List<Message>> getMessagesByIds(List<String> ids);
 
   Future<List<Message>> getMessagesByTopicId(String topicId);
@@ -46,6 +50,11 @@ abstract interface class ChatRepository {
   // --- Message blocks -------------------------------------------------------
 
   Future<MessageBlock?> getMessageBlock(String id);
+
+  /// Every stored message block, across all messages. Used by full-database
+  /// scans such as 聊天搜索 (port of the web
+  /// `dexieStorage.message_blocks.toArray()`).
+  Future<List<MessageBlock>> getAllMessageBlocks();
 
   /// Blocks for the given ids, in the requested order (missing ids skipped).
   Future<List<MessageBlock>> getMessageBlocksByIds(List<String> ids);

@@ -12,6 +12,11 @@ part 'message_dao.g.dart';
 class MessageDao extends DatabaseAccessor<AppDatabase> with _$MessageDaoMixin {
   MessageDao(super.db);
 
+  Future<List<Message>> getAll() async {
+    final rows = await select(messageRows).get();
+    return rows.map((row) => row.data).toList();
+  }
+
   Future<Message?> getById(String id) async {
     final row = await (select(
       messageRows,
