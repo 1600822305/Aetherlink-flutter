@@ -107,22 +107,99 @@ class _InputBoxMenuSheetState extends State<InputBoxMenuSheet> {
               ),
             ),
             Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                padding: EdgeInsets.zero,
-                children: [
-                  for (final action in items) ...[
-                    // The 添加内容 menu sets off its optional feature section from
-                    // the three core upload items with a divider (`UploadMenu`).
-                    if (widget.menu == InputBoxMenu.upload &&
-                        action == InputBoxAction.note)
-                      const Divider(height: 8),
-                    _item(context, theme, action),
-                  ],
-                ],
-              ),
+              child: _buildBody(context, theme, items),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// The 添加内容 menu's three core upload items (选择图片 / 拍摄照片 / 上传文件),
+  /// shown as one horizontal row of icon tiles (Kelivo-style) instead of three
+  /// stacked list rows. Every other item — and the whole 扩展 menu — keeps the
+  /// list layout.
+  static const List<InputBoxAction> _coreUploadActions = [
+    InputBoxAction.photoSelect,
+    InputBoxAction.camera,
+    InputBoxAction.fileUpload,
+  ];
+
+  Widget _buildBody(
+    BuildContext context,
+    ThemeData theme,
+    List<InputBoxAction> items,
+  ) {
+    final core = widget.menu == InputBoxMenu.upload
+        ? items.where(_coreUploadActions.contains).toList()
+        : const <InputBoxAction>[];
+    final rest = items.where((a) => !core.contains(a)).toList();
+
+    return ListView(
+      shrinkWrap: true,
+      padding: EdgeInsets.zero,
+      children: [
+        if (core.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+            child: Row(
+              children: [
+                for (final action in core) _coreItem(context, theme, action),
+              ],
+            ),
+          ),
+          if (rest.isNotEmpty) const Divider(height: 8),
+        ],
+        for (final action in rest) _item(context, theme, action),
+      ],
+    );
+  }
+
+  /// One cell of the core upload row: a tinted round icon over its label.
+  Widget _coreItem(
+    BuildContext context,
+    ThemeData theme,
+    InputBoxAction action,
+  ) {
+    final info = inputBoxMenuItemInfo(action);
+    final color = info.color ?? theme.colorScheme.onSurface;
+    // Short labels keep each cell readable at a third of the sheet width
+    // (the menu's full labels like 从相册选择图片 would ellipsize).
+    final label = switch (action) {
+      InputBoxAction.photoSelect => '相册',
+      InputBoxAction.camera => '拍照',
+      InputBoxAction.fileUpload => '文件',
+      _ => info.label,
+    };
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => Navigator.of(context).pop(action),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: inputBoxMenuIcon(action, color: color, size: 22),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
         ),
       ),
     );
