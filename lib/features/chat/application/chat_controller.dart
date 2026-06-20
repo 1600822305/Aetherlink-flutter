@@ -14,9 +14,11 @@ import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controlle
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/translate_controller.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/api_key_manager.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_file_reference.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_version.dart';
@@ -94,11 +96,19 @@ class ChatController extends _$ChatController {
   }
 
   /// Sends [text] as a user message and streams the assistant reply. A
-  /// blank message, a missing current model, or an in-flight stream are no-ops
-  /// (the composer also disables the button in those cases).
-  Future<void> send(String text) async {
+  /// blank message with no [attachments], a missing current model, or an
+  /// in-flight stream are no-ops (the composer also disables the button in those
+  /// cases).
+  ///
+  /// Each entry of [attachments] (currently only long pasted text converted to a
+  /// `.txt`) is persisted as a `FILE` block on the user message and its decoded
+  /// text is appended to the request content so the model receives it.
+  Future<void> send(
+    String text, {
+    List<ComposerAttachment> attachments = const <ComposerAttachment>[],
+  }) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
+    if (trimmed.isEmpty && attachments.isEmpty) return;
 
     final snapshot = state.value ?? ChatState.initial();
     if (snapshot.isStreaming) return;
@@ -109,9 +119,26 @@ class ChatController extends _$ChatController {
     final topicId = await _ensureTopic();
     final now = DateTime.now();
 
-    // 1. User message + main_text block, persisted.
+    // 1. User message: an optional main_text block plus one FILE block per
+    //    attachment, persisted in that order.
     final userMessageId = generateId('msg');
-    final userBlockId = generateId('block');
+    final hasText = trimmed.isNotEmpty;
+    final userBlocks = <MessageBlock>[
+      if (hasText)
+        MessageBlock.mainText(
+          id: generateId('block'),
+          messageId: userMessageId,
+          status: MessageBlockStatus.success,
+          createdAt: now,
+          content: trimmed,
+        ),
+      for (final attachment in attachments)
+        _attachmentBlock(
+          messageId: userMessageId,
+          createdAt: now,
+          attachment: attachment,
+        ),
+    ];
     final userMessage = Message(
       id: userMessageId,
       role: MessageRole.user,
@@ -119,18 +146,12 @@ class ChatController extends _$ChatController {
       topicId: topicId,
       createdAt: now,
       status: MessageStatus.success,
-      blocks: <String>[userBlockId],
+      blocks: <String>[for (final block in userBlocks) block.id],
     );
     await _repo.saveMessage(userMessage);
-    await _repo.saveMessageBlock(
-      MessageBlock.mainText(
-        id: userBlockId,
-        messageId: userMessageId,
-        status: MessageBlockStatus.success,
-        createdAt: now,
-        content: trimmed,
-      ),
-    );
+    for (final block in userBlocks) {
+      await _repo.saveMessageBlock(block);
+    }
 
     // 2. Assistant message in streaming state, persisted.
     final assistantTime = now.add(const Duration(microseconds: 1));
@@ -164,15 +185,7 @@ class ChatController extends _$ChatController {
       role: MessageRole.user,
       status: MessageStatus.success,
       text: trimmed,
-      blocks: <MessageBlock>[
-        MessageBlock.mainText(
-          id: userBlockId,
-          messageId: userMessageId,
-          status: MessageBlockStatus.success,
-          createdAt: now,
-          content: trimmed,
-        ),
-      ],
+      blocks: userBlocks,
       createdAt: now,
     );
     final assistantView = ChatMessageView(
@@ -195,7 +208,7 @@ class ChatController extends _$ChatController {
       messages: [
         for (final view in views)
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
-            LlmMessage(role: view.role, content: view.text),
+            LlmMessage(role: view.role, content: _requestContent(view)),
       ],
       tools: mcp.useFunctionTools ? mcp.tools : null,
       useResponsesAPI: current.provider.useResponsesAPI ?? false,
@@ -293,7 +306,7 @@ class ChatController extends _$ChatController {
       messages: [
         for (final view in views.sublist(0, index))
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
-            LlmMessage(role: view.role, content: view.text),
+            LlmMessage(role: view.role, content: _requestContent(view)),
       ],
       tools: mcp.useFunctionTools ? mcp.tools : null,
       useResponsesAPI: current.provider.useResponsesAPI ?? false,
@@ -387,7 +400,7 @@ class ChatController extends _$ChatController {
       messages: [
         for (final view in snapshot.messages)
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
-            LlmMessage(role: view.role, content: view.text),
+            LlmMessage(role: view.role, content: _requestContent(view)),
       ],
       tools: mcp.useFunctionTools ? mcp.tools : null,
       useResponsesAPI: current.provider.useResponsesAPI ?? false,
@@ -1429,6 +1442,65 @@ class ChatController extends _$ChatController {
       .whereType<MainTextBlock>()
       .map((block) => block.content)
       .join('\n\n');
+
+  /// Builds a `FILE` block for a pending composer [attachment], carrying its
+  /// text inline as a base64 data URI (no disk file is written for this slice).
+  MessageBlock _attachmentBlock({
+    required String messageId,
+    required DateTime createdAt,
+    required ComposerAttachment attachment,
+  }) {
+    final base64Data =
+        'data:${attachment.mimeType};base64,'
+        '${base64Encode(utf8.encode(attachment.text))}';
+    return MessageBlock.file(
+      id: generateId('block'),
+      messageId: messageId,
+      status: MessageBlockStatus.success,
+      createdAt: createdAt,
+      name: attachment.name,
+      url: '',
+      mimeType: attachment.mimeType,
+      size: attachment.size,
+      file: MessageFileReference(
+        id: attachment.id,
+        name: attachment.name,
+        originName: attachment.name,
+        size: attachment.size,
+        mimeType: attachment.mimeType,
+        base64Data: base64Data,
+      ),
+    );
+  }
+
+  /// The request content for [view]: its main text with each FILE block's
+  /// decoded text appended, so the model receives pasted-as-file content (and
+  /// likewise for history, since [_viewOf] carries FILE blocks through).
+  String _requestContent(ChatMessageView view) {
+    final parts = <String>[
+      if (view.text.isNotEmpty) view.text,
+      for (final block in view.blocks)
+        if (block is FileBlock)
+          if (_decodeFileText(block) case final text? when text.isNotEmpty)
+            text,
+    ];
+    return parts.join('\n\n');
+  }
+
+  /// Decodes a FILE block's inline text, or `null` when it carries no decodable
+  /// `text/plain` base64 data URI.
+  String? _decodeFileText(FileBlock block) {
+    if (block.mimeType != 'text/plain') return null;
+    final data = block.file?.base64Data;
+    if (data == null || data.isEmpty) return null;
+    final comma = data.indexOf(',');
+    final encoded = comma >= 0 ? data.substring(comma + 1) : data;
+    try {
+      return utf8.decode(base64Decode(encoded));
+    } catch (_) {
+      return null;
+    }
+  }
 
   String _versionSnapshotText(MessageVersion version) {
     final snapshot = version.metadata?['contentSnapshot'];
