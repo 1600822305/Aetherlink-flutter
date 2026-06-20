@@ -158,7 +158,10 @@ class _TokenDisplayState extends ConsumerState<TokenDisplay> {
     final panel = Material(
       color: Colors.transparent,
       child: Container(
-        constraints: const BoxConstraints(minWidth: 180),
+        // A compact popover (port of the web `minWidth: 180`). The max cap keeps
+        // it small on mobile — without it the stretched column expands to the
+        // near-full-screen width the layout delegate offers.
+        constraints: const BoxConstraints(minWidth: 180, maxWidth: 240),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: isDark
