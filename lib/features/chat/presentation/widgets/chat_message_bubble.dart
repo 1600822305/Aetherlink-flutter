@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_block_renderer.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/bubble_footer_layout.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_toolbar.dart';
 import 'package:aetherlink_flutter/shared/domain/message_bubble_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/color_picker.dart';
@@ -140,35 +141,33 @@ class ChatMessageBubble extends ConsumerWidget {
                       ),
                     ),
                     child: showToolbar
-                        ? Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: align,
-                            children: [
-                              content,
-                              // The bubble-internal bottom toolbar, separated
-                              // from the content by a 1px divider, mirroring
-                              // `BubbleStyleMessage`'s toolbar mode.
-                              Container(
-                                margin: const EdgeInsets.only(top: 8),
-                                padding: const EdgeInsets.only(top: 8),
-                                decoration: BoxDecoration(
-                                  border: Border(
-                                    top: BorderSide(
-                                      color:
-                                          (theme.brightness == Brightness.dark
-                                                  ? Colors.white
-                                                  : Colors.black)
-                                              .withValues(alpha: 0.1),
-                                    ),
+                        ? BubbleFooterLayout(
+                            content: content,
+                            // The bubble-internal bottom toolbar, separated
+                            // from the content by a 1px divider and stretched to
+                            // the full bubble width so the token chip sits flush
+                            // against the far edge, mirroring
+                            // `BubbleStyleMessage`'s toolbar mode.
+                            footer: Container(
+                              margin: const EdgeInsets.only(top: 8),
+                              padding: const EdgeInsets.only(top: 8),
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  top: BorderSide(
+                                    color:
+                                        (theme.brightness == Brightness.dark
+                                                ? Colors.white
+                                                : Colors.black)
+                                            .withValues(alpha: 0.1),
                                   ),
                                 ),
-                                child: MessageToolbar(
-                                  view: view,
-                                  showTtsButton: settings.showTTSButton,
-                                  customTextColor: customTextColor,
-                                ),
                               ),
-                            ],
+                              child: MessageToolbar(
+                                view: view,
+                                showTtsButton: settings.showTTSButton,
+                                customTextColor: customTextColor,
+                              ),
+                            ),
                           )
                         : content,
                   ),

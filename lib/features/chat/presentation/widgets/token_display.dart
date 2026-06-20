@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -35,10 +37,8 @@ class TokenDisplay extends ConsumerStatefulWidget {
 }
 
 class _TokenDisplayState extends ConsumerState<TokenDisplay> {
-  final LayerLink _link = LayerLink();
+  final GlobalKey _chipKey = GlobalKey();
   final OverlayPortalController _portal = OverlayPortalController();
-
-  bool get _anchorRight => widget.view.role == MessageRole.assistant;
 
   void _toggle() => _portal.isShowing ? _portal.hide() : _portal.show();
 
@@ -105,41 +105,87 @@ class _TokenDisplayState extends ConsumerState<TokenDisplay> {
             ? Colors.white.withValues(alpha: 0.8)
             : Colors.black.withValues(alpha: 0.7));
 
-    return CompositedTransformTarget(
-      link: _link,
-      child: OverlayPortal(
-        controller: _portal,
-        overlayChildBuilder: (context) =>
-            _buildPanel(isDark, totalTokens, currentMessageTokens),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(4),
-          onTap: _toggle,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(LucideIcons.hash, size: 14, color: hashColor),
-                const SizedBox(width: 4),
-                Text(
-                  displayText,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    fontFamily: 'monospace',
-                    height: 1,
-                    color: textColor,
-                  ),
+    return OverlayPortal(
+      controller: _portal,
+      overlayChildBuilder: (overlayContext) =>
+          _buildPanel(overlayContext, isDark, totalTokens, currentMessageTokens),
+      child: InkWell(
+        key: _chipKey,
+        borderRadius: BorderRadius.circular(4),
+        onTap: _toggle,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(LucideIcons.hash, size: 14, color: hashColor),
+              const SizedBox(width: 4),
+              Text(
+                displayText,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  fontFamily: 'monospace',
+                  height: 1,
+                  color: textColor,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildPanel(bool isDark, int totalTokens, int currentMessageTokens) {
+  Widget _buildPanel(
+    BuildContext overlayContext,
+    bool isDark,
+    int totalTokens,
+    int currentMessageTokens,
+  ) {
+    final chipBox = _chipKey.currentContext?.findRenderObject() as RenderBox?;
+    final overlayBox = Overlay.of(
+      overlayContext,
+    ).context.findRenderObject() as RenderBox?;
+    if (chipBox == null || overlayBox == null || !chipBox.hasSize) {
+      return const SizedBox.shrink();
+    }
+    final target =
+        chipBox.localToGlobal(Offset.zero, ancestor: overlayBox) &
+        chipBox.size;
+    final mediaQuery = MediaQuery.of(overlayContext);
+
+    final panel = Material(
+      color: Colors.transparent,
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isDark
+              ? const Color(0xFA232323)
+              : Colors.white.withValues(alpha: 0.98),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.1)
+                : Colors.black.withValues(alpha: 0.08),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.1),
+              blurRadius: 20,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: _statRows(totalTokens, currentMessageTokens),
+        ),
+      ),
+    );
+
     return Stack(
       children: [
         Positioned.fill(
@@ -148,41 +194,12 @@ class _TokenDisplayState extends ConsumerState<TokenDisplay> {
             onTap: _portal.hide,
           ),
         ),
-        CompositedTransformFollower(
-          link: _link,
-          targetAnchor: _anchorRight ? Alignment.topRight : Alignment.topLeft,
-          followerAnchor: _anchorRight
-              ? Alignment.bottomRight
-              : Alignment.bottomLeft,
-          offset: const Offset(0, -6),
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              constraints: const BoxConstraints(minWidth: 180),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF232323) : Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.1)
-                      : Colors.black.withValues(alpha: 0.08),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.1),
-                    blurRadius: 20,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: _statRows(totalTokens, currentMessageTokens),
-              ),
-            ),
+        CustomSingleChildLayout(
+          delegate: _PopoverLayoutDelegate(
+            target: target,
+            padding: mediaQuery.padding,
           ),
+          child: panel,
         ),
       ],
     );
@@ -295,4 +312,54 @@ class _StatRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Positions the usage popover above the chip, horizontally centred on it and
+/// clamped within the safe viewport, flipping below the chip when there isn't
+/// room above. Mirrors the original MUI `Popover` (anchor top-center, transform
+/// bottom-center) while staying on-screen on narrow mobile layouts.
+class _PopoverLayoutDelegate extends SingleChildLayoutDelegate {
+  _PopoverLayoutDelegate({required this.target, required this.padding});
+
+  /// The chip's rect in the overlay's coordinate space.
+  final Rect target;
+
+  /// The viewport's safe-area insets, kept clear of the panel.
+  final EdgeInsets padding;
+
+  static const double _gap = 6;
+  static const double _margin = 8;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    return BoxConstraints(
+      maxWidth: math.max(0.0, constraints.maxWidth - 2 * _margin),
+      maxHeight: math.max(0.0, constraints.maxHeight - 2 * _margin),
+    );
+  }
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final left = padding.left + _margin;
+    final right = size.width - padding.right - _margin;
+    final top = padding.top + _margin;
+    final bottom = size.height - padding.bottom - _margin;
+
+    final maxX = math.max(left, right - childSize.width);
+    final x = (target.center.dx - childSize.width / 2).clamp(left, maxX);
+
+    var y = target.top - _gap - childSize.height;
+    if (y < top) {
+      final below = target.bottom + _gap;
+      y = (below + childSize.height <= bottom) ? below : top;
+    }
+    final maxY = math.max(top, bottom - childSize.height);
+    final clampedY = y.clamp(top, maxY);
+
+    return Offset(x.toDouble(), clampedY.toDouble());
+  }
+
+  @override
+  bool shouldRelayout(_PopoverLayoutDelegate oldDelegate) =>
+      target != oldDelegate.target || padding != oldDelegate.padding;
 }
