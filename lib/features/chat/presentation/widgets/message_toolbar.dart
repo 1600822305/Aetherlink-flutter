@@ -14,6 +14,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_version.dart';
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/token_display.dart';
 
 /// The message bubble bottom toolbar (`MessageActions` `renderMode === 'toolbar'`).
 ///
@@ -336,20 +337,28 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
       ),
     ];
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Row(
-        mainAxisAlignment: _isUser
-            ? MainAxisAlignment.end
-            : MainAxisAlignment.start,
-        children: [
-          for (final button in buttons)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: button,
-            ),
-        ],
-      ),
+    final buttonGroup = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final button in buttons)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: button,
+          ),
+      ],
+    );
+
+    // Token usage chip: to the right of the buttons for AI replies, to the left
+    // for user messages (matching `MessageActions`' toolbar layout). The whole
+    // row hugs its content (`min`) so the enclosing bubble keeps shrink-wrapping
+    // to the message width instead of stretching to its max width.
+    final tokenDisplay = TokenDisplay(view: _view, baseColor: baseColor);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: _isUser
+          ? [tokenDisplay, const SizedBox(width: 4), buttonGroup]
+          : [buttonGroup, const SizedBox(width: 4), tokenDisplay],
     );
   }
 }
