@@ -15,9 +15,9 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/cod
 ///   * fenced code blocks → [CodeBlockView] (language header + copy);
 ///   * inline code → a subtle monospace chip;
 ///   * links → opened externally (`target="_blank"` equivalent);
-///   * tables → [MarkdownTable], mirroring the original `markdown.css` table
-///     styling (soft borders, rounded container, header tint, zebra rows,
-///     horizontal scroll).
+///   * tables → [MarkdownTable], mirroring Kelivo's renderer (columns flex to
+///     fill the width with wrapping cells, falling back to fixed-width columns
+///     inside a horizontal scroll view only when there are many columns).
 ///
 /// LaTeX uses single/double dollar delimiters (`$...$`, `$$...$$`), matching the
 /// original's `mathEnableSingleDollar` default.
@@ -107,10 +107,15 @@ class AppMarkdown extends StatelessWidget {
   }
 }
 
-/// A Markdown table mirroring the original web `markdown.css` styling:
-/// rounded scroll container with a subtle shadow, soft 1px cell borders, a
-/// tinted bold header row, zebra-striped body rows, per-cell minimum width and
-/// horizontal scrolling when the content overflows.
+/// A Markdown table mirroring Kelivo's renderer: columns flex to fill the
+/// available width (cells wrap) so typical tables never scroll horizontally,
+/// switching to fixed-width columns inside a plain horizontal scroll view only
+/// when there are many columns that would otherwise be too cramped.
+///
+/// Colours come from the Material [ColorScheme]: a soft [ColorScheme.outlineVariant]
+/// border, a primary-tinted header and a very faint primary-tinted body, all
+/// inside a rounded, clipped frame. There is deliberately no overlay
+/// [Scrollbar] — it would otherwise paint over the last row of short tables.
 class MarkdownTable extends StatelessWidget {
   const MarkdownTable({required this.rows, required this.baseStyle, super.key});
 
@@ -119,22 +124,20 @@ class MarkdownTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final borderColor = isDark
-        ? const Color(0xFF404040)
-        : const Color(0xFFE0E0E0);
-    final headerBg = isDark ? const Color(0xFF2D3748) : const Color(0xFFF8F9FA);
-    final zebraBg = isDark ? const Color(0xFF2D3748) : const Color(0xFFF8F9FA);
-    final containerBg = isDark
-        ? const Color(0xFF1A1A1A)
-        : const Color(0xFFFFFFFF);
-    final cellColor = isDark
-        ? const Color(0xFFE0E0E0)
-        : const Color(0xFF333333);
-    final headerColor = isDark
-        ? const Color(0xFFF7FAFC)
-        : const Color(0xFF2C3E50);
+    final borderColor = cs.outlineVariant.withValues(
+      alpha: isDark ? 0.22 : 0.30,
+    );
+    final headerBg = Color.alphaBlend(
+      cs.primary.withValues(alpha: isDark ? 0.15 : 0.07),
+      cs.surface,
+    );
+    final bodyBg = Color.alphaBlend(
+      cs.primary.withValues(alpha: isDark ? 0.04 : 0.015),
+      cs.surface,
+    );
 
     final colCount = rows.fold<int>(
       0,
@@ -142,127 +145,131 @@ class MarkdownTable extends StatelessWidget {
     );
     if (colCount == 0) return const SizedBox.shrink();
 
-    final bodyRows = rows.where((r) => !r.isHeader).toList();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        final columnWidth = _columnWidth(maxWidth, colCount);
+        final scrollHorizontally =
+            colCount >= 4 && columnWidth * colCount > maxWidth;
 
-    final tableRows = <TableRow>[
-      for (final row in rows.where((r) => r.isHeader))
-        _buildRow(
+        final table = _buildTable(
           context,
-          row,
-          decoration: BoxDecoration(color: headerBg),
-          textColor: headerColor,
-          isHeader: true,
           colCount: colCount,
-        ),
-      // The original applies zebra striping to `tbody tr:nth-child(even)`,
-      // i.e. the 2nd, 4th, ... body rows (0-based odd indices).
-      for (var i = 0; i < bodyRows.length; i++)
-        _buildRow(
-          context,
-          bodyRows[i],
-          decoration: i.isOdd ? BoxDecoration(color: zebraBg) : null,
-          textColor: cellColor,
-          isHeader: false,
-          colCount: colCount,
-        ),
-    ];
+          borderColor: borderColor,
+          headerBg: headerBg,
+          columnWidth: columnWidth,
+          fixedColumns: scrollHorizontally,
+        );
 
-    final controller = ScrollController();
+        final frame = Container(
+          decoration: BoxDecoration(
+            color: bodyBg,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          foregroundDecoration: BoxDecoration(
+            border: Border.all(color: borderColor, width: 0.8),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: scrollHorizontally
+              ? SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const ClampingScrollPhysics(),
+                  clipBehavior: Clip.hardEdge,
+                  child: table,
+                )
+              : table,
+        );
 
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        color: containerBg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.1),
-            blurRadius: 3,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Scrollbar(
-        controller: controller,
-        child: SingleChildScrollView(
-          controller: controller,
-          scrollDirection: Axis.horizontal,
-          child: Table(
-            defaultColumnWidth: const _MinWidthColumnWidth(),
-            defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-            border: TableBorder(
-              horizontalInside: BorderSide(color: borderColor),
-              verticalInside: BorderSide(color: borderColor),
-            ),
-            children: tableRows,
-          ),
-        ),
-      ),
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: frame,
+        );
+      },
     );
   }
 
-  TableRow _buildRow(
-    BuildContext context,
-    CustomTableRow row, {
-    required BoxDecoration? decoration,
-    required Color textColor,
-    required bool isHeader,
+  Widget _buildTable(
+    BuildContext context, {
     required int colCount,
+    required Color borderColor,
+    required Color headerBg,
+    required double columnWidth,
+    required bool fixedColumns,
   }) {
-    return TableRow(
-      decoration: decoration,
-      children: List.generate(colCount, (i) {
-        final field = i < row.fields.length ? row.fields[i] : null;
-        final data = field?.data ?? '';
-        final align = field?.alignment ?? TextAlign.left;
-
-        final cellStyle = baseStyle.copyWith(
-          color: textColor,
-          fontWeight: isHeader ? FontWeight.bold : baseStyle.fontWeight,
-        );
-
-        return Container(
-          constraints: const BoxConstraints(minWidth: 80),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          alignment: switch (align) {
-            TextAlign.center => Alignment.center,
-            TextAlign.right => Alignment.centerRight,
-            _ => Alignment.centerLeft,
-          },
-          child: GptMarkdown(
-            data,
-            style: cellStyle,
-            textAlign: align,
-            useDollarSignsForLatex: true,
-            onLinkTap: AppMarkdown._openLink,
-            highlightBuilder: AppMarkdown._inlineCode,
+    final columnWidth0 = fixedColumns
+        ? FixedColumnWidth(columnWidth)
+        : const FlexColumnWidth();
+    return Table(
+      defaultColumnWidth: columnWidth0,
+      columnWidths: {for (var i = 0; i < colCount; i++) i: columnWidth0},
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      border: TableBorder(
+        horizontalInside: BorderSide(color: borderColor, width: 0.5),
+        verticalInside: BorderSide(color: borderColor, width: 0.5),
+      ),
+      children: [
+        for (final row in rows)
+          TableRow(
+            decoration: row.isHeader ? BoxDecoration(color: headerBg) : null,
+            children: [
+              for (var c = 0; c < colCount; c++)
+                _cell(
+                  context,
+                  field: c < row.fields.length ? row.fields[c] : null,
+                  isHeader: row.isHeader,
+                ),
+            ],
           ),
-        );
-      }),
+      ],
     );
   }
-}
 
-/// A table column that sizes to the natural (unwrapped) width of its widest
-/// cell, capped at the available width — mirroring the original's
-/// `white-space: nowrap` plus horizontal scrolling behaviour.
-class _MinWidthColumnWidth extends TableColumnWidth {
-  const _MinWidthColumnWidth();
+  Widget _cell(
+    BuildContext context, {
+    required CustomTableField? field,
+    required bool isHeader,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    final data = field?.data ?? '';
+    final align = field?.alignment ?? TextAlign.left;
 
-  @override
-  double maxIntrinsicWidth(Iterable<RenderBox> cells, double containerWidth) {
-    var width = 0.0;
-    for (final cell in cells) {
-      cell.layout(const BoxConstraints(), parentUsesSize: true);
-      width = math.max(width, cell.size.width);
-    }
-    return math.min(containerWidth, width);
+    final cellStyle = baseStyle.copyWith(
+      fontWeight: isHeader ? FontWeight.w600 : baseStyle.fontWeight,
+      color: isHeader ? cs.onSurface : cs.onSurface.withValues(alpha: 0.90),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      child: Align(
+        alignment: switch (align) {
+          TextAlign.center => Alignment.center,
+          TextAlign.right => Alignment.centerRight,
+          _ => Alignment.centerLeft,
+        },
+        child: GptMarkdown(
+          data,
+          style: cellStyle,
+          textAlign: align,
+          useDollarSignsForLatex: true,
+          onLinkTap: AppMarkdown._openLink,
+          highlightBuilder: AppMarkdown._inlineCode,
+        ),
+      ),
+    );
   }
 
-  @override
-  double minIntrinsicWidth(Iterable<RenderBox> cells, double containerWidth) {
-    return 0;
+  /// Per-column width for the fixed-column horizontal-scroll fallback, mirroring
+  /// Kelivo's compact sizing (`(width - 16) / visibleColumns`, clamped). Only
+  /// used when [colCount] >= 4 and the columns would overflow the viewport.
+  double _columnWidth(double maxWidth, int colCount) {
+    final safeMax = maxWidth.isFinite && maxWidth > 0 ? maxWidth : 360.0;
+    if (colCount <= 1) {
+      return (safeMax - 16).clamp(220.0, 360.0).toDouble();
+    }
+    final visibleColumns = colCount >= 4 ? 2.45 : colCount.toDouble();
+    return ((safeMax - 16) / visibleColumns).clamp(112.0, 178.0).toDouble();
   }
 }
