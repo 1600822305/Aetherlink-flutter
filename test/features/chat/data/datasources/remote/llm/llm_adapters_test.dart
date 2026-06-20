@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/llm
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/provider_factory.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_content_image.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
@@ -299,6 +300,79 @@ data: {"candidates":[{"content":{"role":"model","parts":[{"text":" friend"}]},"f
         'https://gemini.test/v1beta/models/test-model:streamGenerateContent?alt=sse',
       );
       expect(adapter.request!.headers['x-goog-api-key'], 'secret-key');
+    });
+  });
+
+  group('image (vision) serialization', () {
+    LlmChatRequest imageRequest(Model model, {bool responses = false}) {
+      return LlmChatRequest(
+        model: model,
+        system: 'You are concise.',
+        messages: const [
+          LlmMessage(
+            role: MessageRole.user,
+            content: 'What is this?',
+            images: [
+              LlmContentImage(mimeType: 'image/png', base64Data: 'AAAA'),
+            ],
+          ),
+        ],
+        useResponsesAPI: responses,
+      );
+    }
+
+    test('OpenAI chat completions emits an image_url content part', () async {
+      final adapter = _ReplayAdapter('data: [DONE]\n');
+      final gateway = OpenAiCompatibleAdapter(_dioWith(adapter));
+
+      await gateway.streamChat(imageRequest(_model(provider: 'openai'))).drain<void>();
+
+      expect(adapter.requestBody, contains('"type":"image_url"'));
+      expect(
+        adapter.requestBody,
+        contains('data:image/png;base64,AAAA'),
+      );
+      expect(adapter.requestBody, contains('"type":"text","text":"What is this?"'));
+    });
+
+    test('OpenAI Responses emits an input_image content part', () async {
+      final adapter = _ReplayAdapter('data: [DONE]\n');
+      final gateway = OpenAiCompatibleAdapter(_dioWith(adapter));
+
+      await gateway
+          .streamChat(imageRequest(_model(provider: 'openai'), responses: true))
+          .drain<void>();
+
+      expect(adapter.requestBody, contains('"type":"input_image"'));
+      expect(adapter.requestBody, contains('data:image/png;base64,AAAA'));
+    });
+
+    test('Anthropic emits a base64 image source block', () async {
+      final adapter = _ReplayAdapter(
+        'event: message_stop\ndata: {"type":"message_stop"}\n',
+      );
+      final gateway = AnthropicAdapter(_dioWith(adapter));
+
+      await gateway
+          .streamChat(imageRequest(_model(provider: 'anthropic')))
+          .drain<void>();
+
+      expect(adapter.requestBody, contains('"type":"image"'));
+      expect(adapter.requestBody, contains('"media_type":"image/png"'));
+      expect(adapter.requestBody, contains('"data":"AAAA"'));
+    });
+
+    test('Gemini emits an inlineData part', () async {
+      final adapter = _ReplayAdapter(
+        'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}\n',
+      );
+      final gateway = GeminiAdapter(_dioWith(adapter));
+
+      await gateway.streamChat(imageRequest(_model(provider: 'gemini'))).drain<void>();
+
+      expect(adapter.requestBody, contains('"inlineData"'));
+      expect(adapter.requestBody, contains('"mimeType":"image/png"'));
+      expect(adapter.requestBody, contains('"data":"AAAA"'));
     });
   });
 

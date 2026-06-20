@@ -25,6 +25,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_version
 import 'package:aetherlink_flutter/features/chat/domain/entities/metrics.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/usage.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_content_image.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
@@ -208,7 +209,11 @@ class ChatController extends _$ChatController {
       messages: [
         for (final view in views)
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
-            LlmMessage(role: view.role, content: _requestContent(view)),
+            LlmMessage(
+              role: view.role,
+              content: _requestContent(view),
+              images: _requestImages(view),
+            ),
       ],
       tools: mcp.useFunctionTools ? mcp.tools : null,
       useResponsesAPI: current.provider.useResponsesAPI ?? false,
@@ -306,7 +311,11 @@ class ChatController extends _$ChatController {
       messages: [
         for (final view in views.sublist(0, index))
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
-            LlmMessage(role: view.role, content: _requestContent(view)),
+            LlmMessage(
+              role: view.role,
+              content: _requestContent(view),
+              images: _requestImages(view),
+            ),
       ],
       tools: mcp.useFunctionTools ? mcp.tools : null,
       useResponsesAPI: current.provider.useResponsesAPI ?? false,
@@ -400,7 +409,11 @@ class ChatController extends _$ChatController {
       messages: [
         for (final view in snapshot.messages)
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
-            LlmMessage(role: view.role, content: _requestContent(view)),
+            LlmMessage(
+              role: view.role,
+              content: _requestContent(view),
+              images: _requestImages(view),
+            ),
       ],
       tools: mcp.useFunctionTools ? mcp.tools : null,
       useResponsesAPI: current.provider.useResponsesAPI ?? false,
@@ -1443,16 +1456,42 @@ class ChatController extends _$ChatController {
       .map((block) => block.content)
       .join('\n\n');
 
-  /// Builds a `FILE` block for a pending composer [attachment], carrying its
-  /// text inline as a base64 data URI (no disk file is written for this slice).
+  /// Builds the message block for a pending composer [attachment], carrying its
+  /// payload inline (no disk file is written): an image becomes an `IMAGE`
+  /// block (raw base64 for inline rendering), a text/file attachment a `FILE`
+  /// block (a base64 data URI; text attachments stay `text/plain` so
+  /// [_decodeFileText] feeds them to the model).
   MessageBlock _attachmentBlock({
     required String messageId,
     required DateTime createdAt,
     required ComposerAttachment attachment,
   }) {
-    final base64Data =
-        'data:${attachment.mimeType};base64,'
-        '${base64Encode(utf8.encode(attachment.text))}';
+    if (attachment.kind == ComposerAttachmentKind.image) {
+      final raw = attachment.base64Data ?? '';
+      return MessageBlock.image(
+        id: generateId('block'),
+        messageId: messageId,
+        status: MessageBlockStatus.success,
+        createdAt: createdAt,
+        url: '',
+        mimeType: attachment.mimeType,
+        base64Data: raw,
+        size: attachment.size,
+        file: MessageFileReference(
+          id: attachment.id,
+          name: attachment.name,
+          originName: attachment.name,
+          size: attachment.size,
+          mimeType: attachment.mimeType,
+          base64Data: 'data:${attachment.mimeType};base64,$raw',
+        ),
+      );
+    }
+    final isText = attachment.kind == ComposerAttachmentKind.text;
+    final encoded = isText
+        ? base64Encode(utf8.encode(attachment.text ?? ''))
+        : (attachment.base64Data ?? '');
+    final mimeType = isText ? 'text/plain' : attachment.mimeType;
     return MessageBlock.file(
       id: generateId('block'),
       messageId: messageId,
@@ -1460,17 +1499,48 @@ class ChatController extends _$ChatController {
       createdAt: createdAt,
       name: attachment.name,
       url: '',
-      mimeType: attachment.mimeType,
+      mimeType: mimeType,
       size: attachment.size,
       file: MessageFileReference(
         id: attachment.id,
         name: attachment.name,
         originName: attachment.name,
         size: attachment.size,
-        mimeType: attachment.mimeType,
-        base64Data: base64Data,
+        mimeType: mimeType,
+        base64Data: 'data:$mimeType;base64,$encoded',
       ),
     );
+  }
+
+  /// The image parts on [view] (raw base64) for a multimodal request, decoded
+  /// from its `IMAGE` blocks; `null` when it has none so plain-text turns are
+  /// serialised unchanged.
+  List<LlmContentImage>? _requestImages(ChatMessageView view) {
+    final images = <LlmContentImage>[
+      for (final block in view.blocks)
+        if (block is ImageBlock)
+          if (_imagePart(block) case final part?) part,
+    ];
+    return images.isEmpty ? null : images;
+  }
+
+  /// Resolves an [ImageBlock] to a request image part, preferring its raw
+  /// [ImageBlock.base64Data] and falling back to the file reference's `data:`
+  /// URI; `null` when neither carries data.
+  LlmContentImage? _imagePart(ImageBlock block) {
+    final raw = block.base64Data;
+    if (raw != null && raw.isNotEmpty) {
+      return LlmContentImage(mimeType: block.mimeType, base64Data: raw);
+    }
+    final reference = block.file?.base64Data;
+    if (reference != null && reference.isNotEmpty) {
+      final comma = reference.indexOf(',');
+      final encoded = comma >= 0 ? reference.substring(comma + 1) : reference;
+      if (encoded.isNotEmpty) {
+        return LlmContentImage(mimeType: block.mimeType, base64Data: encoded);
+      }
+    }
+    return null;
   }
 
   /// The request content for [view]: its main text with each FILE block's
