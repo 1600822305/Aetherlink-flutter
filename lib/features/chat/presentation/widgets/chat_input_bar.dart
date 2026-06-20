@@ -46,6 +46,12 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
   late final FocusNode _focusNode = FocusNode(onKeyEvent: _handleKeyEvent);
   bool _hasText = false;
 
+  /// The field text as of the last change, so [_onTextChanged] can diff a step
+  /// to spot a pasted run; and a guard so the cleanup write we make when
+  /// converting one doesn't re-enter the detector.
+  String _lastText = '';
+  bool _interceptingPaste = false;
+
   /// Cached in [build] so the synchronous [_handleKeyEvent] can decide whether a
   /// hardware Enter should fire a send without re-deriving model/stream state.
   bool _canSend = false;
@@ -53,6 +59,7 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
   @override
   void initState() {
     super.initState();
+    _lastText = _controller.text;
     _controller.addListener(_onTextChanged);
   }
 
@@ -89,6 +96,49 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
     if (hasText != _hasText) {
       setState(() => _hasText = hasText);
     }
+    _maybeInterceptPastedRun();
+  }
+
+  /// Catch-all for paste paths that bypass both `PasteTextIntent` and the
+  /// context menu (notably the mobile IME clipboard chip, which commits text
+  /// straight through the input connection): when 长文本粘贴为文件 is on and a single
+  /// edit drops in a run longer than the threshold that exactly matches the
+  /// clipboard, pull it back out of the field and stage it as a file instead.
+  Future<void> _maybeInterceptPastedRun() async {
+    if (_interceptingPaste) return;
+    final oldText = _lastText;
+    final newText = _controller.text;
+    _lastText = newText;
+
+    final settings = ref.read(sidebarSettingsControllerProvider);
+    if (!settings.pasteLongTextAsFile) return;
+    if (newText.length - oldText.length <= settings.pasteLongTextThreshold) {
+      return;
+    }
+    final insertion = detectInsertion(oldText, newText);
+    if (insertion == null ||
+        insertion.inserted.length <= settings.pasteLongTextThreshold) {
+      return;
+    }
+    // Only treat it as a paste when the run is exactly the clipboard text, so a
+    // long predictive-text / programmatic insert is left alone.
+    final clip = await Clipboard.getData(Clipboard.kTextPlain);
+    if (clip?.text != insertion.inserted) return;
+    final attachment = convertPastedTextToAttachment(
+      text: insertion.inserted,
+      enabled: settings.pasteLongTextAsFile,
+      threshold: settings.pasteLongTextThreshold,
+    );
+    if (attachment == null || !mounted) return;
+
+    _interceptingPaste = true;
+    ref.read(composerAttachmentsProvider.notifier).add(attachment);
+    _controller.value = TextEditingValue(
+      text: insertion.restored,
+      selection: TextSelection.collapsed(offset: insertion.caret),
+    );
+    _lastText = insertion.restored;
+    _interceptingPaste = false;
   }
 
   @override
