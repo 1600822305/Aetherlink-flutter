@@ -187,6 +187,22 @@ class GeminiAdapter implements LlmGateway {
         ],
       };
     }
+    final images = m.images;
+    if (images != null && images.isNotEmpty) {
+      return {
+        'role': _roleValue(m.role),
+        'parts': [
+          if (m.content.isNotEmpty) {'text': m.content},
+          for (final image in images)
+            {
+              'inlineData': {
+                'mimeType': image.mimeType,
+                'data': image.base64Data,
+              },
+            },
+        ],
+      };
+    }
     return {
       'role': _roleValue(m.role),
       'parts': [

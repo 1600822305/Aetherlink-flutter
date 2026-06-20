@@ -77,6 +77,7 @@ ComposerAttachment? convertPastedTextToAttachment({
     name: '粘贴的文本_${pasteFileTimestamp(now ?? DateTime.now())}.txt',
     mimeType: 'text/plain',
     size: utf8.encode(text).length,
+    kind: ComposerAttachmentKind.text,
     text: text,
   );
 }

@@ -201,6 +201,7 @@ void main() {
                 name: '粘贴的文本_20260620T061205.txt',
                 mimeType: 'text/plain',
                 size: 11,
+                kind: ComposerAttachmentKind.text,
                 text: 'hello world',
               ),
             ],
@@ -251,6 +252,7 @@ void main() {
               name: 'note.txt',
               mimeType: 'text/plain',
               size: 4,
+              kind: ComposerAttachmentKind.text,
               text: 'body',
             ),
           ],
@@ -265,6 +267,48 @@ void main() {
 
     final request = gateway.lastRequest!;
     expect(request.messages.single.content, 'body');
+  });
+
+  test('send with an image attachment stages an IMAGE block + image part', () async {
+    final gateway = _FakeGateway(const [
+      LlmStreamChunk.textDelta('a cat'),
+      LlmStreamChunk.done(),
+    ]);
+    final container = _container(
+      gateway: gateway,
+      repo: repo,
+      current: _currentModel(),
+    );
+
+    await container.read(chatControllerProvider.future);
+    await container
+        .read(chatControllerProvider.notifier)
+        .send(
+          'what is this?',
+          attachments: const [
+            ComposerAttachment(
+              id: 'img_1',
+              name: 'cat.png',
+              mimeType: 'image/png',
+              size: 3,
+              kind: ComposerAttachmentKind.image,
+              base64Data: 'AAAA',
+            ),
+          ],
+        );
+
+    final state = container.read(chatControllerProvider).requireValue;
+    final user = state.messages.first;
+    final imageBlock = user.blocks.whereType<ImageBlock>().single;
+    expect(imageBlock.mimeType, 'image/png');
+    expect(imageBlock.base64Data, 'AAAA');
+
+    final request = gateway.lastRequest!;
+    final message = request.messages.single;
+    expect(message.content, 'what is this?');
+    expect(message.images, hasLength(1));
+    expect(message.images!.single.mimeType, 'image/png');
+    expect(message.images!.single.base64Data, 'AAAA');
   });
 
   test('send with neither text nor attachments is a no-op', () async {
