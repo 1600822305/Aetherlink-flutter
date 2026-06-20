@@ -202,6 +202,24 @@ class AnthropicAdapter implements LlmGateway {
         ],
       };
     }
+    final images = m.images;
+    if (images != null && images.isNotEmpty) {
+      return {
+        'role': _roleValue(m.role),
+        'content': [
+          if (m.content.isNotEmpty) {'type': 'text', 'text': m.content},
+          for (final image in images)
+            {
+              'type': 'image',
+              'source': {
+                'type': 'base64',
+                'media_type': image.mimeType,
+                'data': image.base64Data,
+              },
+            },
+        ],
+      };
+    }
     return {'role': _roleValue(m.role), 'content': m.content};
   }
 

@@ -349,6 +349,22 @@ class OpenAiCompatibleAdapter implements LlmGateway {
         ],
       };
     }
+    final images = m.images;
+    if (images != null && images.isNotEmpty) {
+      return {
+        'role': _roleValue(m.role),
+        'content': [
+          if (m.content.isNotEmpty) {'type': 'text', 'text': m.content},
+          for (final image in images)
+            {
+              'type': 'image_url',
+              'image_url': {
+                'url': 'data:${image.mimeType};base64,${image.base64Data}',
+              },
+            },
+        ],
+      };
+    }
     return {'role': _roleValue(m.role), 'content': m.content};
   }
 
@@ -395,6 +411,11 @@ class OpenAiCompatibleAdapter implements LlmGateway {
         'role': 'user',
         'content': [
           {'type': 'input_text', 'text': m.content},
+          for (final image in m.images ?? const [])
+            {
+              'type': 'input_image',
+              'image_url': 'data:${image.mimeType};base64,${image.base64Data}',
+            },
         ],
       },
     ];
