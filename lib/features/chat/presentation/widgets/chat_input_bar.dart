@@ -12,6 +12,7 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/composer_attachments_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/long_text_paste.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
@@ -212,6 +213,9 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
     // Watched so arming/disarming 清空内容's confirm repaints the standalone button
     // (确认清空 / red AlertTriangle); the action reads the latch lazily.
     ref.watch(inputClearConfirmProvider);
+    // Watched so toggling the MCP 工具 总开关 repaints the standalone MCP button
+    // (green when enabled); [ChatInputActions] reads the value lazily.
+    ref.watch(mcpToolsControllerProvider);
 
     final CurrentModel? current = ref.watch(appCurrentModelProvider).value;
     final hasApiKey =
