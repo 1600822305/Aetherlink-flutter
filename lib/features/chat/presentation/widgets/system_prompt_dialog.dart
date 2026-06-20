@@ -332,21 +332,27 @@ class _SystemPromptDialogState extends ConsumerState<_SystemPromptDialog> {
           const SizedBox(height: 8),
           _modeToggle(theme, isMobile),
           const SizedBox(height: 8),
-          Text(
-            '当前编辑: $_saveTarget',
-            style: TextStyle(
-              fontSize: isMobile ? 12 : 11,
-              fontWeight: FontWeight.w500,
-              color: textSecondary,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Align(
-            alignment: Alignment.centerRight,
-            child: OutlinedButton(
-              onPressed: combined ? null : _pickPreset,
-              child: const Text('选择预设提示词'),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '当前编辑: $_saveTarget',
+                  style: TextStyle(
+                    fontSize: isMobile ? 12 : 11,
+                    fontWeight: FontWeight.w500,
+                    color: textSecondary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton(
+                onPressed: combined ? null : _pickPreset,
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: const Text('选择预设提示词'),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           Divider(height: 1, thickness: 1, color: theme.dividerColor),
