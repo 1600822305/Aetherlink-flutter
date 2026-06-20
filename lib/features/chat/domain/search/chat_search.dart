@@ -181,8 +181,9 @@ List<MatchRange> computeMatchRanges(String text, ParsedQuery parsed) {
     final last = merged.last;
     final cur = ranges[i];
     if (cur.start <= last.end) {
-      if (cur.end > last.end)
+      if (cur.end > last.end) {
         merged[merged.length - 1] = MatchRange(last.start, cur.end);
+      }
     } else {
       merged.add(cur);
     }
