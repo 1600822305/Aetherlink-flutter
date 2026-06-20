@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart
 import 'package:aetherlink_flutter/features/chat/application/composer_attachment_builders.dart';
 import 'package:aetherlink_flutter/features/chat/application/composer_attachments_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/mcp_quick_panel_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/quick_phrase_sheet.dart';
@@ -47,6 +48,7 @@ class ChatInputActions implements InputBoxActions {
     InputBoxAction.generateImage => _mode == InputMode.image,
     InputBoxAction.generateVideo => _mode == InputMode.video,
     InputBoxAction.clearTopic => _ref.read(inputClearConfirmProvider),
+    InputBoxAction.mcpTools => _ref.read(mcpToolsControllerProvider).enabled,
     _ => false,
   };
 
