@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -280,11 +282,7 @@ class _ComposerAttachmentChips extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  LucideIcons.fileText,
-                  size: 16,
-                  color: theme.colorScheme.primary,
-                ),
+                _leading(theme, attachment),
                 const SizedBox(width: 6),
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 160),
@@ -320,6 +318,36 @@ class _ComposerAttachmentChips extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+
+  /// The chip's leading affordance: a small thumbnail for an image attachment,
+  /// else a type icon (binary file vs text/document).
+  Widget _leading(ThemeData theme, ComposerAttachment attachment) {
+    if (attachment.kind == ComposerAttachmentKind.image) {
+      final data = attachment.base64Data;
+      if (data != null && data.isNotEmpty) {
+        try {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: Image.memory(
+              base64Decode(data),
+              width: 28,
+              height: 28,
+              fit: BoxFit.cover,
+            ),
+          );
+        } on FormatException {
+          // fall through to the icon
+        }
+      }
+    }
+    return Icon(
+      attachment.kind == ComposerAttachmentKind.file
+          ? LucideIcons.file
+          : LucideIcons.fileText,
+      size: 16,
+      color: theme.colorScheme.primary,
     );
   }
 

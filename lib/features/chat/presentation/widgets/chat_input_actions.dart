@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/quick_phrases_access.dart';
+import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/application/composer_attachment_builders.dart';
+import 'package:aetherlink_flutter/features/chat/application/composer_attachments_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/mcp_quick_panel_dialog.dart';
@@ -81,10 +84,13 @@ class ChatInputActions implements InputBoxActions {
         _openQuickPhrase(context);
       case InputBoxAction.mcpTools:
         showMcpQuickPanel(context);
-      case InputBoxAction.knowledge:
       case InputBoxAction.photoSelect:
+        _pickImages(context, fromCamera: false);
       case InputBoxAction.camera:
+        _pickImages(context, fromCamera: true);
       case InputBoxAction.fileUpload:
+        _pickFile(context);
+      case InputBoxAction.knowledge:
       case InputBoxAction.note:
       case InputBoxAction.aiDebate:
       case InputBoxAction.multiModel:
@@ -115,6 +121,62 @@ class ChatInputActions implements InputBoxActions {
 
   void _openQuickPhrase(BuildContext context) =>
       showQuickPhraseSheet(context, onInsert: insertText);
+
+  /// Picks image(s) — a single capture from the camera, or one or more from the
+  /// gallery — and stages each as an image attachment (port of `UploadMenu`'s
+  /// 拍照 / 相册 items). A cancel is a silent no-op; a failure surfaces a snackbar.
+  Future<void> _pickImages(
+    BuildContext context, {
+    required bool fromCamera,
+  }) async {
+    final picker = _ref.read(imagePickerApiProvider);
+    try {
+      final picked = fromCamera
+          ? [
+              if (await picker.pickFromCamera() case final image?) image,
+            ]
+          : await picker.pickMultipleFromGallery();
+      if (picked.isEmpty) return;
+      final attachments = _ref.read(composerAttachmentsProvider.notifier);
+      for (final image in picked) {
+        attachments.add(
+          imageAttachment(name: image.name, bytes: image.bytes),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) _snack(context, '选择图片失败');
+    }
+  }
+
+  /// Picks a file and stages it as an attachment (port of `UploadMenu`'s 文件
+  /// item): text files ride along as model-readable text, others as binary file
+  /// attachments. A cancel is a silent no-op; a failure surfaces a snackbar.
+  Future<void> _pickFile(BuildContext context) async {
+    final fs = _ref.read(fileSystemApiProvider);
+    try {
+      final picked = await fs.pickFile();
+      if (picked == null) return;
+      var bytes = picked.bytes;
+      if (bytes == null && picked.path.isNotEmpty) {
+        bytes = await fs.readAsBytes(picked.path);
+      }
+      if (bytes == null) {
+        if (context.mounted) _snack(context, '读取文件失败');
+        return;
+      }
+      _ref
+          .read(composerAttachmentsProvider.notifier)
+          .add(fileAttachment(name: picked.name, bytes: bytes));
+    } catch (_) {
+      if (context.mounted) _snack(context, '选择文件失败');
+    }
+  }
+
+  void _snack(BuildContext context, String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
 
   /// Opens [menu] as a bottom sheet. The 清空内容 row runs its own 二次确认 inside the
   /// sheet and pops [InputBoxAction.clearTopic] once confirmed (handled here as a

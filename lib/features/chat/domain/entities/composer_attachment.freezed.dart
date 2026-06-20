@@ -14,7 +14,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$ComposerAttachment {
 
- String get id; String get name; String get mimeType; int get size; String get text;
+ String get id; String get name; String get mimeType; int get size; ComposerAttachmentKind get kind; String? get text; String? get base64Data;
 /// Create a copy of ComposerAttachment
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -25,16 +25,16 @@ $ComposerAttachmentCopyWith<ComposerAttachment> get copyWith => _$ComposerAttach
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ComposerAttachment&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.mimeType, mimeType) || other.mimeType == mimeType)&&(identical(other.size, size) || other.size == size)&&(identical(other.text, text) || other.text == text));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ComposerAttachment&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.mimeType, mimeType) || other.mimeType == mimeType)&&(identical(other.size, size) || other.size == size)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.text, text) || other.text == text)&&(identical(other.base64Data, base64Data) || other.base64Data == base64Data));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,id,name,mimeType,size,text);
+int get hashCode => Object.hash(runtimeType,id,name,mimeType,size,kind,text,base64Data);
 
 @override
 String toString() {
-  return 'ComposerAttachment(id: $id, name: $name, mimeType: $mimeType, size: $size, text: $text)';
+  return 'ComposerAttachment(id: $id, name: $name, mimeType: $mimeType, size: $size, kind: $kind, text: $text, base64Data: $base64Data)';
 }
 
 
@@ -45,7 +45,7 @@ abstract mixin class $ComposerAttachmentCopyWith<$Res>  {
   factory $ComposerAttachmentCopyWith(ComposerAttachment value, $Res Function(ComposerAttachment) _then) = _$ComposerAttachmentCopyWithImpl;
 @useResult
 $Res call({
- String id, String name, String mimeType, int size, String text
+ String id, String name, String mimeType, int size, ComposerAttachmentKind kind, String? text, String? base64Data
 });
 
 
@@ -62,14 +62,16 @@ class _$ComposerAttachmentCopyWithImpl<$Res>
 
 /// Create a copy of ComposerAttachment
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? mimeType = null,Object? size = null,Object? text = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? mimeType = null,Object? size = null,Object? kind = null,Object? text = freezed,Object? base64Data = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,mimeType: null == mimeType ? _self.mimeType : mimeType // ignore: cast_nullable_to_non_nullable
 as String,size: null == size ? _self.size : size // ignore: cast_nullable_to_non_nullable
-as int,text: null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
-as String,
+as int,kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
+as ComposerAttachmentKind,text: freezed == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
+as String?,base64Data: freezed == base64Data ? _self.base64Data : base64Data // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 
@@ -154,10 +156,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String mimeType,  int size,  String text)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String mimeType,  int size,  ComposerAttachmentKind kind,  String? text,  String? base64Data)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ComposerAttachment() when $default != null:
-return $default(_that.id,_that.name,_that.mimeType,_that.size,_that.text);case _:
+return $default(_that.id,_that.name,_that.mimeType,_that.size,_that.kind,_that.text,_that.base64Data);case _:
   return orElse();
 
 }
@@ -175,10 +177,10 @@ return $default(_that.id,_that.name,_that.mimeType,_that.size,_that.text);case _
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String mimeType,  int size,  String text)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String mimeType,  int size,  ComposerAttachmentKind kind,  String? text,  String? base64Data)  $default,) {final _that = this;
 switch (_that) {
 case _ComposerAttachment():
-return $default(_that.id,_that.name,_that.mimeType,_that.size,_that.text);case _:
+return $default(_that.id,_that.name,_that.mimeType,_that.size,_that.kind,_that.text,_that.base64Data);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -195,10 +197,10 @@ return $default(_that.id,_that.name,_that.mimeType,_that.size,_that.text);case _
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String mimeType,  int size,  String text)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String mimeType,  int size,  ComposerAttachmentKind kind,  String? text,  String? base64Data)?  $default,) {final _that = this;
 switch (_that) {
 case _ComposerAttachment() when $default != null:
-return $default(_that.id,_that.name,_that.mimeType,_that.size,_that.text);case _:
+return $default(_that.id,_that.name,_that.mimeType,_that.size,_that.kind,_that.text,_that.base64Data);case _:
   return null;
 
 }
@@ -210,14 +212,16 @@ return $default(_that.id,_that.name,_that.mimeType,_that.size,_that.text);case _
 
 
 class _ComposerAttachment implements ComposerAttachment {
-  const _ComposerAttachment({required this.id, required this.name, required this.mimeType, required this.size, required this.text});
+  const _ComposerAttachment({required this.id, required this.name, required this.mimeType, required this.size, required this.kind, this.text, this.base64Data});
   
 
 @override final  String id;
 @override final  String name;
 @override final  String mimeType;
 @override final  int size;
-@override final  String text;
+@override final  ComposerAttachmentKind kind;
+@override final  String? text;
+@override final  String? base64Data;
 
 /// Create a copy of ComposerAttachment
 /// with the given fields replaced by the non-null parameter values.
@@ -229,16 +233,16 @@ _$ComposerAttachmentCopyWith<_ComposerAttachment> get copyWith => __$ComposerAtt
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ComposerAttachment&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.mimeType, mimeType) || other.mimeType == mimeType)&&(identical(other.size, size) || other.size == size)&&(identical(other.text, text) || other.text == text));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ComposerAttachment&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.mimeType, mimeType) || other.mimeType == mimeType)&&(identical(other.size, size) || other.size == size)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.text, text) || other.text == text)&&(identical(other.base64Data, base64Data) || other.base64Data == base64Data));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,id,name,mimeType,size,text);
+int get hashCode => Object.hash(runtimeType,id,name,mimeType,size,kind,text,base64Data);
 
 @override
 String toString() {
-  return 'ComposerAttachment(id: $id, name: $name, mimeType: $mimeType, size: $size, text: $text)';
+  return 'ComposerAttachment(id: $id, name: $name, mimeType: $mimeType, size: $size, kind: $kind, text: $text, base64Data: $base64Data)';
 }
 
 
@@ -249,7 +253,7 @@ abstract mixin class _$ComposerAttachmentCopyWith<$Res> implements $ComposerAtta
   factory _$ComposerAttachmentCopyWith(_ComposerAttachment value, $Res Function(_ComposerAttachment) _then) = __$ComposerAttachmentCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String name, String mimeType, int size, String text
+ String id, String name, String mimeType, int size, ComposerAttachmentKind kind, String? text, String? base64Data
 });
 
 
@@ -266,14 +270,16 @@ class __$ComposerAttachmentCopyWithImpl<$Res>
 
 /// Create a copy of ComposerAttachment
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? mimeType = null,Object? size = null,Object? text = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? mimeType = null,Object? size = null,Object? kind = null,Object? text = freezed,Object? base64Data = freezed,}) {
   return _then(_ComposerAttachment(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,mimeType: null == mimeType ? _self.mimeType : mimeType // ignore: cast_nullable_to_non_nullable
 as String,size: null == size ? _self.size : size // ignore: cast_nullable_to_non_nullable
-as int,text: null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
-as String,
+as int,kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
+as ComposerAttachmentKind,text: freezed == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
+as String?,base64Data: freezed == base64Data ? _self.base64Data : base64Data // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 
