@@ -401,27 +401,27 @@ class _SystemPromptDialogState extends ConsumerState<_SystemPromptDialog> {
   }
 
   Widget _modeToggle(ThemeData theme, bool isMobile) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: theme.dividerColor),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _modeButton(
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Row(
+          children: [
+            Expanded(
+              child: _modeButton(
                 theme,
                 isMobile,
                 mode: _EditMode.combined,
                 icon: LucideIcons.messageSquare,
                 label: '组合预览',
               ),
-              _toggleDivider(theme),
-              _modeButton(
+            ),
+            _toggleDivider(theme),
+            Expanded(
+              child: _modeButton(
                 theme,
                 isMobile,
                 mode: _EditMode.assistant,
@@ -429,16 +429,18 @@ class _SystemPromptDialogState extends ConsumerState<_SystemPromptDialog> {
                 label: '助手提示词',
                 disabled: _assistant == null,
               ),
-              _toggleDivider(theme),
-              _modeButton(
+            ),
+            _toggleDivider(theme),
+            Expanded(
+              child: _modeButton(
                 theme,
                 isMobile,
                 mode: _EditMode.topic,
                 icon: LucideIcons.messageSquare,
                 label: '话题提示词',
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -478,16 +480,20 @@ class _SystemPromptDialogState extends ConsumerState<_SystemPromptDialog> {
             ? theme.colorScheme.onSurface.withValues(alpha: 0.08)
             : Colors.transparent,
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, size: iconSize, color: fg),
             const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: isMobile ? 14 : 12,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                color: fg,
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: isMobile ? 14 : 12,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                  color: fg,
+                ),
               ),
             ),
           ],
