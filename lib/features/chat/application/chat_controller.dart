@@ -20,6 +20,8 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_s
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_version.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/metrics.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/usage.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
@@ -510,6 +512,14 @@ class ChatController extends _$ChatController {
     var roundBlockId = assistantBlockId;
     final buffer = StringBuffer();
 
+    // Token usage / latency for the finished reply, mirroring the web message's
+    // `usage` + `metrics`: [capturedUsage] is the most recent provider usage
+    // ([LlmDone]); [firstTokenMs] is time-to-first-token; [stopwatch] times the
+    // whole reply. All reset per failover attempt.
+    final stopwatch = Stopwatch();
+    Usage? capturedUsage;
+    int? firstTokenMs;
+
     String roundDisplay() => mcp.usePromptInjection
         ? removeToolUseTags(buffer.toString())
         : buffer.toString();
@@ -580,6 +590,11 @@ class ChatController extends _$ChatController {
       messages = List<LlmMessage>.of(request.messages);
       view = assistantView;
       roundBlockId = assistantBlockId;
+      capturedUsage = null;
+      firstTokenMs = null;
+      stopwatch
+        ..reset()
+        ..start();
       // Once any chunk has streamed we are committed to this attempt: failing
       // over would duplicate already-rendered output, so we only retry on a
       // failure that happens before the first chunk.
@@ -595,16 +610,19 @@ class ChatController extends _$ChatController {
             switch (chunk) {
               case LlmTextDelta(:final text):
                 committed = true;
+                firstTokenMs ??= stopwatch.elapsedMilliseconds;
                 buffer.write(text);
                 update();
               case LlmReasoningDelta(:final text):
                 committed = true;
+                firstTokenMs ??= stopwatch.elapsedMilliseconds;
                 thinking.write(text);
                 update();
               case LlmToolCallChunk(:final call):
                 committed = true;
                 structuredCalls.add(call);
-              case LlmDone():
+              case LlmDone(:final usage):
+                if (usage != null) capturedUsage = usage;
                 break;
             }
           }
@@ -721,9 +739,15 @@ class ChatController extends _$ChatController {
           update();
         }
 
+        stopwatch.stop();
         await _persistMessageBlocks(
           messageId: assistantMessageId,
           status: MessageStatus.success,
+          usage: capturedUsage,
+          metrics: Metrics(
+            latency: stopwatch.elapsedMilliseconds,
+            firstTokenLatency: firstTokenMs,
+          ),
           blocks: [
             if (thinking.isNotEmpty)
               _thinkingBlock(
@@ -846,6 +870,8 @@ class ChatController extends _$ChatController {
     required String messageId,
     required MessageStatus status,
     required List<MessageBlock> blocks,
+    Usage? usage,
+    Metrics? metrics,
   }) async {
     final now = DateTime.now();
     final existing = await _repo.getMessageBlocksByMessageId(messageId);
@@ -862,6 +888,8 @@ class ChatController extends _$ChatController {
           status: status,
           updatedAt: now,
           blocks: [for (final block in blocks) block.id],
+          usage: usage ?? message.usage,
+          metrics: metrics ?? message.metrics,
         ),
       );
     }
@@ -1845,6 +1873,8 @@ class ChatController extends _$ChatController {
       providerName: providerName,
       versions: message.versions ?? const <MessageVersion>[],
       currentVersionId: message.currentVersionId,
+      usage: message.usage,
+      metrics: message.metrics,
     );
   }
 

@@ -88,6 +88,24 @@ class ChatMessageBubble extends ConsumerWidget {
 
     final align = isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start;
 
+    final showToolbar =
+        settings.messageActionMode == MessageActionMode.toolbar &&
+        !isStreaming &&
+        view.blocks.isNotEmpty;
+
+    final content = (view.blocks.isEmpty && hasError && view.errorText != null)
+        ? Text(
+            view.errorText!,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          )
+        : MessageBlockRenderer(
+            blocks: view.blocks,
+            messageStatus: view.status,
+            textColor: textColor,
+          );
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Column(
@@ -121,36 +139,43 @@ class ChatMessageBubble extends ConsumerWidget {
                         hideBubble ? 0 : radius,
                       ),
                     ),
-                    child:
-                        (view.blocks.isEmpty &&
-                            hasError &&
-                            view.errorText != null)
-                        ? Text(
-                            view.errorText!,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.error,
-                            ),
+                    child: showToolbar
+                        ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: align,
+                            children: [
+                              content,
+                              // The bubble-internal bottom toolbar, separated
+                              // from the content by a 1px divider, mirroring
+                              // `BubbleStyleMessage`'s toolbar mode.
+                              Container(
+                                margin: const EdgeInsets.only(top: 8),
+                                padding: const EdgeInsets.only(top: 8),
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    top: BorderSide(
+                                      color:
+                                          (theme.brightness == Brightness.dark
+                                                  ? Colors.white
+                                                  : Colors.black)
+                                              .withValues(alpha: 0.1),
+                                    ),
+                                  ),
+                                ),
+                                child: MessageToolbar(
+                                  view: view,
+                                  showTtsButton: settings.showTTSButton,
+                                  customTextColor: customTextColor,
+                                ),
+                              ),
+                            ],
                           )
-                        : MessageBlockRenderer(
-                            blocks: view.blocks,
-                            messageStatus: view.status,
-                            textColor: textColor,
-                          ),
+                        : content,
                   ),
                 ),
               );
             },
           ),
-          if (settings.messageActionMode == MessageActionMode.toolbar &&
-              !isStreaming &&
-              view.blocks.isNotEmpty) ...[
-            const SizedBox(height: 2),
-            MessageToolbar(
-              view: view,
-              showTtsButton: settings.showTTSButton,
-              customTextColor: customTextColor,
-            ),
-          ],
         ],
       ),
     );
