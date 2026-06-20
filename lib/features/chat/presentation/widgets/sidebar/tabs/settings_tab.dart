@@ -157,9 +157,7 @@ class SettingsTab extends ConsumerWidget {
         _SettingsGroup(
           title: '输入设置',
           subtitle: '粘贴和输入相关的功能设置',
-          comingSoon: true,
           children: [
-            const _ComingSoonNote(text: '设置会先保存，接入输入框后生效。'),
             _SwitchSettingRow(
               title: '长文本粘贴为文件',
               description: '粘贴超长文本时自动转为文件附件',
