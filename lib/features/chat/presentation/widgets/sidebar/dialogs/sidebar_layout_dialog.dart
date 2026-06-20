@@ -160,6 +160,7 @@ class _SidebarLayoutDialogState extends ConsumerState<_SidebarLayoutDialog> {
         TextButton(
           onPressed: () {
             // 取消恢复原宽度（预览未持久化）与原显示方式。
+            FocusScope.of(context).unfocus();
             controller.previewSidebarWidth(_originalWidth);
             controller.setSidebarDisplayMode(_originalMode);
             Navigator.of(context).pop();
@@ -168,6 +169,7 @@ class _SidebarLayoutDialogState extends ConsumerState<_SidebarLayoutDialog> {
         ),
         TextButton(
           onPressed: () {
+            FocusScope.of(context).unfocus();
             controller.setSidebarWidth(display);
             Navigator.of(context).pop();
           },

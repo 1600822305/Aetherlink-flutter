@@ -267,11 +267,17 @@ class _PromptTextDialogState extends State<_PromptTextDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () {
+            FocusScope.of(context).unfocus();
+            Navigator.of(context).pop();
+          },
           child: const Text('取消'),
         ),
         TextButton(
-          onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
+          onPressed: () {
+            FocusScope.of(context).unfocus();
+            Navigator.of(context).pop(_controller.text.trim());
+          },
           child: const Text('确定'),
         ),
       ],
