@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/top_toolbar_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
@@ -39,12 +43,14 @@ const String _modelPlaceholderLabel = '未配置模型';
 /// non-lucide SVGs), never Material substitutes.
 ///
 /// Wired actions: menu opens the drawer, settings pushes `/settings`, the model
-/// selector opens the picker (or jumps to model settings when none exist). The
-/// remaining toolbar buttons (new topic / clear / search / condense) are
-/// full-fidelity glyphs whose behaviors are a later slice, so they render
-/// disabled rather than as fake buttons. The selector shows the current model's
-/// name once configured, otherwise the "未配置模型" placeholder — never a
-/// fabricated model name.
+/// selector opens the picker (or jumps to model settings when none exist), 新建话题
+/// creates a fresh topic for the current assistant ([Topics.create]) and 清空内容
+/// clears the current topic's messages ([Topics.clearMessages]) behind a
+/// two-click confirm (port of the original `handleClearTopicWithConfirm`). The
+/// remaining buttons (search / condense) are full-fidelity glyphs whose
+/// behaviors are a later slice, so they render disabled rather than as fake
+/// buttons. The selector shows the current model's name once configured,
+/// otherwise the "未配置模型" placeholder — never a fabricated model name.
 class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
   const ChatTopBar({super.key});
 
@@ -189,18 +195,22 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
         if (topicName == null) return null;
         return _TopicTitle(name: topicName);
       case TopToolbarComponent.newTopicButton:
+        final assistantId = ref.watch(currentAssistantProvider)?.id;
         return _ToolbarIconButton(
-          icon: topToolbarComponentIcon(component, color: theme.disabledColor),
+          icon: topToolbarComponentIcon(
+            component,
+            color: assistantId == null
+                ? theme.disabledColor
+                : theme.colorScheme.onSurface,
+          ),
           tooltip: _newTopicTooltip,
-          onPressed: null,
+          onPressed: assistantId == null
+              ? null
+              : () => ref.read(topicsProvider.notifier).create(assistantId),
         );
       case TopToolbarComponent.clearButton:
         if (topicName == null) return null;
-        return _ToolbarIconButton(
-          icon: topToolbarComponentIcon(component, color: theme.disabledColor),
-          tooltip: _clearTooltip,
-          onPressed: null,
-        );
+        return const _ClearTopicButton();
       case TopToolbarComponent.searchButton:
         return _ToolbarIconButton(
           icon: topToolbarComponentIcon(component, color: theme.disabledColor),
@@ -276,6 +286,64 @@ class _ToolbarIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(icon: icon, tooltip: tooltip, onPressed: onPressed);
+  }
+}
+
+/// 清空内容 button — a port of the original `handleClearTopicWithConfirm`: the
+/// first tap arms a confirm state (red 警告三角 glyph) that auto-resets after 3s;
+/// the second tap clears the current topic's messages ([Topics.clearMessages]).
+class _ClearTopicButton extends ConsumerStatefulWidget {
+  const _ClearTopicButton();
+
+  @override
+  ConsumerState<_ClearTopicButton> createState() => _ClearTopicButtonState();
+}
+
+class _ClearTopicButtonState extends ConsumerState<_ClearTopicButton> {
+  static const Color _confirmColor = Color(0xFFF44336);
+
+  bool _confirm = false;
+  Timer? _resetTimer;
+
+  @override
+  void dispose() {
+    _resetTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onPressed() {
+    final topicId = ref.read(currentTopicProvider).value?.id;
+    if (topicId == null) return;
+    if (_confirm) {
+      _resetTimer?.cancel();
+      ref.read(topicsProvider.notifier).clearMessages(topicId);
+      setState(() => _confirm = false);
+    } else {
+      setState(() => _confirm = true);
+      _resetTimer?.cancel();
+      _resetTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted) setState(() => _confirm = false);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return _ToolbarIconButton(
+      icon: _confirm
+          ? const Icon(
+              LucideIcons.alertTriangle,
+              size: 20,
+              color: _confirmColor,
+            )
+          : topToolbarComponentIcon(
+              TopToolbarComponent.clearButton,
+              color: theme.colorScheme.onSurface,
+            ),
+      tooltip: _clearTooltip,
+      onPressed: _onPressed,
+    );
   }
 }
 
