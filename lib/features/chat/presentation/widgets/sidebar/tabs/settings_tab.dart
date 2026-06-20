@@ -1092,11 +1092,17 @@ Future<int?> _promptNumber(
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(),
+          onPressed: () {
+            FocusScope.of(dialogContext).unfocus();
+            Navigator.of(dialogContext).pop();
+          },
           child: const Text('取消'),
         ),
         TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(read()),
+          onPressed: () {
+            FocusScope.of(dialogContext).unfocus();
+            Navigator.of(dialogContext).pop(read());
+          },
           child: const Text('确定'),
         ),
       ],
