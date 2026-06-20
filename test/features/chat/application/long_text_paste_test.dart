@@ -51,6 +51,38 @@ void main() {
     });
   });
 
+  group('detectInsertion', () {
+    test('returns null when text did not grow', () {
+      expect(detectInsertion('hello', 'hello'), isNull);
+      expect(detectInsertion('hello', 'hell'), isNull);
+    });
+
+    test('finds a run appended at the caret end', () {
+      final r = detectInsertion('hi ', 'hi there');
+      expect(r, isNotNull);
+      expect(r!.inserted, 'there');
+      expect(r.restored, 'hi ');
+      expect(r.caret, 3);
+    });
+
+    test('finds a run pasted in the middle, keeping prefix and suffix', () {
+      final r = detectInsertion('ab', 'aXYZb');
+      expect(r, isNotNull);
+      expect(r!.inserted, 'XYZ');
+      expect(r.restored, 'ab');
+      expect(r.caret, 1);
+    });
+
+    test('drops a replaced selection from the restored text', () {
+      // "aSELb" with "SEL" selected, pasted the longer "WXYZ" → "aWXYZb".
+      final r = detectInsertion('aSELb', 'aWXYZb');
+      expect(r, isNotNull);
+      expect(r!.inserted, 'WXYZ');
+      expect(r.restored, 'ab');
+      expect(r.caret, 1);
+    });
+  });
+
   test('pasteFileTimestamp formats as YYYYMMDDTHHMMSS in UTC', () {
     expect(
       pasteFileTimestamp(DateTime.utc(2026, 1, 2, 3, 4, 5)),
