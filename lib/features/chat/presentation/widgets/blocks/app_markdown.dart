@@ -158,6 +158,10 @@ class _MarkdownTableState extends State<MarkdownTable> {
       cs.primary.withValues(alpha: isDark ? 0.04 : 0.015),
       cs.surface,
     );
+    final trackColor = cs.outlineVariant.withValues(
+      alpha: isDark ? 0.20 : 0.28,
+    );
+    final thumbColor = cs.onSurface.withValues(alpha: isDark ? 0.42 : 0.38);
 
     final colCount = widget.rows.fold<int>(
       0,
@@ -193,30 +197,38 @@ class _MarkdownTableState extends State<MarkdownTable> {
             borderRadius: BorderRadius.circular(10),
           ),
           clipBehavior: Clip.antiAlias,
-          // Suppress the platform's auto overlay scrollbar (desktop/web add one
-          // that paints over the last row); keep only the explicit [Scrollbar],
-          // whose thumb sits in the reserved bottom gutter below the table.
+          // Suppress every built-in Scrollbar (platform default + any inherited
+          // one); they paint as an overlay on the last row. The scroll position
+          // is shown by [_BottomScrollIndicator], a strip laid out *below* the
+          // table in the Column, so it can never cover a row.
           child: ScrollConfiguration(
             behavior: ScrollConfiguration.of(
               context,
             ).copyWith(scrollbars: false),
-            child: Scrollbar(
+            child: SingleChildScrollView(
               controller: _controller,
-              thumbVisibility: _scrollable,
-              child: SingleChildScrollView(
-                controller: _controller,
-                scrollDirection: Axis.horizontal,
-                physics: const ClampingScrollPhysics(),
-                padding: EdgeInsets.only(bottom: _scrollable ? 12 : 0),
-                child: table,
-              ),
+              scrollDirection: Axis.horizontal,
+              physics: const ClampingScrollPhysics(),
+              child: table,
             ),
           ),
         );
 
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
-          child: frame,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              frame,
+              if (_scrollable)
+                _BottomScrollIndicator(
+                  controller: _controller,
+                  trackColor: trackColor,
+                  thumbColor: thumbColor,
+                ),
+            ],
+          ),
         );
       },
     );
@@ -285,6 +297,92 @@ class _MarkdownTableState extends State<MarkdownTable> {
           onLinkTap: AppMarkdown._openLink,
           highlightBuilder: AppMarkdown._inlineCode,
         ),
+      ),
+    );
+  }
+}
+
+/// A slim horizontal scroll bar laid out *below* the table (a sibling in the
+/// Column, never an overlay), so it can never paint over a row. It mirrors
+/// [controller]'s position and is draggable to scroll the table.
+class _BottomScrollIndicator extends StatelessWidget {
+  const _BottomScrollIndicator({
+    required this.controller,
+    required this.trackColor,
+    required this.thumbColor,
+  });
+
+  final ScrollController controller;
+  final Color trackColor;
+  final Color thumbColor;
+
+  static const double _height = 5;
+
+  Widget _bar(double width, Color color) => Container(
+    width: width,
+    height: _height,
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(_height),
+    ),
+  );
+
+  // Geometry of the thumb on a [track]-wide bar for the current scroll offset.
+  ({double width, double left, double max, double free}) _geometry(
+    double track,
+  ) {
+    if (!controller.hasClients || !controller.position.hasContentDimensions) {
+      return (width: track, left: 0, max: 0, free: 0);
+    }
+    final pos = controller.position;
+    final max = pos.maxScrollExtent;
+    final width =
+        (track * pos.viewportDimension / (pos.viewportDimension + max)).clamp(
+          28.0,
+          track,
+        );
+    final free = track - width;
+    final left = max > 0 ? free * (pos.pixels.clamp(0.0, max) / max) : 0.0;
+    return (width: width, left: left, max: max, free: free);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final track = constraints.maxWidth;
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragUpdate: (d) {
+              final g = _geometry(track);
+              if (g.free <= 0 || g.max <= 0) return;
+              controller.jumpTo(
+                (controller.position.pixels + d.delta.dx * g.max / g.free)
+                    .clamp(0.0, g.max),
+              );
+            },
+            child: SizedBox(
+              height: _height,
+              child: AnimatedBuilder(
+                animation: controller,
+                builder: (context, _) {
+                  final g = _geometry(track);
+                  return Stack(
+                    children: [
+                      _bar(track, trackColor),
+                      Positioned(
+                        left: g.left,
+                        child: _bar(g.width, thumbColor),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          );
+        },
       ),
     );
   }
