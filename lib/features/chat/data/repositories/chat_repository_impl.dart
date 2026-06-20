@@ -46,6 +46,9 @@ class ChatRepositoryImpl implements ChatRepository {
   Future<Message?> getMessage(String id) => _db.messageDao.getById(id);
 
   @override
+  Future<List<Message>> getAllMessages() => _db.messageDao.getAll();
+
+  @override
   Future<List<Message>> getMessagesByIds(List<String> ids) =>
       _db.messageDao.getByIds(ids);
 
@@ -77,6 +80,10 @@ class ChatRepositoryImpl implements ChatRepository {
   @override
   Future<MessageBlock?> getMessageBlock(String id) =>
       _db.messageBlockDao.getById(id);
+
+  @override
+  Future<List<MessageBlock>> getAllMessageBlocks() =>
+      _db.messageBlockDao.getAll();
 
   @override
   Future<List<MessageBlock>> getMessageBlocksByIds(List<String> ids) =>
