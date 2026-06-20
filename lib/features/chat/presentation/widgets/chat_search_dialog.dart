@@ -18,10 +18,18 @@ import 'package:aetherlink_flutter/features/chat/domain/search/chat_search.dart'
 /// scroll-to-message mechanism yet), so a message hit lands on its topic, like
 /// a topic hit.
 Future<void> showChatSearchDialog(BuildContext context) {
-  return showDialog<void>(
+  // Drop the chat input's focus first so opening the dialog doesn't immediately
+  // raise the keyboard, and closing it doesn't re-focus the input box on the
+  // way back to chat (mirrors `showModelSelectorDialog`).
+  FocusManager.instance.primaryFocus?.unfocus();
+  return showGeneralDialog<void>(
     context: context,
     barrierColor: const Color(0x80000000),
-    builder: (_) => const _ChatSearchDialog(),
+    barrierDismissible: true,
+    barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+    pageBuilder: (context, _, _) => const _ChatSearchDialog(),
+    transitionBuilder: (context, animation, _, child) => child,
+    transitionDuration: Duration.zero,
   );
 }
 
@@ -170,47 +178,55 @@ class _ChatSearchDialogState extends ConsumerState<_ChatSearchDialog> {
       });
     }
 
-    return Dialog(
-      insetPadding: isNarrow
-          ? EdgeInsets.zero
-          : const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      backgroundColor: theme.colorScheme.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(isNarrow ? 0 : 24),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 760),
-        child: SizedBox(
-          height: isNarrow ? size.height : size.height * 0.8,
-          child: SafeArea(
-            top: isNarrow,
-            bottom: isNarrow,
-            left: false,
-            right: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _header(
-                  theme,
-                  isNarrow: isNarrow,
-                  hasQuery: committed.isNotEmpty || _pendingQuery.isNotEmpty,
-                  isSearching: isSearching,
-                  hasError: hasError,
-                  results: results,
-                ),
-                Expanded(
-                  child: _body(
-                    theme,
-                    isNarrow: isNarrow,
-                    committed: committed,
-                    recent: recent,
-                    resultsAsync: resultsAsync,
-                    isSearching: isSearching,
-                  ),
-                ),
-              ],
+    final body = SafeArea(
+      top: isNarrow,
+      bottom: isNarrow,
+      left: false,
+      right: false,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _header(
+            theme,
+            isNarrow: isNarrow,
+            hasQuery: committed.isNotEmpty || _pendingQuery.isNotEmpty,
+            isSearching: isSearching,
+            hasError: hasError,
+            results: results,
+          ),
+          Expanded(
+            child: _body(
+              theme,
+              isNarrow: isNarrow,
+              committed: committed,
+              recent: recent,
+              resultsAsync: resultsAsync,
+              isSearching: isSearching,
             ),
+          ),
+        ],
+      ),
+    );
+
+    // Mirror `showModelSelectorDialog`'s responsive presentation: a full-bleed
+    // surface on phones (< 600px), a centred card otherwise.
+    if (isNarrow) {
+      return Material(color: theme.colorScheme.surface, child: body);
+    }
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 760,
+          maxHeight: size.height * 0.8,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Material(
+            color: theme.colorScheme.surface,
+            elevation: 8,
+            borderRadius: BorderRadius.circular(24),
+            clipBehavior: Clip.antiAlias,
+            child: body,
           ),
         ),
       ),
@@ -260,7 +276,6 @@ class _ChatSearchDialogState extends ConsumerState<_ChatSearchDialog> {
           TextField(
             controller: _controller,
             focusNode: _fieldFocus,
-            autofocus: true,
             style: const TextStyle(fontSize: 15),
             textInputAction: TextInputAction.search,
             onChanged: _onQueryChanged,
