@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/shared/domain/input_box_settings.dart';
@@ -52,6 +53,8 @@ class InputBoxComposer extends StatelessWidget {
     this.actions = const NoInputBoxActions(),
     this.sendWithEnter = false,
     this.enterAsNewline = false,
+    this.attachmentsBar,
+    this.onPasteText,
   });
 
   final InputBoxSettings settings;
@@ -82,6 +85,19 @@ class InputBoxComposer extends StatelessWidget {
   /// composer).
   final InputBoxActions actions;
 
+  /// An optional row rendered above the text field (the pending-attachment
+  /// chips). `null` (the appearance preview / not-yet-wired composer) renders
+  /// nothing.
+  final Widget? attachmentsBar;
+
+  /// Optional paste interceptor. When supplied, every paste into the field —
+  /// hardware Ctrl/Cmd+V and the selection toolbar / right-click 粘贴 — is routed
+  /// here with the clipboard's plain text. Returning `true` means it was
+  /// consumed (e.g. long text converted to a file) and must not be inserted;
+  /// `false` falls through to a normal insert at the caret. `null` (the preview)
+  /// leaves the platform's default paste untouched.
+  final Future<bool> Function(String text)? onPasteText;
+
   /// On a mobile soft keyboard, surface a 发送 action key when Enter should send
   /// (`sendWithEnter` on and not forced to newline); otherwise the return key
   /// inserts a newline. Desktop always uses newline — hardware Enter is handled
@@ -94,6 +110,74 @@ class InputBoxComposer extends StatelessWidget {
       return TextInputAction.send;
     }
     return TextInputAction.newline;
+  }
+
+  /// Wraps [field] so a hardware Ctrl/Cmd+V is routed through [onPasteText]
+  /// (the [PasteTextIntent] is registered with [Action.overridable], so an
+  /// ancestor [Actions] overrides it). Untouched when no interceptor is set.
+  Widget _wrapPaste(Widget field) {
+    if (onPasteText == null) return field;
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        PasteTextIntent: CallbackAction<PasteTextIntent>(
+          onInvoke: (_) {
+            _handlePaste();
+            return null;
+          },
+        ),
+      },
+      child: field,
+    );
+  }
+
+  /// The field's context menu. With an interceptor set, the toolbar / right-click
+  /// 粘贴 button (which otherwise pastes directly, bypassing [PasteTextIntent]) is
+  /// rerouted through [onPasteText]; this also means the Flutter toolbar is used
+  /// instead of the platform's system menu so the button stays interceptable.
+  /// Without an interceptor, the default adaptive toolbar is rendered.
+  Widget _buildContextMenu(BuildContext context, EditableTextState state) {
+    if (onPasteText == null) {
+      return AdaptiveTextSelectionToolbar.editableText(
+        editableTextState: state,
+      );
+    }
+    final items = <ContextMenuButtonItem>[
+      for (final item in state.contextMenuButtonItems)
+        if (item.type == ContextMenuButtonType.paste)
+          item.copyWith(
+            onPressed: () {
+              state.hideToolbar();
+              _handlePaste();
+            },
+          )
+        else
+          item,
+    ];
+    return AdaptiveTextSelectionToolbar.buttonItems(
+      anchors: state.contextMenuAnchors,
+      buttonItems: items,
+    );
+  }
+
+  /// Reads the clipboard's plain text and offers it to [onPasteText]; when not
+  /// consumed, performs an ordinary paste by replacing the selection at the
+  /// caret (the override otherwise suppresses the default insert).
+  Future<void> _handlePaste() async {
+    final onPaste = onPasteText;
+    if (onPaste == null) return;
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text;
+    if (text == null || text.isEmpty) return;
+    final consumed = await onPaste(text);
+    if (consumed) return;
+    final value = controller.value;
+    final selection = value.selection;
+    final start = selection.isValid ? selection.start : value.text.length;
+    final end = selection.isValid ? selection.end : value.text.length;
+    controller.value = TextEditingValue(
+      text: value.text.replaceRange(start, end, text),
+      selection: TextSelection.collapsed(offset: start + text.length),
+    );
   }
 
   @override
@@ -119,24 +203,34 @@ class InputBoxComposer extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // The pending-attachment chips, above the field (port of the
+              // input box's converted-file chips).
+              if (attachmentsBar != null)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8, right: 2, bottom: 4),
+                  child: attachmentsBar,
+                ),
               // Upper layer: the text composer.
               Padding(
                 padding: const EdgeInsets.only(left: 8, right: 2),
-                child: TextField(
-                  controller: controller,
-                  focusNode: focusNode,
-                  readOnly: readOnly,
-                  minLines: 1,
-                  maxLines: 5,
-                  textInputAction: _softKeyboardAction,
-                  onSubmitted: readOnly ? null : (_) => onSend?.call(),
-                  style: const TextStyle(fontSize: 16, height: 1.4),
-                  decoration: const InputDecoration(
-                    hintText: _inputHint,
-                    hintStyle: TextStyle(fontSize: 16, height: 1.4),
-                    border: InputBorder.none,
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(vertical: 8),
+                child: _wrapPaste(
+                  TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    readOnly: readOnly,
+                    minLines: 1,
+                    maxLines: 5,
+                    textInputAction: _softKeyboardAction,
+                    onSubmitted: readOnly ? null : (_) => onSend?.call(),
+                    style: const TextStyle(fontSize: 16, height: 1.4),
+                    contextMenuBuilder: _buildContextMenu,
+                    decoration: const InputDecoration(
+                      hintText: _inputHint,
+                      hintStyle: TextStyle(fontSize: 16, height: 1.4),
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(vertical: 8),
+                    ),
                   ),
                 ),
               ),

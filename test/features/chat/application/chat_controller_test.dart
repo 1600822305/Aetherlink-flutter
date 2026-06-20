@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/core/database/app_database.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
@@ -175,6 +176,112 @@ void main() {
       expect(thinking.content, 'think hard');
     },
   );
+
+  test(
+    'a pasted-as-file attachment becomes a FILE block and feeds the model',
+    () async {
+      final gateway = _FakeGateway(const [
+        LlmStreamChunk.textDelta('ok'),
+        LlmStreamChunk.done(),
+      ]);
+      final container = _container(
+        gateway: gateway,
+        repo: repo,
+        current: _currentModel(),
+      );
+
+      await container.read(chatControllerProvider.future);
+      await container
+          .read(chatControllerProvider.notifier)
+          .send(
+            'see file',
+            attachments: const [
+              ComposerAttachment(
+                id: 'file_1',
+                name: '粘贴的文本_20260620T061205.txt',
+                mimeType: 'text/plain',
+                size: 11,
+                text: 'hello world',
+              ),
+            ],
+          );
+
+      // View: the user turn carries its main text plus a FILE block.
+      final state = container.read(chatControllerProvider).requireValue;
+      final user = state.messages.first;
+      expect(user.role, MessageRole.user);
+      expect(user.text, 'see file');
+      final fileBlock = user.blocks.whereType<FileBlock>().single;
+      expect(fileBlock.name, '粘贴的文本_20260620T061205.txt');
+      expect(fileBlock.mimeType, 'text/plain');
+      expect(fileBlock.file?.base64Data, startsWith('data:text/plain;base64,'));
+
+      // Request: the model receives the typed text plus the file's decoded text.
+      final request = gateway.lastRequest!;
+      expect(request.messages.single.content, 'see file\n\nhello world');
+
+      // Persistence: the FILE block landed in the repo.
+      final topics = await repo.getRecentTopics();
+      final messages = await repo.getMessagesByTopicId(topics.single.id);
+      final userMsg = messages.firstWhere((m) => m.role == MessageRole.user);
+      final blocks = await repo.getMessageBlocksByMessageId(userMsg.id);
+      expect(blocks.whereType<FileBlock>(), hasLength(1));
+    },
+  );
+
+  test('send with only an attachment (no typed text) still sends', () async {
+    final gateway = _FakeGateway(const [
+      LlmStreamChunk.textDelta('ok'),
+      LlmStreamChunk.done(),
+    ]);
+    final container = _container(
+      gateway: gateway,
+      repo: repo,
+      current: _currentModel(),
+    );
+
+    await container.read(chatControllerProvider.future);
+    await container
+        .read(chatControllerProvider.notifier)
+        .send(
+          '',
+          attachments: const [
+            ComposerAttachment(
+              id: 'file_1',
+              name: 'note.txt',
+              mimeType: 'text/plain',
+              size: 4,
+              text: 'body',
+            ),
+          ],
+        );
+
+    final state = container.read(chatControllerProvider).requireValue;
+    expect(state.messages, hasLength(2));
+    final user = state.messages.first;
+    expect(user.text, isEmpty);
+    expect(user.blocks.whereType<FileBlock>(), hasLength(1));
+    expect(user.blocks.whereType<MainTextBlock>(), isEmpty);
+
+    final request = gateway.lastRequest!;
+    expect(request.messages.single.content, 'body');
+  });
+
+  test('send with neither text nor attachments is a no-op', () async {
+    final gateway = _FakeGateway(const [LlmStreamChunk.done()]);
+    final container = _container(
+      gateway: gateway,
+      repo: repo,
+      current: _currentModel(),
+    );
+
+    await container.read(chatControllerProvider.future);
+    await container.read(chatControllerProvider.notifier).send('   ');
+
+    final state = container.read(chatControllerProvider).requireValue;
+    expect(state.messages, isEmpty);
+    expect(await repo.getRecentTopics(), isEmpty);
+  });
 
   test('send with no current model is a no-op', () async {
     final gateway = _FakeGateway(const [LlmStreamChunk.done()]);
