@@ -4,6 +4,8 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_version.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/metrics.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/usage.dart';
 
 part 'chat_state.freezed.dart';
 
@@ -34,6 +36,8 @@ abstract class ChatMessageView with _$ChatMessageView {
     String? providerName,
     @Default(<MessageVersion>[]) List<MessageVersion> versions,
     String? currentVersionId,
+    Usage? usage,
+    Metrics? metrics,
   }) = _ChatMessageView;
 }
 
