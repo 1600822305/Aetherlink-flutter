@@ -10,7 +10,7 @@ import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_co
 import 'package:aetherlink_flutter/features/chat/presentation/controllers/chat_auto_scroll_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_message_bubble.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_sidebar.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/chat_sidebar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_top_bar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/system_prompt_bubble.dart';
