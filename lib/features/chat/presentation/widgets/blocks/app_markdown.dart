@@ -158,6 +158,10 @@ class _MarkdownTableState extends State<MarkdownTable> {
       cs.primary.withValues(alpha: isDark ? 0.04 : 0.015),
       cs.surface,
     );
+    final trackColor = cs.outlineVariant.withValues(
+      alpha: isDark ? 0.20 : 0.28,
+    );
+    final thumbColor = cs.onSurface.withValues(alpha: isDark ? 0.42 : 0.38);
 
     final colCount = widget.rows.fold<int>(
       0,
@@ -180,7 +184,7 @@ class _MarkdownTableState extends State<MarkdownTable> {
         );
 
         // The scrollable state is known only after layout; re-sync once the
-        // frame settles so the scrollbar/gutter appears only when needed.
+        // frame settles so the scrollbar strip appears only when needed.
         WidgetsBinding.instance.addPostFrameCallback((_) => _syncScrollable());
 
         final frame = Container(
@@ -193,17 +197,18 @@ class _MarkdownTableState extends State<MarkdownTable> {
             borderRadius: BorderRadius.circular(10),
           ),
           clipBehavior: Clip.antiAlias,
-          child: Scrollbar(
-            controller: _controller,
-            thumbVisibility: _scrollable,
-            interactive: true,
+          // Disable the platform's default overlay scrollbar (desktop/web add
+          // one automatically); the scroll position is shown by the dedicated
+          // [_BottomScrollIndicator] strip below the table instead, so the bar
+          // never paints over a row.
+          child: ScrollConfiguration(
+            behavior: ScrollConfiguration.of(
+              context,
+            ).copyWith(scrollbars: false),
             child: SingleChildScrollView(
               controller: _controller,
               scrollDirection: Axis.horizontal,
               physics: const ClampingScrollPhysics(),
-              // Reserve a strip below the table for the horizontal scrollbar so
-              // it sits in the bottom gutter instead of overlaying the last row.
-              padding: EdgeInsets.only(bottom: _scrollable ? 12 : 0),
               child: table,
             ),
           ),
@@ -211,7 +216,21 @@ class _MarkdownTableState extends State<MarkdownTable> {
 
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
-          child: frame,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              frame,
+              if (_scrollable) ...[
+                const SizedBox(height: 6),
+                _BottomScrollIndicator(
+                  controller: _controller,
+                  trackColor: trackColor,
+                  thumbColor: thumbColor,
+                ),
+              ],
+            ],
+          ),
         );
       },
     );
@@ -281,6 +300,100 @@ class _MarkdownTableState extends State<MarkdownTable> {
           highlightBuilder: AppMarkdown._inlineCode,
         ),
       ),
+    );
+  }
+}
+
+/// A slim horizontal scroll indicator rendered as a dedicated strip *below* the
+/// table card (never overlaying a row). It reflects [controller]'s scroll
+/// position and can be dragged to scroll the table.
+class _BottomScrollIndicator extends StatelessWidget {
+  const _BottomScrollIndicator({
+    required this.controller,
+    required this.trackColor,
+    required this.thumbColor,
+  });
+
+  final ScrollController controller;
+  final Color trackColor;
+  final Color thumbColor;
+
+  static const double _barHeight = 5;
+  static const double _minThumb = 32;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final trackWidth = constraints.maxWidth;
+        return AnimatedBuilder(
+          animation: controller,
+          builder: (context, _) {
+            if (!controller.hasClients ||
+                !controller.position.hasContentDimensions) {
+              return SizedBox(width: trackWidth, height: _barHeight);
+            }
+            final pos = controller.position;
+            final maxScroll = pos.maxScrollExtent;
+            final viewport = pos.viewportDimension;
+            final content = viewport + maxScroll;
+            final thumbFraction = content > 0 ? viewport / content : 1.0;
+            final thumbWidth = (trackWidth * thumbFraction)
+                .clamp(_minThumb, trackWidth)
+                .toDouble();
+            final free = trackWidth - thumbWidth;
+            final progress = maxScroll > 0
+                ? (pos.pixels.clamp(0.0, maxScroll) / maxScroll)
+                : 0.0;
+            final thumbLeft = (free * progress).clamp(0.0, free).toDouble();
+
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragUpdate: (details) {
+                if (free <= 0 || maxScroll <= 0) return;
+                final target =
+                    (pos.pixels + details.delta.dx * (maxScroll / free))
+                        .clamp(0.0, maxScroll)
+                        .toDouble();
+                controller.jumpTo(target);
+              },
+              child: SizedBox(
+                width: trackWidth,
+                height: _barHeight + 6,
+                child: Center(
+                  child: SizedBox(
+                    width: trackWidth,
+                    height: _barHeight,
+                    child: Stack(
+                      children: [
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: trackColor,
+                            borderRadius: BorderRadius.circular(_barHeight),
+                          ),
+                          child: const SizedBox.expand(),
+                        ),
+                        Positioned(
+                          left: thumbLeft,
+                          top: 0,
+                          bottom: 0,
+                          child: Container(
+                            width: thumbWidth,
+                            decoration: BoxDecoration(
+                              color: thumbColor,
+                              borderRadius: BorderRadius.circular(_barHeight),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }
