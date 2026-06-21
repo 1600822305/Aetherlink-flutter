@@ -21,11 +21,76 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/cod
 ///
 /// LaTeX uses single/double dollar delimiters (`$...$`, `$$...$$`), matching the
 /// original's `mathEnableSingleDollar` default.
+/// Regex matching `[citation](index:id)` — the inline citation format used
+/// by the web search system prompt. Captures the index (group 1) and id
+/// (group 2) so we can render a superscript badge and intercept taps.
+final RegExp _citationRe = RegExp(
+  r'\[citation\]\(([A-Za-z0-9_-]+):([A-Za-z0-9_-]+)\)',
+);
+
+/// Also normalise `[citation:index:id]` (some models emit this variant).
+final RegExp _rawCitationRe = RegExp(
+  r'\[citation:([A-Za-z0-9_-]+):([A-Za-z0-9_-]+)\]',
+);
+
+/// Normalise `[[n]](url)` → `[n](url)` (DashScope, Perplexity built-in search).
+final RegExp _doubleBracketLinkRe = RegExp(r'\[\[([^\]]+)\]\]\(([^\s)]+)\)');
+
+/// Pre-processes markdown content to replace citation references with
+/// tappable superscript-style links using a `citation://` pseudo-scheme.
+String _preprocessCitations(String content) {
+  var out = content;
+  // [[n]](url) → [n](url)
+  out = out.replaceAllMapped(_doubleBracketLinkRe, (m) => '[${m[1]}](${m[2]})');
+  // [citation](index:id) → superscript link
+  out = out.replaceAllMapped(_citationRe, (m) {
+    final index = m.group(1)!;
+    final id = m.group(2)!;
+    return ' [${_superscriptDigits(index)}](citation://$index:$id)';
+  });
+  // [citation:index:id] → superscript link
+  out = out.replaceAllMapped(_rawCitationRe, (m) {
+    final index = m.group(1)!;
+    final id = m.group(2)!;
+    return ' [${_superscriptDigits(index)}](citation://$index:$id)';
+  });
+  return out;
+}
+
+/// Maps ASCII digits to Unicode superscript digits for citation badges.
+String _superscriptDigits(String s) {
+  const table = {
+    '0': '\u2070', '1': '\u00B9', '2': '\u00B2', '3': '\u00B3',
+    '4': '\u2074', '5': '\u2075', '6': '\u2076', '7': '\u2077',
+    '8': '\u2078', '9': '\u2079',
+  };
+  final buf = StringBuffer();
+  for (final ch in s.split('')) {
+    buf.write(table[ch] ?? ch);
+  }
+  return buf.toString();
+}
+
 class AppMarkdown extends StatelessWidget {
-  const AppMarkdown({required this.content, this.style, super.key});
+  const AppMarkdown({required this.content, this.style, this.onCitationTap, super.key});
 
   final String content;
   final TextStyle? style;
+
+  /// Called when a citation badge is tapped. Receives the citation id.
+  final void Function(String citationId)? onCitationTap;
+
+  void _handleLinkTap(String url, String label) {
+    if (url.startsWith('citation://')) {
+      final ref = url.substring('citation://'.length);
+      onCitationTap?.call(ref);
+      return;
+    }
+    final uri = Uri.tryParse(url);
+    if (uri != null) {
+      launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
 
   static void _openLink(String url, String _) {
     final uri = Uri.tryParse(url);
@@ -93,10 +158,10 @@ class AppMarkdown extends StatelessWidget {
         ),
       ),
       child: GptMarkdown(
-        content,
+        _preprocessCitations(content),
         style: baseStyle,
         useDollarSignsForLatex: true,
-        onLinkTap: _openLink,
+        onLinkTap: _handleLinkTap,
         codeBuilder: (context, name, code, closed) =>
             CodeBlockView(language: name, code: code),
         highlightBuilder: _inlineCode,

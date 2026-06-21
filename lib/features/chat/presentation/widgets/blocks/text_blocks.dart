@@ -22,10 +22,16 @@ String cleanMainText(String content) =>
 /// assistant text both render as Markdown. Returns nothing when the content is
 /// empty after trimming.
 class MainTextBlockView extends StatelessWidget {
-  const MainTextBlockView({required this.block, this.textColor, super.key});
+  const MainTextBlockView({
+    required this.block,
+    this.textColor,
+    this.onCitationTap,
+    super.key,
+  });
 
   final MainTextBlock block;
   final Color? textColor;
+  final void Function(String citationId)? onCitationTap;
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +44,7 @@ class MainTextBlockView extends StatelessWidget {
         color: textColor,
         height: 1.6,
       ),
+      onCitationTap: onCitationTap,
     );
   }
 }
