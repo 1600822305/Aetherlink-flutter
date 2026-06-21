@@ -33,6 +33,32 @@ class GeminiAdapter implements LlmGateway {
     ];
 
     final tools = request.tools;
+    final nativeSearchTools =
+        request.extraBody?['_nativeSearchTools'] as List<dynamic>?;
+    final extraBodyClean = request.extraBody != null
+        ? (Map<String, dynamic>.of(request.extraBody!)
+          ..remove('_nativeSearchTools'))
+        : null;
+
+    // Gemini tools array: function declarations + optional native search tools
+    // (e.g. google_search for grounding).
+    final toolsArray = <Map<String, dynamic>>[
+      if (tools != null && tools.isNotEmpty)
+        {
+          'functionDeclarations': [
+            for (final t in tools)
+              {
+                'name': t.name,
+                'description': t.description,
+                'parameters': t.inputSchema,
+              },
+          ],
+        },
+      if (nativeSearchTools != null)
+        for (final entry in nativeSearchTools)
+          if (entry is Map<String, dynamic>) entry,
+    ];
+
     final body = <String, dynamic>{
       'contents': contents,
       if (request.system != null)
@@ -46,20 +72,8 @@ class GeminiAdapter implements LlmGateway {
         if (request.maxTokens != null) 'maxOutputTokens': request.maxTokens,
         if (request.topP != null) 'topP': request.topP,
       },
-      if (tools != null && tools.isNotEmpty)
-        'tools': [
-          {
-            'functionDeclarations': [
-              for (final t in tools)
-                {
-                  'name': t.name,
-                  'description': t.description,
-                  'parameters': t.inputSchema,
-                },
-            ],
-          },
-        ],
-      ...?request.extraBody,
+      if (toolsArray.isNotEmpty) 'tools': toolsArray,
+      ...?extraBodyClean,
     };
 
     final headers = <String, dynamic>{
