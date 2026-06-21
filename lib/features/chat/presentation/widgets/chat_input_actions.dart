@@ -61,6 +61,14 @@ class ChatInputActions implements InputBoxActions {
 
   @override
   void invoke(InputBoxAction action, BuildContext context) {
+    // Dismiss the keyboard before any action.  In the original web app,
+    // tapping any button outside the textarea naturally blurs it (DOM
+    // behavior), and the menus additionally set disableAutoFocus /
+    // disableRestoreFocus / disableEnforceFocus to prevent re-focusing
+    // when they close.  Flutter's FocusNode stays focused through all
+    // interactions, so we must explicitly unfocus here.
+    FocusManager.instance.primaryFocus?.unfocus();
+
     switch (action) {
       case InputBoxAction.toolsMenu:
         _openMenu(InputBoxMenu.tools, context);
