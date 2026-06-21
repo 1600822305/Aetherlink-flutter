@@ -16,12 +16,9 @@
 /// and the sidebar's close button drive the same controller.
 library;
 
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:native_keyboard_height/native_keyboard_height.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
@@ -119,17 +116,6 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
   /// Tracks the open/closed edge so [SidebarHost.onOpened] fires once per open.
   bool _wasOpen = false;
 
-  /// True while the keyboard is animating closed.  On Capacitor, the OS
-  /// dismisses the keyboard *before* forwarding the back-button event, so the
-  /// handler never sees a race.  In Flutter, [PopScope] fires on every press
-  /// regardless of the keyboard state.  We set this flag when we initiate a
-  /// dismiss and clear it when the native plugin confirms the keyboard is
-  /// fully hidden ([KeyboardEventType.didHide]).  All back presses while this
-  /// flag is true are swallowed — no timing assumptions needed.
-  bool _dismissingKeyboard = false;
-
-  StreamSubscription<KeyboardEvent>? _kbSub;
-
   @override
   void initState() {
     super.initState();
@@ -138,16 +124,6 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
       duration: const Duration(milliseconds: 250),
     );
     _ac.addListener(_onProgress);
-    _kbSub = NativeKeyboardHeight.instance.events.listen(_onKeyboardEvent);
-  }
-
-  void _onKeyboardEvent(KeyboardEvent event) {
-    // Clear the dismiss guard once the keyboard is fully hidden, or if it
-    // reappears (the user tapped the field again before the animation ended).
-    if (event.type == KeyboardEventType.didHide ||
-        event.type == KeyboardEventType.willShow) {
-      _dismissingKeyboard = false;
-    }
   }
 
   void _onProgress() {
@@ -158,7 +134,6 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
 
   @override
   void dispose() {
-    _kbSub?.cancel();
     _ac.removeListener(_onProgress);
     _ac.dispose();
     super.dispose();
@@ -179,40 +154,48 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
 
   // ── Back-button exit confirm ───────────────────────────────────────────────
 
-  /// Port of the original `ExitConfirmDialog` + `BackButtonHandler`: when the
-  /// sidebar is closed and the user presses the system back button, show a
-  /// confirm dialog instead of immediately exiting.  If the keyboard is
-  /// visible, dismiss it first (matching the original's priority order:
-  /// keyboard → sidebar → exit confirm).
+  /// Port of the original `ExitConfirmDialog` + `BackButtonHandler`.
+  ///
+  /// On Capacitor Android, the IME handles KEYCODE_BACK via
+  /// `dispatchKeyEvent` *before* `onBackPressed()` / the
+  /// `OnBackPressedDispatcher` runs.  When the keyboard is showing, the
+  /// IME consumes the event and dismisses itself — the Capacitor callback
+  /// (and therefore the JS `BackButtonHandler`) never fires.  The exit
+  /// dialog only appears when the keyboard is already gone.
+  ///
+  /// Flutter's `PopScope` with `canPop: false` intercepts every back
+  /// press at the framework level, so the IME never gets to consume it.
+  /// Instead of checking `viewInsets.bottom` (timing-dependent, races
+  /// with the dismiss animation), we check whether the **primary focus**
+  /// belongs to an [EditableText] — the inner widget of every
+  /// [TextField].  This is synchronous and deterministic:
+  ///   • focused EditableText → unfocus → keyboard dismisses → return
+  ///   • no focused EditableText → show exit dialog
   void _handleBackButton() {
     if (isSidebarOpen) {
       closeSidebar();
       return;
     }
-    // If the keyboard is currently dismissing (we initiated the dismiss on a
-    // previous back press and the native plugin hasn't fired didHide yet),
-    // swallow the press.  This is the Flutter equivalent of Capacitor's OS
-    // consuming the back press during keyboard dismiss.
-    if (_dismissingKeyboard) return;
 
-    // If the keyboard is open, dismiss it.
-    final views = WidgetsBinding.instance.platformDispatcher.views;
-    if (views.isNotEmpty && views.first.viewInsets.bottom > 0) {
-      _dismissingKeyboard = true;
-      FocusManager.instance.primaryFocus?.unfocus();
-      return;
-    }
-
-    // Also check the native plugin's height — on some devices viewInsets
-    // drops to 0 before the animation finishes, but the plugin's
-    // currentHeight may still be > 0 until willHide fires.
-    if (NativeKeyboardHeight.instance.currentHeight > 0) {
-      _dismissingKeyboard = true;
-      FocusManager.instance.primaryFocus?.unfocus();
+    // If a text field is focused, dismiss the keyboard instead of
+    // showing the exit dialog.  This replicates the Android IME's
+    // native back-key consumption that Capacitor relies on.
+    final focus = FocusManager.instance.primaryFocus;
+    if (focus != null && _isFocusedOnEditable(focus)) {
+      focus.unfocus();
       return;
     }
 
     _showExitConfirm();
+  }
+
+  /// Returns `true` when [node] or one of its ancestors is an
+  /// [EditableText] — meaning a [TextField] / [TextFormField] is focused
+  /// and the keyboard is (or was just) showing.
+  static bool _isFocusedOnEditable(FocusNode node) {
+    final ctx = node.context;
+    if (ctx == null) return false;
+    return ctx.findAncestorWidgetOfExactType<EditableText>() != null;
   }
 
   Future<void> _showExitConfirm() async {
