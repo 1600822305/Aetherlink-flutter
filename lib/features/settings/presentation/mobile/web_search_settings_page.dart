@@ -4,14 +4,13 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
-import 'package:aetherlink_flutter/features/settings/application/web_search_settings_controller.dart';
-import 'package:aetherlink_flutter/shared/domain/web_search_settings.dart';
 
 /// 网络搜索设置页面（设置 → 提示词与工具 → 网络搜索），参考 Kelivo 的
 /// `SearchServicesPage` 三层结构（搜索提供商列表 + 通用选项），但使用我们
 /// 自己的 `_OutlinedCard` / `_PrimaryRow` 等组件风格。
 ///
 /// 目前仅展示 SearXNG（默认内置提供商），后续可扩展多提供商管理。
+/// 状态管理和持久化暂使用页面本地 State，待后端 controller 就绪后迁移。
 class WebSearchSettingsPage extends ConsumerStatefulWidget {
   const WebSearchSettingsPage({super.key});
 
@@ -22,6 +21,11 @@ class WebSearchSettingsPage extends ConsumerStatefulWidget {
 
 class _WebSearchSettingsPageState
     extends ConsumerState<WebSearchSettingsPage> {
+  // --- Local state (placeholder until a real controller lands) ---
+  int _selectedProvider = 0;
+  int _maxResults = 5;
+  int _timeout = 10;
+
   static const _providers = <_ProviderInfo>[
     _ProviderInfo(
       name: 'SearXNG',
@@ -34,8 +38,6 @@ class _WebSearchSettingsPageState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final settings = ref.watch(webSearchSettingsControllerProvider);
-    final controller = ref.read(webSearchSettingsControllerProvider.notifier);
 
     return Scaffold(
       appBar: AppBar(
@@ -70,9 +72,9 @@ class _WebSearchSettingsPageState
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _providersCard(theme, settings, controller),
+          _providersCard(theme),
           const SizedBox(height: 16),
-          _commonOptionsCard(theme, settings, controller),
+          _commonOptionsCard(theme),
         ],
       ),
     );
@@ -82,11 +84,7 @@ class _WebSearchSettingsPageState
   // 搜索提供商 card
   // ---------------------------------------------------------------------------
 
-  Widget _providersCard(
-    ThemeData theme,
-    WebSearchSettings settings,
-    WebSearchSettingsController controller,
-  ) {
+  Widget _providersCard(ThemeData theme) {
     return _OutlinedCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -100,8 +98,8 @@ class _WebSearchSettingsPageState
             if (i > 0) Divider(height: 1, color: theme.dividerColor),
             _ProviderRow(
               info: _providers[i],
-              selected: i == settings.selectedProvider,
-              onTap: () => controller.setSelectedProvider(i),
+              selected: i == _selectedProvider,
+              onTap: () => setState(() => _selectedProvider = i),
             ),
           ],
           Divider(height: 1, color: theme.dividerColor),
@@ -121,11 +119,7 @@ class _WebSearchSettingsPageState
   // 通用选项 card
   // ---------------------------------------------------------------------------
 
-  Widget _commonOptionsCard(
-    ThemeData theme,
-    WebSearchSettings settings,
-    WebSearchSettingsController controller,
-  ) {
+  Widget _commonOptionsCard(ThemeData theme) {
     return _OutlinedCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -140,10 +134,10 @@ class _WebSearchSettingsPageState
             accent: const Color(0xFF8B5CF6),
             label: '最大结果数',
             description: '每次搜索返回的最大结果条数',
-            value: settings.maxResults,
+            value: _maxResults,
             min: 1,
             max: 20,
-            onChanged: controller.setMaxResults,
+            onChanged: (v) => setState(() => _maxResults = v),
           ),
           Divider(height: 1, color: theme.dividerColor),
           _StepperRow(
@@ -151,11 +145,11 @@ class _WebSearchSettingsPageState
             accent: const Color(0xFFF59E0B),
             label: '超时时间',
             description: '搜索请求的最长等待时间',
-            value: settings.timeout,
+            value: _timeout,
             min: 5,
             max: 60,
             unit: '秒',
-            onChanged: controller.setTimeout,
+            onChanged: (v) => setState(() => _timeout = v),
           ),
         ],
       ),
