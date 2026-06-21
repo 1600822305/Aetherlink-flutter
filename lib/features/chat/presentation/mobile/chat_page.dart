@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -55,26 +56,22 @@ class ChatPage extends ConsumerWidget {
       chatInterfaceSettingsProvider.select((s) => s.background),
     );
 
-    // Freeze the chat behind any pushed dialog / bottom sheet. When this page is
-    // no longer the top-most route, ignore the keyboard inset so focusing a text
-    // field inside an overlay (创建分组 prompt, 编辑消息 sheet, …) doesn't shove the
-    // composer + message list upward — that keyboard belongs to the overlay, not
-    // the chat. Reading the inset here is what makes the Scaffold re-evaluate the
-    // instant an overlay opens/closes the keyboard (a pushed route alone wouldn't
-    // rebuild this page).
-    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
-    final isTopRoute = ModalRoute.of(context)?.isCurrent ?? true;
-
     // The sidebar is hosted by [SidebarHost] (not `Scaffold.drawer`) so its
     // display style can switch between overlay and push (侧边栏显示方式); the
     // chat page itself stays a plain Scaffold behind it. Buzz when the sidebar
     // opens (gated by the 触觉反馈 master + 侧边栏 toggle), matching the original
     // drawer-open haptic.
+    //
+    // resizeToAvoidBottomInset is always false: the keyboard offset is handled
+    // manually inside [_ChatBody] — matching the original's `position: fixed`
+    // input — so the Scaffold body never animates its height during the
+    // keyboard transition, eliminating the per-frame ShaderMask re-rasterize
+    // that caused visible jank.
     return SidebarHost(
       drawer: const ChatSidebar(),
       onOpened: Haptics.instance.onSidebar,
       child: Scaffold(
-        resizeToAvoidBottomInset: isTopRoute || keyboardInset == 0,
+        resizeToAvoidBottomInset: false,
         appBar: const ChatTopBar(),
         body: _ChatBackground(
           background: background,
@@ -149,6 +146,18 @@ class _ChatBodyState extends State<_ChatBody> {
 
   @override
   Widget build(BuildContext context) {
+    // Manual keyboard avoidance (replaces Scaffold.resizeToAvoidBottomInset):
+    // the bottom offset is whichever is larger — the keyboard (viewInsets) or
+    // the system safe area (viewPadding, i.e. home indicator). When this page
+    // is NOT the topmost route (a dialog or sheet owns the keyboard), ignore
+    // the keyboard inset so the chat doesn't shift for someone else's field.
+    final isTopRoute = ModalRoute.of(context)?.isCurrent ?? true;
+    final viewInsets = MediaQuery.viewInsetsOf(context).bottom;
+    final viewPadding = MediaQuery.viewPaddingOf(context).bottom;
+    final bottomOffset = isTopRoute
+        ? math.max(viewInsets, viewPadding)
+        : viewPadding;
+
     return Column(
       children: [
         if (widget.showSystemPromptBubble) ...const [
@@ -164,29 +173,35 @@ class _ChatBodyState extends State<_ChatBody> {
             child: Stack(
               children: [
                 // Fuse the list into the composer (kelivo style): the list fills
-                // the body and reserves `inputHeight + 16` at the bottom so its
-                // tail clears the floating input, while a bottom gradient fades
+                // the body and reserves room at the bottom so its tail clears
+                // the floating input + keyboard, while a bottom gradient fades
                 // the messages out into the background behind the transparent
                 // input — no hard seam between the scroll area and the composer.
+                //
+                // fadeHeight intentionally excludes the keyboard offset so the
+                // ShaderMask's shader rect stays constant during the keyboard
+                // transition — only the cheaper ListView padding changes.
                 Positioned.fill(
                   child: _FadeToBottom(
                     fadeHeight: _inputHeight + _kBottomFadeBand,
                     child: _MessageList(
                       stateAsync: widget.stateAsync,
-                      bottomReserve: _inputHeight + 16,
+                      bottomReserve: _inputHeight + 16 + bottomOffset,
                     ),
                   ),
                 ),
                 Positioned(
                   left: 0,
                   right: 0,
-                  bottom: 0,
+                  bottom: bottomOffset,
                   child: SizeChangedLayoutNotifier(
                     child: KeyedSubtree(
                       key: _inputKey,
-                      // Only the composer carries the bottom safe-area inset, so
-                      // the wallpaper behind it still reaches the screen edge.
-                      child: const SafeArea(top: false, child: ChatInputBar()),
+                      child: const SafeArea(
+                        top: false,
+                        bottom: false,
+                        child: ChatInputBar(),
+                      ),
                     ),
                   ),
                 ),
