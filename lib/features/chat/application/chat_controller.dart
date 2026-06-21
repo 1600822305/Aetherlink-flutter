@@ -40,12 +40,8 @@ import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/builtin_search_detector.dart'
-    as search_detector;
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tools.dart';
-import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
-import 'package:aetherlink_flutter/features/settings/application/web_search_settings_controller.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_bridge_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_prompt.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
@@ -222,7 +218,7 @@ class ChatController extends _$ChatController {
       tools: mcp.useFunctionTools ? mcp.tools : null,
       useResponsesAPI: current.provider.useResponsesAPI ?? false,
       extraHeaders: effective.providerExtraHeaders,
-      extraBody: _mergeExtraBody(effective.providerExtraBody, mcp.nativeSearchExtraBody),
+      extraBody: effective.providerExtraBody,
     );
 
     await _streamInto(
@@ -324,7 +320,7 @@ class ChatController extends _$ChatController {
       tools: mcp.useFunctionTools ? mcp.tools : null,
       useResponsesAPI: current.provider.useResponsesAPI ?? false,
       extraHeaders: effective.providerExtraHeaders,
-      extraBody: _mergeExtraBody(effective.providerExtraBody, mcp.nativeSearchExtraBody),
+      extraBody: effective.providerExtraBody,
     );
 
     await _streamInto(
@@ -422,7 +418,7 @@ class ChatController extends _$ChatController {
       tools: mcp.useFunctionTools ? mcp.tools : null,
       useResponsesAPI: current.provider.useResponsesAPI ?? false,
       extraHeaders: effective.providerExtraHeaders,
-      extraBody: _mergeExtraBody(effective.providerExtraBody, mcp.nativeSearchExtraBody),
+      extraBody: effective.providerExtraBody,
     );
 
     await _streamInto(
@@ -1706,56 +1702,11 @@ class ChatController extends _$ChatController {
       routes[kReadSkillToolName] = const _SkillReadToolRoute();
     }
 
-    // Web search: inject tool when the input mode is active, independent of
-    // the MCP 工具总开关. When the model supports native/built-in search (Gemini
-    // grounding, OpenAI web_search, Claude web_search), prefer that over the
-    // external SearXNG `builtin_web_search` tool.
-    final webSearchActive =
-        ref.read(inputModeControllerProvider) == InputMode.webSearch;
-    Map<String, dynamic>? nativeSearchExtra;
-    if (webSearchActive) {
-      final current = await ref.read(appCurrentModelProvider.future);
-      final effective = current != null ? effectiveModelFor(current) : null;
-      final providerType = effective?.providerType;
-      final modelId = effective?.id;
-      final useResponsesAPI = current?.provider.useResponsesAPI ?? false;
-      final baseUrl = effective?.baseUrl;
-
-      if (search_detector.supportsBuiltInSearch(
-        providerType: providerType,
-        modelId: modelId,
-        baseUrl: baseUrl,
-        useResponsesAPI: useResponsesAPI,
-      )) {
-        nativeSearchExtra = buildNativeSearchBody(
-          providerType: providerType,
-          modelId: modelId,
-          useResponsesAPI: useResponsesAPI,
-        );
-      }
-      // Fall back to SearXNG when native search isn't supported or when the
-      // provider type isn't handled by buildNativeSearchBody.
-      if (nativeSearchExtra == null &&
-          !routes.containsKey(kWebSearchToolDefinition.name)) {
-        tools.add(kWebSearchToolDefinition);
-        routes[kWebSearchToolDefinition.name] = const _WebSearchToolRoute();
-      }
-    }
-
-    // 工具 总开关 off: only read_skill (and web search if active) may ride along.
-    // Force function-calling mode when only web search is present — prompt
-    // injection is an MCP-specific mechanism and shouldn't gate web search.
+    // 工具 总开关 off: only read_skill may ride along (web parity).
     if (!toolsState.enabled) {
       addReadSkill();
-      if (tools.isEmpty && nativeSearchExtra == null) {
-        return const _McpSetup.disabled();
-      }
-      return _McpSetup(
-        mode: webSearchActive ? McpMode.function : toolsState.mode,
-        tools: tools,
-        routes: routes,
-        nativeSearchExtraBody: nativeSearchExtra,
-      );
+      if (tools.isEmpty) return const _McpSetup.disabled();
+      return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
     }
 
     // 桥梁模式: 1 个 mcp_bridge 工具替代注入全部服务器工具。
@@ -1807,13 +1758,7 @@ class ChatController extends _$ChatController {
     }
 
     addReadSkill();
-
-    return _McpSetup(
-      mode: toolsState.mode,
-      tools: tools,
-      routes: routes,
-      nativeSearchExtraBody: nativeSearchExtra,
-    );
+    return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
   }
 
   /// Executes one tool call along its [route]: a built-in runs in-process via
@@ -1846,10 +1791,6 @@ class ChatController extends _$ChatController {
         return executeReadSkill(skills, args);
       case _BridgeToolRoute():
         return _runBridgeTool(args);
-      case _WebSearchToolRoute():
-        final searchSettings =
-            ref.read(webSearchSettingsControllerProvider);
-        return runWebSearchTool(args, searchSettings: searchSettings);
     }
   }
 
@@ -2020,23 +1961,9 @@ class ChatController extends _$ChatController {
 
   /// The system prompt for a turn: in 提示词注入 mode the tool catalogue is woven
   /// into [base] (web `buildSystemPrompt`); otherwise [base] is used as-is and
-  /// tools ride the native `tools` field. When web search is active, the search
-  /// citation instructions are appended.
-  String? _systemFor(_McpSetup mcp, String? base) {
-    final prompt =
-        mcp.usePromptInjection ? buildMcpSystemPrompt(base, mcp.tools) : base;
-    final webSearchActive =
-        ref.read(inputModeControllerProvider) == InputMode.webSearch;
-    if (!webSearchActive) return prompt;
-    // When using native/built-in search, the model's own search already handles
-    // tool invocation — only append the citation format instructions.
-    // When using SearXNG fallback, append the full tool usage instructions.
-    final searchPrompt = mcp.nativeSearchExtraBody != null
-        ? kNativeSearchSystemPrompt
-        : kWebSearchSystemPrompt;
-    final combined = (prompt ?? '') + searchPrompt;
-    return combined.trim().isEmpty ? null : combined;
-  }
+  /// tools ride the native `tools` field.
+  String? _systemFor(_McpSetup mcp, String? base) =>
+      mcp.usePromptInjection ? buildMcpSystemPrompt(base, mcp.tools) : base;
 
   Future<String> _ensureTopic() async {
     final existing = _topicId;
@@ -2135,18 +2062,6 @@ class ChatController extends _$ChatController {
   }
 }
 
-/// Merges [nativeSearch] entries (provider-specific native search config) into
-/// the model's [base] extra body. Returns [base] unchanged when [nativeSearch]
-/// is null.
-Map<String, dynamic>? _mergeExtraBody(
-  Map<String, dynamic>? base,
-  Map<String, dynamic>? nativeSearch,
-) {
-  if (nativeSearch == null) return base;
-  if (base == null) return nativeSearch;
-  return {...base, ...nativeSearch};
-}
-
 /// The latest (live) content stashed in [Message.metadata] while a historical
 /// version is on display: the ids of the cloned blocks plus the model that
 /// produced them, restored by [ChatController.switchToLatest].
@@ -2178,24 +2093,16 @@ class _McpSetup {
     required this.mode,
     required this.tools,
     required this.routes,
-    this.nativeSearchExtraBody,
   });
 
   const _McpSetup.disabled()
     : mode = McpMode.function,
       tools = const <McpToolDefinition>[],
-      routes = const <String, _ToolRoute>{},
-      nativeSearchExtraBody = null;
+      routes = const <String, _ToolRoute>{};
 
   final McpMode mode;
   final List<McpToolDefinition> tools;
   final Map<String, _ToolRoute> routes;
-
-  /// Provider-specific extra body entries to enable native/built-in web search
-  /// (Gemini grounding, OpenAI web_search, Claude web_search tool). When
-  /// non-null, this is merged into `LlmChatRequest.extraBody` so the adapter
-  /// passes the correct tool configuration without `builtin_web_search`.
-  final Map<String, dynamic>? nativeSearchExtraBody;
 
   bool get hasTools => tools.isNotEmpty;
 
@@ -2241,9 +2148,4 @@ class _RemoteToolRoute extends _ToolRoute {
   const _RemoteToolRoute(this.server, super.toolName);
 
   final McpServer server;
-}
-
-/// The `builtin_web_search` tool, run in-process via [runWebSearchTool].
-class _WebSearchToolRoute extends _ToolRoute {
-  const _WebSearchToolRoute() : super('builtin_web_search');
 }

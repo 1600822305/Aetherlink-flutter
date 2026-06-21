@@ -3,16 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/code_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/data_blocks.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/media_blocks.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/text_blocks.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/thinking_block_view.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/citation_store.dart'
-    as citation_store;
 
 /// Dispatches an ordered list of [MessageBlock]s to per-type widgets, mirroring
 /// the original `MessageBlockRenderer.tsx`.
@@ -37,20 +33,6 @@ class MessageBlockRenderer extends StatelessWidget {
   final List<MessageBlock> blocks;
   final MessageStatus messageStatus;
   final Color? textColor;
-
-  /// Opens the source URL for a citation reference (e.g. "1:abc123").
-  static void _onCitationTap(String citationRef) {
-    // citationRef is "index:id" — extract the id part to look up the URL.
-    final parts = citationRef.split(':');
-    final id = parts.length > 1 ? parts[1] : citationRef;
-    final url = citation_store.lookupCitationUrl(id);
-    if (url != null) {
-      final uri = Uri.tryParse(url);
-      if (uri != null) {
-        launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    }
-  }
 
   bool get _isStreaming =>
       messageStatus == MessageStatus.streaming ||
@@ -107,11 +89,7 @@ class MessageBlockRenderer extends StatelessWidget {
         );
       case MainTextBlock():
         if (cleanMainText(block.content).isEmpty) return null;
-        return MainTextBlockView(
-          block: block,
-          textColor: textColor,
-          onCitationTap: _onCitationTap,
-        );
+        return MainTextBlockView(block: block, textColor: textColor);
       case ThinkingBlock():
         return ThinkingBlockView(block: block);
       case ImageBlock():
