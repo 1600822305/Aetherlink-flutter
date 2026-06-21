@@ -42,6 +42,8 @@ import 'package:aetherlink_flutter/shared/domain/skill.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tools.dart';
+import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
+import 'package:aetherlink_flutter/features/settings/application/web_search_settings_controller.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_bridge_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_prompt.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
@@ -1758,6 +1760,15 @@ class ChatController extends _$ChatController {
     }
 
     addReadSkill();
+
+    // Web search: inject `builtin_web_search` when the input mode is active.
+    final webSearchActive =
+        ref.read(inputModeControllerProvider) == InputMode.webSearch;
+    if (webSearchActive && !routes.containsKey(kWebSearchToolDefinition.name)) {
+      tools.add(kWebSearchToolDefinition);
+      routes[kWebSearchToolDefinition.name] = const _WebSearchToolRoute();
+    }
+
     return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
   }
 
@@ -1791,6 +1802,10 @@ class ChatController extends _$ChatController {
         return executeReadSkill(skills, args);
       case _BridgeToolRoute():
         return _runBridgeTool(args);
+      case _WebSearchToolRoute():
+        final searchSettings =
+            ref.read(webSearchSettingsControllerProvider);
+        return runWebSearchTool(args, searchSettings: searchSettings);
     }
   }
 
@@ -1961,9 +1976,17 @@ class ChatController extends _$ChatController {
 
   /// The system prompt for a turn: in 提示词注入 mode the tool catalogue is woven
   /// into [base] (web `buildSystemPrompt`); otherwise [base] is used as-is and
-  /// tools ride the native `tools` field.
-  String? _systemFor(_McpSetup mcp, String? base) =>
-      mcp.usePromptInjection ? buildMcpSystemPrompt(base, mcp.tools) : base;
+  /// tools ride the native `tools` field. When web search is active, the search
+  /// citation instructions are appended.
+  String? _systemFor(_McpSetup mcp, String? base) {
+    final prompt =
+        mcp.usePromptInjection ? buildMcpSystemPrompt(base, mcp.tools) : base;
+    final webSearchActive =
+        ref.read(inputModeControllerProvider) == InputMode.webSearch;
+    if (!webSearchActive) return prompt;
+    final combined = (prompt ?? '') + kWebSearchSystemPrompt;
+    return combined.trim().isEmpty ? null : combined;
+  }
 
   Future<String> _ensureTopic() async {
     final existing = _topicId;
@@ -2148,4 +2171,9 @@ class _RemoteToolRoute extends _ToolRoute {
   const _RemoteToolRoute(this.server, super.toolName);
 
   final McpServer server;
+}
+
+/// The `builtin_web_search` tool, run in-process via [runWebSearchTool].
+class _WebSearchToolRoute extends _ToolRoute {
+  const _WebSearchToolRoute() : super('builtin_web_search');
 }

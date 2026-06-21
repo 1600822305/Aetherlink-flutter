@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
+import 'package:aetherlink_flutter/shared/domain/web_search_settings.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/math_expression.dart';
 
 /// Local execution for the pure-computation built-in MCP servers — the port of
@@ -729,4 +730,157 @@ int _asIntOr(Object? value, int fallback) {
   if (value is num) return value.toInt();
   if (value is String) return int.tryParse(value.trim()) ?? fallback;
   return fallback;
+}
+
+// ---------------------------------------------------------------------------
+// builtin_web_search — the high-level search tool injected when web search
+// mode is active, wrapping the SearXNG backend and formatting results with
+// citations.
+// ---------------------------------------------------------------------------
+
+/// Tool definition for `builtin_web_search` (injected into `tools` when
+/// `InputMode.webSearch` is active). Matches the original
+/// `createWebSearchToolDefinition`.
+const McpToolDefinition kWebSearchToolDefinition = McpToolDefinition(
+  name: 'builtin_web_search',
+  description: '网络搜索工具，用于查找当前信息、新闻和实时数据。\n\n'
+      '使用场景：\n'
+      '- 用户询问实时信息（天气、新闻、股票等）\n'
+      '- 用户询问你不确定的事实\n'
+      '- 用户明确要求搜索网络\n'
+      '- 需要最新数据来回答问题',
+  inputSchema: {
+    'type': 'object',
+    'properties': {
+      'query': {
+        'type': 'string',
+        'description': '搜索查询关键词',
+      },
+    },
+    'required': ['query'],
+  },
+);
+
+/// The system prompt injected when web search is enabled — instructs the model
+/// to use `[citation](index:id)` inline references matching Kelivo's format.
+const String kWebSearchSystemPrompt = '''
+
+## builtin_web_search 工具使用说明
+
+当用户询问需要实时信息或最新数据的问题时，使用 builtin_web_search 工具进行搜索。
+
+### 引用格式
+- 搜索结果中会包含 index（搜索结果序号）和 id（搜索结果唯一标识符），引用格式为：
+  `具体的引用内容 [citation](index:id)`
+- **引用必须紧跟在相关内容之后**，在标点符号后面，不得延后到回复结尾
+- 正确格式：`... [citation](index:id)` `... [citation](index:id) [citation](index:id)`
+
+### 使用规范
+1. **使用时机**
+   - 用户询问最新新闻、事件、数据
+   - 需要查证事实信息
+   - 需要获取技术文档、API 信息等
+
+2. **引用要求**
+   - 使用搜索结果时必须标注引用来源
+   - 每个引用的事实都要紧跟 [citation](index:id) 标记
+   - 不要将所有引用集中在回答末尾
+
+3. **回答格式示例**
+   ✅ 正确：
+   - 据最新报道，该事件发生在昨天下午。[citation](1:a1b2c3)
+   - 技术文档显示该功能需要版本3.0以上。[citation](2:d4e5f6) 具体配置步骤如下...[citation](3:g7h8i9)
+
+   ❌ 错误：
+   - 据最新报道，该事件发生在昨天下午。技术文档显示该功能需要版本3.0以上。
+     [citation](1:a1b2c3) [citation](2:d4e5f6)
+''';
+
+/// Executes `builtin_web_search` by delegating to the SearXNG backend and
+/// formatting results with citation IDs so the model can reference them.
+Future<McpToolResult> runWebSearchTool(
+  Map<String, Object?> args, {
+  Map<String, String>? env,
+  WebSearchSettings searchSettings = const WebSearchSettings(),
+}) async {
+  final query = (args['query'] as String?)?.trim() ?? '';
+  if (query.isEmpty) {
+    return const McpToolResult('搜索关键词不能为空', isError: true);
+  }
+
+  final baseUrl = env?['SEARXNG_BASE_URL'] ?? _kDefaultSearxngUrl;
+
+  try {
+    final params = <String, String>{
+      'q': query,
+      'format': 'json',
+      'language': 'zh-CN',
+      'categories': 'general',
+      'pageno': '1',
+      'safesearch': '0',
+    };
+
+    final uri = Uri.parse('$baseUrl/search').replace(queryParameters: params);
+
+    final client = HttpClient()
+      ..connectionTimeout = Duration(seconds: searchSettings.timeout);
+    try {
+      final request = await client.getUrl(uri);
+      request.headers.set('Accept', 'application/json');
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+
+      if (response.statusCode != 200) {
+        return McpToolResult(
+          '搜索请求失败 (${response.statusCode}): $body',
+          isError: true,
+        );
+      }
+
+      final data = jsonDecode(body) as Map<String, Object?>;
+      final rawResults = (data['results'] as List?) ?? [];
+      final results = rawResults.take(searchSettings.maxResults).toList();
+
+      if (results.isEmpty) {
+        return const McpToolResult('没有找到相关的搜索结果。');
+      }
+
+      // Build citation-compatible JSON output (matches Kelivo format).
+      final items = <Map<String, Object?>>[];
+      for (var i = 0; i < results.length; i++) {
+        final item = results[i];
+        if (item is! Map) continue;
+        final id = _shortId();
+        items.add({
+          'index': i + 1,
+          'id': id,
+          'title': item['title'] ?? '无标题',
+          'url': item['url'] ?? '',
+          'text': item['content'] ?? '',
+        });
+      }
+
+      final resultJson = jsonEncode({'items': items});
+
+      return McpToolResult(
+        '搜索查询: "$query"\n'
+        '找到 ${items.length} 个相关结果。\n\n'
+        '请使用 [citation](index:id) 格式引用具体信息。\n\n'
+        '搜索结果:\n```json\n$resultJson\n```',
+      );
+    } finally {
+      client.close();
+    }
+  } catch (error) {
+    return McpToolResult(
+      '搜索失败: ${error is Exception ? error.toString() : '未知错误'}',
+      isError: true,
+    );
+  }
+}
+
+/// Generates a short 6-character hex ID for citation references.
+String _shortId() {
+  final r = math.Random();
+  return List.generate(6, (_) => r.nextInt(16).toRadixString(16)).join();
 }
