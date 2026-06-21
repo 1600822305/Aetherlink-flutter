@@ -243,13 +243,87 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
   ],
+  '@aether/searxng': [
+    McpToolDefinition(
+      name: 'searxng_search',
+      description:
+          '聚合多引擎互联网搜索。通过 categories 参数选择搜索类别：general(通用), news(新闻), '
+          'science(学术), it(技术), videos, images, repos, packages, social media, '
+          'translate, weather, map, music, books, movies, q&a, dictionaries, '
+          'currency, files。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'query': {'type': 'string', 'description': '搜索关键词'},
+          'engines': {
+            'type': 'string',
+            'description':
+                '指定引擎（逗号分隔），如 google,bing,duckduckgo。留空使用类别默认引擎',
+          },
+          'language': {
+            'type': 'string',
+            'description': '语言代码，如 zh-CN, en, ja',
+            'default': 'zh-CN',
+          },
+          'categories': {
+            'type': 'string',
+            'description': '搜索类别（逗号分隔）',
+            'default': 'general',
+          },
+          'maxResults': {
+            'type': 'number',
+            'description': '最大结果数',
+            'default': 10,
+          },
+          'timeRange': {
+            'type': 'string',
+            'enum': ['day', 'week', 'month', 'year', ''],
+            'description': '时间范围过滤',
+          },
+          'pageno': {
+            'type': 'number',
+            'description': '页码',
+            'default': 1,
+          },
+          'safesearch': {
+            'type': 'number',
+            'enum': [0, 1, 2],
+            'description': '安全搜索：0=关闭, 1=中等, 2=严格',
+            'default': 0,
+          },
+        },
+        'required': ['query'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'searxng_read_url',
+      description: '抓取网页内容并提取正文，支持 HTML/JSON/纯文本',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'url': {
+            'type': 'string',
+            'format': 'uri',
+            'description': '目标 URL',
+          },
+          'maxLength': {
+            'type': 'number',
+            'description': '最大返回字符数',
+            'default': 5000,
+          },
+        },
+        'required': ['url'],
+      },
+    ),
+  ],
 };
 
 /// Whether [serverName] is a built-in server whose tools can be executed
-/// locally right now (pure computation, no native plugin / network).
+/// locally (pure computation or simple HTTP — no native plugin needed).
 const Set<String> kLocallyRunnableBuiltins = {
   '@aether/calculator',
   '@aether/time',
+  '@aether/searxng',
 };
 
 /// The tools a built-in MCP server exposes, or an empty list for servers
