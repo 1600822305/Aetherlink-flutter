@@ -156,6 +156,9 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
     final text = _controller.text;
     final attachments = ref.read(composerAttachmentsProvider);
     if (text.trim().isEmpty && attachments.isEmpty) return;
+    // Dismiss keyboard before sending (original: smartHandleSubmit →
+    // hideKeyboard() → activeElement.blur()).
+    _focusNode.unfocus();
     _controller.clear();
     ref.read(composerAttachmentsProvider.notifier).clear();
     setState(() => _hasText = false);
