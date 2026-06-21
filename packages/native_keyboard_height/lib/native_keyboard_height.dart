@@ -2,29 +2,49 @@
 /// starts, with the final keyboard height.
 ///
 /// This is the Flutter equivalent of Capacitor's `keyboardWillShow` /
-/// `keyboardWillHide` events.
+/// `keyboardWillHide` events, ported 1:1 from `capacitor-edge-to-edge`.
 library native_keyboard_height;
 
 import 'dart:async';
 import 'package:flutter/services.dart';
 
+/// The phase of a keyboard visibility change.
+enum KeyboardEventType {
+  /// Fires **before** the keyboard animation starts (≈ keyboardWillShow).
+  /// [KeyboardEvent.height] is the **final** keyboard height.
+  willShow,
+
+  /// Fires **after** the keyboard animation completes (≈ keyboardDidShow).
+  didShow,
+
+  /// Fires **before** the keyboard hide animation starts (≈ keyboardWillHide).
+  willHide,
+
+  /// Fires **after** the keyboard hide animation completes (≈ keyboardDidHide).
+  didHide,
+}
+
 /// A keyboard visibility event from the native layer.
 class KeyboardEvent {
-  const KeyboardEvent.show(this.height) : visible = true;
-  const KeyboardEvent.hide()
-      : visible = false,
-        height = 0;
+  const KeyboardEvent({
+    required this.type,
+    required this.height,
+  });
 
-  /// Whether the keyboard is visible.
-  final bool visible;
+  /// The event phase.
+  final KeyboardEventType type;
 
   /// The keyboard height in logical pixels (dp on Android, pt on iOS).
-  /// Always 0 when [visible] is false.
+  /// Non-zero for [KeyboardEventType.willShow] and [KeyboardEventType.didShow],
+  /// always 0 for hide events.
   final double height;
 
+  /// Whether the keyboard is becoming visible (willShow or didShow).
+  bool get visible =>
+      type == KeyboardEventType.willShow || type == KeyboardEventType.didShow;
+
   @override
-  String toString() =>
-      'KeyboardEvent(visible: $visible, height: $height)';
+  String toString() => 'KeyboardEvent($type, height: $height)';
 }
 
 /// Singleton that streams native keyboard show/hide events.
@@ -36,10 +56,10 @@ class KeyboardEvent {
 /// Usage:
 /// ```dart
 /// final sub = NativeKeyboardHeight.instance.events.listen((e) {
-///   if (e.visible) {
-///     // keyboard showing, e.height is the final height
-///   } else {
-///     // keyboard hidden
+///   if (e.type == KeyboardEventType.willShow) {
+///     // keyboard about to show, e.height is the final height
+///   } else if (e.type == KeyboardEventType.willHide) {
+///     // keyboard about to hide
 ///   }
 /// });
 /// ```
@@ -59,12 +79,23 @@ class NativeKeyboardHeight {
     _stream ??= _channel.receiveBroadcastStream().map((dynamic event) {
       if (event is Map) {
         final type = event['type'] as String?;
-        if (type == 'show') {
-          final height = (event['height'] as num?)?.toDouble() ?? 0.0;
-          return KeyboardEvent.show(height);
+        final height = (event['height'] as num?)?.toDouble() ?? 0.0;
+        switch (type) {
+          case 'willShow':
+            return KeyboardEvent(
+                type: KeyboardEventType.willShow, height: height);
+          case 'didShow':
+            return KeyboardEvent(
+                type: KeyboardEventType.didShow, height: height);
+          case 'willHide':
+            return KeyboardEvent(
+                type: KeyboardEventType.willHide, height: 0);
+          case 'didHide':
+            return KeyboardEvent(
+                type: KeyboardEventType.didHide, height: 0);
         }
       }
-      return const KeyboardEvent.hide();
+      return KeyboardEvent(type: KeyboardEventType.didHide, height: 0);
     }).asBroadcastStream();
     return _stream!;
   }

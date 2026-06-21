@@ -147,12 +147,22 @@ class _ChatBodyState extends State<_ChatBody> {
     super.dispose();
   }
 
-  /// Called by the native plugin BEFORE the keyboard animation starts.
+  /// Called by the native plugin. Layout updates only on the "will" events
+  /// (before the OS animation starts), matching the original KeyboardManager.
   void _onKeyboardEvent(KeyboardEvent event) {
     if (!mounted) return;
-    final h = event.visible ? event.height : 0.0;
-    if ((h - _keyboardHeight).abs() > 0.5) {
-      setState(() => _keyboardHeight = h);
+    switch (event.type) {
+      case KeyboardEventType.willShow:
+        if ((event.height - _keyboardHeight).abs() > 0.5) {
+          setState(() => _keyboardHeight = event.height);
+        }
+      case KeyboardEventType.willHide:
+        if (_keyboardHeight != 0) {
+          setState(() => _keyboardHeight = 0);
+        }
+      case KeyboardEventType.didShow:
+      case KeyboardEventType.didHide:
+        break;
     }
   }
 
