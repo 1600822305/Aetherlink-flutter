@@ -116,6 +116,13 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
   /// Tracks the open/closed edge so [SidebarHost.onOpened] fires once per open.
   bool _wasOpen = false;
 
+  /// Cooldown after dismissing the keyboard.  On Capacitor, the OS dismisses
+  /// the keyboard *before* firing the back-button event, so the handler never
+  /// sees a race.  In Flutter, [PopScope] fires on every press and
+  /// `viewInsets.bottom` drops to 0 faster than the dismiss animation
+  /// finishes — a rapid second press falls through to the exit dialog.
+  DateTime? _lastKeyboardDismiss;
+
   @override
   void initState() {
     super.initState();
@@ -168,7 +175,17 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
     final views = WidgetsBinding.instance.platformDispatcher.views;
     if (views.isNotEmpty && views.first.viewInsets.bottom > 0) {
       FocusManager.instance.primaryFocus?.unfocus();
+      _lastKeyboardDismiss = DateTime.now();
       return;
+    }
+    // Cooldown: a rapid second back press while the keyboard is still
+    // animating away would fall through here because viewInsets.bottom
+    // already reached 0.  Swallow it so the exit dialog doesn't pop up
+    // on top of the closing keyboard.
+    if (_lastKeyboardDismiss != null) {
+      final elapsed = DateTime.now().difference(_lastKeyboardDismiss!);
+      _lastKeyboardDismiss = null;
+      if (elapsed < const Duration(milliseconds: 500)) return;
     }
     _showExitConfirm();
   }
