@@ -1,0 +1,23 @@
+name: native_keyboard_height
+description: >
+  Provides native keyboard height events (keyboardWillShow / keyboardWillHide)
+  that fire BEFORE the OS keyboard animation starts, with the final keyboard
+  height — matching Capacitor's Keyboard plugin behavior.
+version: 0.1.0
+
+environment:
+  sdk: ^3.0.0
+  flutter: ">=3.10.0"
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.example.native_keyboard_height
+        pluginClass: NativeKeyboardHeightPlugin
+      ios:
+        pluginClass: NativeKeyboardHeightPlugin
+
+dependencies:
+  flutter:
+    sdk: flutter
