@@ -14,6 +14,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/quick_phra
 import 'package:aetherlink_flutter/shared/domain/input_box_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_actions.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_menu_sheet.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/search_settings_sheet.dart';
 
 /// The chat composer's [InputBoxActions]: the single place that owns every
 /// input-box action's behavior and state, replacing the original's three
@@ -75,7 +76,7 @@ class ChatInputActions implements InputBoxActions {
       case InputBoxAction.uploadMenu:
         _openMenu(InputBoxMenu.upload, context);
       case InputBoxAction.webSearch:
-        _toggle(InputMode.webSearch);
+        _openSearchSettings(context);
       case InputBoxAction.generateImage:
         _toggle(InputMode.image);
       case InputBoxAction.generateVideo:
@@ -111,6 +112,9 @@ class ChatInputActions implements InputBoxActions {
 
   void _toggle(InputMode mode) =>
       _ref.read(inputModeControllerProvider.notifier).toggle(mode);
+
+  void _openSearchSettings(BuildContext context) =>
+      showSearchSettingsSheet(context);
 
   /// Creates a fresh topic for the current assistant and switches to it (port of
   /// `handleCreateTopic`); a no-op when no assistant exists. The opening menu has
