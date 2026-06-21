@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -104,7 +105,7 @@ class _ChatBody extends StatefulWidget {
   State<_ChatBody> createState() => _ChatBodyState();
 }
 
-class _ChatBodyState extends State<_ChatBody> {
+class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
   final GlobalKey _inputKey = GlobalKey();
   double _inputHeight = 0;
 
@@ -115,10 +116,77 @@ class _ChatBodyState extends State<_ChatBody> {
   /// mid-animation. Collapsing them to a single pending measure cuts that churn.
   bool _measureScheduled = false;
 
+  // ── Instant keyboard snap ─────────────────────────────────────────────────
+  //
+  // Instead of reading `MediaQuery.viewInsetsOf` in build (which reports
+  // intermediate values during the ~250ms OS keyboard animation and causes
+  // a visible slide), we listen to raw metrics via [WidgetsBindingObserver]
+  // and only call setState at the open↔closed edges.  The result is a binary
+  // snap: content jumps instantly when the keyboard appears/disappears,
+  // matching the original web version's `position: fixed` behavior.
+
+  /// Binary keyboard height: 0 (closed) or the full remembered height (open).
+  double _keyboardHeight = 0;
+
+  /// Max viewInsets.bottom ever observed — subsequent opens snap to this
+  /// value immediately without waiting for the animation.
+  double _rememberedKeyboardHeight = 0;
+
+  /// Whether we consider the keyboard logically open.
+  bool _keyboardOpen = false;
+
+  /// Corrects the first-ever open where the initial snap used a partial value.
+  Timer? _settleTimer;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scheduleMeasure();
+  }
+
+  @override
+  void dispose() {
+    _settleTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    if (views.isEmpty) return;
+    final view = views.first;
+    final rawBottom = view.viewInsets.bottom / view.devicePixelRatio;
+
+    // Track max so subsequent opens snap instantly.
+    if (rawBottom > _rememberedKeyboardHeight) {
+      _rememberedKeyboardHeight = rawBottom;
+    }
+
+    if (rawBottom > 0 && !_keyboardOpen) {
+      // Keyboard started appearing → snap open.
+      _keyboardOpen = true;
+      setState(() => _keyboardHeight = _rememberedKeyboardHeight);
+    } else if (rawBottom == 0 && _keyboardOpen) {
+      // Keyboard fully gone → snap closed.
+      _keyboardOpen = false;
+      _settleTimer?.cancel();
+      setState(() => _keyboardHeight = 0);
+    }
+
+    // After the OS animation settles, correct to the real height (handles
+    // the first-ever open where _rememberedKeyboardHeight started at 0).
+    if (_keyboardOpen) {
+      _settleTimer?.cancel();
+      _settleTimer = Timer(const Duration(milliseconds: 100), () {
+        if (mounted &&
+            _keyboardOpen &&
+            _keyboardHeight != _rememberedKeyboardHeight) {
+          setState(() => _keyboardHeight = _rememberedKeyboardHeight);
+        }
+      });
+    }
   }
 
   void _scheduleMeasure() {
@@ -146,16 +214,13 @@ class _ChatBodyState extends State<_ChatBody> {
 
   @override
   Widget build(BuildContext context) {
-    // Manual keyboard avoidance (replaces Scaffold.resizeToAvoidBottomInset):
-    // the bottom offset is whichever is larger — the keyboard (viewInsets) or
-    // the system safe area (viewPadding, i.e. home indicator). When this page
-    // is NOT the topmost route (a dialog or sheet owns the keyboard), ignore
-    // the keyboard inset so the chat doesn't shift for someone else's field.
+    // _keyboardHeight is maintained by didChangeMetrics (binary snap, no
+    // per-frame animation).  viewPadding is the home-indicator safe area;
+    // it only changes on rotation, not during keyboard transitions.
     final isTopRoute = ModalRoute.of(context)?.isCurrent ?? true;
-    final viewInsets = MediaQuery.viewInsetsOf(context).bottom;
     final viewPadding = MediaQuery.viewPaddingOf(context).bottom;
     final bottomOffset = isTopRoute
-        ? math.max(viewInsets, viewPadding)
+        ? math.max(_keyboardHeight, viewPadding)
         : viewPadding;
 
     return Column(

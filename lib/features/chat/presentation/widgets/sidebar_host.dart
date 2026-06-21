@@ -156,13 +156,21 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
 
   /// Port of the original `ExitConfirmDialog` + `BackButtonHandler`: when the
   /// sidebar is closed and the user presses the system back button, show a
-  /// confirm dialog instead of immediately exiting.
+  /// confirm dialog instead of immediately exiting.  If the keyboard is
+  /// visible, dismiss it first (matching the original's priority order:
+  /// keyboard → sidebar → exit confirm).
   void _handleBackButton() {
     if (isSidebarOpen) {
       closeSidebar();
-    } else {
-      _showExitConfirm();
+      return;
     }
+    // If the keyboard is open, dismiss it instead of showing the dialog.
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    if (views.isNotEmpty && views.first.viewInsets.bottom > 0) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      return;
+    }
+    _showExitConfirm();
   }
 
   Future<void> _showExitConfirm() async {
