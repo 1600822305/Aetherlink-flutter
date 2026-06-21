@@ -4,6 +4,8 @@ import 'dart:math' as math;
 
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/web_search_settings.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/citation_store.dart'
+    as citation_store;
 import 'package:aetherlink_flutter/shared/mcp_tools/math_expression.dart';
 
 /// Local execution for the pure-computation built-in MCP servers — the port of
@@ -796,6 +798,73 @@ const String kWebSearchSystemPrompt = '''
      [citation](1:a1b2c3) [citation](2:d4e5f6)
 ''';
 
+/// System prompt appended when the model uses native/built-in web search
+/// (Gemini grounding, OpenAI web_search, Claude web_search). The model
+/// handles the search itself; we only need citation format instructions.
+const String kNativeSearchSystemPrompt = '''
+
+## 搜索结果引用格式
+
+当你在回答中引用搜索结果时，请使用以下格式标注来源：
+- 格式：`[citation](index:id)` 其中 index 为来源序号，id 为唯一标识
+- 引用必须紧跟在相关内容之后，不得集中在回答末尾
+- 如果搜索结果中包含来源链接，请确保引用对应的来源
+
+示例：据最新数据显示，全球气温上升了1.5°C。[citation](1:src1)
+''';
+
+/// Builds provider-specific `extraBody` entries to enable native web search.
+///
+/// Returns entries that are spread into the request body via
+/// `LlmChatRequest.extraBody`. The key `_nativeSearchTools` carries the
+/// provider-specific tool configs that each adapter should merge into its
+/// own `tools` array. For now, adapters that don't explicitly handle
+/// `_nativeSearchTools` will simply ignore it — a per-adapter hook is the
+/// phase-2 follow-up.
+Map<String, dynamic>? buildNativeSearchBody({
+  required String? providerType,
+  required String? modelId,
+  bool useResponsesAPI = false,
+}) {
+  switch (providerType) {
+    case 'gemini':
+    case 'google':
+      return {
+        '_nativeSearchTools': [
+          {'google_search': {}},
+        ],
+      };
+
+    case 'anthropic':
+      return {
+        '_nativeSearchTools': [
+          {'type': 'web_search_20250305', 'name': 'web_search', 'max_uses': 3},
+        ],
+      };
+
+    case 'openai':
+    case 'openai-aisdk':
+      if (useResponsesAPI) {
+        return {
+          '_nativeSearchTools': [
+            {'type': 'web_search'},
+          ],
+        };
+      }
+      return null;
+
+    case 'grok':
+      return {
+        '_nativeSearchTools': [
+          {'type': 'web_search'},
+        ],
+      };
+
+    default:
+      return null;
+  }
+}
+
 /// Executes `builtin_web_search` by delegating to the SearXNG backend and
 /// formatting results with citation IDs so the model can reference them.
 Future<McpToolResult> runWebSearchTool(
@@ -851,13 +920,17 @@ Future<McpToolResult> runWebSearchTool(
         final item = results[i];
         if (item is! Map) continue;
         final id = _shortId();
+        final url = (item['url'] ?? '').toString();
         items.add({
           'index': i + 1,
           'id': id,
           'title': item['title'] ?? '无标题',
-          'url': item['url'] ?? '',
+          'url': url,
           'text': item['content'] ?? '',
         });
+        if (url.isNotEmpty) {
+          citation_store.storeCitation(id, url);
+        }
       }
 
       final resultJson = jsonEncode({'items': items});

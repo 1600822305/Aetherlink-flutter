@@ -44,6 +44,29 @@ class OpenAiCompatibleAdapter implements LlmGateway {
     ];
 
     final tools = request.tools;
+    final nativeSearchTools =
+        request.extraBody?['_nativeSearchTools'] as List<dynamic>?;
+    final extraBodyClean = request.extraBody != null
+        ? (Map<String, dynamic>.of(request.extraBody!)
+          ..remove('_nativeSearchTools'))
+        : null;
+
+    final toolsArray = <Map<String, dynamic>>[
+      if (tools != null)
+        for (final t in tools)
+          {
+            'type': 'function',
+            'function': {
+              'name': t.name,
+              'description': t.description,
+              'parameters': t.inputSchema,
+            },
+          },
+      if (nativeSearchTools != null)
+        for (final entry in nativeSearchTools)
+          if (entry is Map<String, dynamic>) entry,
+    ];
+
     final body = <String, dynamic>{
       'model': model.id,
       'messages': messages,
@@ -52,19 +75,8 @@ class OpenAiCompatibleAdapter implements LlmGateway {
       if (request.temperature != null) 'temperature': request.temperature,
       if (request.maxTokens != null) 'max_tokens': request.maxTokens,
       if (request.topP != null) 'top_p': request.topP,
-      if (tools != null && tools.isNotEmpty)
-        'tools': [
-          for (final t in tools)
-            {
-              'type': 'function',
-              'function': {
-                'name': t.name,
-                'description': t.description,
-                'parameters': t.inputSchema,
-              },
-            },
-        ],
-      ...?request.extraBody,
+      if (toolsArray.isNotEmpty) 'tools': toolsArray,
+      ...?extraBodyClean,
     };
 
     final headers = <String, dynamic>{
@@ -181,6 +193,27 @@ class OpenAiCompatibleAdapter implements LlmGateway {
 
     final tools = request.tools;
     final hasTools = tools != null && tools.isNotEmpty;
+    final nativeSearchToolsR =
+        request.extraBody?['_nativeSearchTools'] as List<dynamic>?;
+    final extraBodyCleanR = request.extraBody != null
+        ? (Map<String, dynamic>.of(request.extraBody!)
+          ..remove('_nativeSearchTools'))
+        : null;
+
+    final responsesToolsArray = <Map<String, dynamic>>[
+      if (hasTools)
+        for (final t in tools)
+          {
+            'type': 'function',
+            'name': t.name,
+            'description': t.description,
+            'parameters': t.inputSchema,
+          },
+      if (nativeSearchToolsR != null)
+        for (final entry in nativeSearchToolsR)
+          if (entry is Map<String, dynamic>) entry,
+    ];
+
     final system = request.system;
     final body = <String, dynamic>{
       'model': model.id,
@@ -190,20 +223,12 @@ class OpenAiCompatibleAdapter implements LlmGateway {
       if (request.temperature != null) 'temperature': request.temperature,
       if (request.topP != null) 'top_p': request.topP,
       if (request.maxTokens != null) 'max_output_tokens': request.maxTokens,
-      if (hasTools) ...{
-        'tools': [
-          for (final t in tools)
-            {
-              'type': 'function',
-              'name': t.name,
-              'description': t.description,
-              'parameters': t.inputSchema,
-            },
-        ],
+      if (responsesToolsArray.isNotEmpty) ...{
+        'tools': responsesToolsArray,
         'tool_choice': 'auto',
         'parallel_tool_calls': true,
       },
-      ...?request.extraBody,
+      ...?extraBodyCleanR,
     };
 
     final headers = <String, dynamic>{
