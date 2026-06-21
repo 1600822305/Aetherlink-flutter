@@ -53,6 +53,11 @@ class KeyboardEvent {
 /// keyboard height before the OS animation begins — matching Capacitor's
 /// `keyboardWillShow` / `keyboardWillHide`.
 ///
+/// The native [EventChannel] subscription is established once and kept alive
+/// for the entire app lifetime — subscriber count on the Dart side does not
+/// affect the native connection. This prevents missed events during widget
+/// dispose/rebuild cycles.
+///
 /// Usage:
 /// ```dart
 /// final sub = NativeKeyboardHeight.instance.events.listen((e) {
@@ -64,39 +69,64 @@ class KeyboardEvent {
 /// });
 /// ```
 class NativeKeyboardHeight {
-  NativeKeyboardHeight._();
+  NativeKeyboardHeight._() {
+    _startListening();
+  }
 
   static final NativeKeyboardHeight instance = NativeKeyboardHeight._();
 
   static const EventChannel _channel =
       EventChannel('com.example.native_keyboard_height/events');
 
-  Stream<KeyboardEvent>? _stream;
+  final StreamController<KeyboardEvent> _controller =
+      StreamController<KeyboardEvent>.broadcast();
 
-  /// A broadcast stream of keyboard events. The stream is created lazily on
-  /// first access and shared across all listeners.
-  Stream<KeyboardEvent> get events {
-    _stream ??= _channel.receiveBroadcastStream().map((dynamic event) {
-      if (event is Map) {
-        final type = event['type'] as String?;
-        final height = (event['height'] as num?)?.toDouble() ?? 0.0;
-        switch (type) {
-          case 'willShow':
-            return KeyboardEvent(
-                type: KeyboardEventType.willShow, height: height);
-          case 'didShow':
-            return KeyboardEvent(
-                type: KeyboardEventType.didShow, height: height);
-          case 'willHide':
-            return KeyboardEvent(
-                type: KeyboardEventType.willHide, height: 0);
-          case 'didHide':
-            return KeyboardEvent(
-                type: KeyboardEventType.didHide, height: 0);
+  /// The last keyboard height reported by the native layer (logical pixels).
+  /// Useful for reading the current state without waiting for an event.
+  double currentHeight = 0;
+
+  /// A broadcast stream of keyboard events. Multiple listeners can subscribe
+  /// and unsubscribe freely — the native connection is never interrupted.
+  Stream<KeyboardEvent> get events => _controller.stream;
+
+  /// Establishes the persistent native connection. Called once from the
+  /// constructor — never cancelled.
+  void _startListening() {
+    _channel.receiveBroadcastStream().listen(
+      (dynamic raw) {
+        final event = _parse(raw);
+        if (event.visible) {
+          currentHeight = event.height;
+        } else {
+          currentHeight = 0;
         }
+        _controller.add(event);
+      },
+      onError: (Object error) {
+        // Platform channel errors should not kill the subscription.
+        // ignore and keep listening.
+      },
+      cancelOnError: false,
+    );
+  }
+
+  static KeyboardEvent _parse(dynamic raw) {
+    if (raw is Map) {
+      final type = raw['type'] as String?;
+      final height = (raw['height'] as num?)?.toDouble() ?? 0.0;
+      switch (type) {
+        case 'willShow':
+          return KeyboardEvent(
+              type: KeyboardEventType.willShow, height: height);
+        case 'didShow':
+          return KeyboardEvent(
+              type: KeyboardEventType.didShow, height: height);
+        case 'willHide':
+          return KeyboardEvent(type: KeyboardEventType.willHide, height: 0);
+        case 'didHide':
+          return KeyboardEvent(type: KeyboardEventType.didHide, height: 0);
       }
-      return KeyboardEvent(type: KeyboardEventType.didHide, height: 0);
-    }).asBroadcastStream();
-    return _stream!;
+    }
+    return const KeyboardEvent(type: KeyboardEventType.didHide, height: 0);
   }
 }

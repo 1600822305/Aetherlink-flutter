@@ -106,36 +106,38 @@ class _ChatBody extends StatefulWidget {
   State<_ChatBody> createState() => _ChatBodyState();
 }
 
-class _ChatBodyState extends State<_ChatBody> {
+class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
   final GlobalKey _inputKey = GlobalKey();
   double _inputHeight = 0;
 
   /// Guards against queuing more than one pending measure.
   bool _measureScheduled = false;
 
-  // ── Keyboard instant-snap (native plugin, port of Capacitor edge-to-edge) ─
+  // ── Keyboard instant-snap (native plugin + didChangeMetrics fallback) ──────
   //
-  // Uses [NativeKeyboardHeight] — a local Flutter plugin that mirrors the
-  // original `capacitor-edge-to-edge` architecture:
+  // Primary: [NativeKeyboardHeight] — a local Flutter plugin that mirrors the
+  // original `capacitor-edge-to-edge` architecture. Events fire BEFORE the OS
+  // animation with the FINAL keyboard height → single-frame snap, zero delay.
   //
-  //   Android: WindowInsetsAnimationCompat.Callback.onStart() fires BEFORE
-  //            the OS animation with the FINAL IME height.
-  //   iOS:     UIResponder.keyboardWillShowNotification fires BEFORE the
-  //            animation with keyboardFrameEndUserInfoKey (final frame).
-  //
-  // Both platforms deliver a single event with the definitive keyboard height
-  // before any visual change — so we snap the layout in one frame, zero delay,
-  // matching the original web version exactly.
+  // Fallback: [WidgetsBindingObserver.didChangeMetrics] catches edge cases
+  // where the native plugin misses an event (some OEM Android devices don't
+  // fire WindowInsetsAnimationCompat reliably, or events can be lost during
+  // widget rebuild cycles).
 
-  /// Current keyboard height from the native plugin (logical pixels).
+  /// Current keyboard height applied to layout (logical pixels).
   double _keyboardHeight = 0;
 
   /// Subscription to native keyboard events.
   StreamSubscription<KeyboardEvent>? _keyboardSub;
 
+  /// Debounce timer for the didChangeMetrics fallback — avoids acting on
+  /// intermediate animation frames.
+  Timer? _fallbackTimer;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scheduleMeasure();
     _keyboardSub =
         NativeKeyboardHeight.instance.events.listen(_onKeyboardEvent);
@@ -143,7 +145,9 @@ class _ChatBodyState extends State<_ChatBody> {
 
   @override
   void dispose() {
+    _fallbackTimer?.cancel();
     _keyboardSub?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
@@ -151,6 +155,8 @@ class _ChatBodyState extends State<_ChatBody> {
   /// (before the OS animation starts), matching the original KeyboardManager.
   void _onKeyboardEvent(KeyboardEvent event) {
     if (!mounted) return;
+    // Cancel any pending fallback — the plugin is authoritative.
+    _fallbackTimer?.cancel();
     switch (event.type) {
       case KeyboardEventType.willShow:
         if ((event.height - _keyboardHeight).abs() > 0.5) {
@@ -164,6 +170,30 @@ class _ChatBodyState extends State<_ChatBody> {
       case KeyboardEventType.didHide:
         break;
     }
+  }
+
+  /// Fallback: if the native plugin misses an event, the platform's
+  /// `viewInsets` will still settle to the correct value after the animation
+  /// (~300ms). We only act when the settled value disagrees with our current
+  /// `_keyboardHeight`.
+  @override
+  void didChangeMetrics() {
+    _fallbackTimer?.cancel();
+    _fallbackTimer = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      final views = WidgetsBinding.instance.platformDispatcher.views;
+      if (views.isEmpty) return;
+      final view = views.first;
+      final rawBottom = view.viewInsets.bottom / view.devicePixelRatio;
+
+      if (rawBottom < 1 && _keyboardHeight > 0) {
+        // Keyboard is gone but we still think it's open — missed hide event.
+        setState(() => _keyboardHeight = 0);
+      } else if (rawBottom > 0 && _keyboardHeight < 1) {
+        // Keyboard appeared but we missed the show event — use raw value.
+        setState(() => _keyboardHeight = rawBottom);
+      }
+    });
   }
 
   void _scheduleMeasure() {
