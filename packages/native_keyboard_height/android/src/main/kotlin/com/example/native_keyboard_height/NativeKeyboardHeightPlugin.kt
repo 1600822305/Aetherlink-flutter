@@ -9,6 +9,7 @@ import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.EventChannel
+import kotlin.math.roundToInt
 
 /**
  * Flutter plugin that provides native keyboard height events matching
@@ -18,8 +19,14 @@ import io.flutter.plugin.common.EventChannel
  * keyboard height **before** the OS animation starts — so Flutter can snap the
  * layout in a single frame with zero delay.
  *
- * Ported from `capacitor-edge-to-edge` Android implementation
+ * Ported 1:1 from `capacitor-edge-to-edge` Android implementation
  * (`EdgeToEdge.setupKeyboardListener`).
+ *
+ * Events sent via [EventChannel]:
+ *   {type: "willShow", height: <int dp>}
+ *   {type: "didShow",  height: <int dp>}
+ *   {type: "willHide"}
+ *   {type: "didHide"}
  */
 class NativeKeyboardHeightPlugin : FlutterPlugin, ActivityAware, EventChannel.StreamHandler {
     private var eventChannel: EventChannel? = null
@@ -71,7 +78,7 @@ class NativeKeyboardHeightPlugin : FlutterPlugin, ActivityAware, EventChannel.St
         eventSink = null
     }
 
-    // ── Keyboard listener (port of Capacitor EdgeToEdge.setupKeyboardListener) ─
+    // ── Keyboard listener (1:1 port of EdgeToEdge.setupKeyboardListener) ─────
 
     private fun setupKeyboardListener() {
         val act = activity ?: return
@@ -91,6 +98,8 @@ class NativeKeyboardHeightPlugin : FlutterPlugin, ActivityAware, EventChannel.St
                  * Fires **before** the keyboard animation starts.
                  * [ViewCompat.getRootWindowInsets] returns the **target** (end)
                  * state, so `ime().bottom` is the final keyboard height.
+                 *
+                 * Original: EdgeToEdge.java lines 272-293
                  */
                 override fun onStart(
                     animation: WindowInsetsAnimationCompat,
@@ -99,27 +108,36 @@ class NativeKeyboardHeightPlugin : FlutterPlugin, ActivityAware, EventChannel.St
                     val currentInsets = ViewCompat.getRootWindowInsets(rootView)
                         ?: return super.onStart(animation, bounds)
 
-                    val imeVisible = currentInsets.isVisible(WindowInsetsCompat.Type.ime())
+                    val showingKeyboard = currentInsets.isVisible(WindowInsetsCompat.Type.ime())
                     val imeHeightPx = currentInsets.getInsets(WindowInsetsCompat.Type.ime()).bottom
                     val density = act.resources.displayMetrics.density
-                    val imeHeightDp = (imeHeightPx / density).toDouble()
+                    val imeHeightDp = (imeHeightPx / density).roundToInt()
 
-                    if (imeVisible) {
-                        eventSink?.success(mapOf("type" to "show", "height" to imeHeightDp))
+                    if (showingKeyboard) {
+                        eventSink?.success(mapOf("type" to "willShow", "height" to imeHeightDp))
                     } else {
-                        eventSink?.success(mapOf("type" to "hide"))
+                        eventSink?.success(mapOf("type" to "willHide"))
                     }
                     return super.onStart(animation, bounds)
                 }
 
+                /**
+                 * Fires **after** the keyboard animation completes.
+                 *
+                 * Original: EdgeToEdge.java lines 296-314
+                 */
                 override fun onEnd(animation: WindowInsetsAnimationCompat) {
                     super.onEnd(animation)
                     val currentInsets = ViewCompat.getRootWindowInsets(rootView) ?: return
-                    val imeVisible = currentInsets.isVisible(WindowInsetsCompat.Type.ime())
-                    if (!imeVisible) {
-                        // Redundant hide for robustness (e.g. if onStart was
-                        // missed due to a race).
-                        eventSink?.success(mapOf("type" to "hide"))
+                    val showingKeyboard = currentInsets.isVisible(WindowInsetsCompat.Type.ime())
+                    val imeHeightPx = currentInsets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+                    val density = act.resources.displayMetrics.density
+                    val imeHeightDp = (imeHeightPx / density).roundToInt()
+
+                    if (showingKeyboard) {
+                        eventSink?.success(mapOf("type" to "didShow", "height" to imeHeightDp))
+                    } else {
+                        eventSink?.success(mapOf("type" to "didHide"))
                     }
                 }
             },
