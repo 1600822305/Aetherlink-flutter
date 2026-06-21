@@ -96,7 +96,7 @@ InputBoxButtonInfo inputBoxButtonInfo(InputBoxButtonId id) => switch (id) {
     color: _blue,
   ),
   InputBoxButtonId.upload => const InputBoxButtonInfo(
-    label: '添加内容',
+    label: '更多',
     description: '添加图片、文件或使用其他功能',
     color: _amber,
   ),
@@ -280,7 +280,7 @@ String inputBoxToolbarTooltip(InputBoxButtonId id, {bool active = false}) =>
       InputBoxButtonId.video => active ? '退出视频生成模式' : '视频生成',
       InputBoxButtonId.knowledge => '知识库',
       InputBoxButtonId.search => active ? '退出网络搜索模式' : '网络搜索',
-      InputBoxButtonId.upload => '添加内容',
+      InputBoxButtonId.upload => '更多',
       InputBoxButtonId.camera => '拍摄照片',
       InputBoxButtonId.photoSelect => '选择图片',
       InputBoxButtonId.fileUpload => '上传文件',
@@ -314,7 +314,7 @@ class InputBoxMenuItemInfo {
 /// The title shown above [menu]'s items (the aggregator button's label).
 String inputBoxMenuTitle(InputBoxMenu menu) => switch (menu) {
   InputBoxMenu.tools => '扩展',
-  InputBoxMenu.upload => '添加内容',
+  InputBoxMenu.upload => '更多',
 };
 
 /// Per-item metadata for the two aggregator menus, ported 1:1 from the original
@@ -385,7 +385,7 @@ InputBoxMenuItemInfo inputBoxMenuItemInfo(InputBoxAction action) =>
         subtitle: '同时向多个AI模型发送消息',
       ),
       InputBoxAction.toolsMenu => const InputBoxMenuItemInfo(label: '扩展'),
-      InputBoxAction.uploadMenu => const InputBoxMenuItemInfo(label: '添加内容'),
+      InputBoxAction.uploadMenu => const InputBoxMenuItemInfo(label: '更多'),
       InputBoxAction.voice => const InputBoxMenuItemInfo(label: '语音输入'),
     };
 
