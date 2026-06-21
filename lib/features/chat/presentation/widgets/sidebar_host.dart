@@ -178,14 +178,16 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
       _lastKeyboardDismiss = DateTime.now();
       return;
     }
-    // Cooldown: a rapid second back press while the keyboard is still
-    // animating away would fall through here because viewInsets.bottom
-    // already reached 0.  Swallow it so the exit dialog doesn't pop up
-    // on top of the closing keyboard.
+    // Cooldown: rapid back presses while the keyboard is still animating
+    // away fall through here because viewInsets.bottom already reached 0.
+    // Swallow ALL presses within the cooldown window — only clear the
+    // timestamp once the window expires (not on the first swallowed press,
+    // which was the previous bug: clearing it let the NEXT rapid press
+    // through to the exit dialog).
     if (_lastKeyboardDismiss != null) {
       final elapsed = DateTime.now().difference(_lastKeyboardDismiss!);
-      _lastKeyboardDismiss = null;
       if (elapsed < const Duration(milliseconds: 500)) return;
+      _lastKeyboardDismiss = null;
     }
     _showExitConfirm();
   }
