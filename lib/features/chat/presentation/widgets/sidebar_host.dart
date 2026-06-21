@@ -17,6 +17,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
@@ -151,6 +152,42 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
   @override
   bool get isSidebarOpen => _ac.value > 0.5;
 
+  // ── Back-button exit confirm ───────────────────────────────────────────────
+
+  /// Port of the original `ExitConfirmDialog` + `BackButtonHandler`: when the
+  /// sidebar is closed and the user presses the system back button, show a
+  /// confirm dialog instead of immediately exiting.
+  void _handleBackButton() {
+    if (isSidebarOpen) {
+      closeSidebar();
+    } else {
+      _showExitConfirm();
+    }
+  }
+
+  Future<void> _showExitConfirm() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认退出'),
+        content: const Text('您确定要退出应用吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('退出'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      SystemNavigator.pop();
+    }
+  }
+
   // ── Drag handling ───────────────────────────────────────────────────────────
   void _onDragUpdate(DragUpdateDetails details) {
     if (_drawerWidth <= 0) return;
@@ -194,9 +231,9 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
           final pushed = mode == SidebarDisplayMode.push;
 
           return PopScope(
-            canPop: t <= 0,
+            canPop: false,
             onPopInvokedWithResult: (didPop, _) {
-              if (!didPop) closeSidebar();
+              if (!didPop) _handleBackButton();
             },
             // Fixed child set (no conditional children): the gesture layers
             // stay mounted across the whole animation, so an open-drag started
