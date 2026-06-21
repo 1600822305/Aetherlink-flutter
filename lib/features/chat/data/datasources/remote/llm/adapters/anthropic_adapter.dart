@@ -34,26 +34,6 @@ class AnthropicAdapter implements LlmGateway {
     ];
 
     final tools = request.tools;
-    final nativeSearchTools =
-        request.extraBody?['_nativeSearchTools'] as List<dynamic>?;
-    final extraBodyClean = request.extraBody != null
-        ? (Map<String, dynamic>.of(request.extraBody!)
-          ..remove('_nativeSearchTools'))
-        : null;
-
-    final toolsArray = <Map<String, dynamic>>[
-      if (tools != null)
-        for (final t in tools)
-          {
-            'name': t.name,
-            'description': t.description,
-            'input_schema': t.inputSchema,
-          },
-      if (nativeSearchTools != null)
-        for (final entry in nativeSearchTools)
-          if (entry is Map<String, dynamic>) entry,
-    ];
-
     final body = <String, dynamic>{
       'model': model.id,
       // Anthropic requires max_tokens; fall back to a sane default.
@@ -63,8 +43,16 @@ class AnthropicAdapter implements LlmGateway {
       'stream': request.stream,
       if (request.temperature != null) 'temperature': request.temperature,
       if (request.topP != null) 'top_p': request.topP,
-      if (toolsArray.isNotEmpty) 'tools': toolsArray,
-      ...?extraBodyClean,
+      if (tools != null && tools.isNotEmpty)
+        'tools': [
+          for (final t in tools)
+            {
+              'name': t.name,
+              'description': t.description,
+              'input_schema': t.inputSchema,
+            },
+        ],
+      ...?request.extraBody,
     };
 
     final headers = <String, dynamic>{
