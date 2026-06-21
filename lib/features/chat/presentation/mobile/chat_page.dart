@@ -18,6 +18,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_ho
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/system_prompt_bubble.dart';
 import 'package:aetherlink_flutter/shared/domain/chat_interface_settings.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
+import 'package:native_keyboard_height/native_keyboard_height.dart';
 
 /// Static UI strings. The original ran these through i18n; they are ported
 /// verbatim as constants per the M4.1 approach — wiring up i18n is a separate
@@ -105,125 +106,53 @@ class _ChatBody extends StatefulWidget {
   State<_ChatBody> createState() => _ChatBodyState();
 }
 
-class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
+class _ChatBodyState extends State<_ChatBody> {
   final GlobalKey _inputKey = GlobalKey();
   double _inputHeight = 0;
 
-  /// Guards against queuing more than one pending measure: the composer's
-  /// [SizeChangedLayoutNotifier] fires on several consecutive frames while the
-  /// keyboard animates the bottom safe-area inset to zero, and scheduling a
-  /// fresh post-frame callback for each one would rebuild [_ChatBody] repeatedly
-  /// mid-animation. Collapsing them to a single pending measure cuts that churn.
+  /// Guards against queuing more than one pending measure.
   bool _measureScheduled = false;
 
-  // ── Keyboard instant-snap (port of original KeyboardManager) ──────────────
+  // ── Keyboard instant-snap (native plugin, port of Capacitor edge-to-edge) ─
   //
-  // The original web version listens to Capacitor's `keyboardWillShow` /
-  // `keyboardWillHide` native events which fire ONCE with the final keyboard
-  // height BEFORE the OS animation starts — so the layout updates in a single
-  // frame with no visible slide.
+  // Uses [NativeKeyboardHeight] — a local Flutter plugin that mirrors the
+  // original `capacitor-edge-to-edge` architecture:
   //
-  // Flutter has no `keyboardWillShow`.  `MediaQuery.viewInsetsOf` reports
-  // intermediate values during the ~250ms animation, causing a visible slide
-  // if read in `build`.  Instead we:
+  //   Android: WindowInsetsAnimationCompat.Callback.onStart() fires BEFORE
+  //            the OS animation with the FINAL IME height.
+  //   iOS:     UIResponder.keyboardWillShowNotification fires BEFORE the
+  //            animation with keyboardFrameEndUserInfoKey (final frame).
   //
-  //   1.  Wrap the input area in a [Focus] and listen to `onFocusChange`.
-  //       `onFocusChange(true)` fires BEFORE the keyboard animation starts
-  //       (≈ keyboardWillShow); we snap to `_rememberedKeyboardHeight`.
-  //       `onFocusChange(false)` fires when focus leaves (≈ keyboardWillHide);
-  //       we snap to 0.
-  //
-  //   2.  `didChangeMetrics` silently tracks the actual viewInsets so
-  //       `_rememberedKeyboardHeight` stays accurate. It also serves as a
-  //       fallback for edge cases where focus events are not delivered (e.g.
-  //       the system keyboard-dismiss button).
-  //
-  //   3.  `_rememberedKeyboardHeight` is `static` so it survives page
-  //       navigations — the very first keyboard open after app launch is the
-  //       only time there may be a brief correction.
+  // Both platforms deliver a single event with the definitive keyboard height
+  // before any visual change — so we snap the layout in one frame, zero delay,
+  // matching the original web version exactly.
 
-  /// Persists across [_ChatBodyState] recreation (e.g. navigating away and
-  /// back) so the first keyboard open after return is still instant.
-  static double _rememberedKeyboardHeight = 0;
-
-  /// Current keyboard offset applied to layout.  Binary: 0 or the full
-  /// remembered height.
+  /// Current keyboard height from the native plugin (logical pixels).
   double _keyboardHeight = 0;
 
-  /// Whether we consider the keyboard logically open.
-  bool _keyboardOpen = false;
-
-  /// The latest raw `viewInsets.bottom` reported by the platform (in logical
-  /// pixels).  Used to update [_rememberedKeyboardHeight] after the OS
-  /// animation settles.
-  double _latestRawBottom = 0;
-
-  /// Fires after the OS keyboard animation settles to commit the actual
-  /// height into [_rememberedKeyboardHeight].
-  Timer? _settleTimer;
+  /// Subscription to native keyboard events.
+  StreamSubscription<KeyboardEvent>? _keyboardSub;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _scheduleMeasure();
+    _keyboardSub =
+        NativeKeyboardHeight.instance.events.listen(_onKeyboardEvent);
   }
 
   @override
   void dispose() {
-    _settleTimer?.cancel();
-    WidgetsBinding.instance.removeObserver(this);
+    _keyboardSub?.cancel();
     super.dispose();
   }
 
-  /// Port of the original `keyboardWillShow` / `keyboardWillHide`: fires
-  /// when the input area gains or loses focus — **before** the OS keyboard
-  /// animation starts.
-  void _onInputFocusChanged(bool hasFocus) {
-    if (hasFocus && _rememberedKeyboardHeight > 0) {
-      _keyboardOpen = true;
-      setState(() => _keyboardHeight = _rememberedKeyboardHeight);
-    } else if (!hasFocus && _keyboardOpen) {
-      _keyboardOpen = false;
-      _settleTimer?.cancel();
-      setState(() => _keyboardHeight = 0);
-    }
-  }
-
-  @override
-  void didChangeMetrics() {
-    final views = WidgetsBinding.instance.platformDispatcher.views;
-    if (views.isEmpty) return;
-    final view = views.first;
-    final rawBottom = view.viewInsets.bottom / view.devicePixelRatio;
-
-    if (rawBottom > 0) {
-      _latestRawBottom = rawBottom;
-
-      if (!_keyboardOpen) {
-        // Keyboard appeared without a prior focus event (edge case, e.g.
-        // external keyboard attached or system-level focus).
-        _keyboardOpen = true;
-        setState(() => _keyboardHeight = _rememberedKeyboardHeight > 0
-            ? _rememberedKeyboardHeight
-            : rawBottom);
-      }
-
-      // After the animation settles, commit the real height so future
-      // opens snap to the accurate value.
-      _settleTimer?.cancel();
-      _settleTimer = Timer(const Duration(milliseconds: 100), () {
-        if (!mounted || !_keyboardOpen) return;
-        _rememberedKeyboardHeight = _latestRawBottom;
-        if ((_keyboardHeight - _rememberedKeyboardHeight).abs() > 1) {
-          setState(() => _keyboardHeight = _rememberedKeyboardHeight);
-        }
-      });
-    } else if (_keyboardOpen) {
-      // Keyboard fully hidden (e.g. system dismiss button — no unfocus).
-      _keyboardOpen = false;
-      _settleTimer?.cancel();
-      setState(() => _keyboardHeight = 0);
+  /// Called by the native plugin BEFORE the keyboard animation starts.
+  void _onKeyboardEvent(KeyboardEvent event) {
+    if (!mounted) return;
+    final h = event.visible ? event.height : 0.0;
+    if ((h - _keyboardHeight).abs() > 0.5) {
+      setState(() => _keyboardHeight = h);
     }
   }
 
@@ -252,8 +181,8 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    // _keyboardHeight is maintained by didChangeMetrics (binary snap, no
-    // per-frame animation).  viewPadding is the home-indicator safe area;
+    // _keyboardHeight is set by the native plugin (single event before
+    // animation, zero delay).  viewPadding is the home-indicator safe area;
     // it only changes on rotation, not during keyboard transitions.
     final isTopRoute = ModalRoute.of(context)?.isCurrent ?? true;
     final viewPadding = MediaQuery.viewPaddingOf(context).bottom;
@@ -297,17 +226,13 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
                   left: 0,
                   right: 0,
                   bottom: bottomOffset,
-                  child: Focus(
-                    canRequestFocus: false,
-                    onFocusChange: _onInputFocusChanged,
-                    child: SizeChangedLayoutNotifier(
-                      child: KeyedSubtree(
-                        key: _inputKey,
-                        child: const SafeArea(
-                          top: false,
-                          bottom: false,
-                          child: ChatInputBar(),
-                        ),
+                  child: SizeChangedLayoutNotifier(
+                    child: KeyedSubtree(
+                      key: _inputKey,
+                      child: const SafeArea(
+                        top: false,
+                        bottom: false,
+                        child: ChatInputBar(),
                       ),
                     ),
                   ),
