@@ -116,7 +116,7 @@ InputBoxAction? inputBoxButtonAction(InputBoxButtonId id) => switch (id) {
   InputBoxButtonId.send => null,
 };
 
-/// The two aggregator menus opened from the toolbar: 扩展 ([tools]) and 添加内容
+/// The two aggregator menus opened from the toolbar: 扩展 ([tools]) and 更多
 /// ([upload]).
 enum InputBoxMenu { tools, upload }
 
@@ -132,7 +132,7 @@ const List<InputBoxAction> kToolsMenuActions = [
   InputBoxAction.webSearch,
 ];
 
-/// The 添加内容 menu's items, in the original `UploadMenu.tsx` order (core
+/// The 更多 menu's items, in the original `UploadMenu.tsx` order (core
 /// upload items first, then the optional sections).
 const List<InputBoxAction> kUploadMenuActions = [
   InputBoxAction.photoSelect,

@@ -6,7 +6,7 @@ import 'package:aetherlink_flutter/shared/domain/input_box_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_actions.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_button_catalog.dart';
 
-/// The data-driven content for one aggregator menu (扩展 / 添加内容), rendered as a
+/// The data-driven content for one aggregator menu (扩展 / 更多), rendered as a
 /// bottom sheet — the parity port of the original anchored `ToolsMenu` /
 /// `UploadMenu` popovers, which this codebase already renders as bottom sheets
 /// on mobile (cf. the message 翻译/导出 sheets).
@@ -87,7 +87,7 @@ class _InputBoxMenuSheetState extends State<InputBoxMenuSheet> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 8),
+              padding: const EdgeInsets.only(top: 8, bottom: 4),
               child: Container(
                 width: 40,
                 height: 4,
@@ -98,10 +98,10 @@ class _InputBoxMenuSheetState extends State<InputBoxMenuSheet> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.only(bottom: 4),
               child: Text(
                 inputBoxMenuTitle(widget.menu),
-                style: theme.textTheme.titleMedium?.copyWith(
+                style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -115,7 +115,7 @@ class _InputBoxMenuSheetState extends State<InputBoxMenuSheet> {
     );
   }
 
-  /// The 添加内容 menu's three core upload items (选择图片 / 拍摄照片 / 上传文件),
+  /// The 更多 menu's three core upload items (选择图片 / 拍摄照片 / 上传文件),
   /// shown as one horizontal row of icon tiles (Kelivo-style) instead of three
   /// stacked list rows. Every other item — and the whole 扩展 menu — keeps the
   /// list layout.
@@ -176,13 +176,13 @@ class _InputBoxMenuSheetState extends State<InputBoxMenuSheet> {
         borderRadius: BorderRadius.circular(12),
         onTap: () => Navigator.of(context).pop(action),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(vertical: 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
@@ -222,14 +222,26 @@ class _InputBoxMenuSheetState extends State<InputBoxMenuSheet> {
         : base;
 
     return ListTile(
+      dense: true,
+      visualDensity: const VisualDensity(vertical: -2),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+      minVerticalPadding: 6,
       leading: inputBoxMenuIcon(
         action,
         color: iconColor,
         size: 20,
         active: confirm,
       ),
-      title: Text(label),
-      subtitle: info.subtitle == null ? null : Text(info.subtitle!),
+      title: Text(label, style: const TextStyle(fontSize: 14)),
+      subtitle: info.subtitle == null
+          ? null
+          : Text(
+              info.subtitle!,
+              style: TextStyle(
+                fontSize: 12,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+            ),
       tileColor: active ? base.withValues(alpha: 0.12) : null,
       onTap: isClear ? _onClearTap : () => Navigator.of(context).pop(action),
     );
