@@ -116,26 +116,50 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
   /// mid-animation. Collapsing them to a single pending measure cuts that churn.
   bool _measureScheduled = false;
 
-  // ── Instant keyboard snap ─────────────────────────────────────────────────
+  // ── Keyboard instant-snap (port of original KeyboardManager) ──────────────
   //
-  // Instead of reading `MediaQuery.viewInsetsOf` in build (which reports
-  // intermediate values during the ~250ms OS keyboard animation and causes
-  // a visible slide), we listen to raw metrics via [WidgetsBindingObserver]
-  // and only call setState at the open↔closed edges.  The result is a binary
-  // snap: content jumps instantly when the keyboard appears/disappears,
-  // matching the original web version's `position: fixed` behavior.
+  // The original web version listens to Capacitor's `keyboardWillShow` /
+  // `keyboardWillHide` native events which fire ONCE with the final keyboard
+  // height BEFORE the OS animation starts — so the layout updates in a single
+  // frame with no visible slide.
+  //
+  // Flutter has no `keyboardWillShow`.  `MediaQuery.viewInsetsOf` reports
+  // intermediate values during the ~250ms animation, causing a visible slide
+  // if read in `build`.  Instead we:
+  //
+  //   1.  Wrap the input area in a [Focus] and listen to `onFocusChange`.
+  //       `onFocusChange(true)` fires BEFORE the keyboard animation starts
+  //       (≈ keyboardWillShow); we snap to `_rememberedKeyboardHeight`.
+  //       `onFocusChange(false)` fires when focus leaves (≈ keyboardWillHide);
+  //       we snap to 0.
+  //
+  //   2.  `didChangeMetrics` silently tracks the actual viewInsets so
+  //       `_rememberedKeyboardHeight` stays accurate. It also serves as a
+  //       fallback for edge cases where focus events are not delivered (e.g.
+  //       the system keyboard-dismiss button).
+  //
+  //   3.  `_rememberedKeyboardHeight` is `static` so it survives page
+  //       navigations — the very first keyboard open after app launch is the
+  //       only time there may be a brief correction.
 
-  /// Binary keyboard height: 0 (closed) or the full remembered height (open).
+  /// Persists across [_ChatBodyState] recreation (e.g. navigating away and
+  /// back) so the first keyboard open after return is still instant.
+  static double _rememberedKeyboardHeight = 0;
+
+  /// Current keyboard offset applied to layout.  Binary: 0 or the full
+  /// remembered height.
   double _keyboardHeight = 0;
-
-  /// Max viewInsets.bottom ever observed — subsequent opens snap to this
-  /// value immediately without waiting for the animation.
-  double _rememberedKeyboardHeight = 0;
 
   /// Whether we consider the keyboard logically open.
   bool _keyboardOpen = false;
 
-  /// Corrects the first-ever open where the initial snap used a partial value.
+  /// The latest raw `viewInsets.bottom` reported by the platform (in logical
+  /// pixels).  Used to update [_rememberedKeyboardHeight] after the OS
+  /// animation settles.
+  double _latestRawBottom = 0;
+
+  /// Fires after the OS keyboard animation settles to commit the actual
+  /// height into [_rememberedKeyboardHeight].
   Timer? _settleTimer;
 
   @override
@@ -152,6 +176,20 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  /// Port of the original `keyboardWillShow` / `keyboardWillHide`: fires
+  /// when the input area gains or loses focus — **before** the OS keyboard
+  /// animation starts.
+  void _onInputFocusChanged(bool hasFocus) {
+    if (hasFocus && _rememberedKeyboardHeight > 0) {
+      _keyboardOpen = true;
+      setState(() => _keyboardHeight = _rememberedKeyboardHeight);
+    } else if (!hasFocus && _keyboardOpen) {
+      _keyboardOpen = false;
+      _settleTimer?.cancel();
+      setState(() => _keyboardHeight = 0);
+    }
+  }
+
   @override
   void didChangeMetrics() {
     final views = WidgetsBinding.instance.platformDispatcher.views;
@@ -159,33 +197,33 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
     final view = views.first;
     final rawBottom = view.viewInsets.bottom / view.devicePixelRatio;
 
-    // Track max so subsequent opens snap instantly.
-    if (rawBottom > _rememberedKeyboardHeight) {
-      _rememberedKeyboardHeight = rawBottom;
-    }
+    if (rawBottom > 0) {
+      _latestRawBottom = rawBottom;
 
-    if (rawBottom > 0 && !_keyboardOpen) {
-      // Keyboard started appearing → snap open.
-      _keyboardOpen = true;
-      setState(() => _keyboardHeight = _rememberedKeyboardHeight);
-    } else if (rawBottom == 0 && _keyboardOpen) {
-      // Keyboard fully gone → snap closed.
-      _keyboardOpen = false;
-      _settleTimer?.cancel();
-      setState(() => _keyboardHeight = 0);
-    }
+      if (!_keyboardOpen) {
+        // Keyboard appeared without a prior focus event (edge case, e.g.
+        // external keyboard attached or system-level focus).
+        _keyboardOpen = true;
+        setState(() => _keyboardHeight = _rememberedKeyboardHeight > 0
+            ? _rememberedKeyboardHeight
+            : rawBottom);
+      }
 
-    // After the OS animation settles, correct to the real height (handles
-    // the first-ever open where _rememberedKeyboardHeight started at 0).
-    if (_keyboardOpen) {
+      // After the animation settles, commit the real height so future
+      // opens snap to the accurate value.
       _settleTimer?.cancel();
       _settleTimer = Timer(const Duration(milliseconds: 100), () {
-        if (mounted &&
-            _keyboardOpen &&
-            _keyboardHeight != _rememberedKeyboardHeight) {
+        if (!mounted || !_keyboardOpen) return;
+        _rememberedKeyboardHeight = _latestRawBottom;
+        if ((_keyboardHeight - _rememberedKeyboardHeight).abs() > 1) {
           setState(() => _keyboardHeight = _rememberedKeyboardHeight);
         }
       });
+    } else if (_keyboardOpen) {
+      // Keyboard fully hidden (e.g. system dismiss button — no unfocus).
+      _keyboardOpen = false;
+      _settleTimer?.cancel();
+      setState(() => _keyboardHeight = 0);
     }
   }
 
@@ -259,13 +297,17 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
                   left: 0,
                   right: 0,
                   bottom: bottomOffset,
-                  child: SizeChangedLayoutNotifier(
-                    child: KeyedSubtree(
-                      key: _inputKey,
-                      child: const SafeArea(
-                        top: false,
-                        bottom: false,
-                        child: ChatInputBar(),
+                  child: Focus(
+                    canRequestFocus: false,
+                    onFocusChange: _onInputFocusChanged,
+                    child: SizeChangedLayoutNotifier(
+                      child: KeyedSubtree(
+                        key: _inputKey,
+                        child: const SafeArea(
+                          top: false,
+                          bottom: false,
+                          child: ChatInputBar(),
+                        ),
                       ),
                     ),
                   ),
