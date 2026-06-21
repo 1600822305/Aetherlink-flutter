@@ -229,7 +229,7 @@ class InputBoxComposer extends StatelessWidget {
                       hintStyle: TextStyle(fontSize: 16, height: 1.4),
                       border: InputBorder.none,
                       isDense: true,
-                      contentPadding: EdgeInsets.symmetric(vertical: 4),
+                      contentPadding: EdgeInsets.symmetric(vertical: 8),
                     ),
                   ),
                 ),
