@@ -1728,7 +1728,11 @@ class ChatController extends _$ChatController {
           if (disabled.contains(tool.name)) continue;
           if (routes.containsKey(tool.name)) continue;
           tools.add(tool);
-          routes[tool.name] = _BuiltinToolRoute(server.name, tool.name);
+          routes[tool.name] = _BuiltinToolRoute(
+            server.name,
+            tool.name,
+            env: server.env,
+          );
         }
         continue;
       }
@@ -1768,8 +1772,8 @@ class ChatController extends _$ChatController {
     Map<String, Object?> args,
   ) async {
     switch (route) {
-      case _BuiltinToolRoute(:final serverName):
-        return runBuiltinTool(serverName, route.toolName, args) ??
+      case _BuiltinToolRoute(:final serverName, :final env):
+        return await runBuiltinTool(serverName, route.toolName, args, env: env) ??
             McpToolResult('工具 $exposedName 无法在本地执行', isError: true);
       case _RemoteToolRoute(:final server):
         try {
@@ -1919,7 +1923,8 @@ class ChatController extends _$ChatController {
       );
     }
     if (kLocallyRunnableBuiltins.contains(server.name)) {
-      return runBuiltinTool(server.name, toolName, toolArgs) ??
+      return await runBuiltinTool(
+            server.name, toolName, toolArgs, env: server.env) ??
           McpToolResult('工具 $toolName 无法在本地执行', isError: true);
     }
     return ref
@@ -2118,11 +2123,12 @@ sealed class _ToolRoute {
   final String toolName;
 }
 
-/// A tool run in-process by [runBuiltinTool] (calculator / time).
+/// A tool run in-process by [runBuiltinTool] (calculator / time / searxng).
 class _BuiltinToolRoute extends _ToolRoute {
-  const _BuiltinToolRoute(this.serverName, super.toolName);
+  const _BuiltinToolRoute(this.serverName, super.toolName, {this.env});
 
   final String serverName;
+  final Map<String, String>? env;
 }
 
 /// The synthetic `read_skill` tool, run in-process against the skills store.
