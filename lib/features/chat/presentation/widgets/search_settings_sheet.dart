@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
 
 /// 网络搜索设置底部弹窗 — 参考 Kelivo 的三层结构：
@@ -49,11 +51,39 @@ class _SearchSettingsSheet extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 10),
-            Text(
-              '网络搜索',
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(width: 32),
+                Expanded(
+                  child: Text(
+                    '网络搜索',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 32,
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 32,
+                      height: 32,
+                    ),
+                    icon: Icon(
+                      LucideIcons.settings,
+                      size: 16,
+                      color: cs.onSurfaceVariant,
+                    ),
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      context.push(AppRouter.webSearchPath);
+                    },
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
 
