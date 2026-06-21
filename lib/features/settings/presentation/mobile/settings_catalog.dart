@@ -129,6 +129,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.globe,
         title: '网络搜索',
         description: '配置网络搜索和相关服务',
+        route: AppRouter.webSearchPath,
       ),
       SettingItemData(
         icon: LucideIcons.settings,

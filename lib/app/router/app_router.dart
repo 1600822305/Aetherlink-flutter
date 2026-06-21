@@ -26,6 +26,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/setting
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/skill_editor_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/skills_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/top_toolbar_settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search_settings_page.dart';
 import 'package:aetherlink_flutter/features/theming/presentation/mobile/theme_style_settings_page.dart';
 import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
 
@@ -59,6 +60,7 @@ abstract final class AppRouter {
   static const String skillsPath = '/settings/skills';
   static String skillEditorPath(String skillId) => '/settings/skills/$skillId';
   static const String quickPhrasesPath = '/settings/quick-phrases';
+  static const String webSearchPath = '/settings/web-search';
   static const String networkProxyPath = '/settings/network-proxy';
   static const String behaviorPath = '/settings/behavior';
   static const String welcomePath = '/welcome';
@@ -168,6 +170,12 @@ abstract final class AppRouter {
         name: 'quick-phrases',
         pageBuilder: (context, state) =>
             _instant(state, const QuickPhrasesSettingsPage()),
+      ),
+      GoRoute(
+        path: webSearchPath,
+        name: 'web-search',
+        pageBuilder: (context, state) =>
+            _instant(state, const WebSearchSettingsPage()),
       ),
       GoRoute(
         path: networkProxyPath,
