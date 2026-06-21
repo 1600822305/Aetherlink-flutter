@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/settings/application/web_search_settings_controller.dart';
+import 'package:aetherlink_flutter/shared/domain/web_search_settings.dart';
 
 /// 网络搜索设置页面（设置 → 提示词与工具 → 网络搜索），参考 Kelivo 的
 /// `SearchServicesPage` 三层结构（搜索提供商列表 + 通用选项），但使用我们
