@@ -16,9 +16,12 @@
 /// and the sidebar's close button drive the same controller.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:native_keyboard_height/native_keyboard_height.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
@@ -116,12 +119,16 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
   /// Tracks the open/closed edge so [SidebarHost.onOpened] fires once per open.
   bool _wasOpen = false;
 
-  /// Cooldown after dismissing the keyboard.  On Capacitor, the OS dismisses
-  /// the keyboard *before* firing the back-button event, so the handler never
-  /// sees a race.  In Flutter, [PopScope] fires on every press and
-  /// `viewInsets.bottom` drops to 0 faster than the dismiss animation
-  /// finishes — a rapid second press falls through to the exit dialog.
-  DateTime? _lastKeyboardDismiss;
+  /// True while the keyboard is animating closed.  On Capacitor, the OS
+  /// dismisses the keyboard *before* forwarding the back-button event, so the
+  /// handler never sees a race.  In Flutter, [PopScope] fires on every press
+  /// regardless of the keyboard state.  We set this flag when we initiate a
+  /// dismiss and clear it when the native plugin confirms the keyboard is
+  /// fully hidden ([KeyboardEventType.didHide]).  All back presses while this
+  /// flag is true are swallowed — no timing assumptions needed.
+  bool _dismissingKeyboard = false;
+
+  StreamSubscription<KeyboardEvent>? _kbSub;
 
   @override
   void initState() {
@@ -131,6 +138,16 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
       duration: const Duration(milliseconds: 250),
     );
     _ac.addListener(_onProgress);
+    _kbSub = NativeKeyboardHeight.instance.events.listen(_onKeyboardEvent);
+  }
+
+  void _onKeyboardEvent(KeyboardEvent event) {
+    // Clear the dismiss guard once the keyboard is fully hidden, or if it
+    // reappears (the user tapped the field again before the animation ended).
+    if (event.type == KeyboardEventType.didHide ||
+        event.type == KeyboardEventType.willShow) {
+      _dismissingKeyboard = false;
+    }
   }
 
   void _onProgress() {
@@ -141,6 +158,7 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
 
   @override
   void dispose() {
+    _kbSub?.cancel();
     _ac.removeListener(_onProgress);
     _ac.dispose();
     super.dispose();
@@ -171,24 +189,29 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
       closeSidebar();
       return;
     }
-    // If the keyboard is open, dismiss it instead of showing the dialog.
+    // If the keyboard is currently dismissing (we initiated the dismiss on a
+    // previous back press and the native plugin hasn't fired didHide yet),
+    // swallow the press.  This is the Flutter equivalent of Capacitor's OS
+    // consuming the back press during keyboard dismiss.
+    if (_dismissingKeyboard) return;
+
+    // If the keyboard is open, dismiss it.
     final views = WidgetsBinding.instance.platformDispatcher.views;
     if (views.isNotEmpty && views.first.viewInsets.bottom > 0) {
+      _dismissingKeyboard = true;
       FocusManager.instance.primaryFocus?.unfocus();
-      _lastKeyboardDismiss = DateTime.now();
       return;
     }
-    // Cooldown: rapid back presses while the keyboard is still animating
-    // away fall through here because viewInsets.bottom already reached 0.
-    // Swallow ALL presses within the cooldown window — only clear the
-    // timestamp once the window expires (not on the first swallowed press,
-    // which was the previous bug: clearing it let the NEXT rapid press
-    // through to the exit dialog).
-    if (_lastKeyboardDismiss != null) {
-      final elapsed = DateTime.now().difference(_lastKeyboardDismiss!);
-      if (elapsed < const Duration(milliseconds: 500)) return;
-      _lastKeyboardDismiss = null;
+
+    // Also check the native plugin's height — on some devices viewInsets
+    // drops to 0 before the animation finishes, but the plugin's
+    // currentHeight may still be > 0 until willHide fires.
+    if (NativeKeyboardHeight.instance.currentHeight > 0) {
+      _dismissingKeyboard = true;
+      FocusManager.instance.primaryFocus?.unfocus();
+      return;
     }
+
     _showExitConfirm();
   }
 
