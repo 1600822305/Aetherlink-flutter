@@ -226,8 +226,15 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
     // it only changes on rotation, not during keyboard transitions.
     final isTopRoute = ModalRoute.of(context)?.isCurrent ?? true;
     final viewPadding = MediaQuery.viewPaddingOf(context).bottom;
+    // When the keyboard is showing, subtract the InputBoxComposer's internal
+    // bottom padding (8px) so the card sits flush against the keyboard — no
+    // visible gap — matching the original's `position: fixed; bottom:
+    // var(--keyboard-height)`.
+    final keyboardActive = isTopRoute && _keyboardHeight > 0;
     final bottomOffset = isTopRoute
-        ? math.max(_keyboardHeight, viewPadding)
+        ? (keyboardActive
+            ? _keyboardHeight - 8
+            : math.max(_keyboardHeight, viewPadding))
         : viewPadding;
 
     return Column(
