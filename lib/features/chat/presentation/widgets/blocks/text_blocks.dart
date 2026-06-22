@@ -303,53 +303,78 @@ class PlaceholderBlockView extends StatelessWidget {
   }
 }
 
-/// Renders a `CONTEXT_SUMMARY` block, mirroring `ContextSummaryBlock.tsx`: a
-/// compact card with the summary text and the compression stats.
-class ContextSummaryBlockView extends StatelessWidget {
+/// Renders a `CONTEXT_SUMMARY` block: a compact card with the summary text
+/// and compression stats. Defaults to collapsed (2-line preview + stats);
+/// tapping the header expands to show the full summary.
+class ContextSummaryBlockView extends StatefulWidget {
   const ContextSummaryBlockView({required this.block, super.key});
 
   final ContextSummaryBlock block;
 
   @override
+  State<ContextSummaryBlockView> createState() =>
+      _ContextSummaryBlockViewState();
+}
+
+class _ContextSummaryBlockViewState extends State<ContextSummaryBlockView> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: theme.dividerColor),
+        color: cs.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: cs.primary.withValues(alpha: 0.18)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(
-                LucideIcons.scrollText,
-                size: 16,
-                color: theme.colorScheme.primary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '上下文摘要',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
+          // Header (tappable)
+          GestureDetector(
+            onTap: () => setState(() => _expanded = !_expanded),
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              children: [
+                Icon(LucideIcons.scrollText, size: 16, color: cs.primary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '上下文摘要',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          AppMarkdown(content: block.content),
-          const SizedBox(height: 8),
-          Text(
-            '原始 ${block.originalMessageCount} 条 · 压缩 ${block.originalTokens} → '
-            '${block.compressedTokens} tokens（节省 ${block.tokensSaved}）',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+                Icon(
+                  _expanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+                  size: 16,
+                  color: cs.onSurface.withValues(alpha: 0.4),
+                ),
+              ],
             ),
           ),
+
+          // Stats bar
+          const SizedBox(height: 6),
+          Text(
+            '${widget.block.originalMessageCount} 条消息 → '
+            '${widget.block.compressedTokens} tokens'
+            '（节省 ${widget.block.tokensSaved}）',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+
+          // Expanded content
+          if (_expanded) ...[
+            Divider(height: 16, color: cs.primary.withValues(alpha: 0.15)),
+            AppMarkdown(content: widget.block.content),
+          ],
         ],
       ),
     );
