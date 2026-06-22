@@ -52,8 +52,6 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
     if (ref.read(sidebarTabIndexProvider) != index) {
       ref.read(sidebarTabIndexProvider.notifier).set(index);
     }
-    // The 翻译 button only renders on the 助手/话题 tabs, so rebuild on switch.
-    setState(() {});
   }
 
   @override
@@ -65,7 +63,6 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final showTranslate = _tabController.index != 2;
     // 设置 tab 的「侧边栏宽度」对话框驱动这里；按当前屏宽 clamp 到安全范围
     // (`getSafeMaxSidebarWidth`)，对话框拖动时实时预览。
     final rawWidth = ref.watch(
@@ -111,7 +108,7 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
                 ],
               ),
             ),
-            if (showTranslate) const _TranslateButton(),
+            const _TranslateButton(),
           ],
         ),
       ),
