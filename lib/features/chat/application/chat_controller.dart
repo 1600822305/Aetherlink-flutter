@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -855,6 +856,7 @@ class ChatController extends _$ChatController {
         view = await _reloadView(assistantMessageId, view);
         _replace(views, view);
         _emit(views, isStreaming: false);
+        unawaited(_refreshTopicPreview());
         return;
       } on Object catch (error) {
         lastError = error;
@@ -919,6 +921,7 @@ class ChatController extends _$ChatController {
     );
     _replace(views, view);
     _emit(views, isStreaming: false);
+    unawaited(_refreshTopicPreview());
   }
 
   /// Exponential-ish backoff between multi-key failover attempts, mirroring the
@@ -986,6 +989,60 @@ class ChatController extends _$ChatController {
     }
   }
 
+  /// Recomputes and persists the topic's `lastMessagePreview`, `lastMessageTime`
+  /// and `messageCount` from the DB — the port of the web's
+  /// `TopicPreviewService.refreshTopicPreview`. Failure is logged but never
+  /// rethrown (preview is a display enhancement, must not disrupt the message
+  /// flow).
+  Future<void> _refreshTopicPreview() async {
+    final topicId = _topicId;
+    if (topicId == null) return;
+    try {
+      final topic = await _repo.getTopic(topicId);
+      if (topic == null) return;
+      final messages = await _repo.getMessagesByTopicId(topicId);
+      final count = messages.length;
+      String preview = '';
+      String? lastTime;
+      if (messages.isNotEmpty) {
+        messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        final last = messages.last;
+        lastTime = (last.updatedAt ?? last.createdAt).toIso8601String();
+        final blocks = await _repo.getMessageBlocksByMessageId(last.id);
+        for (final block in blocks) {
+          if (block is MainTextBlock && block.content.trim().isNotEmpty) {
+            preview = _formatPreview(block.content);
+            break;
+          }
+        }
+      }
+      if (topic.lastMessagePreview == preview &&
+          topic.messageCount == count &&
+          topic.lastMessageTime == lastTime) {
+        return;
+      }
+      await _repo.saveTopic(
+        topic.copyWith(
+          lastMessagePreview: preview,
+          messageCount: count,
+          lastMessageTime: lastTime,
+          updatedAt: DateTime.now(),
+        ),
+      );
+      ref.invalidate(topicsProvider);
+    } on Object catch (_) {
+      // Preview refresh is non-critical; swallow errors.
+    }
+  }
+
+  /// Collapse whitespace and truncate to 50 chars (mirrors the web's
+  /// `formatPreviewText`).
+  static String _formatPreview(String text) {
+    final normalized = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalized.length <= 50) return normalized;
+    return '${normalized.substring(0, 50)}…';
+  }
+
   /// Deletes [messageId] together with its blocks and drops it from the view.
   ///
   /// Port of the toolbar 删除 action (`MessageActions.handleToolbarDeleteClick`
@@ -1000,6 +1057,7 @@ class ChatController extends _$ChatController {
         .where((view) => view.id != messageId)
         .toList();
     _emit(views, isStreaming: false);
+    unawaited(_refreshTopicPreview());
   }
 
   /// Writes [contentByBlockId] back to the message's `main_text` blocks and
@@ -1044,6 +1102,7 @@ class ChatController extends _$ChatController {
       views[index] = reloaded;
       _emit(views, isStreaming: false);
     }
+    unawaited(_refreshTopicPreview());
   }
 
   // --- Translation ----------------------------------------------------------
