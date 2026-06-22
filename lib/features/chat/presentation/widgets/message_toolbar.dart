@@ -14,7 +14,6 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_version.dart';
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_export_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/token_display.dart';
 
 /// The message bubble bottom toolbar (`MessageActions` `renderMode === 'toolbar'`).
@@ -197,10 +196,6 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
         .enterSelectionMode(anchorIndex: index, messages: messages);
   }
 
-  Future<void> _openExportSheet() async {
-    await showMessageExportSheet(context, messages: [_view]);
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -221,10 +216,10 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
         onTap: _openEditor,
       ),
       _ToolbarIconButton(
-        icon: LucideIcons.fileText,
-        tooltip: '导出/保存',
+        icon: LucideIcons.share2,
+        tooltip: '导出/分享',
         color: baseColor,
-        onTap: _openExportSheet,
+        onTap: _enterSelectionMode,
       ),
       if (_isUser)
         _ToolbarIconButton(
@@ -261,12 +256,6 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
           color: baseColor,
           onTap: _openVersionHistory,
         ),
-      _ToolbarIconButton(
-        icon: LucideIcons.listChecks,
-        tooltip: '选择消息',
-        color: baseColor,
-        onTap: _enterSelectionMode,
-      ),
       _ToolbarIconButton(
         icon: LucideIcons.gitBranch,
         tooltip: '创建分支',
