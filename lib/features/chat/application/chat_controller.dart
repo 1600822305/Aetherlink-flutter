@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/app/di/system_prompt_variables_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/combo_executor.dart';
 import 'package:aetherlink_flutter/features/settings/application/model_combo_controller.dart';
+import 'package:aetherlink_flutter/features/settings/application/model_combo_providers.dart';
 import 'package:aetherlink_flutter/shared/domain/model_combo.dart';
 import 'package:aetherlink_flutter/core/error/failure.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
@@ -313,6 +314,15 @@ class ChatController extends _$ChatController {
     final thinkingBlockId = generateId('block');
     final mainBlockId = generateId('block');
 
+    // Synthetic model carrying the combo display label so _viewOf reads the
+    // correct name when reconstructing from DB.
+    final comboLabel = '${thinking.model.name} → ${generating.model.name}';
+    final comboModel = Model(
+      id: resolution.combo.id,
+      name: comboLabel,
+      provider: kModelComboProviderId,
+    );
+
     final assistantMessage = Message(
       id: assistantMessageId,
       role: MessageRole.assistant,
@@ -320,7 +330,7 @@ class ChatController extends _$ChatController {
       topicId: topicId,
       createdAt: assistantTime,
       status: MessageStatus.streaming,
-      model: generating.model,
+      model: comboModel,
       askId: userMessageId,
       blocks: <String>[thinkingBlockId, mainBlockId],
     );
@@ -352,7 +362,6 @@ class ChatController extends _$ChatController {
       blocks: userBlocks,
       createdAt: now,
     );
-    final comboLabel = '${thinking.model.name} → ${generating.model.name}';
     var assistantView = ChatMessageView(
       id: assistantMessageId,
       role: MessageRole.assistant,
@@ -392,18 +401,41 @@ class ChatController extends _$ChatController {
         maxTokens: ctx.maxTokens,
       );
 
+      // Helper to rebuild live blocks for the view so the bubble renderer
+      // always has non-empty blocks (empty blocks + non-streaming = invisible).
+      List<MessageBlock> liveBlocks() => [
+        MessageBlock.thinking(
+          id: thinkingBlockId,
+          messageId: assistantMessageId,
+          status: MessageBlockStatus.streaming,
+          createdAt: assistantTime,
+          content: reasoningBuf.toString(),
+        ),
+        MessageBlock.mainText(
+          id: mainBlockId,
+          messageId: assistantMessageId,
+          status: MessageBlockStatus.streaming,
+          createdAt: assistantTime,
+          content: mainBuf.toString(),
+        ),
+      ];
+
       await for (final event in comboStream) {
         switch (event) {
           case ComboReasoningDelta(:final text):
             reasoningBuf.write(text);
             assistantView = assistantView.copyWith(
               thinking: reasoningBuf.toString(),
+              blocks: liveBlocks(),
             );
             views = [...views.take(views.length - 1), assistantView];
             _emit(views, isStreaming: true);
           case ComboTextDelta(:final text):
             mainBuf.write(text);
-            assistantView = assistantView.copyWith(text: mainBuf.toString());
+            assistantView = assistantView.copyWith(
+              text: mainBuf.toString(),
+              blocks: liveBlocks(),
+            );
             views = [...views.take(views.length - 1), assistantView];
             _emit(views, isStreaming: true);
           case ComboPhaseStart() || ComboPhaseDone() || ComboDone():
@@ -411,8 +443,27 @@ class ChatController extends _$ChatController {
         }
       }
 
-      // 4. Finalize.
-      assistantView = assistantView.copyWith(status: MessageStatus.success);
+      // 4. Finalize — keep blocks so the bubble stays visible after streaming.
+      final finalBlocks = [
+        MessageBlock.thinking(
+          id: thinkingBlockId,
+          messageId: assistantMessageId,
+          status: MessageBlockStatus.success,
+          createdAt: assistantTime,
+          content: reasoningBuf.toString(),
+        ),
+        MessageBlock.mainText(
+          id: mainBlockId,
+          messageId: assistantMessageId,
+          status: MessageBlockStatus.success,
+          createdAt: assistantTime,
+          content: mainBuf.toString(),
+        ),
+      ];
+      assistantView = assistantView.copyWith(
+        status: MessageStatus.success,
+        blocks: finalBlocks,
+      );
       views = [...views.take(views.length - 1), assistantView];
       _emit(views, isStreaming: false);
 
@@ -2417,11 +2468,15 @@ class ChatController extends _$ChatController {
     final model = message.model;
     String? providerName;
     if (model != null) {
-      final providers = await ref.read(appModelProvidersProvider.future);
-      for (final provider in providers) {
-        if (provider.id == model.provider) {
-          providerName = provider.name;
-          break;
+      if (model.provider == kModelComboProviderId) {
+        providerName = '模型组合';
+      } else {
+        final providers = await ref.read(appModelProvidersProvider.future);
+        for (final provider in providers) {
+          if (provider.id == model.provider) {
+            providerName = provider.name;
+            break;
+          }
         }
       }
     }
