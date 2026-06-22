@@ -152,7 +152,7 @@ class _AuxiliaryModelSettingsPageState
           fontWeight: FontWeight.w600,
           color: theme.colorScheme.onSurface,
         ),
-        title: const Text('辅助模型设置'),
+        title: const Text('辅助模型'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
           child: _SegmentedTabBar(controller: _tabController),

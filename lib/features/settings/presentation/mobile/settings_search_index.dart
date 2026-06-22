@@ -143,8 +143,8 @@ const List<SettingsSearchEntry> kSettingsSearchIndex = <SettingsSearchEntry>[
   ),
   SettingsSearchEntry(
     icon: LucideIcons.sliders,
-    title: '辅助模型设置',
-    description: '配置话题命名、AI意图分析、视觉识别等辅助功能',
+    title: '辅助模型',
+    description: '聊天、标题、翻译、OCR 等默认模型与提示词',
     route: AppRouter.auxiliaryModelPath,
     group: '模型服务',
     keywords: [
