@@ -11,7 +11,9 @@ import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/controllers/chat_auto_scroll_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_message_bubble.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/plain_style_message.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/chat_sidebar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_top_bar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
@@ -613,19 +615,33 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     final showDivider = ref.watch(
       sidebarSettingsControllerProvider.select((s) => s.showMessageDivider),
     );
+    final isPlain = ref.watch(
+      sidebarSettingsControllerProvider.select(
+        (s) => s.messageStyle == MessageStyle.plain,
+      ),
+    );
     return ListView.builder(
       controller: _scrollController,
       padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + widget.bottomReserve),
       itemCount: messages.length,
       itemBuilder: (context, index) {
-        final bubble = ChatMessageBubble(view: messages[index]);
-        if (!showDivider || index == messages.length - 1) return bubble;
+        final view = messages[index];
+        final Widget item = isPlain
+            ? PlainStyleMessage(view: view)
+            : ChatMessageBubble(view: view);
+        // Plain style uses its own bottom border; bubble style uses a Divider
+        // when the setting is on.
+        final needsDivider = isPlain || (showDivider && index < messages.length - 1);
+        if (!needsDivider) return item;
+        final dividerColor = Theme.of(context).brightness == Brightness.dark
+            ? const Color(0x1AFFFFFF)
+            : const Color(0x14000000);
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            bubble,
-            const Divider(height: 17, thickness: 1, indent: 12, endIndent: 12),
+            item,
+            Divider(height: 1, thickness: 1, color: dividerColor),
           ],
         );
       },

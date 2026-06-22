@@ -88,7 +88,6 @@ class SettingsTab extends ConsumerWidget {
               value: s.messageStyle,
               options: [for (final v in MessageStyle.values) (v, v.label)],
               onChanged: c.setMessageStyle,
-              comingSoon: true,
             ),
             _SelectSettingRow<MessageNavigation>(
               title: '对话导航',
