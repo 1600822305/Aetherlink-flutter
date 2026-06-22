@@ -18,7 +18,11 @@ class ModelComboSettingsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final comboState = ref.watch(modelComboControllerProvider);
-    final providersAsync = ref.watch(appModelProvidersProvider);
+    // Use .value — providers are always loaded before the user can reach
+    // settings, so this resolves synchronously (no loading frame).
+    final providers = ref.watch(appModelProvidersProvider).value ?? const [];
+
+    final recommendations = _buildRecommendations(providers, comboState.combos);
 
     return Scaffold(
       appBar: AppBar(
@@ -43,7 +47,7 @@ class ModelComboSettingsPage extends ConsumerWidget {
                   onTap: () => _pushCreate(
                     context,
                     ModelComboStrategy.sequential,
-                    providersAsync,
+                    providers,
                   ),
                 ),
                 Divider(height: 1, color: theme.dividerColor),
@@ -54,7 +58,7 @@ class ModelComboSettingsPage extends ConsumerWidget {
                   onTap: () => _pushCreate(
                     context,
                     ModelComboStrategy.comparison,
-                    providersAsync,
+                    providers,
                   ),
                 ),
               ],
@@ -70,7 +74,7 @@ class ModelComboSettingsPage extends ConsumerWidget {
                     if (i > 0) Divider(height: 1, color: theme.dividerColor),
                     _ComboCard(
                       combo: comboState.combos[i],
-                      providersAsync: providersAsync,
+                      providers: providers,
                     ),
                   ],
                 ],
@@ -79,43 +83,33 @@ class ModelComboSettingsPage extends ConsumerWidget {
             ],
 
             // Recommended combos
-            providersAsync.when(
-              data: (providers) {
-                final recommendations = _buildRecommendations(
-                  providers,
-                  comboState.combos,
-                );
-                if (recommendations.isEmpty) return const SizedBox.shrink();
-                return SettingGroup(
-                  title: '推荐组合',
-                  children: [
-                    for (var i = 0; i < recommendations.length; i++) ...[
-                      if (i > 0) Divider(height: 1, color: theme.dividerColor),
-                      _RecommendationRow(
-                        rec: recommendations[i],
-                        onUse: () {
-                          final now = DateTime.now().toIso8601String();
-                          final combo = ModelComboConfig(
-                            id: 'combo_${DateTime.now().millisecondsSinceEpoch}',
-                            name: recommendations[i].name,
-                            description: recommendations[i].description,
-                            strategy: recommendations[i].strategy,
-                            models: recommendations[i].models,
-                            createdAt: now,
-                            updatedAt: now,
-                          );
-                          ref
-                              .read(modelComboControllerProvider.notifier)
-                              .addCombo(combo);
-                        },
-                      ),
-                    ],
+            if (recommendations.isNotEmpty)
+              SettingGroup(
+                title: '推荐组合',
+                children: [
+                  for (var i = 0; i < recommendations.length; i++) ...[
+                    if (i > 0) Divider(height: 1, color: theme.dividerColor),
+                    _RecommendationRow(
+                      rec: recommendations[i],
+                      onUse: () {
+                        final now = DateTime.now().toIso8601String();
+                        final combo = ModelComboConfig(
+                          id: 'combo_${DateTime.now().millisecondsSinceEpoch}',
+                          name: recommendations[i].name,
+                          description: recommendations[i].description,
+                          strategy: recommendations[i].strategy,
+                          models: recommendations[i].models,
+                          createdAt: now,
+                          updatedAt: now,
+                        );
+                        ref
+                            .read(modelComboControllerProvider.notifier)
+                            .addCombo(combo);
+                      },
+                    ),
                   ],
-                );
-              },
-              loading: () => const SizedBox.shrink(),
-              error: (_, __) => const SizedBox.shrink(),
-            ),
+                ],
+              ),
           ],
         ),
       ),
@@ -125,9 +119,8 @@ class ModelComboSettingsPage extends ConsumerWidget {
   void _pushCreate(
     BuildContext context,
     ModelComboStrategy strategy,
-    AsyncValue<List<ModelProvider>> providersAsync,
+    List<ModelProvider> providers,
   ) {
-    final providers = providersAsync.value ?? [];
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) =>
@@ -335,10 +328,10 @@ class _QuickCreateRow extends StatelessWidget {
 }
 
 class _ComboCard extends ConsumerWidget {
-  const _ComboCard({required this.combo, required this.providersAsync});
+  const _ComboCard({required this.combo, required this.providers});
 
   final ModelComboConfig combo;
-  final AsyncValue<List<ModelProvider>> providersAsync;
+  final List<ModelProvider> providers;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -346,11 +339,10 @@ class _ComboCard extends ConsumerWidget {
     final strategyLabel = combo.strategy == ModelComboStrategy.sequential
         ? '思考+生成'
         : '对比';
-    final modelNames = _resolveModelNames(combo.models, providersAsync);
+    final modelNames = _resolveModelNames(combo.models, providers);
 
     return InkWell(
       onTap: () {
-        final providers = providersAsync.value ?? [];
         Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => EditComboPage(combo: combo, providers: providers),
@@ -422,9 +414,8 @@ class _ComboCard extends ConsumerWidget {
 
   String _resolveModelNames(
     List<ComboModelEntry> models,
-    AsyncValue<List<ModelProvider>> providersAsync,
+    List<ModelProvider> providers,
   ) {
-    final providers = providersAsync.value ?? [];
     final names = <String>[];
     for (final entry in models) {
       final parts = entry.modelId.split('/');
