@@ -9,6 +9,8 @@ import 'package:aetherlink_flutter/app/di/system_prompt_variables_access.dart';
 import 'package:aetherlink_flutter/core/error/failure.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
@@ -1719,6 +1721,10 @@ class ChatController extends _$ChatController {
   /// (locally-runnable) + remote (discovered live) server tools are injected as
   /// before, each minus its `disabledTools`. A remote server that is unreachable
   /// degrades gracefully — it simply contributes no tools this turn.
+  ///
+  /// When the 网络搜索 session mode is active ([InputMode.webSearch]), the
+  /// `builtin_web_search` tool is always injected — independent of the MCP 工具
+  /// 总开关 — so the model can request web searches even if MCP tools are off.
   Future<_McpSetup> _mcpSetup() async {
     final toolsState = ref.read(mcpToolsControllerProvider);
 
@@ -1735,9 +1741,10 @@ class ChatController extends _$ChatController {
       routes[kReadSkillToolName] = const _SkillReadToolRoute();
     }
 
-    // 工具 总开关 off: only read_skill may ride along (web parity).
+    // 工具 总开关 off: only read_skill and web search may ride along.
     if (!toolsState.enabled) {
       addReadSkill();
+      _maybeInjectWebSearch(tools, routes);
       if (tools.isEmpty) return const _McpSetup.disabled();
       return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
     }
@@ -1747,6 +1754,7 @@ class ChatController extends _$ChatController {
       tools.add(kMcpBridgeToolDefinition);
       routes[kMcpBridgeToolName] = const _BridgeToolRoute();
       addReadSkill();
+      _maybeInjectWebSearch(tools, routes);
       return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
     }
 
@@ -1791,7 +1799,21 @@ class ChatController extends _$ChatController {
     }
 
     addReadSkill();
+    _maybeInjectWebSearch(tools, routes);
     return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
+  }
+
+  /// Injects the `builtin_web_search` tool when [InputMode.webSearch] is active.
+  /// Uses the existing SearXNG builtin server's `searxng_search` under the hood.
+  void _maybeInjectWebSearch(
+    List<McpToolDefinition> tools,
+    Map<String, _ToolRoute> routes,
+  ) {
+    if (ref.read(inputModeControllerProvider) != InputMode.webSearch) return;
+    // Avoid duplicating if SearXNG tools are already injected via MCP 总开关.
+    if (routes.containsKey(_kWebSearchToolName)) return;
+    tools.add(_kWebSearchToolDefinition);
+    routes[_kWebSearchToolName] = const _WebSearchToolRoute();
   }
 
   /// Executes one tool call along its [route]: a built-in runs in-process via
@@ -1824,6 +1846,8 @@ class ChatController extends _$ChatController {
         return executeReadSkill(skills, args);
       case _BridgeToolRoute():
         return _runBridgeTool(args);
+      case _WebSearchToolRoute():
+        return _runWebSearch(args);
     }
   }
 
@@ -1992,11 +2016,38 @@ class ChatController extends _$ChatController {
         servers.where((s) => s.name.toLowerCase().contains(lower)).firstOrNull;
   }
 
+  /// Executes a `builtin_web_search` call by delegating to the SearXNG builtin.
+  /// Reads persisted [WebSearchSettings] for defaults; per-call args override.
+  Future<McpToolResult> _runWebSearch(Map<String, Object?> args) async {
+    final query = (args['query'] as String?)?.trim() ?? '';
+    if (query.isEmpty) {
+      return const McpToolResult('搜索关键词不能为空', isError: true);
+    }
+    final ws = ref.read(webSearchSettingsControllerProvider);
+    return runSearxngTool('searxng_search', {
+      'query': query,
+      'maxResults': args['maxResults'] ?? ws.maxResults,
+      'language': args['language'] ?? ws.language,
+      'categories': args['categories'] ?? ws.categories,
+    });
+  }
+
   /// The system prompt for a turn: in 提示词注入 mode the tool catalogue is woven
   /// into [base] (web `buildSystemPrompt`); otherwise [base] is used as-is and
-  /// tools ride the native `tools` field.
-  String? _systemFor(_McpSetup mcp, String? base) =>
-      mcp.usePromptInjection ? buildMcpSystemPrompt(base, mcp.tools) : base;
+  /// tools ride the native `tools` field. When 网络搜索 is active, a hint is
+  /// appended encouraging the model to use the search tool.
+  String? _systemFor(_McpSetup mcp, String? base) {
+    var prompt =
+        mcp.usePromptInjection ? buildMcpSystemPrompt(base, mcp.tools) : base;
+    if (ref.read(inputModeControllerProvider) == InputMode.webSearch) {
+      const hint = '\n\n[网络搜索已启用] '
+          '你可以使用 builtin_web_search 工具搜索互联网获取实时信息。'
+          '当用户的问题可能需要最新信息时，请主动使用搜索工具。'
+          '搜索结果中如果有有用的链接，请在回答中引用。';
+      prompt = (prompt ?? '') + hint;
+    }
+    return prompt;
+  }
 
   Future<String> _ensureTopic() async {
     final existing = _topicId;
@@ -2115,6 +2166,45 @@ class _NoUsableApiKeyException implements Exception {
   String toString() => '没有可用的 API Key：所有 Key 已禁用、失败或处于冷却中。';
 }
 
+// ── Web Search tool definition ──────────────────────────────────────────────
+
+const String _kWebSearchToolName = 'builtin_web_search';
+
+const McpToolDefinition _kWebSearchToolDefinition = McpToolDefinition(
+  name: _kWebSearchToolName,
+  description: '网络搜索工具，用于查找实时信息、新闻和最新数据。\n\n'
+      '使用场景：\n'
+      '- 用户询问实时信息（天气、新闻、股票等）\n'
+      '- 用户询问你不确定的事实\n'
+      '- 用户明确要求搜索网络\n'
+      '- 需要最新数据来回答问题',
+  inputSchema: {
+    'type': 'object',
+    'properties': {
+      'query': {
+        'type': 'string',
+        'description': '搜索查询关键词',
+      },
+      'maxResults': {
+        'type': 'number',
+        'description': '最大结果数',
+        'default': 5,
+      },
+      'language': {
+        'type': 'string',
+        'description': '语言代码，如 zh-CN, en',
+        'default': 'zh-CN',
+      },
+      'categories': {
+        'type': 'string',
+        'description': '搜索类别：general, news, science, it, videos, images',
+        'default': 'general',
+      },
+    },
+    'required': ['query'],
+  },
+);
+
 /// The MCP tool context assembled for one chat turn: the resolved [mode], the
 /// [tools] to expose (启用 built-ins + 启用 remote servers' discovered tools) and
 /// the [routes] map that dispatches each exposed tool name back to its source —
@@ -2173,6 +2263,11 @@ class _SkillReadToolRoute extends _ToolRoute {
 /// servers (built-in or remote) on demand.
 class _BridgeToolRoute extends _ToolRoute {
   const _BridgeToolRoute() : super(kMcpBridgeToolName);
+}
+
+/// The `builtin_web_search` tool injected when the 网络搜索 session mode is on.
+class _WebSearchToolRoute extends _ToolRoute {
+  const _WebSearchToolRoute() : super(_kWebSearchToolName);
 }
 
 /// A tool executed over a live connection to [server] via

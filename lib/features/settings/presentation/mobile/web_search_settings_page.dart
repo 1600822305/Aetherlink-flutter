@@ -4,27 +4,17 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/web_search_settings.dart';
 
 /// 网络搜索设置页面（设置 → 提示词与工具 → 网络搜索），参考 Kelivo 的
 /// `SearchServicesPage` 三层结构（搜索提供商列表 + 通用选项），但使用我们
 /// 自己的 `_OutlinedCard` / `_PrimaryRow` 等组件风格。
 ///
 /// 目前仅展示 SearXNG（默认内置提供商），后续可扩展多提供商管理。
-/// 状态管理和持久化暂使用页面本地 State，待后端 controller 就绪后迁移。
-class WebSearchSettingsPage extends ConsumerStatefulWidget {
+/// 状态通过 [WebSearchSettingsController] 持久化。
+class WebSearchSettingsPage extends ConsumerWidget {
   const WebSearchSettingsPage({super.key});
-
-  @override
-  ConsumerState<WebSearchSettingsPage> createState() =>
-      _WebSearchSettingsPageState();
-}
-
-class _WebSearchSettingsPageState
-    extends ConsumerState<WebSearchSettingsPage> {
-  // --- Local state (placeholder until a real controller lands) ---
-  int _selectedProvider = 0;
-  int _maxResults = 5;
-  int _timeout = 10;
 
   static const _providers = <_ProviderInfo>[
     _ProviderInfo(
@@ -36,8 +26,9 @@ class _WebSearchSettingsPageState
   ];
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final ws = ref.watch(webSearchSettingsControllerProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -74,7 +65,7 @@ class _WebSearchSettingsPageState
         children: [
           _providersCard(theme),
           const SizedBox(height: 16),
-          _commonOptionsCard(theme),
+          _commonOptionsCard(theme, ref, ws),
         ],
       ),
     );
@@ -98,20 +89,14 @@ class _WebSearchSettingsPageState
             if (i > 0) Divider(height: 1, color: theme.dividerColor),
             _ProviderRow(
               info: _providers[i],
-              selected: i == _selectedProvider,
-              onTap: () => setState(() => _selectedProvider = i),
+              selected: true,
+              onTap: () {},
             ),
           ],
           Divider(height: 1, color: theme.dividerColor),
-          _AddProviderRow(onTap: _onAddProvider),
+          _AddProviderRow(onTap: () {}),
         ],
       ),
-    );
-  }
-
-  void _onAddProvider() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('即将支持添加更多搜索提供商')),
     );
   }
 
@@ -119,7 +104,11 @@ class _WebSearchSettingsPageState
   // 通用选项 card
   // ---------------------------------------------------------------------------
 
-  Widget _commonOptionsCard(ThemeData theme) {
+  Widget _commonOptionsCard(
+    ThemeData theme,
+    WidgetRef ref,
+    WebSearchSettings ws,
+  ) {
     return _OutlinedCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -134,10 +123,12 @@ class _WebSearchSettingsPageState
             accent: const Color(0xFF8B5CF6),
             label: '最大结果数',
             description: '每次搜索返回的最大结果条数',
-            value: _maxResults,
+            value: ws.maxResults,
             min: 1,
             max: 20,
-            onChanged: (v) => setState(() => _maxResults = v),
+            onChanged: (v) => ref
+                .read(webSearchSettingsControllerProvider.notifier)
+                .setMaxResults(v),
           ),
           Divider(height: 1, color: theme.dividerColor),
           _StepperRow(
@@ -145,11 +136,13 @@ class _WebSearchSettingsPageState
             accent: const Color(0xFFF59E0B),
             label: '超时时间',
             description: '搜索请求的最长等待时间',
-            value: _timeout,
+            value: ws.timeout,
             min: 5,
             max: 60,
             unit: '秒',
-            onChanged: (v) => setState(() => _timeout = v),
+            onChanged: (v) => ref
+                .read(webSearchSettingsControllerProvider.notifier)
+                .setTimeout(v),
           ),
         ],
       ),
@@ -516,3 +509,5 @@ class _ProviderInfo {
   final IconData icon;
   final Color accent;
 }
+
+
