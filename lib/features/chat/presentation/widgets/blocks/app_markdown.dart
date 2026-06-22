@@ -168,15 +168,29 @@ class _MarkdownTableState extends State<MarkdownTable> {
     return buf.toString().trimRight();
   }
 
+  String _buildCsv() {
+    final buf = StringBuffer();
+    for (final row in widget.rows) {
+      final cells = row.fields.map((f) {
+        final v = f.data;
+        if (v.contains(',') || v.contains('"') || v.contains('\n')) {
+          return '"${v.replaceAll('"', '""')}"';
+        }
+        return v;
+      }).toList();
+      buf.writeln(cells.join(','));
+    }
+    return buf.toString().trimRight();
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final borderColor = cs.outlineVariant;
-    final headerBg = isDark
-        ? cs.surfaceContainerHighest
-        : cs.surfaceContainerHighest;
+    final toolbarBg = cs.surfaceContainerHighest;
+    final tableHeaderBg = cs.surfaceContainerHigh;
     final bodyBg = cs.surfaceContainer;
     final trackColor = cs.outlineVariant.withValues(
       alpha: isDark ? 0.20 : 0.28,
@@ -199,7 +213,7 @@ class _MarkdownTableState extends State<MarkdownTable> {
           context,
           colCount: colCount,
           borderColor: borderColor,
-          headerBg: headerBg,
+          headerBg: tableHeaderBg,
           maxColWidth: maxWidth,
         );
 
@@ -220,7 +234,7 @@ class _MarkdownTableState extends State<MarkdownTable> {
               children: [
                 // Toolbar
                 Container(
-                  color: headerBg,
+                  color: toolbarBg,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 8,
@@ -236,14 +250,29 @@ class _MarkdownTableState extends State<MarkdownTable> {
                         ),
                       ),
                       const Spacer(),
-                      _ToolbarIconButton(
-                        icon: LucideIcons.copy,
-                        tooltip: '复制表格',
-                        onTap: () {
-                          Clipboard.setData(
-                            ClipboardData(text: _buildMarkdownSource()),
-                          );
-                        },
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _ToolbarIconButton(
+                            icon: LucideIcons.copy,
+                            tooltip: '复制表格',
+                            onTap: () {
+                              Clipboard.setData(
+                                ClipboardData(text: _buildMarkdownSource()),
+                              );
+                            },
+                          ),
+                          const SizedBox(width: 16),
+                          _ToolbarIconButton(
+                            icon: LucideIcons.download,
+                            tooltip: '下载 CSV',
+                            onTap: () {
+                              Clipboard.setData(
+                                ClipboardData(text: _buildCsv()),
+                              );
+                            },
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -325,7 +354,7 @@ class _MarkdownTableState extends State<MarkdownTable> {
     );
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Align(
         alignment: switch (align) {
           TextAlign.center => Alignment.center,
