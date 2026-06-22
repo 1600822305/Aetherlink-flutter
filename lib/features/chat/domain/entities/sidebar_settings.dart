@@ -82,8 +82,12 @@ enum MessageNavigation {
 ///   * 常规设置 7 项 + 侧边栏宽度 are fully wired (see [SidebarSettingsController]
 ///     consumers); `showMessageDivider` / `copyableCodeBlocks` already drive the
 ///     chat view, the rest persist and light up as their chat widgets land.
-///   * 上下文 / 输入 / 代码块行为 persist here but are 即将支持 — the
-///     subsystems consuming them are later slices.
+///   * 上下文设置 (`contextCount`, `maxOutputTokens`, `enableMaxOutputTokens`)
+///     are wired — `ChatController._contextSettings()` reads them and applies
+///     message trimming + `maxTokens` to every `LlmChatRequest`.
+///     `contextWindowSize` is informational (displayed in sidebar subtitle).
+///   * 输入 / 代码块行为 persist here but are 即将支持 — the subsystems
+///     consuming them are later slices.
 ///   * 数学 (单美元) is wired — `AppMarkdown` reads `mathEnableSingleDollar`
 ///     via Riverpod and passes it to `GptMarkdown.useDollarSignsForLatex`.
 ///   * 性能节流 / 虚拟化列表 / 代码编辑器主题 / 数学引擎下拉 are Web-only framework tax
@@ -106,7 +110,7 @@ abstract class SidebarSettings with _$SidebarSettings {
     // ── 侧边栏显示方式 (Flutter 特有) ─────────────────────────────────────────
     // overlay 覆盖式（默认，原生抽屉行为）/ push 推开式（聊天页随抽屉右移）。
     @Default(SidebarDisplayMode.overlay) SidebarDisplayMode sidebarDisplayMode,
-    // ── 上下文设置 (即将支持) ─────────────────────────────────────────────────
+    // ── 上下文设置 (已接入 ChatController) ──────────────────────────────────
     @Default(100000) int contextWindowSize,
     @Default(20) int contextCount,
     @Default(8192) int maxOutputTokens,

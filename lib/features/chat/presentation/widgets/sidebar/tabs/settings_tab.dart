@@ -108,15 +108,13 @@ class SettingsTab extends ConsumerWidget {
           ],
         ),
         const _SettingsDivider(),
-        // 上下文设置 — UI + persist; consumed by the request layer later.
+        // 上下文设置 — contextCount / maxOutputTokens wired in ChatController.
         _SettingsGroup(
           title: '上下文设置',
           subtitle:
               '窗口: ${_formatInt(s.contextWindowSize)} | 输出: ${s.maxOutputTokens}',
           chipLabel: '兼容 API',
-          comingSoon: true,
           children: [
-            const _ComingSoonNote(text: '设置会先保存，接入请求层后生效。'),
             _NumberSettingRow(
               title: '上下文窗口大小',
               description: '单位 token',
