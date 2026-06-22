@@ -93,7 +93,7 @@ class _ToolBlockViewState extends ConsumerState<ToolBlockView> {
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.symmetric(vertical: 4),
+      margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(8),
@@ -111,26 +111,26 @@ class _ToolBlockViewState extends ConsumerState<ToolBlockView> {
             onTap: () => setState(() => _expanded = !_expanded),
             child: Container(
               color: headerBg,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
               child: Row(
                 children: [
                   needsConfirmation
                       ? Icon(
                           LucideIcons.shieldAlert,
-                          size: 14,
+                          size: 13,
                           color: statusColor,
                         )
                       : _ToolStatusIcon(status: status, color: statusColor),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       '@$name',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium?.copyWith(
+                      style: theme.textTheme.labelSmall?.copyWith(
                         fontFamily: 'monospace',
-                        fontSize: 13,
-                        color: theme.colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 11,
                       ),
                     ),
                   ),
@@ -152,25 +152,14 @@ class _ToolBlockViewState extends ConsumerState<ToolBlockView> {
                           color: Color(0xFFF59E0B),
                         ),
                       ),
-                    )
-                  else if (isDone && !hasError) ...[
-                    const Text(
-                      '✓',
-                      style: TextStyle(
-                        color: _toolSuccessColor,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
                     ),
-                    const SizedBox(width: 6),
-                  ],
                   const SizedBox(width: 4),
                   AnimatedRotation(
                     turns: _expanded ? 0.25 : 0,
                     duration: const Duration(milliseconds: 200),
                     child: Icon(
                       LucideIcons.chevronRight,
-                      size: 16,
+                      size: 14,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
@@ -383,18 +372,18 @@ class _ToolStatusIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     switch (status) {
       case MessageBlockStatus.error:
-        return Icon(LucideIcons.circleAlert, size: 14, color: color);
+        return Icon(LucideIcons.circleAlert, size: 13, color: color);
       case MessageBlockStatus.success:
-        return Icon(LucideIcons.check, size: 14, color: color);
+        return Icon(LucideIcons.circleCheck, size: 13, color: color);
       case MessageBlockStatus.paused:
-        return Icon(LucideIcons.pause, size: 14, color: color);
+        return Icon(LucideIcons.pause, size: 13, color: color);
       case MessageBlockStatus.pending:
       case MessageBlockStatus.processing:
       case MessageBlockStatus.streaming:
         return SizedBox(
-          width: 14,
-          height: 14,
-          child: CircularProgressIndicator(strokeWidth: 2, color: color),
+          width: 13,
+          height: 13,
+          child: CircularProgressIndicator(strokeWidth: 1.5, color: color),
         );
     }
   }
