@@ -23,6 +23,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/system_pro
 import 'package:aetherlink_flutter/shared/domain/chat_interface_settings.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 import 'package:native_keyboard_height/native_keyboard_height.dart';
+import 'package:scrollview_observer/scrollview_observer.dart';
 
 /// Notifier to request the message list to scroll to a specific message ID.
 class ScrollToMessageNotifier extends Notifier<String?> {
@@ -625,6 +626,7 @@ class _MessageListView extends ConsumerStatefulWidget {
 class _MessageListViewState extends ConsumerState<_MessageListView> {
   final ChatAutoFollowScrollController _scrollController =
       ChatAutoFollowScrollController();
+  late final ListObserverController _observerController;
   late final ChatAutoScrollController _autoScroll;
 
   /// Identifies the loaded conversation so a topic switch (first-message change)
@@ -635,6 +637,8 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   @override
   void initState() {
     super.initState();
+    _observerController = ListObserverController(controller: _scrollController)
+      ..cacheJumpIndexOffset = false;
     _autoScroll = ChatAutoScrollController(
       scrollController: _scrollController,
       isEnabled: () =>
@@ -680,22 +684,14 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     // Listen for scroll-to-message requests from the mini map.
     ref.listen<String?>(scrollToMessageIdProvider, (prev, messageId) {
       if (messageId == null) return;
-      // Clear the request immediately.
       ref.read(scrollToMessageIdProvider.notifier).clear();
       final index = messages.indexWhere((m) => m.id == messageId);
       if (index < 0) return;
-      // Estimate the scroll offset. With variable-height items we use a rough
-      // average-height heuristic; this gets us close enough for the user to see
-      // the target message, and the animation duration gives time for layout.
-      const estimatedItemHeight = 120.0;
-      final target = (index * estimatedItemHeight).clamp(
-        0.0,
-        _scrollController.position.maxScrollExtent,
-      );
-      _scrollController.animateTo(
-        target,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
+      _observerController.animateTo(
+        index: index,
+        alignment: 0.1,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
       );
     });
 
@@ -708,42 +704,45 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         (s) => s.messageStyle == MessageStyle.plain,
       ),
     );
-    return ListView.builder(
-      controller: _scrollController,
-      padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + widget.bottomReserve),
-      itemCount: messages.length,
-      itemBuilder: (context, index) {
-        final view = messages[index];
-        final Widget bubble = isPlain
-            ? PlainStyleMessage(view: view)
-            : ChatMessageBubble(view: view);
+    return ListViewObserver(
+      controller: _observerController,
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + widget.bottomReserve),
+        itemCount: messages.length,
+        itemBuilder: (context, index) {
+          final view = messages[index];
+          final Widget bubble = isPlain
+              ? PlainStyleMessage(view: view)
+              : ChatMessageBubble(view: view);
 
-        // Wrap with selection checkbox when in multi-select mode.
-        final Widget item = isSelecting
-            ? _SelectableMessageRow(
-                messageId: view.id,
-                selected: selectedIds.contains(view.id),
-                child: bubble,
-              )
-            : bubble;
+          // Wrap with selection checkbox when in multi-select mode.
+          final Widget item = isSelecting
+              ? _SelectableMessageRow(
+                  messageId: view.id,
+                  selected: selectedIds.contains(view.id),
+                  child: bubble,
+                )
+              : bubble;
 
-        // Plain style uses its own bottom border; bubble style uses a Divider
-        // when the setting is on.
-        final needsDivider =
-            isPlain || (showDivider && index < messages.length - 1);
-        if (!needsDivider) return item;
-        final dividerColor = Theme.of(context).brightness == Brightness.dark
-            ? const Color(0x1AFFFFFF)
-            : const Color(0x14000000);
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            item,
-            Divider(height: 1, thickness: 1, color: dividerColor),
-          ],
-        );
-      },
+          // Plain style uses its own bottom border; bubble style uses a Divider
+          // when the setting is on.
+          final needsDivider =
+              isPlain || (showDivider && index < messages.length - 1);
+          if (!needsDivider) return item;
+          final dividerColor = Theme.of(context).brightness == Brightness.dark
+              ? const Color(0x1AFFFFFF)
+              : const Color(0x14000000);
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              item,
+              Divider(height: 1, thickness: 1, color: dividerColor),
+            ],
+          );
+        },
+      ),
     );
   }
 }
