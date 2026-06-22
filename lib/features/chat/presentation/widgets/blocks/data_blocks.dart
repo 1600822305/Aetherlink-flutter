@@ -2,12 +2,14 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 
 Widget _card(BuildContext context, {required Widget child}) {
   final theme = Theme.of(context);
@@ -34,16 +36,16 @@ const Color _toolSuccessColor = Color(0xFF2E7D32);
 /// header carries a status-driven icon + colour (执行中 转圈 / 错误 / 成功) and
 /// the `@toolName` in monospace. Expanding reveals the JSON-pretty-printed
 /// 请求参数 and 执行结果 (错误标红), each copyable, separated by a dashed divider.
-class ToolBlockView extends StatefulWidget {
+class ToolBlockView extends ConsumerStatefulWidget {
   const ToolBlockView({required this.block, super.key});
 
   final ToolBlock block;
 
   @override
-  State<ToolBlockView> createState() => _ToolBlockViewState();
+  ConsumerState<ToolBlockView> createState() => _ToolBlockViewState();
 }
 
-class _ToolBlockViewState extends State<ToolBlockView> {
+class _ToolBlockViewState extends ConsumerState<ToolBlockView> {
   bool _expanded = false;
 
   @override
@@ -60,7 +62,23 @@ class _ToolBlockViewState extends State<ToolBlockView> {
     final hasError = status == MessageBlockStatus.error;
     final isDone = status == MessageBlockStatus.success;
 
-    final statusColor = hasError
+    // Check if this block is awaiting user confirmation.
+    final needsConfirmation =
+        block.metadata?['needsConfirmation'] == true && isProcessing;
+    final pending = needsConfirmation
+        ? ref.watch(toolConfirmationProvider)[block.id]
+        : null;
+
+    // Auto-expand when a confirmation request is visible.
+    if (pending != null && !_expanded) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _expanded = true);
+      });
+    }
+
+    final statusColor = needsConfirmation
+        ? const Color(0xFFF59E0B)
+        : hasError
         ? theme.colorScheme.error
         : isDone
         ? _toolSuccessColor
@@ -79,7 +97,11 @@ class _ToolBlockViewState extends State<ToolBlockView> {
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: theme.dividerColor),
+        border: Border.all(
+          color: needsConfirmation
+              ? const Color(0xFFF59E0B).withValues(alpha: 0.5)
+              : theme.dividerColor,
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -92,7 +114,13 @@ class _ToolBlockViewState extends State<ToolBlockView> {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               child: Row(
                 children: [
-                  _ToolStatusIcon(status: status, color: statusColor),
+                  needsConfirmation
+                      ? Icon(
+                          LucideIcons.shieldAlert,
+                          size: 14,
+                          color: statusColor,
+                        )
+                      : _ToolStatusIcon(status: status, color: statusColor),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -106,7 +134,26 @@ class _ToolBlockViewState extends State<ToolBlockView> {
                       ),
                     ),
                   ),
-                  if (isDone && !hasError) ...[
+                  if (needsConfirmation)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        '需要确认',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFFF59E0B),
+                        ),
+                      ),
+                    )
+                  else if (isDone && !hasError) ...[
                     const Text(
                       '✓',
                       style: TextStyle(
@@ -117,6 +164,7 @@ class _ToolBlockViewState extends State<ToolBlockView> {
                     ),
                     const SizedBox(width: 6),
                   ],
+                  const SizedBox(width: 4),
                   AnimatedRotation(
                     turns: _expanded ? 0.25 : 0,
                     duration: const Duration(milliseconds: 200),
@@ -138,6 +186,7 @@ class _ToolBlockViewState extends State<ToolBlockView> {
               result: result,
               isProcessing: isProcessing,
               hasError: hasError,
+              confirmationRequest: pending,
             ),
             crossFadeState: _expanded
                 ? CrossFadeState.showSecond
@@ -155,6 +204,7 @@ class _ToolBlockViewState extends State<ToolBlockView> {
     required String result,
     required bool isProcessing,
     required bool hasError,
+    ToolConfirmationRequest? confirmationRequest,
   }) {
     final theme = Theme.of(context);
     return Container(
@@ -167,9 +217,22 @@ class _ToolBlockViewState extends State<ToolBlockView> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (params.isNotEmpty) _ToolSection(label: '请求参数', text: params),
-          if (params.isNotEmpty && (result.isNotEmpty || isProcessing))
+          if (params.isNotEmpty &&
+              (result.isNotEmpty ||
+                  isProcessing ||
+                  confirmationRequest != null))
             const _DashedDivider(),
-          if (isProcessing)
+          if (confirmationRequest != null)
+            _ConfirmationSection(
+              request: confirmationRequest,
+              onApprove: () => ref
+                  .read(toolConfirmationProvider.notifier)
+                  .respond(confirmationRequest.id, approved: true),
+              onReject: () => ref
+                  .read(toolConfirmationProvider.notifier)
+                  .respond(confirmationRequest.id, approved: false),
+            )
+          else if (isProcessing)
             Row(
               children: [
                 SizedBox(
@@ -192,6 +255,117 @@ class _ToolBlockViewState extends State<ToolBlockView> {
           else if (result.isNotEmpty)
             _ToolSection(label: '执行结果', text: result, isError: hasError),
         ],
+      ),
+    );
+  }
+}
+
+/// Inline confirmation UI for tools that need user approval.
+class _ConfirmationSection extends StatelessWidget {
+  const _ConfirmationSection({
+    required this.request,
+    required this.onApprove,
+    required this.onReject,
+  });
+
+  final ToolConfirmationRequest request;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    const warningColor = Color(0xFFF59E0B);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: warningColor.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: warningColor.withValues(alpha: 0.2)),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                LucideIcons.shieldAlert,
+                size: 16,
+                color: warningColor,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  request.summary,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            _ConfirmButton(
+              label: '拒绝',
+              color: theme.colorScheme.onSurfaceVariant,
+              filled: false,
+              onTap: onReject,
+            ),
+            const SizedBox(width: 8),
+            _ConfirmButton(
+              label: '确认执行',
+              color: warningColor,
+              filled: true,
+              onTap: onApprove,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ConfirmButton extends StatelessWidget {
+  const _ConfirmButton({
+    required this.label,
+    required this.color,
+    required this.filled,
+    required this.onTap,
+  });
+
+  final String label;
+  final Color color;
+  final bool filled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: filled ? color : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: filled ? color : color.withValues(alpha: 0.4),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: filled ? Colors.white : color,
+          ),
+        ),
       ),
     );
   }
