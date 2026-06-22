@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/chat/application/context_condense_service.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
 
@@ -306,18 +308,62 @@ class PlaceholderBlockView extends StatelessWidget {
 /// Renders a `CONTEXT_SUMMARY` block: a compact card with the summary text
 /// and compression stats. Defaults to collapsed (2-line preview + stats);
 /// tapping the header expands to show the full summary.
-class ContextSummaryBlockView extends StatefulWidget {
+/// Includes a "restore original" button when original message data is available.
+class ContextSummaryBlockView extends ConsumerStatefulWidget {
   const ContextSummaryBlockView({required this.block, super.key});
 
   final ContextSummaryBlock block;
 
   @override
-  State<ContextSummaryBlockView> createState() =>
+  ConsumerState<ContextSummaryBlockView> createState() =>
       _ContextSummaryBlockViewState();
 }
 
-class _ContextSummaryBlockViewState extends State<ContextSummaryBlockView> {
+class _ContextSummaryBlockViewState
+    extends ConsumerState<ContextSummaryBlockView> {
   bool _expanded = false;
+  bool _isRestoring = false;
+
+  bool get _canRestore {
+    final original = widget.block.metadata?['originalMessages'];
+    return original is List && original.isNotEmpty;
+  }
+
+  Future<void> _restore() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('恢复原文'),
+        content: const Text('确定要恢复被压缩的原始消息吗？摘要将被删除。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('恢复'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isRestoring = true);
+    final service = ref.read(contextCondenseServiceProvider);
+    final result = await service.restore(block: widget.block);
+    if (!mounted) return;
+
+    if (!result.success) {
+      setState(() => _isRestoring = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.error ?? '恢复失败'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -370,10 +416,73 @@ class _ContextSummaryBlockViewState extends State<ContextSummaryBlockView> {
             ),
           ),
 
-          // Expanded content
+          // Expanded content (preview of the summary)
           if (_expanded) ...[
             Divider(height: 16, color: cs.primary.withValues(alpha: 0.15)),
             AppMarkdown(content: widget.block.content),
+          ],
+
+          // Action buttons
+          if (_canRestore) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                InkWell(
+                  onTap: () => setState(() => _expanded = !_expanded),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _expanded ? LucideIcons.eyeOff : LucideIcons.eye,
+                          size: 14,
+                          color: cs.primary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _expanded ? '收起摘要' : '预览摘要',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: cs.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _isRestoring
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : InkWell(
+                        onTap: _restore,
+                        borderRadius: BorderRadius.circular(6),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(LucideIcons.undo2,
+                                  size: 14, color: cs.error),
+                              const SizedBox(width: 4),
+                              Text(
+                                '恢复原文',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: cs.error,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+              ],
+            ),
           ],
         ],
       ),
