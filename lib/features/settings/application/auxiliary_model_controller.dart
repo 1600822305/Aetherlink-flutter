@@ -159,6 +159,23 @@ class AuxiliaryModelController extends _$AuxiliaryModelController {
   @override
   AuxiliaryModelState build() {
     _hydrate();
+
+    // Keep chatModelKey in sync with the app-level current model.
+    // When the user switches model in the chat composer, the app current model
+    // changes and this listener mirrors the change into the auxiliary setting.
+    ref.listen(appCurrentModelProvider, (prev, next) {
+      final currentModel = next.asData?.value;
+      if (currentModel == null) return;
+      final key = _encodeModelKey(
+        currentModel.provider.id,
+        currentModel.model.id,
+      );
+      if (key != state.chatModelKey) {
+        state = state.copyWith(chatModelKey: () => key);
+        _repo.saveSetting(kChatModelKey, key);
+      }
+    });
+
     return const AuxiliaryModelState();
   }
 
@@ -201,6 +218,10 @@ class AuxiliaryModelController extends _$AuxiliaryModelController {
     final key = _encodeModelKey(providerId, modelId);
     state = state.copyWith(chatModelKey: () => key);
     _repo.saveSetting(kChatModelKey, key);
+    // Sync to the app-level current model so the chat composer uses this model.
+    ref
+        .read(modelStoreProvider.notifier)
+        .selectCurrentModel(providerId: providerId, modelId: modelId);
   }
 
   void setFastModel(String providerId, String modelId) {
