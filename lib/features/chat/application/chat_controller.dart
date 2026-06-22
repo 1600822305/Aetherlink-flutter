@@ -49,6 +49,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/mcp_bridge_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_prompt.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
+import 'package:aetherlink_flutter/shared/services/web_search_service.dart';
 import 'package:aetherlink_flutter/shared/utils/system_prompt_variables.dart';
 
 part 'chat_controller.g.dart';
@@ -2016,20 +2017,35 @@ class ChatController extends _$ChatController {
         servers.where((s) => s.name.toLowerCase().contains(lower)).firstOrNull;
   }
 
-  /// Executes a `builtin_web_search` call by delegating to the SearXNG builtin.
-  /// Reads persisted [WebSearchSettings] for defaults; per-call args override.
+  /// Executes a `builtin_web_search` call by dispatching to the active search
+  /// provider via [WebSearchService]. Reads persisted [WebSearchSettings] for
+  /// provider config and defaults; per-call args can override maxResults etc.
   Future<McpToolResult> _runWebSearch(Map<String, Object?> args) async {
     final query = (args['query'] as String?)?.trim() ?? '';
     if (query.isEmpty) {
       return const McpToolResult('搜索关键词不能为空', isError: true);
     }
     final ws = ref.read(webSearchSettingsControllerProvider);
-    return runSearxngTool('searxng_search', {
-      'query': query,
-      'maxResults': args['maxResults'] ?? ws.maxResults,
-      'language': args['language'] ?? ws.language,
-      'categories': args['categories'] ?? ws.categories,
-    });
+
+    // Find the active provider config
+    final config = ws.providers
+        .where((p) => p.id == ws.activeProviderId && p.isEnabled)
+        .firstOrNull;
+    if (config == null) {
+      return McpToolResult(
+        '未找到活跃的搜索提供商 (${ws.activeProviderId})，请在设置中添加并启用一个搜索提供商',
+        isError: true,
+      );
+    }
+
+    return WebSearchService.search(
+      config: config,
+      query: query,
+      maxResults: (args['maxResults'] as int?) ?? ws.maxResults,
+      timeout: ws.timeout,
+      language: (args['language'] as String?) ?? ws.language,
+      categories: (args['categories'] as String?) ?? ws.categories,
+    );
   }
 
   /// The system prompt for a turn: in 提示词注入 mode the tool catalogue is woven
