@@ -199,7 +199,18 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
     final messages =
         ref.read(chatControllerProvider).value?.messages ??
         const <ChatMessageView>[];
-    if (messages.isEmpty) return;
+    if (messages.isEmpty) {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('当前话题暂无消息'),
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      return;
+    }
     final isSelecting = ref.read(messageSelectionProvider).isSelecting;
     final messageId = await showMiniMapSheet(
       context,
