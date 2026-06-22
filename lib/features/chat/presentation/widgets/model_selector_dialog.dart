@@ -20,7 +20,7 @@ import 'package:aetherlink_flutter/shared/utils/provider_icons.dart';
 /// [selectedProviderId] / [selectedModelId] highlighting the current choice.
 Future<void> showModelSelectorDialog(
   BuildContext context, {
-  void Function(ModelProvider provider, Model model)? onSelect,
+  Future<void> Function(ModelProvider provider, Model model)? onSelect,
   String? selectedProviderId,
   String? selectedModelId,
 }) {
@@ -112,7 +112,7 @@ class _ModelSelectorView extends ConsumerStatefulWidget {
     this.selectedModelId,
   });
 
-  final void Function(ModelProvider provider, Model model)? onSelect;
+  final Future<void> Function(ModelProvider provider, Model model)? onSelect;
   final String? selectedProviderId;
   final String? selectedModelId;
 
@@ -512,7 +512,7 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
   Future<void> _select(ModelProvider provider, Model model) async {
     final onSelect = widget.onSelect;
     if (onSelect != null) {
-      onSelect(provider, model);
+      await onSelect(provider, model);
     } else if (provider.id == kModelComboProviderId) {
       // Combo models are virtual — store the selection in the combo controller
       // and clear the real model's isDefault so the UI picks it up.

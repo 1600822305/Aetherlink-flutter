@@ -283,10 +283,14 @@ class _ModelConfigTabState extends ConsumerState<_ModelConfigTab>
     _ => null,
   };
 
-  void _onModelSelect(AuxiliaryModelController ctrl, ModelProvider p, Model m) {
+  Future<void> _onModelSelect(
+    AuxiliaryModelController ctrl,
+    ModelProvider p,
+    Model m,
+  ) async {
     switch (widget.index) {
       case 0:
-        ctrl.setChatModel(p.id, m.id);
+        await ctrl.setChatModel(p.id, m.id);
       case 1:
         ctrl.setFastModel(p.id, m.id);
       case 2:
