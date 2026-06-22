@@ -42,6 +42,7 @@ class ModelComboSettingsPage extends ConsumerWidget {
               children: [
                 _QuickCreateRow(
                   icon: LucideIcons.brain,
+                  color: Colors.deepPurple,
                   label: '思考 + 生成',
                   description: '推理模型思考，生成模型回答',
                   onTap: () => _pushCreate(
@@ -53,6 +54,7 @@ class ModelComboSettingsPage extends ConsumerWidget {
                 Divider(height: 1, color: theme.dividerColor),
                 _QuickCreateRow(
                   icon: LucideIcons.gitCompareArrows,
+                  color: Colors.orange,
                   label: '模型对比',
                   description: '多模型并行回答，选最佳',
                   onTap: () => _pushCreate(
@@ -268,12 +270,14 @@ class _Recommendation {
 class _QuickCreateRow extends StatelessWidget {
   const _QuickCreateRow({
     required this.icon,
+    required this.color,
     required this.label,
     required this.description,
     required this.onTap,
   });
 
   final IconData icon;
+  final Color color;
   final String label;
   final String description;
   final VoidCallback onTap;
@@ -291,10 +295,10 @@ class _QuickCreateRow extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer,
+                color: color.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(icon, size: 20, color: theme.colorScheme.primary),
+              child: Icon(icon, size: 20, color: color),
             ),
             const SizedBox(width: 12),
             Expanded(
