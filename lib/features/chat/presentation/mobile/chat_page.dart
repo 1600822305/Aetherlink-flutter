@@ -8,11 +8,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aetherlink_flutter/app/di/chat_interface_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/application/message_selection_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/controllers/chat_auto_scroll_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_message_bubble.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_selection_bar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/plain_style_message.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/chat_sidebar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_top_bar.dart';
@@ -59,6 +61,9 @@ class ChatPage extends ConsumerWidget {
     final background = ref.watch(
       chatInterfaceSettingsProvider.select((s) => s.background),
     );
+    final isSelecting = ref.watch(
+      messageSelectionProvider.select((s) => s.isSelecting),
+    );
 
     // The sidebar is hosted by [SidebarHost] (not `Scaffold.drawer`) so its
     // display style can switch between overlay and push (侧边栏显示方式); the
@@ -76,12 +81,15 @@ class ChatPage extends ConsumerWidget {
       onOpened: Haptics.instance.onSidebar,
       child: Scaffold(
         resizeToAvoidBottomInset: false,
-        appBar: const ChatTopBar(),
+        appBar: isSelecting
+            ? const MessageSelectionTopBar()
+            : const ChatTopBar(),
         body: _ChatBackground(
           background: background,
           child: _ChatBody(
             showSystemPromptBubble: showSystemPromptBubble,
             stateAsync: stateAsync,
+            isSelecting: isSelecting,
           ),
         ),
       ),
@@ -99,10 +107,12 @@ class _ChatBody extends StatefulWidget {
   const _ChatBody({
     required this.showSystemPromptBubble,
     required this.stateAsync,
+    this.isSelecting = false,
   });
 
   final bool showSystemPromptBubble;
   final AsyncValue<ChatState> stateAsync;
+  final bool isSelecting;
 
   @override
   State<_ChatBody> createState() => _ChatBodyState();
@@ -141,8 +151,9 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _scheduleMeasure();
-    _keyboardSub =
-        NativeKeyboardHeight.instance.events.listen(_onKeyboardEvent);
+    _keyboardSub = NativeKeyboardHeight.instance.events.listen(
+      _onKeyboardEvent,
+    );
   }
 
   @override
@@ -235,8 +246,8 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
     final keyboardActive = isTopRoute && _keyboardHeight > 0;
     final bottomOffset = isTopRoute
         ? (keyboardActive
-            ? _keyboardHeight - 8
-            : math.max(_keyboardHeight, viewPadding))
+              ? _keyboardHeight - 8
+              : math.max(_keyboardHeight, viewPadding))
         : viewPadding;
 
     return Column(
@@ -264,28 +275,41 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
                 // transition — only the cheaper ListView padding changes.
                 Positioned.fill(
                   child: _FadeToBottom(
-                    fadeHeight: _inputHeight + _kBottomFadeBand,
+                    fadeHeight: widget.isSelecting
+                        ? 0
+                        : _inputHeight + _kBottomFadeBand,
                     child: _MessageList(
                       stateAsync: widget.stateAsync,
-                      bottomReserve: _inputHeight + 16 + bottomOffset,
+                      bottomReserve: widget.isSelecting
+                          ? 120 + viewPadding
+                          : _inputHeight + 16 + bottomOffset,
+                      isSelecting: widget.isSelecting,
                     ),
                   ),
                 ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: bottomOffset,
-                  child: SizeChangedLayoutNotifier(
-                    child: KeyedSubtree(
-                      key: _inputKey,
-                      child: const SafeArea(
-                        top: false,
-                        bottom: false,
-                        child: ChatInputBar(),
+                if (widget.isSelecting)
+                  const Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: MessageSelectionBottomBar(),
+                  )
+                else
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: bottomOffset,
+                    child: SizeChangedLayoutNotifier(
+                      child: KeyedSubtree(
+                        key: _inputKey,
+                        child: const SafeArea(
+                          top: false,
+                          bottom: false,
+                          child: ChatInputBar(),
+                        ),
                       ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
@@ -471,13 +495,19 @@ ImageRepeat _repeatFor(ChatBackgroundRepeat repeat) => switch (repeat) {
 /// spinner, failure → error notice, empty → empty state, and a list of message
 /// bubbles otherwise.
 class _MessageList extends StatelessWidget {
-  const _MessageList({required this.stateAsync, this.bottomReserve = 0});
+  const _MessageList({
+    required this.stateAsync,
+    this.bottomReserve = 0,
+    this.isSelecting = false,
+  });
 
   final AsyncValue<ChatState> stateAsync;
 
   /// Extra bottom padding so the list's tail clears the composer floating over
   /// it (the composer's measured height; see [_ChatBodyState]).
   final double bottomReserve;
+
+  final bool isSelecting;
 
   @override
   Widget build(BuildContext context) {
@@ -486,7 +516,11 @@ class _MessageList extends StatelessWidget {
       error: (error, _) => const _ErrorNotice(),
       data: (state) => state.messages.isEmpty
           ? const _EmptyState()
-          : _MessageListView(state.messages, bottomReserve: bottomReserve),
+          : _MessageListView(
+              state.messages,
+              bottomReserve: bottomReserve,
+              isSelecting: isSelecting,
+            ),
     );
   }
 }
@@ -549,13 +583,19 @@ class _ErrorNotice extends StatelessWidget {
 /// In-place growth such as streaming needs nothing here — the custom
 /// [ChatAutoFollowScrollController] follows it during layout when sticking.
 class _MessageListView extends ConsumerStatefulWidget {
-  const _MessageListView(this.messages, {this.bottomReserve = 0});
+  const _MessageListView(
+    this.messages, {
+    this.bottomReserve = 0,
+    this.isSelecting = false,
+  });
 
   final List<ChatMessageView> messages;
 
   /// Reserves room under the last bubble for the composer floating over the
   /// list (mirrors the original `messageContainer` `paddingBottom`).
   final double bottomReserve;
+
+  final bool isSelecting;
 
   @override
   ConsumerState<_MessageListView> createState() => _MessageListViewState();
@@ -611,6 +651,10 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   @override
   Widget build(BuildContext context) {
     final messages = widget.messages;
+    final isSelecting = widget.isSelecting;
+    final selectedIds = isSelecting
+        ? ref.watch(messageSelectionProvider.select((s) => s.selectedIds))
+        : const <String>{};
     // 消息分割线 (设置 tab 常规设置)：开启时在相邻消息之间画一条分割线。
     final showDivider = ref.watch(
       sidebarSettingsControllerProvider.select((s) => s.showMessageDivider),
@@ -626,12 +670,23 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       itemCount: messages.length,
       itemBuilder: (context, index) {
         final view = messages[index];
-        final Widget item = isPlain
+        final Widget bubble = isPlain
             ? PlainStyleMessage(view: view)
             : ChatMessageBubble(view: view);
+
+        // Wrap with selection checkbox when in multi-select mode.
+        final Widget item = isSelecting
+            ? _SelectableMessageRow(
+                messageId: view.id,
+                selected: selectedIds.contains(view.id),
+                child: bubble,
+              )
+            : bubble;
+
         // Plain style uses its own bottom border; bubble style uses a Divider
         // when the setting is on.
-        final needsDivider = isPlain || (showDivider && index < messages.length - 1);
+        final needsDivider =
+            isPlain || (showDivider && index < messages.length - 1);
         if (!needsDivider) return item;
         final dividerColor = Theme.of(context).brightness == Brightness.dark
             ? const Color(0x1AFFFFFF)
@@ -645,6 +700,51 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           ],
         );
       },
+    );
+  }
+}
+
+/// A message row with a leading checkbox, shown during multi-select mode.
+class _SelectableMessageRow extends ConsumerWidget {
+  const _SelectableMessageRow({
+    required this.messageId,
+    required this.selected,
+    required this.child,
+  });
+
+  final String messageId;
+  final bool selected;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () =>
+          ref.read(messageSelectionProvider.notifier).toggleMessage(messageId),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 8, top: 16),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked,
+                key: ValueKey(selected),
+                size: 22,
+                color: selected
+                    ? cs.primary
+                    : cs.onSurface.withValues(alpha: 0.35),
+              ),
+            ),
+          ),
+          Expanded(child: IgnorePointer(child: child)),
+        ],
+      ),
     );
   }
 }

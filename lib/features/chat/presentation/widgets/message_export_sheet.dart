@@ -14,8 +14,8 @@ import 'package:share_plus/share_plus.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_block_renderer.dart';
 
 /// Shows the export/share bottom sheet for one or more messages.
 ///
@@ -36,10 +36,7 @@ Future<void> showMessageExportSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
-    builder: (ctx) => _ExportSheet(
-      messages: messages,
-      topicTitle: topicTitle,
-    ),
+    builder: (ctx) => _ExportSheet(messages: messages, topicTitle: topicTitle),
   );
 }
 
@@ -130,10 +127,7 @@ class _ExportSheetState extends State<_ExportSheet> {
             ),
             const SizedBox(height: 12),
             // Divider
-            Divider(
-              height: 1,
-              color: cs.outlineVariant.withValues(alpha: 0.3),
-            ),
+            Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.3)),
             const SizedBox(height: 8),
             // Switches
             Padding(
@@ -162,13 +156,9 @@ class _ExportSheetState extends State<_ExportSheet> {
             ),
             const SizedBox(height: 4),
             // Quick actions: copy & share
-            Divider(
-              height: 1,
-              color: cs.outlineVariant.withValues(alpha: 0.3),
-            ),
+            Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.3)),
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
                   _QuickActionChip(
@@ -222,9 +212,10 @@ class _ExportSheetState extends State<_ExportSheet> {
 
       if (_showThinkingAndTools) {
         for (final block in msg.blocks) {
-          if (block is ToolMessageBlock) {
-            buf.writeln(
-                '> 🔧 **${block.toolName}** → ${block.isError ? "错误" : "完成"}\n');
+          if (block is ToolBlock) {
+            final name = block.toolName ?? block.toolId;
+            final failed = block.status == MessageBlockStatus.error;
+            buf.writeln('> 🔧 **$name** → ${failed ? "错误" : "完成"}\n');
           }
         }
       }
@@ -258,9 +249,10 @@ class _ExportSheetState extends State<_ExportSheet> {
 
       if (_showThinkingAndTools) {
         for (final block in msg.blocks) {
-          if (block is ToolMessageBlock) {
-            buf.writeln(
-                '[工具] ${block.toolName} → ${block.isError ? "错误" : "完成"}');
+          if (block is ToolBlock) {
+            final name = block.toolName ?? block.toolId;
+            final failed = block.status == MessageBlockStatus.error;
+            buf.writeln('[工具] $name → ${failed ? "错误" : "完成"}');
           }
         }
       }
@@ -323,9 +315,7 @@ class _ExportSheetState extends State<_ExportSheet> {
       if (!mounted) return;
       Navigator.of(context).pop();
       // Show share/save options for the image
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path)]),
-      );
+      await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
     } catch (e) {
       _toast('导出图片失败: $e');
     } finally {
@@ -371,7 +361,7 @@ class _ExportSheetState extends State<_ExportSheet> {
     List<String> extensions,
   ) async {
     final bytes = utf8.encode(content);
-    final path = await FilePicker.platform.saveFile(
+    final path = await FilePicker.saveFile(
       dialogTitle: '导出文件',
       fileName: filename,
       type: FileType.custom,
@@ -501,15 +491,10 @@ Future<File?> _renderMessagesAsImage(
         left: -10000,
         top: -10000,
         child: MediaQuery(
-          data: MediaQuery.of(ctx).copyWith(
-            textScaler: TextScaler.noScaling,
-          ),
+          data: MediaQuery.of(ctx).copyWith(textScaler: TextScaler.noScaling),
           child: Theme(
             data: theme,
-            child: RepaintBoundary(
-              key: boundaryKey,
-              child: buildContent(),
-            ),
+            child: RepaintBoundary(key: boundaryKey, child: buildContent()),
           ),
         ),
       );
@@ -521,8 +506,9 @@ Future<File?> _renderMessagesAsImage(
   try {
     await completer.future.timeout(const Duration(seconds: 5));
 
-    final boundary = boundaryKey.currentContext?.findRenderObject()
-        as RenderRepaintBoundary?;
+    final boundary =
+        boundaryKey.currentContext?.findRenderObject()
+            as RenderRepaintBoundary?;
     if (boundary == null) return null;
 
     final image = await boundary.toImage(pixelRatio: pixelRatio);
@@ -619,10 +605,9 @@ class _ExportMessageCard extends StatelessWidget {
         // Tool blocks
         if (showTools)
           for (final block in message.blocks)
-            if (block is ToolMessageBlock) ...[
+            if (block is ToolBlock) ...[
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: cs.surfaceContainerHighest.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(6),
@@ -637,7 +622,7 @@ class _ExportMessageCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      block.toolName,
+                      block.toolName ?? block.toolId,
                       style: TextStyle(
                         fontSize: 11,
                         color: cs.onSurface.withValues(alpha: 0.6),
@@ -652,11 +637,7 @@ class _ExportMessageCard extends StatelessWidget {
         if (message.text.trim().isNotEmpty)
           Text(
             message.text.trim(),
-            style: TextStyle(
-              fontSize: 14,
-              color: cs.onSurface,
-              height: 1.5,
-            ),
+            style: TextStyle(fontSize: 14, color: cs.onSurface, height: 1.5),
           ),
       ],
     );
@@ -812,7 +793,11 @@ class _QuickActionChip extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, size: 14, color: cs.onSurface.withValues(alpha: 0.7)),
+                Icon(
+                  icon,
+                  size: 14,
+                  color: cs.onSurface.withValues(alpha: 0.7),
+                ),
                 const SizedBox(width: 4),
                 Text(
                   label,

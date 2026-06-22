@@ -4,16 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:share_plus/share_plus.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/application/message_selection_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/translate_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_version.dart';
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_export_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/token_display.dart';
 
 /// The message bubble bottom toolbar (`MessageActions` `renderMode === 'toolbar'`).
@@ -71,8 +72,6 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
   bool get _isUser => _view.role == MessageRole.user;
 
   String get _mainText => _view.text;
-
-  String get _thinkingText => _view.thinking;
 
   void _toast(String message) {
     if (!mounted) return;
@@ -152,47 +151,6 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
     _toast('已复制到剪贴板');
   }
 
-  /// Builds the message Markdown, mirroring `exportUtils.messageToMarkdown` /
-  /// `messageToMarkdownWithReasoning`: a `## 用户`/`## 助手` title, optional
-  /// 思考过程/回答 sections, then the main text.
-  String _toMarkdown({required bool includeReasoning}) {
-    final title = _isUser ? '## 用户' : '## 助手';
-    final content = _mainText.trim();
-    if (includeReasoning && _thinkingText.trim().isNotEmpty) {
-      return '$title\n\n### 思考过程\n\n${_thinkingText.trim()}'
-          '\n\n### 回答\n\n$content';
-    }
-    return '$title\n\n$content';
-  }
-
-  Future<void> _copyMarkdown({required bool includeReasoning}) async {
-    final markdown = _toMarkdown(includeReasoning: includeReasoning).trim();
-    if (markdown.isEmpty) {
-      _toast('没有可复制的内容');
-      return;
-    }
-    await Clipboard.setData(ClipboardData(text: markdown));
-    _toast(includeReasoning ? '已复制 Markdown（含思考）' : '已复制为 Markdown');
-  }
-
-  Future<void> _share({required bool asMarkdown}) async {
-    final content = asMarkdown
-        ? _toMarkdown(includeReasoning: false).trim()
-        : _mainText.trim();
-    if (content.isEmpty) {
-      _toast('没有可分享的内容');
-      return;
-    }
-    try {
-      await SharePlus.instance.share(ShareParams(text: content));
-    } catch (_) {
-      // Desktop platforms may lack a native share sheet; fall back to copy so
-      // the action is never a silent no-op.
-      await Clipboard.setData(ClipboardData(text: content));
-      _toast('已复制到剪贴板');
-    }
-  }
-
   void _handleDeleteTap() {
     if (!_deleteConfirming) {
       setState(() => _deleteConfirming = true);
@@ -229,37 +187,18 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
     }
   }
 
+  void _enterSelectionMode() {
+    final messages =
+        ref.read(chatControllerProvider).value?.messages ??
+        const <ChatMessageView>[];
+    final index = messages.indexWhere((m) => m.id == _view.id);
+    ref
+        .read(messageSelectionProvider.notifier)
+        .enterSelectionMode(anchorIndex: index, messages: messages);
+  }
+
   Future<void> _openExportSheet() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (sheetContext) => _ExportSheet(
-        onCopyMarkdown: () {
-          Navigator.of(sheetContext).pop();
-          _copyMarkdown(includeReasoning: false);
-        },
-        onCopyMarkdownWithReasoning: () {
-          Navigator.of(sheetContext).pop();
-          _copyMarkdown(includeReasoning: true);
-        },
-        onShareText: () {
-          Navigator.of(sheetContext).pop();
-          _share(asMarkdown: false);
-        },
-        onShareMarkdown: () {
-          Navigator.of(sheetContext).pop();
-          _share(asMarkdown: true);
-        },
-        onComingSoon: () {
-          Navigator.of(sheetContext).pop();
-          _comingSoon();
-        },
-      ),
-    );
+    await showMessageExportSheet(context, messages: [_view]);
   }
 
   @override
@@ -322,6 +261,12 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
           color: baseColor,
           onTap: _openVersionHistory,
         ),
+      _ToolbarIconButton(
+        icon: LucideIcons.listChecks,
+        tooltip: '选择消息',
+        color: baseColor,
+        onTap: _enterSelectionMode,
+      ),
       _ToolbarIconButton(
         icon: LucideIcons.gitBranch,
         tooltip: '创建分支',
@@ -567,129 +512,6 @@ class _MessageEditorSheetState extends State<_MessageEditorSheet> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The 导出/保存 bottom sheet (`UnifiedExportMenu`). Wires the actions that work
-/// without extra systems (复制为 Markdown / 分享文本·Markdown) and surfaces the
-/// ones that need note storage / image capture / Obsidian as 「即将支持」.
-class _ExportSheet extends StatelessWidget {
-  const _ExportSheet({
-    required this.onCopyMarkdown,
-    required this.onCopyMarkdownWithReasoning,
-    required this.onShareText,
-    required this.onShareMarkdown,
-    required this.onComingSoon,
-  });
-
-  final VoidCallback onCopyMarkdown;
-  final VoidCallback onCopyMarkdownWithReasoning;
-  final VoidCallback onShareText;
-  final VoidCallback onShareMarkdown;
-  final VoidCallback onComingSoon;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return ConstrainedBox(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.7,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 8, bottom: 8),
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              '导出/保存',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          Flexible(
-            child: ListView(
-              shrinkWrap: true,
-              padding: EdgeInsets.zero,
-              children: [
-                _sectionLabel(theme, '快捷保存'),
-                ListTile(
-                  leading: const Icon(LucideIcons.notebookPen, size: 20),
-                  title: const Text('保存为笔记'),
-                  subtitle: const Text('保存到应用笔记'),
-                  onTap: onComingSoon,
-                ),
-                ListTile(
-                  leading: const Icon(LucideIcons.save, size: 20),
-                  title: const Text('保存为文件'),
-                  subtitle: const Text('导出为文本文件'),
-                  onTap: onComingSoon,
-                ),
-                const Divider(height: 8),
-                _sectionLabel(theme, 'Markdown'),
-                ListTile(
-                  leading: const Icon(LucideIcons.copy, size: 20),
-                  title: const Text('复制为 Markdown'),
-                  onTap: onCopyMarkdown,
-                ),
-                ListTile(
-                  leading: const Icon(LucideIcons.brain, size: 20),
-                  title: const Text('复制 Markdown（含思考）'),
-                  onTap: onCopyMarkdownWithReasoning,
-                ),
-                const Divider(height: 8),
-                _sectionLabel(theme, '分享'),
-                ListTile(
-                  leading: const Icon(LucideIcons.share2, size: 20),
-                  title: const Text('分享文本'),
-                  onTap: onShareText,
-                ),
-                ListTile(
-                  leading: const Icon(LucideIcons.share2, size: 20),
-                  title: const Text('分享 Markdown'),
-                  onTap: onShareMarkdown,
-                ),
-                const Divider(height: 8),
-                _sectionLabel(theme, '第三方应用'),
-                ListTile(
-                  leading: const Icon(LucideIcons.externalLink, size: 20),
-                  title: const Text('导出到 Obsidian'),
-                  subtitle: const Text('通过 URL Scheme'),
-                  onTap: onComingSoon,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _sectionLabel(ThemeData theme, String text) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Text(
-          text,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.bold,
-          ),
         ),
       ),
     );
