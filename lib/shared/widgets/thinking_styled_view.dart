@@ -81,7 +81,18 @@ class ThinkingStyledView extends StatelessWidget {
       case ThinkingDisplayStyle.card:
         return _buildCard(context);
       case ThinkingDisplayStyle.compact:
-        return _buildCompact(context);
+        return _ThinkingCompactView(
+          content: content,
+          isThinking: isThinking,
+          seconds: seconds,
+          expanded: expanded,
+          copied: copied,
+          onToggleExpanded: onToggleExpanded,
+          onCopy: onCopy,
+          markdownBuilder: markdownBuilder,
+          previewContent: previewContent,
+          inlineTools: inlineTools,
+        );
     }
   }
 
@@ -115,123 +126,7 @@ class ThinkingStyledView extends StatelessWidget {
   }
 
   // -------------------------------------------------------------- 紧凑 compact
-
-  Widget _buildCompact(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final chipLabel = isThinking
-        ? '思考中… ${_secondsLabel}s'
-        : '已深度思考 ${_secondsLabel}s';
-    final glassBg = isDark
-        ? Colors.white.withValues(alpha: 0.04)
-        : Colors.white.withValues(alpha: 0.85);
-    final border = isDark ? Colors.white12 : Colors.black12;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: glassBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          InkWell(
-            onTap: onToggleExpanded,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  Icon(
-                    LucideIcons.lightbulb,
-                    size: 16,
-                    color: isThinking
-                        ? _amber
-                        : theme.colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '思考过程',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w500,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 1,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(9),
-                      border: Border.all(
-                        color: isThinking ? _amber : theme.dividerColor,
-                      ),
-                    ),
-                    child: Text(
-                      chipLabel,
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        color: isThinking
-                            ? _amber
-                            : theme.colorScheme.onSurface,
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
-                  _copyButton(theme),
-                  _chevron(theme),
-                ],
-              ),
-            ),
-          ),
-          if (expanded)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  markdownBuilder(context, content, null),
-                  if (inlineTools != null) ...[
-                    const SizedBox(height: 8),
-                    inlineTools!,
-                  ],
-                ],
-              ),
-            )
-          else if (isThinking)
-            Container(
-              width: double.infinity,
-              constraints: const BoxConstraints(maxHeight: 160),
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-              color: isDark
-                  ? Colors.black.withValues(alpha: 0.2)
-                  : Colors.black.withValues(alpha: 0.02),
-              child: SingleChildScrollView(
-                reverse: true,
-                child: markdownBuilder(
-                  context,
-                  previewContent ?? content,
-                  TextStyle(
-                    fontSize: 12,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            )
-          else if (inlineTools != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: inlineTools!,
-            ),
-        ],
-      ),
-    );
-  }
+  // Extracted to _ThinkingCompactView (StatefulWidget) for inner collapse state.
 
   // ------------------------------------------------------------------ 完整 full
 
@@ -564,6 +459,254 @@ class ThinkingStyledView extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Compact thinking style with two-level expand/collapse, mirroring
+/// `ThinkingCompactStyle.tsx` from the web version.
+///
+/// Outer level: [expanded] controls the entire panel (thinking text + tools).
+/// Inner level: [_thinkingExpanded] controls just the thinking text when
+/// inlineTools exist, allowing users to collapse the text while keeping
+/// tool chips visible.
+class _ThinkingCompactView extends StatefulWidget {
+  const _ThinkingCompactView({
+    required this.content,
+    required this.isThinking,
+    required this.seconds,
+    required this.expanded,
+    required this.copied,
+    required this.onToggleExpanded,
+    required this.onCopy,
+    required this.markdownBuilder,
+    this.previewContent,
+    this.inlineTools,
+  });
+
+  final String content;
+  final bool isThinking;
+  final double seconds;
+  final bool expanded;
+  final bool copied;
+  final VoidCallback onToggleExpanded;
+  final VoidCallback onCopy;
+  final ThinkingMarkdownBuilder markdownBuilder;
+  final String? previewContent;
+  final Widget? inlineTools;
+
+  @override
+  State<_ThinkingCompactView> createState() => _ThinkingCompactViewState();
+}
+
+class _ThinkingCompactViewState extends State<_ThinkingCompactView> {
+  bool _thinkingExpanded = true;
+
+  Color get _amber => Colors.amber.shade700;
+  String get _secondsLabel => widget.seconds.toStringAsFixed(1);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final chipLabel = widget.isThinking
+        ? '思考中… ${_secondsLabel}s'
+        : '已深度思考 ${_secondsLabel}s';
+    final glassBg = isDark
+        ? Colors.white.withValues(alpha: 0.04)
+        : Colors.white.withValues(alpha: 0.85);
+    final border = isDark ? Colors.white12 : Colors.black12;
+    final hasTools = widget.inlineTools != null;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: glassBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header bar
+          InkWell(
+            onTap: widget.onToggleExpanded,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  Icon(
+                    LucideIcons.lightbulb,
+                    size: 16,
+                    color: widget.isThinking
+                        ? _amber
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '思考过程',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(9),
+                      border: Border.all(
+                        color: widget.isThinking ? _amber : theme.dividerColor,
+                      ),
+                    ),
+                    child: Text(
+                      chipLabel,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: widget.isThinking
+                            ? _amber
+                            : theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  _buildCopyButton(theme),
+                  _buildChevron(theme),
+                ],
+              ),
+            ),
+          ),
+
+          // --- Expanded state ---
+          if (widget.expanded) ...[
+            // Inner collapse header (only when inline tools exist)
+            if (hasTools)
+              InkWell(
+                onTap: () =>
+                    setState(() => _thinkingExpanded = !_thinkingExpanded),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '思考内容',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                      AnimatedRotation(
+                        turns: _thinkingExpanded ? 0.5 : 0,
+                        duration: const Duration(milliseconds: 250),
+                        child: Icon(
+                          LucideIcons.chevronDown,
+                          size: 14,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            // Thinking text (collapsible when tools exist)
+            if (!hasTools || _thinkingExpanded)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: widget.markdownBuilder(context, widget.content, null),
+              ),
+            // Tool chips (always visible when expanded)
+            if (hasTools)
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  12,
+                  _thinkingExpanded ? 0 : 6,
+                  12,
+                  10,
+                ),
+                child: widget.inlineTools!,
+              ),
+          ]
+          // --- Collapsed + streaming ---
+          else if (widget.isThinking) ...[
+            // Preview text
+            Container(
+              width: double.infinity,
+              constraints: const BoxConstraints(maxHeight: 160),
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              color: isDark
+                  ? Colors.black.withValues(alpha: 0.2)
+                  : Colors.black.withValues(alpha: 0.02),
+              child: SingleChildScrollView(
+                reverse: true,
+                child: widget.markdownBuilder(
+                  context,
+                  widget.previewContent ?? widget.content,
+                  TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+            // Tool chips visible during streaming even when collapsed
+            if (hasTools)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.06)
+                          : Colors.black.withValues(alpha: 0.04),
+                    ),
+                  ),
+                ),
+                child: widget.inlineTools!,
+              ),
+          ],
+          // --- Collapsed + not thinking: no extra content (matches web) ---
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCopyButton(ThemeData theme) {
+    return InkWell(
+      onTap: widget.onCopy,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Icon(
+          widget.copied ? LucideIcons.check : LucideIcons.copy,
+          size: 14,
+          color: widget.copied
+              ? Colors.green
+              : theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChevron(ThemeData theme) {
+    return AnimatedRotation(
+      turns: widget.expanded ? 0.5 : 0,
+      duration: const Duration(milliseconds: 250),
+      child: Icon(
+        LucideIcons.chevronDown,
+        size: 16,
+        color: theme.colorScheme.onSurfaceVariant,
       ),
     );
   }
