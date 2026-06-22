@@ -105,11 +105,6 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         description: '创建和管理多模型组合',
         route: AppRouter.modelComboPath,
       ),
-      SettingItemData(
-        icon: LucideIcons.foldVertical,
-        title: '上下文压缩',
-        description: '智能压缩对话历史，节省Token成本',
-      ),
     ],
   ),
   SettingGroupData(
