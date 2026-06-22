@@ -36,8 +36,7 @@ class SearchProviderPreset {
 // ---------------------------------------------------------------------------
 const _base = 'assets/images/search_icons';
 
-/// All available search provider presets — aligned with the Kelivo project's
-/// provider catalog (16 providers) + Firecrawl. The user picks from these when
+/// All available search provider presets. The user picks from these when
 /// adding a provider; only the ones they add show up on the second-level page.
 const List<SearchProviderPreset> kSearchProviderPresets = [
   // ── 免费 / 无需 API Key ──────────────────────────────────────────────────
@@ -204,6 +203,22 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     assetPath: '$_base/ollama.svg',
     needsApiKey: true,
   ),
+  SearchProviderPreset(
+    id: 'tinyfish',
+    name: 'Tinyfish',
+    description: '小鱼 AI 搜索引擎',
+    icon: LucideIcons.fish,
+    accent: Color(0xFF38BDF8),
+    needsApiKey: true,
+  ),
+  SearchProviderPreset(
+    id: 'rikkahub',
+    name: 'RikkaHub',
+    description: 'RikkaHub AI 搜索，支持深度搜索和摘要',
+    icon: LucideIcons.bot,
+    accent: Color(0xFF7C3AED),
+    needsApiKey: true,
+  ),
 ];
 
 /// Looks up a preset by its id. Returns `null` if not found (custom provider).
@@ -224,11 +239,7 @@ SearchProviderPreset? presetForId(String id) {
 /// (color SVGs stay colorful). Otherwise the Lucide [SearchProviderPreset.icon]
 /// is used with the provider [accent] color.
 class SearchProviderIcon extends StatelessWidget {
-  const SearchProviderIcon({
-    super.key,
-    required this.preset,
-    this.size = 34,
-  });
+  const SearchProviderIcon({super.key, required this.preset, this.size = 34});
 
   /// If null, a generic globe icon is shown.
   final SearchProviderPreset? preset;

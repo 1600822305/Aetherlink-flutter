@@ -5,15 +5,19 @@ import 'package:aetherlink_flutter/shared/services/web_search/bocha_search.dart'
 import 'package:aetherlink_flutter/shared/services/web_search/brave_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/duckduckgo_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/exa_search.dart';
+import 'package:aetherlink_flutter/shared/services/web_search/firecrawl_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/grok_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/jina_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/linkup_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/metaso_search.dart';
+import 'package:aetherlink_flutter/shared/services/web_search/ollama_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/perplexity_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/querit_search.dart';
+import 'package:aetherlink_flutter/shared/services/web_search/rikkahub_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/searxng_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/serper_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/tavily_search.dart';
+import 'package:aetherlink_flutter/shared/services/web_search/tinyfish_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/zhipu_search.dart';
 
 /// Unified web search dispatcher — routes a search request to the provider
@@ -38,11 +42,23 @@ class WebSearchService {
 
     switch (config.id) {
       case 'searxng':
-        return SearxngSearch.search(config, query, maxResults, timeoutDuration, language, categories);
+        return SearxngSearch.search(
+          config,
+          query,
+          maxResults,
+          timeoutDuration,
+          language,
+          categories,
+        );
       case 'bing-free':
         return BingSearch.search(query, maxResults, timeoutDuration, language);
       case 'duckduckgo':
-        return DuckDuckGoSearch.search(query, maxResults, timeoutDuration, language);
+        return DuckDuckGoSearch.search(
+          query,
+          maxResults,
+          timeoutDuration,
+          language,
+        );
       case 'tavily':
         return TavilySearch.search(config, query, maxResults, timeoutDuration);
       case 'exa':
@@ -58,7 +74,12 @@ class WebSearchService {
       case 'jina':
         return JinaSearch.search(config, query, maxResults, timeoutDuration);
       case 'perplexity':
-        return PerplexitySearch.search(config, query, maxResults, timeoutDuration);
+        return PerplexitySearch.search(
+          config,
+          query,
+          maxResults,
+          timeoutDuration,
+        );
       case 'metaso':
         return MetasoSearch.search(config, query, maxResults, timeoutDuration);
       case 'linkup':
@@ -67,6 +88,29 @@ class WebSearchService {
         return QueritSearch.search(config, query, maxResults, timeoutDuration);
       case 'grok':
         return GrokSearch.search(config, query, maxResults, timeoutDuration);
+      case 'firecrawl':
+        return FirecrawlSearch.search(
+          config,
+          query,
+          maxResults,
+          timeoutDuration,
+        );
+      case 'tinyfish':
+        return TinyfishSearch.search(
+          config,
+          query,
+          maxResults,
+          timeoutDuration,
+        );
+      case 'rikkahub':
+        return RikkaHubSearch.search(
+          config,
+          query,
+          maxResults,
+          timeoutDuration,
+        );
+      case 'ollama':
+        return OllamaSearch.search(config, query, maxResults, timeoutDuration);
       default:
         return McpToolResult(
           '不支持的搜索提供商: ${config.name} (${config.id})',
