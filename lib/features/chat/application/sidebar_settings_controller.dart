@@ -113,7 +113,7 @@ class SidebarSettingsController extends _$SidebarSettingsController
   void setSidebarDisplayMode(SidebarDisplayMode value) =>
       persist(state.copyWith(sidebarDisplayMode: value));
 
-  // ── 上下文设置 (即将支持) ─────────────────────────────────────────────────
+  // ── 上下文设置 (已接入 ChatController) ──────────────────────────────────
   void setContextWindowSize(int value) =>
       persist(state.copyWith(contextWindowSize: value));
 
