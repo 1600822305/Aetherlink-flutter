@@ -26,7 +26,7 @@ final class ContextCondenseServiceProvider
         argument: null,
         retry: null,
         name: r'contextCondenseServiceProvider',
-        isAutoDispose: true,
+        isAutoDispose: false,
         dependencies: null,
         $allTransitiveDependencies: null,
       );
