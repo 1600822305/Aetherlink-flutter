@@ -145,20 +145,11 @@ class MarkdownTable extends StatefulWidget {
 
 class _MarkdownTableState extends State<MarkdownTable> {
   final ScrollController _controller = ScrollController();
-  bool _scrollable = false;
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
-  }
-
-  void _syncScrollable() {
-    if (!mounted || !_controller.hasClients) return;
-    final scrollable = _controller.position.maxScrollExtent > 0.5;
-    if (scrollable != _scrollable) {
-      setState(() => _scrollable = scrollable);
-    }
   }
 
   String _buildMarkdownSource() {
@@ -217,8 +208,6 @@ class _MarkdownTableState extends State<MarkdownTable> {
       onSurface.withValues(alpha: isDark ? 0.04 : 0.02),
       surface,
     );
-    final trackColor = onSurface.withValues(alpha: isDark ? 0.12 : 0.16);
-    final thumbColor = onSurface.withValues(alpha: isDark ? 0.42 : 0.38);
 
     final colCount = widget.rows.fold<int>(
       0,
@@ -239,8 +228,6 @@ class _MarkdownTableState extends State<MarkdownTable> {
           headerBg: headerBg,
           maxColWidth: maxWidth,
         );
-
-        WidgetsBinding.instance.addPostFrameCallback((_) => _syncScrollable());
 
         // rikkahub: shapes.large = 16dp, 1dp outlineVariant border
         return Padding(
@@ -316,12 +303,6 @@ class _MarkdownTableState extends State<MarkdownTable> {
                     child: table,
                   ),
                 ),
-                if (_scrollable)
-                  _BottomScrollIndicator(
-                    controller: _controller,
-                    trackColor: trackColor,
-                    thumbColor: thumbColor,
-                  ),
               ],
             ),
           ),
@@ -430,90 +411,6 @@ class _ToolbarIconButton extends StatelessWidget {
             color: cs.onSurfaceVariant.withValues(alpha: 0.5),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// A slim horizontal scroll bar laid out *below* the table (a sibling in the
-/// Column, never an overlay), so it can never paint over a row.
-class _BottomScrollIndicator extends StatelessWidget {
-  const _BottomScrollIndicator({
-    required this.controller,
-    required this.trackColor,
-    required this.thumbColor,
-  });
-
-  final ScrollController controller;
-  final Color trackColor;
-  final Color thumbColor;
-
-  static const double _height = 5;
-
-  Widget _bar(double width, Color color) => Container(
-    width: width,
-    height: _height,
-    decoration: BoxDecoration(
-      color: color,
-      borderRadius: BorderRadius.circular(_height),
-    ),
-  );
-
-  ({double width, double left, double max, double free}) _geometry(
-    double track,
-  ) {
-    if (!controller.hasClients || !controller.position.hasContentDimensions) {
-      return (width: track, left: 0, max: 0, free: 0);
-    }
-    final pos = controller.position;
-    final max = pos.maxScrollExtent;
-    final width =
-        (track * pos.viewportDimension / (pos.viewportDimension + max)).clamp(
-          28.0,
-          track,
-        );
-    final free = track - width;
-    final left = max > 0 ? free * (pos.pixels.clamp(0.0, max) / max) : 0.0;
-    return (width: width, left: left, max: max, free: free);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 4),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final track = constraints.maxWidth;
-          return GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onHorizontalDragUpdate: (d) {
-              final g = _geometry(track);
-              if (g.free <= 0 || g.max <= 0) return;
-              controller.jumpTo(
-                (controller.position.pixels + d.delta.dx * g.max / g.free)
-                    .clamp(0.0, g.max),
-              );
-            },
-            child: SizedBox(
-              height: _height,
-              child: AnimatedBuilder(
-                animation: controller,
-                builder: (context, _) {
-                  final g = _geometry(track);
-                  return Stack(
-                    children: [
-                      _bar(track, trackColor),
-                      Positioned(
-                        left: g.left,
-                        child: _bar(g.width, thumbColor),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          );
-        },
       ),
     );
   }
