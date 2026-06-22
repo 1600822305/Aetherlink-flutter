@@ -13,6 +13,9 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_s
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway.dart';
+import 'package:aetherlink_flutter/shared/domain/model.dart';
+import 'package:aetherlink_flutter/shared/domain/topic.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
@@ -21,6 +24,8 @@ import 'package:aetherlink_flutter/features/settings/application/auxiliary_model
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 
 part 'context_condense_service.g.dart';
+
+// ── Options & Result ────────────────────────────────────────────────────────
 
 /// Options for the context compression operation.
 class CondenseOptions {
@@ -59,6 +64,19 @@ class CondenseResult {
   int get tokensSaved => originalTokens - compressedTokens;
 }
 
+// ── Cancel Token ────────────────────────────────────────────────────────────
+
+/// Lightweight cancellation primitive. The dialog holds this and calls
+/// [cancel] if the user dismisses mid-operation; the service checks
+/// [isCancelled] after each async gap.
+class CancelToken {
+  bool _cancelled = false;
+
+  bool get isCancelled => _cancelled;
+
+  void cancel() => _cancelled = true;
+}
+
 // ── Token estimation ────────────────────────────────────────────────────────
 
 /// Estimates token count: Chinese chars ×1.5, other chars ÷4.
@@ -73,33 +91,68 @@ int estimateTokens(String content) {
   return (chineseCount * 1.5 + otherCount / 4).ceil();
 }
 
-// ── Service ─────────────────────────────────────────────────────────────────
+// ── Provider (thin entry point) ─────────────────────────────────────────────
 
+/// The provider is a thin shell that resolves all Ref-dependent values
+/// *synchronously* and delegates to the stateless [ContextCondenseService].
+/// Because the service itself never touches Ref, it is immune to provider
+/// disposal during long-running async work.
 @Riverpod(keepAlive: true)
-ContextCondenseService contextCondenseService(Ref ref) =>
-    ContextCondenseService(ref);
+ContextCondenseService contextCondenseService(Ref ref) {
+  return ContextCondenseService(
+    repo: ref.read(chatRepositoryProvider),
+    readCurrentTopic: () => ref.read(currentTopicProvider.future),
+    readIsStreaming: () =>
+        ref.read(chatControllerProvider).value?.isStreaming ?? false,
+    readAuxState: () => ref.read(auxiliaryModelControllerProvider),
+    readProviders: () => ref.read(appModelProvidersProvider.future),
+    buildGateway: (model) =>
+        ref.read(llmGatewayFactoryProvider).forModel(model),
+    refreshChat: () => ref.read(chatRefreshProvider.notifier).bump(),
+  );
+}
+
+// ── Service (stateless, no Ref) ─────────────────────────────────────────────
 
 /// Orchestrates the context compression flow:
 ///   1. Gather messages for the current topic
 ///   2. Split into "to compress" + "to keep"
 ///   3. Build the prompt from the auxiliary compress template
-///   4. Call the compress model (fallback: chat model → global default)
+///   4. Call the compress model via streaming
 ///   5. Create a summary message + ContextSummaryBlock
 ///   6. Delete compressed messages, persist the summary, refresh UI
+///
+/// Design: no [Ref] is stored. All external dependencies are injected as
+/// closures so they are captured once at provider creation time. The long
+/// async work only uses the repository (whose lifetime is tied to the app
+/// database, not a widget) and the LLM gateway (a stateless factory product).
 class ContextCondenseService {
-  ContextCondenseService(this._ref) {
-    _ref.onDispose(() => _disposed = true);
-  }
+  ContextCondenseService({
+    required ChatRepository repo,
+    required this.readCurrentTopic,
+    required this.readIsStreaming,
+    required this.readAuxState,
+    required this.readProviders,
+    required this.buildGateway,
+    required this.refreshChat,
+  }) : _repo = repo;
 
-  final Ref _ref;
-  bool _disposed = false;
+  final ChatRepository _repo;
 
-  ChatRepository get _repo => _ref.read(chatRepositoryProvider);
+  // Closures that read live state — called only at the *start* of compress,
+  // before any long-running work. They may throw if the container is disposed,
+  // which is caught by the outer try/catch.
+  final Future<Topic?> Function() readCurrentTopic;
+  final bool Function() readIsStreaming;
+  final AuxiliaryModelState Function() readAuxState;
+  final Future<List<ModelProvider>> Function() readProviders;
+  final LlmGateway Function(Model model) buildGateway;
+  final void Function() refreshChat;
 
   /// Returns `true` when there are enough messages in the current topic to
   /// compress (more than keepRecentMessages + 1).
   Future<bool> canCompress({int keepRecentMessages = 3}) async {
-    final topic = await _ref.read(currentTopicProvider.future);
+    final topic = await readCurrentTopic();
     if (topic == null) return false;
     final messages = await _repo.getMessagesByTopicId(topic.id);
     return messages.length > keepRecentMessages + 1;
@@ -107,12 +160,18 @@ class ContextCondenseService {
 
   /// Runs the compression. Returns a [CondenseResult].
   /// [onProgress] is called with status strings for UI feedback.
+  /// [cancelToken] allows the caller to cancel mid-operation.
   Future<CondenseResult> compress({
     required CondenseOptions options,
     void Function(String status)? onProgress,
+    CancelToken? cancelToken,
   }) async {
     try {
-      return await _compressImpl(options: options, onProgress: onProgress);
+      return await _compressImpl(
+        options: options,
+        onProgress: onProgress,
+        cancelToken: cancelToken,
+      );
     } on Object catch (e) {
       return CondenseResult(success: false, error: '压缩失败: $e');
     }
@@ -121,71 +180,31 @@ class ContextCondenseService {
   Future<CondenseResult> _compressImpl({
     required CondenseOptions options,
     void Function(String status)? onProgress,
+    CancelToken? cancelToken,
   }) async {
-    // 1. Resolve the current topic
-    final topic = await _ref.read(currentTopicProvider.future);
-    if (_disposed) {
-      return const CondenseResult(success: false, error: '操作已取消');
+    // ── 1. Pre-flight checks (fast, use closures) ──
+
+    // 1a. Reject when streaming
+    if (readIsStreaming()) {
+      return const CondenseResult(
+        success: false,
+        error: '请等待当前回复完成后再压缩',
+      );
     }
+
+    // 1b. Resolve current topic
+    final topic = await readCurrentTopic();
     final topicId = topic?.id;
     if (topicId == null) {
       return const CondenseResult(success: false, error: '没有活跃的对话');
     }
-
-    // 1.5 Reject when a streaming reply is in progress.
-    final chatState = _ref.read(chatControllerProvider);
-    final isStreaming = chatState.value?.isStreaming ?? false;
-    if (isStreaming) {
-      return const CondenseResult(success: false, error: '请等待当前回复完成后再压缩');
-    }
-
-    onProgress?.call('正在收集消息…');
-
-    // 2. Gather and sort messages
-    final allMessages = await _repo.getMessagesByTopicId(topicId);
-    allMessages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-
-    if (allMessages.length <= options.keepRecentMessages + 1) {
-      return const CondenseResult(success: false, error: '消息数量不足，无法压缩');
-    }
-
-    // 3. Split: compress older messages, keep recent N
-    final messagesToCompress = allMessages.sublist(
-      0,
-      allMessages.length - options.keepRecentMessages,
-    );
-    // Build text representation
-    final textParts = <String>[];
-    int totalOriginalTokens = 0;
-    for (final msg in messagesToCompress) {
-      final blocks = await _repo.getMessageBlocksByMessageId(msg.id);
-      final text = blocks
-          .whereType<MainTextBlock>()
-          .map((b) => b.content)
-          .join('\n');
-      if (text.trim().isEmpty) continue;
-      final role = msg.role == MessageRole.user ? '用户' : 'AI';
-      final truncated = text.length > 2000
-          ? '${text.substring(0, 2000)}…'
-          : text;
-      textParts.add('$role: $truncated');
-      totalOriginalTokens += estimateTokens(text);
-    }
-
-    if (textParts.isEmpty) {
-      return const CondenseResult(success: false, error: '没有可压缩的文本内容');
-    }
-    if (_disposed) {
+    if (cancelToken?.isCancelled ?? false) {
       return const CondenseResult(success: false, error: '操作已取消');
     }
 
-    final conversationText = textParts.join('\n\n');
-
-    onProgress?.call('正在压缩…');
-
-    // 4. Resolve model
-    final auxState = _ref.read(auxiliaryModelControllerProvider);
-    final providers = await _ref.read(appModelProvidersProvider.future);
+    // 1c. Resolve model (before any heavy I/O)
+    final auxState = readAuxState();
+    final providers = await readProviders();
     final model = _resolveCompressModel(auxState, providers);
     if (model == null) {
       return const CondenseResult(
@@ -193,8 +212,77 @@ class ContextCondenseService {
         error: '未找到可用的压缩模型，请在辅助模型设置中配置',
       );
     }
+    if (cancelToken?.isCancelled ?? false) {
+      return const CondenseResult(success: false, error: '操作已取消');
+    }
 
-    // 5. Build prompt
+    // ── 2. Gather messages ──
+
+    onProgress?.call('正在收集消息…');
+
+    final allMessages = await _repo.getMessagesByTopicId(topicId);
+    allMessages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+    if (allMessages.length <= options.keepRecentMessages + 1) {
+      return const CondenseResult(
+        success: false,
+        error: '消息数量不足，无法压缩',
+      );
+    }
+
+    // Check if recent messages already contain a summary
+    final recentMessages = allMessages.sublist(
+      allMessages.length - options.keepRecentMessages,
+    );
+    final recentHasSummary = recentMessages.any(
+      (m) => (m.metadata?['isSummary'] as bool?) == true,
+    );
+    if (recentHasSummary) {
+      return const CondenseResult(
+        success: false,
+        error: '最近已经压缩过，请稍后再试',
+      );
+    }
+
+    // ── 3. Split: compress older messages, keep recent N ──
+
+    final messagesToCompress = allMessages.sublist(
+      0,
+      allMessages.length - options.keepRecentMessages,
+    );
+
+    final textParts = <String>[];
+    int totalOriginalTokens = 0;
+    for (final msg in messagesToCompress) {
+      if (cancelToken?.isCancelled ?? false) {
+        return const CondenseResult(success: false, error: '操作已取消');
+      }
+      final blocks = await _repo.getMessageBlocksByMessageId(msg.id);
+      final text =
+          blocks.whereType<MainTextBlock>().map((b) => b.content).join('\n');
+      if (text.trim().isEmpty) continue;
+      final role = msg.role == MessageRole.user ? '用户' : 'AI';
+      final truncated =
+          text.length > 2000 ? '${text.substring(0, 2000)}…' : text;
+      textParts.add('$role: $truncated');
+      totalOriginalTokens += estimateTokens(text);
+    }
+
+    if (textParts.isEmpty) {
+      return const CondenseResult(
+        success: false,
+        error: '没有可压缩的文本内容',
+      );
+    }
+    if (cancelToken?.isCancelled ?? false) {
+      return const CondenseResult(success: false, error: '操作已取消');
+    }
+
+    // ── 4. Call LLM ──
+
+    onProgress?.call('正在压缩…');
+
+    final conversationText = textParts.join('\n\n');
     final additionalContext = options.additionalPrompt.trim().isNotEmpty
         ? '用户附加指令: ${options.additionalPrompt.trim()}'
         : '';
@@ -203,7 +291,6 @@ class ContextCondenseService {
         .replaceAll('{target_tokens}', options.targetTokens.toString())
         .replaceAll('{additional_context}', additionalContext);
 
-    // 6. Call LLM
     final effective = effectiveModelFor(model);
     final request = LlmChatRequest(
       model: effective,
@@ -211,12 +298,13 @@ class ContextCondenseService {
       extraHeaders: effective.providerExtraHeaders,
       extraBody: effective.providerExtraBody,
     );
-    if (_disposed) {
-      return const CondenseResult(success: false, error: '操作已取消');
-    }
-    final gateway = _ref.read(llmGatewayFactoryProvider).forModel(effective);
+    final gateway = buildGateway(effective);
     final buffer = StringBuffer();
+
     await for (final chunk in gateway.streamChat(request)) {
+      if (cancelToken?.isCancelled ?? false) {
+        return const CondenseResult(success: false, error: '操作已取消');
+      }
       switch (chunk) {
         case LlmTextDelta(:final text):
           buffer.write(text);
@@ -226,8 +314,8 @@ class ContextCondenseService {
           break;
       }
     }
-    final summary = buffer.toString().trim();
 
+    final summary = buffer.toString().trim();
     if (summary.isEmpty) {
       return CondenseResult(
         success: false,
@@ -236,18 +324,15 @@ class ContextCondenseService {
         originalTokens: totalOriginalTokens,
       );
     }
-
-    if (_disposed) {
+    if (cancelToken?.isCancelled ?? false) {
       return const CondenseResult(success: false, error: '操作已取消');
     }
 
+    // ── 5. Persist ──
+
     onProgress?.call('正在保存…');
 
-    // 7. Calculate stats
     final compressedTokens = estimateTokens(summary);
-
-    // 8. Create summary message + block
-    // 摘要的时间戳取被压缩的最后一条消息的时间，确保排在保留消息之前
     final summaryTime = messagesToCompress.last.createdAt;
     final summaryMessageId = generateId('msg');
     final summaryBlockId = generateId('block');
@@ -277,9 +362,7 @@ class ContextCondenseService {
       metadata: {'isSummary': true},
     );
 
-    // 9. Persist atomically: delete compressed messages + their blocks, save
-    // the summary — all inside a single transaction so a mid-way failure can't
-    // leave the topic with deleted history but no summary.
+    // Atomic transaction: delete old messages + save summary
     await _repo.runInTransaction(() async {
       for (final msg in messagesToCompress) {
         await _repo.deleteMessage(msg.id);
@@ -288,10 +371,14 @@ class ContextCondenseService {
       await _repo.saveMessage(summaryMessage);
     });
 
-    // 10. Reload the chat UI
+    // ── 6. Refresh UI ──
+
     onProgress?.call('完成');
-    if (!_disposed) {
-      _ref.read(chatRefreshProvider.notifier).bump();
+    try {
+      refreshChat();
+    } on Object catch (_) {
+      // If the provider container is gone by now, the UI will refresh on its
+      // own when the user navigates back. Swallow silently.
     }
 
     return CondenseResult(
@@ -307,13 +394,10 @@ class ContextCondenseService {
     AuxiliaryModelState auxState,
     List<ModelProvider> providers,
   ) {
-    // Try compress model
     var resolved = resolveAuxiliaryModel(auxState.compressModelKey, providers);
     if (resolved != null) return resolved;
-    // Try chat model
     resolved = resolveAuxiliaryModel(auxState.chatModelKey, providers);
     if (resolved != null) return resolved;
-    // Try global default
     return findCurrentModel(providers);
   }
 }

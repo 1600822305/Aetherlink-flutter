@@ -29,6 +29,7 @@ class _ContextCondenseDialogState
   bool _showAdvanced = false;
   bool _isCompressing = false;
   String _statusText = '';
+  CancelToken? _cancelToken;
 
   // Advanced options
   int _keepRecentMessages = 3;
@@ -41,14 +42,17 @@ class _ContextCondenseDialogState
 
   @override
   void dispose() {
+    _cancelToken?.cancel();
     _additionalPromptController.dispose();
     super.dispose();
   }
 
   Future<void> _startCompress() async {
+    final cancelToken = CancelToken();
     setState(() {
       _isCompressing = true;
       _statusText = '准备中…';
+      _cancelToken = cancelToken;
     });
 
     final service = ref.read(contextCondenseServiceProvider);
@@ -61,6 +65,7 @@ class _ContextCondenseDialogState
       onProgress: (status) {
         if (mounted) setState(() => _statusText = status);
       },
+      cancelToken: cancelToken,
     );
 
     if (!mounted) return;
@@ -68,19 +73,28 @@ class _ContextCondenseDialogState
     if (result.success) {
       Navigator.of(context).pop(result);
     } else {
+      // If cancelled, just close
+      if (cancelToken.isCancelled) {
+        Navigator.of(context).pop();
+        return;
+      }
       setState(() {
         _isCompressing = false;
         _statusText = '';
+        _cancelToken = null;
       });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.error ?? '压缩失败'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.error ?? '压缩失败'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
     }
+  }
+
+  void _cancel() {
+    _cancelToken?.cancel();
+    Navigator.of(context).pop();
   }
 
   @override
@@ -118,7 +132,7 @@ class _ContextCondenseDialogState
         Text(_statusText, style: TextStyle(fontSize: 14, color: cs.onSurface)),
         const SizedBox(height: 16),
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: _cancel,
           child: const Text('取消'),
         ),
       ],
@@ -346,9 +360,8 @@ class _ContextCondenseDialogState
                   labelBuilder(opt),
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight: isSelected
-                        ? FontWeight.w600
-                        : FontWeight.normal,
+                    fontWeight:
+                        isSelected ? FontWeight.w600 : FontWeight.normal,
                     color: isSelected
                         ? cs.primary
                         : cs.onSurface.withValues(alpha: 0.7),
