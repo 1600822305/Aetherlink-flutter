@@ -1,3 +1,69 @@
+import 'package:flutter/foundation.dart';
+
+/// A single search-provider configuration — the Flutter port of the web's
+/// `WebSearchProviderConfig`. Each provider the user adds gets one of these.
+@immutable
+class SearchProviderConfig {
+  const SearchProviderConfig({
+    required this.id,
+    required this.name,
+    this.apiHost = '',
+    this.apiKey = '',
+    this.isEnabled = true,
+  });
+
+  final String id;
+  final String name;
+  final String apiHost;
+  final String apiKey;
+  final bool isEnabled;
+
+  SearchProviderConfig copyWith({
+    String? id,
+    String? name,
+    String? apiHost,
+    String? apiKey,
+    bool? isEnabled,
+  }) =>
+      SearchProviderConfig(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        apiHost: apiHost ?? this.apiHost,
+        apiKey: apiKey ?? this.apiKey,
+        isEnabled: isEnabled ?? this.isEnabled,
+      );
+
+  factory SearchProviderConfig.fromJson(Map<String, dynamic> json) =>
+      SearchProviderConfig(
+        id: json['id'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        apiHost: json['apiHost'] as String? ?? '',
+        apiKey: json['apiKey'] as String? ?? '',
+        isEnabled: json['isEnabled'] as bool? ?? true,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'apiHost': apiHost,
+        'apiKey': apiKey,
+        'isEnabled': isEnabled,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SearchProviderConfig &&
+          other.id == id &&
+          other.name == name &&
+          other.apiHost == apiHost &&
+          other.apiKey == apiKey &&
+          other.isEnabled == isEnabled;
+
+  @override
+  int get hashCode => Object.hash(id, name, apiHost, apiKey, isEnabled);
+}
+
 /// Persisted web-search configuration — the Flutter equivalent of the web's
 /// `webSearchSlice` state. Controls how the `builtin_web_search` tool behaves
 /// when the 网络搜索 session mode is active.
@@ -10,6 +76,8 @@ class WebSearchSettings {
     this.timeout = 10,
     this.language = 'zh-CN',
     this.categories = 'general',
+    this.activeProviderId = 'searxng',
+    this.providers = const [],
   });
 
   /// Maximum number of results returned per search.
@@ -24,17 +92,27 @@ class WebSearchSettings {
   /// Default search category (general, news, science, it, etc.).
   final String categories;
 
+  /// The currently active provider id used for searching.
+  final String activeProviderId;
+
+  /// User-added search providers (only these are shown in the list page).
+  final List<SearchProviderConfig> providers;
+
   WebSearchSettings copyWith({
     int? maxResults,
     int? timeout,
     String? language,
     String? categories,
+    String? activeProviderId,
+    List<SearchProviderConfig>? providers,
   }) =>
       WebSearchSettings(
         maxResults: maxResults ?? this.maxResults,
         timeout: timeout ?? this.timeout,
         language: language ?? this.language,
         categories: categories ?? this.categories,
+        activeProviderId: activeProviderId ?? this.activeProviderId,
+        providers: providers ?? this.providers,
       );
 
   factory WebSearchSettings.fromJson(Map<String, dynamic> json) =>
@@ -43,6 +121,12 @@ class WebSearchSettings {
         timeout: json['timeout'] as int? ?? 10,
         language: json['language'] as String? ?? 'zh-CN',
         categories: json['categories'] as String? ?? 'general',
+        activeProviderId: json['activeProviderId'] as String? ?? 'searxng',
+        providers: (json['providers'] as List<dynamic>?)
+                ?.map((e) =>
+                    SearchProviderConfig.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
       );
 
   Map<String, dynamic> toJson() => {
@@ -50,6 +134,8 @@ class WebSearchSettings {
         'timeout': timeout,
         'language': language,
         'categories': categories,
+        'activeProviderId': activeProviderId,
+        'providers': providers.map((p) => p.toJson()).toList(),
       };
 
   @override
@@ -59,8 +145,17 @@ class WebSearchSettings {
           other.maxResults == maxResults &&
           other.timeout == timeout &&
           other.language == language &&
-          other.categories == categories;
+          other.categories == categories &&
+          other.activeProviderId == activeProviderId &&
+          listEquals(other.providers, providers);
 
   @override
-  int get hashCode => Object.hash(maxResults, timeout, language, categories);
+  int get hashCode => Object.hash(
+        maxResults,
+        timeout,
+        language,
+        categories,
+        activeProviderId,
+        Object.hashAll(providers),
+      );
 }

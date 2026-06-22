@@ -37,4 +37,46 @@ class WebSearchSettingsController extends _$WebSearchSettingsController
 
   void setCategories(String value) =>
       persist(state.copyWith(categories: value));
+
+  void setActiveProvider(String id) =>
+      persist(state.copyWith(activeProviderId: id));
+
+  /// Adds a provider to the user's list. If a provider with the same id already
+  /// exists, it is replaced.
+  void addProvider(SearchProviderConfig provider) {
+    final list = state.providers.toList()
+      ..removeWhere((p) => p.id == provider.id)
+      ..add(provider);
+    persist(state.copyWith(
+      providers: list,
+      activeProviderId:
+          state.providers.isEmpty ? provider.id : state.activeProviderId,
+    ));
+  }
+
+  /// Removes a provider by id. If the removed provider was active, resets to
+  /// the first remaining provider or 'searxng'.
+  void removeProvider(String id) {
+    final list = state.providers.where((p) => p.id != id).toList();
+    final activeId = state.activeProviderId == id
+        ? (list.isNotEmpty ? list.first.id : 'searxng')
+        : state.activeProviderId;
+    persist(state.copyWith(providers: list, activeProviderId: activeId));
+  }
+
+  /// Updates a single provider's config in place.
+  void updateProvider(SearchProviderConfig updated) {
+    final list = state.providers.map((p) {
+      return p.id == updated.id ? updated : p;
+    }).toList();
+    persist(state.copyWith(providers: list));
+  }
+
+  /// Toggles a provider's enabled state.
+  void toggleProvider(String id) {
+    final list = state.providers.map((p) {
+      return p.id == id ? p.copyWith(isEnabled: !p.isEnabled) : p;
+    }).toList();
+    persist(state.copyWith(providers: list));
+  }
 }

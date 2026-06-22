@@ -6,24 +6,16 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/web_search_settings.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search/search_provider_catalog.dart';
 
-/// 网络搜索设置页面（设置 → 提示词与工具 → 网络搜索），参考 Kelivo 的
-/// `SearchServicesPage` 三层结构（搜索提供商列表 + 通用选项），但使用我们
-/// 自己的 `_OutlinedCard` / `_PrimaryRow` 等组件风格。
+/// 网络搜索设置二级页面（设置 → 网络搜索）。
 ///
-/// 目前仅展示 SearXNG（默认内置提供商），后续可扩展多提供商管理。
-/// 状态通过 [WebSearchSettingsController] 持久化。
+/// Shows only user-added providers (from [WebSearchSettings.providers]).
+/// Each row navigates to the third-level detail page. The "添加搜索提供商"
+/// button opens [AddSearchProviderPage] where the user picks from presets.
+/// Below the provider list is a "通用选项" card for maxResults / timeout.
 class WebSearchSettingsPage extends ConsumerWidget {
   const WebSearchSettingsPage({super.key});
-
-  static const _providers = <_ProviderInfo>[
-    _ProviderInfo(
-      name: 'SearXNG',
-      description: '聚合 Google、Bing、DuckDuckGo 等 70+ 搜索引擎',
-      icon: LucideIcons.search,
-      accent: Color(0xFF3B82F6),
-    ),
-  ];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -63,7 +55,7 @@ class WebSearchSettingsPage extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _providersCard(theme),
+          _providersCard(context, theme, ws),
           const SizedBox(height: 16),
           _commonOptionsCard(theme, ref, ws),
         ],
@@ -72,29 +64,75 @@ class WebSearchSettingsPage extends ConsumerWidget {
   }
 
   // ---------------------------------------------------------------------------
-  // 搜索提供商 card
+  // 搜索提供商列表 card
   // ---------------------------------------------------------------------------
 
-  Widget _providersCard(ThemeData theme) {
+  Widget _providersCard(
+    BuildContext context,
+    ThemeData theme,
+    WebSearchSettings ws,
+  ) {
+    final providers = ws.providers;
+
     return _OutlinedCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _CardHeader(
             title: '搜索提供商',
-            description: '选择和管理搜索服务提供商',
+            description: '已添加的搜索服务，点击进入配置',
           ),
           Divider(height: 1, color: theme.dividerColor),
-          for (var i = 0; i < _providers.length; i++) ...[
-            if (i > 0) Divider(height: 1, color: theme.dividerColor),
-            _ProviderRow(
-              info: _providers[i],
-              selected: true,
-              onTap: () {},
-            ),
-          ],
+
+          // 已添加的提供商列表
+          if (providers.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 24),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(
+                      LucideIcons.search,
+                      size: 32,
+                      color: theme.colorScheme.onSurfaceVariant
+                          .withValues(alpha: 0.4),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '暂无搜索提供商',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '点击下方按钮添加',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 12,
+                        color: theme.colorScheme.onSurfaceVariant
+                            .withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            for (var i = 0; i < providers.length; i++) ...[
+              if (i > 0) Divider(height: 1, color: theme.dividerColor),
+              _ProviderRow(
+                config: providers[i],
+                isActive: providers[i].id == ws.activeProviderId,
+                onTap: () => context.push(
+                  AppRouter.searchProviderDetailPath(providers[i].id),
+                ),
+              ),
+            ],
+
           Divider(height: 1, color: theme.dividerColor),
-          _AddProviderRow(onTap: () {}),
+          _AddProviderRow(
+            onTap: () => context.push(AppRouter.addSearchProviderPath),
+          ),
         ],
       ),
     );
@@ -151,7 +189,7 @@ class WebSearchSettingsPage extends ConsumerWidget {
 }
 
 // =============================================================================
-// Shared card / row widgets — same style as BehaviorSettingsPage
+// Shared card / row widgets
 // =============================================================================
 
 class _OutlinedCard extends StatelessWidget {
@@ -219,21 +257,25 @@ class _CardHeader extends StatelessWidget {
   }
 }
 
-/// A provider row with icon badge, name, description, and a check when selected.
+/// A provider row showing icon, name, description, active badge, and chevron.
 class _ProviderRow extends StatelessWidget {
   const _ProviderRow({
-    required this.info,
-    required this.selected,
+    required this.config,
+    required this.isActive,
     required this.onTap,
   });
 
-  final _ProviderInfo info;
-  final bool selected;
+  final SearchProviderConfig config;
+  final bool isActive;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final preset = presetForId(config.id);
+    final accent = preset?.accent ?? theme.colorScheme.primary;
+    final icon = preset?.icon ?? LucideIcons.globe;
+
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -241,32 +283,73 @@ class _ProviderRow extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 30,
-              height: 30,
+              width: 34,
+              height: 34,
               decoration: BoxDecoration(
-                color: info.accent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
+                color: accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(info.icon, size: 16, color: info.accent),
+              child: Icon(icon, size: 18, color: accent),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    info.name,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: selected
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.onSurface,
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        config.name,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                      if (isActive) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primary
+                                .withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '当前',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (!config.isEnabled) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.onSurfaceVariant
+                                .withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '已禁用',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    info.description,
+                    preset?.description ?? config.apiHost,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium?.copyWith(
@@ -278,14 +361,11 @@ class _ProviderRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            if (selected)
-              Icon(LucideIcons.check, size: 18, color: theme.colorScheme.primary)
-            else
-              Icon(
-                LucideIcons.chevronRight,
-                size: 18,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+            Icon(
+              LucideIcons.chevronRight,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ],
         ),
       ),
@@ -309,11 +389,7 @@ class _AddProviderRow extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              LucideIcons.plus,
-              size: 16,
-              color: theme.colorScheme.primary,
-            ),
+            Icon(LucideIcons.plus, size: 16, color: theme.colorScheme.primary),
             const SizedBox(width: 6),
             Text(
               '添加搜索提供商',
@@ -409,7 +485,6 @@ class _StepperRow extends StatelessWidget {
   }
 }
 
-/// Compact +/- stepper control.
 class _Stepper extends StatelessWidget {
   const _Stepper({
     required this.value,
@@ -427,8 +502,7 @@ class _Stepper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final cs = Theme.of(context).colorScheme;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -472,9 +546,8 @@ class _StepperButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final color = enabled
-        ? cs.primary
-        : cs.onSurfaceVariant.withValues(alpha: 0.3);
+    final color =
+        enabled ? cs.primary : cs.onSurfaceVariant.withValues(alpha: 0.3);
     return InkWell(
       onTap: enabled ? onTap : null,
       borderRadius: BorderRadius.circular(8),
@@ -490,24 +563,3 @@ class _StepperButton extends StatelessWidget {
     );
   }
 }
-
-// =============================================================================
-// Data model
-// =============================================================================
-
-@immutable
-class _ProviderInfo {
-  const _ProviderInfo({
-    required this.name,
-    required this.description,
-    required this.icon,
-    required this.accent,
-  });
-
-  final String name;
-  final String description;
-  final IconData icon;
-  final Color accent;
-}
-
-

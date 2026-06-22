@@ -27,6 +27,8 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/skill_e
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/skills_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/top_toolbar_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search_settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search/add_search_provider_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search/search_provider_detail_page.dart';
 import 'package:aetherlink_flutter/features/theming/presentation/mobile/theme_style_settings_page.dart';
 import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
 
@@ -61,6 +63,9 @@ abstract final class AppRouter {
   static String skillEditorPath(String skillId) => '/settings/skills/$skillId';
   static const String quickPhrasesPath = '/settings/quick-phrases';
   static const String webSearchPath = '/settings/web-search';
+  static const String addSearchProviderPath = '/settings/web-search/add';
+  static String searchProviderDetailPath(String providerId) =>
+      '/settings/web-search/provider/$providerId';
   static const String networkProxyPath = '/settings/network-proxy';
   static const String behaviorPath = '/settings/behavior';
   static const String welcomePath = '/welcome';
@@ -176,6 +181,22 @@ abstract final class AppRouter {
         name: 'web-search',
         pageBuilder: (context, state) =>
             _instant(state, const WebSearchSettingsPage()),
+      ),
+      GoRoute(
+        path: addSearchProviderPath,
+        name: 'add-search-provider',
+        pageBuilder: (context, state) =>
+            _instant(state, const AddSearchProviderPage()),
+      ),
+      GoRoute(
+        path: '/settings/web-search/provider/:providerId',
+        name: 'search-provider-detail',
+        pageBuilder: (context, state) => _instant(
+          state,
+          SearchProviderDetailPage(
+            providerId: state.pathParameters['providerId'] ?? '',
+          ),
+        ),
       ),
       GoRoute(
         path: networkProxyPath,
