@@ -1049,7 +1049,10 @@ class ChatController extends _$ChatController {
 
           // Run each requested tool — built-ins in-process, remote tools over a
           // live connection — and render a 工具 block per call.
-          // Settings tools with `confirm` permission pause for user approval.
+          // Every tool block is shown immediately in "processing" state so the
+          // user sees real-time feedback, then replaced with the final result.
+          // Settings tools with `confirm` permission additionally pause for
+          // user approval before execution.
           final results = <({LlmToolCall call, McpToolResult result})>[];
           for (final call in runnable) {
             final route = mcp.routes[call.name]!;
@@ -1062,23 +1065,26 @@ class ChatController extends _$ChatController {
                 inferSettingsPermission(call.name) ==
                     SettingsToolPermission.confirm;
 
+            // Show a processing block immediately so the user sees the tool
+            // call in real-time (spinner + tool name).
+            completed.add(
+              MessageBlock.tool(
+                id: blockId,
+                messageId: assistantMessageId,
+                status: MessageBlockStatus.processing,
+                createdAt: assistantTime,
+                toolId: toolId,
+                toolName: call.name,
+                arguments: args,
+                metadata: needsConfirm
+                    ? const {'needsConfirmation': true}
+                    : null,
+              ),
+            );
+            update();
+
             McpToolResult result;
             if (needsConfirm) {
-              // Show a pending-confirmation block and wait for user action.
-              completed.add(
-                MessageBlock.tool(
-                  id: blockId,
-                  messageId: assistantMessageId,
-                  status: MessageBlockStatus.processing,
-                  createdAt: assistantTime,
-                  toolId: toolId,
-                  toolName: call.name,
-                  arguments: args,
-                  metadata: const {'needsConfirmation': true},
-                ),
-              );
-              update();
-
               final approved = await ref
                   .read(toolConfirmationProvider.notifier)
                   .request(
@@ -1093,16 +1099,14 @@ class ChatController extends _$ChatController {
               if (approved) {
                 result = await _runTool(route, call.name, args);
               } else {
-                result =
-                    const McpToolResult('用户拒绝了此操作', isError: true);
+                result = const McpToolResult('用户拒绝了此操作', isError: true);
               }
-
-              // Replace the pending block with the final result.
-              completed.removeWhere((b) => b is ToolBlock && b.id == blockId);
             } else {
               result = await _runTool(route, call.name, args);
             }
 
+            // Replace the processing block with the final result.
+            completed.removeWhere((b) => b is ToolBlock && b.id == blockId);
             results.add((call: call, result: result));
             completed.add(
               MessageBlock.tool(
@@ -1119,7 +1123,7 @@ class ChatController extends _$ChatController {
                 content: result.text,
               ),
             );
-            if (needsConfirm) update();
+            update();
           }
 
           // Feed the assistant turn + tool results back so the model can continue.
