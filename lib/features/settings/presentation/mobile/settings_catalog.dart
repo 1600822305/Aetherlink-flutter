@@ -92,6 +92,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.sliders,
         title: '辅助模型设置',
         description: '配置话题命名、AI 意图分析、视觉识别等辅助功能',
+        route: AppRouter.auxiliaryModelPath,
       ),
       SettingItemData(
         icon: LucideIcons.messageSquare,
