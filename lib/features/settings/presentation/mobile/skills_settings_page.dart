@@ -378,8 +378,9 @@ class _SkillsSettingsPageState extends ConsumerState<SkillsSettingsPage>
   Widget _builtinTab(ThemeData theme, List<Skill> builtin) {
     final skills = _filter(builtin);
     if (skills.isEmpty) return _noResults(theme);
+    final bottomPad = MediaQuery.of(context).padding.bottom;
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 24 + bottomPad),
       itemCount: skills.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (_, i) => _card(skills[i]),
@@ -391,8 +392,9 @@ class _SkillsSettingsPageState extends ConsumerState<SkillsSettingsPage>
     if (skills.isEmpty) {
       return _query.trim().isNotEmpty ? _noResults(theme) : _customEmpty(theme);
     }
+    final bottomPad = MediaQuery.of(context).padding.bottom;
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 24 + bottomPad),
       itemCount: skills.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (_, i) => _card(skills[i]),
@@ -728,8 +730,9 @@ class _TutorialTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final bottomPad = MediaQuery.of(context).padding.bottom;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomPad),
       children: [
         _section(
           theme,
