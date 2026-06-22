@@ -321,13 +321,17 @@ class ContextSummaryBlockView extends ConsumerStatefulWidget {
 
 class _ContextSummaryBlockViewState
     extends ConsumerState<ContextSummaryBlockView> {
-  bool _expanded = false;
+  bool _showingSummary = false;
+  bool _showingOriginal = false;
   bool _isRestoring = false;
 
-  bool get _canRestore {
+  List<Map<String, dynamic>> get _originalMessages {
     final original = widget.block.metadata?['originalMessages'];
-    return original is List && original.isNotEmpty;
+    if (original is List) return original.cast<Map<String, dynamic>>();
+    return [];
   }
+
+  bool get _canRestore => _originalMessages.isNotEmpty;
 
   Future<void> _restore() async {
     final confirmed = await showDialog<bool>(
@@ -365,6 +369,50 @@ class _ContextSummaryBlockViewState
     }
   }
 
+  /// Build a formatted preview of the original messages.
+  Widget _buildOriginalPreview(ThemeData theme, ColorScheme cs) {
+    final messages = _originalMessages;
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 300),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final msg in messages) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      msg['role'] == 'user' ? '用户' : 'AI',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: msg['role'] == 'user'
+                            ? cs.primary
+                            : cs.secondary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      (msg['content'] as String? ?? '').length > 500
+                          ? '${(msg['content'] as String).substring(0, 500)}…'
+                          : msg['content'] as String? ?? '',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: cs.onSurface.withValues(alpha: 0.8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: cs.outline.withValues(alpha: 0.1)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -380,9 +428,12 @@ class _ContextSummaryBlockViewState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header (tappable)
+          // Header (tappable to toggle summary)
           GestureDetector(
-            onTap: () => setState(() => _expanded = !_expanded),
+            onTap: () => setState(() {
+              _showingSummary = !_showingSummary;
+              if (_showingSummary) _showingOriginal = false;
+            }),
             behavior: HitTestBehavior.opaque,
             child: Row(
               children: [
@@ -397,7 +448,9 @@ class _ContextSummaryBlockViewState
                   ),
                 ),
                 Icon(
-                  _expanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+                  _showingSummary
+                      ? LucideIcons.chevronUp
+                      : LucideIcons.chevronDown,
                   size: 16,
                   color: cs.onSurface.withValues(alpha: 0.4),
                 ),
@@ -416,10 +469,16 @@ class _ContextSummaryBlockViewState
             ),
           ),
 
-          // Expanded content (preview of the summary)
-          if (_expanded) ...[
+          // Expanded summary content (tapping header toggles this)
+          if (_showingSummary) ...[
             Divider(height: 16, color: cs.primary.withValues(alpha: 0.15)),
             AppMarkdown(content: widget.block.content),
+          ],
+
+          // Expanded original messages preview
+          if (_showingOriginal) ...[
+            Divider(height: 16, color: cs.primary.withValues(alpha: 0.15)),
+            _buildOriginalPreview(theme, cs),
           ],
 
           // Action buttons
@@ -427,8 +486,12 @@ class _ContextSummaryBlockViewState
             const SizedBox(height: 8),
             Row(
               children: [
+                // Preview original button
                 InkWell(
-                  onTap: () => setState(() => _expanded = !_expanded),
+                  onTap: () => setState(() {
+                    _showingOriginal = !_showingOriginal;
+                    if (_showingOriginal) _showingSummary = false;
+                  }),
                   borderRadius: BorderRadius.circular(6),
                   child: Padding(
                     padding:
@@ -437,13 +500,15 @@ class _ContextSummaryBlockViewState
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          _expanded ? LucideIcons.eyeOff : LucideIcons.eye,
+                          _showingOriginal
+                              ? LucideIcons.eyeOff
+                              : LucideIcons.eye,
                           size: 14,
                           color: cs.primary,
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          _expanded ? '收起摘要' : '预览摘要',
+                          _showingOriginal ? '收起原文' : '预览原文',
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: cs.primary,
                           ),
@@ -453,6 +518,7 @@ class _ContextSummaryBlockViewState
                   ),
                 ),
                 const SizedBox(width: 8),
+                // Restore button
                 _isRestoring
                     ? const SizedBox(
                         width: 14,
