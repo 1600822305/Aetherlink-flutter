@@ -31,6 +31,7 @@ const String _newTopicTooltip = '新建话题';
 const String _clearTooltip = '清空内容';
 const String _searchTooltip = '搜索';
 const String _condenseTooltip = '压缩上下文';
+const String _miniMapTooltip = '迷你地图';
 const String _modelPlaceholderLabel = '未配置模型';
 
 /// The chat top bar, driven by the appearance 顶部工具栏 DIY 设置 page's
@@ -168,15 +169,16 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
           ? const SizedBox.shrink()
           : _TopicTitle(name: topic.name),
       actions: [
-        _ToolbarIconButton(
-          icon: Icon(
-            LucideIcons.map,
-            size: 20,
-            color: theme.colorScheme.onSurface,
-          ),
-          tooltip: '迷你地图',
-          onPressed: () => _openMiniMap(context, ref),
-        ),
+        _buildComponent(
+          TopToolbarComponent.miniMapButton,
+          context: context,
+          ref: ref,
+          theme: theme,
+          settings: settings,
+          topicName: topic?.name,
+          current: current,
+          hasModels: hasModels,
+        )!,
         if (modelSelector != null) modelSelector,
         _buildComponent(
           TopToolbarComponent.settingsButton,
@@ -295,6 +297,15 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
           icon: topToolbarComponentIcon(component, color: theme.disabledColor),
           tooltip: _condenseTooltip,
           onPressed: null,
+        );
+      case TopToolbarComponent.miniMapButton:
+        return _ToolbarIconButton(
+          icon: topToolbarComponentIcon(
+            component,
+            color: theme.colorScheme.onSurface,
+          ),
+          tooltip: _miniMapTooltip,
+          onPressed: () => _openMiniMap(context, ref),
         );
     }
   }
