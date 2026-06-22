@@ -293,8 +293,6 @@ class _ProviderRowState extends State<_ProviderRow> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final preset = presetForId(widget.config.id);
-    final accent = preset?.accent ?? theme.colorScheme.primary;
-    final icon = preset?.icon ?? LucideIcons.globe;
 
     return InkWell(
       onTap: () {
@@ -308,15 +306,7 @@ class _ProviderRowState extends State<_ProviderRow> {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, size: 18, color: accent),
-            ),
+            SearchProviderIcon(preset: preset, size: 34),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
