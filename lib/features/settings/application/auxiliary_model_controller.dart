@@ -4,6 +4,7 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
+import 'package:aetherlink_flutter/features/settings/application/model_combo_controller.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 
 part 'auxiliary_model_controller.g.dart';
@@ -214,12 +215,14 @@ class AuxiliaryModelController extends _$AuxiliaryModelController {
 
   // ── Model setters ──
 
-  void setChatModel(String providerId, String modelId) {
+  Future<void> setChatModel(String providerId, String modelId) async {
     final key = _encodeModelKey(providerId, modelId);
     state = state.copyWith(chatModelKey: () => key);
     _repo.saveSetting(kChatModelKey, key);
+    // Clear any active combo so the new model takes effect immediately.
+    ref.read(modelComboControllerProvider.notifier).clearComboSelection();
     // Sync to the app-level current model so the chat composer uses this model.
-    ref
+    await ref
         .read(modelStoreProvider.notifier)
         .selectCurrentModel(providerId: providerId, modelId: modelId);
   }
