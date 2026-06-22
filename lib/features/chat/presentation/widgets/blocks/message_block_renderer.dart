@@ -21,8 +21,10 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/web
 ///   * show the streaming placeholder (「正在生成回复...」) when nothing visible
 ///     has been produced yet.
 ///
-/// The thinking-phase inline-tool grouping and the 16 thinking display styles
-/// are later slices; tool blocks render as their own cards for now.
+/// Thinking-phase tool calls are grouped and embedded inside the corresponding
+/// thinking block as lightweight `InlineToolChip`s, mirroring the web's
+/// `computeInlineToolGroups`. Once `MAIN_TEXT` appears the answer phase starts
+/// and subsequent tool blocks render as independent top-level cards.
 class MessageBlockRenderer extends StatelessWidget {
   const MessageBlockRenderer({
     required this.blocks,
@@ -41,10 +43,14 @@ class MessageBlockRenderer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Phase-aware grouping: thinking-phase tool blocks are consumed and attached
+    // to their corresponding ThinkingBlock instead of rendering top-level.
+    final (:consumedToolIds, :inlineToolMap) = _computeInlineToolGroups(blocks);
+
     final grouped = _groupSimilarBlocks(blocks);
     final widgets = <Widget>[];
     for (final item in grouped) {
-      final widget = _buildItem(item);
+      final widget = _buildItem(item, consumedToolIds, inlineToolMap);
       if (widget != null) widgets.add(widget);
     }
 
@@ -65,16 +71,24 @@ class MessageBlockRenderer extends StatelessWidget {
     );
   }
 
-  Widget? _buildItem(_RenderItem item) {
+  Widget? _buildItem(
+    _RenderItem item,
+    Set<String> consumedToolIds,
+    Map<String, List<ToolBlock>> inlineToolMap,
+  ) {
     switch (item) {
       case _ImageGroup(:final images):
         return ImageBlockGroupView(blocks: images);
       case _SingleBlock(:final block):
-        return _buildBlock(block);
+        return _buildBlock(block, consumedToolIds, inlineToolMap);
     }
   }
 
-  Widget? _buildBlock(MessageBlock block) {
+  Widget? _buildBlock(
+    MessageBlock block,
+    Set<String> consumedToolIds,
+    Map<String, List<ToolBlock>> inlineToolMap,
+  ) {
     switch (block) {
       case UnknownBlock(:final content, :final status):
         if (status == MessageBlockStatus.processing) {
@@ -92,7 +106,10 @@ class MessageBlockRenderer extends StatelessWidget {
         if (cleanMainText(block.content).isEmpty) return null;
         return MainTextBlockView(block: block, textColor: textColor);
       case ThinkingBlock():
-        return ThinkingBlockView(block: block);
+        return ThinkingBlockView(
+          block: block,
+          inlineToolBlocks: inlineToolMap[block.id] ?? const [],
+        );
       case ImageBlock():
         return ImageBlockView(block: block);
       case VideoBlock():
@@ -100,6 +117,8 @@ class MessageBlockRenderer extends StatelessWidget {
       case CodeBlock():
         return CodeBlockViewBlock(block: block);
       case ToolBlock():
+        // Skip tool blocks that were consumed into a thinking block.
+        if (consumedToolIds.contains(block.id)) return null;
         if (block.toolName == 'builtin_web_search') {
           return WebSearchBlockView(block: block);
         }
@@ -166,6 +185,32 @@ class CodeBlockViewBlock extends StatelessWidget {
       code: block.content,
     );
   }
+}
+
+/// Phase-aware grouping: TOOL blocks that appear after a THINKING block and
+/// before the first MAIN_TEXT are "thinking-phase" tools. They get consumed
+/// into the thinking block and removed from the top-level flow.
+///
+/// Mirrors `computeInlineToolGroups` in the web's `MessageBlockRenderer.tsx`.
+({Set<String> consumedToolIds, Map<String, List<ToolBlock>> inlineToolMap})
+    _computeInlineToolGroups(List<MessageBlock> blocks) {
+  final consumedToolIds = <String>{};
+  final inlineToolMap = <String, List<ToolBlock>>{};
+  String? currentThinkingId;
+
+  for (final block in blocks) {
+    if (block is ThinkingBlock) {
+      currentThinkingId = block.id;
+    } else if (block is MainTextBlock) {
+      // Answer phase starts — subsequent tools stay top-level.
+      currentThinkingId = null;
+    } else if (block is ToolBlock && currentThinkingId != null) {
+      inlineToolMap.putIfAbsent(currentThinkingId, () => []).add(block);
+      consumedToolIds.add(block.id);
+    }
+  }
+
+  return (consumedToolIds: consumedToolIds, inlineToolMap: inlineToolMap);
 }
 
 sealed class _RenderItem {

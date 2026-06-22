@@ -30,6 +30,7 @@ class ThinkingStyledView extends StatelessWidget {
     required this.onCopy,
     required this.markdownBuilder,
     this.previewContent,
+    this.inlineTools,
     super.key,
   });
 
@@ -58,6 +59,9 @@ class ThinkingStyledView extends StatelessWidget {
   /// The trailing slice shown in the compact streaming preview; defaults to the
   /// full [content].
   final String? previewContent;
+
+  /// Optional widget showing tool calls made during the thinking phase.
+  final Widget? inlineTools;
 
   Color get _amber => Colors.amber.shade700;
 
@@ -188,7 +192,13 @@ class ThinkingStyledView extends StatelessWidget {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: markdownBuilder(context, content, null),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  markdownBuilder(context, content, null),
+                  if (inlineTools != null) ...[const SizedBox(height: 8), inlineTools!],
+                ],
+              ),
             )
           else if (isThinking)
             Container(
@@ -209,6 +219,11 @@ class ThinkingStyledView extends StatelessWidget {
                   ),
                 ),
               ),
+            )
+          else if (inlineTools != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: inlineTools!,
             ),
         ],
       ),
@@ -268,7 +283,13 @@ class ThinkingStyledView extends StatelessWidget {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
-            child: markdownBuilder(context, content, null),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                markdownBuilder(context, content, null),
+                if (inlineTools != null) ...[const SizedBox(height: 8), inlineTools!],
+              ],
+            ),
           ),
         ],
       ),
@@ -348,7 +369,13 @@ class ThinkingStyledView extends StatelessWidget {
                 ),
                 Padding(
                   padding: const EdgeInsets.all(12),
-                  child: markdownBuilder(context, content, null),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      markdownBuilder(context, content, null),
+                      if (inlineTools != null) ...[const SizedBox(height: 8), inlineTools!],
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -418,6 +445,7 @@ class ThinkingStyledView extends StatelessWidget {
                     if (expanded) ...[
                       const SizedBox(height: 8),
                       markdownBuilder(context, content, null),
+                      if (inlineTools != null) ...[const SizedBox(height: 8), inlineTools!],
                     ],
                   ],
                 ),
@@ -509,7 +537,13 @@ class ThinkingStyledView extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: theme.dividerColor),
                   ),
-                  child: markdownBuilder(context, content, null),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      markdownBuilder(context, content, null),
+                      if (inlineTools != null) ...[const SizedBox(height: 8), inlineTools!],
+                    ],
+                  ),
                 ),
               ],
             ],
