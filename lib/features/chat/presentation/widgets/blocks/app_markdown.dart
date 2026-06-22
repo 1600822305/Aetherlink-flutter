@@ -1,9 +1,11 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gpt_markdown/gpt_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/code_block_view.dart';
 
 /// Renders Markdown for message blocks, mirroring the original `Markdown.tsx`.
@@ -19,9 +21,9 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/cod
 ///     fill the width with wrapping cells, falling back to fixed-width columns
 ///     inside a horizontal scroll view only when there are many columns).
 ///
-/// LaTeX uses single/double dollar delimiters (`$...$`, `$$...$$`), matching the
-/// original's `mathEnableSingleDollar` default.
-class AppMarkdown extends StatelessWidget {
+/// LaTeX dollar-delimiter support (`$...$`, `$$...$$`) is controlled by the
+/// sidebar's `mathEnableSingleDollar` setting, read live via Riverpod.
+class AppMarkdown extends ConsumerWidget {
   const AppMarkdown({required this.content, this.style, super.key});
 
   final String content;
@@ -51,7 +53,10 @@ class AppMarkdown extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dollarLatex = ref.watch(
+      sidebarSettingsControllerProvider.select((s) => s.mathEnableSingleDollar),
+    );
     final theme = Theme.of(context);
     final baseStyle = style ?? theme.textTheme.bodyMedium;
 
@@ -95,13 +100,17 @@ class AppMarkdown extends StatelessWidget {
       child: GptMarkdown(
         content,
         style: baseStyle,
-        useDollarSignsForLatex: true,
+        useDollarSignsForLatex: dollarLatex,
         onLinkTap: _openLink,
         codeBuilder: (context, name, code, closed) =>
             CodeBlockView(language: name, code: code),
         highlightBuilder: _inlineCode,
         tableBuilder: (context, rows, textStyle, config) =>
-            MarkdownTable(rows: rows, baseStyle: textStyle),
+            MarkdownTable(
+              rows: rows,
+              baseStyle: textStyle,
+              useDollarSignsForLatex: dollarLatex,
+            ),
       ),
     );
   }
@@ -115,10 +124,16 @@ class AppMarkdown extends StatelessWidget {
 /// gutter (so it never paints over the last row). Narrow tables that fit show
 /// no scrollbar and no gutter.
 class MarkdownTable extends StatefulWidget {
-  const MarkdownTable({required this.rows, required this.baseStyle, super.key});
+  const MarkdownTable({
+    required this.rows,
+    required this.baseStyle,
+    this.useDollarSignsForLatex = true,
+    super.key,
+  });
 
   final List<CustomTableRow> rows;
   final TextStyle baseStyle;
+  final bool useDollarSignsForLatex;
 
   @override
   State<MarkdownTable> createState() => _MarkdownTableState();
@@ -293,7 +308,7 @@ class _MarkdownTableState extends State<MarkdownTable> {
           data,
           style: cellStyle,
           textAlign: align,
-          useDollarSignsForLatex: true,
+          useDollarSignsForLatex: widget.useDollarSignsForLatex,
           onLinkTap: AppMarkdown._openLink,
           highlightBuilder: AppMarkdown._inlineCode,
         ),
