@@ -143,7 +143,7 @@ class _TranslatePageState extends ConsumerState<TranslatePage> {
       context,
       selectedProviderId: current?.provider.id,
       selectedModelId: current?.model.id,
-      onSelect: (provider, model) {
+      onSelect: (provider, model) async {
         ref
             .read(translateModelSelectionProvider.notifier)
             .set(provider.id, model.id);
@@ -341,8 +341,7 @@ class _ModelButton extends ConsumerWidget {
               width: 20,
               height: 20,
               fit: BoxFit.contain,
-              errorBuilder: (_, _, _) =>
-                  const Icon(LucideIcons.bot, size: 18),
+              errorBuilder: (_, _, _) => const Icon(LucideIcons.bot, size: 18),
             ),
           ),
         ),
@@ -370,8 +369,8 @@ class _LanguageBar extends ConsumerWidget {
     final sourceLang = source == kTranslateAutoLang
         ? null
         : builtinTranslateLanguages
-            .where((l) => l.langCode == source)
-            .firstOrNull;
+              .where((l) => l.langCode == source)
+              .firstOrNull;
     final targetLang = builtinTranslateLanguages
         .where((l) => l.langCode == target)
         .firstOrNull;
@@ -477,8 +476,10 @@ class _LanguageBar extends ConsumerWidget {
                 ),
               ),
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -504,8 +505,9 @@ class _LanguageBar extends ConsumerWidget {
                       title: Text(
                         item.label,
                         style: TextStyle(
-                          fontWeight:
-                              selected ? FontWeight.w600 : FontWeight.w400,
+                          fontWeight: selected
+                              ? FontWeight.w600
+                              : FontWeight.w400,
                           color: selected ? cs.primary : cs.onSurface,
                         ),
                       ),
@@ -568,11 +570,7 @@ class _LanguagePill extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 4),
-            Icon(
-              LucideIcons.chevronDown,
-              size: 14,
-              color: cs.onSurfaceVariant,
-            ),
+            Icon(LucideIcons.chevronDown, size: 14, color: cs.onSurfaceVariant),
           ],
         ),
       ),
@@ -672,8 +670,10 @@ class _InputSection extends StatelessWidget {
               decoration: const InputDecoration(
                 hintText: '输入要翻译的文本...',
                 border: InputBorder.none,
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
               ),
             ),
           ),
@@ -835,8 +835,7 @@ class _OutputSection extends StatelessWidget {
           // Output text
           Expanded(
             child: SingleChildScrollView(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Align(
                 alignment: Alignment.topLeft,
                 child: SelectableText(
@@ -862,11 +861,7 @@ class _OutputSection extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _MiniIconButton extends StatelessWidget {
-  const _MiniIconButton({
-    required this.icon,
-    required this.onTap,
-    this.color,
-  });
+  const _MiniIconButton({required this.icon, required this.onTap, this.color});
 
   final IconData icon;
   final VoidCallback onTap;
@@ -1038,8 +1033,10 @@ class _HistoryTile extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: cs.primary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(6),
@@ -1084,8 +1081,7 @@ class _HistoryTile extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 _MiniIconButton(
-                  icon:
-                      history.star ? LucideIcons.star : LucideIcons.starOff,
+                  icon: history.star ? LucideIcons.star : LucideIcons.starOff,
                   onTap: onStar,
                   color: history.star ? const Color(0xFFF59E0B) : secondary,
                 ),
