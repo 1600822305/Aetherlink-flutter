@@ -33,6 +33,7 @@ class GrokSearch {
           ],
           'tools': [
             {'type': 'web_search'},
+            {'type': 'x_search'},
           ],
           'store': false,
           'stream': false,
