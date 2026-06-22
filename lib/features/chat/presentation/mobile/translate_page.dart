@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
@@ -15,14 +16,6 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_sele
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/utils/provider_icons.dart';
 
-/// The 翻译 page (1:1 functional port of the web `TranslatePage`).
-///
-/// Mobile (< 900px) lays the input above the output in a column with the
-/// history shown as a bottom sheet; desktop (>= 900px) lays them side by side
-/// with the history in a right drawer — matching the web's
-/// `useMediaQuery(down('md'))` split. Selected languages / model and the
-/// history are persisted through [translate_controller]'s providers; the
-/// translation itself streams from the configured translate model.
 class TranslatePage extends ConsumerStatefulWidget {
   const TranslatePage({super.key});
 
@@ -199,76 +192,122 @@ class _TranslatePageState extends ConsumerState<TranslatePage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final isWide = MediaQuery.of(context).size.width >= _wideBreakpoint;
-
-    final input = _InputCard(
-      controller: _input,
-      isWide: isWide,
-      isTranslating: _isTranslating,
-      onChanged: () => setState(() {}),
-      onClear: _clear,
-      onTranslate: _translate,
-    );
-    final output = _OutputCard(
-      text: _output,
-      isWide: isWide,
-      copied: _copied,
-      onCopy: _copy,
-    );
+    final bottomPad = MediaQuery.paddingOf(context).bottom;
 
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: theme.colorScheme.surface,
+      backgroundColor: cs.surfaceContainerLowest,
       endDrawer: isWide
           ? Drawer(width: 360, child: _HistoryPanel(onSelect: _applyHistory))
           : null,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _TopBar(
-              onBack: () => Navigator.of(context).maybePop(),
-              onModel: _pickModel,
-              onHistory: _openHistory,
-            ),
-            _LanguageBar(onSwap: _swapLanguages),
-            Expanded(
-              child: Padding(
-                padding: EdgeInsets.all(isWide ? 16 : 0),
-                child: isWide
-                    ? Row(
-                        children: [
-                          Expanded(child: input),
-                          const SizedBox(width: 16),
-                          Expanded(child: output),
-                        ],
-                      )
-                    : Column(
-                        children: [
-                          Expanded(child: input),
-                          const Divider(height: 1),
-                          Expanded(child: output),
-                        ],
-                      ),
-              ),
-            ),
-          ],
+      appBar: AppBar(
+        backgroundColor: cs.surface,
+        foregroundColor: cs.onSurface,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        toolbarHeight: 56,
+        centerTitle: false,
+        titleSpacing: 0,
+        shape: Border(bottom: BorderSide(color: theme.dividerColor)),
+        leadingWidth: 44,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 4),
+          child: IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            icon: const Icon(LucideIcons.arrowLeft, size: 24),
+            color: cs.primary,
+            onPressed: () =>
+                context.canPop() ? context.pop() : Navigator.of(context).pop(),
+          ),
         ),
+        titleTextStyle: theme.textTheme.titleLarge?.copyWith(
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+          color: cs.onSurface,
+        ),
+        title: const Text('翻译'),
+        actions: [
+          _ModelButton(onTap: _pickModel),
+          IconButton(
+            onPressed: _openHistory,
+            icon: const Icon(LucideIcons.history, size: 20),
+            color: cs.onSurfaceVariant,
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
+      body: Column(
+        children: [
+          _LanguageBar(onSwap: _swapLanguages),
+          Expanded(
+            child: isWide
+                ? Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _InputSection(
+                            controller: _input,
+                            isTranslating: _isTranslating,
+                            isWide: true,
+                            onChanged: () => setState(() {}),
+                            onClear: _clear,
+                            onTranslate: _translate,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _OutputSection(
+                            text: _output,
+                            copied: _copied,
+                            isWide: true,
+                            onCopy: _copy,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : Column(
+                    children: [
+                      Expanded(
+                        child: _InputSection(
+                          controller: _input,
+                          isTranslating: _isTranslating,
+                          isWide: false,
+                          onChanged: () => setState(() {}),
+                          onClear: _clear,
+                          onTranslate: _translate,
+                        ),
+                      ),
+                      Expanded(
+                        child: _OutputSection(
+                          text: _output,
+                          copied: _copied,
+                          isWide: false,
+                          onCopy: _copy,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+          SizedBox(height: bottomPad),
+        ],
       ),
     );
   }
 }
 
-/// Top navigation bar: back · 翻译 title, model-picker icon, history icon.
-class _TopBar extends ConsumerWidget {
-  const _TopBar({
-    required this.onBack,
-    required this.onModel,
-    required this.onHistory,
-  });
+// ---------------------------------------------------------------------------
+// Model button (appbar action)
+// ---------------------------------------------------------------------------
 
-  final VoidCallback onBack;
-  final VoidCallback onModel;
-  final VoidCallback onHistory;
+class _ModelButton extends ConsumerWidget {
+  const _ModelButton({required this.onTap});
+
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -283,67 +322,39 @@ class _TopBar extends ConsumerWidget {
             isDark: isDark,
           );
 
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        border: Border(
-          bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.5)),
+    return Tooltip(
+      message: current?.model.name ?? current?.model.id ?? '选择模型',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          alignment: Alignment.center,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: Image.asset(
+              iconPath,
+              width: 20,
+              height: 20,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) =>
+                  const Icon(LucideIcons.bot, size: 18),
+            ),
+          ),
         ),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: onBack,
-            icon: const Icon(LucideIcons.arrowLeft, size: 20),
-          ),
-          const Icon(LucideIcons.languages, size: 22),
-          const SizedBox(width: 8),
-          Text(
-            '翻译',
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const Spacer(),
-          Tooltip(
-            message: current?.model.name ?? current?.model.id ?? '选择模型',
-            child: InkWell(
-              onTap: onModel,
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                alignment: Alignment.center,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: Image.asset(
-                    iconPath,
-                    width: 22,
-                    height: 22,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) =>
-                        const Icon(LucideIcons.bot, size: 20),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          IconButton(
-            onPressed: onHistory,
-            icon: const Icon(LucideIcons.history, size: 20),
-          ),
-        ],
       ),
     );
   }
 }
 
-/// Source / target language selectors with a swap button between them.
+// ---------------------------------------------------------------------------
+// Language bar
+// ---------------------------------------------------------------------------
+
 class _LanguageBar extends ConsumerWidget {
   const _LanguageBar({required this.onSwap});
 
@@ -352,93 +363,240 @@ class _LanguageBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final source = ref.watch(translateSourceLanguageProvider);
     final target = ref.watch(translateTargetLanguageProvider);
 
+    final sourceLang = source == kTranslateAutoLang
+        ? null
+        : builtinTranslateLanguages
+            .where((l) => l.langCode == source)
+            .firstOrNull;
+    final targetLang = builtinTranslateLanguages
+        .where((l) => l.langCode == target)
+        .firstOrNull;
+
     return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
+        color: cs.surface,
         border: Border(
           bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.5)),
         ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _LanguageDropdown(
-            value: source,
-            showAuto: true,
-            onChanged: (v) =>
-                ref.read(translateSourceLanguageProvider.notifier).set(v),
+          Expanded(
+            child: _LanguagePill(
+              emoji: sourceLang?.emoji ?? '🔍',
+              label: sourceLang?.label ?? '自动检测',
+              onTap: () => _pickLanguage(
+                context,
+                ref,
+                current: source,
+                showAuto: true,
+                onSelect: (v) =>
+                    ref.read(translateSourceLanguageProvider.notifier).set(v),
+              ),
+            ),
           ),
-          IconButton(
-            onPressed: source == kTranslateAutoLang ? null : onSwap,
-            icon: const Icon(LucideIcons.arrowRightLeft, size: 18),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: GestureDetector(
+              onTap: source == kTranslateAutoLang ? null : onSwap,
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: cs.primary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  LucideIcons.arrowRightLeft,
+                  size: 16,
+                  color: source == kTranslateAutoLang
+                      ? cs.onSurfaceVariant.withValues(alpha: 0.3)
+                      : cs.primary,
+                ),
+              ),
+            ),
           ),
-          _LanguageDropdown(
-            value: target,
-            showAuto: false,
-            onChanged: (v) =>
-                ref.read(translateTargetLanguageProvider.notifier).set(v),
+          Expanded(
+            child: _LanguagePill(
+              emoji: targetLang?.emoji ?? '🇬🇧',
+              label: targetLang?.label ?? '英文',
+              onTap: () => _pickLanguage(
+                context,
+                ref,
+                current: target,
+                showAuto: false,
+                onSelect: (v) =>
+                    ref.read(translateTargetLanguageProvider.notifier).set(v),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
+
+  void _pickLanguage(
+    BuildContext context,
+    WidgetRef ref, {
+    required String current,
+    required bool showAuto,
+    required ValueChanged<String> onSelect,
+  }) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: cs.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        final items = <({String code, String emoji, String label})>[
+          if (showAuto) (code: kTranslateAutoLang, emoji: '🔍', label: '自动检测'),
+          for (final lang in builtinTranslateLanguages)
+            (code: lang.langCode, emoji: lang.emoji, label: lang.label),
+        ];
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: cs.onSurface.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '选择语言',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: items.length,
+                  itemBuilder: (_, i) {
+                    final item = items[i];
+                    final selected = item.code == current;
+                    return ListTile(
+                      leading: Text(
+                        item.emoji,
+                        style: const TextStyle(fontSize: 22),
+                      ),
+                      title: Text(
+                        item.label,
+                        style: TextStyle(
+                          fontWeight:
+                              selected ? FontWeight.w600 : FontWeight.w400,
+                          color: selected ? cs.primary : cs.onSurface,
+                        ),
+                      ),
+                      trailing: selected
+                          ? Icon(LucideIcons.check, size: 18, color: cs.primary)
+                          : null,
+                      onTap: () {
+                        onSelect(item.code);
+                        Navigator.of(ctx).pop();
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
-class _LanguageDropdown extends StatelessWidget {
-  const _LanguageDropdown({
-    required this.value,
-    required this.showAuto,
-    required this.onChanged,
+class _LanguagePill extends StatelessWidget {
+  const _LanguagePill({
+    required this.emoji,
+    required this.label,
+    required this.onTap,
   });
 
-  final String value;
-  final bool showAuto;
-  final ValueChanged<String> onChanged;
+  final String emoji;
+  final String label;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonHideUnderline(
-      child: DropdownButton<String>(
-        value: value,
-        borderRadius: BorderRadius.circular(8),
-        items: [
-          if (showAuto)
-            const DropdownMenuItem(
-              value: kTranslateAutoLang,
-              child: Text('🔍 自动检测'),
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 18)),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
-          for (final lang in builtinTranslateLanguages)
-            DropdownMenuItem(
-              value: lang.langCode,
-              child: Text('${lang.emoji} ${lang.label}'),
+            const SizedBox(width: 4),
+            Icon(
+              LucideIcons.chevronDown,
+              size: 14,
+              color: cs.onSurfaceVariant,
             ),
-        ],
-        onChanged: (v) {
-          if (v != null) onChanged(v);
-        },
+          ],
+        ),
       ),
     );
   }
 }
 
-/// The input editor with its bottom bar (char count, clear, send/stop FAB).
-class _InputCard extends StatelessWidget {
-  const _InputCard({
+// ---------------------------------------------------------------------------
+// Input section
+// ---------------------------------------------------------------------------
+
+class _InputSection extends StatelessWidget {
+  const _InputSection({
     required this.controller,
-    required this.isWide,
     required this.isTranslating,
+    required this.isWide,
     required this.onChanged,
     required this.onClear,
     required this.onTranslate,
   });
 
   final TextEditingController controller;
-  final bool isWide;
   final bool isTranslating;
+  final bool isWide;
   final VoidCallback onChanged;
   final VoidCallback onClear;
   final VoidCallback onTranslate;
@@ -446,11 +604,63 @@ class _InputCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return _Panel(
-      isWide: isWide,
-      background: theme.colorScheme.surface,
+    final cs = theme.colorScheme;
+    final hasText = controller.text.isNotEmpty;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: isWide ? BorderRadius.circular(16) : null,
+        border: isWide
+            ? Border.all(color: theme.dividerColor)
+            : Border(
+                bottom: BorderSide(
+                  color: theme.dividerColor.withValues(alpha: 0.5),
+                ),
+              ),
+        boxShadow: isWide
+            ? const [
+                BoxShadow(
+                  color: Color(0x0D000000),
+                  blurRadius: 12,
+                  offset: Offset(0, 4),
+                ),
+              ]
+            : null,
+      ),
       child: Column(
         children: [
+          // Label row
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+            child: Row(
+              children: [
+                Text(
+                  '原文',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${controller.text.length} 字符',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+                  ),
+                ),
+                const Spacer(),
+                if (hasText)
+                  _MiniIconButton(
+                    icon: LucideIcons.x,
+                    onTap: onClear,
+                    color: cs.onSurfaceVariant,
+                  ),
+              ],
+            ),
+          ),
+          // Text field
           Expanded(
             child: TextField(
               controller: controller,
@@ -458,53 +668,25 @@ class _InputCard extends StatelessWidget {
               expands: true,
               maxLines: null,
               textAlignVertical: TextAlignVertical.top,
+              style: theme.textTheme.bodyLarge,
               decoration: const InputDecoration(
                 hintText: '输入要翻译的文本...',
                 border: InputBorder.none,
-                contentPadding: EdgeInsets.all(16),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               ),
             ),
           ),
-          Container(
-            constraints: const BoxConstraints(minHeight: 52),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              border: Border(
-                top: BorderSide(
-                  color: theme.dividerColor.withValues(alpha: 0.5),
-                ),
-              ),
-            ),
+          // Bottom action
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 12, 10),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Text(
-                  '${controller.text.length} 字符',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const Spacer(),
-                if (controller.text.isNotEmpty)
-                  IconButton(
-                    onPressed: onClear,
-                    icon: const Icon(LucideIcons.x, size: 18),
-                  ),
-                const SizedBox(width: 4),
-                FloatingActionButton.small(
-                  heroTag: 'translate-send',
-                  onPressed: (controller.text.trim().isEmpty || isTranslating)
-                      ? null
-                      : onTranslate,
-                  child: isTranslating
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(LucideIcons.send, size: 18),
+                _TranslateButton(
+                  isTranslating: isTranslating,
+                  enabled: controller.text.trim().isNotEmpty && !isTranslating,
+                  onTap: onTranslate,
                 ),
               ],
             ),
@@ -515,73 +697,158 @@ class _InputCard extends StatelessWidget {
   }
 }
 
-/// The output display with a copy FAB in its bottom bar.
-class _OutputCard extends StatelessWidget {
-  const _OutputCard({
+class _TranslateButton extends StatelessWidget {
+  const _TranslateButton({
+    required this.isTranslating,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final bool isTranslating;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: enabled ? cs.primary : cs.onSurface.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isTranslating) ...[
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: cs.onPrimary,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '翻译中',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: cs.onPrimary,
+                ),
+              ),
+            ] else ...[
+              Icon(
+                LucideIcons.languages,
+                size: 16,
+                color: enabled
+                    ? cs.onPrimary
+                    : cs.onSurface.withValues(alpha: 0.3),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '翻译',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: enabled
+                      ? cs.onPrimary
+                      : cs.onSurface.withValues(alpha: 0.3),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Output section
+// ---------------------------------------------------------------------------
+
+class _OutputSection extends StatelessWidget {
+  const _OutputSection({
     required this.text,
-    required this.isWide,
     required this.copied,
+    required this.isWide,
     required this.onCopy,
   });
 
   final String text;
-  final bool isWide;
   final bool copied;
+  final bool isWide;
   final VoidCallback onCopy;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return _Panel(
-      isWide: isWide,
-      background: theme.colorScheme.onSurface.withValues(alpha: 0.04),
+    final cs = theme.colorScheme;
+    final hasText = text.isNotEmpty;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        borderRadius: isWide ? BorderRadius.circular(16) : null,
+        border: isWide ? Border.all(color: theme.dividerColor) : null,
+        boxShadow: isWide
+            ? const [
+                BoxShadow(
+                  color: Color(0x0D000000),
+                  blurRadius: 12,
+                  offset: Offset(0, 4),
+                ),
+              ]
+            : null,
+      ),
       child: Column(
         children: [
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: Text(
-                  text.isEmpty ? '翻译结果将显示在这里...' : text,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: text.isEmpty
-                        ? theme.colorScheme.onSurfaceVariant
-                        : theme.colorScheme.onSurface,
+          // Label row
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+            child: Row(
+              children: [
+                Text(
+                  '译文',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
                   ),
                 ),
-              ),
+                const Spacer(),
+                if (hasText)
+                  _MiniIconButton(
+                    icon: copied ? LucideIcons.check : LucideIcons.copy,
+                    onTap: onCopy,
+                    color: copied ? Colors.green : cs.onSurfaceVariant,
+                  ),
+              ],
             ),
           ),
-          Container(
-            constraints: const BoxConstraints(minHeight: 52),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              border: Border(
-                top: BorderSide(
-                  color: theme.dividerColor.withValues(alpha: 0.5),
-                ),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                FloatingActionButton.small(
-                  heroTag: 'translate-copy',
-                  elevation: 0,
-                  backgroundColor: copied
-                      ? Colors.green
-                      : theme.colorScheme.surfaceContainerHighest,
-                  foregroundColor: copied
-                      ? Colors.white
-                      : theme.colorScheme.onSurface,
-                  onPressed: text.isEmpty ? null : onCopy,
-                  child: Icon(
-                    copied ? LucideIcons.check : LucideIcons.copy,
-                    size: 18,
+          // Output text
+          Expanded(
+            child: SingleChildScrollView(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: SelectableText(
+                  hasText ? text : '翻译结果将显示在这里...',
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: hasText
+                        ? cs.onSurface
+                        : cs.onSurfaceVariant.withValues(alpha: 0.5),
+                    height: 1.6,
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         ],
@@ -590,40 +857,37 @@ class _OutputCard extends StatelessWidget {
   }
 }
 
-/// A panel that is borderless edge-to-edge on mobile and a rounded bordered
-/// card on desktop, mirroring the web `Paper` per-breakpoint styling.
-class _Panel extends StatelessWidget {
-  const _Panel({
-    required this.isWide,
-    required this.background,
-    required this.child,
+// ---------------------------------------------------------------------------
+// Mini icon button (used in label rows)
+// ---------------------------------------------------------------------------
+
+class _MiniIconButton extends StatelessWidget {
+  const _MiniIconButton({
+    required this.icon,
+    required this.onTap,
+    this.color,
   });
 
-  final bool isWide;
-  final Color background;
-  final Widget child;
+  final IconData icon;
+  final VoidCallback onTap;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: isWide ? BorderRadius.circular(12) : null,
-        border: isWide
-            ? Border.all(color: theme.dividerColor.withValues(alpha: 0.5))
-            : null,
-      ),
-      child: ClipRRect(
-        borderRadius: isWide ? BorderRadius.circular(12) : BorderRadius.zero,
-        child: child,
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Icon(icon, size: 16, color: color),
       ),
     );
   }
 }
 
-/// The 翻译历史 list (shared by the mobile bottom sheet and desktop drawer):
-/// header with 清空 / 关闭, then the records with star / delete actions.
+// ---------------------------------------------------------------------------
+// History panel (shared by bottom sheet and desktop drawer)
+// ---------------------------------------------------------------------------
+
 class _HistoryPanel extends ConsumerWidget {
   const _HistoryPanel({required this.onSelect});
 
@@ -632,45 +896,67 @@ class _HistoryPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final historiesAsync = ref.watch(translateHistoryStoreProvider);
     final histories = historiesAsync.value ?? const <TranslateHistory>[];
 
     return SafeArea(
       child: Column(
         children: [
+          // Header
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
             child: Row(
               children: [
-                Text('翻译历史', style: theme.textTheme.titleMedium),
+                Text(
+                  '翻译历史',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const Spacer(),
                 if (histories.isNotEmpty)
-                  IconButton(
-                    onPressed: () => _confirmClear(context, ref),
-                    color: theme.colorScheme.error,
-                    icon: const Icon(LucideIcons.trash2, size: 18),
+                  _MiniIconButton(
+                    icon: LucideIcons.trash2,
+                    onTap: () => _confirmClear(context, ref),
+                    color: cs.error,
                   ),
-                IconButton(
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  icon: const Icon(LucideIcons.x, size: 18),
+                _MiniIconButton(
+                  icon: LucideIcons.x,
+                  onTap: () => Navigator.of(context).maybePop(),
+                  color: cs.onSurfaceVariant,
                 ),
               ],
             ),
           ),
           const Divider(height: 1),
+          // List
           Expanded(
             child: histories.isEmpty
                 ? Center(
-                    child: Text(
-                      '暂无翻译历史',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          LucideIcons.history,
+                          size: 40,
+                          color: cs.onSurfaceVariant.withValues(alpha: 0.3),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          '暂无翻译历史',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+                          ),
+                        ),
+                      ],
                     ),
                   )
                 : ListView.separated(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
                     itemCount: histories.length,
-                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    separatorBuilder: (_, _) =>
+                        Divider(height: 1, indent: 16, endIndent: 16),
                     itemBuilder: (context, i) {
                       final h = histories[i];
                       return _HistoryTile(
@@ -733,7 +1019,8 @@ class _HistoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final secondary = theme.colorScheme.onSurfaceVariant;
+    final cs = theme.colorScheme;
+    final secondary = cs.onSurfaceVariant;
     final from = translateLanguageByCode(history.sourceLanguage);
     final to = translateLanguageByCode(history.targetLanguage);
     final fromLabel = history.sourceLanguage == kTranslateAutoLang
@@ -743,52 +1030,70 @@ class _HistoryTile extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Language + date row
             Row(
               children: [
-                Text(
-                  '$fromLabel → ${to.label}',
-                  style: theme.textTheme.bodySmall?.copyWith(color: secondary),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: cs.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '$fromLabel → ${to.label}',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cs.primary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
                 const Spacer(),
                 Text(
                   _formatDate(history.createdAt),
-                  style: theme.textTheme.bodySmall?.copyWith(color: secondary),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: secondary.withValues(alpha: 0.5),
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
+            // Source text
             Text(
               history.sourceText,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodyMedium,
             ),
+            const SizedBox(height: 4),
+            // Target text
             Text(
               history.targetText,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium?.copyWith(color: secondary),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: secondary.withValues(alpha: 0.7),
+              ),
             ),
+            // Actions row
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  onPressed: onStar,
-                  icon: Icon(
-                    history.star ? LucideIcons.star : LucideIcons.starOff,
-                    size: 16,
-                    color: history.star ? const Color(0xFFF59E0B) : null,
-                  ),
+                _MiniIconButton(
+                  icon:
+                      history.star ? LucideIcons.star : LucideIcons.starOff,
+                  onTap: onStar,
+                  color: history.star ? const Color(0xFFF59E0B) : secondary,
                 ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  onPressed: onDelete,
-                  icon: const Icon(LucideIcons.trash2, size: 16),
+                const SizedBox(width: 4),
+                _MiniIconButton(
+                  icon: LucideIcons.trash2,
+                  onTap: onDelete,
+                  color: secondary,
                 ),
               ],
             ),
