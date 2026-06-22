@@ -284,9 +284,8 @@ class _ModelConfigTabState extends ConsumerState<_ModelConfigTab>
   };
 
   void _onModelSelect(AuxiliaryModelController ctrl, ModelProvider p, Model m) {
+    // Case 0 (chat) is handled by the dialog's default path — see onTap above.
     switch (widget.index) {
-      case 0:
-        ctrl.setChatModel(p.id, m.id);
       case 1:
         ctrl.setFastModel(p.id, m.id);
       case 2:
@@ -461,12 +460,17 @@ class _ModelConfigTabState extends ConsumerState<_ModelConfigTab>
 
               // Model picker row
               InkWell(
-                onTap: () => showModelSelectorDialog(
-                  context,
-                  onSelect: (p, m) => _onModelSelect(ctrl, p, m),
-                  selectedProviderId: selectedProviderId,
-                  selectedModelId: selectedModelId,
-                ),
+                onTap: () => widget.index == 0
+                    // Chat tab: let the dialog use its default path which
+                    // properly awaits selectCurrentModel; the controller's
+                    // listener syncs chatModelKey automatically.
+                    ? showModelSelectorDialog(context)
+                    : showModelSelectorDialog(
+                        context,
+                        onSelect: (p, m) => _onModelSelect(ctrl, p, m),
+                        selectedProviderId: selectedProviderId,
+                        selectedModelId: selectedModelId,
+                      ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,
