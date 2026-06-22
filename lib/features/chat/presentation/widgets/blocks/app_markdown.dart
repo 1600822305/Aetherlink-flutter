@@ -1,5 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -179,6 +182,36 @@ class _MarkdownTableState extends State<MarkdownTable> {
     return buf.toString().trimRight();
   }
 
+  Future<void> _downloadCsv(BuildContext _) async {
+    final csv = _buildCsv();
+    final bytes = utf8.encode(csv);
+    final now = DateTime.now();
+    final ts =
+        '${now.year}${_two(now.month)}${_two(now.day)}_${_two(now.hour)}${_two(now.minute)}${_two(now.second)}';
+    final filename = 'table_$ts.csv';
+
+    final path = await FilePicker.saveFile(
+      dialogTitle: '导出 CSV',
+      fileName: filename,
+      type: FileType.custom,
+      allowedExtensions: ['csv'],
+      bytes: Uint8List.fromList(bytes),
+    );
+    if (path == null) return;
+    // On desktop, FilePicker.saveFile doesn't write bytes — write manually.
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      await File(path).writeAsString(csv);
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)
+      ?..clearSnackBars()
+      ..showSnackBar(
+        const SnackBar(content: Text('已导出'), duration: Duration(seconds: 2)),
+      );
+  }
+
+  static String _two(int v) => v.toString().padLeft(2, '0');
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -278,11 +311,7 @@ class _MarkdownTableState extends State<MarkdownTable> {
                           _ToolbarIconButton(
                             icon: LucideIcons.download,
                             tooltip: '下载 CSV',
-                            onTap: () {
-                              Clipboard.setData(
-                                ClipboardData(text: _buildCsv()),
-                              );
-                            },
+                            onTap: () => _downloadCsv(context),
                           ),
                         ],
                       ),
