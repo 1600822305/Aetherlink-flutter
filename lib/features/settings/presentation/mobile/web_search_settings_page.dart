@@ -55,7 +55,7 @@ class WebSearchSettingsPage extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _providersCard(context, theme, ws),
+          _providersCard(context, ref, theme, ws),
           const SizedBox(height: 16),
           _commonOptionsCard(theme, ref, ws),
         ],
@@ -69,6 +69,7 @@ class WebSearchSettingsPage extends ConsumerWidget {
 
   Widget _providersCard(
     BuildContext context,
+    WidgetRef ref,
     ThemeData theme,
     WebSearchSettings ws,
   ) {
@@ -126,6 +127,9 @@ class WebSearchSettingsPage extends ConsumerWidget {
                 onTap: () => context.push(
                   AppRouter.searchProviderDetailPath(providers[i].id),
                 ),
+                onDelete: () => ref
+                    .read(webSearchSettingsControllerProvider.notifier)
+                    .removeProvider(providers[i].id),
               ),
             ],
 
@@ -257,27 +261,49 @@ class _CardHeader extends StatelessWidget {
   }
 }
 
-/// A provider row showing icon, name, description, active badge, and chevron.
-class _ProviderRow extends StatelessWidget {
+/// A provider row showing icon, name, description, active badge, delete icon,
+/// and chevron. The delete icon uses a two-tap pattern: first tap turns it red
+/// (confirm state), second tap performs the deletion. Tapping elsewhere or
+/// waiting 2 seconds resets the confirm state.
+class _ProviderRow extends StatefulWidget {
   const _ProviderRow({
     required this.config,
     required this.isActive,
     required this.onTap,
+    required this.onDelete,
   });
 
   final SearchProviderConfig config;
   final bool isActive;
   final VoidCallback onTap;
+  final VoidCallback onDelete;
+
+  @override
+  State<_ProviderRow> createState() => _ProviderRowState();
+}
+
+class _ProviderRowState extends State<_ProviderRow> {
+  bool _confirmDelete = false;
+
+  void _resetConfirm() {
+    if (_confirmDelete && mounted) setState(() => _confirmDelete = false);
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final preset = presetForId(config.id);
+    final preset = presetForId(widget.config.id);
     final accent = preset?.accent ?? theme.colorScheme.primary;
     final icon = preset?.icon ?? LucideIcons.globe;
 
     return InkWell(
-      onTap: onTap,
+      onTap: () {
+        if (_confirmDelete) {
+          setState(() => _confirmDelete = false);
+          return;
+        }
+        widget.onTap();
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
@@ -298,15 +324,18 @@ class _ProviderRow extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        config.name,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: theme.colorScheme.onSurface,
+                      Flexible(
+                        child: Text(
+                          widget.config.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurface,
+                          ),
                         ),
                       ),
-                      if (isActive) ...[
+                      if (widget.isActive) ...[
                         const SizedBox(width: 6),
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -326,7 +355,7 @@ class _ProviderRow extends StatelessWidget {
                           ),
                         ),
                       ],
-                      if (!config.isEnabled) ...[
+                      if (!widget.config.isEnabled) ...[
                         const SizedBox(width: 6),
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -349,7 +378,7 @@ class _ProviderRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    preset?.description ?? config.apiHost,
+                    preset?.description ?? widget.config.apiHost,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium?.copyWith(
@@ -361,6 +390,31 @@ class _ProviderRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
+            // Delete icon: first tap → red confirm, second tap → delete.
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                if (_confirmDelete) {
+                  widget.onDelete();
+                } else {
+                  setState(() => _confirmDelete = true);
+                  Future.delayed(
+                      const Duration(seconds: 2), _resetConfirm);
+                }
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  LucideIcons.trash2,
+                  size: 16,
+                  color: _confirmDelete
+                      ? const Color(0xFFEF4444)
+                      : theme.colorScheme.onSurfaceVariant
+                          .withValues(alpha: 0.4),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
             Icon(
               LucideIcons.chevronRight,
               size: 18,
