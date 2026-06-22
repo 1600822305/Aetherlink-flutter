@@ -54,6 +54,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/mcp_bridge_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_prompt.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/settings_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
 import 'package:aetherlink_flutter/shared/services/web_search_service.dart';
 import 'package:aetherlink_flutter/shared/utils/system_prompt_variables.dart';
@@ -1048,27 +1049,77 @@ class ChatController extends _$ChatController {
 
           // Run each requested tool — built-ins in-process, remote tools over a
           // live connection — and render a 工具 block per call.
+          // Settings tools with `confirm` permission pause for user approval.
           final results = <({LlmToolCall call, McpToolResult result})>[];
           for (final call in runnable) {
             final route = mcp.routes[call.name]!;
             final args = decodeToolArguments(call.arguments);
-            final result = await _runTool(route, call.name, args);
+            final blockId = generateId('block');
+            final toolId = call.id.isEmpty ? call.name : call.id;
+
+            final needsConfirm =
+                route is _SettingsToolRoute &&
+                inferSettingsPermission(call.name) ==
+                    SettingsToolPermission.confirm;
+
+            McpToolResult result;
+            if (needsConfirm) {
+              // Show a pending-confirmation block and wait for user action.
+              completed.add(
+                MessageBlock.tool(
+                  id: blockId,
+                  messageId: assistantMessageId,
+                  status: MessageBlockStatus.processing,
+                  createdAt: assistantTime,
+                  toolId: toolId,
+                  toolName: call.name,
+                  arguments: args,
+                  metadata: const {'needsConfirmation': true},
+                ),
+              );
+              update();
+
+              final approved = await ref
+                  .read(toolConfirmationProvider.notifier)
+                  .request(
+                    ToolConfirmationRequest(
+                      id: blockId,
+                      toolName: call.name,
+                      summary: _confirmSummary(call.name, args),
+                      args: args,
+                    ),
+                  );
+
+              if (approved) {
+                result = await _runTool(route, call.name, args);
+              } else {
+                result =
+                    const McpToolResult('用户拒绝了此操作', isError: true);
+              }
+
+              // Replace the pending block with the final result.
+              completed.removeWhere((b) => b is ToolBlock && b.id == blockId);
+            } else {
+              result = await _runTool(route, call.name, args);
+            }
+
             results.add((call: call, result: result));
             completed.add(
               MessageBlock.tool(
-                id: generateId('block'),
+                id: blockId,
                 messageId: assistantMessageId,
                 status: result.isError
                     ? MessageBlockStatus.error
                     : MessageBlockStatus.success,
                 createdAt: assistantTime,
                 updatedAt: DateTime.now(),
-                toolId: call.id.isEmpty ? call.name : call.id,
+                toolId: toolId,
                 toolName: call.name,
                 arguments: args,
                 content: result.text,
               ),
             );
+            if (needsConfirm) update();
           }
 
           // Feed the assistant turn + tool results back so the model can continue.
@@ -1148,9 +1199,9 @@ class ChatController extends _$ChatController {
       }
     }
 
-    // Terminal failure: persist any key stat changes, then mark the message
-    // errored — keeping whatever the last attempt streamed — exactly like the
-    // original single-key error path.
+    // Terminal failure: reject any pending confirmations, persist any key stat
+    // changes, then mark the message errored.
+    ref.read(toolConfirmationProvider.notifier).rejectAll();
     await persistKeyUpdates();
     final messageText = _errorMessage(
       lastError ?? const _NoUsableApiKeyException(),
@@ -2550,6 +2601,22 @@ class ChatController extends _$ChatController {
   String _errorMessage(Object error) {
     if (error is Failure) return error.message;
     return error.toString();
+  }
+
+  /// Human-readable summary for a confirmation dialog.
+  static String _confirmSummary(String toolName, Map<String, Object?> args) {
+    switch (toolName) {
+      case 'create_provider':
+        return '创建模型供应商「${args['name'] ?? '未命名'}」';
+      case 'delete_provider':
+        return '删除模型供应商（ID: ${args['id']})';
+      case 'add_model':
+        return '向供应商添加模型「${args['name'] ?? '未命名'}」';
+      case 'delete_model':
+        return '从供应商删除模型「${args['modelId'] ?? ''}」';
+      default:
+        return '执行操作: $toolName';
+    }
   }
 }
 
