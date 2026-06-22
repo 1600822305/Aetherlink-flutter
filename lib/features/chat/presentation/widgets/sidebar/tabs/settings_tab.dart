@@ -123,7 +123,7 @@ class SettingsTab extends ConsumerWidget {
               max: 100,
               divisions: 100,
               valueLabel: s.contextCount >= 100 ? '最大' : '${s.contextCount}',
-              marks: const {0: '0', 50: '50', 100: '最大'},
+              marks: {0.0: '0', 50.0: '50', 100.0: '最大'},
               onChanged: (v) => c.setContextCount(v.round()),
             ),
             _SwitchSettingRow(
