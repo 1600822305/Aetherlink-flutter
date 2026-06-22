@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.d
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/translate_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/agent_prompts_settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/auxiliary_model_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/appearance_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/behavior_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/chat_interface_settings_page.dart';
@@ -49,6 +50,7 @@ abstract final class AppRouter {
   static const String settingsPath = '/settings';
   static const String aboutPath = '/about';
   static const String defaultModelPath = '/settings/default-model';
+  static const String auxiliaryModelPath = '/settings/auxiliary-model';
   static const String appearancePath = '/settings/appearance';
   static const String inputBoxSettingsPath = '/settings/appearance/input-box';
   static const String topToolbarSettingsPath =
@@ -250,6 +252,12 @@ abstract final class AppRouter {
         name: 'default-model',
         pageBuilder: (context, state) =>
             _instant(state, const DefaultModelSettingsPage()),
+      ),
+      GoRoute(
+        path: auxiliaryModelPath,
+        name: 'auxiliary-model',
+        pageBuilder: (context, state) =>
+            _instant(state, const AuxiliaryModelSettingsPage()),
       ),
       GoRoute(
         path: appearancePath,
