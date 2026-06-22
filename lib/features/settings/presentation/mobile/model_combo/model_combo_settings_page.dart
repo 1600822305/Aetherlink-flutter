@@ -122,8 +122,10 @@ class ModelComboSettingsPage extends ConsumerWidget {
     List<ModelProvider> providers,
   ) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) =>
+      PageRouteBuilder<void>(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (_, __, ___) =>
             CreateComboPage(strategy: strategy, providers: providers),
       ),
     );
@@ -344,8 +346,11 @@ class _ComboCard extends ConsumerWidget {
     return InkWell(
       onTap: () {
         Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => EditComboPage(combo: combo, providers: providers),
+          PageRouteBuilder<void>(
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            pageBuilder: (_, __, ___) =>
+                EditComboPage(combo: combo, providers: providers),
           ),
         );
       },
