@@ -338,7 +338,7 @@ final class AppModelCatalogProvider
   }
 }
 
-String _$appModelCatalogHash() => r'2642aa6fc0ca2550261234a54f941eb5ffe76f3a';
+String _$appModelCatalogHash() => r'775132ef9e370bfc769413d15ea0667d067e2155';
 
 /// The LLM gateway factory for the settings 测试模式 (per-model connectivity
 /// test). Re-exposed from `chat`'s composed factory so the settings UI can run
@@ -458,7 +458,7 @@ final class ModelStoreProvider extends $NotifierProvider<ModelStore, void> {
   }
 }
 
-String _$modelStoreHash() => r'810bc4ccc1b3c97fe89c1411f19bfc4a4b3f3c7f';
+String _$modelStoreHash() => r'6fe6c161b33c5585b4d9124d3a8f79625cc2ffcb';
 
 /// Write API over the model store for the settings UI. Every mutation persists
 /// through the [ModelRepository] port and then invalidates

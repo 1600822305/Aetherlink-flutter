@@ -59,7 +59,7 @@ final class SkillsProvider extends $AsyncNotifierProvider<Skills, List<Skill>> {
   Skills create() => Skills();
 }
 
-String _$skillsHash() => r'14461bf45f1b2031132141597b5d20dddec6e932';
+String _$skillsHash() => r'611446c693a16aa9ddc8d50931606d134289c048';
 
 /// The skill library, persisted through the app-level key/value store as a JSON
 /// list — the port of the web `SkillManager` (CRUD / toggle / built-in

@@ -12,6 +12,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/chat_in
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/default_model_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/input_box_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_server_detail_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_combo/model_combo_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_server_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/message_bubble_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/network_proxy_settings_page.dart';
@@ -66,6 +67,7 @@ abstract final class AppRouter {
   static const String addSearchProviderPath = '/settings/web-search/add';
   static String searchProviderDetailPath(String providerId) =>
       '/settings/web-search/provider/$providerId';
+  static const String modelComboPath = '/settings/model-combo';
   static const String networkProxyPath = '/settings/network-proxy';
   static const String behaviorPath = '/settings/behavior';
   static const String welcomePath = '/welcome';
@@ -135,6 +137,12 @@ abstract final class AppRouter {
         path: aboutPath,
         name: 'about',
         pageBuilder: (context, state) => _instant(state, const AboutPage()),
+      ),
+      GoRoute(
+        path: modelComboPath,
+        name: 'model-combo',
+        pageBuilder: (context, state) =>
+            _instant(state, const ModelComboSettingsPage()),
       ),
       GoRoute(
         path: mcpServerPath,

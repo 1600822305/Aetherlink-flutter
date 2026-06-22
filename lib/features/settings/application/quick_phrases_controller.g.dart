@@ -55,7 +55,7 @@ final class GlobalQuickPhrasesProvider
 }
 
 String _$globalQuickPhrasesHash() =>
-    r'89606fc4b9c8a4291d9b5c7a5c12209051b65dba';
+    r'4d367b8cfa6cfab9712bf7f78008b4ba6ffc57c5';
 
 /// The global (assistant-independent) 快捷短语, persisted through the app-level
 /// key/value store as a JSON list — the port of `QuickPhraseService`'s global

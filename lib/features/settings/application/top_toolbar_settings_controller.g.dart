@@ -12,12 +12,9 @@ part of 'top_toolbar_settings_controller.dart';
 /// `settings.topToolbar.componentPositions` + `modelSelectorDisplayStyle`), so
 /// the appearance 顶部工具栏设置 sub-page stays a pure view.
 ///
-/// Like [ThemeModeController] / [FontSizeController] /
-/// [InputBoxSettingsController] it lives in memory only for now: the original
-/// persisted these in the `settings` slice, but where app preferences live
-/// (shared_preferences vs a Drift settings table) is a separate decision, so
-/// the layout resets to [TopToolbarSettings]'s defaults on each cold start
-/// until persistence is wired.
+/// Hydrated from the Drift key/value store on first build and written through
+/// on every change, so the layout survives a full restart (the web kept it in
+/// the `settings` slice).
 ///
 /// `keepAlive: true`: an app-level preference that must survive the settings
 /// page being disposed when navigating away.
@@ -30,12 +27,9 @@ final topToolbarSettingsControllerProvider =
 /// `settings.topToolbar.componentPositions` + `modelSelectorDisplayStyle`), so
 /// the appearance 顶部工具栏设置 sub-page stays a pure view.
 ///
-/// Like [ThemeModeController] / [FontSizeController] /
-/// [InputBoxSettingsController] it lives in memory only for now: the original
-/// persisted these in the `settings` slice, but where app preferences live
-/// (shared_preferences vs a Drift settings table) is a separate decision, so
-/// the layout resets to [TopToolbarSettings]'s defaults on each cold start
-/// until persistence is wired.
+/// Hydrated from the Drift key/value store on first build and written through
+/// on every change, so the layout survives a full restart (the web kept it in
+/// the `settings` slice).
 ///
 /// `keepAlive: true`: an app-level preference that must survive the settings
 /// page being disposed when navigating away.
@@ -46,12 +40,9 @@ final class TopToolbarSettingsControllerProvider
   /// `settings.topToolbar.componentPositions` + `modelSelectorDisplayStyle`), so
   /// the appearance 顶部工具栏设置 sub-page stays a pure view.
   ///
-  /// Like [ThemeModeController] / [FontSizeController] /
-  /// [InputBoxSettingsController] it lives in memory only for now: the original
-  /// persisted these in the `settings` slice, but where app preferences live
-  /// (shared_preferences vs a Drift settings table) is a separate decision, so
-  /// the layout resets to [TopToolbarSettings]'s defaults on each cold start
-  /// until persistence is wired.
+  /// Hydrated from the Drift key/value store on first build and written through
+  /// on every change, so the layout survives a full restart (the web kept it in
+  /// the `settings` slice).
   ///
   /// `keepAlive: true`: an app-level preference that must survive the settings
   /// page being disposed when navigating away.
@@ -83,18 +74,15 @@ final class TopToolbarSettingsControllerProvider
 }
 
 String _$topToolbarSettingsControllerHash() =>
-    r'351b31731248c51c782d7822caeddb0e69a4f4f4';
+    r'48ab4cba8b5fb06211645bf841bf2631df743bee';
 
 /// Holds the chat top-toolbar DIY configuration (the original
 /// `settings.topToolbar.componentPositions` + `modelSelectorDisplayStyle`), so
 /// the appearance 顶部工具栏设置 sub-page stays a pure view.
 ///
-/// Like [ThemeModeController] / [FontSizeController] /
-/// [InputBoxSettingsController] it lives in memory only for now: the original
-/// persisted these in the `settings` slice, but where app preferences live
-/// (shared_preferences vs a Drift settings table) is a separate decision, so
-/// the layout resets to [TopToolbarSettings]'s defaults on each cold start
-/// until persistence is wired.
+/// Hydrated from the Drift key/value store on first build and written through
+/// on every change, so the layout survives a full restart (the web kept it in
+/// the `settings` slice).
 ///
 /// `keepAlive: true`: an app-level preference that must survive the settings
 /// page being disposed when navigating away.

@@ -7,6 +7,9 @@ import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/app/di/system_prompt_variables_access.dart';
+import 'package:aetherlink_flutter/features/chat/application/combo_executor.dart';
+import 'package:aetherlink_flutter/features/settings/application/model_combo_controller.dart';
+import 'package:aetherlink_flutter/shared/domain/model_combo.dart';
 import 'package:aetherlink_flutter/core/error/failure.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
@@ -118,6 +121,20 @@ class ChatController extends _$ChatController {
 
     final snapshot = state.value ?? ChatState.initial();
     if (snapshot.isStreaming) return;
+
+    // Check if a combo is active — if so, delegate to the combo flow.
+    final comboState = ref.read(modelComboControllerProvider);
+    final activeComboId = comboState.selectedComboId;
+    if (activeComboId != null) {
+      final resolution = await ref.read(
+        resolveComboProvider(activeComboId).future,
+      );
+      if (resolution != null &&
+          resolution.combo.strategy == ModelComboStrategy.sequential) {
+        await _sendCombo(trimmed, resolution, attachments: attachments);
+        return;
+      }
+    }
 
     final current = await ref.read(appCurrentModelProvider.future);
     if (current == null) return;
@@ -240,6 +257,208 @@ class ChatController extends _$ChatController {
       assistantView: assistantView,
       mcp: mcp,
     );
+  }
+
+  /// Sends a user message and streams the combo (sequential) response.
+  /// Phase 1: streams the thinking model's reasoning into a thinking block.
+  /// Phase 2: streams the generating model's answer into the main text block.
+  Future<void> _sendCombo(
+    String text,
+    ComboResolution resolution, {
+    List<ComposerAttachment> attachments = const <ComposerAttachment>[],
+  }) async {
+    final snapshot = state.value ?? ChatState.initial();
+    final topicId = await _ensureTopic();
+    final now = DateTime.now();
+    final thinking = resolution.thinkingModel;
+    final generating = resolution.generatingModel;
+    if (thinking == null || generating == null) return;
+
+    // 1. Persist user message.
+    final userMessageId = generateId('msg');
+    final hasText = text.isNotEmpty;
+    final userBlocks = <MessageBlock>[
+      if (hasText)
+        MessageBlock.mainText(
+          id: generateId('block'),
+          messageId: userMessageId,
+          status: MessageBlockStatus.success,
+          createdAt: now,
+          content: text,
+        ),
+      for (final attachment in attachments)
+        _attachmentBlock(
+          messageId: userMessageId,
+          createdAt: now,
+          attachment: attachment,
+        ),
+    ];
+    final userMessage = Message(
+      id: userMessageId,
+      role: MessageRole.user,
+      assistantId: _assistantId,
+      topicId: topicId,
+      createdAt: now,
+      status: MessageStatus.success,
+      blocks: <String>[for (final block in userBlocks) block.id],
+    );
+    await _repo.saveMessage(userMessage);
+    for (final block in userBlocks) {
+      await _repo.saveMessageBlock(block);
+    }
+
+    // 2. Assistant message with a thinking block + main text block.
+    final assistantTime = now.add(const Duration(microseconds: 1));
+    final assistantMessageId = generateId('msg');
+    final thinkingBlockId = generateId('block');
+    final mainBlockId = generateId('block');
+
+    final assistantMessage = Message(
+      id: assistantMessageId,
+      role: MessageRole.assistant,
+      assistantId: _assistantId,
+      topicId: topicId,
+      createdAt: assistantTime,
+      status: MessageStatus.streaming,
+      model: generating.model,
+      askId: userMessageId,
+      blocks: <String>[thinkingBlockId, mainBlockId],
+    );
+    await _repo.saveMessage(assistantMessage);
+    await _repo.saveMessageBlock(
+      MessageBlock.thinking(
+        id: thinkingBlockId,
+        messageId: assistantMessageId,
+        status: MessageBlockStatus.streaming,
+        createdAt: assistantTime,
+        content: '',
+      ),
+    );
+    await _repo.saveMessageBlock(
+      MessageBlock.mainText(
+        id: mainBlockId,
+        messageId: assistantMessageId,
+        status: MessageBlockStatus.streaming,
+        createdAt: assistantTime,
+        content: '',
+      ),
+    );
+
+    final userView = ChatMessageView(
+      id: userMessageId,
+      role: MessageRole.user,
+      status: MessageStatus.success,
+      text: text,
+      blocks: userBlocks,
+      createdAt: now,
+    );
+    final comboLabel = '${thinking.model.name} → ${generating.model.name}';
+    var assistantView = ChatMessageView(
+      id: assistantMessageId,
+      role: MessageRole.assistant,
+      status: MessageStatus.streaming,
+      createdAt: assistantTime,
+      modelName: comboLabel,
+      providerName: '模型组合',
+    );
+    var views = [...snapshot.messages, userView, assistantView];
+    _emit(views, isStreaming: true);
+
+    // 3. Build messages for the thinking model request.
+    final ctx = _contextSettings();
+    final contextViews = _trimViews(views, ctx.contextCount);
+    final llmMessages = [
+      for (final view in contextViews)
+        if (view.role != MessageRole.assistant || view.text.isNotEmpty)
+          LlmMessage(role: view.role, content: _requestContent(view)),
+    ];
+
+    final gatewayFactory = ref.read(llmGatewayFactoryProvider);
+    final thinkingGateway = gatewayFactory.forModel(thinking.model);
+    final generatingGateway = gatewayFactory.forModel(generating.model);
+
+    final system = _systemFor(await _mcpSetup(), await _buildSystemPrompt());
+
+    try {
+      final reasoningBuf = StringBuffer();
+      final mainBuf = StringBuffer();
+
+      final comboStream = executeSequentialCombo(
+        resolution: resolution,
+        thinkingGateway: thinkingGateway,
+        generatingGateway: generatingGateway,
+        messages: llmMessages,
+        system: system,
+        maxTokens: ctx.maxTokens,
+      );
+
+      await for (final event in comboStream) {
+        switch (event) {
+          case ComboReasoningDelta(:final text):
+            reasoningBuf.write(text);
+            assistantView = assistantView.copyWith(
+              thinking: reasoningBuf.toString(),
+            );
+            views = [...views.take(views.length - 1), assistantView];
+            _emit(views, isStreaming: true);
+          case ComboTextDelta(:final text):
+            mainBuf.write(text);
+            assistantView = assistantView.copyWith(text: mainBuf.toString());
+            views = [...views.take(views.length - 1), assistantView];
+            _emit(views, isStreaming: true);
+          case ComboPhaseStart() || ComboPhaseDone() || ComboDone():
+            break;
+        }
+      }
+
+      // 4. Finalize.
+      assistantView = assistantView.copyWith(status: MessageStatus.success);
+      views = [...views.take(views.length - 1), assistantView];
+      _emit(views, isStreaming: false);
+
+      await _repo.saveMessageBlock(
+        MessageBlock.thinking(
+          id: thinkingBlockId,
+          messageId: assistantMessageId,
+          status: MessageBlockStatus.success,
+          createdAt: assistantTime,
+          content: reasoningBuf.toString(),
+        ),
+      );
+      await _repo.saveMessageBlock(
+        MessageBlock.mainText(
+          id: mainBlockId,
+          messageId: assistantMessageId,
+          status: MessageBlockStatus.success,
+          createdAt: assistantTime,
+          content: mainBuf.toString(),
+        ),
+      );
+      await _repo.saveMessage(
+        assistantMessage.copyWith(status: MessageStatus.success),
+      );
+    } on Object catch (e) {
+      final errorText = e is Failure ? e.message : e.toString();
+      assistantView = assistantView.copyWith(
+        status: MessageStatus.error,
+        text: errorText,
+      );
+      views = [...views.take(views.length - 1), assistantView];
+      _emit(views, isStreaming: false);
+
+      await _repo.saveMessageBlock(
+        MessageBlock.mainText(
+          id: mainBlockId,
+          messageId: assistantMessageId,
+          status: MessageBlockStatus.error,
+          createdAt: assistantTime,
+          content: errorText,
+        ),
+      );
+      await _repo.saveMessage(
+        assistantMessage.copyWith(status: MessageStatus.error),
+      );
+    }
   }
 
   /// Regenerates the assistant reply [messageId] in place.
@@ -1917,7 +2136,12 @@ class ChatController extends _$ChatController {
   ) async {
     switch (route) {
       case _BuiltinToolRoute(:final serverName, :final env):
-        return await runBuiltinTool(serverName, route.toolName, args, env: env) ??
+        return await runBuiltinTool(
+              serverName,
+              route.toolName,
+              args,
+              env: env,
+            ) ??
             McpToolResult('工具 $exposedName 无法在本地执行', isError: true);
       case _RemoteToolRoute(:final server):
         try {
@@ -2070,7 +2294,11 @@ class ChatController extends _$ChatController {
     }
     if (kLocallyRunnableBuiltins.contains(server.name)) {
       return await runBuiltinTool(
-            server.name, toolName, toolArgs, env: server.env) ??
+            server.name,
+            toolName,
+            toolArgs,
+            env: server.env,
+          ) ??
           McpToolResult('工具 $toolName 无法在本地执行', isError: true);
     }
     return ref
@@ -2141,10 +2369,12 @@ class ChatController extends _$ChatController {
   /// tools ride the native `tools` field. When 网络搜索 is active, a hint is
   /// appended encouraging the model to use the search tool.
   String? _systemFor(_McpSetup mcp, String? base) {
-    var prompt =
-        mcp.usePromptInjection ? buildMcpSystemPrompt(base, mcp.tools) : base;
+    var prompt = mcp.usePromptInjection
+        ? buildMcpSystemPrompt(base, mcp.tools)
+        : base;
     if (ref.read(inputModeControllerProvider) == InputMode.webSearch) {
-      const hint = '\n\n[网络搜索已启用] '
+      const hint =
+          '\n\n[网络搜索已启用] '
           '你可以使用 builtin_web_search 工具搜索互联网获取实时信息。'
           '当用户的问题可能需要最新信息时，请主动使用搜索工具。'
           '搜索结果中如果有有用的链接，请在回答中引用。';
@@ -2276,7 +2506,8 @@ const String _kWebSearchToolName = 'builtin_web_search';
 
 const McpToolDefinition _kWebSearchToolDefinition = McpToolDefinition(
   name: _kWebSearchToolName,
-  description: '网络搜索工具，用于查找实时信息、新闻和最新数据。\n\n'
+  description:
+      '网络搜索工具，用于查找实时信息、新闻和最新数据。\n\n'
       '使用场景：\n'
       '- 用户询问实时信息（天气、新闻、股票等）\n'
       '- 用户询问你不确定的事实\n'
@@ -2285,15 +2516,8 @@ const McpToolDefinition _kWebSearchToolDefinition = McpToolDefinition(
   inputSchema: {
     'type': 'object',
     'properties': {
-      'query': {
-        'type': 'string',
-        'description': '搜索查询关键词',
-      },
-      'maxResults': {
-        'type': 'number',
-        'description': '最大结果数',
-        'default': 5,
-      },
+      'query': {'type': 'string', 'description': '搜索查询关键词'},
+      'maxResults': {'type': 'number', 'description': '最大结果数', 'default': 5},
       'language': {
         'type': 'string',
         'description': '语言代码，如 zh-CN, en',

@@ -15,12 +15,9 @@ part of 'font_size_controller.dart';
 /// applied to the active theme, so every text style scales proportionally —
 /// matching the original theme's `fontScale = fontSize / 16` (`themes.ts`).
 ///
-/// Seeds [defaultSize] (16px = "标准"), the original default. Like
-/// [ThemeModeController], it lives in memory only for now: the original
-/// persisted `settings.fontSize`, but where app preferences live
-/// (shared_preferences vs a Drift settings table) is a separate decision, so
-/// the size resets to the default on each cold start until persistence is
-/// wired.
+/// Seeds [defaultSize] (16px = "标准"), the original default. Hydrated from the
+/// Drift key/value store on first build and written through on every change,
+/// so the size survives a full restart.
 ///
 /// `keepAlive: true`: an app-level preference that must survive the appearance
 /// page being disposed when navigating away, so it is not auto-disposed.
@@ -35,12 +32,9 @@ final fontSizeControllerProvider = FontSizeControllerProvider._();
 /// applied to the active theme, so every text style scales proportionally —
 /// matching the original theme's `fontScale = fontSize / 16` (`themes.ts`).
 ///
-/// Seeds [defaultSize] (16px = "标准"), the original default. Like
-/// [ThemeModeController], it lives in memory only for now: the original
-/// persisted `settings.fontSize`, but where app preferences live
-/// (shared_preferences vs a Drift settings table) is a separate decision, so
-/// the size resets to the default on each cold start until persistence is
-/// wired.
+/// Seeds [defaultSize] (16px = "标准"), the original default. Hydrated from the
+/// Drift key/value store on first build and written through on every change,
+/// so the size survives a full restart.
 ///
 /// `keepAlive: true`: an app-level preference that must survive the appearance
 /// page being disposed when navigating away, so it is not auto-disposed.
@@ -53,12 +47,9 @@ final class FontSizeControllerProvider
   /// applied to the active theme, so every text style scales proportionally —
   /// matching the original theme's `fontScale = fontSize / 16` (`themes.ts`).
   ///
-  /// Seeds [defaultSize] (16px = "标准"), the original default. Like
-  /// [ThemeModeController], it lives in memory only for now: the original
-  /// persisted `settings.fontSize`, but where app preferences live
-  /// (shared_preferences vs a Drift settings table) is a separate decision, so
-  /// the size resets to the default on each cold start until persistence is
-  /// wired.
+  /// Seeds [defaultSize] (16px = "标准"), the original default. Hydrated from the
+  /// Drift key/value store on first build and written through on every change,
+  /// so the size survives a full restart.
   ///
   /// `keepAlive: true`: an app-level preference that must survive the appearance
   /// page being disposed when navigating away, so it is not auto-disposed.
@@ -90,7 +81,7 @@ final class FontSizeControllerProvider
 }
 
 String _$fontSizeControllerHash() =>
-    r'e2ece35dd2c9bbbb86ea56b0cf9350bbf1a371f6';
+    r'8de0b8ca4e971f532fad3a6f34a59bb9e5a8a7e1';
 
 /// Holds the global base font size in px (the original `settings.fontSize`),
 /// so the appearance page stays a pure view.
@@ -99,12 +90,9 @@ String _$fontSizeControllerHash() =>
 /// applied to the active theme, so every text style scales proportionally —
 /// matching the original theme's `fontScale = fontSize / 16` (`themes.ts`).
 ///
-/// Seeds [defaultSize] (16px = "标准"), the original default. Like
-/// [ThemeModeController], it lives in memory only for now: the original
-/// persisted `settings.fontSize`, but where app preferences live
-/// (shared_preferences vs a Drift settings table) is a separate decision, so
-/// the size resets to the default on each cold start until persistence is
-/// wired.
+/// Seeds [defaultSize] (16px = "标准"), the original default. Hydrated from the
+/// Drift key/value store on first build and written through on every change,
+/// so the size survives a full restart.
 ///
 /// `keepAlive: true`: an app-level preference that must survive the appearance
 /// page being disposed when navigating away, so it is not auto-disposed.

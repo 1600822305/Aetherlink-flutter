@@ -71,7 +71,7 @@ final class SystemPromptVariablesControllerProvider
 }
 
 String _$systemPromptVariablesControllerHash() =>
-    r'21b380f8340c69e61e69adb2f44aa2c27cf46613';
+    r'a5772a2314bd615da1e77616129adab6d8a0eb06';
 
 /// Holds the 系统提示词变量注入 configuration (the original
 /// `settings.systemPromptVariables`), so the 智能体提示词集合 page stays a pure view

@@ -145,24 +145,27 @@ abstract class _$CurrentTopicId extends $Notifier<String?> {
   }
 }
 
-/// The active sidebar tab index (0 助手 / 1 话题 / 2 设置). Hydrated from / written
-/// through to persisted storage so the last tab is restored on reopening the
-/// drawer and on app restart — the port of the web `settings.sidebarTabIndex`
-/// (`setSidebarTabIndex`).
+/// The active sidebar tab index (0 助手 / 1 话题 / 2 设置). Session-only and held
+/// purely in memory: it remembers the last tab while the app runs (so reopening
+/// the drawer keeps the same tab), but it is **not** persisted, so a full app
+/// restart resets to the default 助手 tab. We deliberately diverge from the web
+/// (`settings.sidebarTabIndex`), which persisted it across restarts.
 
 @ProviderFor(SidebarTabIndex)
 final sidebarTabIndexProvider = SidebarTabIndexProvider._();
 
-/// The active sidebar tab index (0 助手 / 1 话题 / 2 设置). Hydrated from / written
-/// through to persisted storage so the last tab is restored on reopening the
-/// drawer and on app restart — the port of the web `settings.sidebarTabIndex`
-/// (`setSidebarTabIndex`).
+/// The active sidebar tab index (0 助手 / 1 话题 / 2 设置). Session-only and held
+/// purely in memory: it remembers the last tab while the app runs (so reopening
+/// the drawer keeps the same tab), but it is **not** persisted, so a full app
+/// restart resets to the default 助手 tab. We deliberately diverge from the web
+/// (`settings.sidebarTabIndex`), which persisted it across restarts.
 final class SidebarTabIndexProvider
     extends $NotifierProvider<SidebarTabIndex, int> {
-  /// The active sidebar tab index (0 助手 / 1 话题 / 2 设置). Hydrated from / written
-  /// through to persisted storage so the last tab is restored on reopening the
-  /// drawer and on app restart — the port of the web `settings.sidebarTabIndex`
-  /// (`setSidebarTabIndex`).
+  /// The active sidebar tab index (0 助手 / 1 话题 / 2 设置). Session-only and held
+  /// purely in memory: it remembers the last tab while the app runs (so reopening
+  /// the drawer keeps the same tab), but it is **not** persisted, so a full app
+  /// restart resets to the default 助手 tab. We deliberately diverge from the web
+  /// (`settings.sidebarTabIndex`), which persisted it across restarts.
   SidebarTabIndexProvider._()
     : super(
         from: null,
@@ -190,12 +193,13 @@ final class SidebarTabIndexProvider
   }
 }
 
-String _$sidebarTabIndexHash() => r'28771173d0cba39bdd9e7b5946ca17b15d18a904';
+String _$sidebarTabIndexHash() => r'f769b61d3056bc9a07804b0317790405be3b2aa3';
 
-/// The active sidebar tab index (0 助手 / 1 话题 / 2 设置). Hydrated from / written
-/// through to persisted storage so the last tab is restored on reopening the
-/// drawer and on app restart — the port of the web `settings.sidebarTabIndex`
-/// (`setSidebarTabIndex`).
+/// The active sidebar tab index (0 助手 / 1 话题 / 2 设置). Session-only and held
+/// purely in memory: it remembers the last tab while the app runs (so reopening
+/// the drawer keeps the same tab), but it is **not** persisted, so a full app
+/// restart resets to the default 助手 tab. We deliberately diverge from the web
+/// (`settings.sidebarTabIndex`), which persisted it across restarts.
 
 abstract class _$SidebarTabIndex extends $Notifier<int> {
   int build();
@@ -384,7 +388,7 @@ final class AssistantsProvider
   Assistants create() => Assistants();
 }
 
-String _$assistantsHash() => r'2c8e9da25492119b21ba8cadbc1dd8932b517367';
+String _$assistantsHash() => r'e7c183e3b57a0ec5acc131cab4b4614abea7277a';
 
 /// All assistants, persisted via Drift. On a truly fresh store (no assistants
 /// and no topics) it seeds the two web defaults (默认助手 + 网页分析助手), each with a
@@ -438,7 +442,7 @@ final class TopicsProvider extends $AsyncNotifierProvider<Topics, List<Topic>> {
   Topics create() => Topics();
 }
 
-String _$topicsHash() => r'4766977f5bdcb3b9dc1077f88197e44cfca926c6';
+String _$topicsHash() => r'c189e68ce0e614537ce44a686d905a39742f9111';
 
 /// All topics, persisted via Drift. Depends on [Assistants] so seeding (which
 /// creates the default topics) always runs first.
