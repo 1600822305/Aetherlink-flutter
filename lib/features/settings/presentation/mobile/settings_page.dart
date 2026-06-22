@@ -61,6 +61,12 @@ class SettingsPage extends ConsumerWidget {
         title: const Text(kSettingsTitle),
         actions: [
           IconButton(
+            icon: const Icon(LucideIcons.search),
+            color: theme.colorScheme.onSurfaceVariant,
+            tooltip: '搜索设置',
+            onPressed: () => context.push(AppRouter.settingsSearchPath),
+          ),
+          IconButton(
             icon: Icon(isCompact ? LucideIcons.list : LucideIcons.layoutGrid),
             color: theme.colorScheme.onSurfaceVariant,
             tooltip: isCompact

@@ -27,6 +27,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_p
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/model_provider_detail_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/multi_key_management_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/settings_search_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/skill_editor_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/skills_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/top_toolbar_settings_page.dart';
@@ -78,6 +79,7 @@ abstract final class AppRouter {
   static const String modelComboPath = '/settings/model-combo';
   static const String networkProxyPath = '/settings/network-proxy';
   static const String behaviorPath = '/settings/behavior';
+  static const String settingsSearchPath = '/settings/search';
   static const String welcomePath = '/welcome';
   static const String translatePath = '/translate';
 
@@ -246,6 +248,12 @@ abstract final class AppRouter {
         name: 'behavior',
         pageBuilder: (context, state) =>
             _instant(state, const BehaviorSettingsPage()),
+      ),
+      GoRoute(
+        path: settingsSearchPath,
+        name: 'settings-search',
+        pageBuilder: (context, state) =>
+            _instant(state, const SettingsSearchPage()),
       ),
       GoRoute(
         path: defaultModelPath,
