@@ -252,6 +252,7 @@ class ContextCondenseService {
     );
 
     final textParts = <String>[];
+    final originalMessagesData = <Map<String, dynamic>>[];
     int totalOriginalTokens = 0;
     for (final msg in messagesToCompress) {
       if (cancelToken?.isCancelled ?? false) {
@@ -266,6 +267,14 @@ class ContextCondenseService {
           text.length > 2000 ? '${text.substring(0, 2000)}…' : text;
       textParts.add('$role: $truncated');
       totalOriginalTokens += estimateTokens(text);
+
+      // Save original message data for potential restoration
+      originalMessagesData.add({
+        'role': msg.role.name,
+        'content': text,
+        'createdAt': msg.createdAt.toIso8601String(),
+        'assistantId': msg.assistantId,
+      });
     }
 
     if (textParts.isEmpty) {
@@ -349,6 +358,7 @@ class ContextCondenseService {
       tokensSaved: totalOriginalTokens - compressedTokens,
       compressedAt: DateTime.now(),
       modelId: model.model.id,
+      metadata: {'originalMessages': originalMessagesData},
     );
 
     final summaryMessage = Message(
@@ -386,6 +396,97 @@ class ContextCondenseService {
       originalMessageCount: messagesToCompress.length,
       originalTokens: totalOriginalTokens,
       compressedTokens: compressedTokens,
+    );
+  }
+
+  /// Restore original messages from a context summary block.
+  ///
+  /// Reads original messages from the block's metadata, recreates them as
+  /// individual messages with MainTextBlocks, deletes the summary message,
+  /// and refreshes the chat UI.
+  Future<CondenseResult> restore({
+    required ContextSummaryBlock block,
+  }) async {
+    try {
+      return await _restoreImpl(block: block);
+    } on Object catch (e) {
+      return CondenseResult(success: false, error: '恢复失败: $e');
+    }
+  }
+
+  Future<CondenseResult> _restoreImpl({
+    required ContextSummaryBlock block,
+  }) async {
+    final originalMessages =
+        (block.metadata?['originalMessages'] as List<dynamic>?)
+            ?.cast<Map<String, dynamic>>();
+    if (originalMessages == null || originalMessages.isEmpty) {
+      return const CondenseResult(
+        success: false,
+        error: '此摘要不包含原始消息数据，无法恢复',
+      );
+    }
+
+    // Find the summary message to get its topicId
+    final summaryMsg = await _repo.getMessage(block.messageId);
+    if (summaryMsg == null) {
+      return const CondenseResult(
+        success: false,
+        error: '找不到摘要消息',
+      );
+    }
+    final topicId = summaryMsg.topicId;
+
+    // Recreate original messages with their blocks
+    final restoredMessages = <Message>[];
+    final restoredBlocks = <MessageBlock>[];
+    for (final data in originalMessages) {
+      final msgId = generateId('msg');
+      final blockId = generateId('block');
+      final role = data['role'] == 'user' ? MessageRole.user : MessageRole.assistant;
+      final createdAt =
+          DateTime.tryParse(data['createdAt'] as String? ?? '') ?? DateTime.now();
+      final content = data['content'] as String? ?? '';
+      final assistantId = data['assistantId'] as String? ?? summaryMsg.assistantId;
+
+      restoredBlocks.add(MessageBlock.mainText(
+        id: blockId,
+        messageId: msgId,
+        status: MessageBlockStatus.success,
+        createdAt: createdAt,
+        content: content,
+      ));
+
+      restoredMessages.add(Message(
+        id: msgId,
+        role: role,
+        assistantId: assistantId,
+        topicId: topicId,
+        createdAt: createdAt,
+        status: MessageStatus.success,
+        blocks: [blockId],
+      ));
+    }
+
+    // Atomic transaction: delete summary + restore original messages
+    await _repo.runInTransaction(() async {
+      await _repo.deleteMessage(summaryMsg.id);
+      for (final b in restoredBlocks) {
+        await _repo.saveMessageBlock(b);
+      }
+      for (final m in restoredMessages) {
+        await _repo.saveMessage(m);
+      }
+    });
+
+    // Refresh UI
+    try {
+      refreshChat();
+    } on Object catch (_) {}
+
+    return CondenseResult(
+      success: true,
+      originalMessageCount: restoredMessages.length,
     );
   }
 
