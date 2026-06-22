@@ -112,30 +112,24 @@ class SettingsTab extends ConsumerWidget {
         _SettingsGroup(
           title: '上下文设置',
           subtitle:
-              '窗口: ${_formatInt(s.contextWindowSize)} | 输出: ${s.maxOutputTokens}',
+              '消息: ${s.contextCount >= 100 ? '最大' : '${s.contextCount} 条'}'
+              ' | 输出: ${s.enableMaxOutputTokens ? _formatInt(s.maxOutputTokens) : '默认'}',
           chipLabel: '兼容 API',
           children: [
-            _NumberSettingRow(
-              title: '上下文窗口大小',
-              description: '单位 token',
-              value: s.contextWindowSize,
-              min: 1000,
-              max: 2000000,
-              onChanged: c.setContextWindowSize,
-            ),
             _SliderSettingRow(
               title: '上下文消息数量',
-              description: '携带的历史消息条数',
+              description: '携带的历史消息条数，0 = 无记忆（每次独立对话）',
               value: s.contextCount.toDouble(),
               min: 0,
               max: 100,
               divisions: 100,
-              valueLabel: '${s.contextCount}',
+              valueLabel: s.contextCount >= 100 ? '最大' : '${s.contextCount}',
+              marks: const {0: '0', 50: '50', 100: '最大'},
               onChanged: (v) => c.setContextCount(v.round()),
             ),
             _SwitchSettingRow(
               title: '启用最大输出限制',
-              description: '限制单次回复的最大 token 数',
+              description: '关闭则使用模型默认值',
               value: s.enableMaxOutputTokens,
               onChanged: c.setEnableMaxOutputTokens,
             ),
@@ -148,6 +142,14 @@ class SettingsTab extends ConsumerWidget {
                 max: 200000,
                 onChanged: c.setMaxOutputTokens,
               ),
+            _NumberSettingRow(
+              title: '上下文窗口大小',
+              description: '模型可处理的总 Token 数（仅供参考，不限制实际发送）',
+              value: s.contextWindowSize,
+              min: 1000,
+              max: 2000000,
+              onChanged: c.setContextWindowSize,
+            ),
           ],
         ),
         const _SettingsDivider(),
@@ -897,6 +899,7 @@ class _SliderSettingRow extends StatelessWidget {
     required this.divisions,
     required this.valueLabel,
     required this.onChanged,
+    this.marks,
   });
 
   final String title;
@@ -907,6 +910,11 @@ class _SliderSettingRow extends StatelessWidget {
   final int divisions;
   final String valueLabel;
   final ValueChanged<double> onChanged;
+
+  /// Optional tick-mark labels keyed by their slider value (e.g.
+  /// `{0: '0', 50: '50', 100: '最大'}`). When non-null a row of labels is
+  /// rendered below the slider track, matching the original web UI.
+  final Map<double, String>? marks;
 
   @override
   Widget build(BuildContext context) {
@@ -952,6 +960,23 @@ class _SliderSettingRow extends StatelessWidget {
             label: valueLabel,
             onChanged: onChanged,
           ),
+          if (marks != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  for (final entry in marks!.entries)
+                    Text(
+                      entry.value,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: textSecondary,
+                      ),
+                    ),
+                ],
+              ),
+            ),
         ],
       ),
     );
