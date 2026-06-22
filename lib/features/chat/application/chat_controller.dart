@@ -12,6 +12,7 @@ import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/translate_controller.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/api_key_manager.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
@@ -203,11 +204,13 @@ class ChatController extends _$ChatController {
     // 3. Build the request from the current model + history (the user turn we
     // just added included; the empty assistant placeholder excluded).
     final mcp = await _mcpSetup();
+    final ctx = _contextSettings();
+    final contextViews = _trimViews(views, ctx.contextCount);
     final request = LlmChatRequest(
       model: effective,
       system: _systemFor(mcp, await _buildSystemPrompt()),
       messages: [
-        for (final view in views)
+        for (final view in contextViews)
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
             LlmMessage(
               role: view.role,
@@ -215,6 +218,7 @@ class ChatController extends _$ChatController {
               images: _requestImages(view),
             ),
       ],
+      maxTokens: ctx.maxTokens,
       tools: mcp.useFunctionTools ? mcp.tools : null,
       useResponsesAPI: current.provider.useResponsesAPI ?? false,
       extraHeaders: effective.providerExtraHeaders,
@@ -305,11 +309,13 @@ class ChatController extends _$ChatController {
     _emit(views, isStreaming: true);
 
     final mcp = await _mcpSetup();
+    final ctx = _contextSettings();
+    final contextViews = _trimViews(views.sublist(0, index), ctx.contextCount);
     final request = LlmChatRequest(
       model: effective,
       system: _systemFor(mcp, await _buildSystemPrompt()),
       messages: [
-        for (final view in views.sublist(0, index))
+        for (final view in contextViews)
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
             LlmMessage(
               role: view.role,
@@ -317,6 +323,7 @@ class ChatController extends _$ChatController {
               images: _requestImages(view),
             ),
       ],
+      maxTokens: ctx.maxTokens,
       tools: mcp.useFunctionTools ? mcp.tools : null,
       useResponsesAPI: current.provider.useResponsesAPI ?? false,
       extraHeaders: effective.providerExtraHeaders,
@@ -403,11 +410,13 @@ class ChatController extends _$ChatController {
     _emit(views, isStreaming: true);
 
     final mcp = await _mcpSetup();
+    final ctx = _contextSettings();
+    final contextViews = _trimViews(snapshot.messages, ctx.contextCount);
     final request = LlmChatRequest(
       model: effective,
       system: _systemFor(mcp, await _buildSystemPrompt()),
       messages: [
-        for (final view in snapshot.messages)
+        for (final view in contextViews)
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
             LlmMessage(
               role: view.role,
@@ -415,6 +424,7 @@ class ChatController extends _$ChatController {
               images: _requestImages(view),
             ),
       ],
+      maxTokens: ctx.maxTokens,
       tools: mcp.useFunctionTools ? mcp.tools : null,
       useResponsesAPI: current.provider.useResponsesAPI ?? false,
       extraHeaders: effective.providerExtraHeaders,
@@ -456,6 +466,29 @@ class ChatController extends _$ChatController {
       if (next.role == MessageRole.assistant) return next.id;
     }
     return null;
+  }
+
+  // ── Context-settings helpers ──────────────────────────────────────────────
+
+  /// Reads the sidebar 上下文设置 and returns the `maxTokens` to set on the
+  /// request (`null` when the user disabled the limit) and the `contextCount`
+  /// (number of history messages to include).
+  ({int contextCount, int? maxTokens}) _contextSettings() {
+    final s = ref.read(sidebarSettingsControllerProvider);
+    return (
+      contextCount: s.contextCount,
+      maxTokens: s.enableMaxOutputTokens ? s.maxOutputTokens : null,
+    );
+  }
+
+  /// Trims [views] to the last [count] entries so only recent history is sent
+  /// to the model. When [count] covers all views the list is returned as-is.
+  static List<ChatMessageView> _trimViews(
+    List<ChatMessageView> views,
+    int count,
+  ) {
+    if (views.length <= count) return views;
+    return views.sublist(views.length - count);
   }
 
   /// The most rounds the tool-call loop will run before forcing a final answer,
