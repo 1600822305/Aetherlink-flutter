@@ -45,9 +45,12 @@ class _AuxiliaryModelSettingsPageState
 
     return Scaffold(
       appBar: _buildAppBar(theme),
-      body: TabBarView(
-        controller: _tabController,
-        children: const [AuxiliaryModelTab(), AuxiliaryPromptTab()],
+      body: SafeArea(
+        top: false,
+        child: TabBarView(
+          controller: _tabController,
+          children: const [AuxiliaryModelTab(), AuxiliaryPromptTab()],
+        ),
       ),
     );
   }
