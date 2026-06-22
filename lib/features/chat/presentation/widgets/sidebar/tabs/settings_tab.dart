@@ -226,9 +226,7 @@ class SettingsTab extends ConsumerWidget {
         _SettingsGroup(
           title: '数学公式设置',
           subtitle: '渲染引擎: KaTeX',
-          comingSoon: true,
           children: [
-            const _ComingSoonNote(text: '设置会先保存，接入渲染后生效。'),
             const _StaticSettingRow(
               title: '渲染引擎',
               value: 'KaTeX（flutter_math，原生渲染）',

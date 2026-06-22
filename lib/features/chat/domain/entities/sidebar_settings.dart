@@ -82,8 +82,10 @@ enum MessageNavigation {
 ///   * 常规设置 7 项 + 侧边栏宽度 are fully wired (see [SidebarSettingsController]
 ///     consumers); `showMessageDivider` / `copyableCodeBlocks` already drive the
 ///     chat view, the rest persist and light up as their chat widgets land.
-///   * 上下文 / 输入 / 代码块行为 / 数学 (单美元) persist here but are 即将支持 — the
+///   * 上下文 / 输入 / 代码块行为 persist here but are 即将支持 — the
 ///     subsystems consuming them are later slices.
+///   * 数学 (单美元) is wired — `AppMarkdown` reads `mathEnableSingleDollar`
+///     via Riverpod and passes it to `GptMarkdown.useDollarSignsForLatex`.
 ///   * 性能节流 / 虚拟化列表 / 代码编辑器主题 / 数学引擎下拉 are Web-only framework tax
 ///     and are intentionally dropped.
 @freezed
