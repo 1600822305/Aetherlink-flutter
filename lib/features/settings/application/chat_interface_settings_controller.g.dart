@@ -71,7 +71,7 @@ final class ChatInterfaceSettingsControllerProvider
 }
 
 String _$chatInterfaceSettingsControllerHash() =>
-    r'5774db2873796459479c98dca57eb1de3c792e27';
+    r'b679988ccc06670143c14a61bf71ab263cb8429e';
 
 /// Holds the 聊天界面设置 configuration (the original `settings.multiModelDisplayStyle`
 /// / `showToolDetails` / `showCitationDetails` / `showSystemPromptBubble` /

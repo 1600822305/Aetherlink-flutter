@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/top_toolbar_access.dart';
+import 'package:aetherlink_flutter/features/settings/application/model_combo_controller.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
@@ -72,6 +73,14 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
     final current = ref.watch(appCurrentModelProvider).value;
     final providers = ref.watch(appModelProvidersProvider).value ?? const [];
     final hasModels = providers.any((p) => p.models.isNotEmpty);
+    final comboState = ref.watch(modelComboControllerProvider);
+    final activeComboId = comboState.selectedComboId;
+    final comboName = activeComboId != null
+        ? comboState.combos
+              .where((c) => c.id == activeComboId)
+              .firstOrNull
+              ?.name
+        : null;
 
     // The original header is light and flat: `bg-paper` fill, `elevation 0` and
     // a 1px bottom divider (`baseStyles.appBar`). All colors are theme tokens.
@@ -106,6 +115,7 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
                           topicName: topic?.name,
                           current: current,
                           hasModels: hasModels,
+                          comboName: comboName,
                         )
                         case final Widget child)
                       Positioned(
@@ -135,6 +145,7 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
       topicName: topic?.name,
       current: current,
       hasModels: hasModels,
+      comboName: comboName,
     );
     return AppBar(
       backgroundColor: theme.colorScheme.surface,
@@ -211,6 +222,7 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
     required String? topicName,
     required CurrentModel? current,
     required bool hasModels,
+    String? comboName,
   }) {
     switch (component) {
       case TopToolbarComponent.menuButton:
@@ -264,6 +276,7 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
         return _ModelSelector(
           style: settings.modelSelectorDisplayStyle,
           current: current,
+          comboName: comboName,
           onPressed: () => hasModels
               ? showModelSelectorDialog(context)
               : context.push(AppRouter.defaultModelPath),
@@ -399,16 +412,19 @@ class _ModelSelector extends StatelessWidget {
     required this.style,
     required this.current,
     required this.onPressed,
+    this.comboName,
   });
 
   final ModelSelectorDisplayStyle style;
   final CurrentModel? current;
   final VoidCallback onPressed;
+  final String? comboName;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final modelLabel = current?.model.name ?? _modelPlaceholderLabel;
+    final modelLabel =
+        comboName ?? current?.model.name ?? _modelPlaceholderLabel;
 
     if (style == ModelSelectorDisplayStyle.icon) {
       return _ToolbarIconButton(
@@ -421,7 +437,9 @@ class _ModelSelector extends StatelessWidget {
       );
     }
 
-    final providerName = current?.provider.name ?? '';
+    final providerName = comboName != null
+        ? '模型组合'
+        : (current?.provider.name ?? '');
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: OutlinedButton(

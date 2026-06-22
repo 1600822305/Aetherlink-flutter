@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/features/settings/application/model_combo_controller.dart';
+import 'package:aetherlink_flutter/features/settings/application/model_combo_providers.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/utils/provider_icons.dart';
@@ -152,7 +154,7 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
     // useMediaQuery(theme.breakpoints.down('sm')) -> width < 600px.
     final fullScreen = mq.size.width < 600;
 
-    final providersAsync = ref.watch(appModelProvidersProvider);
+    final providersAsync = ref.watch(allProvidersWithCombosProvider);
     final currentAsync = ref.watch(appCurrentModelProvider);
     final providers = providersAsync.value ?? const [];
     final current = currentAsync.value;
@@ -180,16 +182,26 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
     // When [onSelect] is set the dialog highlights the caller's pre-selected
     // model instead of the app current chat model.
     final useExternalSelection = widget.onSelect != null;
-    final currentProviderId = useExternalSelection
-        ? widget.selectedProviderId
-        : current?.provider.id;
-    final selectedKey = useExternalSelection
-        ? (widget.selectedProviderId != null && widget.selectedModelId != null
-              ? _identity(widget.selectedProviderId!, widget.selectedModelId!)
-              : null)
-        : (current == null
-              ? null
-              : _identity(current.provider.id, current.model.id));
+    final comboState = ref.watch(modelComboControllerProvider);
+    final activeComboId = comboState.selectedComboId;
+    final String? currentProviderId;
+    final String? selectedKey;
+    if (useExternalSelection) {
+      currentProviderId = widget.selectedProviderId;
+      selectedKey =
+          widget.selectedProviderId != null && widget.selectedModelId != null
+          ? _identity(widget.selectedProviderId!, widget.selectedModelId!)
+          : null;
+    } else if (activeComboId != null) {
+      currentProviderId = kModelComboProviderId;
+      selectedKey = _identity(activeComboId, kModelComboProviderId);
+    } else if (current != null) {
+      currentProviderId = current.provider.id;
+      selectedKey = _identity(current.provider.id, current.model.id);
+    } else {
+      currentProviderId = null;
+      selectedKey = null;
+    }
 
     // Open-time default: 'frequently-used' when a current model exists. Defer
     // until both providers and current model have resolved, otherwise the first
@@ -501,7 +513,13 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
     final onSelect = widget.onSelect;
     if (onSelect != null) {
       onSelect(provider, model);
+    } else if (provider.id == kModelComboProviderId) {
+      // Combo models are virtual — store the selection in the combo controller
+      // and clear the real model's isDefault so the UI picks it up.
+      ref.read(modelComboControllerProvider.notifier).selectCombo(model.id);
     } else {
+      // Normal model — clear any combo selection first.
+      ref.read(modelComboControllerProvider.notifier).clearComboSelection();
       await ref
           .read(modelStoreProvider.notifier)
           .selectCurrentModel(providerId: provider.id, modelId: model.id);

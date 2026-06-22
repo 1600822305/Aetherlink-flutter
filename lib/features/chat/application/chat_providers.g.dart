@@ -213,7 +213,7 @@ final class LlmGatewayFactoryProvider
   }
 }
 
-String _$llmGatewayFactoryHash() => r'68cc9fbd6419097c4c41772c43542368e4c310c2';
+String _$llmGatewayFactoryHash() => r'1ecdc4c224347bf05f05d44ced4dfd9e97a18d32';
 
 /// The live MCP connection pool for remote (sse / streamableHttp) servers,
 /// shared across chat turns. Kept alive so connections are reused; closed when
@@ -279,7 +279,7 @@ final class RemoteMcpConnectionManagerProvider
 }
 
 String _$remoteMcpConnectionManagerHash() =>
-    r'37e639330d2a11ee0dabaf275840c390a511a2f6';
+    r'fd4bfec129fc5404e815ad956e040059929d1ca8';
 
 /// Debug-only seed so message rendering is visible before send/streaming exist
 /// (M4.2.2+). In release builds ([kDebugMode] false) this is a no-op, so the

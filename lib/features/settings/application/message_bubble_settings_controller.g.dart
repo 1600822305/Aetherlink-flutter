@@ -74,7 +74,7 @@ final class MessageBubbleSettingsControllerProvider
 }
 
 String _$messageBubbleSettingsControllerHash() =>
-    r'fbcf63af3b9250da63fcda6354de4ea6fae33e68';
+    r'b1df0084d836c51b67b384c010bbea30e5e78109';
 
 /// Holds the 信息气泡管理 configuration (the original `settings.messageActionMode`
 /// / `showMicroBubbles` / `showTTSButton` / `versionSwitchStyle` / bubble widths

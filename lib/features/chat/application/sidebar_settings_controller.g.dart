@@ -66,7 +66,7 @@ final class SidebarSettingsControllerProvider
 }
 
 String _$sidebarSettingsControllerHash() =>
-    r'de372de0a4aa5d8979f8db77a23c1a473e753875';
+    r'cf09e82eadd635eac63a09918abda02d42cace5b';
 
 /// Holds the 设置 tab (侧边栏快捷设置面板) configuration so the sidebar stays a pure
 /// view and the chat view can react to the wired-up toggles.

@@ -67,7 +67,7 @@ final class ThinkingSettingsControllerProvider
 }
 
 String _$thinkingSettingsControllerHash() =>
-    r'195c0054c646cd98640be36dfe97b4ab0ffb581f';
+    r'b54d5052d1b2b11ed91c19143b9cdddfacc55e81';
 
 /// Holds the 思考过程设置 configuration (the original `settings.thinkingDisplayStyle`
 /// / `thoughtAutoCollapse` / `thinkingToolInline`), so the appearance sub-page

@@ -13,15 +13,10 @@ part of 'settings_view_mode_controller.dart';
 /// PROJECT_STRUCTURE / ADR-0009).
 ///
 /// `true` = compact (titles only), `false` = detailed (titles + descriptions).
-/// It seeds `false` (detailed is the default, matching the original) and lives
-/// in memory only for this milestone — mirroring the M4.1 onboarding
-/// controller's "seam, not yet persisted" approach.
-///
-/// The original persisted this under the `settings-compact-mode` localStorage
-/// key. Where app preferences live (shared_preferences vs a Drift settings
-/// table) is a separate decision, and this milestone adds no new persistence —
-/// so the mode resets to detailed on each cold start until persistence is
-/// wired.
+/// It seeds `false` (detailed is the default, matching the original), then
+/// hydrates from the Drift key/value store on first build and writes through on
+/// every toggle, so the choice survives a full restart (the web persisted this
+/// under the `settings-compact-mode` localStorage key).
 ///
 /// `keepAlive: true`: this is an app-level UI preference, not screen-scoped
 /// state — it must survive the settings page being disposed when navigating
@@ -36,15 +31,10 @@ final settingsViewModeControllerProvider =
 /// PROJECT_STRUCTURE / ADR-0009).
 ///
 /// `true` = compact (titles only), `false` = detailed (titles + descriptions).
-/// It seeds `false` (detailed is the default, matching the original) and lives
-/// in memory only for this milestone — mirroring the M4.1 onboarding
-/// controller's "seam, not yet persisted" approach.
-///
-/// The original persisted this under the `settings-compact-mode` localStorage
-/// key. Where app preferences live (shared_preferences vs a Drift settings
-/// table) is a separate decision, and this milestone adds no new persistence —
-/// so the mode resets to detailed on each cold start until persistence is
-/// wired.
+/// It seeds `false` (detailed is the default, matching the original), then
+/// hydrates from the Drift key/value store on first build and writes through on
+/// every toggle, so the choice survives a full restart (the web persisted this
+/// under the `settings-compact-mode` localStorage key).
 ///
 /// `keepAlive: true`: this is an app-level UI preference, not screen-scoped
 /// state — it must survive the settings page being disposed when navigating
@@ -56,15 +46,10 @@ final class SettingsViewModeControllerProvider
   /// PROJECT_STRUCTURE / ADR-0009).
   ///
   /// `true` = compact (titles only), `false` = detailed (titles + descriptions).
-  /// It seeds `false` (detailed is the default, matching the original) and lives
-  /// in memory only for this milestone — mirroring the M4.1 onboarding
-  /// controller's "seam, not yet persisted" approach.
-  ///
-  /// The original persisted this under the `settings-compact-mode` localStorage
-  /// key. Where app preferences live (shared_preferences vs a Drift settings
-  /// table) is a separate decision, and this milestone adds no new persistence —
-  /// so the mode resets to detailed on each cold start until persistence is
-  /// wired.
+  /// It seeds `false` (detailed is the default, matching the original), then
+  /// hydrates from the Drift key/value store on first build and writes through on
+  /// every toggle, so the choice survives a full restart (the web persisted this
+  /// under the `settings-compact-mode` localStorage key).
   ///
   /// `keepAlive: true`: this is an app-level UI preference, not screen-scoped
   /// state — it must survive the settings page being disposed when navigating
@@ -97,22 +82,17 @@ final class SettingsViewModeControllerProvider
 }
 
 String _$settingsViewModeControllerHash() =>
-    r'df5830d852d2574c33827e86469afc3d0f84cee1';
+    r'df20aa948be0f87768b8c0c9403c1d4a2bbdb9d2';
 
 /// Holds the settings hub's "compact ↔ detailed" view mode for the application
 /// layer (the page stays a pure view — no business logic, see
 /// PROJECT_STRUCTURE / ADR-0009).
 ///
 /// `true` = compact (titles only), `false` = detailed (titles + descriptions).
-/// It seeds `false` (detailed is the default, matching the original) and lives
-/// in memory only for this milestone — mirroring the M4.1 onboarding
-/// controller's "seam, not yet persisted" approach.
-///
-/// The original persisted this under the `settings-compact-mode` localStorage
-/// key. Where app preferences live (shared_preferences vs a Drift settings
-/// table) is a separate decision, and this milestone adds no new persistence —
-/// so the mode resets to detailed on each cold start until persistence is
-/// wired.
+/// It seeds `false` (detailed is the default, matching the original), then
+/// hydrates from the Drift key/value store on first build and writes through on
+/// every toggle, so the choice survives a full restart (the web persisted this
+/// under the `settings-compact-mode` localStorage key).
 ///
 /// `keepAlive: true`: this is an app-level UI preference, not screen-scoped
 /// state — it must survive the settings page being disposed when navigating
