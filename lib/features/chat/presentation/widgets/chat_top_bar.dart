@@ -323,13 +323,17 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
           onPressed: () => context.push(AppRouter.settingsPath),
         );
       case TopToolbarComponent.condenseButton:
+        final isStreaming =
+            ref.watch(chatControllerProvider).value?.isStreaming ?? false;
         return _ToolbarIconButton(
           icon: topToolbarComponentIcon(
             component,
-            color: theme.colorScheme.onSurface,
+            color: isStreaming
+                ? theme.disabledColor
+                : theme.colorScheme.onSurface,
           ),
           tooltip: _condenseTooltip,
-          onPressed: () => _openCondenseDialog(context),
+          onPressed: isStreaming ? null : () => _openCondenseDialog(context),
         );
       case TopToolbarComponent.miniMapButton:
         return _ToolbarIconButton(

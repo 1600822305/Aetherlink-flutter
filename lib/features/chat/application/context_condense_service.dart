@@ -4,6 +4,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
@@ -125,6 +126,13 @@ class ContextCondenseService {
       return const CondenseResult(success: false, error: '没有活跃的对话');
     }
 
+    // 1.5 Reject when a streaming reply is in progress.
+    final chatState = _ref.read(chatControllerProvider);
+    final isStreaming = chatState.value?.isStreaming ?? false;
+    if (isStreaming) {
+      return const CondenseResult(success: false, error: '请等待当前回复完成后再压缩');
+    }
+
     onProgress?.call('正在收集消息…');
 
     // 2. Gather and sort messages
@@ -223,7 +231,8 @@ class ContextCondenseService {
     final compressedTokens = estimateTokens(summary);
 
     // 8. Create summary message + block
-    final now = DateTime.now();
+    // 摘要的时间戳取被压缩的最后一条消息的时间，确保排在保留消息之前
+    final summaryTime = messagesToCompress.last.createdAt;
     final summaryMessageId = generateId('msg');
     final summaryBlockId = generateId('block');
 
@@ -231,13 +240,13 @@ class ContextCondenseService {
       id: summaryBlockId,
       messageId: summaryMessageId,
       status: MessageBlockStatus.success,
-      createdAt: now,
+      createdAt: summaryTime,
       content: summary,
       originalMessageCount: messagesToCompress.length,
       originalTokens: totalOriginalTokens,
       compressedTokens: compressedTokens,
       tokensSaved: totalOriginalTokens - compressedTokens,
-      compressedAt: now,
+      compressedAt: DateTime.now(),
       modelId: model.model.id,
     );
 
@@ -246,18 +255,22 @@ class ContextCondenseService {
       role: MessageRole.assistant,
       assistantId: allMessages.first.assistantId,
       topicId: topicId,
-      createdAt: now,
+      createdAt: summaryTime,
       status: MessageStatus.success,
       blocks: [summaryBlockId],
       metadata: {'isSummary': true},
     );
 
-    // 9. Persist: delete compressed messages + their blocks, save summary
-    for (final msg in messagesToCompress) {
-      await _repo.deleteMessage(msg.id);
-    }
-    await _repo.saveMessageBlock(summaryBlock);
-    await _repo.saveMessage(summaryMessage);
+    // 9. Persist atomically: delete compressed messages + their blocks, save
+    // the summary — all inside a single transaction so a mid-way failure can't
+    // leave the topic with deleted history but no summary.
+    await _repo.runInTransaction(() async {
+      for (final msg in messagesToCompress) {
+        await _repo.deleteMessage(msg.id);
+      }
+      await _repo.saveMessageBlock(summaryBlock);
+      await _repo.saveMessage(summaryMessage);
+    });
 
     // 10. Reload the chat UI
     onProgress?.call('完成');

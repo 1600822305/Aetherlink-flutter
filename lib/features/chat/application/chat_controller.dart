@@ -2797,10 +2797,15 @@ class ChatController extends _$ChatController {
   Future<ChatMessageView> _viewOf(Message message) async {
     final fetched = await _repo.getMessageBlocksByMessageId(message.id);
     final blocks = _orderBlocks(message.blocks, fetched);
-    final text = blocks
+    final mainText = blocks
         .whereType<MainTextBlock>()
         .map((block) => block.content)
         .join('\n\n');
+    final summaryText = blocks
+        .whereType<ContextSummaryBlock>()
+        .map((block) => block.content)
+        .join('\n\n');
+    final text = mainText.isNotEmpty ? mainText : summaryText;
     final thinking = blocks
         .whereType<ThinkingBlock>()
         .map((block) => block.content)
