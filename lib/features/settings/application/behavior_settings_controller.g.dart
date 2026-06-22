@@ -67,7 +67,7 @@ final class BehaviorSettingsControllerProvider
 }
 
 String _$behaviorSettingsControllerHash() =>
-    r'84df19d0366afe78c114aa7a1208a515ab3df496';
+    r'799a2454bf5d8ba617661294f20e7d2127de1732';
 
 /// Holds the 行为 settings (the original `settingsSlice` behavior fields), so
 /// the 行为 page stays a pure view and the chat composer / haptic service can

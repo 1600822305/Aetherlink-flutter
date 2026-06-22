@@ -8,13 +8,22 @@ part of 'web_search_settings_controller.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
+/// Persists web-search settings as a single JSON blob (the Flutter port of the
+/// web's `webSearchSlice`). Same hydrate-on-build pattern as
+/// [SidebarSettingsController].
 
 @ProviderFor(WebSearchSettingsController)
 final webSearchSettingsControllerProvider =
     WebSearchSettingsControllerProvider._();
 
+/// Persists web-search settings as a single JSON blob (the Flutter port of the
+/// web's `webSearchSlice`). Same hydrate-on-build pattern as
+/// [SidebarSettingsController].
 final class WebSearchSettingsControllerProvider
     extends $NotifierProvider<WebSearchSettingsController, WebSearchSettings> {
+  /// Persists web-search settings as a single JSON blob (the Flutter port of the
+  /// web's `webSearchSlice`). Same hydrate-on-build pattern as
+  /// [SidebarSettingsController].
   WebSearchSettingsControllerProvider._()
     : super(
         from: null,
@@ -43,7 +52,11 @@ final class WebSearchSettingsControllerProvider
 }
 
 String _$webSearchSettingsControllerHash() =>
-    r'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
+    r'5bfb66c6a357308cda45d7b94495de92d4887437';
+
+/// Persists web-search settings as a single JSON blob (the Flutter port of the
+/// web's `webSearchSlice`). Same hydrate-on-build pattern as
+/// [SidebarSettingsController].
 
 abstract class _$WebSearchSettingsController
     extends $Notifier<WebSearchSettings> {

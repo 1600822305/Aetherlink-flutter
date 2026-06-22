@@ -66,7 +66,7 @@ final class McpToolsControllerProvider
 }
 
 String _$mcpToolsControllerHash() =>
-    r'4355b7004a13ecc45aaacf89bec7765c25de1420';
+    r'8a340138854bca831d4620c2c2483b0883e63076';
 
 /// Holds the MCP 工具 总开关 + 调用模式, the Flutter port of the web `useMCPTools`
 /// hook. Both values persist under their own Drift key/value entries

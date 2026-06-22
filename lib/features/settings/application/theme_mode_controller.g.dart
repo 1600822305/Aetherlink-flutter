@@ -12,12 +12,10 @@ part of 'theme_mode_controller.dart';
 /// application layer, so the appearance page stays a pure view.
 ///
 /// Seeds [AppThemeMode.system] — matching the app shell's prior behaviour of
-/// leaving `MaterialApp.themeMode` unset, which defaults to follow-system. It
-/// lives in memory only for now, mirroring the onboarding / view-mode
-/// controllers' "seam, not yet persisted" approach: the original persisted
-/// `settings.theme`, but where app preferences live (shared_preferences vs a
-/// Drift settings table) is a separate decision, so the mode resets to
-/// follow-system on each cold start until persistence is wired.
+/// leaving `MaterialApp.themeMode` unset, which defaults to follow-system. The
+/// value is hydrated from the Drift key/value store on first build and written
+/// through on every change, so the mode survives a full restart (the web kept
+/// it under `settings.theme`).
 ///
 /// `keepAlive: true`: an app-level preference that must survive the appearance
 /// page being disposed when navigating away, so it is not auto-disposed.
@@ -29,12 +27,10 @@ final themeModeControllerProvider = ThemeModeControllerProvider._();
 /// application layer, so the appearance page stays a pure view.
 ///
 /// Seeds [AppThemeMode.system] — matching the app shell's prior behaviour of
-/// leaving `MaterialApp.themeMode` unset, which defaults to follow-system. It
-/// lives in memory only for now, mirroring the onboarding / view-mode
-/// controllers' "seam, not yet persisted" approach: the original persisted
-/// `settings.theme`, but where app preferences live (shared_preferences vs a
-/// Drift settings table) is a separate decision, so the mode resets to
-/// follow-system on each cold start until persistence is wired.
+/// leaving `MaterialApp.themeMode` unset, which defaults to follow-system. The
+/// value is hydrated from the Drift key/value store on first build and written
+/// through on every change, so the mode survives a full restart (the web kept
+/// it under `settings.theme`).
 ///
 /// `keepAlive: true`: an app-level preference that must survive the appearance
 /// page being disposed when navigating away, so it is not auto-disposed.
@@ -44,12 +40,10 @@ final class ThemeModeControllerProvider
   /// application layer, so the appearance page stays a pure view.
   ///
   /// Seeds [AppThemeMode.system] — matching the app shell's prior behaviour of
-  /// leaving `MaterialApp.themeMode` unset, which defaults to follow-system. It
-  /// lives in memory only for now, mirroring the onboarding / view-mode
-  /// controllers' "seam, not yet persisted" approach: the original persisted
-  /// `settings.theme`, but where app preferences live (shared_preferences vs a
-  /// Drift settings table) is a separate decision, so the mode resets to
-  /// follow-system on each cold start until persistence is wired.
+  /// leaving `MaterialApp.themeMode` unset, which defaults to follow-system. The
+  /// value is hydrated from the Drift key/value store on first build and written
+  /// through on every change, so the mode survives a full restart (the web kept
+  /// it under `settings.theme`).
   ///
   /// `keepAlive: true`: an app-level preference that must survive the appearance
   /// page being disposed when navigating away, so it is not auto-disposed.
@@ -81,18 +75,16 @@ final class ThemeModeControllerProvider
 }
 
 String _$themeModeControllerHash() =>
-    r'd59a037eb369aa44e350d3dc318e17361a47b413';
+    r'd5a784dafb444ec3d70251ebc34c8f9c52e9469e';
 
 /// Holds the active [AppThemeMode] (the original `settings.theme`) for the
 /// application layer, so the appearance page stays a pure view.
 ///
 /// Seeds [AppThemeMode.system] — matching the app shell's prior behaviour of
-/// leaving `MaterialApp.themeMode` unset, which defaults to follow-system. It
-/// lives in memory only for now, mirroring the onboarding / view-mode
-/// controllers' "seam, not yet persisted" approach: the original persisted
-/// `settings.theme`, but where app preferences live (shared_preferences vs a
-/// Drift settings table) is a separate decision, so the mode resets to
-/// follow-system on each cold start until persistence is wired.
+/// leaving `MaterialApp.themeMode` unset, which defaults to follow-system. The
+/// value is hydrated from the Drift key/value store on first build and written
+/// through on every change, so the mode survives a full restart (the web kept
+/// it under `settings.theme`).
 ///
 /// `keepAlive: true`: an app-level preference that must survive the appearance
 /// page being disposed when navigating away, so it is not auto-disposed.

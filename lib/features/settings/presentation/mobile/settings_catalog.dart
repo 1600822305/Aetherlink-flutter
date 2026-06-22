@@ -102,6 +102,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.gitBranch,
         title: '模型组合',
         description: '创建和管理多模型组合',
+        route: AppRouter.modelComboPath,
       ),
       SettingItemData(
         icon: LucideIcons.foldVertical,
