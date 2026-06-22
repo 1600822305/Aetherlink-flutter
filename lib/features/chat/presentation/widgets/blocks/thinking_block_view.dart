@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/thinking_settings_access.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/inline_tool_chip.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
 import 'package:aetherlink_flutter/shared/domain/thinking_settings.dart';
@@ -20,9 +21,17 @@ import 'package:aetherlink_flutter/shared/widgets/thinking_styled_view.dart';
 /// subset of the original's 17 styles is ported — 紧凑 (default) / 完整 / 极简 /
 /// 气泡 / 卡片 / 隐藏; the novelty styles are intentionally dropped.
 class ThinkingBlockView extends ConsumerStatefulWidget {
-  const ThinkingBlockView({required this.block, super.key});
+  const ThinkingBlockView({
+    required this.block,
+    this.inlineToolBlocks = const [],
+    super.key,
+  });
 
   final ThinkingBlock block;
+
+  /// Tool blocks that occurred during this thinking phase, to be rendered
+  /// inline as lightweight chips (mirrors `inlineToolBlocks` in the web).
+  final List<ToolBlock> inlineToolBlocks;
 
   @override
   ConsumerState<ThinkingBlockView> createState() => _ThinkingBlockViewState();
@@ -108,6 +117,19 @@ class _ThinkingBlockViewState extends ConsumerState<ThinkingBlockView> {
     final style = ref.watch(
       thinkingSettingsProvider.select((s) => s.displayStyle),
     );
+    final inlineTools = widget.inlineToolBlocks.isEmpty
+        ? null
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < widget.inlineToolBlocks.length; i++) ...
+                [
+                  if (i > 0) const SizedBox(height: 6),
+                  InlineToolChip(block: widget.inlineToolBlocks[i]),
+                ],
+            ],
+          );
+
     return ThinkingStyledView(
       style: style,
       content: widget.block.content,
@@ -118,6 +140,7 @@ class _ThinkingBlockViewState extends ConsumerState<ThinkingBlockView> {
       onToggleExpanded: _toggleExpanded,
       onCopy: _copy,
       previewContent: _previewContent(),
+      inlineTools: inlineTools,
       markdownBuilder: (context, content, style) =>
           AppMarkdown(content: content, style: style),
     );
