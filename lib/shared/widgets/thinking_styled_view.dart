@@ -184,7 +184,11 @@ class ThinkingStyledView extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                markdownBuilder(context, content, null),
+                markdownBuilder(
+                  context,
+                  content,
+                  TextStyle(color: theme.colorScheme.onSurface),
+                ),
                 if (inlineTools != null) ...[
                   const SizedBox(height: 8),
                   inlineTools!,
@@ -273,7 +277,11 @@ class ThinkingStyledView extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      markdownBuilder(context, content, null),
+                      markdownBuilder(
+                        context,
+                        content,
+                        TextStyle(color: theme.colorScheme.onSurface),
+                      ),
                       if (inlineTools != null) ...[
                         const SizedBox(height: 8),
                         inlineTools!,
@@ -348,7 +356,11 @@ class ThinkingStyledView extends StatelessWidget {
                     ),
                     if (expanded) ...[
                       const SizedBox(height: 8),
-                      markdownBuilder(context, content, null),
+                      markdownBuilder(
+                        context,
+                        content,
+                        TextStyle(color: theme.colorScheme.onSurface),
+                      ),
                       if (inlineTools != null) ...[
                         const SizedBox(height: 8),
                         inlineTools!,
@@ -447,7 +459,11 @@ class ThinkingStyledView extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      markdownBuilder(context, content, null),
+                      markdownBuilder(
+                        context,
+                        content,
+                        TextStyle(color: theme.colorScheme.onSurface),
+                      ),
                       if (inlineTools != null) ...[
                         const SizedBox(height: 8),
                         inlineTools!,
@@ -623,7 +639,11 @@ class _ThinkingCompactViewState extends State<_ThinkingCompactView> {
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                child: widget.markdownBuilder(context, widget.content, null),
+                child: widget.markdownBuilder(
+                  context,
+                  widget.content,
+                  TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                ),
               ),
             // Tool chips (always visible when expanded)
             if (hasTools)
