@@ -114,6 +114,13 @@ class ChatAutoScrollController {
   /// Whether the list is currently following the bottom (web `stick`).
   bool get isSticking => _stick;
 
+  /// Programmatically detach from the bottom so an explicit scroll-to-index
+  /// (e.g. mini-map jump) is not immediately overridden by the auto-follow.
+  void unstick() {
+    _stick = false;
+    _pinnedUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
   bool get _isPinned => DateTime.now().isBefore(_pinnedUntil);
 
   /// User scroll is the only input that flips [_stick] (web `handleScroll`):
