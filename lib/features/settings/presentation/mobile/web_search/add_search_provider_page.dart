@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/web_search_settings.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search/search_provider_catalog.dart';
@@ -65,7 +64,6 @@ class AddSearchProviderPage extends ConsumerWidget {
                     preset: kSearchProviderPresets[i],
                     alreadyAdded: addedIds.contains(kSearchProviderPresets[i].id),
                     onTap: () => _addProvider(
-                      context,
                       ref,
                       kSearchProviderPresets[i],
                     ),
@@ -80,7 +78,6 @@ class AddSearchProviderPage extends ConsumerWidget {
   }
 
   void _addProvider(
-    BuildContext context,
     WidgetRef ref,
     SearchProviderPreset preset,
   ) {
@@ -90,8 +87,6 @@ class AddSearchProviderPage extends ConsumerWidget {
       apiHost: preset.apiHost,
     );
     ref.read(webSearchSettingsControllerProvider.notifier).addProvider(provider);
-    // Navigate to the detail page for the just-added provider.
-    context.pushReplacement(AppRouter.searchProviderDetailPath(preset.id));
   }
 }
 
