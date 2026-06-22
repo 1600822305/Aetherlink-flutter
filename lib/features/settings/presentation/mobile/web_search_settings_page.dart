@@ -53,7 +53,12 @@ class WebSearchSettingsPage extends ConsumerWidget {
         title: const Text('网络搜索'),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          16 + MediaQuery.of(context).padding.bottom,
+        ),
         children: [
           _providersCard(context, ref, theme, ws),
           const SizedBox(height: 16),
