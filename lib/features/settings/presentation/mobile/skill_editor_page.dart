@@ -187,7 +187,9 @@ class _SkillEditorPageState extends ConsumerState<SkillEditorPage> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        padding: EdgeInsets.fromLTRB(
+          16, 16, 16, 24 + MediaQuery.of(context).padding.bottom,
+        ),
         children: [
           _basicInfoCard(theme, isBuiltin),
           const SizedBox(height: 12),
