@@ -229,12 +229,19 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
         return _TopicTitle(name: topicName);
       case TopToolbarComponent.newTopicButton:
         final assistantId = ref.watch(currentAssistantProvider)?.id;
+        final hasMessages =
+            (ref.watch(chatControllerProvider).value?.messages ?? const [])
+                .isNotEmpty;
+        final iconColor = assistantId == null
+            ? theme.disabledColor
+            : theme.colorScheme.onSurface;
         return _ToolbarIconButton(
-          icon: topToolbarComponentIcon(
-            component,
-            color: assistantId == null
-                ? theme.disabledColor
-                : theme.colorScheme.onSurface,
+          icon: Icon(
+            hasMessages
+                ? LucideIcons.messageSquarePlus
+                : LucideIcons.messageSquare,
+            size: 20,
+            color: iconColor,
           ),
           tooltip: _newTopicTooltip,
           onPressed: assistantId == null
