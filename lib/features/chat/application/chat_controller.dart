@@ -83,6 +83,11 @@ class ChatController extends _$ChatController {
   String? _topicId;
   String _assistantId = _defaultAssistantId;
 
+  /// The id of the last assistant message that was truncated due to
+  /// `finishReason == 'length'` after exhausting auto-continues. Cleared on
+  /// the next send / regenerate. The UI reads this to show a "继续生成" button.
+  String? _truncatedMessageId;
+
   ChatRepository get _repo => ref.read(chatRepositoryProvider);
 
   @override
@@ -122,6 +127,7 @@ class ChatController extends _$ChatController {
     final trimmed = text.trim();
     if (trimmed.isEmpty && attachments.isEmpty) return;
 
+    _truncatedMessageId = null;
     final snapshot = state.value ?? ChatState.initial();
     if (snapshot.isStreaming) return;
 
@@ -526,6 +532,7 @@ class ChatController extends _$ChatController {
   /// streaming, when the conversation has not loaded, when no model is selected,
   /// or when [messageId] is not a loaded assistant message.
   Future<void> regenerate(String messageId) async {
+    _truncatedMessageId = null;
     final snapshot = state.value;
     if (snapshot == null || snapshot.isStreaming) return;
 
@@ -720,6 +727,99 @@ class ChatController extends _$ChatController {
     );
   }
 
+  /// The message id whose response was truncated, or `null`.
+  String? get truncatedMessageId => _truncatedMessageId;
+
+  /// Continues generating from a previously truncated assistant message.
+  ///
+  /// Loads the conversation up to [messageId], appends its partial content as
+  /// an assistant message, and streams a new completion that picks up from
+  /// where the model was cut off. The new content is appended to the existing
+  /// blocks (not replacing them).
+  Future<void> continueGenerating(String messageId) async {
+    final snapshot = state.value;
+    if (snapshot == null || snapshot.isStreaming) return;
+
+    final current = await ref.read(appCurrentModelProvider.future);
+    if (current == null) return;
+
+    _truncatedMessageId = null;
+
+    // Load the existing assistant message.
+    final message = await _repo.getMessage(messageId);
+    if (message == null || message.role != MessageRole.assistant) return;
+
+    final effective = effectiveModelFor(current);
+    final now = DateTime.now();
+
+    // Gather existing blocks to extract the partial content so far.
+    final existingBlocks = await _repo.getMessageBlocksByMessageId(messageId);
+    final partialText = <String>[
+      for (final block in existingBlocks)
+        if (block is MainTextBlock && block.content.isNotEmpty) block.content,
+    ].join('\n\n');
+
+    // Build conversation history up to (but not including) this message, then
+    // append the partial as an assistant turn for the model to continue from.
+    final views = snapshot.messages;
+    final msgIndex = views.indexWhere((v) => v.id == messageId);
+    if (msgIndex < 0) return;
+
+    final mcp = await _mcpSetup();
+    final ctx = _contextSettings();
+    final history = _trimViews(views.sublist(0, msgIndex), ctx.contextCount);
+    final messages = <LlmMessage>[
+      for (final view in history)
+        LlmMessage(
+          role: view.role,
+          content: _requestContent(view),
+          images: _requestImages(view),
+        ),
+      // The partial response as an assistant turn so the model continues.
+      if (partialText.isNotEmpty)
+        LlmMessage(role: MessageRole.assistant, content: partialText),
+    ];
+
+    // Create a new block id for the continuation segment.
+    final continuationBlockId = generateId('block');
+
+    // Update the message status to streaming.
+    await _repo.saveMessage(
+      message.copyWith(status: MessageStatus.streaming, updatedAt: now),
+    );
+
+    // Create the continuation view — reuse existing view data.
+    final assistantView = views[msgIndex].copyWith(
+      status: MessageStatus.streaming,
+    );
+    final updatedViews = [
+      ...views.sublist(0, msgIndex),
+      assistantView,
+      ...views.sublist(msgIndex + 1),
+    ];
+    _emit(updatedViews, isStreaming: true);
+
+    await _streamInto(
+      request: LlmChatRequest(
+        model: effective,
+        messages: messages,
+        maxTokens: ctx.maxTokens,
+        tools: mcp.useFunctionTools ? mcp.tools : null,
+        useResponsesAPI: current.provider.useResponsesAPI ?? false,
+        extraHeaders: effective.providerExtraHeaders,
+        extraBody: effective.providerExtraBody,
+      ),
+      effective: effective,
+      provider: current.provider,
+      assistantMessageId: messageId,
+      assistantBlockId: continuationBlockId,
+      assistantTime: now,
+      views: updatedViews,
+      assistantView: assistantView,
+      mcp: mcp,
+    );
+  }
+
   /// Finds the assistant reply for user message [userMessage], or null if it has
   /// none. Mirrors the original `source:'user'` lookup
   /// (`msg.role === 'assistant' && msg.askId === messageId`); falls back to the
@@ -767,9 +867,16 @@ class ChatController extends _$ChatController {
     return views.sublist(views.length - count);
   }
 
-  /// The most rounds the tool-call loop will run before forcing a final answer,
-  /// mirroring the web `maxToolCallRounds` guard against runaway tool loops.
-  static const int _kMaxToolRounds = 5;
+  /// The most rounds the tool-call loop will run before forcing a final answer.
+  /// Raised to 25 to match the web's agentic mode; complex multi-tool tasks
+  /// (e.g. "create a provider and add 3 models") easily exceed 5 rounds.
+  static const int _kMaxToolRounds = 25;
+
+  /// How many times we auto-continue when the model hits the token limit
+  /// (`finishReason == 'length'`). After exhaustion the message is persisted
+  /// with `metadata['truncated'] = true` so the UI can show a
+  /// "继续生成" button.
+  static const int _kMaxAutoContinues = 3;
 
   /// The most keys a single send tries before giving up, when the provider has a
   /// multi-key pool. Mirrors the web `EnhancedApiProvider` `maxRetries = 3`.
@@ -945,8 +1052,10 @@ class ChatController extends _$ChatController {
       var committed = false;
 
       try {
+        var autoContinueCount = 0;
         for (var round = 0; ; round++) {
           buffer.clear();
+          String? lastFinishReason;
           final structuredCalls = <LlmToolCall>[];
           await for (final chunk in gateway.streamChat(
             request.copyWith(messages: messages, model: effectiveForAttempt),
@@ -965,8 +1074,9 @@ class ChatController extends _$ChatController {
               case LlmToolCallChunk(:final call):
                 committed = true;
                 structuredCalls.add(call);
-              case LlmDone(:final usage):
+              case LlmDone(:final usage, :final finishReason):
                 if (usage != null) capturedUsage = usage;
+                lastFinishReason = finishReason;
                 break;
             }
           }
@@ -990,8 +1100,48 @@ class ChatController extends _$ChatController {
           ];
 
           // No (more) tools to run, or the round budget is spent: this round's
-          // prose is the final answer.
+          // prose is the final answer — unless the model was truncated
+          // (finishReason == 'length'), in which case we auto-continue.
           if (runnable.isEmpty || round >= _kMaxToolRounds - 1) {
+            final truncated = lastFinishReason == 'length';
+
+            // Auto-continue: append partial output as assistant message and
+            // re-request so the model resumes from the truncation point.
+            if (truncated && autoContinueCount < _kMaxAutoContinues) {
+              autoContinueCount++;
+              final partial = roundDisplay();
+              if (partial.isNotEmpty) {
+                completed.add(
+                  _mainTextBlock(
+                    id: roundBlockId,
+                    messageId: assistantMessageId,
+                    createdAt: assistantTime,
+                    content: partial,
+                  ),
+                );
+              }
+              if (thinking.isNotEmpty) {
+                completed.add(
+                  _thinkingBlock(
+                    messageId: assistantMessageId,
+                    createdAt: assistantTime,
+                    content: thinking.toString(),
+                  ),
+                );
+                thinking.clear();
+                thinkingBlockId = generateId('thinking');
+              }
+              // Feed partial output back so the model continues from where it
+              // was cut off.
+              messages = <LlmMessage>[
+                ...messages,
+                LlmMessage(role: MessageRole.assistant, content: partial),
+              ];
+              roundBlockId = generateId('block');
+              update();
+              continue; // next round = continuation
+            }
+
             // Flush this round's thinking before the final text so block order
             // is correct: ...prev → ThinkingBlockN → MainText(final).
             if (thinking.isNotEmpty) {
@@ -1015,6 +1165,9 @@ class ChatController extends _$ChatController {
                 ),
               );
             }
+            // Record whether the response was still truncated after all auto-
+            // continues so the UI can show a "继续生成" button.
+            if (truncated) _truncatedMessageId = assistantMessageId;
             break;
           }
 

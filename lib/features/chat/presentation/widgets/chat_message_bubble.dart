@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/message_bubble_access.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme_extension.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
@@ -94,7 +96,14 @@ class ChatMessageBubble extends ConsumerWidget {
         !isStreaming &&
         view.blocks.isNotEmpty;
 
-    final content = (view.blocks.isEmpty && hasError && view.errorText != null)
+    // Check whether this message was truncated and should show a "继续生成"
+    // button. Only the last assistant message is eligible.
+    final controller = ref.watch(chatControllerProvider.notifier);
+    final isTruncated =
+        !isUser && !isStreaming && controller.truncatedMessageId == view.id;
+
+    final blockContent =
+        (view.blocks.isEmpty && hasError && view.errorText != null)
         ? Text(
             view.errorText!,
             style: theme.textTheme.bodyMedium?.copyWith(
@@ -106,6 +115,17 @@ class ChatMessageBubble extends ConsumerWidget {
             messageStatus: view.status,
             textColor: textColor,
           );
+
+    final content = isTruncated
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              blockContent,
+              const SizedBox(height: 8),
+              _ContinueGeneratingButton(messageId: view.id),
+            ],
+          )
+        : blockContent;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -267,6 +287,64 @@ class _MessageHeader extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// A tappable chip shown below a truncated AI reply.
+///
+/// Mirrors ChatGPT / LibreChat's "Continue generating" UX: when the model's
+/// response was cut short by the token limit (`finishReason == 'length'`) and
+/// automatic continuation was exhausted, this button lets the user manually
+/// trigger another continuation round.
+class _ContinueGeneratingButton extends ConsumerWidget {
+  const _ContinueGeneratingButton({required this.messageId});
+
+  final String messageId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () {
+            ref
+                .read(chatControllerProvider.notifier)
+                .continueGenerating(messageId);
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: theme.colorScheme.primary.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  LucideIcons.chevronDown,
+                  size: 14,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '继续生成',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
