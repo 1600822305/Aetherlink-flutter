@@ -177,7 +177,7 @@ class ThinkingStyledView extends StatelessWidget {
                         fontSize: 10.5,
                         color: isThinking
                             ? _amber
-                            : theme.colorScheme.onSurfaceVariant,
+                            : theme.colorScheme.onSurface,
                       ),
                     ),
                   ),
@@ -196,7 +196,10 @@ class ThinkingStyledView extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   markdownBuilder(context, content, null),
-                  if (inlineTools != null) ...[const SizedBox(height: 8), inlineTools!],
+                  if (inlineTools != null) ...[
+                    const SizedBox(height: 8),
+                    inlineTools!,
+                  ],
                 ],
               ),
             )
@@ -287,7 +290,10 @@ class ThinkingStyledView extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 markdownBuilder(context, content, null),
-                if (inlineTools != null) ...[const SizedBox(height: 8), inlineTools!],
+                if (inlineTools != null) ...[
+                  const SizedBox(height: 8),
+                  inlineTools!,
+                ],
               ],
             ),
           ),
@@ -373,7 +379,10 @@ class ThinkingStyledView extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       markdownBuilder(context, content, null),
-                      if (inlineTools != null) ...[const SizedBox(height: 8), inlineTools!],
+                      if (inlineTools != null) ...[
+                        const SizedBox(height: 8),
+                        inlineTools!,
+                      ],
                     ],
                   ),
                 ),
@@ -445,7 +454,10 @@ class ThinkingStyledView extends StatelessWidget {
                     if (expanded) ...[
                       const SizedBox(height: 8),
                       markdownBuilder(context, content, null),
-                      if (inlineTools != null) ...[const SizedBox(height: 8), inlineTools!],
+                      if (inlineTools != null) ...[
+                        const SizedBox(height: 8),
+                        inlineTools!,
+                      ],
                     ],
                   ],
                 ),
@@ -541,7 +553,10 @@ class ThinkingStyledView extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       markdownBuilder(context, content, null),
-                      if (inlineTools != null) ...[const SizedBox(height: 8), inlineTools!],
+                      if (inlineTools != null) ...[
+                        const SizedBox(height: 8),
+                        inlineTools!,
+                      ],
                     ],
                   ),
                 ),
