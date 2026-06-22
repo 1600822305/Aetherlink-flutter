@@ -74,7 +74,7 @@ int estimateTokens(String content) {
 
 // ── Service ─────────────────────────────────────────────────────────────────
 
-@riverpod
+@Riverpod(keepAlive: true)
 ContextCondenseService contextCondenseService(Ref ref) =>
     ContextCondenseService(ref);
 
@@ -104,6 +104,17 @@ class ContextCondenseService {
   /// Runs the compression. Returns a [CondenseResult].
   /// [onProgress] is called with status strings for UI feedback.
   Future<CondenseResult> compress({
+    required CondenseOptions options,
+    void Function(String status)? onProgress,
+  }) async {
+    try {
+      return await _compressImpl(options: options, onProgress: onProgress);
+    } on Object catch (e) {
+      return CondenseResult(success: false, error: '压缩失败: $e');
+    }
+  }
+
+  Future<CondenseResult> _compressImpl({
     required CondenseOptions options,
     void Function(String status)? onProgress,
   }) async {
@@ -176,36 +187,26 @@ class ContextCondenseService {
         .replaceAll('{additional_context}', additionalContext);
 
     // 6. Call LLM
-    String summary;
-    try {
-      final effective = effectiveModelFor(model);
-      final request = LlmChatRequest(
-        model: effective,
-        messages: [LlmMessage(role: MessageRole.user, content: prompt)],
-        extraHeaders: effective.providerExtraHeaders,
-        extraBody: effective.providerExtraBody,
-      );
-      final gateway = _ref.read(llmGatewayFactoryProvider).forModel(effective);
-      final buffer = StringBuffer();
-      await for (final chunk in gateway.streamChat(request)) {
-        switch (chunk) {
-          case LlmTextDelta(:final text):
-            buffer.write(text);
-          case LlmReasoningDelta():
-          case LlmToolCallChunk():
-          case LlmDone():
-            break;
-        }
+    final effective = effectiveModelFor(model);
+    final request = LlmChatRequest(
+      model: effective,
+      messages: [LlmMessage(role: MessageRole.user, content: prompt)],
+      extraHeaders: effective.providerExtraHeaders,
+      extraBody: effective.providerExtraBody,
+    );
+    final gateway = _ref.read(llmGatewayFactoryProvider).forModel(effective);
+    final buffer = StringBuffer();
+    await for (final chunk in gateway.streamChat(request)) {
+      switch (chunk) {
+        case LlmTextDelta(:final text):
+          buffer.write(text);
+        case LlmReasoningDelta():
+        case LlmToolCallChunk():
+        case LlmDone():
+          break;
       }
-      summary = buffer.toString().trim();
-    } on Object catch (e) {
-      return CondenseResult(
-        success: false,
-        error: '压缩失败: $e',
-        originalMessageCount: messagesToCompress.length,
-        originalTokens: totalOriginalTokens,
-      );
     }
+    final summary = buffer.toString().trim();
 
     if (summary.isEmpty) {
       return CondenseResult(
