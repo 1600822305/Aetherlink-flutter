@@ -687,6 +687,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       ref.read(scrollToMessageIdProvider.notifier).clear();
       final index = messages.indexWhere((m) => m.id == messageId);
       if (index < 0) return;
+      _autoScroll.unstick();
       _observerController.animateTo(
         index: index,
         alignment: 0.1,
