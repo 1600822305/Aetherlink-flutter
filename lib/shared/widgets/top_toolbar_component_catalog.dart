@@ -46,7 +46,7 @@ Widget topToolbarComponentIcon(
     color: color,
   ),
   TopToolbarComponent.newTopicButton => Icon(
-    LucideIcons.plus,
+    LucideIcons.messageSquarePlus,
     size: size,
     color: color,
   ),
