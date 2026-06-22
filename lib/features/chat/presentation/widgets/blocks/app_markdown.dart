@@ -105,12 +105,11 @@ class AppMarkdown extends ConsumerWidget {
         codeBuilder: (context, name, code, closed) =>
             CodeBlockView(language: name, code: code),
         highlightBuilder: _inlineCode,
-        tableBuilder: (context, rows, textStyle, config) =>
-            MarkdownTable(
-              rows: rows,
-              baseStyle: textStyle,
-              useDollarSignsForLatex: dollarLatex,
-            ),
+        tableBuilder: (context, rows, textStyle, config) => MarkdownTable(
+          rows: rows,
+          baseStyle: textStyle,
+          useDollarSignsForLatex: dollarLatex,
+        ),
       ),
     );
   }
@@ -428,4 +427,9 @@ class _ContentColumnWidth extends TableColumnWidth {
   double minIntrinsicWidth(Iterable<RenderBox> cells, double containerWidth) {
     return math.min(maxWidth, _minWidth);
   }
+
+  /// When total column widths < table width, distribute excess space equally
+  /// so columns stretch to fill — no white gap on the right.
+  @override
+  double? flex(Iterable<RenderBox> cells) => 1.0;
 }
