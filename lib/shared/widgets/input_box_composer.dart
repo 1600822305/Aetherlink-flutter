@@ -196,7 +196,7 @@ class InputBoxComposer extends StatelessWidget {
         boxShadow: spec.shadow,
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 64),
+        constraints: const BoxConstraints(minHeight: 72),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           child: Column(
@@ -229,7 +229,7 @@ class InputBoxComposer extends StatelessWidget {
                       hintStyle: TextStyle(fontSize: 16, height: 1.4),
                       border: InputBorder.none,
                       isDense: true,
-                      contentPadding: EdgeInsets.symmetric(vertical: 8),
+                      contentPadding: EdgeInsets.symmetric(vertical: 10),
                     ),
                   ),
                 ),
