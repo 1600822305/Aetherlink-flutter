@@ -560,11 +560,13 @@ class ChatController extends _$ChatController {
       keyUpdates[updated.id] = updated;
     }
 
-    // Reasoning is aggregated across rounds into one 思考 card; [completed] holds
-    // the blocks earlier rounds finalized (the model's prose plus the 工具 blocks
-    // it triggered) in render order; [messages] is the running conversation that
-    // grows by an assistant turn + tool-result turns each time a tool runs.
+    // Each tool round finalizes its thinking into a separate ThinkingBlock in
+    // [completed], mirroring the web's BlockStateManager.resetThinkingBlock().
+    // [thinking] holds only the *current* round's reasoning; once the round
+    // ends with tool calls it is flushed into [completed] and cleared so the
+    // next round gets a fresh block.
     final thinking = StringBuffer();
+    var thinkingBlockId = '$assistantMessageId::thinking';
     final completed = <MessageBlock>[];
     var messages = List<LlmMessage>.of(request.messages);
     var view = assistantView;
@@ -592,18 +594,24 @@ class ChatController extends _$ChatController {
       if (current.isNotEmpty) current,
     ].join('\n\n');
 
+    String aggregateThinking() => <String>[
+      for (final block in completed)
+        if (block is ThinkingBlock && block.content.isNotEmpty) block.content,
+      if (thinking.isNotEmpty) thinking.toString(),
+    ].join('\n\n');
+
     void update() {
       final current = roundDisplay();
       final liveBlocks = <MessageBlock>[
+        ...completed,
         if (thinking.isNotEmpty)
           MessageBlock.thinking(
-            id: '$assistantMessageId::thinking',
+            id: thinkingBlockId,
             messageId: assistantMessageId,
             status: MessageBlockStatus.streaming,
             createdAt: assistantTime,
             content: thinking.toString(),
           ),
-        ...completed,
         MessageBlock.mainText(
           id: roundBlockId,
           messageId: assistantMessageId,
@@ -614,7 +622,7 @@ class ChatController extends _$ChatController {
       ];
       view = view.copyWith(
         text: aggregateText(current),
-        thinking: thinking.toString(),
+        thinking: aggregateThinking(),
         blocks: liveBlocks,
       );
       _replace(views, view);
@@ -647,6 +655,7 @@ class ChatController extends _$ChatController {
 
       // Reset the per-attempt accumulators so a failover retry starts clean.
       thinking.clear();
+      thinkingBlockId = '$assistantMessageId::thinking';
       completed.clear();
       buffer.clear();
       messages = List<LlmMessage>.of(request.messages);
@@ -710,6 +719,18 @@ class ChatController extends _$ChatController {
           // No (more) tools to run, or the round budget is spent: this round's
           // prose is the final answer.
           if (runnable.isEmpty || round >= _kMaxToolRounds - 1) {
+            // Flush this round's thinking before the final text so block order
+            // is correct: ...prev → ThinkingBlockN → MainText(final).
+            if (thinking.isNotEmpty) {
+              completed.add(
+                _thinkingBlock(
+                  messageId: assistantMessageId,
+                  createdAt: assistantTime,
+                  content: thinking.toString(),
+                ),
+              );
+              thinking.clear();
+            }
             final display = roundDisplay();
             if (display.isNotEmpty || completed.isEmpty) {
               completed.add(
@@ -722,6 +743,21 @@ class ChatController extends _$ChatController {
               );
             }
             break;
+          }
+
+          // Finalize this round's thinking (if any) into a separate block
+          // before the tool blocks, so the render order mirrors the web:
+          // ThinkingBlock₁ → ToolBlock₁ → ThinkingBlock₂ → ToolBlock₂ → …
+          if (thinking.isNotEmpty) {
+            completed.add(
+              _thinkingBlock(
+                messageId: assistantMessageId,
+                createdAt: assistantTime,
+                content: thinking.toString(),
+              ),
+            );
+            thinking.clear();
+            thinkingBlockId = generateId('thinking');
           }
 
           // Persist this round's prose (if any) before the tool blocks so the
@@ -810,15 +846,7 @@ class ChatController extends _$ChatController {
             latency: stopwatch.elapsedMilliseconds,
             firstTokenLatency: firstTokenMs,
           ),
-          blocks: [
-            if (thinking.isNotEmpty)
-              _thinkingBlock(
-                messageId: assistantMessageId,
-                createdAt: assistantTime,
-                content: thinking.toString(),
-              ),
-            ...completed,
-          ],
+          blocks: [...completed],
         );
         if (selectedIndex != -1) {
           recordKeyOutcome(selectedIndex, success: true);
@@ -859,6 +887,7 @@ class ChatController extends _$ChatController {
       messageId: assistantMessageId,
       status: MessageStatus.error,
       blocks: [
+        // Flush any remaining thinking from the current round.
         if (thinking.isNotEmpty)
           _thinkingBlock(
             messageId: assistantMessageId,
