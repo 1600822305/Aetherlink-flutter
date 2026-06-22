@@ -45,14 +45,15 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
   }
 
   void _onTabChanged() {
-    if (_tabController.indexIsChanging) return;
     // Remember the active tab for this session so reopening the drawer keeps it
     // (in-memory only — a restart resets to the default tab).
     final index = _tabController.index;
     if (ref.read(sidebarTabIndexProvider) != index) {
       ref.read(sidebarTabIndexProvider.notifier).set(index);
     }
-    // The 翻译 button only renders on the 助手/话题 tabs, so rebuild on switch.
+    // Rebuild immediately (no indexIsChanging guard) so the translate button
+    // visibility updates the instant the user taps a tab, not after the
+    // animation finishes — prevents a visible layout delay.
     setState(() {});
   }
 
@@ -100,10 +101,13 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
             const _CloseRow(),
             _SidebarTabBar(controller: _tabController),
             Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                // 禁止左右滑动切换 tab，只能点 tab 切换。
-                physics: const NeverScrollableScrollPhysics(),
+              // IndexedStack keeps all three tabs alive permanently so
+              // switching tabs never triggers an async reload — the "共 N 个"
+              // footer and all list content render instantly.
+              // Swipe between tabs is already disabled, so TabBarView's page
+              // animation is unnecessary.
+              child: IndexedStack(
+                index: _tabController.index,
                 children: [
                   AssistantTab(onGoToTopics: () => _tabController.animateTo(1)),
                   const TopicTab(),
@@ -111,7 +115,13 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
                 ],
               ),
             ),
-            if (showTranslate) const _TranslateButton(),
+            Visibility(
+              visible: showTranslate,
+              maintainSize: true,
+              maintainAnimation: true,
+              maintainState: true,
+              child: const _TranslateButton(),
+            ),
           ],
         ),
       ),
