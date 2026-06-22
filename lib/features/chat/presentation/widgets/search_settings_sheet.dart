@@ -5,6 +5,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search/search_provider_catalog.dart';
 
 /// 网络搜索设置底部弹窗 — 参考 Kelivo 的三层结构：
 ///   1. 搜索总开关
@@ -106,12 +108,7 @@ class _SearchSettingsSheet extends ConsumerWidget {
               const SizedBox(height: 8),
               _SectionHeader(label: '搜索提供商'),
               const SizedBox(height: 4),
-              _ProviderCard(
-                name: 'SearXNG',
-                description: '聚合 Google、Bing、DuckDuckGo 等 70+ 搜索引擎',
-                isSelected: true,
-                icon: LucideIcons.search,
-              ),
+              _ActiveProviderCard(),
             ],
           ],
         ),
@@ -223,75 +220,72 @@ class _ToggleCard extends StatelessWidget {
   }
 }
 
-/// Search provider card showing name, description, and selected state.
-class _ProviderCard extends StatelessWidget {
-  const _ProviderCard({
-    required this.name,
-    required this.description,
-    required this.isSelected,
-    required this.icon,
-  });
-
-  final String name;
-  final String description;
-  final bool isSelected;
-  final IconData icon;
+/// Reads the active provider from [WebSearchSettingsController] and displays
+/// its brand icon, name, and description. Tapping navigates to the full
+/// search settings page.
+class _ActiveProviderCard extends ConsumerWidget {
+  const _ActiveProviderCard();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isSelected
-              ? cs.primary.withValues(alpha: 0.3)
-              : cs.onSurface.withValues(alpha: 0.12),
+    final ws = ref.watch(webSearchSettingsControllerProvider);
+    final activeId = ws.activeProviderId;
+    final preset = presetForId(activeId);
+
+    // Find the user-added config (may have a custom name)
+    final config = ws.providers.where((p) => p.id == activeId).firstOrNull;
+    final name = config?.name ?? preset?.name ?? activeId;
+    final description = preset?.description ?? '';
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () {
+        Navigator.of(context).pop();
+        context.push(AppRouter.webSearchPath);
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: cs.primary.withValues(alpha: 0.3)),
         ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: cs.primary.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 18, color: cs.primary),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    name,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: isSelected ? cs.primary : cs.onSurface,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              SearchProviderIcon(preset: preset, size: 36),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      name,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: cs.primary,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    description,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: cs.onSurface.withValues(alpha: 0.6),
-                    ),
-                  ),
-                ],
+                    if (description.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        description,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: cs.onSurface.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-            ),
-            if (isSelected)
-              Icon(LucideIcons.check, size: 18, color: cs.primary),
-          ],
+              Icon(LucideIcons.chevronRight, size: 16, color: cs.onSurfaceVariant),
+            ],
+          ),
         ),
       ),
     );
