@@ -76,20 +76,28 @@ class ChatPage extends ConsumerWidget {
     // input — so the Scaffold body never animates its height during the
     // keyboard transition, eliminating the per-frame ShaderMask re-rasterize
     // that caused visible jank.
-    return SidebarHost(
-      drawer: const ChatSidebar(),
-      onOpened: Haptics.instance.onSidebar,
-      child: Scaffold(
-        resizeToAvoidBottomInset: false,
-        appBar: isSelecting
-            ? const MessageSelectionTopBar()
-            : const ChatTopBar(),
-        body: _ChatBackground(
-          background: background,
-          child: _ChatBody(
-            showSystemPromptBubble: showSystemPromptBubble,
-            stateAsync: stateAsync,
-            isSelecting: isSelecting,
+    return PopScope(
+      canPop: !isSelecting,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && isSelecting) {
+          ref.read(messageSelectionProvider.notifier).exitSelectionMode();
+        }
+      },
+      child: SidebarHost(
+        drawer: const ChatSidebar(),
+        onOpened: Haptics.instance.onSidebar,
+        child: Scaffold(
+          resizeToAvoidBottomInset: false,
+          appBar: isSelecting
+              ? const MessageSelectionTopBar()
+              : const ChatTopBar(),
+          body: _ChatBackground(
+            background: background,
+            child: _ChatBody(
+              showSystemPromptBubble: showSystemPromptBubble,
+              stateAsync: stateAsync,
+              isSelecting: isSelecting,
+            ),
           ),
         ),
       ),
