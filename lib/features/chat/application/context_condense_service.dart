@@ -87,9 +87,12 @@ ContextCondenseService contextCondenseService(Ref ref) =>
 ///   5. Create a summary message + ContextSummaryBlock
 ///   6. Delete compressed messages, persist the summary, refresh UI
 class ContextCondenseService {
-  ContextCondenseService(this._ref);
+  ContextCondenseService(this._ref) {
+    _ref.onDispose(() => _disposed = true);
+  }
 
   final Ref _ref;
+  bool _disposed = false;
 
   ChatRepository get _repo => _ref.read(chatRepositoryProvider);
 
@@ -121,6 +124,9 @@ class ContextCondenseService {
   }) async {
     // 1. Resolve the current topic
     final topic = await _ref.read(currentTopicProvider.future);
+    if (_disposed) {
+      return const CondenseResult(success: false, error: '操作已取消');
+    }
     final topicId = topic?.id;
     if (topicId == null) {
       return const CondenseResult(success: false, error: '没有活跃的对话');
@@ -169,6 +175,9 @@ class ContextCondenseService {
     if (textParts.isEmpty) {
       return const CondenseResult(success: false, error: '没有可压缩的文本内容');
     }
+    if (_disposed) {
+      return const CondenseResult(success: false, error: '操作已取消');
+    }
 
     final conversationText = textParts.join('\n\n');
 
@@ -202,6 +211,9 @@ class ContextCondenseService {
       extraHeaders: effective.providerExtraHeaders,
       extraBody: effective.providerExtraBody,
     );
+    if (_disposed) {
+      return const CondenseResult(success: false, error: '操作已取消');
+    }
     final gateway = _ref.read(llmGatewayFactoryProvider).forModel(effective);
     final buffer = StringBuffer();
     await for (final chunk in gateway.streamChat(request)) {
@@ -223,6 +235,10 @@ class ContextCondenseService {
         originalMessageCount: messagesToCompress.length,
         originalTokens: totalOriginalTokens,
       );
+    }
+
+    if (_disposed) {
+      return const CondenseResult(success: false, error: '操作已取消');
     }
 
     onProgress?.call('正在保存…');
@@ -274,7 +290,9 @@ class ContextCondenseService {
 
     // 10. Reload the chat UI
     onProgress?.call('完成');
-    _ref.read(chatRefreshProvider.notifier).bump();
+    if (!_disposed) {
+      _ref.read(chatRefreshProvider.notifier).bump();
+    }
 
     return CondenseResult(
       success: true,
