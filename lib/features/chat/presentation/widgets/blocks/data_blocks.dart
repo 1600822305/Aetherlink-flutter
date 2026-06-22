@@ -130,7 +130,7 @@ class _ToolBlockViewState extends ConsumerState<ToolBlockView> {
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontFamily: 'monospace',
                         fontSize: 13,
-                        color: theme.colorScheme.onSurfaceVariant,
+                        color: theme.colorScheme.onSurface,
                       ),
                     ),
                   ),
@@ -433,7 +433,7 @@ class _ToolSectionState extends State<_ToolSection> {
     final theme = Theme.of(context);
     final labelColor = widget.isError
         ? theme.colorScheme.error
-        : theme.colorScheme.onSurfaceVariant;
+        : theme.colorScheme.onSurface;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -500,7 +500,7 @@ class _ToolPre extends StatelessWidget {
             height: 1.5,
             color: isError
                 ? theme.colorScheme.error
-                : theme.colorScheme.onSurfaceVariant,
+                : theme.colorScheme.onSurface,
           ),
         ),
       ),
