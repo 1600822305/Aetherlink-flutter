@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/dat
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/media_blocks.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/text_blocks.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/thinking_block_view.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/web_search_block_view.dart';
 
 /// Dispatches an ordered list of [MessageBlock]s to per-type widgets, mirroring
 /// the original `MessageBlockRenderer.tsx`.
@@ -99,6 +100,9 @@ class MessageBlockRenderer extends StatelessWidget {
       case CodeBlock():
         return CodeBlockViewBlock(block: block);
       case ToolBlock():
+        if (block.toolName == 'builtin_web_search') {
+          return WebSearchBlockView(block: block);
+        }
         return ToolBlockView(block: block);
       case FileBlock():
         return FileBlockView(block: block);
