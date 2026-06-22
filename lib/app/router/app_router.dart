@@ -11,7 +11,9 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/behavio
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/chat_interface_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/default_model_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/input_box_settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_assistant_detail_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_server_detail_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_tool_domain_detail_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_combo/model_combo_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_server_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/message_bubble_settings_page.dart';
@@ -59,6 +61,10 @@ abstract final class AppRouter {
   static const String themeStyleSettingsPath =
       '/settings/appearance/theme-style';
   static const String mcpServerPath = '/settings/mcp-server';
+  static String mcpAssistantDetailPath(String serverId) =>
+      '/settings/mcp-assistant/$serverId';
+  static String mcpAssistantDomainPath(String serverId, String domain) =>
+      '/settings/mcp-assistant/$serverId/domain/$domain';
   static const String agentPromptsPath = '/settings/agent-prompts';
   static const String skillsPath = '/settings/skills';
   static String skillEditorPath(String skillId) => '/settings/skills/$skillId';
@@ -156,6 +162,27 @@ abstract final class AppRouter {
         pageBuilder: (context, state) => _instant(
           state,
           McpServerDetailPage(serverId: state.pathParameters['id'] ?? ''),
+        ),
+      ),
+      GoRoute(
+        path: '/settings/mcp-assistant/:serverId',
+        name: 'mcp-assistant-detail',
+        pageBuilder: (context, state) => _instant(
+          state,
+          McpAssistantDetailPage(
+            serverId: state.pathParameters['serverId'] ?? '',
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/settings/mcp-assistant/:serverId/domain/:domain',
+        name: 'mcp-assistant-domain',
+        pageBuilder: (context, state) => _instant(
+          state,
+          McpToolDomainDetailPage(
+            serverId: state.pathParameters['serverId'] ?? '',
+            domain: state.pathParameters['domain'] ?? '',
+          ),
         ),
       ),
       GoRoute(

@@ -53,6 +53,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_bridge_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_prompt.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/settings_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
 import 'package:aetherlink_flutter/shared/services/web_search_service.dart';
 import 'package:aetherlink_flutter/shared/utils/system_prompt_variables.dart';
@@ -2121,6 +2122,18 @@ class ChatController extends _$ChatController {
     for (final server in servers) {
       if (!server.isActive) continue;
 
+      // Settings assistant (@aether/settings): runs in-process with Ref.
+      if (kRefDependentBuiltins.contains(server.name)) {
+        final disabled = server.disabledTools?.toSet() ?? const <String>{};
+        for (final tool in builtinToolsFor(server.name)) {
+          if (disabled.contains(tool.name)) continue;
+          if (routes.containsKey(tool.name)) continue;
+          tools.add(tool);
+          routes[tool.name] = _SettingsToolRoute(tool.name);
+        }
+        continue;
+      }
+
       // Built-in (locally-runnable) servers: static catalogue, run in-process.
       if (kLocallyRunnableBuiltins.contains(server.name)) {
         final disabled = server.disabledTools?.toSet() ?? const <String>{};
@@ -2186,6 +2199,8 @@ class ChatController extends _$ChatController {
     Map<String, Object?> args,
   ) async {
     switch (route) {
+      case _SettingsToolRoute():
+        return await runSettingsTool(ref, route.toolName, args);
       case _BuiltinToolRoute(:final serverName, :final env):
         return await runBuiltinTool(
               serverName,
@@ -2342,6 +2357,9 @@ class ChatController extends _$ChatController {
         '未找到服务器: "$serverName"。可用的服务器: ${available.isEmpty ? '无' : available}',
         isError: true,
       );
+    }
+    if (kRefDependentBuiltins.contains(server.name)) {
+      return await runSettingsTool(ref, toolName, toolArgs);
     }
     if (kLocallyRunnableBuiltins.contains(server.name)) {
       return await runBuiltinTool(
@@ -2627,6 +2645,11 @@ sealed class _ToolRoute {
   const _ToolRoute(this.toolName);
 
   final String toolName;
+}
+
+/// A settings assistant tool, run in-process with [Ref] access.
+class _SettingsToolRoute extends _ToolRoute {
+  const _SettingsToolRoute(super.toolName);
 }
 
 /// A tool run in-process by [runBuiltinTool] (calculator / time / searxng).
