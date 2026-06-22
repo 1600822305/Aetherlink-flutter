@@ -139,4 +139,10 @@ class ChatRepositoryImpl implements ChatRepository {
   @override
   Future<void> saveSetting(String key, String value) =>
       _db.appSettingDao.setValue(key, value);
+
+  // --- Transactions ---------------------------------------------------------
+
+  @override
+  Future<T> runInTransaction<T>(Future<T> Function() action) =>
+      _db.transaction(action);
 }
