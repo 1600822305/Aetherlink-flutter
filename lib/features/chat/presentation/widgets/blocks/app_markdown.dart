@@ -1,8 +1,10 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gpt_markdown/gpt_markdown.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
@@ -115,13 +117,11 @@ class AppMarkdown extends ConsumerWidget {
   }
 }
 
-/// A Markdown table styled after Kelivo (soft [ColorScheme.outlineVariant]
-/// border, primary-tinted header, faint primary-tinted body, rounded/clipped
-/// frame), but with the original web table's scroll behaviour: columns size to
-/// their content, and when the table is wider than the bubble it scrolls
-/// horizontally with a persistent scrollbar that sits in a reserved bottom
-/// gutter (so it never paints over the last row). Narrow tables that fit show
-/// no scrollbar and no gutter.
+/// A Markdown table matching rikkahub's style: a card with a toolbar header
+/// ("表格" label + copy button), neutral surfaceContainerHighest header row,
+/// surfaceContainer body, outlineVariant cell borders, columns sized between
+/// 80–200px, and stretch-to-fill when narrow. Horizontal scroll with a bottom
+/// indicator when the table overflows.
 class MarkdownTable extends StatefulWidget {
   const MarkdownTable({
     required this.rows,
@@ -156,22 +156,28 @@ class _MarkdownTableState extends State<MarkdownTable> {
     }
   }
 
+  String _buildMarkdownSource() {
+    final buf = StringBuffer();
+    for (final row in widget.rows) {
+      final cells = row.fields.map((f) => f.data).toList();
+      buf.writeln('| ${cells.join(' | ')} |');
+      if (row.isHeader) {
+        buf.writeln('| ${cells.map((_) => '---').join(' | ')} |');
+      }
+    }
+    return buf.toString().trimRight();
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final borderColor = cs.outlineVariant.withValues(
-      alpha: isDark ? 0.22 : 0.30,
-    );
-    final headerBg = Color.alphaBlend(
-      cs.primary.withValues(alpha: isDark ? 0.15 : 0.07),
-      cs.surface,
-    );
-    final bodyBg = Color.alphaBlend(
-      cs.primary.withValues(alpha: isDark ? 0.04 : 0.015),
-      cs.surface,
-    );
+    final borderColor = cs.outlineVariant;
+    final headerBg = isDark
+        ? cs.surfaceContainerHighest
+        : cs.surfaceContainerHighest;
+    final bodyBg = cs.surfaceContainer;
     final trackColor = cs.outlineVariant.withValues(
       alpha: isDark ? 0.20 : 0.28,
     );
@@ -197,51 +203,71 @@ class _MarkdownTableState extends State<MarkdownTable> {
           maxColWidth: maxWidth,
         );
 
-        // The scrollable state is known only after layout; re-sync once the
-        // frame settles so the gutter/scrollbar appears only when needed.
         WidgetsBinding.instance.addPostFrameCallback((_) => _syncScrollable());
 
-        final frame = Container(
-          decoration: BoxDecoration(
-            color: bodyBg,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          foregroundDecoration: BoxDecoration(
-            border: Border.all(color: borderColor, width: 0.8),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          clipBehavior: Clip.antiAlias,
-          // Suppress every built-in Scrollbar (platform default + any inherited
-          // one); they paint as an overlay on the last row. The scroll position
-          // is shown by [_BottomScrollIndicator], a strip laid out *below* the
-          // table in the Column, so it can never cover a row.
-          child: ScrollConfiguration(
-            behavior: ScrollConfiguration.of(
-              context,
-            ).copyWith(scrollbars: false),
-            child: SingleChildScrollView(
-              controller: _controller,
-              scrollDirection: Axis.horizontal,
-              physics: const ClampingScrollPhysics(),
-              child: table,
-            ),
-          ),
-        );
-
         return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              frame,
-              if (_scrollable)
-                _BottomScrollIndicator(
-                  controller: _controller,
-                  trackColor: trackColor,
-                  thumbColor: thumbColor,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: bodyBg,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: borderColor, width: 1),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Toolbar
+                Container(
+                  color: headerBg,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    children: [
+                      Text(
+                        '表格',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                      const Spacer(),
+                      _ToolbarIconButton(
+                        icon: LucideIcons.copy,
+                        tooltip: '复制表格',
+                        onTap: () {
+                          Clipboard.setData(
+                            ClipboardData(text: _buildMarkdownSource()),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-            ],
+                // Table content with horizontal scroll
+                ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(
+                    context,
+                  ).copyWith(scrollbars: false),
+                  child: SingleChildScrollView(
+                    controller: _controller,
+                    scrollDirection: Axis.horizontal,
+                    physics: const ClampingScrollPhysics(),
+                    child: table,
+                  ),
+                ),
+                if (_scrollable)
+                  _BottomScrollIndicator(
+                    controller: _controller,
+                    trackColor: trackColor,
+                    thumbColor: thumbColor,
+                  ),
+              ],
+            ),
           ),
         );
       },
@@ -255,7 +281,10 @@ class _MarkdownTableState extends State<MarkdownTable> {
     required Color headerBg,
     required double maxColWidth,
   }) {
-    final columnWidth = _ContentColumnWidth(maxWidth: maxColWidth);
+    final columnWidth = _ContentColumnWidth(
+      minWidth: 80,
+      maxWidth: math.min(200, maxColWidth),
+    );
     return Table(
       defaultColumnWidth: columnWidth,
       columnWidths: {for (var i = 0; i < colCount; i++) i: columnWidth},
@@ -316,9 +345,41 @@ class _MarkdownTableState extends State<MarkdownTable> {
   }
 }
 
+/// Small icon button used in the table toolbar.
+class _ToolbarIconButton extends StatelessWidget {
+  const _ToolbarIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(4),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Icon(
+            icon,
+            size: 16,
+            color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// A slim horizontal scroll bar laid out *below* the table (a sibling in the
-/// Column, never an overlay), so it can never paint over a row. It mirrors
-/// [controller]'s position and is draggable to scroll the table.
+/// Column, never an overlay), so it can never paint over a row.
 class _BottomScrollIndicator extends StatelessWidget {
   const _BottomScrollIndicator({
     required this.controller,
@@ -341,7 +402,6 @@ class _BottomScrollIndicator extends StatelessWidget {
     ),
   );
 
-  // Geometry of the thumb on a [track]-wide bar for the current scroll offset.
   ({double width, double left, double max, double free}) _geometry(
     double track,
   ) {
@@ -363,7 +423,7 @@ class _BottomScrollIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.only(top: 4, bottom: 4),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final track = constraints.maxWidth;
@@ -402,34 +462,29 @@ class _BottomScrollIndicator extends StatelessWidget {
   }
 }
 
-/// Sizes a column to the natural (unwrapped) width of its widest cell, with a
-/// lower bound of [_minWidth] and capped at [maxWidth] (the bubble width) so a
-/// single long cell wraps instead of stretching the table indefinitely. Tables
-/// whose columns sum wider than the viewport then overflow and scroll.
+/// Sizes a column between [minWidth] and [maxWidth]. Columns stretch to fill
+/// the viewport when the table is narrower than available width.
 class _ContentColumnWidth extends TableColumnWidth {
-  const _ContentColumnWidth({required this.maxWidth});
+  const _ContentColumnWidth({required this.minWidth, required this.maxWidth});
 
-  static const double _minWidth = 72;
-
+  final double minWidth;
   final double maxWidth;
 
   @override
   double maxIntrinsicWidth(Iterable<RenderBox> cells, double containerWidth) {
-    var width = _minWidth;
+    var width = minWidth;
     for (final cell in cells) {
       cell.layout(const BoxConstraints(), parentUsesSize: true);
       width = math.max(width, cell.size.width);
     }
-    return math.min(maxWidth, width);
+    return width.clamp(minWidth, maxWidth);
   }
 
   @override
   double minIntrinsicWidth(Iterable<RenderBox> cells, double containerWidth) {
-    return math.min(maxWidth, _minWidth);
+    return minWidth;
   }
 
-  /// When total column widths < table width, distribute excess space equally
-  /// so columns stretch to fill — no white gap on the right.
   @override
   double? flex(Iterable<RenderBox> cells) => 1.0;
 }
