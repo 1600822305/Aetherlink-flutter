@@ -1,60 +1,133 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 
-/// Tab 2 — 提示词设置: per-feature prompt editors with reset-to-default.
-///
-/// Extracted as a standalone widget for reuse outside the auxiliary settings
-/// page (e.g. embedded in another settings flow).
-class AuxiliaryPromptTab extends StatelessWidget {
-  const AuxiliaryPromptTab({
-    super.key,
-    required this.topicPromptController,
-    required this.intentPromptController,
-    required this.visionPromptController,
-    required this.onResetTopicPrompt,
-    required this.onResetIntentPrompt,
-    required this.onResetVisionPrompt,
-  });
+/// Tab 2 — 提示词设置: 5 prompt editors (translate, title, suggestion, ocr,
+/// compress) with reset-to-default. Uses Aetherlink-flutter's existing
+/// collapsible card UI style.
+class AuxiliaryPromptTab extends ConsumerStatefulWidget {
+  const AuxiliaryPromptTab({super.key});
 
-  final TextEditingController topicPromptController;
-  final TextEditingController intentPromptController;
-  final TextEditingController visionPromptController;
-  final VoidCallback onResetTopicPrompt;
-  final VoidCallback onResetIntentPrompt;
-  final VoidCallback onResetVisionPrompt;
+  @override
+  ConsumerState<AuxiliaryPromptTab> createState() => _AuxiliaryPromptTabState();
+}
+
+class _AuxiliaryPromptTabState extends ConsumerState<AuxiliaryPromptTab> {
+  late final TextEditingController _translateController;
+  late final TextEditingController _titleController;
+  late final TextEditingController _suggestionController;
+  late final TextEditingController _ocrController;
+  late final TextEditingController _compressController;
+
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _translateController = TextEditingController();
+    _titleController = TextEditingController();
+    _suggestionController = TextEditingController();
+    _ocrController = TextEditingController();
+    _compressController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _translateController.dispose();
+    _titleController.dispose();
+    _suggestionController.dispose();
+    _ocrController.dispose();
+    _compressController.dispose();
+    super.dispose();
+  }
+
+  void _syncControllers(AuxiliaryModelState state) {
+    if (!_initialized) {
+      _translateController.text = state.translatePrompt;
+      _titleController.text = state.titlePrompt;
+      _suggestionController.text = state.suggestionPrompt;
+      _ocrController.text = state.ocrPrompt;
+      _compressController.text = state.compressPrompt;
+      _initialized = true;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(auxiliaryModelControllerProvider);
+    final ctrl = ref.read(auxiliaryModelControllerProvider.notifier);
+
+    _syncControllers(state);
+
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
         AuxiliaryPromptCard(
+          icon: LucideIcons.languages,
+          iconColor: const Color(0xFF3B82F6),
+          title: '翻译提示词',
+          description: '用于指导模型如何进行文本翻译',
+          controller: _translateController,
+          onReset: () {
+            ctrl.resetTranslatePrompt();
+            _translateController.text = kDefaultTranslatePrompt;
+          },
+          onChanged: ctrl.setTranslatePrompt,
+        ),
+        const SizedBox(height: 12),
+        AuxiliaryPromptCard(
           icon: LucideIcons.type,
-          iconColor: const Color(0xFF6366F1),
-          title: '话题命名提示词',
+          iconColor: const Color(0xFF8B5CF6),
+          title: '标题提示词',
           description: '用于指导模型如何生成对话标题',
-          controller: topicPromptController,
-          onReset: onResetTopicPrompt,
+          controller: _titleController,
+          onReset: () {
+            ctrl.resetTitlePrompt();
+            _titleController.text = kDefaultTitlePrompt;
+          },
+          onChanged: ctrl.setTitlePrompt,
         ),
         const SizedBox(height: 12),
         AuxiliaryPromptCard(
           icon: LucideIcons.lightbulb,
-          iconColor: const Color(0xFFF59E0B),
-          title: '意图分析提示词',
-          description: '用于指导模型如何判断用户意图',
-          controller: intentPromptController,
-          onReset: onResetIntentPrompt,
+          iconColor: const Color(0xFF10B981),
+          title: '建议提示词',
+          description: '用于指导模型如何生成后续问题建议',
+          controller: _suggestionController,
+          onReset: () {
+            ctrl.resetSuggestionPrompt();
+            _suggestionController.text = kDefaultSuggestionPrompt;
+          },
+          onChanged: ctrl.setSuggestionPrompt,
         ),
         const SizedBox(height: 12),
         AuxiliaryPromptCard(
           icon: LucideIcons.eye,
-          iconColor: const Color(0xFF10B981),
-          title: '视觉识别提示词',
+          iconColor: const Color(0xFFEC4899),
+          title: 'OCR 提示词',
           description: '用于指导视觉模型如何描述图片内容',
-          controller: visionPromptController,
-          onReset: onResetVisionPrompt,
+          controller: _ocrController,
+          onReset: () {
+            ctrl.resetOcrPrompt();
+            _ocrController.text = kDefaultOcrPrompt;
+          },
+          onChanged: ctrl.setOcrPrompt,
+        ),
+        const SizedBox(height: 12),
+        AuxiliaryPromptCard(
+          icon: LucideIcons.foldVertical,
+          iconColor: const Color(0xFF14B8A6),
+          title: '压缩提示词',
+          description: '用于指导模型如何压缩对话历史',
+          controller: _compressController,
+          onReset: () {
+            ctrl.resetCompressPrompt();
+            _compressController.text = kDefaultCompressPrompt;
+          },
+          onChanged: ctrl.setCompressPrompt,
         ),
       ],
     );
@@ -75,6 +148,7 @@ class AuxiliaryPromptCard extends StatefulWidget {
     required this.description,
     required this.controller,
     required this.onReset,
+    this.onChanged,
   });
 
   final IconData icon;
@@ -83,6 +157,7 @@ class AuxiliaryPromptCard extends StatefulWidget {
   final String description;
   final TextEditingController controller;
   final VoidCallback onReset;
+  final ValueChanged<String>? onChanged;
 
   @override
   State<AuxiliaryPromptCard> createState() => _AuxiliaryPromptCardState();
@@ -175,6 +250,7 @@ class _AuxiliaryPromptCardState extends State<AuxiliaryPromptCard> {
                     maxLines: 8,
                     minLines: 3,
                     style: theme.textTheme.bodyMedium?.copyWith(fontSize: 14),
+                    onChanged: widget.onChanged,
                     decoration: InputDecoration(
                       isDense: true,
                       hintText: '输入自定义提示词...',
