@@ -65,21 +65,20 @@ class _ExportSheetState extends State<_ExportSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final bottomPad = MediaQuery.of(context).padding.bottom;
     final title = _isSingle ? '导出/分享' : '导出 ${widget.messages.length} 条消息';
 
     return SafeArea(
       top: false,
       child: Padding(
-        padding: EdgeInsets.only(bottom: bottomPad > 0 ? 0 : 8),
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // Drag handle
             Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 8),
+              padding: const EdgeInsets.only(top: 8, bottom: 6),
               child: Container(
-                width: 40,
+                width: 36,
                 height: 4,
                 decoration: BoxDecoration(
                   color: cs.onSurface.withValues(alpha: 0.2),
@@ -89,97 +88,97 @@ class _ExportSheetState extends State<_ExportSheet> {
             ),
             // Title
             Padding(
-              padding: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.only(bottom: 10),
               child: Text(
                 title,
-                style: theme.textTheme.titleMedium?.copyWith(
+                style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
-            // Export options
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                children: [
-                  _ExportOptionRow(
-                    icon: LucideIcons.bookOpenText,
-                    label: 'Markdown',
-                    subtitle: '导出为 .md 文件',
-                    onTap: _exporting ? null : _exportMarkdown,
-                  ),
-                  const SizedBox(height: 8),
-                  _ExportOptionRow(
+            // Export format buttons row (compact, Kelivo-style)
+            Row(
+              children: [
+                Expanded(
+                  child: _CompactFormatButton(
                     icon: LucideIcons.fileText,
                     label: '纯文本',
-                    subtitle: '导出为 .txt 文件',
+                    color: cs.tertiary,
                     onTap: _exporting ? null : _exportTxt,
                   ),
-                  const SizedBox(height: 8),
-                  _ExportOptionRow(
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _CompactFormatButton(
+                    icon: LucideIcons.bookOpenText,
+                    label: 'Markdown',
+                    color: cs.primary,
+                    onTap: _exporting ? null : _exportMarkdown,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _CompactFormatButton(
                     icon: LucideIcons.image,
                     label: '图片',
-                    subtitle: '导出为长图',
+                    color: cs.secondary,
                     onTap: _exporting ? null : _exportImage,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            // Divider
-            Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.3)),
             const SizedBox(height: 8),
-            // Switches
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                children: [
-                  _SwitchRow(
-                    label: '包含思考过程和工具',
-                    value: _showThinkingAndTools,
-                    onChanged: (v) {
-                      setState(() {
-                        _showThinkingAndTools = v;
-                        if (!v) _expandThinking = false;
-                      });
+            // Toggle chips row (thinking & tools)
+            Row(
+              children: [
+                Expanded(
+                  child: _ToggleChip(
+                    icon: LucideIcons.wrench,
+                    label: '思考和工具',
+                    selected: _showThinkingAndTools,
+                    onTap: () => setState(() {
+                      _showThinkingAndTools = !_showThinkingAndTools;
+                      if (!_showThinkingAndTools) _expandThinking = false;
+                    }),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _ToggleChip(
+                    icon: LucideIcons.brain,
+                    label: '展开思考',
+                    selected: _expandThinking,
+                    enabled: _showThinkingAndTools,
+                    onTap: () {
+                      if (!_showThinkingAndTools) return;
+                      setState(() => _expandThinking = !_expandThinking);
                     },
                   ),
-                  _SwitchRow(
-                    label: '展开思考内容',
-                    value: _expandThinking,
-                    onChanged: _showThinkingAndTools
-                        ? (v) => setState(() => _expandThinking = v)
-                        : null,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(height: 4),
-            // Quick actions: copy & share
-            Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.3)),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  _QuickActionChip(
-                    icon: LucideIcons.copy,
-                    label: '复制文本',
-                    onTap: () => _copyContent(asMarkdown: false),
-                  ),
-                  const SizedBox(width: 8),
-                  _QuickActionChip(
-                    icon: LucideIcons.copy,
-                    label: '复制 MD',
-                    onTap: () => _copyContent(asMarkdown: true),
-                  ),
-                  const SizedBox(width: 8),
-                  _QuickActionChip(
-                    icon: LucideIcons.share2,
-                    label: '分享',
-                    onTap: _shareText,
-                  ),
-                ],
-              ),
+            const SizedBox(height: 8),
+            // Quick actions row (copy & share)
+            Row(
+              children: [
+                _QuickActionChip(
+                  icon: LucideIcons.copy,
+                  label: '复制文本',
+                  onTap: () => _copyContent(asMarkdown: false),
+                ),
+                const SizedBox(width: 8),
+                _QuickActionChip(
+                  icon: LucideIcons.copy,
+                  label: '复制 MD',
+                  onTap: () => _copyContent(asMarkdown: true),
+                ),
+                const SizedBox(width: 8),
+                _QuickActionChip(
+                  icon: LucideIcons.share2,
+                  label: '分享',
+                  onTap: _shareText,
+                ),
+              ],
             ),
           ],
         ),
@@ -648,63 +647,46 @@ class _ExportMessageCard extends StatelessWidget {
 // Compact option row
 // ---------------------------------------------------------------------------
 
-class _ExportOptionRow extends StatelessWidget {
-  const _ExportOptionRow({
+/// Compact colored format button (Kelivo-style).
+class _CompactFormatButton extends StatelessWidget {
+  const _CompactFormatButton({
     required this.icon,
     required this.label,
-    required this.subtitle,
+    required this.color,
     this.onTap,
   });
 
   final IconData icon;
   final String label;
-  final String subtitle;
+  final Color color;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark
+        ? color.withValues(alpha: 0.15)
+        : color.withValues(alpha: 0.08);
     return Material(
-      color: isDark
-          ? cs.primary.withValues(alpha: 0.08)
-          : cs.primary.withValues(alpha: 0.05),
+      color: bg,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 20, color: cs.primary),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: cs.onSurface,
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: cs.onSurface.withValues(alpha: 0.6),
-                      ),
-                    ),
-                  ],
+              Icon(icon, size: 20, color: color),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: color,
                 ),
-              ),
-              Icon(
-                LucideIcons.chevronRight,
-                size: 16,
-                color: cs.onSurface.withValues(alpha: 0.3),
               ),
             ],
           ),
@@ -715,49 +697,62 @@ class _ExportOptionRow extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Switch row
+// Toggle chip (like Kelivo's selection bar toggle)
 // ---------------------------------------------------------------------------
 
-class _SwitchRow extends StatelessWidget {
-  const _SwitchRow({
+class _ToggleChip extends StatelessWidget {
+  const _ToggleChip({
+    required this.icon,
     required this.label,
-    required this.value,
-    required this.onChanged,
+    required this.selected,
+    required this.onTap,
+    this.enabled = true,
   });
 
+  final IconData icon;
   final String label;
-  final bool value;
-  final ValueChanged<bool>? onChanged;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final enabled = onChanged != null;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                color: enabled
-                    ? cs.onSurface
-                    : cs.onSurface.withValues(alpha: 0.4),
+    final fg = !enabled
+        ? cs.onSurface.withValues(alpha: 0.3)
+        : selected
+        ? cs.primary
+        : cs.onSurface.withValues(alpha: 0.7);
+    final bg = selected
+        ? cs.primary.withValues(alpha: 0.12)
+        : cs.surfaceContainerHighest.withValues(alpha: 0.5);
+    return Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 14, color: fg),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                    color: fg,
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
-          SizedBox(
-            height: 28,
-            child: Switch.adaptive(
-              value: value,
-              onChanged: onChanged,
-              activeColor: cs.primary,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
