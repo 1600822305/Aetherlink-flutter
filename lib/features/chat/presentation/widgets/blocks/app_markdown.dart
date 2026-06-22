@@ -117,11 +117,16 @@ class AppMarkdown extends ConsumerWidget {
   }
 }
 
-/// A Markdown table matching rikkahub's style: a card with a toolbar header
-/// ("表格" label + copy button), neutral surfaceContainerHighest header row,
-/// surfaceContainer body, outlineVariant cell borders, columns sized between
-/// 80–200px, and stretch-to-fill when narrow. Horizontal scroll with a bottom
-/// indicator when the table overflows.
+/// Markdown table — 1:1 port of rikkahub's TableNode + DataTable.
+///
+/// Structure (outside-in):
+///   Card (surfaceContainer bg, 16dp radius, 1dp outlineVariant border)
+///     ├─ Toolbar (surfaceContainerHighest bg, 12h/8v padding)
+///     │    "表格" label + copy + download icons
+///     └─ DataTable (no outer border, rectangular)
+///          ├─ Header row: surfaceContainerHighest bg
+///          ├─ Body rows: transparent (shows card's surfaceContainer)
+///          └─ Each cell: 0.5dp outlineVariant border on all 4 sides, 4dp padding
 class MarkdownTable extends StatefulWidget {
   const MarkdownTable({
     required this.rows,
@@ -188,10 +193,17 @@ class _MarkdownTableState extends State<MarkdownTable> {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    // rikkahub color mapping:
+    //   card bg     = surfaceContainer
+    //   toolbar bg  = surfaceContainerHighest
+    //   header bg   = surfaceContainerHighest (surfaceVariant in Compose,
+    //                 but deprecated in Flutter → surfaceContainerHighest)
+    //   cell border = 0.5dp outlineVariant
+    //   card border = 1dp outlineVariant
     final borderColor = cs.outlineVariant;
     final toolbarBg = cs.surfaceContainerHighest;
-    final tableHeaderBg = cs.surfaceContainerHigh;
-    final bodyBg = cs.surfaceContainer;
+    final headerBg = cs.surfaceContainerHighest;
+    final cardBg = cs.surfaceContainer;
     final trackColor = cs.outlineVariant.withValues(
       alpha: isDark ? 0.20 : 0.28,
     );
@@ -213,26 +225,27 @@ class _MarkdownTableState extends State<MarkdownTable> {
           context,
           colCount: colCount,
           borderColor: borderColor,
-          headerBg: tableHeaderBg,
+          headerBg: headerBg,
           maxColWidth: maxWidth,
         );
 
         WidgetsBinding.instance.addPostFrameCallback((_) => _syncScrollable());
 
+        // rikkahub: shapes.large = 16dp, 1dp outlineVariant border
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Container(
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
-              color: bodyBg,
-              borderRadius: BorderRadius.circular(12),
+              color: cardBg,
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(color: borderColor, width: 1),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Toolbar
+                // Toolbar — surfaceContainerHighest bg
                 Container(
                   color: toolbarBg,
                   padding: const EdgeInsets.symmetric(
@@ -246,6 +259,7 @@ class _MarkdownTableState extends State<MarkdownTable> {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
+                          height: 1.0,
                           color: cs.onSurfaceVariant,
                         ),
                       ),
@@ -277,6 +291,8 @@ class _MarkdownTableState extends State<MarkdownTable> {
                     ],
                   ),
                 ),
+                // Divider between toolbar and table content
+                Divider(height: 1, thickness: 0.5, color: borderColor),
                 // Table content with horizontal scroll
                 ScrollConfiguration(
                   behavior: ScrollConfiguration.of(
@@ -314,14 +330,14 @@ class _MarkdownTableState extends State<MarkdownTable> {
       minWidth: 80,
       maxWidth: math.min(200, maxColWidth),
     );
+    // rikkahub CellBox: each cell has its own 0.5dp border on all 4 sides.
+    // Flutter Table doesn't support per-cell borders, so we use TableBorder.all
+    // to draw 0.5dp lines on every edge (top, bottom, left, right, inside).
     return Table(
       defaultColumnWidth: columnWidth,
       columnWidths: {for (var i = 0; i < colCount; i++) i: columnWidth},
       defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-      border: TableBorder(
-        horizontalInside: BorderSide(color: borderColor, width: 0.5),
-        verticalInside: BorderSide(color: borderColor, width: 0.5),
-      ),
+      border: TableBorder.all(color: borderColor, width: 0.5),
       children: [
         for (final row in widget.rows)
           TableRow(
@@ -353,8 +369,9 @@ class _MarkdownTableState extends State<MarkdownTable> {
       color: isHeader ? cs.onSurface : cs.onSurface.withValues(alpha: 0.90),
     );
 
+    // rikkahub CellBox: 4dp padding uniform, Alignment.CenterStart
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.all(4),
       child: Align(
         alignment: switch (align) {
           TextAlign.center => Alignment.center,
