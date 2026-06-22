@@ -29,6 +29,7 @@ String topToolbarComponentName(TopToolbarComponent component) =>
       TopToolbarComponent.modelSelector => '模型选择器',
       TopToolbarComponent.settingsButton => '设置按钮',
       TopToolbarComponent.condenseButton => '压缩上下文',
+      TopToolbarComponent.miniMapButton => '迷你地图',
     };
 
 /// The component's glyph (`componentConfig.icon`), tinted [color]. `topicName`
@@ -67,6 +68,11 @@ Widget topToolbarComponentIcon(
     color: color,
   ),
   TopToolbarComponent.condenseButton => _svg(kFoldVerticalIcon, color, size),
+  TopToolbarComponent.miniMapButton => Icon(
+    LucideIcons.map,
+    size: size,
+    color: color,
+  ),
 };
 
 /// Renders a bespoke (non-lucide) SVG glyph tinted to [color], matching the

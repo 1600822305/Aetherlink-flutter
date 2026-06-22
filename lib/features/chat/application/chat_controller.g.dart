@@ -78,7 +78,7 @@ final class ChatControllerProvider
   ChatController create() => ChatController();
 }
 
-String _$chatControllerHash() => r'b29e4476f203a187518ad4904175aab07844c5f9';
+String _$chatControllerHash() => r'93c1825c4a35d79e6cb02d77c26605e5ad286bbc';
 
 /// Orchestrates the chat send/stream loop (application layer).
 ///
