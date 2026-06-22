@@ -175,16 +175,20 @@ class _MiniMapSheetState extends State<_MiniMapSheet> {
                             ),
                           ),
                         )
-                      : ListView.builder(
+                      : Scrollbar(
                           controller: controller,
-                          itemCount: pairs.length,
-                          itemBuilder: (context, index) {
-                            return _MiniMapRow(
-                              pair: pairs[index],
-                              selecting: widget.selecting,
-                              ref: widget.ref,
-                            );
-                          },
+                          thumbVisibility: true,
+                          child: ListView.builder(
+                            controller: controller,
+                            itemCount: pairs.length,
+                            itemBuilder: (context, index) {
+                              return _MiniMapRow(
+                                pair: pairs[index],
+                                selecting: widget.selecting,
+                                ref: widget.ref,
+                              );
+                            },
+                          ),
                         ),
                 ),
               ],
