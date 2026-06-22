@@ -57,7 +57,10 @@ String _encodeModelKey(String providerId, String modelId) =>
 }
 
 /// Resolves a stored model key to a [CurrentModel] from the provider list.
-CurrentModel? _resolveModel(String? key, List<ModelProvider> providers) {
+CurrentModel? resolveAuxiliaryModel(
+  String? key,
+  List<ModelProvider> providers,
+) {
   final pair = _decodeModelKey(key);
   if (pair == null) return null;
   final (providerId, modelId) = pair;
@@ -310,7 +313,7 @@ class AuxiliaryModelController extends _$AuxiliaryModelController {
 Future<String?> auxiliaryModelDisplayName(Ref ref, String? modelKey) async {
   if (modelKey == null || modelKey.isEmpty) return null;
   final providers = await ref.watch(appModelProvidersProvider.future);
-  final resolved = _resolveModel(modelKey, providers);
+  final resolved = resolveAuxiliaryModel(modelKey, providers);
   if (resolved == null) return null;
   return '${resolved.provider.name} / ${resolved.model.name}';
 }
