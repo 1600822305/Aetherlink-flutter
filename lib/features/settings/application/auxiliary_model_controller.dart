@@ -57,7 +57,10 @@ String _encodeModelKey(String providerId, String modelId) =>
 }
 
 /// Resolves a stored model key to a [CurrentModel] from the provider list.
-CurrentModel? _resolveModel(String? key, List<ModelProvider> providers) {
+CurrentModel? resolveAuxiliaryModel(
+  String? key,
+  List<ModelProvider> providers,
+) {
   final pair = _decodeModelKey(key);
   if (pair == null) return null;
   final (providerId, modelId) = pair;
@@ -156,6 +159,23 @@ class AuxiliaryModelController extends _$AuxiliaryModelController {
   @override
   AuxiliaryModelState build() {
     _hydrate();
+
+    // Keep chatModelKey in sync with the app-level current model.
+    // When the user switches model in the chat composer, the app current model
+    // changes and this listener mirrors the change into the auxiliary setting.
+    ref.listen(appCurrentModelProvider, (prev, next) {
+      final currentModel = next.asData?.value;
+      if (currentModel == null) return;
+      final key = _encodeModelKey(
+        currentModel.provider.id,
+        currentModel.model.id,
+      );
+      if (key != state.chatModelKey) {
+        state = state.copyWith(chatModelKey: () => key);
+        _repo.saveSetting(kChatModelKey, key);
+      }
+    });
+
     return const AuxiliaryModelState();
   }
 
@@ -198,6 +218,10 @@ class AuxiliaryModelController extends _$AuxiliaryModelController {
     final key = _encodeModelKey(providerId, modelId);
     state = state.copyWith(chatModelKey: () => key);
     _repo.saveSetting(kChatModelKey, key);
+    // Sync to the app-level current model so the chat composer uses this model.
+    ref
+        .read(modelStoreProvider.notifier)
+        .selectCurrentModel(providerId: providerId, modelId: modelId);
   }
 
   void setFastModel(String providerId, String modelId) {
@@ -310,7 +334,7 @@ class AuxiliaryModelController extends _$AuxiliaryModelController {
 Future<String?> auxiliaryModelDisplayName(Ref ref, String? modelKey) async {
   if (modelKey == null || modelKey.isEmpty) return null;
   final providers = await ref.watch(appModelProvidersProvider.future);
-  final resolved = _resolveModel(modelKey, providers);
+  final resolved = resolveAuxiliaryModel(modelKey, providers);
   if (resolved == null) return null;
   return '${resolved.provider.name} / ${resolved.model.name}';
 }

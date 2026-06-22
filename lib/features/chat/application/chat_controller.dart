@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/app/di/system_prompt_variables_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/combo_executor.dart';
+import 'package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/model_combo_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/model_combo_providers.dart';
 import 'package:aetherlink_flutter/shared/domain/model_combo.dart';
@@ -1336,6 +1337,7 @@ class ChatController extends _$ChatController {
         _replace(views, view);
         _emit(views, isStreaming: false);
         unawaited(_refreshTopicPreview());
+        unawaited(_generateTitle());
         return;
       } on Object catch (error) {
         lastError = error;
@@ -1520,6 +1522,120 @@ class ChatController extends _$ChatController {
     final normalized = text.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (normalized.length <= 50) return normalized;
     return '${normalized.substring(0, 50)}…';
+  }
+
+  /// Generates a conversation title using the configured title model + prompt.
+  ///
+  /// Mirrors rikkahub's `ChatService.generateTitle`: takes the last 4 messages,
+  /// builds a summary, sends the title prompt to the title model (falling back
+  /// to the current chat model), and saves the result as the topic name.
+  /// Non-critical: failures are silently swallowed.
+  Future<void> _generateTitle() async {
+    final topicId = _topicId;
+    if (topicId == null) return;
+    try {
+      final topic = await _repo.getTopic(topicId);
+      if (topic == null) return;
+
+      // Skip if the name was manually edited or is already non-default.
+      if (topic.isNameManuallyEdited) return;
+      final name = topic.name;
+      if (name != '新对话' &&
+          name != '新的对话' &&
+          name != '新话题' &&
+          name.trim().isNotEmpty) {
+        return;
+      }
+
+      // Gather the last 4 messages' text for context.
+      final messages = await _repo.getMessagesByTopicId(topicId)
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      if (messages.isEmpty) return;
+
+      final recent = messages.length > 4
+          ? messages.sublist(messages.length - 4)
+          : messages;
+      final summaryParts = <String>[];
+      for (final msg in recent) {
+        final blocks = await _repo.getMessageBlocksByMessageId(msg.id);
+        final text = blocks
+            .whereType<MainTextBlock>()
+            .map((b) => b.content)
+            .join('\n');
+        if (text.trim().isEmpty) continue;
+        final truncated = text.length > 500
+            ? '${text.substring(0, 500)}…'
+            : text;
+        final role = msg.role == MessageRole.user ? '用户' : 'AI';
+        summaryParts.add('$role: $truncated');
+      }
+      if (summaryParts.isEmpty) return;
+      final contentSummary = summaryParts.join('\n\n');
+
+      // Resolve the title model; fall back to the current chat model.
+      final auxState = ref.read(auxiliaryModelControllerProvider);
+      final providers = await ref.read(appModelProvidersProvider.future);
+      var resolved = resolveAuxiliaryModel(auxState.titleModelKey, providers);
+      resolved ??= findCurrentModel(providers);
+      if (resolved == null) return;
+
+      final effective = effectiveModelFor(resolved);
+      final titlePrompt = auxState.titlePrompt;
+
+      // Build the prompt by replacing {{messages}} / {content} / {locale}.
+      final locale = 'Chinese';
+      var prompt = titlePrompt
+          .replaceAll('{{messages}}', contentSummary)
+          .replaceAll('{content}', contentSummary)
+          .replaceAll('{locale}', locale);
+      // If the template didn't contain any placeholder, append the content.
+      if (prompt == titlePrompt) {
+        prompt = '$titlePrompt\n\n$contentSummary';
+      }
+
+      final request = LlmChatRequest(
+        model: effective,
+        messages: [LlmMessage(role: MessageRole.user, content: prompt)],
+        extraHeaders: effective.providerExtraHeaders,
+        extraBody: effective.providerExtraBody,
+      );
+
+      final gateway = ref.read(llmGatewayFactoryProvider).forModel(effective);
+      final buffer = StringBuffer();
+      await for (final chunk in gateway.streamChat(request)) {
+        switch (chunk) {
+          case LlmTextDelta(:final text):
+            buffer.write(text);
+          case LlmReasoningDelta():
+          case LlmToolCallChunk():
+          case LlmDone():
+            break;
+        }
+      }
+
+      var newTitle = buffer.toString().trim();
+      if (newTitle.isEmpty) return;
+
+      // Strip surrounding quotes if the model wrapped the title.
+      if (newTitle.startsWith('"') && newTitle.endsWith('"')) {
+        newTitle = newTitle.substring(1, newTitle.length - 1).trim();
+      }
+      if (newTitle.startsWith('「') && newTitle.endsWith('」')) {
+        newTitle = newTitle.substring(1, newTitle.length - 1).trim();
+      }
+      if (newTitle.isEmpty || newTitle == name) return;
+
+      // Re-fetch topic (may have changed during generation).
+      final latest = await _repo.getTopic(topicId);
+      if (latest == null || latest.isNameManuallyEdited) return;
+
+      await _repo.saveTopic(
+        latest.copyWith(name: newTitle, updatedAt: DateTime.now()),
+      );
+      ref.invalidate(topicsProvider);
+    } on Object catch (_) {
+      // Title generation is non-critical; swallow errors.
+    }
   }
 
   /// Deletes [messageId] together with its blocks and drops it from the view.
