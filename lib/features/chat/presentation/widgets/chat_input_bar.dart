@@ -105,8 +105,14 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
   /// Catch-all for paste paths that bypass both `PasteTextIntent` and the
   /// context menu (notably the mobile IME clipboard chip, which commits text
   /// straight through the input connection): when 长文本粘贴为文件 is on and a single
-  /// edit drops in a run longer than the threshold that exactly matches the
-  /// clipboard, pull it back out of the field and stage it as a file instead.
+  /// edit drops in a run longer than the threshold, pull it back out of the
+  /// field and stage it as a file instead.
+  ///
+  /// On desktop we verify the inserted run matches the system clipboard so a
+  /// long programmatic insert is left alone. On mobile the IME clipboard
+  /// history commits text directly through the input connection without
+  /// updating the system clipboard, so the verification is skipped — the
+  /// threshold alone is sufficient (predictive text never inserts that much).
   Future<void> _maybeInterceptPastedRun() async {
     if (_interceptingPaste) return;
     final oldText = _lastText;
@@ -123,10 +129,16 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
         insertion.inserted.length <= settings.pasteLongTextThreshold) {
       return;
     }
-    // Only treat it as a paste when the run is exactly the clipboard text, so a
-    // long predictive-text / programmatic insert is left alone.
-    final clip = await Clipboard.getData(Clipboard.kTextPlain);
-    if (clip?.text != insertion.inserted) return;
+    // On desktop, verify the run matches the system clipboard so a long
+    // programmatic insert is left alone. On mobile, skip — the IME clipboard
+    // history doesn't sync with the system clipboard.
+    final isMobile =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+    if (!isMobile) {
+      final clip = await Clipboard.getData(Clipboard.kTextPlain);
+      if (clip?.text != insertion.inserted) return;
+    }
     final attachment = convertPastedTextToAttachment(
       text: insertion.inserted,
       enabled: settings.pasteLongTextAsFile,
