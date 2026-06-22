@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/app/di/message_bubble_access.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme_extension.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_block_renderer.dart';
@@ -91,10 +92,13 @@ class ChatMessageBubble extends ConsumerWidget {
 
     final align = isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start;
 
+    final isSummaryMessage =
+        view.blocks.any((b) => b is ContextSummaryBlock);
     final showToolbar =
         settings.messageActionMode == MessageActionMode.toolbar &&
         !isStreaming &&
-        view.blocks.isNotEmpty;
+        view.blocks.isNotEmpty &&
+        !isSummaryMessage;
 
     // Check whether this message was truncated and should show a "继续生成"
     // button. Only the last assistant message is eligible.
