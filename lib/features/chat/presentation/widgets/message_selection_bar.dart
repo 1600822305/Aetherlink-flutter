@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/features/chat/application/chat_controller.dar
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/message_selection_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_export_sheet.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/mini_map_sheet.dart';
 
 // ---------------------------------------------------------------------------
 // Selection top bar: replaces the normal top bar during selection mode.
@@ -42,6 +43,18 @@ class MessageSelectionTopBar extends ConsumerWidget
         style: theme.textTheme.titleMedium,
       ),
       actions: [
+        IconButton(
+          icon: Icon(LucideIcons.map, size: 20, color: cs.onSurface),
+          tooltip: '迷你地图',
+          onPressed: () async {
+            await showMiniMapSheet(
+              context,
+              messages,
+              selecting: true,
+              ref: ref,
+            );
+          },
+        ),
         TextButton(
           onPressed: () => ref
               .read(messageSelectionProvider.notifier)

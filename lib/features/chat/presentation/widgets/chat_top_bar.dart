@@ -9,8 +9,13 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/top_toolbar_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/application/message_selection_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_search_dialog.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/mini_map_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
@@ -152,6 +157,15 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
           ? const SizedBox.shrink()
           : _TopicTitle(name: topic.name),
       actions: [
+        _ToolbarIconButton(
+          icon: Icon(
+            LucideIcons.map,
+            size: 20,
+            color: theme.colorScheme.onSurface,
+          ),
+          tooltip: '迷你地图',
+          onPressed: () => _openMiniMap(context, ref),
+        ),
         if (modelSelector != null) modelSelector,
         _buildComponent(
           TopToolbarComponent.settingsButton,
@@ -166,6 +180,23 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
         const SizedBox(width: 4),
       ],
     );
+  }
+
+  Future<void> _openMiniMap(BuildContext context, WidgetRef ref) async {
+    final messages =
+        ref.read(chatControllerProvider).value?.messages ??
+        const <ChatMessageView>[];
+    if (messages.isEmpty) return;
+    final isSelecting = ref.read(messageSelectionProvider).isSelecting;
+    final messageId = await showMiniMapSheet(
+      context,
+      messages,
+      selecting: isSelecting,
+      ref: ref,
+    );
+    if (messageId != null && !isSelecting) {
+      ref.read(scrollToMessageIdProvider.notifier).scrollTo(messageId);
+    }
   }
 
   /// Builds a single toolbar component, or `null` when it should not render
@@ -198,12 +229,19 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
         return _TopicTitle(name: topicName);
       case TopToolbarComponent.newTopicButton:
         final assistantId = ref.watch(currentAssistantProvider)?.id;
+        final hasMessages =
+            (ref.watch(chatControllerProvider).value?.messages ?? const [])
+                .isNotEmpty;
+        final iconColor = assistantId == null
+            ? theme.disabledColor
+            : theme.colorScheme.onSurface;
         return _ToolbarIconButton(
-          icon: topToolbarComponentIcon(
-            component,
-            color: assistantId == null
-                ? theme.disabledColor
-                : theme.colorScheme.onSurface,
+          icon: Icon(
+            hasMessages
+                ? LucideIcons.messageSquarePlus
+                : LucideIcons.messageSquare,
+            size: 20,
+            color: iconColor,
           ),
           tooltip: _newTopicTooltip,
           onPressed: assistantId == null

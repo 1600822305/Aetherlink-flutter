@@ -24,6 +24,19 @@ import 'package:aetherlink_flutter/shared/domain/chat_interface_settings.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 import 'package:native_keyboard_height/native_keyboard_height.dart';
 
+/// Notifier to request the message list to scroll to a specific message ID.
+class ScrollToMessageNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+  void scrollTo(String id) => state = id;
+  void clear() => state = null;
+}
+
+final scrollToMessageIdProvider =
+    NotifierProvider<ScrollToMessageNotifier, String?>(
+      ScrollToMessageNotifier.new,
+    );
+
 /// Static UI strings. The original ran these through i18n; they are ported
 /// verbatim as constants per the M4.1 approach — wiring up i18n is a separate
 /// effort and out of scope.
@@ -663,6 +676,29 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     final selectedIds = isSelecting
         ? ref.watch(messageSelectionProvider.select((s) => s.selectedIds))
         : const <String>{};
+
+    // Listen for scroll-to-message requests from the mini map.
+    ref.listen<String?>(scrollToMessageIdProvider, (prev, messageId) {
+      if (messageId == null) return;
+      // Clear the request immediately.
+      ref.read(scrollToMessageIdProvider.notifier).clear();
+      final index = messages.indexWhere((m) => m.id == messageId);
+      if (index < 0) return;
+      // Estimate the scroll offset. With variable-height items we use a rough
+      // average-height heuristic; this gets us close enough for the user to see
+      // the target message, and the animation duration gives time for layout.
+      const estimatedItemHeight = 120.0;
+      final target = (index * estimatedItemHeight).clamp(
+        0.0,
+        _scrollController.position.maxScrollExtent,
+      );
+      _scrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    });
+
     // 消息分割线 (设置 tab 常规设置)：开启时在相邻消息之间画一条分割线。
     final showDivider = ref.watch(
       sidebarSettingsControllerProvider.select((s) => s.showMessageDivider),
