@@ -193,21 +193,32 @@ class _MarkdownTableState extends State<MarkdownTable> {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // rikkahub color mapping:
-    //   card bg     = surfaceContainer
-    //   toolbar bg  = surfaceContainerHighest
-    //   header bg   = surfaceContainerHighest (surfaceVariant in Compose,
-    //                 but deprecated in Flutter → surfaceContainerHighest)
-    //   cell border = 0.5dp outlineVariant
-    //   card border = 1dp outlineVariant
-    final borderColor = cs.outlineVariant;
-    final toolbarBg = cs.surfaceContainerHighest;
-    final headerBg = cs.surfaceContainerHighest;
-    final cardBg = cs.surfaceContainer;
-    final trackColor = cs.outlineVariant.withValues(
-      alpha: isDark ? 0.20 : 0.28,
+    // This app uses useMaterial3: false with a manually constructed
+    // ColorScheme that only has basic colors (primary, secondary, surface,
+    // onSurface, onSurfaceVariant). M3 tokens like surfaceContainerHighest
+    // fallback to near-identical values in M2 mode, making all table layers
+    // look the same. Derive visual hierarchy from onSurface overlays:
+    //   rikkahub toolbar = surfaceContainerHighest  → surface + 8% onSurface
+    //   rikkahub header  = surfaceVariant           → surface + 5% onSurface
+    //   rikkahub card bg = surfaceContainer         → surface + 2% onSurface
+    //   rikkahub border  = outlineVariant           → onSurface at 12%
+    final onSurface = cs.onSurface;
+    final surface = cs.surface;
+    final borderColor = onSurface.withValues(alpha: isDark ? 0.15 : 0.12);
+    final toolbarBg = Color.alphaBlend(
+      onSurface.withValues(alpha: isDark ? 0.10 : 0.08),
+      surface,
     );
-    final thumbColor = cs.onSurface.withValues(alpha: isDark ? 0.42 : 0.38);
+    final headerBg = Color.alphaBlend(
+      onSurface.withValues(alpha: isDark ? 0.07 : 0.05),
+      surface,
+    );
+    final cardBg = Color.alphaBlend(
+      onSurface.withValues(alpha: isDark ? 0.04 : 0.02),
+      surface,
+    );
+    final trackColor = onSurface.withValues(alpha: isDark ? 0.12 : 0.16);
+    final thumbColor = onSurface.withValues(alpha: isDark ? 0.42 : 0.38);
 
     final colCount = widget.rows.fold<int>(
       0,
