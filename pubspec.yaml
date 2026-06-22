@@ -61,6 +61,7 @@ dependencies:
   gpt_markdown: ^1.1.7
   native_keyboard_height:
     path: packages/native_keyboard_height
+  scrollview_observer: ^1.27.0
 
 dev_dependencies:
   flutter_test:
