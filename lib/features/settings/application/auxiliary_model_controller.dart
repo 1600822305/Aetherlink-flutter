@@ -41,9 +41,20 @@ const String kDefaultSuggestionPrompt =
 const String kDefaultOcrPrompt =
     '请描述这张图片的内容，包括主要对象、场景、颜色和任何文字。'
     '尽可能详细地描述，以便不能看到图片的人也能理解图片内容。';
-const String kDefaultCompressPrompt =
-    '你是一个对话摘要助手。请将以下对话历史压缩为简短的摘要，保留关键信息和上下文。\n\n'
-    '变量：{{messages}} — 对话内容';
+const String kDefaultCompressPrompt = '''你是一个对话压缩助手。请将以下对话历史压缩为精简摘要。
+
+要求：
+1. 保留关键事实、决策和继续对话所需的重要上下文
+2. 使用与原始对话相同的语言
+3. 目标约 {target_tokens} tokens
+4. 直接输出摘要，不要添加任何额外评论
+5. 以「[对话摘要]」开头
+
+{additional_context}
+
+<conversation>
+{content}
+</conversation>''';
 
 /// Encodes a `(providerId, modelId)` pair into a persisted key.
 String _encodeModelKey(String providerId, String modelId) =>

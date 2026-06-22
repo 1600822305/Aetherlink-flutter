@@ -16,6 +16,7 @@ import 'package:aetherlink_flutter/features/chat/application/message_selection_c
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_search_dialog.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/context_condense_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/mini_map_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
@@ -223,6 +224,24 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
     }
   }
 
+  Future<void> _openCondenseDialog(BuildContext context) async {
+    final result = await showContextCondenseDialog(context);
+    if (result != null && result.success && context.mounted) {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              '已压缩 ${result.originalMessageCount} 条消息，'
+              '节省约 ${result.tokensSaved} tokens',
+            ),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    }
+  }
+
   /// Builds a single toolbar component, or `null` when it should not render
   /// (the original's `renderToolbarComponent` returns `null` for `topicName` /
   /// `clearButton` with no current topic).
@@ -305,9 +324,12 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
         );
       case TopToolbarComponent.condenseButton:
         return _ToolbarIconButton(
-          icon: topToolbarComponentIcon(component, color: theme.disabledColor),
+          icon: topToolbarComponentIcon(
+            component,
+            color: theme.colorScheme.onSurface,
+          ),
           tooltip: _condenseTooltip,
-          onPressed: null,
+          onPressed: () => _openCondenseDialog(context),
         );
       case TopToolbarComponent.miniMapButton:
         return _ToolbarIconButton(
