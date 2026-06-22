@@ -95,6 +95,7 @@ flutter:
     - assets/images/
     - assets/images/provider_icons/dark/
     - assets/images/provider_icons/light/
+    - assets/images/search_icons/
     - assets/icons/
 
   # Roboto — the cross-platform member of the original app's system font stack

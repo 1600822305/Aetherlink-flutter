@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// Static metadata for every preset search provider — visual properties that
@@ -12,6 +13,7 @@ class SearchProviderPreset {
     required this.description,
     required this.icon,
     required this.accent,
+    this.assetPath,
     this.apiHost = '',
     this.needsApiKey = false,
   });
@@ -21,13 +23,22 @@ class SearchProviderPreset {
   final String description;
   final IconData icon;
   final Color accent;
+
+  /// Optional SVG asset path (e.g. `assets/images/search_icons/searxng.svg`).
+  /// When present, [SearchProviderIcon] renders the SVG instead of [icon].
+  final String? assetPath;
   final String apiHost;
   final bool needsApiKey;
 }
 
+// ---------------------------------------------------------------------------
+// Asset base path
+// ---------------------------------------------------------------------------
+const _base = 'assets/images/search_icons';
+
 /// All available search provider presets — aligned with the Kelivo project's
-/// provider catalog (16 providers). The user picks from these when adding a
-/// provider; only the ones they add show up on the second-level page.
+/// provider catalog (16 providers) + Firecrawl. The user picks from these when
+/// adding a provider; only the ones they add show up on the second-level page.
 const List<SearchProviderPreset> kSearchProviderPresets = [
   // ── 免费 / 无需 API Key ──────────────────────────────────────────────────
   SearchProviderPreset(
@@ -36,6 +47,7 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     description: '聚合 Google、Bing、DuckDuckGo 等 70+ 搜索引擎',
     icon: LucideIcons.search,
     accent: Color(0xFF3B82F6),
+    assetPath: '$_base/searxng.svg',
     apiHost: 'http://154.37.208.52:39281',
   ),
   SearchProviderPreset(
@@ -44,6 +56,7 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     description: '免费 Bing 网页抓取，无需 API 密钥',
     icon: LucideIcons.globe,
     accent: Color(0xFF0078D4),
+    assetPath: '$_base/bing.svg',
     apiHost: 'https://www.bing.com',
   ),
   SearchProviderPreset(
@@ -52,6 +65,7 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     description: '注重隐私的免费搜索，无需 API 密钥',
     icon: LucideIcons.shield,
     accent: Color(0xFFDE5833),
+    assetPath: '$_base/duckduckgo.svg',
   ),
 
   // ── 需要 API Key ─────────────────────────────────────────────────────────
@@ -61,6 +75,7 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     description: 'AI 优化的搜索 API，高质量结果',
     icon: LucideIcons.sparkles,
     accent: Color(0xFF8B5CF6),
+    assetPath: '$_base/tavily.svg',
     apiHost: 'https://api.tavily.com/search',
     needsApiKey: true,
   ),
@@ -70,6 +85,7 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     description: '神经搜索引擎，语义理解能力强',
     icon: LucideIcons.brain,
     accent: Color(0xFFEC4899),
+    assetPath: '$_base/exa.svg',
     apiHost: 'https://api.exa.ai/search',
     needsApiKey: true,
   ),
@@ -79,6 +95,7 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     description: 'AI 搜索引擎，支持时效过滤和摘要',
     icon: LucideIcons.bot,
     accent: Color(0xFF06B6D4),
+    assetPath: '$_base/bocha.svg',
     apiHost: 'https://api.bochaai.com',
     needsApiKey: true,
   ),
@@ -97,6 +114,7 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     description: '智谱 AI 网络搜索服务',
     icon: LucideIcons.zap,
     accent: Color(0xFF10B981),
+    assetPath: '$_base/zhipu.svg',
     apiHost: 'https://open.bigmodel.cn/api/paas/v4/web_search',
     needsApiKey: true,
   ),
@@ -106,6 +124,7 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     description: '搜索 + 网页阅读，支持内容提取',
     icon: LucideIcons.fileSearch,
     accent: Color(0xFFF59E0B),
+    assetPath: '$_base/jina.svg',
     apiHost: 'https://s.jina.ai',
     needsApiKey: true,
   ),
@@ -115,6 +134,7 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     description: '独立搜索引擎，注重隐私的 API',
     icon: LucideIcons.compass,
     accent: Color(0xFFFF5500),
+    assetPath: '$_base/brave.svg',
     apiHost: 'https://api.search.brave.com/res/v1/web/search',
     needsApiKey: true,
   ),
@@ -124,6 +144,7 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     description: 'Google 搜索结果 API，速度快',
     icon: LucideIcons.radar,
     accent: Color(0xFF4285F4),
+    assetPath: '$_base/serper.svg',
     apiHost: 'https://google.serper.dev/search',
     needsApiKey: true,
   ),
@@ -133,6 +154,7 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     description: 'AI 搜索引擎，自动综合多源信息',
     icon: LucideIcons.sparkle,
     accent: Color(0xFF20B2AA),
+    assetPath: '$_base/perplexity.svg',
     apiHost: 'https://api.perplexity.ai/chat/completions',
     needsApiKey: true,
   ),
@@ -142,6 +164,7 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     description: '中文 AI 搜索引擎',
     icon: LucideIcons.languages,
     accent: Color(0xFF6366F1),
+    assetPath: '$_base/metaso.svg',
     needsApiKey: true,
   ),
   SearchProviderPreset(
@@ -150,6 +173,7 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     description: '链接聚合搜索服务',
     icon: LucideIcons.link,
     accent: Color(0xFF0EA5E9),
+    assetPath: '$_base/linkup.svg',
     needsApiKey: true,
   ),
   SearchProviderPreset(
@@ -158,6 +182,7 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     description: '搜索聚合，支持站点和时间过滤',
     icon: LucideIcons.filter,
     accent: Color(0xFF84CC16),
+    assetPath: '$_base/querit.svg',
     needsApiKey: true,
   ),
   SearchProviderPreset(
@@ -166,6 +191,7 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     description: 'xAI 搜索，基于 Grok 模型实时联网',
     icon: LucideIcons.cpu,
     accent: Color(0xFF000000),
+    assetPath: '$_base/grok.svg',
     apiHost: 'https://api.x.ai/v1/responses',
     needsApiKey: true,
   ),
@@ -175,6 +201,7 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     description: '本地模型搜索服务',
     icon: LucideIcons.server,
     accent: Color(0xFF737373),
+    assetPath: '$_base/ollama.svg',
     needsApiKey: true,
   ),
 ];
@@ -185,4 +212,49 @@ SearchProviderPreset? presetForId(String id) {
     if (p.id == id) return p;
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Shared icon widget — renders brand SVG when available, falls back to Lucide.
+// ---------------------------------------------------------------------------
+
+/// Renders a search provider icon inside a rounded-rect container.
+///
+/// If the [preset] has an [SearchProviderPreset.assetPath], the SVG is rendered
+/// (color SVGs stay colorful). Otherwise the Lucide [SearchProviderPreset.icon]
+/// is used with the provider [accent] color.
+class SearchProviderIcon extends StatelessWidget {
+  const SearchProviderIcon({
+    super.key,
+    required this.preset,
+    this.size = 34,
+  });
+
+  /// If null, a generic globe icon is shown.
+  final SearchProviderPreset? preset;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = preset?.accent ?? Theme.of(context).colorScheme.primary;
+    final asset = preset?.assetPath;
+    final iconSize = size * 0.58;
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      alignment: Alignment.center,
+      child: asset != null
+          ? SvgPicture.asset(asset, width: iconSize, height: iconSize)
+          : Icon(
+              preset?.icon ?? LucideIcons.globe,
+              size: iconSize,
+              color: accent,
+            ),
+    );
+  }
 }

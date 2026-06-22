@@ -184,15 +184,7 @@ class _PresetRow extends StatelessWidget {
           opacity: muted,
           child: Row(
             children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: preset.accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(preset.icon, size: 18, color: preset.accent),
-              ),
+              SearchProviderIcon(preset: preset, size: 34),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

@@ -58,7 +58,6 @@ class _SearchProviderDetailPageState
     _seedFrom(config);
     final preset = presetForId(config.id);
     final accent = preset?.accent ?? theme.colorScheme.primary;
-    final icon = preset?.icon ?? LucideIcons.globe;
     final isActive = ws.activeProviderId == config.id;
 
     return Scaffold(
@@ -114,15 +113,7 @@ class _SearchProviderDetailPageState
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Icon(icon, size: 24, color: accent),
-                  ),
+                  SearchProviderIcon(preset: preset, size: 48),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
