@@ -257,8 +257,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           'query': {'type': 'string', 'description': '搜索关键词'},
           'engines': {
             'type': 'string',
-            'description':
-                '指定引擎（逗号分隔），如 google,bing,duckduckgo。留空使用类别默认引擎',
+            'description': '指定引擎（逗号分隔），如 google,bing,duckduckgo。留空使用类别默认引擎',
           },
           'language': {
             'type': 'string',
@@ -280,11 +279,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'enum': ['day', 'week', 'month', 'year', ''],
             'description': '时间范围过滤',
           },
-          'pageno': {
-            'type': 'number',
-            'description': '页码',
-            'default': 1,
-          },
+          'pageno': {'type': 'number', 'description': '页码', 'default': 1},
           'safesearch': {
             'type': 'number',
             'enum': [0, 1, 2],
@@ -301,11 +296,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'url': {
-            'type': 'string',
-            'format': 'uri',
-            'description': '目标 URL',
-          },
+          'url': {'type': 'string', 'format': 'uri', 'description': '目标 URL'},
           'maxLength': {
             'type': 'number',
             'description': '最大返回字符数',
@@ -313,6 +304,154 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
         },
         'required': ['url'],
+      },
+    ),
+  ],
+  '@aether/settings': [
+    // ── Provider-level tools ──
+    McpToolDefinition(
+      name: 'list_providers',
+      description: '列出所有模型供应商及其启用状态、模型数量、是否配置 API Key',
+      inputSchema: {'type': 'object', 'properties': {}},
+    ),
+    McpToolDefinition(
+      name: 'get_provider',
+      description: '获取指定供应商的详细信息，包括配置、所有模型列表',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'id': {'type': 'string', 'description': '供应商 ID'},
+        },
+        'required': ['id'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'toggle_provider',
+      description: '启用或禁用指定供应商',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'id': {'type': 'string', 'description': '供应商 ID'},
+          'enabled': {'type': 'boolean', 'description': '是否启用'},
+        },
+        'required': ['id', 'enabled'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'update_provider_config',
+      description: '更新供应商配置（API 密钥、基础 URL、名称）',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'id': {'type': 'string', 'description': '供应商 ID'},
+          'apiKey': {'type': 'string', 'description': '新的 API 密钥（可选）'},
+          'baseUrl': {'type': 'string', 'description': '新的基础 URL（可选）'},
+          'name': {'type': 'string', 'description': '新的供应商名称（可选）'},
+        },
+        'required': ['id'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'create_provider',
+      description: '创建一个新的模型供应商。这是一个需要用户确认的操作，请先向用户确认后再调用',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'name': {'type': 'string', 'description': '供应商名称'},
+          'type': {
+            'type': 'string',
+            'description':
+                '供应商类型：openai, anthropic, gemini, deepseek, azure-openai 等',
+            'default': 'openai',
+          },
+          'apiKey': {'type': 'string', 'description': 'API 密钥（可选）'},
+          'baseUrl': {'type': 'string', 'description': '基础 URL（可选）'},
+        },
+        'required': ['name'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'delete_provider',
+      description: '删除指定的模型供应商及其所有模型。这是一个危险操作，请先向用户确认后再调用',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'id': {'type': 'string', 'description': '要删除的供应商 ID'},
+        },
+        'required': ['id'],
+      },
+    ),
+    // ── Model-level tools ──
+    McpToolDefinition(
+      name: 'list_models',
+      description: '列出指定供应商下的所有模型',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'providerId': {'type': 'string', 'description': '供应商 ID'},
+        },
+        'required': ['providerId'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'get_current_model',
+      description: '获取当前正在使用的默认聊天模型及其所属供应商',
+      inputSchema: {'type': 'object', 'properties': {}},
+    ),
+    McpToolDefinition(
+      name: 'set_default_model',
+      description: '设置全局默认聊天模型',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'providerId': {'type': 'string', 'description': '供应商 ID'},
+          'modelId': {'type': 'string', 'description': '模型 ID'},
+        },
+        'required': ['providerId', 'modelId'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'toggle_model',
+      description: '启用或禁用供应商中的指定模型',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'providerId': {'type': 'string', 'description': '供应商 ID'},
+          'modelId': {'type': 'string', 'description': '模型 ID'},
+          'enabled': {'type': 'boolean', 'description': '是否启用'},
+        },
+        'required': ['providerId', 'modelId', 'enabled'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'add_model',
+      description: '向供应商添加一个新模型。这是一个需要用户确认的操作，请先向用户确认后再调用',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'providerId': {'type': 'string', 'description': '供应商 ID'},
+          'modelId': {
+            'type': 'string',
+            'description': '模型 ID（如 gpt-4o, claude-sonnet-4-20250514）',
+          },
+          'modelName': {
+            'type': 'string',
+            'description': '模型显示名称（可选，默认使用 modelId）',
+          },
+        },
+        'required': ['providerId', 'modelId'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'delete_model',
+      description: '从供应商中删除指定模型。这是一个危险操作，请先向用户确认后再调用',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'providerId': {'type': 'string', 'description': '供应商 ID'},
+          'modelId': {'type': 'string', 'description': '要删除的模型 ID'},
+        },
+        'required': ['providerId', 'modelId'],
       },
     ),
   ],
@@ -325,6 +464,9 @@ const Set<String> kLocallyRunnableBuiltins = {
   '@aether/time',
   '@aether/searxng',
 };
+
+/// Servers that run in-process but need Riverpod [Ref] (settings assistant).
+const Set<String> kRefDependentBuiltins = {'@aether/settings'};
 
 /// The tools a built-in MCP server exposes, or an empty list for servers
 /// without a static catalog (e.g. external servers, discovered at connect time).

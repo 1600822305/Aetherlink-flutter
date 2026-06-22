@@ -652,7 +652,13 @@ class _TemplateRow extends ConsumerWidget {
 
     if (added == null) return row;
     return InkWell(
-      onTap: () => context.push('${AppRouter.mcpServerPath}/${added.id}'),
+      onTap: () {
+        if (isAssistant) {
+          context.push(AppRouter.mcpAssistantDetailPath(added.id));
+        } else {
+          context.push('${AppRouter.mcpServerPath}/${added.id}');
+        }
+      },
       child: row,
     );
   }

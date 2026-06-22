@@ -123,12 +123,6 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
 
   void _close() => Navigator.of(context).pop();
 
-  void _comingSoon(String label) {
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text('$label：即将支持')));
-  }
-
   @override
   Widget build(BuildContext context) {
     final t = _Tokens(Theme.of(context));
@@ -523,8 +517,12 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
         final added = _added(servers, tpl.name);
         return _ServerRow(
           tokens: t,
-          // UI-only for now: tapping does not open a detail page yet.
-          onTap: added == null ? null : () => _comingSoon('智能助手详情'),
+          onTap: added == null
+              ? null
+              : () {
+                  _close();
+                  context.push(AppRouter.mcpAssistantDetailPath(added.id));
+                },
           avatar: const _EmojiAvatar(emoji: '🤖', color: Color(0xFF2196F3)),
           title: tpl.name,
           subtitle: _DescText(text: tpl.description ?? '智能助手', tokens: t),
