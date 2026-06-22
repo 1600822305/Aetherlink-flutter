@@ -31,6 +31,7 @@ const _$TopToolbarComponentEnumMap = {
   TopToolbarComponent.modelSelector: 'modelSelector',
   TopToolbarComponent.settingsButton: 'settingsButton',
   TopToolbarComponent.condenseButton: 'condenseButton',
+  TopToolbarComponent.miniMapButton: 'miniMapButton',
 };
 
 _TopToolbarSettings _$TopToolbarSettingsFromJson(Map<String, dynamic> json) =>

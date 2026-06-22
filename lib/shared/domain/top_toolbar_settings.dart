@@ -17,7 +17,8 @@ enum TopToolbarComponent {
   searchButton('searchButton'),
   modelSelector('modelSelector'),
   settingsButton('settingsButton'),
-  condenseButton('condenseButton');
+  condenseButton('condenseButton'),
+  miniMapButton('miniMapButton');
 
   const TopToolbarComponent(this.id);
 
