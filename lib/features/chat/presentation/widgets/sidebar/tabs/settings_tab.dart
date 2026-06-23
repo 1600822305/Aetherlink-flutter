@@ -764,7 +764,7 @@ class _McpServerRow extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Switch(
+            CustomSwitch(
               value: server.isActive,
               onChanged: toolsEnabled
                   ? (v) => ref
