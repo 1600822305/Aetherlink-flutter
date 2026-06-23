@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
+import 'package:aetherlink_flutter/shared/domain/parameter_metadata.dart';
 
 /// The "编辑模型" third-level page, a 1:1 reproduction of
 /// `src/pages/Settings/ModelProviders/EditModelPage.tsx` (whose form body is the
@@ -43,6 +44,7 @@ class _EditModelPageState extends ConsumerState<EditModelPage> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _modelIdController = TextEditingController();
   bool _initialized = false;
+  String? _parameterScope;
 
   @override
   void dispose() {
@@ -60,6 +62,7 @@ class _EditModelPageState extends ConsumerState<EditModelPage> {
       if (model.id == id) {
         _nameController.text = model.name;
         _modelIdController.text = model.id;
+        _parameterScope = model.parameterScope;
         return;
       }
     }
@@ -94,6 +97,7 @@ class _EditModelPageState extends ConsumerState<EditModelPage> {
       name: name,
       provider: provider.name,
       providerType: provider.providerType,
+      parameterScope: _parameterScope,
     );
     final updated = provider.copyWith(models: [...existing, model]);
     await ref.read(modelStoreProvider.notifier).saveProvider(updated);
@@ -167,6 +171,12 @@ class _EditModelPageState extends ConsumerState<EditModelPage> {
             helper: EditModelPage._modelIdHelper,
             controller: _modelIdController,
             onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 24),
+          _ParameterScopeField(
+            value: _parameterScope,
+            modelId: _modelIdController.text.trim(),
+            onChanged: (v) => setState(() => _parameterScope = v),
           ),
           const SizedBox(height: 24),
           _ModelTypeSection(theme: theme),
@@ -281,6 +291,83 @@ class _ProviderField extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           EditModelPage._providerHelper,
+          style: theme.textTheme.bodySmall?.copyWith(
+            fontSize: 12,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Dropdown for selecting the parameter display scope at the model level.
+/// Shows the current auto-detected scope as a hint so users can see what
+/// the system would pick without their override.
+class _ParameterScopeField extends StatelessWidget {
+  const _ParameterScopeField({
+    required this.value,
+    required this.modelId,
+    required this.onChanged,
+  });
+
+  final String? value;
+  final String modelId;
+  final ValueChanged<String?> onChanged;
+
+  static const List<(String?, String)> _options = [
+    (null, '自动检测'),
+    ('openai', 'OpenAI'),
+    ('anthropic', 'Anthropic'),
+    ('gemini', 'Gemini'),
+    ('openaiCompatible', 'OpenAI 兼容'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final detected = detectProviderFromModel(modelId);
+    final detectedLabel = detected.name == 'openaiCompatible'
+        ? 'OpenAI 兼容'
+        : detected.name[0].toUpperCase() + detected.name.substring(1);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '参数能力范围',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<String?>(
+          initialValue: _options.any((o) => o.$1 == value) ? value : null,
+          isExpanded: true,
+          decoration: InputDecoration(
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
+            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+          ),
+          items: [
+            for (final option in _options)
+              DropdownMenuItem<String?>(
+                value: option.$1,
+                child: Text(option.$2),
+              ),
+          ],
+          onChanged: onChanged,
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '当前自动检测结果：$detectedLabel。设置后覆盖自动检测，'
+          '优先级高于供应商级设置。',
           style: theme.textTheme.bodySmall?.copyWith(
             fontSize: 12,
             color: theme.colorScheme.onSurfaceVariant,

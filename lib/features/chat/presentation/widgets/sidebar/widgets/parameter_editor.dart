@@ -54,11 +54,17 @@ class _ParameterEditorState extends ConsumerState<ParameterEditor> {
     final ps = ref.watch(parameterSettingsControllerProvider);
     final ctrl = ref.read(parameterSettingsControllerProvider.notifier);
 
-    // Resolve provider type: explicit prop → current model's provider → detect
-    // from model id → fallback to openaiCompatible.  Mirrors web's
-    // `detectProviderFromModel(modelId)` in DynamicContextSettings.
+    // Resolve parameter scope via canonical priority chain
+    // (see docs/PARAMETER_SCOPE_DESIGN.md).
     final resolvedProvider = widget.providerType ?? _resolveProviderType(ref);
     final currentModelId = _resolveModelId(ref);
+    final effectiveProtocol = _resolveEffectiveProtocol(ref);
+
+    // Determine if there's a protocol mismatch (e.g. Anthropic params shown
+    // but protocol is openaiCompatible because the user is using a third-party
+    // API that proxies Claude via OpenAI-compatible endpoint).
+    final hasMismatch = resolvedProvider != effectiveProtocol &&
+        resolvedProvider != ProviderType.openaiCompatible;
 
     final allParams = getParametersForProvider(resolvedProvider);
 
@@ -79,6 +85,13 @@ class _ParameterEditorState extends ConsumerState<ParameterEditor> {
           paramCount: allParams.length,
         ),
         const SizedBox(height: 8),
+
+        // Protocol mismatch hint.
+        if (hasMismatch)
+          _ProtocolMismatchHint(
+            resolvedProvider: resolvedProvider,
+            effectiveProtocol: effectiveProtocol,
+          ),
 
         // Category groups.
         for (final cat in ParameterCategory.values)
@@ -120,24 +133,38 @@ class _ParameterEditorState extends ConsumerState<ParameterEditor> {
     return sw.values.contains(depValue);
   }
 
-  /// Detect provider type from current model (same as web's
-  /// `detectProviderFromModel(modelId)` called in DynamicContextSettings).
+  /// Resolve the parameter display scope for the current model.
+  /// Delegates to the canonical [resolveParameterScope] function.
   static ProviderType _resolveProviderType(WidgetRef ref) {
     final current = ref.watch(appCurrentModelProvider).asData?.value;
     if (current == null) return ProviderType.openaiCompatible;
-    // Prefer explicit providerType on the provider/model, fall back to
-    // heuristic detection from model id.
-    final explicit = current.model.providerType ?? current.provider.providerType;
-    if (explicit != null && explicit.isNotEmpty) {
-      return providerTypeFromProtocolKey(explicit);
-    }
-    return detectProviderFromModel(current.model.id);
+    return resolveParameterScope(
+      modelParameterScope: current.model.parameterScope,
+      providerParameterScope: current.provider.parameterScope,
+      modelId: current.model.id,
+      modelProviderType: current.model.providerType,
+      providerProviderType: current.provider.providerType,
+    );
   }
 
   /// Get the current model ID for dynamic option resolution.
   static String? _resolveModelId(WidgetRef ref) {
     final current = ref.watch(appCurrentModelProvider).asData?.value;
     return current?.model.id;
+  }
+
+  /// Resolve the effective API protocol (i.e. which Adapter is used to send
+  /// the request). This is determined by `providerType` on the model or
+  /// provider — NOT by parameterScope or model-ID heuristics.
+  static ProviderType _resolveEffectiveProtocol(WidgetRef ref) {
+    final current = ref.watch(appCurrentModelProvider).asData?.value;
+    if (current == null) return ProviderType.openaiCompatible;
+    final explicit =
+        current.model.providerType ?? current.provider.providerType;
+    if (explicit != null && explicit.isNotEmpty) {
+      return providerTypeFromProtocolKey(explicit);
+    }
+    return ProviderType.openaiCompatible;
   }
 }
 
@@ -182,6 +209,62 @@ class _ProviderBadgeRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─── Protocol mismatch hint ──────────────────────────────────────────────────
+
+/// Warning banner shown when the resolved parameter scope (what params we show)
+/// differs from the effective API protocol (how params are sent). For example,
+/// using Claude via an OpenAI-compatible third-party API means Anthropic-specific
+/// params (cacheControl, etc.) may not be delivered correctly.
+class _ProtocolMismatchHint extends StatelessWidget {
+  const _ProtocolMismatchHint({
+    required this.resolvedProvider,
+    required this.effectiveProtocol,
+  });
+
+  final ProviderType resolvedProvider;
+  final ProviderType effectiveProtocol;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scopeName = _providerNames[resolvedProvider] ?? resolvedProvider.name;
+    final protocolName =
+        _providerNames[effectiveProtocol] ?? effectiveProtocol.name;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.tertiaryContainer.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: theme.colorScheme.tertiary.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            LucideIcons.triangleAlert,
+            size: 14,
+            color: theme.colorScheme.tertiary,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              '当前按 $scopeName 参数范围显示，但 API 协议为 $protocolName。'
+              '部分专属参数可能无法通过当前协议正确传递。',
+              style: TextStyle(
+                fontSize: 11,
+                color: theme.colorScheme.onTertiaryContainer,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

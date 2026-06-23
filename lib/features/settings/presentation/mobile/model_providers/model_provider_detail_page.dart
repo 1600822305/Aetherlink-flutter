@@ -328,6 +328,20 @@ class _ModelProviderDetailPageState
               ],
 
               const Divider(height: 24),
+              // 参数能力范围
+              _ParameterScopeRow(
+                value: provider.parameterScope,
+                labelStyle: labelStyle!,
+                hintStyle: hintStyle!,
+                onChanged: (v) async {
+                  final updated = provider.copyWith(parameterScope: v);
+                  await ref
+                      .read(modelStoreProvider.notifier)
+                      .saveProvider(updated);
+                },
+              ),
+
+              const Divider(height: 24),
               // 高级 API 配置入口
               _NavRow(
                 icon: LucideIcons.settings,
@@ -1345,6 +1359,83 @@ class _CustomEndpointDialogState extends State<_CustomEndpointDialog> {
         FilledButton(
           onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
           child: const Text('获取'),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Parameter scope row ─────────────────────────────────────────────────────
+
+/// Dropdown for selecting the parameter display scope (parameterScope) at the
+/// provider level. See `docs/PARAMETER_SCOPE_DESIGN.md`.
+const List<(String?, String)> _parameterScopeOptions = [
+  (null, '自动检测'),
+  ('openai', 'OpenAI'),
+  ('anthropic', 'Anthropic'),
+  ('gemini', 'Gemini'),
+  ('openaiCompatible', 'OpenAI 兼容'),
+];
+
+class _ParameterScopeRow extends StatelessWidget {
+  const _ParameterScopeRow({
+    required this.value,
+    required this.labelStyle,
+    required this.hintStyle,
+    required this.onChanged,
+  });
+
+  final String? value;
+  final TextStyle labelStyle;
+  final TextStyle hintStyle;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Text('参数能力范围', style: labelStyle),
+            const SizedBox(width: 6),
+            Tooltip(
+              message: '设置后，参数编辑器将按指定的模型家族显示可用参数，\n'
+                  '覆盖自动检测结果。适用于第三方 API 转发场景。',
+              child: Icon(
+                LucideIcons.info,
+                size: 15,
+                color: hintStyle.color,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String?>(
+          initialValue: _parameterScopeOptions.any((o) => o.$1 == value) ? value : null,
+          isExpanded: true,
+          decoration: InputDecoration(
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
+            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          items: [
+            for (final option in _parameterScopeOptions)
+              DropdownMenuItem<String?>(
+                value: option.$1,
+                child: Text(option.$2),
+              ),
+          ],
+          onChanged: onChanged,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '设置此供应商下所有模型的参数显示范围（模型级设置优先）',
+          style: hintStyle,
         ),
       ],
     );
