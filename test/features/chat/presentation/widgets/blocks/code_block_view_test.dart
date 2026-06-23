@@ -41,18 +41,18 @@ void main() {
       await pumpCodeBlock(tester);
 
       expect(find.text('<DART>'), findsOneWidget);
-      expect(find.text('1\n2'), findsOneWidget);
+      // In wrap mode (default), line numbers are rendered per-line.
+      expect(find.text('1'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
       expect(codeText(), findsOneWidget);
       expect(find.byTooltip('复制代码'), findsOneWidget);
     },
   );
 
-  testWidgets('renders syntax-highlighted selectable spans', (tester) async {
+  testWidgets('renders syntax-highlighted spans', (tester) async {
     await pumpCodeBlock(tester);
 
-    final selectable = tester
-        .widgetList<SelectableText>(find.byType(SelectableText))
-        .firstWhere((w) => w.textSpan != null);
+    final richTexts = tester.widgetList<RichText>(find.byType(RichText));
     final spans = <TextSpan>[];
     void collect(InlineSpan span) {
       if (span is! TextSpan) return;
@@ -64,7 +64,9 @@ void main() {
       }
     }
 
-    collect(selectable.textSpan!);
+    for (final rt in richTexts) {
+      collect(rt.text as TextSpan);
+    }
 
     expect(spans.any((s) => s.text == 'final'), isTrue);
     expect(spans.any((s) => s.text != null && s.style?.color != null), isTrue);
@@ -81,7 +83,7 @@ void main() {
       ),
     );
 
-    expect(find.text('1\n2'), findsNothing);
+    expect(find.text('1'), findsNothing);
     expect(codeText(), findsOneWidget);
     expect(find.byTooltip('复制代码'), findsNothing);
   });
