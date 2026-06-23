@@ -422,21 +422,39 @@ List<ParameterMeta> getParametersForProvider(ProviderType provider) {
 }
 
 /// Detects the provider type from a model id string.
+///
+/// Used as the second-priority signal (after explicit `parameterScope`) when
+/// determining which parameters to display. Recognizes model families across
+/// official and third-party APIs (e.g. `anthropic/claude-3.5-sonnet` on
+/// OpenRouter is correctly identified as Anthropic).
 ProviderType detectProviderFromModel(String? modelId) {
   if (modelId == null || modelId.isEmpty) return ProviderType.openaiCompatible;
   final id = modelId.toLowerCase();
+
+  // --- Anthropic family ---
   if (id.contains('claude') || id.contains('anthropic')) {
     return ProviderType.anthropic;
   }
+
+  // --- Google / Gemini family ---
   if (id.contains('gemini') || id.contains('palm')) {
     return ProviderType.gemini;
   }
-  if (id.contains('gpt') ||
-      id.contains('o1') ||
-      id.contains('o3') ||
-      id.contains('o4')) {
+
+  // --- OpenAI family ---
+  // Match gpt-*, o1-*, o3-*, o4-*, chatgpt-*
+  if (id.contains('gpt') || id.contains('chatgpt')) {
     return ProviderType.openai;
   }
+  // OpenAI reasoning models: o1, o3, o4 (but not "doubao", "moonshot", etc.)
+  // Use word-boundary-like matching to avoid false positives.
+  if (RegExp(r'(?:^|[/\-_])o[134](?:[/\-_]|$)').hasMatch(id)) {
+    return ProviderType.openai;
+  }
+
+  // --- All others → openaiCompatible ---
+  // Includes: deepseek, qwen, glm, minimax, doubao, yi, moonshot, etc.
+  // These all use OpenAI-compatible protocol and share the same parameter set.
   return ProviderType.openaiCompatible;
 }
 
@@ -446,6 +464,47 @@ ProviderType providerTypeFromProtocolKey(String key) {
   if (k == 'anthropic' || k == 'claude') return ProviderType.anthropic;
   if (k == 'gemini' || k == 'google') return ProviderType.gemini;
   if (k == 'openai') return ProviderType.openai;
+  return ProviderType.openaiCompatible;
+}
+
+/// Resolves the parameter display scope given the model and provider fields.
+///
+/// Priority:
+///   1. `modelParameterScope` (user-specified on model)
+///   2. `providerParameterScope` (user-specified on provider)
+///   3. Model ID heuristic detection
+///   4. `modelProviderType` or `providerProviderType` (protocol fallback)
+///   5. openaiCompatible (safe default)
+///
+/// This is the canonical resolution logic; the ParameterEditor widget delegates
+/// to this function. Other consumers (e.g. request adapters, debugging tools)
+/// should also call this rather than duplicating the priority chain.
+ProviderType resolveParameterScope({
+  String? modelParameterScope,
+  String? providerParameterScope,
+  String? modelId,
+  String? modelProviderType,
+  String? providerProviderType,
+}) {
+  // ① User-specified parameterScope.
+  final scope = modelParameterScope ?? providerParameterScope;
+  if (scope != null && scope.isNotEmpty) {
+    return providerTypeFromProtocolKey(scope);
+  }
+
+  // ② Model ID heuristic.
+  final fromModel = detectProviderFromModel(modelId);
+  if (fromModel != ProviderType.openaiCompatible) {
+    return fromModel;
+  }
+
+  // ③ Protocol-level providerType.
+  final explicit = modelProviderType ?? providerProviderType;
+  if (explicit != null && explicit.isNotEmpty) {
+    return providerTypeFromProtocolKey(explicit);
+  }
+
+  // ④ Fallback.
   return ProviderType.openaiCompatible;
 }
 

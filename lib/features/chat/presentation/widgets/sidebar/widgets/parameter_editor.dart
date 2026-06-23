@@ -54,9 +54,8 @@ class _ParameterEditorState extends ConsumerState<ParameterEditor> {
     final ps = ref.watch(parameterSettingsControllerProvider);
     final ctrl = ref.read(parameterSettingsControllerProvider.notifier);
 
-    // Resolve provider type: explicit prop → current model's provider → detect
-    // from model id → fallback to openaiCompatible.  Mirrors web's
-    // `detectProviderFromModel(modelId)` in DynamicContextSettings.
+    // Resolve parameter scope via canonical priority chain
+    // (see docs/PARAMETER_SCOPE_DESIGN.md).
     final resolvedProvider = widget.providerType ?? _resolveProviderType(ref);
     final currentModelId = _resolveModelId(ref);
 
@@ -120,18 +119,18 @@ class _ParameterEditorState extends ConsumerState<ParameterEditor> {
     return sw.values.contains(depValue);
   }
 
-  /// Detect provider type from current model (same as web's
-  /// `detectProviderFromModel(modelId)` called in DynamicContextSettings).
+  /// Resolve the parameter display scope for the current model.
+  /// Delegates to the canonical [resolveParameterScope] function.
   static ProviderType _resolveProviderType(WidgetRef ref) {
     final current = ref.watch(appCurrentModelProvider).asData?.value;
     if (current == null) return ProviderType.openaiCompatible;
-    // Prefer explicit providerType on the provider/model, fall back to
-    // heuristic detection from model id.
-    final explicit = current.model.providerType ?? current.provider.providerType;
-    if (explicit != null && explicit.isNotEmpty) {
-      return providerTypeFromProtocolKey(explicit);
-    }
-    return detectProviderFromModel(current.model.id);
+    return resolveParameterScope(
+      modelParameterScope: current.model.parameterScope,
+      providerParameterScope: current.provider.parameterScope,
+      modelId: current.model.id,
+      modelProviderType: current.model.providerType,
+      providerProviderType: current.provider.providerType,
+    );
   }
 
   /// Get the current model ID for dynamic option resolution.
