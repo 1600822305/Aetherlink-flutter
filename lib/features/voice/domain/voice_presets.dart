@@ -464,52 +464,58 @@ const kSiliconFlowModels = <VoicePreset>[
   VoicePreset(
     id: 'FunAudioLLM/CosyVoice2-0.5B',
     name: 'CosyVoice2-0.5B',
-    description: '多语言语音合成',
+    description: '多语言语音合成（中/英/日/韩/方言）',
+  ),
+  VoicePreset(
+    id: 'fishaudio/fish-speech-1.5',
+    name: 'Fish-Speech-1.5',
+    description: '多语言 TTS，DualAR 架构（中/英/日）',
   ),
   VoicePreset(
     id: 'IndexTeam/IndexTTS-2',
     name: 'IndexTTS-2',
-    description: 'B站情感语音合成',
+    description: 'B站情感语音合成，精确时长控制',
   ),
   VoicePreset(
     id: 'fnlp/MOSS-TTSD-v0.5',
     name: 'MOSS-TTSD-v0.5',
-    description: '高表现力对话语音',
+    description: '高表现力双人对话语音',
   ),
 ];
 
+const _kSiliconFlowPresetVoices = <VoicePreset>[
+  VoicePreset(id: 'alex', name: 'Alex', description: '沉稳男声'),
+  VoicePreset(id: 'benjamin', name: 'Benjamin', description: '低沉男声'),
+  VoicePreset(id: 'charles', name: 'Charles', description: '磁性男声'),
+  VoicePreset(id: 'david', name: 'David', description: '欢快男声'),
+  VoicePreset(id: 'anna', name: 'Anna', description: '沉稳女声'),
+  VoicePreset(id: 'bella', name: 'Bella', description: '激情女声'),
+  VoicePreset(id: 'claire', name: 'Claire', description: '温柔女声'),
+  VoicePreset(id: 'diana', name: 'Diana', description: '欢快女声'),
+];
+
 const kSiliconFlowVoices = <String, List<VoicePreset>>{
-  'FunAudioLLM/CosyVoice2-0.5B': [
-    VoicePreset(id: 'alex', name: 'Alex', description: '沉稳男声'),
-    VoicePreset(id: 'benjamin', name: 'Benjamin', description: '低沉男声'),
-    VoicePreset(id: 'charles', name: 'Charles', description: '磁性男声'),
-    VoicePreset(id: 'david', name: 'David', description: '欢快男声'),
-    VoicePreset(id: 'anna', name: 'Anna', description: '沉稳女声'),
-    VoicePreset(id: 'bella', name: 'Bella', description: '激情女声'),
-    VoicePreset(id: 'claire', name: 'Claire', description: '温柔女声'),
-    VoicePreset(id: 'diana', name: 'Diana', description: '欢快女声'),
-  ],
-  'IndexTeam/IndexTTS-2': [
-    VoicePreset(id: 'alex', name: 'Alex', description: '沉稳男声'),
-    VoicePreset(id: 'benjamin', name: 'Benjamin', description: '低沉男声'),
-    VoicePreset(id: 'charles', name: 'Charles', description: '磁性男声'),
-    VoicePreset(id: 'david', name: 'David', description: '欢快男声'),
-    VoicePreset(id: 'anna', name: 'Anna', description: '沉稳女声'),
-    VoicePreset(id: 'bella', name: 'Bella', description: '激情女声'),
-    VoicePreset(id: 'claire', name: 'Claire', description: '温柔女声'),
-    VoicePreset(id: 'diana', name: 'Diana', description: '欢快女声'),
-  ],
-  'fnlp/MOSS-TTSD-v0.5': [
-    VoicePreset(id: 'alex', name: 'Alex', description: '沉稳男声'),
-    VoicePreset(id: 'benjamin', name: 'Benjamin', description: '低沉男声'),
-    VoicePreset(id: 'charles', name: 'Charles', description: '磁性男声'),
-    VoicePreset(id: 'david', name: 'David', description: '欢快男声'),
-    VoicePreset(id: 'anna', name: 'Anna', description: '沉稳女声'),
-    VoicePreset(id: 'bella', name: 'Bella', description: '激情女声'),
-    VoicePreset(id: 'claire', name: 'Claire', description: '温柔女声'),
-    VoicePreset(id: 'diana', name: 'Diana', description: '欢快女声'),
-  ],
+  'FunAudioLLM/CosyVoice2-0.5B': _kSiliconFlowPresetVoices,
+  'fishaudio/fish-speech-1.5': _kSiliconFlowPresetVoices,
+  'IndexTeam/IndexTTS-2': _kSiliconFlowPresetVoices,
+  'fnlp/MOSS-TTSD-v0.5': _kSiliconFlowPresetVoices,
 };
+
+const kSiliconFlowOutputFormats = <VoicePreset>[
+  VoicePreset(id: 'mp3', name: 'MP3', description: '通用有损格式'),
+  VoicePreset(id: 'wav', name: 'WAV', description: '无损格式'),
+  VoicePreset(id: 'pcm', name: 'PCM', description: '原始 PCM'),
+  VoicePreset(id: 'opus', name: 'Opus', description: '高效有损格式'),
+];
+
+const kSiliconFlowSampleRates = <VoicePreset>[
+  VoicePreset(id: '8000', name: '8kHz', description: '电话质量'),
+  VoicePreset(id: '16000', name: '16kHz', description: '语音识别'),
+  VoicePreset(id: '24000', name: '24kHz', description: '高清语音'),
+  VoicePreset(id: '32000', name: '32kHz', description: '广播质量'),
+  VoicePreset(id: '44100', name: '44.1kHz', description: 'CD 质量（默认）'),
+  VoicePreset(id: '48000', name: '48kHz', description: 'Opus 专用'),
+];
 
 // ---------------------------------------------------------------------------
 // Azure
