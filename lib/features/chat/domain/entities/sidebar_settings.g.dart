@@ -49,6 +49,8 @@ _SidebarSettings _$SidebarSettingsFromJson(
   codeDefaultCollapsed: json['codeDefaultCollapsed'] as bool? ?? false,
   codeHighlightTheme: json['codeHighlightTheme'] as String? ?? 'auto',
   codeFontSize: (json['codeFontSize'] as num?)?.toInt() ?? 13,
+  codeFixedHeight: json['codeFixedHeight'] as bool? ?? false,
+  codeMaxHeight: (json['codeMaxHeight'] as num?)?.toInt() ?? 300,
   mermaidEnabled: json['mermaidEnabled'] as bool? ?? true,
   mathEnableSingleDollar: json['mathEnableSingleDollar'] as bool? ?? true,
 );
@@ -80,6 +82,8 @@ Map<String, dynamic> _$SidebarSettingsToJson(
   'codeDefaultCollapsed': instance.codeDefaultCollapsed,
   'codeHighlightTheme': instance.codeHighlightTheme,
   'codeFontSize': instance.codeFontSize,
+  'codeFixedHeight': instance.codeFixedHeight,
+  'codeMaxHeight': instance.codeMaxHeight,
   'mermaidEnabled': instance.mermaidEnabled,
   'mathEnableSingleDollar': instance.mathEnableSingleDollar,
 };

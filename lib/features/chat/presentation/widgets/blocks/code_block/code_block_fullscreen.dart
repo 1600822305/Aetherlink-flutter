@@ -70,9 +70,10 @@ class _CodeBlockFullScreenState extends State<CodeBlockFullScreen> {
       backgroundColor: bg,
       appBar: AppBar(
         backgroundColor: isDark ? const Color(0xFF282828) : const Color(0xFFF0F0F0),
+        foregroundColor: labelColor,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(LucideIcons.arrowLeft),
+          icon: Icon(LucideIcons.arrowLeft, color: labelColor),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(

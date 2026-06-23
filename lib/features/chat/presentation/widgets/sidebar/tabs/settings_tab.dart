@@ -235,6 +235,23 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       onChanged: (v) => c.setCodeFontSize(v.round()),
     ),
     _SwitchSettingRow(
+      title: '固定高度',
+      description: '展开后限制最大高度，内容在容器内滚动（配合全屏查看使用）',
+      value: s.codeFixedHeight,
+      onChanged: c.setCodeFixedHeight,
+    ),
+    if (s.codeFixedHeight)
+      _SliderSettingRow(
+        title: '最大高度',
+        description: '代码块展开后的最大高度（px）',
+        value: s.codeMaxHeight.toDouble(),
+        min: 100,
+        max: 800,
+        divisions: 14,
+        valueLabel: '${s.codeMaxHeight}',
+        onChanged: (v) => c.setCodeMaxHeight(v.round()),
+      ),
+    _SwitchSettingRow(
       title: 'Mermaid 图表',
       description: '渲染 Mermaid 流程图 / 时序图',
       value: s.mermaidEnabled,
@@ -642,31 +659,32 @@ class _SettingsGroupDetailHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        SidebarMutedIconButton(
-          icon: LucideIcons.arrowLeft,
-          size: 18,
-          box: 28,
-          color: textPrimary,
-          onPressed: onBack,
-        ),
-        const SizedBox(width: 4),
-        Icon(icon, size: 16, color: textSecondary),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: textPrimary,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onBack,
+      child: SizedBox(
+        height: 44,
+        child: Row(
+          children: [
+            Icon(LucideIcons.arrowLeft, size: 18, color: textPrimary),
+            const SizedBox(width: 8),
+            Icon(icon, size: 16, color: textSecondary),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: textPrimary,
+                ),
+              ),
             ),
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
