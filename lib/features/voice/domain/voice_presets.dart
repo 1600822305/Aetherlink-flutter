@@ -40,18 +40,25 @@ class SelectorItem {
 // ---------------------------------------------------------------------------
 
 const kOpenAIModels = <VoicePreset>[
-  VoicePreset(id: 'gpt-4o-mini-tts', name: 'GPT-4o Mini TTS', description: '新一代低延迟语音合成'),
+  VoicePreset(id: 'gpt-4o-mini-tts', name: 'GPT-4o Mini TTS', description: '支持 instructions 控制语音风格'),
   VoicePreset(id: 'tts-1', name: 'TTS-1', description: '标准质量，速度快'),
   VoicePreset(id: 'tts-1-hd', name: 'TTS-1-HD', description: '高清质量，更自然'),
 ];
 
 const kOpenAIVoices = <VoicePreset>[
   VoicePreset(id: 'alloy', name: 'Alloy', description: '中性，平衡'),
+  VoicePreset(id: 'ash', name: 'Ash', description: '男性，沉稳'),
+  VoicePreset(id: 'ballad', name: 'Ballad', description: '温暖，叙事感'),
+  VoicePreset(id: 'coral', name: 'Coral', description: '女性，清晰自然（官方推荐）'),
   VoicePreset(id: 'echo', name: 'Echo', description: '男性，深沉'),
   VoicePreset(id: 'fable', name: 'Fable', description: '英式，优雅'),
-  VoicePreset(id: 'onyx', name: 'Onyx', description: '男性，深沉有力'),
   VoicePreset(id: 'nova', name: 'Nova', description: '女性，年轻活泼'),
+  VoicePreset(id: 'onyx', name: 'Onyx', description: '男性，深沉有力'),
+  VoicePreset(id: 'sage', name: 'Sage', description: '中性，知性'),
   VoicePreset(id: 'shimmer', name: 'Shimmer', description: '女性，温柔'),
+  VoicePreset(id: 'verse', name: 'Verse', description: '男性，多样表现力'),
+  VoicePreset(id: 'marin', name: 'Marin', description: '女性，最新推荐'),
+  VoicePreset(id: 'cedar', name: 'Cedar', description: '男性，最新推荐'),
 ];
 
 const kOpenAIFormats = <VoicePreset>[
