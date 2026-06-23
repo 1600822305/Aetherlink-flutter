@@ -32,9 +32,13 @@ abstract class AsrProviderSetting with _$AsrProviderSetting {
     // Whisper-specific
     @Default('') String responseFormat,
     @Default(0.0) double temperature, // Whisper temperature [0,1]
+    @Default('') String prompt, // Whisper/Realtime prompt for domain vocabulary
     // VAD threshold (0.0-1.0)
     @Default(0.5) double vadThreshold,
     @Default(500) int silenceDurationMs,
+    @Default(300) int prefixPaddingMs, // VAD prefix padding (ms)
+    // Realtime delay (latency/accuracy tradeoff)
+    @Default('') String realtimeDelay, // minimal/low/medium/high/xhigh
   }) = _AsrProviderSetting;
 
   factory AsrProviderSetting.fromJson(Map<String, dynamic> json) =>
@@ -55,6 +59,7 @@ AsrProviderSetting defaultAsrProvider(AsrProviderKind kind) => switch (kind) {
     name: 'OpenAI Realtime ASR',
     websocketUrl: 'wss://api.openai.com/v1/realtime?intent=transcription',
     model: 'gpt-4o-transcribe',
+    realtimeDelay: 'medium',
   ),
   AsrProviderKind.whisper => const AsrProviderSetting(
     id: 'whisper',

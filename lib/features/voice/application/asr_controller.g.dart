@@ -59,7 +59,7 @@ final class AsrControllerProvider
   }
 }
 
-String _$asrControllerHash() => r'068c81b3401ab5f955153f928ae4b49f4c9b9dc4';
+String _$asrControllerHash() => r'b7bc008e1f5fae69fda847c6907b6de4fc671e0d';
 
 /// The ASR controller: manages microphone recording, speech recognition
 /// (system native, real-time streaming, or batch Whisper), and exposes the
