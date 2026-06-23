@@ -55,12 +55,13 @@ class _VoiceInputSheetState extends ConsumerState<_VoiceInputSheet>
     final isProcessing = asrState.status == AsrStatus.processing;
     final isError = asrState.status == AsrStatus.error;
 
+    final bottomPad = MediaQuery.paddingOf(context).bottom;
     return Container(
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+      padding: EdgeInsets.fromLTRB(24, 16, 24, 16 + bottomPad),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

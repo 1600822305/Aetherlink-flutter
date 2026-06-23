@@ -173,12 +173,15 @@ class _VoiceSettingsPageState extends ConsumerState<VoiceSettingsPage>
           child: _TabHeader(controller: _tabCtrl),
         ),
       ),
-      body: TabBarView(
-        controller: _tabCtrl,
-        children: [
-          _TtsTab(settings: settings, ctrl: ctrl),
-          _AsrTab(settings: settings, ctrl: ctrl),
-        ],
+      body: SafeArea(
+        top: false,
+        child: TabBarView(
+          controller: _tabCtrl,
+          children: [
+            _TtsTab(settings: settings, ctrl: ctrl),
+            _AsrTab(settings: settings, ctrl: ctrl),
+          ],
+        ),
       ),
     );
   }
@@ -264,9 +267,7 @@ class _TtsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final meta = _ttsServiceMeta();
     return ListView(
-      padding: EdgeInsets.fromLTRB(
-        16, 12, 16, 16 + MediaQuery.paddingOf(context).bottom,
-      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
         for (final kind in TtsProviderKind.values) ...[
           Builder(builder: (ctx) {
@@ -324,9 +325,7 @@ class _AsrTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final meta = _asrServiceMeta();
     return ListView(
-      padding: EdgeInsets.fromLTRB(
-        16, 12, 16, 16 + MediaQuery.paddingOf(context).bottom,
-      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
         for (final kind in AsrProviderKind.values) ...[
           Builder(builder: (ctx) {
@@ -697,13 +696,13 @@ class _TtsProviderDetailPageState
           ),
         ],
       ),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16, 12, 16, 16 + MediaQuery.paddingOf(context).bottom,
-        ),
-        children: [
-          // ===== Single main card (matching Web's single Paper) =====
-          ModelSettingsCard(
+      body: SafeArea(
+        top: false,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          children: [
+            // ===== Single main card (matching Web's single Paper) =====
+            ModelSettingsCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -783,6 +782,7 @@ class _TtsProviderDetailPageState
             ),
           ],
         ],
+      ),
       ),
     );
   }
@@ -1268,13 +1268,13 @@ class _AsrProviderDetailPageState
           ),
         ],
       ),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16, 12, 16, 16 + MediaQuery.paddingOf(context).bottom,
-        ),
-        children: [
-          // Single card (matching Web pattern)
-          ModelSettingsCard(
+      body: SafeArea(
+        top: false,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          children: [
+            // Single card (matching Web pattern)
+            ModelSettingsCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1338,6 +1338,7 @@ class _AsrProviderDetailPageState
             ),
           ),
         ],
+      ),
       ),
     );
   }
