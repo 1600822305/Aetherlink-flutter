@@ -72,13 +72,13 @@ Future<StoreSearchResult> searchClawHub({
   final skills = results.map((e) {
     final item = e as Map<String, dynamic>;
     final owner = item['owner'] as Map<String, dynamic>?;
-    final slug = item['slug'] as String? ?? '';
-    final ownerHandle = item['ownerHandle'] as String? ?? '';
+    final slug = item['slug']?.toString() ?? '';
+    final ownerHandle = item['ownerHandle']?.toString() ?? '';
     return StoreSkillItem(
       id: slug,
-      name: item['displayName'] as String? ?? slug,
-      author: owner?['displayName'] as String? ?? ownerHandle,
-      description: item['summary'] as String? ?? '',
+      name: item['displayName']?.toString() ?? slug,
+      author: owner?['displayName']?.toString() ?? ownerHandle,
+      description: item['summary']?.toString() ?? '',
       url: 'https://clawhub.ai/$ownerHandle/$slug',
       source: SkillStoreSource.clawhub,
       stars: 0,
@@ -116,13 +116,13 @@ Future<StoreSearchResult> searchAiSkillStore({
   final skills = results.map((e) {
     final item = e as Map<String, dynamic>;
     final skillId =
-        item['skill_id'] as String? ?? item['name'] as String? ?? '';
-    final name = item['name'] as String? ?? '';
+        item['skill_id']?.toString() ?? item['name']?.toString() ?? '';
+    final name = item['name']?.toString() ?? '';
     return StoreSkillItem(
       id: skillId,
       name: name,
-      author: item['trust_level'] as String? ?? 'community',
-      description: item['description'] as String? ?? '',
+      author: item['trust_level']?.toString() ?? 'community',
+      description: item['description']?.toString() ?? '',
       url: 'https://www.aiskillstore.io/skills/$skillId',
       source: SkillStoreSource.aiskillstore,
       stars: 0,
