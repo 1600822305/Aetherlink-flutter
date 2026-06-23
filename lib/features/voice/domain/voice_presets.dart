@@ -577,6 +577,7 @@ const kElevenLabsVoices = <VoicePreset>[
 ];
 
 const kElevenLabsModels = <VoicePreset>[
+  VoicePreset(id: 'eleven_v3', name: 'v3', description: '最新旗舰模型，最高音质'),
   VoicePreset(
     id: 'eleven_multilingual_v2',
     name: 'Multilingual v2',
@@ -590,7 +591,7 @@ const kElevenLabsModels = <VoicePreset>[
   VoicePreset(
     id: 'eleven_flash_v2_5',
     name: 'Flash v2.5',
-    description: '超低延迟模型',
+    description: '超低延迟 75ms',
   ),
   VoicePreset(
     id: 'eleven_monolingual_v1',
@@ -600,30 +601,48 @@ const kElevenLabsModels = <VoicePreset>[
 ];
 
 const kElevenLabsOutputFormats = <VoicePreset>[
+  // MP3
+  VoicePreset(
+    id: 'mp3_44100_192',
+    name: 'MP3 44.1kHz 192k',
+    description: '最高质量',
+  ),
   VoicePreset(
     id: 'mp3_44100_128',
-    name: 'MP3 44.1kHz 128kbps',
-    description: '高质量',
+    name: 'MP3 44.1kHz 128k',
+    description: '高质量（默认）',
+  ),
+  VoicePreset(id: 'mp3_44100_96', name: 'MP3 44.1kHz 96k', description: '标准+'),
+  VoicePreset(id: 'mp3_44100_64', name: 'MP3 44.1kHz 64k', description: '标准'),
+  VoicePreset(id: 'mp3_44100_32', name: 'MP3 44.1kHz 32k', description: '低码率'),
+  VoicePreset(id: 'mp3_22050_32', name: 'MP3 22.05kHz 32k', description: '低带宽'),
+  VoicePreset(id: 'mp3_24000_48', name: 'MP3 24kHz 48k', description: '中等'),
+  // PCM
+  VoicePreset(id: 'pcm_44100', name: 'PCM 44.1kHz', description: 'CD 质量'),
+  VoicePreset(id: 'pcm_24000', name: 'PCM 24kHz', description: '高清语音'),
+  VoicePreset(id: 'pcm_22050', name: 'PCM 22.05kHz', description: '标准'),
+  VoicePreset(id: 'pcm_16000', name: 'PCM 16kHz', description: '语音识别'),
+  // Opus
+  VoicePreset(
+    id: 'opus_48000_128',
+    name: 'Opus 48kHz 128k',
+    description: '高质量流媒体',
   ),
   VoicePreset(
-    id: 'mp3_44100_64',
-    name: 'MP3 44.1kHz 64kbps',
-    description: '标准质量',
+    id: 'opus_48000_64',
+    name: 'Opus 48kHz 64k',
+    description: '标准流媒体',
   ),
   VoicePreset(
-    id: 'mp3_22050_32',
-    name: 'MP3 22.05kHz 32kbps',
-    description: '低带宽',
+    id: 'opus_48000_32',
+    name: 'Opus 48kHz 32k',
+    description: '低码率流媒体',
   ),
-  VoicePreset(id: 'pcm_16000', name: 'PCM 16kHz', description: '原始 PCM'),
-  VoicePreset(id: 'pcm_22050', name: 'PCM 22.05kHz', description: '原始 PCM 高采样'),
-  VoicePreset(id: 'pcm_24000', name: 'PCM 24kHz', description: '原始 PCM 24k'),
-  VoicePreset(
-    id: 'pcm_44100',
-    name: 'PCM 44.1kHz',
-    description: '原始 PCM CD 质量',
-  ),
-  VoicePreset(id: 'ulaw_8000', name: 'μ-law 8kHz', description: '电话质量'),
+  // WAV
+  VoicePreset(id: 'wav_44100', name: 'WAV 44.1kHz', description: '无损 CD 质量'),
+  // Telephony
+  VoicePreset(id: 'ulaw_8000', name: 'μ-law 8kHz', description: '电话（北美）'),
+  VoicePreset(id: 'alaw_8000', name: 'A-law 8kHz', description: '电话（欧洲）'),
 ];
 
 // ---------------------------------------------------------------------------
