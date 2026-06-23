@@ -66,18 +66,28 @@ TextStyle? _mergeStyle(TextStyle? parent, TextStyle? child) {
 }
 
 /// Resolve theme name to a theme map, with transparent background.
+///
+/// Returns a **cached** map — the same instance is returned for identical
+/// `(themeName, isDark)` pairs so downstream identity checks (`identical()`)
+/// work correctly and avoid redundant re-highlights.
 Map<String, TextStyle> resolveTheme(String themeName, bool isDark) {
+  final key = (themeName, isDark);
+  final cached = _resolvedThemeCache[key];
+  if (cached != null) return cached;
+
+  Map<String, TextStyle> base;
   if (themeName == 'auto') {
-    return _transparentBg(
-      isDark ? kCodeThemeDarkDefault : kCodeThemeLightDefault,
-    );
+    base = isDark ? kCodeThemeDarkDefault : kCodeThemeLightDefault;
+  } else {
+    base = kCodeHighlightThemes[themeName] ??
+        (isDark ? kCodeThemeDarkDefault : kCodeThemeLightDefault);
   }
-  final resolved = kCodeHighlightThemes[themeName];
-  if (resolved != null) return _transparentBg(resolved);
-  return _transparentBg(
-    isDark ? kCodeThemeDarkDefault : kCodeThemeLightDefault,
-  );
+  final result = _transparentBg(base);
+  _resolvedThemeCache[key] = result;
+  return result;
 }
+
+final Map<(String, bool), Map<String, TextStyle>> _resolvedThemeCache = {};
 
 Map<String, TextStyle> _transparentBg(Map<String, TextStyle> base) {
   final theme = Map<String, TextStyle>.from(base);

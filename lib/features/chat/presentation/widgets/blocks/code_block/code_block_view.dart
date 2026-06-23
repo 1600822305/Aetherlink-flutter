@@ -11,6 +11,35 @@ import 'code_block_search.dart';
 import 'code_highlight_utils.dart';
 import 'mermaid_view.dart';
 
+/// Only the settings fields that CodeBlockView actually uses, packed into a
+/// single record so `.select()` can do a cheap equality check instead of
+/// rebuilding on every unrelated setting change.
+typedef _CodeSettings = ({
+  bool showLineNumbers,
+  bool collapsible,
+  bool wrappable,
+  bool defaultCollapsed,
+  String highlightTheme,
+  int fontSize,
+  bool fixedHeight,
+  int maxHeight,
+  bool mermaidEnabled,
+  bool copyable,
+});
+
+_CodeSettings _selectCodeSettings(SidebarSettings s) => (
+      showLineNumbers: s.codeShowLineNumbers,
+      collapsible: s.codeCollapsible,
+      wrappable: s.codeWrappable,
+      defaultCollapsed: s.codeDefaultCollapsed,
+      highlightTheme: s.codeHighlightTheme,
+      fontSize: s.codeFontSize,
+      fixedHeight: s.codeFixedHeight,
+      maxHeight: s.codeMaxHeight,
+      mermaidEnabled: s.mermaidEnabled,
+      copyable: s.copyableCodeBlocks,
+    );
+
 /// A fenced code block with syntax highlighting (190+ languages, 110+ themes),
 /// line numbers, collapsible/default-collapsed state, wrap-vs-horizontal-scroll,
 /// font size control, fullscreen, diff rendering, search, and streaming
@@ -41,14 +70,32 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
   String _searchQuery = '';
   int _currentMatchIndex = 0;
 
+  // Cached derived values to avoid recomputing every frame.
+  String? _cachedNormalizedLanguage;
+  String? _cachedHighlightLanguage;
+
+  @override
+  void initState() {
+    super.initState();
+    _updateLanguageCache();
+  }
+
   @override
   void didUpdateWidget(covariant CodeBlockView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.language != widget.language) {
+      _updateLanguageCache();
+    }
     if (oldWidget.language != widget.language ||
         oldWidget.code != widget.code) {
       _expandedOverride = null;
       _copied = false;
     }
+  }
+
+  void _updateLanguageCache() {
+    _cachedNormalizedLanguage = displayLanguage(widget.language);
+    _cachedHighlightLanguage = normalizeHighlightLanguage(widget.language);
   }
 
   Future<void> _copy() async {
@@ -60,11 +107,9 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
     });
   }
 
-  void _openFullScreen(SidebarSettings settings, bool isDark) {
-    final highlightLanguage = normalizeHighlightLanguage(widget.language);
-    final highlightTheme =
-        resolveTheme(settings.codeHighlightTheme, isDark);
-    final fontSize = settings.codeFontSize.toDouble();
+  void _openFullScreen(_CodeSettings cs, bool isDark) {
+    final highlightTheme = resolveTheme(cs.highlightTheme, isDark);
+    final fontSize = cs.fontSize.toDouble();
     final theme = Theme.of(context);
     final labelColor = isDark ? Colors.white70 : Colors.black54;
     final codeStyle = TextStyle(
@@ -84,12 +129,12 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
         pageBuilder: (_, __, ___) => CodeBlockFullScreen(
           code: widget.code,
           language: widget.language,
-          highlightLanguage: highlightLanguage,
+          highlightLanguage: _cachedHighlightLanguage,
           highlightTheme: highlightTheme,
           codeStyle: codeStyle,
           lineNumberStyle: lineNumberStyle,
           gutterBorderColor: border,
-          showLineNumbers: settings.codeShowLineNumbers,
+          showLineNumbers: cs.showLineNumbers,
         ),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
@@ -106,11 +151,12 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
 
   @override
   Widget build(BuildContext context) {
-    final settings = ref.watch(sidebarSettingsControllerProvider);
+    final cs = ref.watch(
+      sidebarSettingsControllerProvider.select(_selectCodeSettings),
+    );
 
     // Mermaid: dispatch to dedicated renderer when enabled.
-    if (settings.mermaidEnabled &&
-        widget.language.toLowerCase() == 'mermaid') {
+    if (cs.mermaidEnabled && widget.language.toLowerCase() == 'mermaid') {
       return MermaidBlockView(code: widget.code);
     }
 
@@ -121,12 +167,9 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
         isDark ? const Color(0xF2282828) : const Color(0xF2F0F0F0);
     final border = isDark ? Colors.white12 : Colors.black12;
     final labelColor = isDark ? Colors.white70 : Colors.black54;
-    final expanded = _effectiveExpanded(settings);
-    final normalizedLanguage = displayLanguage(widget.language);
-    final highlightLanguage = normalizeHighlightLanguage(widget.language);
-    final highlightTheme =
-        resolveTheme(settings.codeHighlightTheme, isDark);
-    final fontSize = settings.codeFontSize.toDouble();
+    final expanded = _effectiveExpanded(cs);
+    final highlightTheme = resolveTheme(cs.highlightTheme, isDark);
+    final fontSize = cs.fontSize.toDouble();
     final codeStyle = TextStyle(
       fontFamily: 'monospace',
       fontSize: fontSize,
@@ -161,16 +204,16 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
             child: Row(
               children: [
                 Expanded(
-                  child: settings.codeCollapsible
+                  child: cs.collapsible
                       ? _CodeBlockHeaderToggle(
                           expanded: expanded,
-                          onTap: () => _toggleExpanded(settings),
+                          onTap: () => _toggleExpanded(cs),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Flexible(
                                 child: _LanguageLabel(
-                                  language: normalizedLanguage,
+                                  language: _cachedNormalizedLanguage!,
                                   color: labelColor,
                                 ),
                               ),
@@ -186,7 +229,7 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
                           ),
                         )
                       : _LanguageLabel(
-                          language: normalizedLanguage,
+                          language: _cachedNormalizedLanguage!,
                           color: labelColor,
                         ),
                 ),
@@ -212,7 +255,7 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
                 // Fullscreen button
                 IconButton(
                   tooltip: '全屏查看',
-                  onPressed: () => _openFullScreen(settings, isDark),
+                  onPressed: () => _openFullScreen(cs, isDark),
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
                   constraints:
@@ -224,7 +267,7 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
                   ),
                 ),
                 // Copy button
-                if (settings.copyableCodeBlocks)
+                if (cs.copyable)
                   IconButton(
                     tooltip: _copied ? '已复制' : '复制代码',
                     onPressed: _copy,
@@ -258,7 +301,7 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
             switchInCurve: Curves.easeOutCubic,
             switchOutCurve: Curves.easeInCubic,
             child: expanded
-                ? _buildBody(settings, highlightLanguage, highlightTheme,
+                ? _buildBody(cs, _cachedHighlightLanguage, highlightTheme,
                     codeStyle, lineNumberStyle, border)
                 : const SizedBox(
                     key: ValueKey('code-block-body-collapsed'),
@@ -271,7 +314,7 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
   }
 
   Widget _buildBody(
-    SidebarSettings settings,
+    _CodeSettings cs,
     String? highlightLanguage,
     Map<String, TextStyle> highlightTheme,
     TextStyle codeStyle,
@@ -283,8 +326,8 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
       code: widget.code,
       highlightLanguage: highlightLanguage,
       highlightTheme: highlightTheme,
-      showLineNumbers: settings.codeShowLineNumbers,
-      wrappable: settings.codeWrappable,
+      showLineNumbers: cs.showLineNumbers,
+      wrappable: cs.wrappable,
       codeStyle: codeStyle,
       lineNumberStyle: lineNumberStyle,
       gutterBorderColor: border,
@@ -293,22 +336,22 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
       currentMatchIndex: _showSearch ? _currentMatchIndex : null,
     );
 
-    if (!settings.codeFixedHeight) return body;
+    if (!cs.fixedHeight) return body;
 
     return ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: settings.codeMaxHeight.toDouble()),
+      constraints: BoxConstraints(maxHeight: cs.maxHeight.toDouble()),
       child: SingleChildScrollView(child: body),
     );
   }
 
-  bool _effectiveExpanded(SidebarSettings settings) {
-    if (!settings.codeCollapsible) return true;
-    return _expandedOverride ?? !settings.codeDefaultCollapsed;
+  bool _effectiveExpanded(_CodeSettings cs) {
+    if (!cs.collapsible) return true;
+    return _expandedOverride ?? !cs.defaultCollapsed;
   }
 
-  void _toggleExpanded(SidebarSettings settings) {
-    if (!settings.codeCollapsible) return;
-    setState(() => _expandedOverride = !_effectiveExpanded(settings));
+  void _toggleExpanded(_CodeSettings cs) {
+    if (!cs.collapsible) return;
+    setState(() => _expandedOverride = !_effectiveExpanded(cs));
   }
 }
 
