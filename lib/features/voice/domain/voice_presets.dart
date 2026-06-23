@@ -522,21 +522,707 @@ const kSiliconFlowSampleRates = <VoicePreset>[
 // ---------------------------------------------------------------------------
 
 const kAzureVoices = <VoicePreset>[
-  VoicePreset(id: 'zh-CN-XiaoxiaoNeural', name: '晓晓', description: '标准女声'),
-  VoicePreset(id: 'zh-CN-YunxiNeural', name: '云希', description: '标准男声'),
-  VoicePreset(id: 'zh-CN-YunjianNeural', name: '云健', description: '新闻播报男声'),
-  VoicePreset(id: 'zh-CN-XiaoyiNeural', name: '晓伊', description: '儿童女声'),
-  VoicePreset(id: 'zh-CN-YunyangNeural', name: '云扬', description: '专业新闻男声'),
-  VoicePreset(id: 'zh-CN-XiaohanNeural', name: '晓涵', description: '情感女声'),
-  VoicePreset(id: 'zh-CN-XiaomoNeural', name: '晓墨', description: '温暖女声'),
-  VoicePreset(id: 'zh-CN-XiaoxuanNeural', name: '晓萱', description: '轻快女声'),
-  VoicePreset(id: 'zh-CN-XiaoruiNeural', name: '晓蕊', description: '老年女声'),
-  VoicePreset(id: 'zh-CN-YunzeNeural', name: '云泽', description: '广播男声'),
-  VoicePreset(id: 'en-US-JennyNeural', name: 'Jenny', description: '英文女声'),
-  VoicePreset(id: 'en-US-GuyNeural', name: 'Guy', description: '英文男声'),
-  VoicePreset(id: 'en-US-AriaNeural', name: 'Aria', description: '英文情感女声'),
-  VoicePreset(id: 'ja-JP-NanamiNeural', name: 'Nanami', description: '日文女声'),
-  VoicePreset(id: 'ko-KR-SunHiNeural', name: 'SunHi', description: '韩文女声'),
+  // 中文（普通话）
+  VoicePreset(
+    id: 'zh-CN-XiaoxiaoNeural',
+    name: '晓晓',
+    description: '女声·情感丰富',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-XiaoxiaoMultilingualNeural',
+    name: '晓晓 多语言',
+    description: '女声·多语种',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-XiaoxiaoDialectsNeural',
+    name: '晓晓 方言',
+    description: '女声·方言',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-YunxiNeural',
+    name: '云希',
+    description: '男声·标准',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-YunjianNeural',
+    name: '云健',
+    description: '男声·新闻播报',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-YunyangNeural',
+    name: '云扬',
+    description: '男声·专业新闻',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-XiaohanNeural',
+    name: '晓涵',
+    description: '女声·情感',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-XiaomoNeural',
+    name: '晓墨',
+    description: '女声·温暖',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-XiaoxuanNeural',
+    name: '晓萱',
+    description: '女声·轻快',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-XiaoruiNeural',
+    name: '晓蕊',
+    description: '女声·老年',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-XiaoyiNeural',
+    name: '晓伊',
+    description: '女声·儿童',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-YunzeNeural',
+    name: '云泽',
+    description: '男声·广播',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-YunfengNeural',
+    name: '云枫',
+    description: '男声·沉稳',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-YunhaoNeural',
+    name: '云皓',
+    description: '男声·广告',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-YunjieNeural',
+    name: '云杰',
+    description: '男声·温暖',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-XiaochenNeural',
+    name: '晓辰',
+    description: '女声·休闲',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-XiaomengNeural',
+    name: '晓梦',
+    description: '女声·可爱',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-XiaoshuangNeural',
+    name: '晓双',
+    description: '女声·儿童',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-XiaoyanNeural',
+    name: '晓颜',
+    description: '女声·温柔',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-XiaoyouNeural',
+    name: '晓悠',
+    description: '女声·儿童故事',
+    language: 'zh-CN',
+  ),
+  VoicePreset(
+    id: 'zh-CN-YunxiaNeural',
+    name: '云夏',
+    description: '男声·少年',
+    language: 'zh-CN',
+  ),
+  // 中文（粤语）
+  VoicePreset(
+    id: 'zh-HK-HiuMaanNeural',
+    name: 'HiuMaan',
+    description: '粤语女声',
+    language: 'zh-HK',
+  ),
+  VoicePreset(
+    id: 'zh-HK-WanLungNeural',
+    name: 'WanLung',
+    description: '粤语男声',
+    language: 'zh-HK',
+  ),
+  VoicePreset(
+    id: 'zh-HK-HiuGaaiNeural',
+    name: 'HiuGaai',
+    description: '粤语女声2',
+    language: 'zh-HK',
+  ),
+  // 中文（台湾）
+  VoicePreset(
+    id: 'zh-TW-HsiaoChenNeural',
+    name: 'HsiaoChen',
+    description: '台湾女声',
+    language: 'zh-TW',
+  ),
+  VoicePreset(
+    id: 'zh-TW-YunJheNeural',
+    name: 'YunJhe',
+    description: '台湾男声',
+    language: 'zh-TW',
+  ),
+  VoicePreset(
+    id: 'zh-TW-HsiaoYuNeural',
+    name: 'HsiaoYu',
+    description: '台湾女声2',
+    language: 'zh-TW',
+  ),
+  // 英文（美国）
+  VoicePreset(
+    id: 'en-US-JennyNeural',
+    name: 'Jenny',
+    description: '英文女声',
+    language: 'en-US',
+  ),
+  VoicePreset(
+    id: 'en-US-JennyMultilingualNeural',
+    name: 'Jenny 多语言',
+    description: '英文女声·多语种',
+    language: 'en-US',
+  ),
+  VoicePreset(
+    id: 'en-US-GuyNeural',
+    name: 'Guy',
+    description: '英文男声',
+    language: 'en-US',
+  ),
+  VoicePreset(
+    id: 'en-US-AriaNeural',
+    name: 'Aria',
+    description: '英文情感女声',
+    language: 'en-US',
+  ),
+  VoicePreset(
+    id: 'en-US-DavisNeural',
+    name: 'Davis',
+    description: '英文情感男声',
+    language: 'en-US',
+  ),
+  VoicePreset(
+    id: 'en-US-AmberNeural',
+    name: 'Amber',
+    description: '英文温暖女声',
+    language: 'en-US',
+  ),
+  VoicePreset(
+    id: 'en-US-AnaNeural',
+    name: 'Ana',
+    description: '英文儿童女声',
+    language: 'en-US',
+  ),
+  VoicePreset(
+    id: 'en-US-AndrewNeural',
+    name: 'Andrew',
+    description: '英文温暖男声',
+    language: 'en-US',
+  ),
+  VoicePreset(
+    id: 'en-US-EmmaNeural',
+    name: 'Emma',
+    description: '英文专业女声',
+    language: 'en-US',
+  ),
+  VoicePreset(
+    id: 'en-US-BrianNeural',
+    name: 'Brian',
+    description: '英文叙事男声',
+    language: 'en-US',
+  ),
+  VoicePreset(
+    id: 'en-US-ChristopherNeural',
+    name: 'Christopher',
+    description: '英文可靠男声',
+    language: 'en-US',
+  ),
+  VoicePreset(
+    id: 'en-US-EricNeural',
+    name: 'Eric',
+    description: '英文自然男声',
+    language: 'en-US',
+  ),
+  VoicePreset(
+    id: 'en-US-MichelleNeural',
+    name: 'Michelle',
+    description: '英文友好女声',
+    language: 'en-US',
+  ),
+  VoicePreset(
+    id: 'en-US-RogerNeural',
+    name: 'Roger',
+    description: '英文成熟男声',
+    language: 'en-US',
+  ),
+  VoicePreset(
+    id: 'en-US-SteffanNeural',
+    name: 'Steffan',
+    description: '英文自信男声',
+    language: 'en-US',
+  ),
+  // 英文（英国）
+  VoicePreset(
+    id: 'en-GB-SoniaNeural',
+    name: 'Sonia',
+    description: '英式女声',
+    language: 'en-GB',
+  ),
+  VoicePreset(
+    id: 'en-GB-RyanNeural',
+    name: 'Ryan',
+    description: '英式男声',
+    language: 'en-GB',
+  ),
+  VoicePreset(
+    id: 'en-GB-LibbyNeural',
+    name: 'Libby',
+    description: '英式女声2',
+    language: 'en-GB',
+  ),
+  VoicePreset(
+    id: 'en-GB-MaisieNeural',
+    name: 'Maisie',
+    description: '英式儿童',
+    language: 'en-GB',
+  ),
+  // 日文
+  VoicePreset(
+    id: 'ja-JP-NanamiNeural',
+    name: 'Nanami',
+    description: '日文女声',
+    language: 'ja-JP',
+  ),
+  VoicePreset(
+    id: 'ja-JP-KeitaNeural',
+    name: 'Keita',
+    description: '日文男声',
+    language: 'ja-JP',
+  ),
+  VoicePreset(
+    id: 'ja-JP-AoiNeural',
+    name: 'Aoi',
+    description: '日文女声2',
+    language: 'ja-JP',
+  ),
+  VoicePreset(
+    id: 'ja-JP-DaichiNeural',
+    name: 'Daichi',
+    description: '日文男声2',
+    language: 'ja-JP',
+  ),
+  VoicePreset(
+    id: 'ja-JP-MayuNeural',
+    name: 'Mayu',
+    description: '日文女声3',
+    language: 'ja-JP',
+  ),
+  VoicePreset(
+    id: 'ja-JP-NaokiNeural',
+    name: 'Naoki',
+    description: '日文男声3',
+    language: 'ja-JP',
+  ),
+  VoicePreset(
+    id: 'ja-JP-ShioriNeural',
+    name: 'Shiori',
+    description: '日文女声4',
+    language: 'ja-JP',
+  ),
+  // 韩文
+  VoicePreset(
+    id: 'ko-KR-SunHiNeural',
+    name: 'SunHi',
+    description: '韩文女声',
+    language: 'ko-KR',
+  ),
+  VoicePreset(
+    id: 'ko-KR-InJoonNeural',
+    name: 'InJoon',
+    description: '韩文男声',
+    language: 'ko-KR',
+  ),
+  VoicePreset(
+    id: 'ko-KR-BongJinNeural',
+    name: 'BongJin',
+    description: '韩文男声2',
+    language: 'ko-KR',
+  ),
+  VoicePreset(
+    id: 'ko-KR-GookMinNeural',
+    name: 'GookMin',
+    description: '韩文男声3',
+    language: 'ko-KR',
+  ),
+  VoicePreset(
+    id: 'ko-KR-JiMinNeural',
+    name: 'JiMin',
+    description: '韩文女声2',
+    language: 'ko-KR',
+  ),
+  VoicePreset(
+    id: 'ko-KR-YuJinNeural',
+    name: 'YuJin',
+    description: '韩文女声3',
+    language: 'ko-KR',
+  ),
+  // 法语
+  VoicePreset(
+    id: 'fr-FR-DeniseNeural',
+    name: 'Denise',
+    description: '法语女声',
+    language: 'fr-FR',
+  ),
+  VoicePreset(
+    id: 'fr-FR-HenriNeural',
+    name: 'Henri',
+    description: '法语男声',
+    language: 'fr-FR',
+  ),
+  // 德语
+  VoicePreset(
+    id: 'de-DE-KatjaNeural',
+    name: 'Katja',
+    description: '德语女声',
+    language: 'de-DE',
+  ),
+  VoicePreset(
+    id: 'de-DE-ConradNeural',
+    name: 'Conrad',
+    description: '德语男声',
+    language: 'de-DE',
+  ),
+  // 西班牙语
+  VoicePreset(
+    id: 'es-ES-ElviraNeural',
+    name: 'Elvira',
+    description: '西语女声',
+    language: 'es-ES',
+  ),
+  VoicePreset(
+    id: 'es-ES-AlvaroNeural',
+    name: 'Alvaro',
+    description: '西语男声',
+    language: 'es-ES',
+  ),
+  // 葡萄牙语
+  VoicePreset(
+    id: 'pt-BR-FranciscaNeural',
+    name: 'Francisca',
+    description: '葡语女声',
+    language: 'pt-BR',
+  ),
+  VoicePreset(
+    id: 'pt-BR-AntonioNeural',
+    name: 'Antonio',
+    description: '葡语男声',
+    language: 'pt-BR',
+  ),
+  // 意大利语
+  VoicePreset(
+    id: 'it-IT-ElsaNeural',
+    name: 'Elsa',
+    description: '意语女声',
+    language: 'it-IT',
+  ),
+  VoicePreset(
+    id: 'it-IT-DiegoNeural',
+    name: 'Diego',
+    description: '意语男声',
+    language: 'it-IT',
+  ),
+  // 俄语
+  VoicePreset(
+    id: 'ru-RU-SvetlanaNeural',
+    name: 'Svetlana',
+    description: '俄语女声',
+    language: 'ru-RU',
+  ),
+  VoicePreset(
+    id: 'ru-RU-DmitryNeural',
+    name: 'Dmitry',
+    description: '俄语男声',
+    language: 'ru-RU',
+  ),
+  // 阿拉伯语
+  VoicePreset(
+    id: 'ar-SA-ZariyahNeural',
+    name: 'Zariyah',
+    description: '阿拉伯女声',
+    language: 'ar-SA',
+  ),
+  VoicePreset(
+    id: 'ar-SA-HamedNeural',
+    name: 'Hamed',
+    description: '阿拉伯男声',
+    language: 'ar-SA',
+  ),
+  // 印地语
+  VoicePreset(
+    id: 'hi-IN-SwaraNeural',
+    name: 'Swara',
+    description: '印地女声',
+    language: 'hi-IN',
+  ),
+  VoicePreset(
+    id: 'hi-IN-MadhurNeural',
+    name: 'Madhur',
+    description: '印地男声',
+    language: 'hi-IN',
+  ),
+  // 泰语
+  VoicePreset(
+    id: 'th-TH-PremwadeeNeural',
+    name: 'Premwadee',
+    description: '泰语女声',
+    language: 'th-TH',
+  ),
+  VoicePreset(
+    id: 'th-TH-NiwatNeural',
+    name: 'Niwat',
+    description: '泰语男声',
+    language: 'th-TH',
+  ),
+  // 越南语
+  VoicePreset(
+    id: 'vi-VN-HoaiMyNeural',
+    name: 'HoaiMy',
+    description: '越南女声',
+    language: 'vi-VN',
+  ),
+  VoicePreset(
+    id: 'vi-VN-NamMinhNeural',
+    name: 'NamMinh',
+    description: '越南男声',
+    language: 'vi-VN',
+  ),
+];
+
+const kAzureOutputFormats = <VoicePreset>[
+  // MP3
+  VoicePreset(
+    id: 'audio-48khz-192kbitrate-mono-mp3',
+    name: 'MP3 48kHz 192k',
+    description: '最高质量',
+  ),
+  VoicePreset(
+    id: 'audio-48khz-96kbitrate-mono-mp3',
+    name: 'MP3 48kHz 96k',
+    description: '高质量',
+  ),
+  VoicePreset(
+    id: 'audio-24khz-160kbitrate-mono-mp3',
+    name: 'MP3 24kHz 160k',
+    description: '高清',
+  ),
+  VoicePreset(
+    id: 'audio-24khz-96kbitrate-mono-mp3',
+    name: 'MP3 24kHz 96k',
+    description: '标准+',
+  ),
+  VoicePreset(
+    id: 'audio-24khz-48kbitrate-mono-mp3',
+    name: 'MP3 24kHz 48k',
+    description: '标准',
+  ),
+  VoicePreset(
+    id: 'audio-16khz-128kbitrate-mono-mp3',
+    name: 'MP3 16kHz 128k',
+    description: '默认',
+  ),
+  VoicePreset(
+    id: 'audio-16khz-64kbitrate-mono-mp3',
+    name: 'MP3 16kHz 64k',
+    description: '低码率',
+  ),
+  VoicePreset(
+    id: 'audio-16khz-32kbitrate-mono-mp3',
+    name: 'MP3 16kHz 32k',
+    description: '最低码率',
+  ),
+  // Opus
+  VoicePreset(
+    id: 'ogg-48khz-16bit-mono-opus',
+    name: 'Opus 48kHz',
+    description: '高质量流媒体',
+  ),
+  VoicePreset(
+    id: 'ogg-24khz-16bit-mono-opus',
+    name: 'Opus 24kHz',
+    description: '标准流媒体',
+  ),
+  VoicePreset(
+    id: 'ogg-16khz-16bit-mono-opus',
+    name: 'Opus 16kHz',
+    description: '低码率流媒体',
+  ),
+  // WAV (RIFF)
+  VoicePreset(
+    id: 'riff-48khz-16bit-mono-pcm',
+    name: 'WAV 48kHz',
+    description: '无损最高',
+  ),
+  VoicePreset(
+    id: 'riff-24khz-16bit-mono-pcm',
+    name: 'WAV 24kHz',
+    description: '无损标准',
+  ),
+  VoicePreset(
+    id: 'riff-16khz-16bit-mono-pcm',
+    name: 'WAV 16kHz',
+    description: '无损低',
+  ),
+  // Raw PCM
+  VoicePreset(
+    id: 'raw-48khz-16bit-mono-pcm',
+    name: 'PCM 48kHz',
+    description: '原始 CD+',
+  ),
+  VoicePreset(
+    id: 'raw-24khz-16bit-mono-pcm',
+    name: 'PCM 24kHz',
+    description: '原始标准',
+  ),
+  VoicePreset(
+    id: 'raw-16khz-16bit-mono-pcm',
+    name: 'PCM 16kHz',
+    description: '原始低',
+  ),
+  // WebM
+  VoicePreset(
+    id: 'webm-24khz-16bit-mono-opus',
+    name: 'WebM 24kHz',
+    description: 'WebM 容器',
+  ),
+  VoicePreset(
+    id: 'webm-16khz-16bit-mono-opus',
+    name: 'WebM 16kHz',
+    description: 'WebM 低',
+  ),
+];
+
+const kAzureStyles = <VoicePreset>[
+  VoicePreset(id: '', name: '无', description: '默认中性'),
+  VoicePreset(id: 'cheerful', name: 'Cheerful', description: '开心'),
+  VoicePreset(id: 'sad', name: 'Sad', description: '悲伤'),
+  VoicePreset(id: 'angry', name: 'Angry', description: '愤怒'),
+  VoicePreset(id: 'excited', name: 'Excited', description: '兴奋'),
+  VoicePreset(id: 'friendly', name: 'Friendly', description: '友好'),
+  VoicePreset(id: 'terrified', name: 'Terrified', description: '恐惧'),
+  VoicePreset(id: 'shouting', name: 'Shouting', description: '大喊'),
+  VoicePreset(id: 'whispering', name: 'Whispering', description: '耳语'),
+  VoicePreset(id: 'hopeful', name: 'Hopeful', description: '满怀期望'),
+  VoicePreset(
+    id: 'narration-professional',
+    name: 'Narration Pro',
+    description: '专业旁白',
+  ),
+  VoicePreset(
+    id: 'newscast-casual',
+    name: 'Newscast Casual',
+    description: '随意新闻',
+  ),
+  VoicePreset(
+    id: 'newscast-formal',
+    name: 'Newscast Formal',
+    description: '正式新闻',
+  ),
+  VoicePreset(
+    id: 'customerservice',
+    name: 'Customer Service',
+    description: '客服',
+  ),
+  VoicePreset(id: 'chat', name: 'Chat', description: '聊天'),
+  VoicePreset(id: 'assistant', name: 'Assistant', description: '助手'),
+  VoicePreset(id: 'calm', name: 'Calm', description: '平静'),
+  VoicePreset(id: 'gentle', name: 'Gentle', description: '温柔'),
+  VoicePreset(id: 'serious', name: 'Serious', description: '严肃'),
+  VoicePreset(id: 'depressed', name: 'Depressed', description: '沮丧'),
+  VoicePreset(id: 'embarrassed', name: 'Embarrassed', description: '尴尬'),
+  VoicePreset(id: 'envious', name: 'Envious', description: '嫉妒'),
+  VoicePreset(id: 'fearful', name: 'Fearful', description: '害怕'),
+  VoicePreset(id: 'affectionate', name: 'Affectionate', description: '深情'),
+  VoicePreset(id: 'disgruntled', name: 'Disgruntled', description: '不满'),
+  VoicePreset(id: 'lyrical', name: 'Lyrical', description: '抒情'),
+  VoicePreset(id: 'poetry-reading', name: 'Poetry Reading', description: '诗朗诵'),
+  VoicePreset(
+    id: 'advertisement-upbeat',
+    name: 'Ad Upbeat',
+    description: '广告活力',
+  ),
+  VoicePreset(id: 'sports-commentary', name: 'Sports', description: '体育解说'),
+  VoicePreset(
+    id: 'sports-commentary-excited',
+    name: 'Sports Excited',
+    description: '激动解说',
+  ),
+  VoicePreset(
+    id: 'documentary-narration',
+    name: 'Documentary',
+    description: '纪录片旁白',
+  ),
+];
+
+const kAzureRoles = <VoicePreset>[
+  VoicePreset(id: '', name: '无', description: '默认'),
+  VoicePreset(id: 'Girl', name: 'Girl', description: '模拟女孩'),
+  VoicePreset(id: 'Boy', name: 'Boy', description: '模拟男孩'),
+  VoicePreset(
+    id: 'YoungAdultFemale',
+    name: 'Young Adult ♀',
+    description: '年轻女性',
+  ),
+  VoicePreset(id: 'YoungAdultMale', name: 'Young Adult ♂', description: '年轻男性'),
+  VoicePreset(
+    id: 'OlderAdultFemale',
+    name: 'Older Adult ♀',
+    description: '中年女性',
+  ),
+  VoicePreset(id: 'OlderAdultMale', name: 'Older Adult ♂', description: '中年男性'),
+  VoicePreset(id: 'SeniorFemale', name: 'Senior ♀', description: '老年女性'),
+  VoicePreset(id: 'SeniorMale', name: 'Senior ♂', description: '老年男性'),
+];
+
+const kAzureProsodyRates = <VoicePreset>[
+  VoicePreset(id: 'x-slow', name: '极慢', description: 'x-slow'),
+  VoicePreset(id: 'slow', name: '慢', description: 'slow'),
+  VoicePreset(id: 'medium', name: '正常', description: 'medium'),
+  VoicePreset(id: 'fast', name: '快', description: 'fast'),
+  VoicePreset(id: 'x-fast', name: '极快', description: 'x-fast'),
+];
+
+const kAzureProsodyPitches = <VoicePreset>[
+  VoicePreset(id: 'x-low', name: '极低', description: 'x-low'),
+  VoicePreset(id: 'low', name: '低', description: 'low'),
+  VoicePreset(id: 'medium', name: '正常', description: 'medium'),
+  VoicePreset(id: 'high', name: '高', description: 'high'),
+  VoicePreset(id: 'x-high', name: '极高', description: 'x-high'),
+];
+
+const kAzureProsodyVolumes = <VoicePreset>[
+  VoicePreset(id: 'silent', name: '静音', description: 'silent'),
+  VoicePreset(id: 'x-soft', name: '极轻', description: 'x-soft'),
+  VoicePreset(id: 'soft', name: '轻', description: 'soft'),
+  VoicePreset(id: 'medium', name: '正常', description: 'medium'),
+  VoicePreset(id: 'loud', name: '响', description: 'loud'),
+  VoicePreset(id: 'x-loud', name: '极响', description: 'x-loud'),
 ];
 
 // ---------------------------------------------------------------------------

@@ -50,6 +50,13 @@ abstract class TtsProviderSetting with _$TtsProviderSetting {
     @Default('mp3') String audioFormat,
     // Azure-specific
     @Default('') String region,
+    @Default('medium') String azureRate, // prosody rate
+    @Default('medium') String azurePitch, // prosody pitch
+    @Default('medium') String azureVolume, // prosody volume
+    @Default('') String azureStyle, // express-as style
+    @Default(1.0) double azureStyleDegree, // 0.01-2.0
+    @Default('') String azureRole, // express-as role
+    @Default('audio-16khz-128kbitrate-mono-mp3') String azureOutputFormat,
     // Gemini voiceName (distinct from generic `voice`)
     @Default('') String voiceName,
     // Gemini style prompt (natural language control of speech style)
@@ -131,9 +138,12 @@ TtsProviderSetting defaultTtsProvider(TtsProviderKind kind) => switch (kind) {
     id: 'azure',
     kind: TtsProviderKind.azure,
     name: 'Azure TTS',
-    model: 'zh-CN-XiaoxiaoMultilingualNeural',
-    voice: 'zh-CN-XiaoxiaoMultilingualNeural',
+    voice: 'zh-CN-XiaoxiaoNeural',
     region: 'eastus',
+    azureRate: 'medium',
+    azurePitch: 'medium',
+    azureVolume: 'medium',
+    azureOutputFormat: 'audio-16khz-128kbitrate-mono-mp3',
   ),
   TtsProviderKind.elevenlabs => const TtsProviderSetting(
     id: 'elevenlabs',
