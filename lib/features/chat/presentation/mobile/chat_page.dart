@@ -279,6 +279,9 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
           SizedBox(height: 8),
           SystemPromptBubble(),
         ],
+        // TTS floating player — sits below the system prompt, above the
+        // message list.  Collapses to zero height when idle.
+        const TtsFloatingPlayer(),
         Expanded(
           child: NotificationListener<SizeChangedLayoutNotification>(
             onNotification: (_) {
@@ -333,13 +336,6 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
                       ),
                     ),
                   ),
-                // TTS floating player overlay.
-                const Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: TtsFloatingPlayer(),
-                ),
               ],
             ),
           ),
