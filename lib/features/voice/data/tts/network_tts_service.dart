@@ -5,6 +5,20 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:aetherlink_flutter/features/voice/domain/tts_provider_setting.dart';
 
+/// A voice entry returned by MiniMax's `/v1/get_voice` API.
+class MiniMaxRemoteVoice {
+  const MiniMaxRemoteVoice({
+    required this.id,
+    required this.name,
+    this.description = '',
+    this.category = 'system',
+  });
+  final String id;
+  final String name;
+  final String description;
+  final String category; // system, cloned, generated
+}
+
 /// The result of a network TTS synthesis call: raw audio bytes and their MIME
 /// type so the player knows the codec.
 class TtsSynthesisResult {
@@ -283,6 +297,91 @@ class NetworkTtsService {
       _ => 'audio/mpeg',
     };
     return TtsSynthesisResult(bytes: _hexToBytes(audioHex), mimeType: mimeType);
+  }
+
+  /// Fetches available MiniMax voices from the `/v1/get_voice` API.
+  /// Returns a list of [VoicePreset] items. Falls back to empty list on error.
+  Future<List<MiniMaxRemoteVoice>> fetchMiniMaxVoices(
+    TtsProviderSetting provider,
+  ) async {
+    final baseUrl = provider.baseUrl.isNotEmpty
+        ? provider.baseUrl
+        : 'https://api.minimaxi.chat';
+    final groupId = provider.groupId;
+    final path = groupId.isNotEmpty
+        ? '/v1/get_voice?GroupId=$groupId'
+        : '/v1/get_voice';
+    final url = _joinUrl(baseUrl, path);
+    final response = await _dio.post<Map<String, dynamic>>(
+      url,
+      data: {'voice_type': 'all'},
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer ${provider.apiKey}',
+          'Content-Type': 'application/json',
+        },
+      ),
+    );
+    final json = response.data!;
+    final baseResp = json['base_resp'] as Map<String, dynamic>?;
+    if (baseResp != null && baseResp['status_code'] != 0) {
+      throw Exception(
+        'MiniMax get_voice: ${baseResp['status_msg'] ?? 'unknown error'}',
+      );
+    }
+    final results = <MiniMaxRemoteVoice>[];
+    // System voices
+    final systemVoices = json['system_voice'] as List<dynamic>? ?? [];
+    for (final v in systemVoices) {
+      final m = v as Map<String, dynamic>;
+      final id = (m['voice_id'] ?? '').toString();
+      if (id.isEmpty) continue;
+      final name = (m['voice_name'] ?? id).toString();
+      final desc =
+          (m['description'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .join('; ') ??
+          '';
+      results.add(
+        MiniMaxRemoteVoice(
+          id: id,
+          name: name,
+          description: desc,
+          category: 'system',
+        ),
+      );
+    }
+    // Cloned voices
+    final clonedVoices = json['voice_cloning'] as List<dynamic>? ?? [];
+    for (final v in clonedVoices) {
+      final m = v as Map<String, dynamic>;
+      final id = (m['voice_id'] ?? '').toString();
+      if (id.isEmpty) continue;
+      results.add(
+        MiniMaxRemoteVoice(
+          id: id,
+          name: id,
+          description: '克隆音色',
+          category: 'cloned',
+        ),
+      );
+    }
+    // Generated voices
+    final genVoices = json['voice_generation'] as List<dynamic>? ?? [];
+    for (final v in genVoices) {
+      final m = v as Map<String, dynamic>;
+      final id = (m['voice_id'] ?? '').toString();
+      if (id.isEmpty) continue;
+      results.add(
+        MiniMaxRemoteVoice(
+          id: id,
+          name: id,
+          description: '生成音色',
+          category: 'generated',
+        ),
+      );
+    }
+    return results;
   }
 
   /// SiliconFlow TTS — uses OpenAI-compatible `/audio/speech` endpoint but

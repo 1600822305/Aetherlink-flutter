@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_
 import 'package:aetherlink_flutter/features/voice/application/tts_controller.dart';
 import 'package:aetherlink_flutter/features/voice/application/voice_settings_controller.dart';
 import 'package:aetherlink_flutter/features/voice/domain/asr_provider_setting.dart';
+import 'package:aetherlink_flutter/features/voice/data/tts/network_tts_service.dart';
 import 'package:aetherlink_flutter/features/voice/domain/tts_playback_state.dart';
 import 'package:aetherlink_flutter/features/voice/domain/tts_provider_setting.dart';
 import 'package:aetherlink_flutter/features/voice/domain/voice_presets.dart';
@@ -628,6 +629,7 @@ class _TtsProviderDetailPageState
   late int _sampleRate;
   late int _bitrate;
   late String _audioFormat;
+  List<MiniMaxRemoteVoice> _miniMaxRemoteVoices = [];
 
   bool get _isSystem => widget.kind == TtsProviderKind.system;
   bool get _isVolcano => widget.kind == TtsProviderKind.volcano;
@@ -1113,6 +1115,81 @@ class _TtsProviderDetailPageState
     ];
   }
 
+  Future<void> _fetchMiniMaxRemoteVoices() async {
+    try {
+      final provider = _currentProvider();
+      final svc = NetworkTtsService();
+      final voices = await svc.fetchMiniMaxVoices(provider);
+      if (mounted) {
+        setState(() => _miniMaxRemoteVoices = voices);
+      }
+    } catch (_) {
+      // Silently fall back to static list.
+    }
+  }
+
+  List<SelectorGroup> _buildMiniMaxRemoteGroups() {
+    final systemVoices = _miniMaxRemoteVoices
+        .where((v) => v.category == 'system')
+        .toList();
+    final clonedVoices = _miniMaxRemoteVoices
+        .where((v) => v.category == 'cloned')
+        .toList();
+    final genVoices = _miniMaxRemoteVoices
+        .where((v) => v.category == 'generated')
+        .toList();
+    final groups = <SelectorGroup>[];
+    if (systemVoices.isNotEmpty) {
+      groups.add(
+        SelectorGroup(
+          name: '系统音色 (${systemVoices.length})',
+          items: systemVoices
+              .map(
+                (v) => SelectorItem(
+                  key: v.id,
+                  label: v.name,
+                  subLabel: v.description,
+                ),
+              )
+              .toList(),
+        ),
+      );
+    }
+    if (clonedVoices.isNotEmpty) {
+      groups.add(
+        SelectorGroup(
+          name: '克隆音色 (${clonedVoices.length})',
+          items: clonedVoices
+              .map(
+                (v) => SelectorItem(
+                  key: v.id,
+                  label: v.name,
+                  subLabel: v.description,
+                ),
+              )
+              .toList(),
+        ),
+      );
+    }
+    if (genVoices.isNotEmpty) {
+      groups.add(
+        SelectorGroup(
+          name: '生成音色 (${genVoices.length})',
+          items: genVoices
+              .map(
+                (v) => SelectorItem(
+                  key: v.id,
+                  label: v.name,
+                  subLabel: v.description,
+                ),
+              )
+              .toList(),
+        ),
+      );
+    }
+    return groups;
+  }
+
   List<Widget> _buildMiniMaxVoice() {
     return [
       // -- Model & Voice --
@@ -1133,16 +1210,31 @@ class _TtsProviderDetailPageState
               value: _voice,
               displayText: _voice.isEmpty
                   ? '选择...'
-                  : kMiniMaxVoices
+                  : _miniMaxRemoteVoices
+                            .where((v) => v.id == _voice)
+                            .map((v) => v.name)
+                            .firstOrNull ??
+                        kMiniMaxVoices
                             .where((v) => v.id == _voice)
                             .map((v) => v.name)
                             .firstOrNull ??
                         _voice,
               onTap: () async {
+                // Try to fetch remote voices if API key is present and not yet fetched.
+                var groups = buildPresetGroups('MiniMax 音色', kMiniMaxVoices);
+                if (_miniMaxRemoteVoices.isNotEmpty) {
+                  groups = _buildMiniMaxRemoteGroups();
+                } else if (_apiKeyCtrl.text.trim().isNotEmpty) {
+                  await _fetchMiniMaxRemoteVoices();
+                  if (_miniMaxRemoteVoices.isNotEmpty) {
+                    groups = _buildMiniMaxRemoteGroups();
+                  }
+                }
+                if (!mounted) return;
                 final result = await FullScreenVoicePicker.show(
                   context,
                   title: '选择 MiniMax 音色',
-                  groups: buildPresetGroups('MiniMax 音色', kMiniMaxVoices),
+                  groups: groups,
                   selectedKey: _voice,
                 );
                 if (result != null) setState(() => _voice = result);
