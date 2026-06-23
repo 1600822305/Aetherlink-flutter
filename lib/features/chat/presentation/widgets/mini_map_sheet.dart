@@ -97,104 +97,79 @@ class _MiniMapSheetState extends State<_MiniMapSheet> {
     final cs = Theme.of(context).colorScheme;
     final searchWidth = min(MediaQuery.sizeOf(context).width * 0.6, 260.0);
 
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final fixedHeight = screenHeight * 0.55;
+    final pairs = _filteredPairs(_pairs);
+
     return SafeArea(
       top: false,
-      child: DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.55,
-        minChildSize: 0.35,
-        maxChildSize: 0.9,
-        builder: (ctx, controller) {
-          final pairs = _filteredPairs(_pairs);
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Drag handle
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: cs.onSurface.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+      child: SizedBox(
+        height: fixedHeight,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Drag handle (decorative)
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: cs.onSurface.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                const SizedBox(height: 10),
-                // Title row
-                Row(
-                  children: [
-                    Icon(LucideIcons.map, size: 18, color: cs.primary),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        '迷你地图',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 10),
+              // Title row
+              Row(
+                children: [
+                  Icon(LucideIcons.map, size: 18, color: cs.primary),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      '迷你地图',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(width: 4),
-                    SizedBox(
-                      height: 36,
-                      width: 36,
-                      child: IconButton(
-                        padding: EdgeInsets.zero,
-                        icon: Icon(
-                          LucideIcons.chevronsDown,
-                          size: 18,
-                          color: cs.onSurface,
+                  ),
+                  const SizedBox(width: 4),
+                  _buildSearchToggle(context, searchWidth),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Scrollable content
+              Expanded(
+                child: pairs.isEmpty
+                    ? Center(
+                        child: Text(
+                          _query.isNotEmpty ? '无匹配消息' : '暂无消息',
+                          style: TextStyle(
+                            color: cs.onSurface.withValues(alpha: 0.5),
+                          ),
                         ),
-                        tooltip: '滚动到底部',
-                        onPressed: () {
-                          if (controller.hasClients &&
-                              controller.position.maxScrollExtent > 0) {
-                            controller.jumpTo(
-                              controller.position.maxScrollExtent,
+                      )
+                    : Scrollbar(
+                        thumbVisibility: true,
+                        child: ListView.builder(
+                          itemCount: pairs.length,
+                          itemBuilder: (context, index) {
+                            return _MiniMapRow(
+                              pair: pairs[index],
+                              selecting: widget.selecting,
+                              ref: widget.ref,
                             );
-                          }
-                        },
-                      ),
-                    ),
-                    _buildSearchToggle(context, searchWidth),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                // Scrollable content
-                Expanded(
-                  child: pairs.isEmpty
-                      ? Center(
-                          child: Text(
-                            _query.isNotEmpty ? '无匹配消息' : '暂无消息',
-                            style: TextStyle(
-                              color: cs.onSurface.withValues(alpha: 0.5),
-                            ),
-                          ),
-                        )
-                      : Scrollbar(
-                          controller: controller,
-                          thumbVisibility: true,
-                          child: ListView.builder(
-                            controller: controller,
-                            itemCount: pairs.length,
-                            itemBuilder: (context, index) {
-                              return _MiniMapRow(
-                                pair: pairs[index],
-                                selecting: widget.selecting,
-                                ref: widget.ref,
-                              );
-                            },
-                          ),
+                          },
                         ),
-                ),
-              ],
-            ),
-          );
-        },
+                      ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
