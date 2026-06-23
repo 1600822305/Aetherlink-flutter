@@ -1,10 +1,19 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/application/translate_controller.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
+import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
+import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/features/settings/application/skill_store_sources.dart';
 import 'package:aetherlink_flutter/features/settings/application/skills_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/skillsmp_service.dart';
@@ -245,6 +254,24 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage>
           ),
         );
     }
+  }
+
+  void _showSkillDetail(StoreSkillItem item) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => _SkillDetailSheet(
+        item: item,
+        onImport: () {
+          Navigator.of(context).pop();
+          _importSkill(item);
+        },
+      ),
+    );
   }
 
   void _showApiKeyDialog() {
@@ -571,10 +598,7 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage>
         return _StoreSkillCard(
           item: _results[i],
           onImport: () => _importSkill(_results[i]),
-          onOpenUrl: () => launchUrl(
-            Uri.parse(_results[i].url),
-            mode: LaunchMode.externalApplication,
-          ),
+          onTap: () => _showSkillDetail(_results[i]),
         );
       },
     );
@@ -596,12 +620,12 @@ class _StoreSkillCard extends StatelessWidget {
   const _StoreSkillCard({
     required this.item,
     required this.onImport,
-    required this.onOpenUrl,
+    required this.onTap,
   });
 
   final StoreSkillItem item;
   final VoidCallback onImport;
-  final VoidCallback onOpenUrl;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -616,7 +640,7 @@ class _StoreSkillCard extends StatelessWidget {
       color: bg,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
-        onTap: onOpenUrl,
+        onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Padding(
           padding: const EdgeInsets.all(12),
@@ -707,6 +731,332 @@ class _StoreSkillCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Detail BottomSheet for a skill — full description, metadata, translate, and
+/// import/open actions.
+class _SkillDetailSheet extends ConsumerStatefulWidget {
+  const _SkillDetailSheet({required this.item, required this.onImport});
+
+  final StoreSkillItem item;
+  final VoidCallback onImport;
+
+  @override
+  ConsumerState<_SkillDetailSheet> createState() => _SkillDetailSheetState();
+}
+
+class _SkillDetailSheetState extends ConsumerState<_SkillDetailSheet> {
+  String? _translatedDescription;
+  bool _isTranslating = false;
+
+  Future<void> _translateDescription() async {
+    final text = widget.item.description.trim();
+    if (text.isEmpty || _isTranslating) return;
+
+    final current = await ref.read(translateModelProvider.future);
+    if (!mounted) return;
+    if (current == null) {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(const SnackBar(content: Text('请先在「模型」中配置翻译模型')));
+      return;
+    }
+
+    setState(() {
+      _isTranslating = true;
+      _translatedDescription = '';
+    });
+
+    final effective = effectiveModelFor(current);
+    final request = LlmChatRequest(
+      model: effective,
+      messages: [
+        LlmMessage(
+          role: MessageRole.user,
+          content: buildTranslatePrompt(kChineseSimplified, text),
+        ),
+      ],
+      extraHeaders: effective.providerExtraHeaders,
+      extraBody: effective.providerExtraBody,
+    );
+
+    final gateway = ref.read(llmGatewayFactoryProvider).forModel(effective);
+    final buffer = StringBuffer();
+    try {
+      await for (final chunk in gateway.streamChat(request)) {
+        if (!mounted) return;
+        switch (chunk) {
+          case LlmTextDelta(:final text):
+            buffer.write(text);
+            setState(() => _translatedDescription = buffer.toString());
+          case LlmReasoningDelta():
+          case LlmToolCallChunk():
+          case LlmDone():
+            break;
+        }
+      }
+      if (mounted) {
+        setState(() => _translatedDescription = buffer.toString().trim());
+      }
+    } on Object catch (e) {
+      if (mounted) {
+        setState(() => _translatedDescription = '翻译失败: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _isTranslating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final item = widget.item;
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.65,
+      maxChildSize: 0.9,
+      minChildSize: 0.4,
+      expand: false,
+      builder: (context, scrollController) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + bottomPad),
+        child: ListView(
+          controller: scrollController,
+          children: [
+            // Drag handle
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Title + source badge
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    item.name,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: cs.primaryContainer,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    item.source.label,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cs.onPrimaryContainer,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // Author + stats row
+            Row(
+              children: [
+                Icon(LucideIcons.user, size: 13, color: cs.onSurfaceVariant),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    item.author,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (item.stars > 0) ...[
+                  const SizedBox(width: 12),
+                  Icon(LucideIcons.star, size: 13, color: cs.primary),
+                  const SizedBox(width: 3),
+                  Text(
+                    '${item.stars}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.primary,
+                    ),
+                  ),
+                ],
+                if (item.downloads > 0) ...[
+                  const SizedBox(width: 12),
+                  Icon(LucideIcons.download, size: 13, color: cs.primary),
+                  const SizedBox(width: 3),
+                  Text(
+                    '${item.downloads}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.primary,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 16),
+            // Description header + translate button
+            Row(
+              children: [
+                Text(
+                  '描述',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const Spacer(),
+                SizedBox(
+                  height: 28,
+                  child: TextButton.icon(
+                    onPressed: _isTranslating ? null : _translateDescription,
+                    icon: _isTranslating
+                        ? SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.5,
+                              color: cs.primary,
+                            ),
+                          )
+                        : Icon(LucideIcons.languages, size: 14),
+                    label: Text(
+                      _isTranslating ? '翻译中...' : '翻译为中文',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // Original description
+            SelectableText(
+              item.description,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: cs.onSurface,
+                height: 1.5,
+              ),
+            ),
+            // Translated description
+            if (_translatedDescription != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: cs.primaryContainer.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          LucideIcons.languages,
+                          size: 13,
+                          color: cs.primary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '中文翻译',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: cs.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (_translatedDescription!.isNotEmpty)
+                          GestureDetector(
+                            onTap: () {
+                              Clipboard.setData(
+                                ClipboardData(text: _translatedDescription!),
+                              );
+                              ScaffoldMessenger.of(context)
+                                ..clearSnackBars()
+                                ..showSnackBar(
+                                  const SnackBar(
+                                    content: Text('已复制翻译'),
+                                    duration: Duration(seconds: 1),
+                                  ),
+                                );
+                            },
+                            child: Icon(
+                              LucideIcons.copy,
+                              size: 13,
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    SelectableText(
+                      _translatedDescription!,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: cs.onSurface,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 24),
+            // Action buttons
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => launchUrl(
+                      Uri.parse(item.url),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    icon: const Icon(LucideIcons.externalLink, size: 16),
+                    label: const Text('查看原文'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: widget.onImport,
+                    icon: const Icon(LucideIcons.download, size: 16),
+                    label: const Text('导入技能'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

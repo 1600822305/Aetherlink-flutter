@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_reposi
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_history.dart';
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
+import 'package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart';
 
 part 'translate_controller.g.dart';
 
@@ -55,7 +56,9 @@ class TranslateSourceLanguage extends _$TranslateSourceLanguage {
 
   void set(String langCode) {
     state = langCode;
-    ref.read(chatRepositoryProvider).saveSetting(kTranslateSourceLangKey, langCode);
+    ref
+        .read(chatRepositoryProvider)
+        .saveSetting(kTranslateSourceLangKey, langCode);
   }
 }
 
@@ -78,32 +81,57 @@ class TranslateTargetLanguage extends _$TranslateTargetLanguage {
 
   void set(String langCode) {
     state = langCode;
-    ref.read(chatRepositoryProvider).saveSetting(kTranslateTargetLangKey, langCode);
+    ref
+        .read(chatRepositoryProvider)
+        .saveSetting(kTranslateTargetLangKey, langCode);
   }
 }
 
 /// The persisted translate model key (`providerId\u0000modelId`), or `null` to
-/// fall back to the app's current chat model. Hydrated from / written through to
-/// persisted storage.
+/// fall back to the app's current chat model.
+///
+/// Single source of truth: [AuxiliaryModelController.translateModelKey].
+/// This provider derives its state from the auxiliary controller so that
+/// the sidebar translate page, message toolbar, and settings all share the
+/// same selection.
 @Riverpod(keepAlive: true)
 class TranslateModelSelection extends _$TranslateModelSelection {
   @override
   String? build() {
-    _hydrate();
+    // Derive from auxiliary model controller — single source of truth.
+    final auxiliaryKey = ref.watch(
+      auxiliaryModelControllerProvider.select((s) => s.translateModelKey),
+    );
+    if (auxiliaryKey != null && auxiliaryKey.isNotEmpty) return auxiliaryKey;
+
+    // One-time migration: if user previously configured via translate page
+    // (old key), migrate that value to the unified key.
+    _migrateOldKey();
     return null;
   }
 
-  Future<void> _hydrate() async {
-    final stored = await ref
+  Future<void> _migrateOldKey() async {
+    final oldStored = await ref
         .read(chatRepositoryProvider)
         .getSetting(kTranslateModelKey);
-    if (stored != null && stored.isNotEmpty) state = stored;
+    if (oldStored != null && oldStored.isNotEmpty) {
+      final parts = oldStored.split('\u0000');
+      if (parts.length == 2) {
+        // Write to the unified key via auxiliary controller.
+        ref
+            .read(auxiliaryModelControllerProvider.notifier)
+            .setTranslateModel(parts[0], parts[1]);
+      }
+      // Clear the old key to avoid repeated migration.
+      ref.read(chatRepositoryProvider).saveSetting(kTranslateModelKey, '');
+    }
   }
 
   void set(String providerId, String modelId) {
-    final key = translateModelKeyOf(providerId, modelId);
-    state = key;
-    ref.read(chatRepositoryProvider).saveSetting(kTranslateModelKey, key);
+    // Delegate to auxiliary controller — the single source of truth.
+    ref
+        .read(auxiliaryModelControllerProvider.notifier)
+        .setTranslateModel(providerId, modelId);
   }
 }
 
