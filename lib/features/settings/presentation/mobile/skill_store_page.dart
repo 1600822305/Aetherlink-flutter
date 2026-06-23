@@ -33,6 +33,9 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
   String _lastQuery = '';
   String _rateInfo = '';
 
+  /// Monotonically increasing counter to detect stale async responses.
+  int _searchEpoch = 0;
+
   late final Dio _dio;
 
   @override
@@ -66,6 +69,7 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
 
   void _switchSource(SkillStoreSource source) {
     if (source == _currentSource) return;
+    _searchEpoch++; // Invalidate any in-flight search.
     setState(() {
       _currentSource = source;
       _results = [];
@@ -75,6 +79,7 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
       _hasMore = true;
       _rateInfo = '';
       _lastQuery = '';
+      _loading = false;
     });
   }
 
@@ -89,6 +94,8 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
         _hasMore = true;
       });
     }
+
+    final epoch = ++_searchEpoch;
 
     setState(() {
       _loading = true;
@@ -108,6 +115,9 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
           result = await searchAiSkillStore(dio: _dio, query: query, limit: 20);
       }
 
+      // Discard stale responses (user switched source or started a new search).
+      if (epoch != _searchEpoch) return;
+
       setState(() {
         _results = reset ? result.skills : [..._results, ...result.skills];
         _total = result.total;
@@ -116,6 +126,7 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
         _loading = false;
       });
     } catch (e) {
+      if (epoch != _searchEpoch) return;
       setState(() {
         _error = e.toString();
         _loading = false;
