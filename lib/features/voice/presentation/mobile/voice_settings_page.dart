@@ -624,6 +624,10 @@ class _TtsProviderDetailPageState
   late String _model;
   late String _outputFormat;
   late String _resourceId;
+  late String _languageBoost;
+  late int _sampleRate;
+  late int _bitrate;
+  late String _audioFormat;
 
   bool get _isSystem => widget.kind == TtsProviderKind.system;
   bool get _isVolcano => widget.kind == TtsProviderKind.volcano;
@@ -655,6 +659,10 @@ class _TtsProviderDetailPageState
     _model = p.model;
     _outputFormat = p.outputFormat;
     _resourceId = p.resourceId;
+    _languageBoost = p.languageBoost;
+    _sampleRate = p.sampleRate;
+    _bitrate = p.bitrate;
+    _audioFormat = p.audioFormat;
     _instructionsCtrl = TextEditingController(text: p.instructions);
     _stylePromptCtrl = TextEditingController(text: p.stylePrompt);
     _speaker1NameCtrl = TextEditingController(text: p.speaker1Name);
@@ -702,6 +710,10 @@ class _TtsProviderDetailPageState
     pitch: _pitch,
     apiVersion: _apiVersion,
     encoding: _encoding,
+    languageBoost: _languageBoost,
+    sampleRate: _sampleRate,
+    bitrate: _bitrate,
+    audioFormat: _audioFormat,
     instructions: _instructionsCtrl.text,
     stylePrompt: _stylePromptCtrl.text,
     useMultiSpeaker: _useMultiSpeaker,
@@ -817,6 +829,24 @@ class _TtsProviderDetailPageState
                         min: 0.5,
                         max: 2.0,
                         divisions: 6,
+                        onChanged: (v) => setState(() => _pitch = v),
+                      ),
+                    ],
+                    if (widget.kind == TtsProviderKind.minimax) ...[
+                      _SliderRow(
+                        label: '音量',
+                        value: _volume,
+                        min: 0.1,
+                        max: 10.0,
+                        divisions: 99,
+                        onChanged: (v) => setState(() => _volume = v),
+                      ),
+                      _SliderRow(
+                        label: '音调',
+                        value: _pitch,
+                        min: -12,
+                        max: 12,
+                        divisions: 24,
                         onChanged: (v) => setState(() => _pitch = v),
                       ),
                     ],
@@ -1085,6 +1115,7 @@ class _TtsProviderDetailPageState
 
   List<Widget> _buildMiniMaxVoice() {
     return [
+      // -- Model & Voice --
       Row(
         children: [
           Expanded(
@@ -1121,6 +1152,7 @@ class _TtsProviderDetailPageState
         ],
       ),
       const SizedBox(height: 12),
+      // -- Emotion & Language Boost --
       Row(
         children: [
           Expanded(
@@ -1150,9 +1182,33 @@ class _TtsProviderDetailPageState
           Expanded(
             child: _DropdownField(
               label: '语言增强',
-              value: kMiniMaxLanguageBoost.any((l) => l.id == _voice) ? '' : '',
+              value: _languageBoost.isEmpty ? 'auto' : _languageBoost,
               items: {for (final l in kMiniMaxLanguageBoost) l.id: l.name},
-              onChanged: (_) {},
+              onChanged: (v) => setState(() => _languageBoost = v),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      // -- Audio Settings --
+      Row(
+        children: [
+          Expanded(
+            child: _DropdownField(
+              label: '音频格式',
+              value: _audioFormat.isEmpty ? 'mp3' : _audioFormat,
+              items: {for (final f in kMiniMaxAudioFormats) f.id: f.name},
+              onChanged: (v) => setState(() => _audioFormat = v),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _DropdownField(
+              label: '采样率',
+              value: _sampleRate.toString(),
+              items: {for (final s in kMiniMaxSampleRates) s.id: s.name},
+              onChanged: (v) =>
+                  setState(() => _sampleRate = int.tryParse(v) ?? 32000),
             ),
           ),
         ],

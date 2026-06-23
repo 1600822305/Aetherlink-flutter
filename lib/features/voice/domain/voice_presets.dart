@@ -158,10 +158,38 @@ const kGeminiVoices = <VoicePreset>[
 // ---------------------------------------------------------------------------
 
 const kMiniMaxModels = <VoicePreset>[
-  VoicePreset(id: 'speech-02-hd', name: 'Speech 02 HD', description: '高清语音模型'),
-  VoicePreset(id: 'speech-02', name: 'Speech 02', description: '标准语音模型'),
-  VoicePreset(id: 'speech-01-hd', name: 'Speech 01 HD', description: '旧版高清模型'),
-  VoicePreset(id: 'speech-01', name: 'Speech 01', description: '旧版标准模型'),
+  VoicePreset(
+    id: 'speech-2.8-hd',
+    name: 'Speech 2.8 HD',
+    description: '最新高清，支持 interjection tags',
+  ),
+  VoicePreset(
+    id: 'speech-2.8-turbo',
+    name: 'Speech 2.8 Turbo',
+    description: '最新快速，自然流畅',
+  ),
+  VoicePreset(
+    id: 'speech-2.6-hd',
+    name: 'Speech 2.6 HD',
+    description: '高清，韵律出色/克隆相似度高',
+  ),
+  VoicePreset(
+    id: 'speech-2.6-turbo',
+    name: 'Speech 2.6 Turbo',
+    description: '快速，支持 40+ 语言',
+  ),
+  VoicePreset(id: 'speech-02-hd', name: 'Speech 02 HD', description: '旧版高清'),
+  VoicePreset(
+    id: 'speech-02-turbo',
+    name: 'Speech 02 Turbo',
+    description: '旧版快速',
+  ),
+  VoicePreset(id: 'speech-01-hd', name: 'Speech 01 HD', description: '经典高清'),
+  VoicePreset(
+    id: 'speech-01-turbo',
+    name: 'Speech 01 Turbo',
+    description: '经典快速',
+  ),
 ];
 
 const kMiniMaxVoices = <VoicePreset>[
@@ -249,6 +277,139 @@ const kMiniMaxVoices = <VoicePreset>[
     description: '标准英语女声',
     language: 'en',
   ),
+  // 新增：官方系统音色
+  VoicePreset(
+    id: 'English_expressive_narrator',
+    name: 'Expressive Narrator',
+    description: '表现力叙述者',
+    language: 'en',
+  ),
+  VoicePreset(
+    id: 'English_Graceful_Lady',
+    name: 'Graceful Lady',
+    description: '优雅女士',
+    language: 'en',
+  ),
+  VoicePreset(
+    id: 'English_Insightful_Speaker',
+    name: 'Insightful Speaker',
+    description: '洞察力演讲者',
+    language: 'en',
+  ),
+  VoicePreset(
+    id: 'English_radiant_girl',
+    name: 'Radiant Girl',
+    description: '阳光女孩',
+    language: 'en',
+  ),
+  VoicePreset(
+    id: 'English_Persuasive_Man',
+    name: 'Persuasive Man',
+    description: '有说服力男声',
+    language: 'en',
+  ),
+  VoicePreset(
+    id: 'English_Sweet_Girl',
+    name: 'Sweet Girl',
+    description: '甜美女孩',
+    language: 'en',
+  ),
+  VoicePreset(
+    id: 'English_Lucky_Robot',
+    name: 'Lucky Robot',
+    description: '幸运机器人',
+    language: 'en',
+  ),
+  VoicePreset(
+    id: 'Chinese (Mandarin)_Reliable_Executive',
+    name: '稳重高管',
+    description: '可靠的男性高管声',
+    language: 'zh',
+  ),
+  VoicePreset(
+    id: 'Chinese (Mandarin)_News_Anchor',
+    name: '新闻主播',
+    description: '专业女主播声',
+    language: 'zh',
+  ),
+  VoicePreset(
+    id: 'Chinese (Mandarin)_Lyrical_Voice',
+    name: '抒情女声',
+    description: '抒情柔美女声',
+    language: 'zh',
+  ),
+  VoicePreset(
+    id: 'clever_boy',
+    name: '聪明男童',
+    description: '机智的男童声音',
+    language: 'zh',
+  ),
+  VoicePreset(
+    id: 'cute_boy',
+    name: '可爱男童',
+    description: '可爱的男童声音',
+    language: 'zh',
+  ),
+  VoicePreset(
+    id: 'lovely_girl',
+    name: '萌萌女童',
+    description: '可爱甜美的女童声音',
+    language: 'zh',
+  ),
+  VoicePreset(
+    id: 'Japanese_IntellectualSenior',
+    name: '知性前辈',
+    description: '知性的日语前辈声',
+    language: 'ja',
+  ),
+  VoicePreset(
+    id: 'Japanese_DecisivePrincess',
+    name: '果断公主',
+    description: '果断的日语公主声',
+    language: 'ja',
+  ),
+  VoicePreset(
+    id: 'Japanese_GentleButler',
+    name: '温柔管家',
+    description: '温柔的日语管家声',
+    language: 'ja',
+  ),
+  VoicePreset(
+    id: 'Japanese_Whisper_Belle',
+    name: '低语美人',
+    description: '低语的日语美人声',
+    language: 'ja',
+  ),
+  VoicePreset(
+    id: 'Japanese_OptimisticYouth',
+    name: '乐观少年',
+    description: '乐观的日语少年声',
+    language: 'ja',
+  ),
+  VoicePreset(
+    id: 'Korean_CalmGentleman',
+    name: '沉稳绅士',
+    description: '沉稳的韩语绅士声',
+    language: 'ko',
+  ),
+  VoicePreset(
+    id: 'Korean_CheerfulBoyfriend',
+    name: '阳光男友',
+    description: '开朗的韩语男友声',
+    language: 'ko',
+  ),
+  VoicePreset(
+    id: 'Korean_SweetGirl',
+    name: '甜美女孩',
+    description: '甜美的韩语女孩声',
+    language: 'ko',
+  ),
+  VoicePreset(
+    id: 'Korean_DecisiveQueen',
+    name: '果断女王',
+    description: '果断的韩语女王声',
+    language: 'ko',
+  ),
 ];
 
 const kMiniMaxEmotions = <VoicePreset>[
@@ -263,12 +424,36 @@ const kMiniMaxEmotions = <VoicePreset>[
 ];
 
 const kMiniMaxLanguageBoost = <VoicePreset>[
-  VoicePreset(id: '', name: '自动', description: '自动检测语言'),
+  VoicePreset(id: 'auto', name: '自动', description: '自动检测语言'),
   VoicePreset(id: 'Chinese', name: '中文普通话', description: '优化普通话发音'),
   VoicePreset(id: 'Chinese,Yue', name: '粤语', description: '优化粤语发音'),
   VoicePreset(id: 'English', name: '英语', description: '优化英语发音'),
   VoicePreset(id: 'Japanese', name: '日语', description: '优化日语发音'),
   VoicePreset(id: 'Korean', name: '韩语', description: '优化韩语发音'),
+  VoicePreset(id: 'Spanish', name: '西班牙语', description: '优化西班牙语发音'),
+  VoicePreset(id: 'French', name: '法语', description: '优化法语发音'),
+  VoicePreset(id: 'German', name: '德语', description: '优化德语发音'),
+  VoicePreset(id: 'Portuguese', name: '葡萄牙语', description: '优化葡萄牙语发音'),
+  VoicePreset(id: 'Indonesian', name: '印尼语', description: '优化印尼语发音'),
+  VoicePreset(id: 'Thai', name: '泰语', description: '优化泰语发音'),
+  VoicePreset(id: 'Vietnamese', name: '越南语', description: '优化越南语发音'),
+];
+
+const kMiniMaxAudioFormats = <VoicePreset>[
+  VoicePreset(id: 'mp3', name: 'MP3', description: '通用有损格式'),
+  VoicePreset(id: 'wav', name: 'WAV', description: '无损格式'),
+  VoicePreset(id: 'pcm', name: 'PCM', description: '原始音频数据'),
+  VoicePreset(id: 'flac', name: 'FLAC', description: '无损压缩格式'),
+  VoicePreset(id: 'opus', name: 'Opus', description: '高效编码格式'),
+];
+
+const kMiniMaxSampleRates = <VoicePreset>[
+  VoicePreset(id: '8000', name: '8 kHz', description: '电话级别'),
+  VoicePreset(id: '16000', name: '16 kHz', description: '语音识别级别'),
+  VoicePreset(id: '22050', name: '22.05 kHz', description: '标准语音'),
+  VoicePreset(id: '24000', name: '24 kHz', description: '高质量语音'),
+  VoicePreset(id: '32000', name: '32 kHz', description: '推荐（默认）'),
+  VoicePreset(id: '44100', name: '44.1 kHz', description: 'CD 级别'),
 ];
 
 // ---------------------------------------------------------------------------
