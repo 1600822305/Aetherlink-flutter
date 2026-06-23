@@ -250,22 +250,8 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
             switchInCurve: Curves.easeOutCubic,
             switchOutCurve: Curves.easeInCubic,
             child: expanded
-                ? CodeBlockBody(
-                    key: const ValueKey('code-block-body-expanded'),
-                    code: widget.code,
-                    highlightLanguage: highlightLanguage,
-                    highlightTheme: highlightTheme,
-                    showLineNumbers: settings.codeShowLineNumbers,
-                    wrappable: settings.codeWrappable,
-                    codeStyle: codeStyle,
-                    lineNumberStyle: lineNumberStyle,
-                    gutterBorderColor: border,
-                    isStreaming: widget.isStreaming,
-                    searchQuery:
-                        _showSearch ? _searchQuery : null,
-                    currentMatchIndex:
-                        _showSearch ? _currentMatchIndex : null,
-                  )
+                ? _buildBody(settings, highlightLanguage, highlightTheme,
+                    codeStyle, lineNumberStyle, border)
                 : const SizedBox(
                     key: ValueKey('code-block-body-collapsed'),
                     width: double.infinity,
@@ -273,6 +259,37 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildBody(
+    SidebarSettings settings,
+    String? highlightLanguage,
+    Map<String, TextStyle> highlightTheme,
+    TextStyle codeStyle,
+    TextStyle lineNumberStyle,
+    Color border,
+  ) {
+    final body = CodeBlockBody(
+      key: const ValueKey('code-block-body-expanded'),
+      code: widget.code,
+      highlightLanguage: highlightLanguage,
+      highlightTheme: highlightTheme,
+      showLineNumbers: settings.codeShowLineNumbers,
+      wrappable: settings.codeWrappable,
+      codeStyle: codeStyle,
+      lineNumberStyle: lineNumberStyle,
+      gutterBorderColor: border,
+      isStreaming: widget.isStreaming,
+      searchQuery: _showSearch ? _searchQuery : null,
+      currentMatchIndex: _showSearch ? _currentMatchIndex : null,
+    );
+
+    if (!settings.codeFixedHeight) return body;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: settings.codeMaxHeight.toDouble()),
+      child: SingleChildScrollView(child: body),
     );
   }
 

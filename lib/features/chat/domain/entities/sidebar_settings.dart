@@ -147,6 +147,8 @@ abstract class SidebarSettings with _$SidebarSettings {
     @Default(false) bool codeDefaultCollapsed,
     @Default('auto') String codeHighlightTheme,
     @Default(13) int codeFontSize,
+    @Default(false) bool codeFixedHeight,
+    @Default(300) int codeMaxHeight,
     @Default(true) bool mermaidEnabled,
     // ── 数学公式设置 ─────────────────────────────────────────────────────────
     // Single-dollar inline math; the engine dropdown (KaTeX/MathJax) is dropped
