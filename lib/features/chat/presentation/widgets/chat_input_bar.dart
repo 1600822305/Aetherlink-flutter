@@ -17,6 +17,7 @@ import 'package:aetherlink_flutter/features/chat/application/long_text_paste.dar
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_actions.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/reasoning_effort_button.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_composer.dart';
 
@@ -262,6 +263,10 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
               onRemove: (id) =>
                   ref.read(composerAttachmentsProvider.notifier).removeById(id),
             ),
+      extraActionsBar: const Align(
+        alignment: Alignment.centerLeft,
+        child: ReasoningEffortButton(),
+      ),
       // No model ⇒ a tap surfaces the hint; otherwise the field/streaming state
       // decides whether the send action fires.
       onSend: canSend ? _send : (modelReady ? null : _showNoModelHint),

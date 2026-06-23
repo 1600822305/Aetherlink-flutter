@@ -54,6 +54,7 @@ class InputBoxComposer extends StatelessWidget {
     this.sendWithEnter = false,
     this.enterAsNewline = false,
     this.attachmentsBar,
+    this.extraActionsBar,
     this.onPasteText,
   });
 
@@ -89,6 +90,10 @@ class InputBoxComposer extends StatelessWidget {
   /// chips). `null` (the appearance preview / not-yet-wired composer) renders
   /// nothing.
   final Widget? attachmentsBar;
+
+  /// An optional row rendered between the text field and the toolbar (e.g. a
+  /// reasoning-effort toggle). `null` renders nothing.
+  final Widget? extraActionsBar;
 
   /// Optional paste interceptor. When supplied, every paste into the field —
   /// hardware Ctrl/Cmd+V and the selection toolbar / right-click 粘贴 — is routed
@@ -234,6 +239,12 @@ class InputBoxComposer extends StatelessWidget {
                   ),
                 ),
               ),
+              // Extra actions bar (e.g. reasoning-effort toggle).
+              if (extraActionsBar != null)
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, right: 4, top: 2),
+                  child: extraActionsBar,
+                ),
               // Lower layer: the configurable button toolbar.
               _Toolbar(
                 settings: settings,
