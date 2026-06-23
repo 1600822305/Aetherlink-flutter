@@ -44,6 +44,10 @@ abstract class TtsProviderSetting with _$TtsProviderSetting {
     @Default('') String groupId,
     @Default('') String emotion,
     @Default(1.0) double speed,
+    @Default('') String languageBoost,
+    @Default(32000) int sampleRate,
+    @Default(128000) int bitrate,
+    @Default('mp3') String audioFormat,
     // Azure-specific
     @Default('') String region,
     // Gemini voiceName (distinct from generic `voice`)
@@ -103,9 +107,10 @@ TtsProviderSetting defaultTtsProvider(TtsProviderKind kind) => switch (kind) {
     kind: TtsProviderKind.minimax,
     name: 'MiniMax TTS',
     baseUrl: 'https://api.minimaxi.chat',
-    model: 'speech-02-hd',
+    model: 'speech-2.8-hd',
     voice: 'female-tianmei',
     emotion: 'neutral',
+    languageBoost: 'auto',
   ),
   TtsProviderKind.siliconflow => const TtsProviderSetting(
     id: 'siliconflow',

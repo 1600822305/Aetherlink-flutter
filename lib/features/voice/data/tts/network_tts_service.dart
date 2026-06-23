@@ -5,6 +5,20 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:aetherlink_flutter/features/voice/domain/tts_provider_setting.dart';
 
+/// A voice entry returned by MiniMax's `/v1/get_voice` API.
+class MiniMaxRemoteVoice {
+  const MiniMaxRemoteVoice({
+    required this.id,
+    required this.name,
+    this.description = '',
+    this.category = 'system',
+  });
+  final String id;
+  final String name;
+  final String description;
+  final String category; // system, cloned, generated
+}
+
 /// The result of a network TTS synthesis call: raw audio bytes and their MIME
 /// type so the player knows the codec.
 class TtsSynthesisResult {
@@ -202,6 +216,8 @@ class NetworkTtsService {
   }
 
   /// MiniMax TTS via T2A v2 endpoint.
+  /// Sends voice_setting (voice_id, speed, vol, pitch, emotion),
+  /// language_boost, and audio_setting (sample_rate, bitrate, format).
   Future<TtsSynthesisResult> _synthesizeMiniMax(
     String text,
     TtsProviderSetting provider,
@@ -212,18 +228,46 @@ class NetworkTtsService {
         ? '/v1/t2a_v2?GroupId=$groupId'
         : '/v1/t2a_v2';
     final url = _joinUrl(provider.baseUrl, path);
+
+    // Build voice_setting with all official parameters.
+    final voiceSetting = <String, dynamic>{
+      'voice_id': provider.voice,
+      'speed': provider.speed,
+      'vol': provider.volume,
+      'pitch': provider.pitch.round(),
+    };
+    if (provider.emotion.isNotEmpty) {
+      voiceSetting['emotion'] = provider.emotion;
+    }
+
+    // Build audio_setting.
+    final audioFormat = provider.audioFormat.isNotEmpty
+        ? provider.audioFormat
+        : 'mp3';
+    final audioSetting = <String, dynamic>{
+      'sample_rate': provider.sampleRate > 0 ? provider.sampleRate : 32000,
+      'bitrate': provider.bitrate > 0 ? provider.bitrate : 128000,
+      'format': audioFormat,
+      'channel': 1,
+    };
+
+    final body = <String, dynamic>{
+      'model': provider.model,
+      'text': text,
+      'stream': false,
+      'voice_setting': voiceSetting,
+      'audio_setting': audioSetting,
+      'output_format': 'hex',
+    };
+
+    // language_boost
+    if (provider.languageBoost.isNotEmpty) {
+      body['language_boost'] = provider.languageBoost;
+    }
+
     final response = await _dio.post<Map<String, dynamic>>(
       url,
-      data: {
-        'model': provider.model,
-        'text': text,
-        'stream': false,
-        'voice_setting': {
-          'voice_id': provider.voice,
-          'emotion': provider.emotion.isNotEmpty ? provider.emotion : 'neutral',
-          'speed': provider.speed,
-        },
-      },
+      data: body,
       options: Options(
         headers: {
           'Authorization': 'Bearer ${provider.apiKey}',
@@ -243,10 +287,101 @@ class NetworkTtsService {
     final data = json['data'] as Map<String, dynamic>?;
     final audioHex = (data?['audio'] ?? '').toString();
     if (audioHex.isEmpty) throw Exception('MiniMax TTS: empty audio');
-    return TtsSynthesisResult(
-      bytes: _hexToBytes(audioHex),
-      mimeType: 'audio/mpeg',
+
+    // Determine MIME type based on audio format.
+    final mimeType = switch (audioFormat) {
+      'wav' => 'audio/wav',
+      'pcm' => 'audio/pcm',
+      'flac' => 'audio/flac',
+      'opus' => 'audio/opus',
+      _ => 'audio/mpeg',
+    };
+    return TtsSynthesisResult(bytes: _hexToBytes(audioHex), mimeType: mimeType);
+  }
+
+  /// Fetches available MiniMax voices from the `/v1/get_voice` API.
+  /// Returns a list of [VoicePreset] items. Falls back to empty list on error.
+  Future<List<MiniMaxRemoteVoice>> fetchMiniMaxVoices(
+    TtsProviderSetting provider,
+  ) async {
+    final baseUrl = provider.baseUrl.isNotEmpty
+        ? provider.baseUrl
+        : 'https://api.minimaxi.chat';
+    final groupId = provider.groupId;
+    final path = groupId.isNotEmpty
+        ? '/v1/get_voice?GroupId=$groupId'
+        : '/v1/get_voice';
+    final url = _joinUrl(baseUrl, path);
+    final response = await _dio.post<Map<String, dynamic>>(
+      url,
+      data: {'voice_type': 'all'},
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer ${provider.apiKey}',
+          'Content-Type': 'application/json',
+        },
+      ),
     );
+    final json = response.data!;
+    final baseResp = json['base_resp'] as Map<String, dynamic>?;
+    if (baseResp != null && baseResp['status_code'] != 0) {
+      throw Exception(
+        'MiniMax get_voice: ${baseResp['status_msg'] ?? 'unknown error'}',
+      );
+    }
+    final results = <MiniMaxRemoteVoice>[];
+    // System voices
+    final systemVoices = json['system_voice'] as List<dynamic>? ?? [];
+    for (final v in systemVoices) {
+      final m = v as Map<String, dynamic>;
+      final id = (m['voice_id'] ?? '').toString();
+      if (id.isEmpty) continue;
+      final name = (m['voice_name'] ?? id).toString();
+      final desc =
+          (m['description'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .join('; ') ??
+          '';
+      results.add(
+        MiniMaxRemoteVoice(
+          id: id,
+          name: name,
+          description: desc,
+          category: 'system',
+        ),
+      );
+    }
+    // Cloned voices
+    final clonedVoices = json['voice_cloning'] as List<dynamic>? ?? [];
+    for (final v in clonedVoices) {
+      final m = v as Map<String, dynamic>;
+      final id = (m['voice_id'] ?? '').toString();
+      if (id.isEmpty) continue;
+      results.add(
+        MiniMaxRemoteVoice(
+          id: id,
+          name: id,
+          description: '克隆音色',
+          category: 'cloned',
+        ),
+      );
+    }
+    // Generated voices
+    final genVoices = json['voice_generation'] as List<dynamic>? ?? [];
+    for (final v in genVoices) {
+      final m = v as Map<String, dynamic>;
+      final id = (m['voice_id'] ?? '').toString();
+      if (id.isEmpty) continue;
+      results.add(
+        MiniMaxRemoteVoice(
+          id: id,
+          name: id,
+          description: '生成音色',
+          category: 'generated',
+        ),
+      );
+    }
+    return results;
   }
 
   /// SiliconFlow TTS — uses OpenAI-compatible `/audio/speech` endpoint but
