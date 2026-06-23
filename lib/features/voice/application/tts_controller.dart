@@ -27,7 +27,8 @@ part 'tts_controller.g.dart';
 class TtsController extends _$TtsController {
   final NetworkTtsService _networkTts = NetworkTtsService();
   SystemTtsService? _systemTts;
-  final AudioPlayer _player = AudioPlayer();
+  AudioPlayer? _player;
+  AudioPlayer get _audioPlayer => _player ??= AudioPlayer();
 
   List<TtsTextChunk> _chunks = const [];
   final Map<int, Uint8List> _cache = {};
@@ -37,7 +38,6 @@ class TtsController extends _$TtsController {
   @override
   TtsPlaybackState build() {
     ref.onDispose(_dispose);
-    _playerSub = _player.processingStateStream.listen(_onProcessingStateChanged);
     return const TtsPlaybackState();
   }
 
@@ -89,7 +89,7 @@ class TtsController extends _$TtsController {
     if (state.activeProvider == TtsProviderKind.system) {
       await _systemTts?.pause();
     } else {
-      await _player.pause();
+      await _audioPlayer.pause();
     }
     state = state.copyWith(status: TtsStatus.paused);
   }
@@ -103,7 +103,7 @@ class TtsController extends _$TtsController {
         await _playChunk(state.currentChunk, provider);
       }
     } else {
-      await _player.play();
+      await _audioPlayer.play();
       state = state.copyWith(status: TtsStatus.playing);
     }
   }
@@ -112,7 +112,7 @@ class TtsController extends _$TtsController {
     _cancelToken?.cancel();
     _cancelToken = null;
     await _systemTts?.stop();
-    await _player.stop();
+    await _player?.stop();
     _cache.clear();
     _chunks = const [];
     state = const TtsPlaybackState();
@@ -126,7 +126,7 @@ class TtsController extends _$TtsController {
     }
     final provider = ref.read(activeTtsProviderProvider);
     if (provider == null) return;
-    await _player.stop();
+    await _audioPlayer.stop();
     await _playChunk(state.currentChunk + 1, provider);
   }
 
@@ -135,14 +135,14 @@ class TtsController extends _$TtsController {
     if (state.currentChunk <= 0) return;
     final provider = ref.read(activeTtsProviderProvider);
     if (provider == null) return;
-    await _player.stop();
+    await _audioPlayer.stop();
     await _playChunk(state.currentChunk - 1, provider);
   }
 
   /// Sets playback speed.
   Future<void> setSpeed(double speed) async {
     final clamped = speed.clamp(0.5, 2.0);
-    await _player.setSpeed(clamped);
+    await _audioPlayer.setSpeed(clamped);
     state = state.copyWith(speed: clamped);
   }
 
@@ -175,10 +175,11 @@ class TtsController extends _$TtsController {
       final bytes = await _synthesizeWithCache(index, provider);
 
       state = state.copyWith(status: TtsStatus.playing);
-      await _player.setSpeed(state.speed);
+      await _audioPlayer.setSpeed(state.speed);
+      _playerSub ??= _audioPlayer.processingStateStream.listen(_onProcessingStateChanged);
       final source = _BytesAudioSource(bytes);
-      await _player.setAudioSource(source);
-      await _player.play();
+      await _audioPlayer.setAudioSource(source);
+      await _audioPlayer.play();
 
       // Prefetch the next few chunks.
       _prefetch(index + 1, provider, count: 3);
@@ -237,7 +238,7 @@ class TtsController extends _$TtsController {
   void _dispose() {
     _cancelToken?.cancel();
     _playerSub?.cancel();
-    _player.dispose();
+    _player?.dispose();
     _systemTts?.dispose();
   }
 }
