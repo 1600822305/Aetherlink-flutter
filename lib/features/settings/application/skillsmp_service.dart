@@ -24,14 +24,14 @@ class SkillsMpItem {
   });
 
   factory SkillsMpItem.fromJson(Map<String, dynamic> json) => SkillsMpItem(
-    id: json['id'] as String? ?? '',
-    name: json['name'] as String? ?? '',
-    author: json['author'] as String? ?? '',
-    description: json['description'] as String? ?? '',
-    githubUrl: json['githubUrl'] as String? ?? '',
-    skillUrl: json['skillUrl'] as String? ?? '',
+    id: json['id']?.toString() ?? '',
+    name: json['name']?.toString() ?? '',
+    author: json['author']?.toString() ?? '',
+    description: json['description']?.toString() ?? '',
+    githubUrl: json['githubUrl']?.toString() ?? '',
+    skillUrl: json['skillUrl']?.toString() ?? '',
     stars: (json['stars'] as num?)?.toInt() ?? 0,
-    updatedAt: json['updatedAt'] as String? ?? '',
+    updatedAt: json['updatedAt']?.toString() ?? '',
   );
 
   final String id;
