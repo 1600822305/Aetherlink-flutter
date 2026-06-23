@@ -99,20 +99,9 @@ class _AvatarCropPageState extends State<AvatarCropPage> {
           baseColor: Colors.black,
           maskColor: Colors.black.withValues(alpha: 0.7),
           cornerDotBuilder: (size, edgeAlignment) => const SizedBox.shrink(),
-          onCropped: (result) {
+          onCropped: (croppedImage) {
             setState(() => _isCropping = false);
-            result.when(
-              success: (croppedImage) {
-                if (mounted) Navigator.of(context).pop(croppedImage);
-              },
-              error: (error) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('裁剪失败，请重试')),
-                  );
-                }
-              },
-            );
+            if (mounted) Navigator.of(context).pop(croppedImage);
           },
         );
       },
