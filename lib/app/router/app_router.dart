@@ -29,6 +29,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_p
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/settings_search_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/skill_editor_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/skill_store_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/skills_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/top_toolbar_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search_settings_page.dart';
@@ -70,6 +71,7 @@ abstract final class AppRouter {
       '/settings/mcp-assistant/$serverId/domain/$domain';
   static const String agentPromptsPath = '/settings/agent-prompts';
   static const String skillsPath = '/settings/skills';
+  static const String skillStorePath = '/settings/skills/store';
   static String skillEditorPath(String skillId) => '/settings/skills/$skillId';
   static const String quickPhrasesPath = '/settings/quick-phrases';
   static const String webSearchPath = '/settings/web-search';
@@ -200,6 +202,12 @@ abstract final class AppRouter {
         name: 'skills',
         pageBuilder: (context, state) =>
             _instant(state, const SkillsSettingsPage()),
+      ),
+      GoRoute(
+        path: skillStorePath,
+        name: 'skill-store',
+        pageBuilder: (context, state) =>
+            _instant(state, const SkillStorePage()),
       ),
       GoRoute(
         path: '$skillsPath/:skillId',

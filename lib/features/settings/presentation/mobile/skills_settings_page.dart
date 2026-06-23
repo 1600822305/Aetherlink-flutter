@@ -247,6 +247,12 @@ class _SkillsSettingsPageState extends ConsumerState<SkillsSettingsPage>
         title: const Text(_title),
         actions: [
           IconButton(
+            tooltip: '技能商店',
+            icon: const Icon(LucideIcons.store, size: 18),
+            color: theme.colorScheme.primary,
+            onPressed: () => context.push(AppRouter.skillStorePath),
+          ),
+          IconButton(
             tooltip: '导入技能',
             icon: const Icon(LucideIcons.upload, size: 18),
             onPressed: _import,
