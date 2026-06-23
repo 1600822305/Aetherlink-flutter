@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$AsrProviderSetting {
 
- String get id; AsrProviderKind get kind; String get name; bool get enabled; String get apiKey; String get baseUrl; String get model; String get language; String get websocketUrl; String get responseFormat; double get temperature; double get vadThreshold; int get silenceDurationMs;
+ String get id; AsrProviderKind get kind; String get name; bool get enabled; String get apiKey; String get baseUrl; String get model; String get language; String get websocketUrl; String get responseFormat; double get temperature; String get prompt; double get vadThreshold; int get silenceDurationMs; int get prefixPaddingMs; String get realtimeDelay;
 /// Create a copy of AsrProviderSetting
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $AsrProviderSettingCopyWith<AsrProviderSetting> get copyWith => _$AsrProviderSet
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is AsrProviderSetting&&(identical(other.id, id) || other.id == id)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.name, name) || other.name == name)&&(identical(other.enabled, enabled) || other.enabled == enabled)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.baseUrl, baseUrl) || other.baseUrl == baseUrl)&&(identical(other.model, model) || other.model == model)&&(identical(other.language, language) || other.language == language)&&(identical(other.websocketUrl, websocketUrl) || other.websocketUrl == websocketUrl)&&(identical(other.responseFormat, responseFormat) || other.responseFormat == responseFormat)&&(identical(other.temperature, temperature) || other.temperature == temperature)&&(identical(other.vadThreshold, vadThreshold) || other.vadThreshold == vadThreshold)&&(identical(other.silenceDurationMs, silenceDurationMs) || other.silenceDurationMs == silenceDurationMs));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AsrProviderSetting&&(identical(other.id, id) || other.id == id)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.name, name) || other.name == name)&&(identical(other.enabled, enabled) || other.enabled == enabled)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.baseUrl, baseUrl) || other.baseUrl == baseUrl)&&(identical(other.model, model) || other.model == model)&&(identical(other.language, language) || other.language == language)&&(identical(other.websocketUrl, websocketUrl) || other.websocketUrl == websocketUrl)&&(identical(other.responseFormat, responseFormat) || other.responseFormat == responseFormat)&&(identical(other.temperature, temperature) || other.temperature == temperature)&&(identical(other.prompt, prompt) || other.prompt == prompt)&&(identical(other.vadThreshold, vadThreshold) || other.vadThreshold == vadThreshold)&&(identical(other.silenceDurationMs, silenceDurationMs) || other.silenceDurationMs == silenceDurationMs)&&(identical(other.prefixPaddingMs, prefixPaddingMs) || other.prefixPaddingMs == prefixPaddingMs)&&(identical(other.realtimeDelay, realtimeDelay) || other.realtimeDelay == realtimeDelay));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,kind,name,enabled,apiKey,baseUrl,model,language,websocketUrl,responseFormat,temperature,vadThreshold,silenceDurationMs);
+int get hashCode => Object.hash(runtimeType,id,kind,name,enabled,apiKey,baseUrl,model,language,websocketUrl,responseFormat,temperature,prompt,vadThreshold,silenceDurationMs,prefixPaddingMs,realtimeDelay);
 
 @override
 String toString() {
-  return 'AsrProviderSetting(id: $id, kind: $kind, name: $name, enabled: $enabled, apiKey: $apiKey, baseUrl: $baseUrl, model: $model, language: $language, websocketUrl: $websocketUrl, responseFormat: $responseFormat, temperature: $temperature, vadThreshold: $vadThreshold, silenceDurationMs: $silenceDurationMs)';
+  return 'AsrProviderSetting(id: $id, kind: $kind, name: $name, enabled: $enabled, apiKey: $apiKey, baseUrl: $baseUrl, model: $model, language: $language, websocketUrl: $websocketUrl, responseFormat: $responseFormat, temperature: $temperature, prompt: $prompt, vadThreshold: $vadThreshold, silenceDurationMs: $silenceDurationMs, prefixPaddingMs: $prefixPaddingMs, realtimeDelay: $realtimeDelay)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $AsrProviderSettingCopyWith<$Res>  {
   factory $AsrProviderSettingCopyWith(AsrProviderSetting value, $Res Function(AsrProviderSetting) _then) = _$AsrProviderSettingCopyWithImpl;
 @useResult
 $Res call({
- String id, AsrProviderKind kind, String name, bool enabled, String apiKey, String baseUrl, String model, String language, String websocketUrl, String responseFormat, double temperature, double vadThreshold, int silenceDurationMs
+ String id, AsrProviderKind kind, String name, bool enabled, String apiKey, String baseUrl, String model, String language, String websocketUrl, String responseFormat, double temperature, String prompt, double vadThreshold, int silenceDurationMs, int prefixPaddingMs, String realtimeDelay
 });
 
 
@@ -65,7 +65,7 @@ class _$AsrProviderSettingCopyWithImpl<$Res>
 
 /// Create a copy of AsrProviderSetting
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? kind = null,Object? name = null,Object? enabled = null,Object? apiKey = null,Object? baseUrl = null,Object? model = null,Object? language = null,Object? websocketUrl = null,Object? responseFormat = null,Object? temperature = null,Object? vadThreshold = null,Object? silenceDurationMs = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? kind = null,Object? name = null,Object? enabled = null,Object? apiKey = null,Object? baseUrl = null,Object? model = null,Object? language = null,Object? websocketUrl = null,Object? responseFormat = null,Object? temperature = null,Object? prompt = null,Object? vadThreshold = null,Object? silenceDurationMs = null,Object? prefixPaddingMs = null,Object? realtimeDelay = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
@@ -78,9 +78,12 @@ as String,language: null == language ? _self.language : language // ignore: cast
 as String,websocketUrl: null == websocketUrl ? _self.websocketUrl : websocketUrl // ignore: cast_nullable_to_non_nullable
 as String,responseFormat: null == responseFormat ? _self.responseFormat : responseFormat // ignore: cast_nullable_to_non_nullable
 as String,temperature: null == temperature ? _self.temperature : temperature // ignore: cast_nullable_to_non_nullable
-as double,vadThreshold: null == vadThreshold ? _self.vadThreshold : vadThreshold // ignore: cast_nullable_to_non_nullable
+as double,prompt: null == prompt ? _self.prompt : prompt // ignore: cast_nullable_to_non_nullable
+as String,vadThreshold: null == vadThreshold ? _self.vadThreshold : vadThreshold // ignore: cast_nullable_to_non_nullable
 as double,silenceDurationMs: null == silenceDurationMs ? _self.silenceDurationMs : silenceDurationMs // ignore: cast_nullable_to_non_nullable
-as int,
+as int,prefixPaddingMs: null == prefixPaddingMs ? _self.prefixPaddingMs : prefixPaddingMs // ignore: cast_nullable_to_non_nullable
+as int,realtimeDelay: null == realtimeDelay ? _self.realtimeDelay : realtimeDelay // ignore: cast_nullable_to_non_nullable
+as String,
   ));
 }
 
@@ -165,10 +168,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  AsrProviderKind kind,  String name,  bool enabled,  String apiKey,  String baseUrl,  String model,  String language,  String websocketUrl,  String responseFormat,  double temperature,  double vadThreshold,  int silenceDurationMs)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  AsrProviderKind kind,  String name,  bool enabled,  String apiKey,  String baseUrl,  String model,  String language,  String websocketUrl,  String responseFormat,  double temperature,  String prompt,  double vadThreshold,  int silenceDurationMs,  int prefixPaddingMs,  String realtimeDelay)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _AsrProviderSetting() when $default != null:
-return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.baseUrl,_that.model,_that.language,_that.websocketUrl,_that.responseFormat,_that.temperature,_that.vadThreshold,_that.silenceDurationMs);case _:
+return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.baseUrl,_that.model,_that.language,_that.websocketUrl,_that.responseFormat,_that.temperature,_that.prompt,_that.vadThreshold,_that.silenceDurationMs,_that.prefixPaddingMs,_that.realtimeDelay);case _:
   return orElse();
 
 }
@@ -186,10 +189,10 @@ return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  AsrProviderKind kind,  String name,  bool enabled,  String apiKey,  String baseUrl,  String model,  String language,  String websocketUrl,  String responseFormat,  double temperature,  double vadThreshold,  int silenceDurationMs)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  AsrProviderKind kind,  String name,  bool enabled,  String apiKey,  String baseUrl,  String model,  String language,  String websocketUrl,  String responseFormat,  double temperature,  String prompt,  double vadThreshold,  int silenceDurationMs,  int prefixPaddingMs,  String realtimeDelay)  $default,) {final _that = this;
 switch (_that) {
 case _AsrProviderSetting():
-return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.baseUrl,_that.model,_that.language,_that.websocketUrl,_that.responseFormat,_that.temperature,_that.vadThreshold,_that.silenceDurationMs);case _:
+return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.baseUrl,_that.model,_that.language,_that.websocketUrl,_that.responseFormat,_that.temperature,_that.prompt,_that.vadThreshold,_that.silenceDurationMs,_that.prefixPaddingMs,_that.realtimeDelay);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -206,10 +209,10 @@ return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  AsrProviderKind kind,  String name,  bool enabled,  String apiKey,  String baseUrl,  String model,  String language,  String websocketUrl,  String responseFormat,  double temperature,  double vadThreshold,  int silenceDurationMs)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  AsrProviderKind kind,  String name,  bool enabled,  String apiKey,  String baseUrl,  String model,  String language,  String websocketUrl,  String responseFormat,  double temperature,  String prompt,  double vadThreshold,  int silenceDurationMs,  int prefixPaddingMs,  String realtimeDelay)?  $default,) {final _that = this;
 switch (_that) {
 case _AsrProviderSetting() when $default != null:
-return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.baseUrl,_that.model,_that.language,_that.websocketUrl,_that.responseFormat,_that.temperature,_that.vadThreshold,_that.silenceDurationMs);case _:
+return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.baseUrl,_that.model,_that.language,_that.websocketUrl,_that.responseFormat,_that.temperature,_that.prompt,_that.vadThreshold,_that.silenceDurationMs,_that.prefixPaddingMs,_that.realtimeDelay);case _:
   return null;
 
 }
@@ -221,7 +224,7 @@ return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.
 @JsonSerializable()
 
 class _AsrProviderSetting implements AsrProviderSetting {
-  const _AsrProviderSetting({required this.id, required this.kind, this.name = '', this.enabled = false, this.apiKey = '', this.baseUrl = '', this.model = '', this.language = '', this.websocketUrl = '', this.responseFormat = '', this.temperature = 0.0, this.vadThreshold = 0.5, this.silenceDurationMs = 500});
+  const _AsrProviderSetting({required this.id, required this.kind, this.name = '', this.enabled = false, this.apiKey = '', this.baseUrl = '', this.model = '', this.language = '', this.websocketUrl = '', this.responseFormat = '', this.temperature = 0.0, this.prompt = '', this.vadThreshold = 0.5, this.silenceDurationMs = 500, this.prefixPaddingMs = 300, this.realtimeDelay = ''});
   factory _AsrProviderSetting.fromJson(Map<String, dynamic> json) => _$AsrProviderSettingFromJson(json);
 
 @override final  String id;
@@ -235,8 +238,11 @@ class _AsrProviderSetting implements AsrProviderSetting {
 @override@JsonKey() final  String websocketUrl;
 @override@JsonKey() final  String responseFormat;
 @override@JsonKey() final  double temperature;
+@override@JsonKey() final  String prompt;
 @override@JsonKey() final  double vadThreshold;
 @override@JsonKey() final  int silenceDurationMs;
+@override@JsonKey() final  int prefixPaddingMs;
+@override@JsonKey() final  String realtimeDelay;
 
 /// Create a copy of AsrProviderSetting
 /// with the given fields replaced by the non-null parameter values.
@@ -251,16 +257,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _AsrProviderSetting&&(identical(other.id, id) || other.id == id)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.name, name) || other.name == name)&&(identical(other.enabled, enabled) || other.enabled == enabled)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.baseUrl, baseUrl) || other.baseUrl == baseUrl)&&(identical(other.model, model) || other.model == model)&&(identical(other.language, language) || other.language == language)&&(identical(other.websocketUrl, websocketUrl) || other.websocketUrl == websocketUrl)&&(identical(other.responseFormat, responseFormat) || other.responseFormat == responseFormat)&&(identical(other.temperature, temperature) || other.temperature == temperature)&&(identical(other.vadThreshold, vadThreshold) || other.vadThreshold == vadThreshold)&&(identical(other.silenceDurationMs, silenceDurationMs) || other.silenceDurationMs == silenceDurationMs));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _AsrProviderSetting&&(identical(other.id, id) || other.id == id)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.name, name) || other.name == name)&&(identical(other.enabled, enabled) || other.enabled == enabled)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.baseUrl, baseUrl) || other.baseUrl == baseUrl)&&(identical(other.model, model) || other.model == model)&&(identical(other.language, language) || other.language == language)&&(identical(other.websocketUrl, websocketUrl) || other.websocketUrl == websocketUrl)&&(identical(other.responseFormat, responseFormat) || other.responseFormat == responseFormat)&&(identical(other.temperature, temperature) || other.temperature == temperature)&&(identical(other.prompt, prompt) || other.prompt == prompt)&&(identical(other.vadThreshold, vadThreshold) || other.vadThreshold == vadThreshold)&&(identical(other.silenceDurationMs, silenceDurationMs) || other.silenceDurationMs == silenceDurationMs)&&(identical(other.prefixPaddingMs, prefixPaddingMs) || other.prefixPaddingMs == prefixPaddingMs)&&(identical(other.realtimeDelay, realtimeDelay) || other.realtimeDelay == realtimeDelay));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,kind,name,enabled,apiKey,baseUrl,model,language,websocketUrl,responseFormat,temperature,vadThreshold,silenceDurationMs);
+int get hashCode => Object.hash(runtimeType,id,kind,name,enabled,apiKey,baseUrl,model,language,websocketUrl,responseFormat,temperature,prompt,vadThreshold,silenceDurationMs,prefixPaddingMs,realtimeDelay);
 
 @override
 String toString() {
-  return 'AsrProviderSetting(id: $id, kind: $kind, name: $name, enabled: $enabled, apiKey: $apiKey, baseUrl: $baseUrl, model: $model, language: $language, websocketUrl: $websocketUrl, responseFormat: $responseFormat, temperature: $temperature, vadThreshold: $vadThreshold, silenceDurationMs: $silenceDurationMs)';
+  return 'AsrProviderSetting(id: $id, kind: $kind, name: $name, enabled: $enabled, apiKey: $apiKey, baseUrl: $baseUrl, model: $model, language: $language, websocketUrl: $websocketUrl, responseFormat: $responseFormat, temperature: $temperature, prompt: $prompt, vadThreshold: $vadThreshold, silenceDurationMs: $silenceDurationMs, prefixPaddingMs: $prefixPaddingMs, realtimeDelay: $realtimeDelay)';
 }
 
 
@@ -271,7 +277,7 @@ abstract mixin class _$AsrProviderSettingCopyWith<$Res> implements $AsrProviderS
   factory _$AsrProviderSettingCopyWith(_AsrProviderSetting value, $Res Function(_AsrProviderSetting) _then) = __$AsrProviderSettingCopyWithImpl;
 @override @useResult
 $Res call({
- String id, AsrProviderKind kind, String name, bool enabled, String apiKey, String baseUrl, String model, String language, String websocketUrl, String responseFormat, double temperature, double vadThreshold, int silenceDurationMs
+ String id, AsrProviderKind kind, String name, bool enabled, String apiKey, String baseUrl, String model, String language, String websocketUrl, String responseFormat, double temperature, String prompt, double vadThreshold, int silenceDurationMs, int prefixPaddingMs, String realtimeDelay
 });
 
 
@@ -288,7 +294,7 @@ class __$AsrProviderSettingCopyWithImpl<$Res>
 
 /// Create a copy of AsrProviderSetting
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? kind = null,Object? name = null,Object? enabled = null,Object? apiKey = null,Object? baseUrl = null,Object? model = null,Object? language = null,Object? websocketUrl = null,Object? responseFormat = null,Object? temperature = null,Object? vadThreshold = null,Object? silenceDurationMs = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? kind = null,Object? name = null,Object? enabled = null,Object? apiKey = null,Object? baseUrl = null,Object? model = null,Object? language = null,Object? websocketUrl = null,Object? responseFormat = null,Object? temperature = null,Object? prompt = null,Object? vadThreshold = null,Object? silenceDurationMs = null,Object? prefixPaddingMs = null,Object? realtimeDelay = null,}) {
   return _then(_AsrProviderSetting(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
@@ -301,9 +307,12 @@ as String,language: null == language ? _self.language : language // ignore: cast
 as String,websocketUrl: null == websocketUrl ? _self.websocketUrl : websocketUrl // ignore: cast_nullable_to_non_nullable
 as String,responseFormat: null == responseFormat ? _self.responseFormat : responseFormat // ignore: cast_nullable_to_non_nullable
 as String,temperature: null == temperature ? _self.temperature : temperature // ignore: cast_nullable_to_non_nullable
-as double,vadThreshold: null == vadThreshold ? _self.vadThreshold : vadThreshold // ignore: cast_nullable_to_non_nullable
+as double,prompt: null == prompt ? _self.prompt : prompt // ignore: cast_nullable_to_non_nullable
+as String,vadThreshold: null == vadThreshold ? _self.vadThreshold : vadThreshold // ignore: cast_nullable_to_non_nullable
 as double,silenceDurationMs: null == silenceDurationMs ? _self.silenceDurationMs : silenceDurationMs // ignore: cast_nullable_to_non_nullable
-as int,
+as int,prefixPaddingMs: null == prefixPaddingMs ? _self.prefixPaddingMs : prefixPaddingMs // ignore: cast_nullable_to_non_nullable
+as int,realtimeDelay: null == realtimeDelay ? _self.realtimeDelay : realtimeDelay // ignore: cast_nullable_to_non_nullable
+as String,
   ));
 }
 

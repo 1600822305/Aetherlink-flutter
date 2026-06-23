@@ -1825,10 +1825,13 @@ class _AsrProviderDetailPageState
   late final TextEditingController _modelCtrl;
   late final TextEditingController _wsUrlCtrl;
   late final TextEditingController _languageCtrl;
+  late final TextEditingController _promptCtrl;
   late bool _enabled;
   late double _vadThreshold;
   late int _silenceDurationMs;
+  late int _prefixPaddingMs;
   late double _temperature;
+  late String _realtimeDelay;
 
   @override
   void initState() {
@@ -1839,12 +1842,15 @@ class _AsrProviderDetailPageState
     _modelCtrl = TextEditingController(text: p.model);
     _wsUrlCtrl = TextEditingController(text: p.websocketUrl);
     _languageCtrl = TextEditingController(text: p.language);
+    _promptCtrl = TextEditingController(text: p.prompt);
     // "启用此服务" reflects whether this is the single active ASR provider.
     _enabled =
         ref.read(voiceSettingsControllerProvider).activeAsrProviderId == p.id;
     _vadThreshold = p.vadThreshold;
     _silenceDurationMs = p.silenceDurationMs;
+    _prefixPaddingMs = p.prefixPaddingMs;
     _temperature = p.temperature;
+    _realtimeDelay = p.realtimeDelay;
   }
 
   @override
@@ -1854,6 +1860,7 @@ class _AsrProviderDetailPageState
     _modelCtrl.dispose();
     _wsUrlCtrl.dispose();
     _languageCtrl.dispose();
+    _promptCtrl.dispose();
     super.dispose();
   }
 
@@ -1867,9 +1874,12 @@ class _AsrProviderDetailPageState
       model: _modelCtrl.text.trim(),
       websocketUrl: _wsUrlCtrl.text.trim(),
       language: _languageCtrl.text.trim(),
+      prompt: _promptCtrl.text.trim(),
       vadThreshold: _vadThreshold,
       silenceDurationMs: _silenceDurationMs,
+      prefixPaddingMs: _prefixPaddingMs,
       temperature: _temperature,
+      realtimeDelay: _realtimeDelay,
     );
     final notifier = ref.read(voiceSettingsControllerProvider.notifier);
     notifier.updateAsrProvider(updated);
@@ -1929,7 +1939,9 @@ class _AsrProviderDetailPageState
                         '使用设备内置语音识别引擎，无需 API Key。'
                         '识别语言留空时自动使用系统语言。',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.5,
+                          ),
                         ),
                       ),
                     ],
@@ -1957,20 +1969,80 @@ class _AsrProviderDetailPageState
                           controller: _wsUrlCtrl,
                         ),
                       ],
+                      // Model selector
                       const SizedBox(height: 12),
-                      ModelFormField(
-                        label: '模型',
-                        hint: '输入模型名称',
-                        controller: _modelCtrl,
-                      ),
+                      if (isWhisper)
+                        _DropdownRow(
+                          label: '模型',
+                          value: _modelCtrl.text.isEmpty
+                              ? 'whisper-1'
+                              : _modelCtrl.text,
+                          items: const [
+                            ('whisper-1', 'whisper-1'),
+                            ('gpt-4o-transcribe', 'gpt-4o-transcribe'),
+                            (
+                              'gpt-4o-mini-transcribe',
+                              'gpt-4o-mini-transcribe',
+                            ),
+                          ],
+                          onChanged: (v) => setState(() => _modelCtrl.text = v),
+                        )
+                      else if (isRealtime)
+                        _DropdownRow(
+                          label: '模型',
+                          value: _modelCtrl.text.isEmpty
+                              ? 'gpt-4o-transcribe'
+                              : _modelCtrl.text,
+                          items: const [
+                            ('gpt-4o-transcribe', 'gpt-4o-transcribe'),
+                            (
+                              'gpt-4o-mini-transcribe',
+                              'gpt-4o-mini-transcribe',
+                            ),
+                            ('gpt-realtime-whisper', 'gpt-realtime-whisper'),
+                          ],
+                          onChanged: (v) => setState(() => _modelCtrl.text = v),
+                        )
+                      else
+                        ModelFormField(
+                          label: '模型',
+                          hint: '输入模型名称',
+                          controller: _modelCtrl,
+                        ),
                       const SizedBox(height: 12),
                       ModelFormField(
                         label: '识别语言',
                         hint: '如 zh、en（留空自动检测）',
                         controller: _languageCtrl,
                       ),
+                      // Prompt (Whisper + Realtime)
+                      if (isWhisper || isRealtime) ...[
+                        const SizedBox(height: 12),
+                        ModelFormField(
+                          label: 'Prompt（提示词）',
+                          hint: '引导转录风格或专业术语',
+                          controller: _promptCtrl,
+                          maxLines: 2,
+                        ),
+                      ],
                       if (isRealtime) ...[
                         Divider(height: 24, color: theme.dividerColor),
+                        // Delay selector (for gpt-realtime-whisper)
+                        _DropdownRow(
+                          label: '延迟/精度',
+                          value: _realtimeDelay.isEmpty
+                              ? 'medium'
+                              : _realtimeDelay,
+                          items: const [
+                            ('minimal', 'minimal（最低延迟）'),
+                            ('low', 'low（低延迟）'),
+                            ('medium', 'medium（平衡）'),
+                            ('high', 'high（高精度）'),
+                            ('xhigh', 'xhigh（最高精度）'),
+                          ],
+                          onChanged: (v) => setState(() => _realtimeDelay = v),
+                        ),
+                        const SizedBox(height: 8),
                         _SliderRow(
                           label: 'VAD 阈值',
                           value: _vadThreshold,
@@ -1987,6 +2059,15 @@ class _AsrProviderDetailPageState
                           divisions: 19,
                           onChanged: (v) =>
                               setState(() => _silenceDurationMs = v.round()),
+                        ),
+                        _SliderRow(
+                          label: '前置缓冲 (ms)',
+                          value: _prefixPaddingMs.toDouble(),
+                          min: 0,
+                          max: 1000,
+                          divisions: 20,
+                          onChanged: (v) =>
+                              setState(() => _prefixPaddingMs = v.round()),
                         ),
                       ],
                       if (isWhisper) ...[
@@ -2142,6 +2223,67 @@ class _InlineToggle extends StatelessWidget {
           ),
         ),
         CustomSwitch(value: value, onChanged: onChanged),
+      ],
+    );
+  }
+}
+
+class _DropdownRow extends StatelessWidget {
+  const _DropdownRow({
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String value;
+  final List<(String, String)> items;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<String>(
+          initialValue: items.any((e) => e.$1 == value)
+              ? value
+              : items.first.$1,
+          decoration: InputDecoration(
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: theme.dividerColor),
+            ),
+          ),
+          items: items
+              .map(
+                (e) => DropdownMenuItem<String>(
+                  value: e.$1,
+                  child: Text(e.$2, style: theme.textTheme.bodyMedium),
+                ),
+              )
+              .toList(),
+          onChanged: (v) {
+            if (v != null) onChanged(v);
+          },
+        ),
       ],
     );
   }
