@@ -39,6 +39,11 @@ abstract class Model with _$Model {
     Map<String, dynamic>? extraBody,
     Map<String, String>? providerExtraHeaders,
     Map<String, dynamic>? providerExtraBody,
+    /// User-override for parameter display scope. When set, the parameter
+    /// editor uses this instead of auto-detecting from model ID or
+    /// providerType. Values: 'openai', 'anthropic', 'gemini', or null (auto).
+    /// See `docs/PARAMETER_SCOPE_DESIGN.md`.
+    String? parameterScope,
   }) = _Model;
 
   factory Model.fromJson(Map<String, dynamic> json) => _$ModelFromJson(json);

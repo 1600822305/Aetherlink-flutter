@@ -15,7 +15,11 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$Model {
 
- String get id; String get name; String get provider; String? get description; String? get providerType; String? get apiKey; String? get baseUrl; int? get maxTokens; double? get temperature; bool? get enabled; bool? get isDefault; String? get iconUrl; String? get presetModelId; String? get group; ModelCapabilities? get capabilities; bool? get multimodal; bool? get imageGeneration; bool? get videoGeneration; List<ModelType>? get modelTypes; String? get apiVersion; Map<String, String>? get extraHeaders; Map<String, dynamic>? get extraBody; Map<String, String>? get providerExtraHeaders; Map<String, dynamic>? get providerExtraBody;
+ String get id; String get name; String get provider; String? get description; String? get providerType; String? get apiKey; String? get baseUrl; int? get maxTokens; double? get temperature; bool? get enabled; bool? get isDefault; String? get iconUrl; String? get presetModelId; String? get group; ModelCapabilities? get capabilities; bool? get multimodal; bool? get imageGeneration; bool? get videoGeneration; List<ModelType>? get modelTypes; String? get apiVersion; Map<String, String>? get extraHeaders; Map<String, dynamic>? get extraBody; Map<String, String>? get providerExtraHeaders; Map<String, dynamic>? get providerExtraBody;/// User-override for parameter display scope. When set, the parameter
+/// editor uses this instead of auto-detecting from model ID or
+/// providerType. Values: 'openai', 'anthropic', 'gemini', or null (auto).
+/// See `docs/PARAMETER_SCOPE_DESIGN.md`.
+ String? get parameterScope;
 /// Create a copy of Model
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +32,16 @@ $ModelCopyWith<Model> get copyWith => _$ModelCopyWithImpl<Model>(this as Model, 
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Model&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.provider, provider) || other.provider == provider)&&(identical(other.description, description) || other.description == description)&&(identical(other.providerType, providerType) || other.providerType == providerType)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.baseUrl, baseUrl) || other.baseUrl == baseUrl)&&(identical(other.maxTokens, maxTokens) || other.maxTokens == maxTokens)&&(identical(other.temperature, temperature) || other.temperature == temperature)&&(identical(other.enabled, enabled) || other.enabled == enabled)&&(identical(other.isDefault, isDefault) || other.isDefault == isDefault)&&(identical(other.iconUrl, iconUrl) || other.iconUrl == iconUrl)&&(identical(other.presetModelId, presetModelId) || other.presetModelId == presetModelId)&&(identical(other.group, group) || other.group == group)&&(identical(other.capabilities, capabilities) || other.capabilities == capabilities)&&(identical(other.multimodal, multimodal) || other.multimodal == multimodal)&&(identical(other.imageGeneration, imageGeneration) || other.imageGeneration == imageGeneration)&&(identical(other.videoGeneration, videoGeneration) || other.videoGeneration == videoGeneration)&&const DeepCollectionEquality().equals(other.modelTypes, modelTypes)&&(identical(other.apiVersion, apiVersion) || other.apiVersion == apiVersion)&&const DeepCollectionEquality().equals(other.extraHeaders, extraHeaders)&&const DeepCollectionEquality().equals(other.extraBody, extraBody)&&const DeepCollectionEquality().equals(other.providerExtraHeaders, providerExtraHeaders)&&const DeepCollectionEquality().equals(other.providerExtraBody, providerExtraBody));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Model&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.provider, provider) || other.provider == provider)&&(identical(other.description, description) || other.description == description)&&(identical(other.providerType, providerType) || other.providerType == providerType)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.baseUrl, baseUrl) || other.baseUrl == baseUrl)&&(identical(other.maxTokens, maxTokens) || other.maxTokens == maxTokens)&&(identical(other.temperature, temperature) || other.temperature == temperature)&&(identical(other.enabled, enabled) || other.enabled == enabled)&&(identical(other.isDefault, isDefault) || other.isDefault == isDefault)&&(identical(other.iconUrl, iconUrl) || other.iconUrl == iconUrl)&&(identical(other.presetModelId, presetModelId) || other.presetModelId == presetModelId)&&(identical(other.group, group) || other.group == group)&&(identical(other.capabilities, capabilities) || other.capabilities == capabilities)&&(identical(other.multimodal, multimodal) || other.multimodal == multimodal)&&(identical(other.imageGeneration, imageGeneration) || other.imageGeneration == imageGeneration)&&(identical(other.videoGeneration, videoGeneration) || other.videoGeneration == videoGeneration)&&const DeepCollectionEquality().equals(other.modelTypes, modelTypes)&&(identical(other.apiVersion, apiVersion) || other.apiVersion == apiVersion)&&const DeepCollectionEquality().equals(other.extraHeaders, extraHeaders)&&const DeepCollectionEquality().equals(other.extraBody, extraBody)&&const DeepCollectionEquality().equals(other.providerExtraHeaders, providerExtraHeaders)&&const DeepCollectionEquality().equals(other.providerExtraBody, providerExtraBody)&&(identical(other.parameterScope, parameterScope) || other.parameterScope == parameterScope));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hashAll([runtimeType,id,name,provider,description,providerType,apiKey,baseUrl,maxTokens,temperature,enabled,isDefault,iconUrl,presetModelId,group,capabilities,multimodal,imageGeneration,videoGeneration,const DeepCollectionEquality().hash(modelTypes),apiVersion,const DeepCollectionEquality().hash(extraHeaders),const DeepCollectionEquality().hash(extraBody),const DeepCollectionEquality().hash(providerExtraHeaders),const DeepCollectionEquality().hash(providerExtraBody)]);
+int get hashCode => Object.hashAll([runtimeType,id,name,provider,description,providerType,apiKey,baseUrl,maxTokens,temperature,enabled,isDefault,iconUrl,presetModelId,group,capabilities,multimodal,imageGeneration,videoGeneration,const DeepCollectionEquality().hash(modelTypes),apiVersion,const DeepCollectionEquality().hash(extraHeaders),const DeepCollectionEquality().hash(extraBody),const DeepCollectionEquality().hash(providerExtraHeaders),const DeepCollectionEquality().hash(providerExtraBody),parameterScope]);
 
 @override
 String toString() {
-  return 'Model(id: $id, name: $name, provider: $provider, description: $description, providerType: $providerType, apiKey: $apiKey, baseUrl: $baseUrl, maxTokens: $maxTokens, temperature: $temperature, enabled: $enabled, isDefault: $isDefault, iconUrl: $iconUrl, presetModelId: $presetModelId, group: $group, capabilities: $capabilities, multimodal: $multimodal, imageGeneration: $imageGeneration, videoGeneration: $videoGeneration, modelTypes: $modelTypes, apiVersion: $apiVersion, extraHeaders: $extraHeaders, extraBody: $extraBody, providerExtraHeaders: $providerExtraHeaders, providerExtraBody: $providerExtraBody)';
+  return 'Model(id: $id, name: $name, provider: $provider, description: $description, providerType: $providerType, apiKey: $apiKey, baseUrl: $baseUrl, maxTokens: $maxTokens, temperature: $temperature, enabled: $enabled, isDefault: $isDefault, iconUrl: $iconUrl, presetModelId: $presetModelId, group: $group, capabilities: $capabilities, multimodal: $multimodal, imageGeneration: $imageGeneration, videoGeneration: $videoGeneration, modelTypes: $modelTypes, apiVersion: $apiVersion, extraHeaders: $extraHeaders, extraBody: $extraBody, providerExtraHeaders: $providerExtraHeaders, providerExtraBody: $providerExtraBody, parameterScope: $parameterScope)';
 }
 
 
@@ -48,7 +52,7 @@ abstract mixin class $ModelCopyWith<$Res>  {
   factory $ModelCopyWith(Model value, $Res Function(Model) _then) = _$ModelCopyWithImpl;
 @useResult
 $Res call({
- String id, String name, String provider, String? description, String? providerType, String? apiKey, String? baseUrl, int? maxTokens, double? temperature, bool? enabled, bool? isDefault, String? iconUrl, String? presetModelId, String? group, ModelCapabilities? capabilities, bool? multimodal, bool? imageGeneration, bool? videoGeneration, List<ModelType>? modelTypes, String? apiVersion, Map<String, String>? extraHeaders, Map<String, dynamic>? extraBody, Map<String, String>? providerExtraHeaders, Map<String, dynamic>? providerExtraBody
+ String id, String name, String provider, String? description, String? providerType, String? apiKey, String? baseUrl, int? maxTokens, double? temperature, bool? enabled, bool? isDefault, String? iconUrl, String? presetModelId, String? group, ModelCapabilities? capabilities, bool? multimodal, bool? imageGeneration, bool? videoGeneration, List<ModelType>? modelTypes, String? apiVersion, Map<String, String>? extraHeaders, Map<String, dynamic>? extraBody, Map<String, String>? providerExtraHeaders, Map<String, dynamic>? providerExtraBody, String? parameterScope
 });
 
 
@@ -65,7 +69,7 @@ class _$ModelCopyWithImpl<$Res>
 
 /// Create a copy of Model
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? provider = null,Object? description = freezed,Object? providerType = freezed,Object? apiKey = freezed,Object? baseUrl = freezed,Object? maxTokens = freezed,Object? temperature = freezed,Object? enabled = freezed,Object? isDefault = freezed,Object? iconUrl = freezed,Object? presetModelId = freezed,Object? group = freezed,Object? capabilities = freezed,Object? multimodal = freezed,Object? imageGeneration = freezed,Object? videoGeneration = freezed,Object? modelTypes = freezed,Object? apiVersion = freezed,Object? extraHeaders = freezed,Object? extraBody = freezed,Object? providerExtraHeaders = freezed,Object? providerExtraBody = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? provider = null,Object? description = freezed,Object? providerType = freezed,Object? apiKey = freezed,Object? baseUrl = freezed,Object? maxTokens = freezed,Object? temperature = freezed,Object? enabled = freezed,Object? isDefault = freezed,Object? iconUrl = freezed,Object? presetModelId = freezed,Object? group = freezed,Object? capabilities = freezed,Object? multimodal = freezed,Object? imageGeneration = freezed,Object? videoGeneration = freezed,Object? modelTypes = freezed,Object? apiVersion = freezed,Object? extraHeaders = freezed,Object? extraBody = freezed,Object? providerExtraHeaders = freezed,Object? providerExtraBody = freezed,Object? parameterScope = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -91,7 +95,8 @@ as String?,extraHeaders: freezed == extraHeaders ? _self.extraHeaders : extraHea
 as Map<String, String>?,extraBody: freezed == extraBody ? _self.extraBody : extraBody // ignore: cast_nullable_to_non_nullable
 as Map<String, dynamic>?,providerExtraHeaders: freezed == providerExtraHeaders ? _self.providerExtraHeaders : providerExtraHeaders // ignore: cast_nullable_to_non_nullable
 as Map<String, String>?,providerExtraBody: freezed == providerExtraBody ? _self.providerExtraBody : providerExtraBody // ignore: cast_nullable_to_non_nullable
-as Map<String, dynamic>?,
+as Map<String, dynamic>?,parameterScope: freezed == parameterScope ? _self.parameterScope : parameterScope // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 /// Create a copy of Model
@@ -188,10 +193,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String provider,  String? description,  String? providerType,  String? apiKey,  String? baseUrl,  int? maxTokens,  double? temperature,  bool? enabled,  bool? isDefault,  String? iconUrl,  String? presetModelId,  String? group,  ModelCapabilities? capabilities,  bool? multimodal,  bool? imageGeneration,  bool? videoGeneration,  List<ModelType>? modelTypes,  String? apiVersion,  Map<String, String>? extraHeaders,  Map<String, dynamic>? extraBody,  Map<String, String>? providerExtraHeaders,  Map<String, dynamic>? providerExtraBody)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String provider,  String? description,  String? providerType,  String? apiKey,  String? baseUrl,  int? maxTokens,  double? temperature,  bool? enabled,  bool? isDefault,  String? iconUrl,  String? presetModelId,  String? group,  ModelCapabilities? capabilities,  bool? multimodal,  bool? imageGeneration,  bool? videoGeneration,  List<ModelType>? modelTypes,  String? apiVersion,  Map<String, String>? extraHeaders,  Map<String, dynamic>? extraBody,  Map<String, String>? providerExtraHeaders,  Map<String, dynamic>? providerExtraBody,  String? parameterScope)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Model() when $default != null:
-return $default(_that.id,_that.name,_that.provider,_that.description,_that.providerType,_that.apiKey,_that.baseUrl,_that.maxTokens,_that.temperature,_that.enabled,_that.isDefault,_that.iconUrl,_that.presetModelId,_that.group,_that.capabilities,_that.multimodal,_that.imageGeneration,_that.videoGeneration,_that.modelTypes,_that.apiVersion,_that.extraHeaders,_that.extraBody,_that.providerExtraHeaders,_that.providerExtraBody);case _:
+return $default(_that.id,_that.name,_that.provider,_that.description,_that.providerType,_that.apiKey,_that.baseUrl,_that.maxTokens,_that.temperature,_that.enabled,_that.isDefault,_that.iconUrl,_that.presetModelId,_that.group,_that.capabilities,_that.multimodal,_that.imageGeneration,_that.videoGeneration,_that.modelTypes,_that.apiVersion,_that.extraHeaders,_that.extraBody,_that.providerExtraHeaders,_that.providerExtraBody,_that.parameterScope);case _:
   return orElse();
 
 }
@@ -209,10 +214,10 @@ return $default(_that.id,_that.name,_that.provider,_that.description,_that.provi
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String provider,  String? description,  String? providerType,  String? apiKey,  String? baseUrl,  int? maxTokens,  double? temperature,  bool? enabled,  bool? isDefault,  String? iconUrl,  String? presetModelId,  String? group,  ModelCapabilities? capabilities,  bool? multimodal,  bool? imageGeneration,  bool? videoGeneration,  List<ModelType>? modelTypes,  String? apiVersion,  Map<String, String>? extraHeaders,  Map<String, dynamic>? extraBody,  Map<String, String>? providerExtraHeaders,  Map<String, dynamic>? providerExtraBody)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String provider,  String? description,  String? providerType,  String? apiKey,  String? baseUrl,  int? maxTokens,  double? temperature,  bool? enabled,  bool? isDefault,  String? iconUrl,  String? presetModelId,  String? group,  ModelCapabilities? capabilities,  bool? multimodal,  bool? imageGeneration,  bool? videoGeneration,  List<ModelType>? modelTypes,  String? apiVersion,  Map<String, String>? extraHeaders,  Map<String, dynamic>? extraBody,  Map<String, String>? providerExtraHeaders,  Map<String, dynamic>? providerExtraBody,  String? parameterScope)  $default,) {final _that = this;
 switch (_that) {
 case _Model():
-return $default(_that.id,_that.name,_that.provider,_that.description,_that.providerType,_that.apiKey,_that.baseUrl,_that.maxTokens,_that.temperature,_that.enabled,_that.isDefault,_that.iconUrl,_that.presetModelId,_that.group,_that.capabilities,_that.multimodal,_that.imageGeneration,_that.videoGeneration,_that.modelTypes,_that.apiVersion,_that.extraHeaders,_that.extraBody,_that.providerExtraHeaders,_that.providerExtraBody);case _:
+return $default(_that.id,_that.name,_that.provider,_that.description,_that.providerType,_that.apiKey,_that.baseUrl,_that.maxTokens,_that.temperature,_that.enabled,_that.isDefault,_that.iconUrl,_that.presetModelId,_that.group,_that.capabilities,_that.multimodal,_that.imageGeneration,_that.videoGeneration,_that.modelTypes,_that.apiVersion,_that.extraHeaders,_that.extraBody,_that.providerExtraHeaders,_that.providerExtraBody,_that.parameterScope);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -229,10 +234,10 @@ return $default(_that.id,_that.name,_that.provider,_that.description,_that.provi
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String provider,  String? description,  String? providerType,  String? apiKey,  String? baseUrl,  int? maxTokens,  double? temperature,  bool? enabled,  bool? isDefault,  String? iconUrl,  String? presetModelId,  String? group,  ModelCapabilities? capabilities,  bool? multimodal,  bool? imageGeneration,  bool? videoGeneration,  List<ModelType>? modelTypes,  String? apiVersion,  Map<String, String>? extraHeaders,  Map<String, dynamic>? extraBody,  Map<String, String>? providerExtraHeaders,  Map<String, dynamic>? providerExtraBody)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String provider,  String? description,  String? providerType,  String? apiKey,  String? baseUrl,  int? maxTokens,  double? temperature,  bool? enabled,  bool? isDefault,  String? iconUrl,  String? presetModelId,  String? group,  ModelCapabilities? capabilities,  bool? multimodal,  bool? imageGeneration,  bool? videoGeneration,  List<ModelType>? modelTypes,  String? apiVersion,  Map<String, String>? extraHeaders,  Map<String, dynamic>? extraBody,  Map<String, String>? providerExtraHeaders,  Map<String, dynamic>? providerExtraBody,  String? parameterScope)?  $default,) {final _that = this;
 switch (_that) {
 case _Model() when $default != null:
-return $default(_that.id,_that.name,_that.provider,_that.description,_that.providerType,_that.apiKey,_that.baseUrl,_that.maxTokens,_that.temperature,_that.enabled,_that.isDefault,_that.iconUrl,_that.presetModelId,_that.group,_that.capabilities,_that.multimodal,_that.imageGeneration,_that.videoGeneration,_that.modelTypes,_that.apiVersion,_that.extraHeaders,_that.extraBody,_that.providerExtraHeaders,_that.providerExtraBody);case _:
+return $default(_that.id,_that.name,_that.provider,_that.description,_that.providerType,_that.apiKey,_that.baseUrl,_that.maxTokens,_that.temperature,_that.enabled,_that.isDefault,_that.iconUrl,_that.presetModelId,_that.group,_that.capabilities,_that.multimodal,_that.imageGeneration,_that.videoGeneration,_that.modelTypes,_that.apiVersion,_that.extraHeaders,_that.extraBody,_that.providerExtraHeaders,_that.providerExtraBody,_that.parameterScope);case _:
   return null;
 
 }
@@ -244,7 +249,7 @@ return $default(_that.id,_that.name,_that.provider,_that.description,_that.provi
 @JsonSerializable()
 
 class _Model implements Model {
-  const _Model({required this.id, required this.name, required this.provider, this.description, this.providerType, this.apiKey, this.baseUrl, this.maxTokens, this.temperature, this.enabled, this.isDefault, this.iconUrl, this.presetModelId, this.group, this.capabilities, this.multimodal, this.imageGeneration, this.videoGeneration, final  List<ModelType>? modelTypes, this.apiVersion, final  Map<String, String>? extraHeaders, final  Map<String, dynamic>? extraBody, final  Map<String, String>? providerExtraHeaders, final  Map<String, dynamic>? providerExtraBody}): _modelTypes = modelTypes,_extraHeaders = extraHeaders,_extraBody = extraBody,_providerExtraHeaders = providerExtraHeaders,_providerExtraBody = providerExtraBody;
+  const _Model({required this.id, required this.name, required this.provider, this.description, this.providerType, this.apiKey, this.baseUrl, this.maxTokens, this.temperature, this.enabled, this.isDefault, this.iconUrl, this.presetModelId, this.group, this.capabilities, this.multimodal, this.imageGeneration, this.videoGeneration, final  List<ModelType>? modelTypes, this.apiVersion, final  Map<String, String>? extraHeaders, final  Map<String, dynamic>? extraBody, final  Map<String, String>? providerExtraHeaders, final  Map<String, dynamic>? providerExtraBody, this.parameterScope}): _modelTypes = modelTypes,_extraHeaders = extraHeaders,_extraBody = extraBody,_providerExtraHeaders = providerExtraHeaders,_providerExtraBody = providerExtraBody;
   factory _Model.fromJson(Map<String, dynamic> json) => _$ModelFromJson(json);
 
 @override final  String id;
@@ -311,6 +316,11 @@ class _Model implements Model {
   return EqualUnmodifiableMapView(value);
 }
 
+/// User-override for parameter display scope. When set, the parameter
+/// editor uses this instead of auto-detecting from model ID or
+/// providerType. Values: 'openai', 'anthropic', 'gemini', or null (auto).
+/// See `docs/PARAMETER_SCOPE_DESIGN.md`.
+@override final  String? parameterScope;
 
 /// Create a copy of Model
 /// with the given fields replaced by the non-null parameter values.
@@ -325,16 +335,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Model&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.provider, provider) || other.provider == provider)&&(identical(other.description, description) || other.description == description)&&(identical(other.providerType, providerType) || other.providerType == providerType)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.baseUrl, baseUrl) || other.baseUrl == baseUrl)&&(identical(other.maxTokens, maxTokens) || other.maxTokens == maxTokens)&&(identical(other.temperature, temperature) || other.temperature == temperature)&&(identical(other.enabled, enabled) || other.enabled == enabled)&&(identical(other.isDefault, isDefault) || other.isDefault == isDefault)&&(identical(other.iconUrl, iconUrl) || other.iconUrl == iconUrl)&&(identical(other.presetModelId, presetModelId) || other.presetModelId == presetModelId)&&(identical(other.group, group) || other.group == group)&&(identical(other.capabilities, capabilities) || other.capabilities == capabilities)&&(identical(other.multimodal, multimodal) || other.multimodal == multimodal)&&(identical(other.imageGeneration, imageGeneration) || other.imageGeneration == imageGeneration)&&(identical(other.videoGeneration, videoGeneration) || other.videoGeneration == videoGeneration)&&const DeepCollectionEquality().equals(other._modelTypes, _modelTypes)&&(identical(other.apiVersion, apiVersion) || other.apiVersion == apiVersion)&&const DeepCollectionEquality().equals(other._extraHeaders, _extraHeaders)&&const DeepCollectionEquality().equals(other._extraBody, _extraBody)&&const DeepCollectionEquality().equals(other._providerExtraHeaders, _providerExtraHeaders)&&const DeepCollectionEquality().equals(other._providerExtraBody, _providerExtraBody));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Model&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.provider, provider) || other.provider == provider)&&(identical(other.description, description) || other.description == description)&&(identical(other.providerType, providerType) || other.providerType == providerType)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.baseUrl, baseUrl) || other.baseUrl == baseUrl)&&(identical(other.maxTokens, maxTokens) || other.maxTokens == maxTokens)&&(identical(other.temperature, temperature) || other.temperature == temperature)&&(identical(other.enabled, enabled) || other.enabled == enabled)&&(identical(other.isDefault, isDefault) || other.isDefault == isDefault)&&(identical(other.iconUrl, iconUrl) || other.iconUrl == iconUrl)&&(identical(other.presetModelId, presetModelId) || other.presetModelId == presetModelId)&&(identical(other.group, group) || other.group == group)&&(identical(other.capabilities, capabilities) || other.capabilities == capabilities)&&(identical(other.multimodal, multimodal) || other.multimodal == multimodal)&&(identical(other.imageGeneration, imageGeneration) || other.imageGeneration == imageGeneration)&&(identical(other.videoGeneration, videoGeneration) || other.videoGeneration == videoGeneration)&&const DeepCollectionEquality().equals(other._modelTypes, _modelTypes)&&(identical(other.apiVersion, apiVersion) || other.apiVersion == apiVersion)&&const DeepCollectionEquality().equals(other._extraHeaders, _extraHeaders)&&const DeepCollectionEquality().equals(other._extraBody, _extraBody)&&const DeepCollectionEquality().equals(other._providerExtraHeaders, _providerExtraHeaders)&&const DeepCollectionEquality().equals(other._providerExtraBody, _providerExtraBody)&&(identical(other.parameterScope, parameterScope) || other.parameterScope == parameterScope));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hashAll([runtimeType,id,name,provider,description,providerType,apiKey,baseUrl,maxTokens,temperature,enabled,isDefault,iconUrl,presetModelId,group,capabilities,multimodal,imageGeneration,videoGeneration,const DeepCollectionEquality().hash(_modelTypes),apiVersion,const DeepCollectionEquality().hash(_extraHeaders),const DeepCollectionEquality().hash(_extraBody),const DeepCollectionEquality().hash(_providerExtraHeaders),const DeepCollectionEquality().hash(_providerExtraBody)]);
+int get hashCode => Object.hashAll([runtimeType,id,name,provider,description,providerType,apiKey,baseUrl,maxTokens,temperature,enabled,isDefault,iconUrl,presetModelId,group,capabilities,multimodal,imageGeneration,videoGeneration,const DeepCollectionEquality().hash(_modelTypes),apiVersion,const DeepCollectionEquality().hash(_extraHeaders),const DeepCollectionEquality().hash(_extraBody),const DeepCollectionEquality().hash(_providerExtraHeaders),const DeepCollectionEquality().hash(_providerExtraBody),parameterScope]);
 
 @override
 String toString() {
-  return 'Model(id: $id, name: $name, provider: $provider, description: $description, providerType: $providerType, apiKey: $apiKey, baseUrl: $baseUrl, maxTokens: $maxTokens, temperature: $temperature, enabled: $enabled, isDefault: $isDefault, iconUrl: $iconUrl, presetModelId: $presetModelId, group: $group, capabilities: $capabilities, multimodal: $multimodal, imageGeneration: $imageGeneration, videoGeneration: $videoGeneration, modelTypes: $modelTypes, apiVersion: $apiVersion, extraHeaders: $extraHeaders, extraBody: $extraBody, providerExtraHeaders: $providerExtraHeaders, providerExtraBody: $providerExtraBody)';
+  return 'Model(id: $id, name: $name, provider: $provider, description: $description, providerType: $providerType, apiKey: $apiKey, baseUrl: $baseUrl, maxTokens: $maxTokens, temperature: $temperature, enabled: $enabled, isDefault: $isDefault, iconUrl: $iconUrl, presetModelId: $presetModelId, group: $group, capabilities: $capabilities, multimodal: $multimodal, imageGeneration: $imageGeneration, videoGeneration: $videoGeneration, modelTypes: $modelTypes, apiVersion: $apiVersion, extraHeaders: $extraHeaders, extraBody: $extraBody, providerExtraHeaders: $providerExtraHeaders, providerExtraBody: $providerExtraBody, parameterScope: $parameterScope)';
 }
 
 
@@ -345,7 +355,7 @@ abstract mixin class _$ModelCopyWith<$Res> implements $ModelCopyWith<$Res> {
   factory _$ModelCopyWith(_Model value, $Res Function(_Model) _then) = __$ModelCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String name, String provider, String? description, String? providerType, String? apiKey, String? baseUrl, int? maxTokens, double? temperature, bool? enabled, bool? isDefault, String? iconUrl, String? presetModelId, String? group, ModelCapabilities? capabilities, bool? multimodal, bool? imageGeneration, bool? videoGeneration, List<ModelType>? modelTypes, String? apiVersion, Map<String, String>? extraHeaders, Map<String, dynamic>? extraBody, Map<String, String>? providerExtraHeaders, Map<String, dynamic>? providerExtraBody
+ String id, String name, String provider, String? description, String? providerType, String? apiKey, String? baseUrl, int? maxTokens, double? temperature, bool? enabled, bool? isDefault, String? iconUrl, String? presetModelId, String? group, ModelCapabilities? capabilities, bool? multimodal, bool? imageGeneration, bool? videoGeneration, List<ModelType>? modelTypes, String? apiVersion, Map<String, String>? extraHeaders, Map<String, dynamic>? extraBody, Map<String, String>? providerExtraHeaders, Map<String, dynamic>? providerExtraBody, String? parameterScope
 });
 
 
@@ -362,7 +372,7 @@ class __$ModelCopyWithImpl<$Res>
 
 /// Create a copy of Model
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? provider = null,Object? description = freezed,Object? providerType = freezed,Object? apiKey = freezed,Object? baseUrl = freezed,Object? maxTokens = freezed,Object? temperature = freezed,Object? enabled = freezed,Object? isDefault = freezed,Object? iconUrl = freezed,Object? presetModelId = freezed,Object? group = freezed,Object? capabilities = freezed,Object? multimodal = freezed,Object? imageGeneration = freezed,Object? videoGeneration = freezed,Object? modelTypes = freezed,Object? apiVersion = freezed,Object? extraHeaders = freezed,Object? extraBody = freezed,Object? providerExtraHeaders = freezed,Object? providerExtraBody = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? provider = null,Object? description = freezed,Object? providerType = freezed,Object? apiKey = freezed,Object? baseUrl = freezed,Object? maxTokens = freezed,Object? temperature = freezed,Object? enabled = freezed,Object? isDefault = freezed,Object? iconUrl = freezed,Object? presetModelId = freezed,Object? group = freezed,Object? capabilities = freezed,Object? multimodal = freezed,Object? imageGeneration = freezed,Object? videoGeneration = freezed,Object? modelTypes = freezed,Object? apiVersion = freezed,Object? extraHeaders = freezed,Object? extraBody = freezed,Object? providerExtraHeaders = freezed,Object? providerExtraBody = freezed,Object? parameterScope = freezed,}) {
   return _then(_Model(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -388,7 +398,8 @@ as String?,extraHeaders: freezed == extraHeaders ? _self._extraHeaders : extraHe
 as Map<String, String>?,extraBody: freezed == extraBody ? _self._extraBody : extraBody // ignore: cast_nullable_to_non_nullable
 as Map<String, dynamic>?,providerExtraHeaders: freezed == providerExtraHeaders ? _self._providerExtraHeaders : providerExtraHeaders // ignore: cast_nullable_to_non_nullable
 as Map<String, String>?,providerExtraBody: freezed == providerExtraBody ? _self._providerExtraBody : providerExtraBody // ignore: cast_nullable_to_non_nullable
-as Map<String, dynamic>?,
+as Map<String, dynamic>?,parameterScope: freezed == parameterScope ? _self.parameterScope : parameterScope // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 

@@ -15,7 +15,10 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$ModelProvider {
 
- String get id; String get name; String get avatar; String get color; bool get isEnabled; List<Model> get models; String? get apiKey; String? get baseUrl; String? get providerType; bool? get isSystem; Map<String, String>? get extraHeaders; Map<String, dynamic>? get extraBody; bool? get useResponsesAPI; List<ApiKeyConfig>? get apiKeys; KeyManagementConfig? get keyManagement;
+ String get id; String get name; String get avatar; String get color; bool get isEnabled; List<Model> get models; String? get apiKey; String? get baseUrl; String? get providerType; bool? get isSystem; Map<String, String>? get extraHeaders; Map<String, dynamic>? get extraBody; bool? get useResponsesAPI; List<ApiKeyConfig>? get apiKeys; KeyManagementConfig? get keyManagement;/// Provider-level override for parameter display scope. Applied to all
+/// models under this provider unless the model has its own
+/// [Model.parameterScope]. See `docs/PARAMETER_SCOPE_DESIGN.md`.
+ String? get parameterScope;
 /// Create a copy of ModelProvider
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +31,16 @@ $ModelProviderCopyWith<ModelProvider> get copyWith => _$ModelProviderCopyWithImp
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ModelProvider&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.avatar, avatar) || other.avatar == avatar)&&(identical(other.color, color) || other.color == color)&&(identical(other.isEnabled, isEnabled) || other.isEnabled == isEnabled)&&const DeepCollectionEquality().equals(other.models, models)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.baseUrl, baseUrl) || other.baseUrl == baseUrl)&&(identical(other.providerType, providerType) || other.providerType == providerType)&&(identical(other.isSystem, isSystem) || other.isSystem == isSystem)&&const DeepCollectionEquality().equals(other.extraHeaders, extraHeaders)&&const DeepCollectionEquality().equals(other.extraBody, extraBody)&&(identical(other.useResponsesAPI, useResponsesAPI) || other.useResponsesAPI == useResponsesAPI)&&const DeepCollectionEquality().equals(other.apiKeys, apiKeys)&&(identical(other.keyManagement, keyManagement) || other.keyManagement == keyManagement));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ModelProvider&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.avatar, avatar) || other.avatar == avatar)&&(identical(other.color, color) || other.color == color)&&(identical(other.isEnabled, isEnabled) || other.isEnabled == isEnabled)&&const DeepCollectionEquality().equals(other.models, models)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.baseUrl, baseUrl) || other.baseUrl == baseUrl)&&(identical(other.providerType, providerType) || other.providerType == providerType)&&(identical(other.isSystem, isSystem) || other.isSystem == isSystem)&&const DeepCollectionEquality().equals(other.extraHeaders, extraHeaders)&&const DeepCollectionEquality().equals(other.extraBody, extraBody)&&(identical(other.useResponsesAPI, useResponsesAPI) || other.useResponsesAPI == useResponsesAPI)&&const DeepCollectionEquality().equals(other.apiKeys, apiKeys)&&(identical(other.keyManagement, keyManagement) || other.keyManagement == keyManagement)&&(identical(other.parameterScope, parameterScope) || other.parameterScope == parameterScope));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,avatar,color,isEnabled,const DeepCollectionEquality().hash(models),apiKey,baseUrl,providerType,isSystem,const DeepCollectionEquality().hash(extraHeaders),const DeepCollectionEquality().hash(extraBody),useResponsesAPI,const DeepCollectionEquality().hash(apiKeys),keyManagement);
+int get hashCode => Object.hash(runtimeType,id,name,avatar,color,isEnabled,const DeepCollectionEquality().hash(models),apiKey,baseUrl,providerType,isSystem,const DeepCollectionEquality().hash(extraHeaders),const DeepCollectionEquality().hash(extraBody),useResponsesAPI,const DeepCollectionEquality().hash(apiKeys),keyManagement,parameterScope);
 
 @override
 String toString() {
-  return 'ModelProvider(id: $id, name: $name, avatar: $avatar, color: $color, isEnabled: $isEnabled, models: $models, apiKey: $apiKey, baseUrl: $baseUrl, providerType: $providerType, isSystem: $isSystem, extraHeaders: $extraHeaders, extraBody: $extraBody, useResponsesAPI: $useResponsesAPI, apiKeys: $apiKeys, keyManagement: $keyManagement)';
+  return 'ModelProvider(id: $id, name: $name, avatar: $avatar, color: $color, isEnabled: $isEnabled, models: $models, apiKey: $apiKey, baseUrl: $baseUrl, providerType: $providerType, isSystem: $isSystem, extraHeaders: $extraHeaders, extraBody: $extraBody, useResponsesAPI: $useResponsesAPI, apiKeys: $apiKeys, keyManagement: $keyManagement, parameterScope: $parameterScope)';
 }
 
 
@@ -48,7 +51,7 @@ abstract mixin class $ModelProviderCopyWith<$Res>  {
   factory $ModelProviderCopyWith(ModelProvider value, $Res Function(ModelProvider) _then) = _$ModelProviderCopyWithImpl;
 @useResult
 $Res call({
- String id, String name, String avatar, String color, bool isEnabled, List<Model> models, String? apiKey, String? baseUrl, String? providerType, bool? isSystem, Map<String, String>? extraHeaders, Map<String, dynamic>? extraBody, bool? useResponsesAPI, List<ApiKeyConfig>? apiKeys, KeyManagementConfig? keyManagement
+ String id, String name, String avatar, String color, bool isEnabled, List<Model> models, String? apiKey, String? baseUrl, String? providerType, bool? isSystem, Map<String, String>? extraHeaders, Map<String, dynamic>? extraBody, bool? useResponsesAPI, List<ApiKeyConfig>? apiKeys, KeyManagementConfig? keyManagement, String? parameterScope
 });
 
 
@@ -65,7 +68,7 @@ class _$ModelProviderCopyWithImpl<$Res>
 
 /// Create a copy of ModelProvider
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? avatar = null,Object? color = null,Object? isEnabled = null,Object? models = null,Object? apiKey = freezed,Object? baseUrl = freezed,Object? providerType = freezed,Object? isSystem = freezed,Object? extraHeaders = freezed,Object? extraBody = freezed,Object? useResponsesAPI = freezed,Object? apiKeys = freezed,Object? keyManagement = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? avatar = null,Object? color = null,Object? isEnabled = null,Object? models = null,Object? apiKey = freezed,Object? baseUrl = freezed,Object? providerType = freezed,Object? isSystem = freezed,Object? extraHeaders = freezed,Object? extraBody = freezed,Object? useResponsesAPI = freezed,Object? apiKeys = freezed,Object? keyManagement = freezed,Object? parameterScope = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -82,7 +85,8 @@ as Map<String, String>?,extraBody: freezed == extraBody ? _self.extraBody : extr
 as Map<String, dynamic>?,useResponsesAPI: freezed == useResponsesAPI ? _self.useResponsesAPI : useResponsesAPI // ignore: cast_nullable_to_non_nullable
 as bool?,apiKeys: freezed == apiKeys ? _self.apiKeys : apiKeys // ignore: cast_nullable_to_non_nullable
 as List<ApiKeyConfig>?,keyManagement: freezed == keyManagement ? _self.keyManagement : keyManagement // ignore: cast_nullable_to_non_nullable
-as KeyManagementConfig?,
+as KeyManagementConfig?,parameterScope: freezed == parameterScope ? _self.parameterScope : parameterScope // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 /// Create a copy of ModelProvider
@@ -179,10 +183,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String avatar,  String color,  bool isEnabled,  List<Model> models,  String? apiKey,  String? baseUrl,  String? providerType,  bool? isSystem,  Map<String, String>? extraHeaders,  Map<String, dynamic>? extraBody,  bool? useResponsesAPI,  List<ApiKeyConfig>? apiKeys,  KeyManagementConfig? keyManagement)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String avatar,  String color,  bool isEnabled,  List<Model> models,  String? apiKey,  String? baseUrl,  String? providerType,  bool? isSystem,  Map<String, String>? extraHeaders,  Map<String, dynamic>? extraBody,  bool? useResponsesAPI,  List<ApiKeyConfig>? apiKeys,  KeyManagementConfig? keyManagement,  String? parameterScope)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ModelProvider() when $default != null:
-return $default(_that.id,_that.name,_that.avatar,_that.color,_that.isEnabled,_that.models,_that.apiKey,_that.baseUrl,_that.providerType,_that.isSystem,_that.extraHeaders,_that.extraBody,_that.useResponsesAPI,_that.apiKeys,_that.keyManagement);case _:
+return $default(_that.id,_that.name,_that.avatar,_that.color,_that.isEnabled,_that.models,_that.apiKey,_that.baseUrl,_that.providerType,_that.isSystem,_that.extraHeaders,_that.extraBody,_that.useResponsesAPI,_that.apiKeys,_that.keyManagement,_that.parameterScope);case _:
   return orElse();
 
 }
@@ -200,10 +204,10 @@ return $default(_that.id,_that.name,_that.avatar,_that.color,_that.isEnabled,_th
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String avatar,  String color,  bool isEnabled,  List<Model> models,  String? apiKey,  String? baseUrl,  String? providerType,  bool? isSystem,  Map<String, String>? extraHeaders,  Map<String, dynamic>? extraBody,  bool? useResponsesAPI,  List<ApiKeyConfig>? apiKeys,  KeyManagementConfig? keyManagement)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String avatar,  String color,  bool isEnabled,  List<Model> models,  String? apiKey,  String? baseUrl,  String? providerType,  bool? isSystem,  Map<String, String>? extraHeaders,  Map<String, dynamic>? extraBody,  bool? useResponsesAPI,  List<ApiKeyConfig>? apiKeys,  KeyManagementConfig? keyManagement,  String? parameterScope)  $default,) {final _that = this;
 switch (_that) {
 case _ModelProvider():
-return $default(_that.id,_that.name,_that.avatar,_that.color,_that.isEnabled,_that.models,_that.apiKey,_that.baseUrl,_that.providerType,_that.isSystem,_that.extraHeaders,_that.extraBody,_that.useResponsesAPI,_that.apiKeys,_that.keyManagement);case _:
+return $default(_that.id,_that.name,_that.avatar,_that.color,_that.isEnabled,_that.models,_that.apiKey,_that.baseUrl,_that.providerType,_that.isSystem,_that.extraHeaders,_that.extraBody,_that.useResponsesAPI,_that.apiKeys,_that.keyManagement,_that.parameterScope);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -220,10 +224,10 @@ return $default(_that.id,_that.name,_that.avatar,_that.color,_that.isEnabled,_th
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String avatar,  String color,  bool isEnabled,  List<Model> models,  String? apiKey,  String? baseUrl,  String? providerType,  bool? isSystem,  Map<String, String>? extraHeaders,  Map<String, dynamic>? extraBody,  bool? useResponsesAPI,  List<ApiKeyConfig>? apiKeys,  KeyManagementConfig? keyManagement)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String avatar,  String color,  bool isEnabled,  List<Model> models,  String? apiKey,  String? baseUrl,  String? providerType,  bool? isSystem,  Map<String, String>? extraHeaders,  Map<String, dynamic>? extraBody,  bool? useResponsesAPI,  List<ApiKeyConfig>? apiKeys,  KeyManagementConfig? keyManagement,  String? parameterScope)?  $default,) {final _that = this;
 switch (_that) {
 case _ModelProvider() when $default != null:
-return $default(_that.id,_that.name,_that.avatar,_that.color,_that.isEnabled,_that.models,_that.apiKey,_that.baseUrl,_that.providerType,_that.isSystem,_that.extraHeaders,_that.extraBody,_that.useResponsesAPI,_that.apiKeys,_that.keyManagement);case _:
+return $default(_that.id,_that.name,_that.avatar,_that.color,_that.isEnabled,_that.models,_that.apiKey,_that.baseUrl,_that.providerType,_that.isSystem,_that.extraHeaders,_that.extraBody,_that.useResponsesAPI,_that.apiKeys,_that.keyManagement,_that.parameterScope);case _:
   return null;
 
 }
@@ -235,7 +239,7 @@ return $default(_that.id,_that.name,_that.avatar,_that.color,_that.isEnabled,_th
 @JsonSerializable()
 
 class _ModelProvider implements ModelProvider {
-  const _ModelProvider({required this.id, required this.name, required this.avatar, required this.color, this.isEnabled = false, final  List<Model> models = const <Model>[], this.apiKey, this.baseUrl, this.providerType, this.isSystem, final  Map<String, String>? extraHeaders, final  Map<String, dynamic>? extraBody, this.useResponsesAPI, final  List<ApiKeyConfig>? apiKeys, this.keyManagement}): _models = models,_extraHeaders = extraHeaders,_extraBody = extraBody,_apiKeys = apiKeys;
+  const _ModelProvider({required this.id, required this.name, required this.avatar, required this.color, this.isEnabled = false, final  List<Model> models = const <Model>[], this.apiKey, this.baseUrl, this.providerType, this.isSystem, final  Map<String, String>? extraHeaders, final  Map<String, dynamic>? extraBody, this.useResponsesAPI, final  List<ApiKeyConfig>? apiKeys, this.keyManagement, this.parameterScope}): _models = models,_extraHeaders = extraHeaders,_extraBody = extraBody,_apiKeys = apiKeys;
   factory _ModelProvider.fromJson(Map<String, dynamic> json) => _$ModelProviderFromJson(json);
 
 @override final  String id;
@@ -283,6 +287,10 @@ class _ModelProvider implements ModelProvider {
 }
 
 @override final  KeyManagementConfig? keyManagement;
+/// Provider-level override for parameter display scope. Applied to all
+/// models under this provider unless the model has its own
+/// [Model.parameterScope]. See `docs/PARAMETER_SCOPE_DESIGN.md`.
+@override final  String? parameterScope;
 
 /// Create a copy of ModelProvider
 /// with the given fields replaced by the non-null parameter values.
@@ -297,16 +305,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ModelProvider&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.avatar, avatar) || other.avatar == avatar)&&(identical(other.color, color) || other.color == color)&&(identical(other.isEnabled, isEnabled) || other.isEnabled == isEnabled)&&const DeepCollectionEquality().equals(other._models, _models)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.baseUrl, baseUrl) || other.baseUrl == baseUrl)&&(identical(other.providerType, providerType) || other.providerType == providerType)&&(identical(other.isSystem, isSystem) || other.isSystem == isSystem)&&const DeepCollectionEquality().equals(other._extraHeaders, _extraHeaders)&&const DeepCollectionEquality().equals(other._extraBody, _extraBody)&&(identical(other.useResponsesAPI, useResponsesAPI) || other.useResponsesAPI == useResponsesAPI)&&const DeepCollectionEquality().equals(other._apiKeys, _apiKeys)&&(identical(other.keyManagement, keyManagement) || other.keyManagement == keyManagement));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ModelProvider&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.avatar, avatar) || other.avatar == avatar)&&(identical(other.color, color) || other.color == color)&&(identical(other.isEnabled, isEnabled) || other.isEnabled == isEnabled)&&const DeepCollectionEquality().equals(other._models, _models)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.baseUrl, baseUrl) || other.baseUrl == baseUrl)&&(identical(other.providerType, providerType) || other.providerType == providerType)&&(identical(other.isSystem, isSystem) || other.isSystem == isSystem)&&const DeepCollectionEquality().equals(other._extraHeaders, _extraHeaders)&&const DeepCollectionEquality().equals(other._extraBody, _extraBody)&&(identical(other.useResponsesAPI, useResponsesAPI) || other.useResponsesAPI == useResponsesAPI)&&const DeepCollectionEquality().equals(other._apiKeys, _apiKeys)&&(identical(other.keyManagement, keyManagement) || other.keyManagement == keyManagement)&&(identical(other.parameterScope, parameterScope) || other.parameterScope == parameterScope));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,avatar,color,isEnabled,const DeepCollectionEquality().hash(_models),apiKey,baseUrl,providerType,isSystem,const DeepCollectionEquality().hash(_extraHeaders),const DeepCollectionEquality().hash(_extraBody),useResponsesAPI,const DeepCollectionEquality().hash(_apiKeys),keyManagement);
+int get hashCode => Object.hash(runtimeType,id,name,avatar,color,isEnabled,const DeepCollectionEquality().hash(_models),apiKey,baseUrl,providerType,isSystem,const DeepCollectionEquality().hash(_extraHeaders),const DeepCollectionEquality().hash(_extraBody),useResponsesAPI,const DeepCollectionEquality().hash(_apiKeys),keyManagement,parameterScope);
 
 @override
 String toString() {
-  return 'ModelProvider(id: $id, name: $name, avatar: $avatar, color: $color, isEnabled: $isEnabled, models: $models, apiKey: $apiKey, baseUrl: $baseUrl, providerType: $providerType, isSystem: $isSystem, extraHeaders: $extraHeaders, extraBody: $extraBody, useResponsesAPI: $useResponsesAPI, apiKeys: $apiKeys, keyManagement: $keyManagement)';
+  return 'ModelProvider(id: $id, name: $name, avatar: $avatar, color: $color, isEnabled: $isEnabled, models: $models, apiKey: $apiKey, baseUrl: $baseUrl, providerType: $providerType, isSystem: $isSystem, extraHeaders: $extraHeaders, extraBody: $extraBody, useResponsesAPI: $useResponsesAPI, apiKeys: $apiKeys, keyManagement: $keyManagement, parameterScope: $parameterScope)';
 }
 
 
@@ -317,7 +325,7 @@ abstract mixin class _$ModelProviderCopyWith<$Res> implements $ModelProviderCopy
   factory _$ModelProviderCopyWith(_ModelProvider value, $Res Function(_ModelProvider) _then) = __$ModelProviderCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String name, String avatar, String color, bool isEnabled, List<Model> models, String? apiKey, String? baseUrl, String? providerType, bool? isSystem, Map<String, String>? extraHeaders, Map<String, dynamic>? extraBody, bool? useResponsesAPI, List<ApiKeyConfig>? apiKeys, KeyManagementConfig? keyManagement
+ String id, String name, String avatar, String color, bool isEnabled, List<Model> models, String? apiKey, String? baseUrl, String? providerType, bool? isSystem, Map<String, String>? extraHeaders, Map<String, dynamic>? extraBody, bool? useResponsesAPI, List<ApiKeyConfig>? apiKeys, KeyManagementConfig? keyManagement, String? parameterScope
 });
 
 
@@ -334,7 +342,7 @@ class __$ModelProviderCopyWithImpl<$Res>
 
 /// Create a copy of ModelProvider
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? avatar = null,Object? color = null,Object? isEnabled = null,Object? models = null,Object? apiKey = freezed,Object? baseUrl = freezed,Object? providerType = freezed,Object? isSystem = freezed,Object? extraHeaders = freezed,Object? extraBody = freezed,Object? useResponsesAPI = freezed,Object? apiKeys = freezed,Object? keyManagement = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? avatar = null,Object? color = null,Object? isEnabled = null,Object? models = null,Object? apiKey = freezed,Object? baseUrl = freezed,Object? providerType = freezed,Object? isSystem = freezed,Object? extraHeaders = freezed,Object? extraBody = freezed,Object? useResponsesAPI = freezed,Object? apiKeys = freezed,Object? keyManagement = freezed,Object? parameterScope = freezed,}) {
   return _then(_ModelProvider(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -351,7 +359,8 @@ as Map<String, String>?,extraBody: freezed == extraBody ? _self._extraBody : ext
 as Map<String, dynamic>?,useResponsesAPI: freezed == useResponsesAPI ? _self.useResponsesAPI : useResponsesAPI // ignore: cast_nullable_to_non_nullable
 as bool?,apiKeys: freezed == apiKeys ? _self._apiKeys : apiKeys // ignore: cast_nullable_to_non_nullable
 as List<ApiKeyConfig>?,keyManagement: freezed == keyManagement ? _self.keyManagement : keyManagement // ignore: cast_nullable_to_non_nullable
-as KeyManagementConfig?,
+as KeyManagementConfig?,parameterScope: freezed == parameterScope ? _self.parameterScope : parameterScope // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 
