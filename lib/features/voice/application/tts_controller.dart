@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/features/voice/application/voice_settings_con
 import 'package:aetherlink_flutter/features/voice/data/tts/network_tts_service.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/system_tts_service.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/tts_text_chunker.dart';
+import 'package:aetherlink_flutter/features/voice/data/tts/tts_text_preprocessor.dart';
 import 'package:aetherlink_flutter/features/voice/domain/tts_playback_state.dart';
 import 'package:aetherlink_flutter/features/voice/domain/tts_provider_setting.dart';
 import 'package:aetherlink_flutter/features/voice/domain/tts_text_chunk.dart';
@@ -68,7 +69,8 @@ class TtsController extends _$TtsController {
       return;
     }
 
-    _chunks = TtsTextChunker.split(text);
+    final cleaned = TtsTextPreprocessor.preprocess(text);
+    _chunks = TtsTextChunker.split(cleaned);
     if (_chunks.isEmpty) return;
 
     final speed = ref.read(voiceSettingsControllerProvider).defaultSpeed;
