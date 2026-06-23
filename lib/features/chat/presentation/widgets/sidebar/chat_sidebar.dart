@@ -218,7 +218,7 @@ class _SidebarTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Tab(
-      height: 32,
+      height: 36,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
