@@ -7,120 +7,44 @@ import 'package:aetherlink_flutter/features/chat/application/parameter_settings_
 import 'package:aetherlink_flutter/shared/domain/parameter_metadata.dart';
 import 'package:aetherlink_flutter/shared/domain/reasoning_model_detection.dart';
 
-/// A compact toggle button for the input-box toolbar that shows the current
-/// reasoning-effort level and opens a [_ReasoningEffortPicker] bottom sheet on
-/// tap. Adapted from rikkahub's `ReasoningButton` + `ReasoningPicker`.
-///
-/// The button reads from [parameterSettingsControllerProvider] (the
-/// `reasoningEffort` key) and writes back through the same controller, so it
-/// stays in sync with the sidebar parameter editor.
-class ReasoningEffortButton extends ConsumerWidget {
-  const ReasoningEffortButton({super.key});
+/// Shows the reasoning-effort picker bottom sheet and writes the selected level
+/// back to [parameterSettingsControllerProvider].
+void showReasoningEffortPicker(BuildContext context, WidgetRef ref) {
+  final params = ref.read(parameterSettingsControllerProvider);
+  final currentValue =
+      (params.getParameterValue('reasoningEffort') as String?) ?? 'medium';
+  final modelId = ref.read(appCurrentModelProvider).asData?.value?.model.id;
+  final options = getReasoningEffortOptions(modelId);
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final params = ref.watch(parameterSettingsControllerProvider);
-    final currentValue =
-        (params.getParameterValue('reasoningEffort') as String?) ?? 'medium';
-    final enabled = params.isParameterEnabled('reasoningEffort');
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (_) => _ReasoningEffortPicker(
+      currentValue: currentValue,
+      options: options,
+      onChanged: (value) {
+        final notifier =
+            ref.read(parameterSettingsControllerProvider.notifier);
+        notifier.setParameterValue('reasoningEffort', value);
+        notifier.setParameterEnabled(
+          'reasoningEffort',
+          value != 'none' && value != 'off',
+        );
+      },
+    ),
+  );
+}
 
-    final modelId = ref.watch(appCurrentModelProvider).asData?.value?.model.id;
-    final options = getReasoningEffortOptions(modelId);
-
-    final label = _labelFor(currentValue, options);
-    final isActive = enabled && currentValue != 'none' && currentValue != 'off';
-
-    final theme = Theme.of(context);
-    final activeColor = theme.colorScheme.primary;
-    final inactiveColor = theme.colorScheme.onSurfaceVariant;
-
-    return Material(
-      type: MaterialType.transparency,
-      child: InkWell(
-        onTap: () => _showPicker(context, ref, currentValue, options),
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: isActive
-                ? activeColor.withValues(alpha: 0.1)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isActive
-                  ? activeColor.withValues(alpha: 0.3)
-                  : theme.dividerColor,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _ReasoningIcon(
-                value: currentValue,
-                color: isActive ? activeColor : inactiveColor,
-                size: 16,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: isActive ? activeColor : inactiveColor,
-                  fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showPicker(
-    BuildContext context,
-    WidgetRef ref,
-    String currentValue,
-    List<SelectOption> options,
-  ) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (_) => _ReasoningEffortPicker(
-        currentValue: currentValue,
-        options: options,
-        onChanged: (value) {
-          final notifier =
-              ref.read(parameterSettingsControllerProvider.notifier);
-          notifier.setParameterValue('reasoningEffort', value);
-          notifier.setParameterEnabled(
-            'reasoningEffort',
-            value != 'none' && value != 'off',
-          );
-        },
-      ),
-    );
-  }
-
-  static String _labelFor(String value, List<SelectOption> options) {
-    for (final opt in options) {
-      if (opt.value == value) return opt.label;
-    }
-    return _fallbackLabels[value] ?? value;
-  }
-
-  static const _fallbackLabels = {
-    'default': '默认',
-    'none': '关闭',
-    'off': '关闭',
-    'minimal': '极简',
-    'low': '低',
-    'medium': '中',
-    'high': '高',
-    'xhigh': '最高',
-    'auto': '自动',
-  };
+/// Whether reasoning effort is currently active (enabled and not off/none).
+bool isReasoningEffortActive(WidgetRef ref) {
+  final params = ref.read(parameterSettingsControllerProvider);
+  final value =
+      (params.getParameterValue('reasoningEffort') as String?) ?? 'medium';
+  final enabled = params.isParameterEnabled('reasoningEffort');
+  return enabled && value != 'none' && value != 'off';
 }
 
 // ─── Bottom-sheet picker ─────────────────────────────────────────────────────

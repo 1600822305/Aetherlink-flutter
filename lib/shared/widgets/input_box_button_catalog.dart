@@ -130,6 +130,11 @@ InputBoxButtonInfo inputBoxButtonInfo(InputBoxButtonId id) => switch (id) {
     description: '同时向多个AI模型发送消息',
     color: null,
   ),
+  InputBoxButtonId.reasoningEffort => const InputBoxButtonInfo(
+    label: '思考程度',
+    description: '调节模型的推理深度',
+    color: _purple,
+  ),
   InputBoxButtonId.send => const InputBoxButtonInfo(
     label: '发送按钮',
     description: '发送消息按钮',
@@ -182,6 +187,11 @@ Widget inputBoxListIcon(
   InputBoxButtonId.quickPhrase => _svg(kQuickPhraseIcon, color, size),
   InputBoxButtonId.multiModel => Icon(
     LucideIcons.arrowLeftRight,
+    size: size,
+    color: color,
+  ),
+  InputBoxButtonId.reasoningEffort => Icon(
+    LucideIcons.brain,
     size: size,
     color: color,
   ),
@@ -238,6 +248,11 @@ Widget inputBoxToolbarIcon(
     size: size,
     color: color,
   ),
+  InputBoxButtonId.reasoningEffort => Icon(
+    LucideIcons.brain,
+    size: size,
+    color: color,
+  ),
   InputBoxButtonId.send => Icon(LucideIcons.send, size: size, color: color),
   InputBoxButtonId.voice => Icon(LucideIcons.mic, size: size, color: color),
 };
@@ -250,6 +265,7 @@ Color inputBoxToolbarRestColor(InputBoxButtonId id, Color iconColor) =>
       InputBoxButtonId.camera => _purple,
       InputBoxButtonId.photoSelect => _indigo,
       InputBoxButtonId.fileUpload => _green,
+      InputBoxButtonId.reasoningEffort => _purple,
       _ => iconColor,
     };
 
@@ -265,6 +281,7 @@ Color inputBoxToolbarActiveColor(InputBoxButtonId id, Color fallback) =>
       InputBoxButtonId.voice => _red,
       InputBoxButtonId.mcpTools => _green,
       InputBoxButtonId.clear => _red,
+      InputBoxButtonId.reasoningEffort => _purple,
       _ => fallback,
     };
 
@@ -287,6 +304,7 @@ String inputBoxToolbarTooltip(InputBoxButtonId id, {bool active = false}) =>
       InputBoxButtonId.aiDebate => '开始AI辩论',
       InputBoxButtonId.quickPhrase => '快捷短语',
       InputBoxButtonId.multiModel => '多模型发送',
+      InputBoxButtonId.reasoningEffort => '思考程度',
       InputBoxButtonId.send => '发送消息',
       InputBoxButtonId.voice => '切换到语音输入模式',
     };
@@ -384,6 +402,11 @@ InputBoxMenuItemInfo inputBoxMenuItemInfo(InputBoxAction action) =>
         label: '发送到多个模型',
         subtitle: '同时向多个AI模型发送消息',
       ),
+      InputBoxAction.reasoningEffort => const InputBoxMenuItemInfo(
+        label: '思考程度',
+        subtitle: '调节模型的推理深度',
+        color: _purple,
+      ),
       InputBoxAction.toolsMenu => const InputBoxMenuItemInfo(label: '扩展'),
       InputBoxAction.uploadMenu => const InputBoxMenuItemInfo(label: '更多'),
       InputBoxAction.voice => const InputBoxMenuItemInfo(label: '语音输入'),
@@ -439,6 +462,11 @@ Widget inputBoxMenuIcon(
   InputBoxAction.quickPhrase => _svg(kQuickPhraseIcon, color, size),
   InputBoxAction.multiModel => Icon(
     LucideIcons.arrowLeftRight,
+    size: size,
+    color: color,
+  ),
+  InputBoxAction.reasoningEffort => Icon(
+    LucideIcons.brain,
     size: size,
     color: color,
   ),

@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controlle
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/mcp_quick_panel_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/quick_phrase_sheet.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/reasoning_effort_picker.dart';
 import 'package:aetherlink_flutter/shared/domain/input_box_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_actions.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_menu_sheet.dart';
@@ -51,6 +52,7 @@ class ChatInputActions implements InputBoxActions {
     InputBoxAction.generateVideo => _mode == InputMode.video,
     InputBoxAction.clearTopic => _ref.read(inputClearConfirmProvider),
     InputBoxAction.mcpTools => _ref.read(mcpToolsControllerProvider).enabled,
+    InputBoxAction.reasoningEffort => isReasoningEffortActive(_ref),
     _ => false,
   };
 
@@ -104,6 +106,8 @@ class ChatInputActions implements InputBoxActions {
         _pickFile(context);
       case InputBoxAction.voice:
         _openVoiceInput(context);
+      case InputBoxAction.reasoningEffort:
+        showReasoningEffortPicker(context, _ref);
       case InputBoxAction.knowledge:
       case InputBoxAction.note:
       case InputBoxAction.aiDebate:

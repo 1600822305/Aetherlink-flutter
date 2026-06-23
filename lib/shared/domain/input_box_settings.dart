@@ -45,6 +45,7 @@ enum InputBoxButtonId {
   aiDebate('ai-debate'),
   quickPhrase('quick-phrase'),
   multiModel('multi-model'),
+  reasoningEffort('reasoning-effort'),
   send('send'),
   voice('voice');
 
@@ -91,6 +92,7 @@ enum InputBoxAction {
   aiDebate,
   quickPhrase,
   multiModel,
+  reasoningEffort,
   voice,
 }
 
@@ -112,6 +114,7 @@ InputBoxAction? inputBoxButtonAction(InputBoxButtonId id) => switch (id) {
   InputBoxButtonId.aiDebate => InputBoxAction.aiDebate,
   InputBoxButtonId.quickPhrase => InputBoxAction.quickPhrase,
   InputBoxButtonId.multiModel => InputBoxAction.multiModel,
+  InputBoxButtonId.reasoningEffort => InputBoxAction.reasoningEffort,
   InputBoxButtonId.voice => InputBoxAction.voice,
   InputBoxButtonId.send => null,
 };
