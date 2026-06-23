@@ -6,13 +6,13 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:aetherlink_flutter/features/chat/application/user_avatar_controller.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/dialogs/avatar_crop_page.dart';
 
 /// Shows the avatar editing bottom sheet with multiple source options.
 Future<void> showAvatarEditSheet(BuildContext context, WidgetRef ref) {
@@ -109,36 +109,19 @@ class _AvatarEditSheetContent extends StatelessWidget {
     final XFile? picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked == null) return;
 
-    // Crop the image
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: picked.path,
-      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: '裁剪头像',
-          lockAspectRatio: true,
-          hideBottomControls: false,
-        ),
-        IOSUiSettings(
-          title: '裁剪头像',
-          aspectRatioLockEnabled: true,
-          resetAspectRatioEnabled: false,
-        ),
-      ],
-    );
-    if (cropped == null) return;
+    // Navigate to custom crop page (with SafeArea, no transition animation)
+    if (!context.mounted) return;
+    final croppedBytes = await AvatarCropPage.push(context, picked.path);
+    if (croppedBytes == null) return;
 
-    // Copy to a persistent path under app documents
+    // Save cropped bytes to a persistent path under app documents
     final appDir = await getApplicationDocumentsDirectory();
     final avatarDir = Directory(p.join(appDir.path, 'avatars'));
     if (!avatarDir.existsSync()) {
       avatarDir.createSync(recursive: true);
     }
-    final ext = p.extension(cropped.path).isNotEmpty
-        ? p.extension(cropped.path)
-        : '.jpg';
-    final destPath = p.join(avatarDir.path, 'user_avatar$ext');
-    await File(cropped.path).copy(destPath);
+    final destPath = p.join(avatarDir.path, 'user_avatar.png');
+    await File(destPath).writeAsBytes(croppedBytes);
 
     parentRef.read(userAvatarControllerProvider.notifier).setFile(destPath);
     if (navigator.mounted) navigator.pop();
