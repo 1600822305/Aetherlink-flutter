@@ -58,6 +58,9 @@ class NetworkTtsService {
     CancelToken? cancelToken,
   ) async {
     final url = _joinUrl(provider.baseUrl, '/audio/speech');
+    final format = provider.outputFormat.isNotEmpty
+        ? provider.outputFormat
+        : 'mp3';
     final response = await _dio.post<List<int>>(
       url,
       data: {
@@ -65,6 +68,7 @@ class NetworkTtsService {
         'input': text,
         'voice': provider.voice,
         if (provider.speed != 1.0) 'speed': provider.speed,
+        'response_format': format,
       },
       options: Options(
         headers: {
@@ -77,7 +81,7 @@ class NetworkTtsService {
     );
     return TtsSynthesisResult(
       bytes: Uint8List.fromList(response.data!),
-      mimeType: 'audio/mpeg',
+      mimeType: _openAiMimeType(format),
     );
   }
 
@@ -488,6 +492,15 @@ class NetworkTtsService {
     if (provider.voice.contains('_uranus_')) return 'seed-tts-2.0';
     return 'volc.service_type.10029';
   }
+
+  static String _openAiMimeType(String format) => switch (format) {
+    'opus' => 'audio/ogg',
+    'aac' => 'audio/aac',
+    'flac' => 'audio/flac',
+    'wav' => 'audio/wav',
+    'pcm' => 'audio/pcm',
+    _ => 'audio/mpeg',
+  };
 
   static String _volcanoMimeType(String encoding) => switch (encoding) {
     'ogg_opus' => 'audio/ogg',
