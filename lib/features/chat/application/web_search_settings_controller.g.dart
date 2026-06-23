@@ -52,7 +52,7 @@ final class WebSearchSettingsControllerProvider
 }
 
 String _$webSearchSettingsControllerHash() =>
-    r'5bfb66c6a357308cda45d7b94495de92d4887437';
+    r'8dcfccf35c5cad0b890e7bce7a9809d703573890';
 
 /// Persists web-search settings as a single JSON blob (the Flutter port of the
 /// web's `webSearchSlice`). Same hydrate-on-build pattern as
