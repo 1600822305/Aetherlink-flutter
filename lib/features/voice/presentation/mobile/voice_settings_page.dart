@@ -596,6 +596,7 @@ class _TtsProviderDetailPageState
   late final TextEditingController _appIdCtrl;
   late final TextEditingController _clusterCtrl;
   late final TextEditingController _testTextCtrl;
+  late final TextEditingController _instructionsCtrl;
   late bool _enabled;
   late double _speed;
   late double _volume;
@@ -641,6 +642,7 @@ class _TtsProviderDetailPageState
     _model = p.model;
     _outputFormat = p.outputFormat;
     _resourceId = p.resourceId;
+    _instructionsCtrl = TextEditingController(text: p.instructions);
   }
 
   @override
@@ -653,6 +655,7 @@ class _TtsProviderDetailPageState
     _appIdCtrl.dispose();
     _clusterCtrl.dispose();
     _testTextCtrl.dispose();
+    _instructionsCtrl.dispose();
     super.dispose();
   }
 
@@ -677,6 +680,7 @@ class _TtsProviderDetailPageState
         pitch: _pitch,
         apiVersion: _apiVersion,
         encoding: _encoding,
+        instructions: _instructionsCtrl.text,
       );
 
   /// Persists the current form values. Called automatically when leaving the
@@ -765,9 +769,9 @@ class _TtsProviderDetailPageState
                 _SliderRow(
                   label: '语速',
                   value: _speed,
-                  min: 0.5,
-                  max: 2.0,
-                  divisions: 6,
+                  min: widget.kind == TtsProviderKind.openai ? 0.25 : 0.5,
+                  max: widget.kind == TtsProviderKind.openai ? 4.0 : 2.0,
+                  divisions: widget.kind == TtsProviderKind.openai ? 15 : 6,
                   onChanged: (v) => setState(() => _speed = v),
                 ),
                 if (_isVolcano) ...[
@@ -924,6 +928,7 @@ class _TtsProviderDetailPageState
   }
 
   List<Widget> _buildOpenAIVoice() {
+    final isGpt4oMiniTts = _model.startsWith('gpt-4o-mini-tts');
     return [
       _DropdownField(
         label: '模型',
@@ -945,6 +950,15 @@ class _TtsProviderDetailPageState
         items: {for (final f in kOpenAIFormats) f.id: '${f.name} - ${f.description}'},
         onChanged: (v) => setState(() => _outputFormat = v),
       ),
+      if (isGpt4oMiniTts) ...[
+        const SizedBox(height: 12),
+        ModelFormField(
+          label: 'Instructions (语音风格指令)',
+          hint: '例如：Speak in a cheerful tone / 用温柔的语气说话',
+          controller: _instructionsCtrl,
+          maxLines: 3,
+        ),
+      ],
     ];
   }
 

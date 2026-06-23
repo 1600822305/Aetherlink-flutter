@@ -58,6 +58,8 @@ abstract class TtsProviderSetting with _$TtsProviderSetting {
     @Default(1.0) double volume,
     @Default(1.0) double pitch,
     @Default('mp3') String encoding,
+    // OpenAI gpt-4o-mini-tts instructions (controls accent, tone, emotion, etc.)
+    @Default('') String instructions,
   }) = _TtsProviderSetting;
 
   factory TtsProviderSetting.fromJson(Map<String, dynamic> json) =>

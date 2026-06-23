@@ -29,6 +29,7 @@ _TtsProviderSetting _$TtsProviderSettingFromJson(Map<String, dynamic> json) =>
       volume: (json['volume'] as num?)?.toDouble() ?? 1.0,
       pitch: (json['pitch'] as num?)?.toDouble() ?? 1.0,
       encoding: json['encoding'] as String? ?? 'mp3',
+      instructions: json['instructions'] as String? ?? '',
     );
 
 Map<String, dynamic> _$TtsProviderSettingToJson(_TtsProviderSetting instance) =>
@@ -54,6 +55,7 @@ Map<String, dynamic> _$TtsProviderSettingToJson(_TtsProviderSetting instance) =>
       'volume': instance.volume,
       'pitch': instance.pitch,
       'encoding': instance.encoding,
+      'instructions': instance.instructions,
     };
 
 const _$TtsProviderKindEnumMap = {
