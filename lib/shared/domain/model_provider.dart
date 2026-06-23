@@ -49,6 +49,10 @@ abstract class ModelProvider with _$ModelProvider {
     // (`ApiKeyManager`); model-fetch still uses the single [apiKey].
     List<ApiKeyConfig>? apiKeys,
     KeyManagementConfig? keyManagement,
+    /// Provider-level override for parameter display scope. Applied to all
+    /// models under this provider unless the model has its own
+    /// [Model.parameterScope]. See `docs/PARAMETER_SCOPE_DESIGN.md`.
+    String? parameterScope,
   }) = _ModelProvider;
 
   factory ModelProvider.fromJson(Map<String, dynamic> json) =>

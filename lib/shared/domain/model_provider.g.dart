@@ -35,6 +35,7 @@ _ModelProvider _$ModelProviderFromJson(Map<String, dynamic> json) =>
           : KeyManagementConfig.fromJson(
               json['keyManagement'] as Map<String, dynamic>,
             ),
+      parameterScope: json['parameterScope'] as String?,
     );
 
 Map<String, dynamic> _$ModelProviderToJson(_ModelProvider instance) =>
@@ -54,4 +55,5 @@ Map<String, dynamic> _$ModelProviderToJson(_ModelProvider instance) =>
       'useResponsesAPI': ?instance.useResponsesAPI,
       'apiKeys': ?instance.apiKeys?.map((e) => e.toJson()).toList(),
       'keyManagement': ?instance.keyManagement?.toJson(),
+      'parameterScope': ?instance.parameterScope,
     };
