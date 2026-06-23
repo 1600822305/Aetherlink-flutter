@@ -13,7 +13,12 @@ class TtsFloatingPlayer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final playback = ref.watch(ttsControllerProvider);
+    final TtsPlaybackState playback;
+    try {
+      playback = ref.watch(ttsControllerProvider);
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
 
     // Only show when TTS is active.
     if (playback.status == TtsStatus.idle) return const SizedBox.shrink();
@@ -23,10 +28,8 @@ class TtsFloatingPlayer extends ConsumerWidget {
     final isLoading = playback.status == TtsStatus.loading;
     final isError = playback.status == TtsStatus.error;
 
-    return Positioned(
-      left: 16,
-      right: 16,
-      bottom: 16,
+    return Padding(
+      padding: const EdgeInsets.all(16),
       child: Material(
         elevation: 8,
         borderRadius: BorderRadius.circular(16),
