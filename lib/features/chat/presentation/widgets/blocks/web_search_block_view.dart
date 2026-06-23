@@ -23,6 +23,11 @@ class WebSearchBlockView extends StatefulWidget {
 class _WebSearchBlockViewState extends State<WebSearchBlockView> {
   bool _expanded = false;
 
+  // Cached parsed results to avoid regex matching on every rebuild.
+  List<_SearchResult>? _cachedResults;
+  Object? _lastContent;
+  MessageBlockStatus? _lastStatus;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -34,7 +39,12 @@ class _WebSearchBlockViewState extends State<WebSearchBlockView> {
     final hasError = status == MessageBlockStatus.error;
 
     final query = _extractQuery(widget.block.arguments);
-    final results = hasError ? const <_SearchResult>[] : _parseResults(widget.block.content);
+    if (!identical(widget.block.content, _lastContent) || status != _lastStatus) {
+      _lastContent = widget.block.content;
+      _lastStatus = status;
+      _cachedResults = hasError ? const <_SearchResult>[] : _parseResults(widget.block.content);
+    }
+    final results = _cachedResults ?? const <_SearchResult>[];
 
     final bgColor = isDark
         ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3)
