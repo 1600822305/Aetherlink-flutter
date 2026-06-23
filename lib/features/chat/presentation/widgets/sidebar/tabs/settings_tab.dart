@@ -235,6 +235,23 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       onChanged: (v) => c.setCodeFontSize(v.round()),
     ),
     _SwitchSettingRow(
+      title: '固定高度',
+      description: '展开后限制最大高度，内容在容器内滚动（配合全屏查看使用）',
+      value: s.codeFixedHeight,
+      onChanged: c.setCodeFixedHeight,
+    ),
+    if (s.codeFixedHeight)
+      _SliderSettingRow(
+        title: '最大高度',
+        description: '代码块展开后的最大高度（px）',
+        value: s.codeMaxHeight.toDouble(),
+        min: 100,
+        max: 800,
+        divisions: 14,
+        valueLabel: '${s.codeMaxHeight}',
+        onChanged: (v) => c.setCodeMaxHeight(v.round()),
+      ),
+    _SwitchSettingRow(
       title: 'Mermaid 图表',
       description: '渲染 Mermaid 流程图 / 时序图',
       value: s.mermaidEnabled,

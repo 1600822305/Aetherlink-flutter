@@ -152,6 +152,12 @@ class SidebarSettingsController extends _$SidebarSettingsController
   void setCodeFontSize(int value) =>
       persist(state.copyWith(codeFontSize: value.clamp(10, 24)));
 
+  void setCodeFixedHeight(bool value) =>
+      persist(state.copyWith(codeFixedHeight: value));
+
+  void setCodeMaxHeight(int value) =>
+      persist(state.copyWith(codeMaxHeight: value.clamp(100, 800)));
+
   void setMermaidEnabled(bool value) =>
       persist(state.copyWith(mermaidEnabled: value));
 
