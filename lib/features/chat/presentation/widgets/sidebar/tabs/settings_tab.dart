@@ -175,13 +175,11 @@ class SettingsTab extends ConsumerWidget {
           ],
         ),
         const _SettingsDivider(),
-        // 代码块设置 — UI + persist; consumed by 代码块视图 later.
+        // 代码块设置 — UI + persist; CodeBlockView consumes display settings.
         _SettingsGroup(
           title: '代码块设置',
           subtitle: '配置代码显示和编辑功能',
-          comingSoon: true,
           children: [
-            const _ComingSoonNote(text: '设置会先保存，接入代码块视图后生效。'),
             _SwitchSettingRow(
               title: '显示行号',
               description: '在代码块左侧显示行号',
@@ -200,22 +198,18 @@ class SettingsTab extends ConsumerWidget {
               value: s.codeWrappable,
               onChanged: c.setCodeWrappable,
             ),
-            _SwitchSettingRow(
-              title: '默认折叠',
-              description: '代码块默认以折叠状态显示',
-              value: s.codeDefaultCollapsed,
-              onChanged: c.setCodeDefaultCollapsed,
-            ),
+            if (s.codeCollapsible)
+              _SwitchSettingRow(
+                title: '默认折叠',
+                description: '代码块默认以折叠状态显示',
+                value: s.codeDefaultCollapsed,
+                onChanged: c.setCodeDefaultCollapsed,
+              ),
             _SwitchSettingRow(
               title: 'Mermaid 图表',
               description: '渲染 Mermaid 流程图 / 时序图',
               value: s.mermaidEnabled,
               onChanged: c.setMermaidEnabled,
-            ),
-            // 高亮主题：Flutter 暂无 Shiki 同款高亮器，主题列表无法复刻；先展示占位。
-            const _StaticSettingRow(
-              title: '代码高亮主题',
-              value: '自动（跟随应用主题）',
               comingSoon: true,
             ),
           ],
@@ -579,8 +573,8 @@ class _UserAvatarRow extends StatelessWidget {
   }
 }
 
-/// A collapsible 设置 group: a tappable header (title + subtitle + optional chip
-/// / 即将支持 badge + rotating chevron) over an expandable body. Mirrors the web
+/// A collapsible 设置 group: a tappable header (title + subtitle + optional
+/// chip + rotating chevron) over an expandable body. Mirrors the web
 /// `SettingGroup` accordion; collapsed by default.
 class _SettingsGroup extends StatefulWidget {
   const _SettingsGroup({
@@ -588,14 +582,12 @@ class _SettingsGroup extends StatefulWidget {
     required this.subtitle,
     required this.children,
     this.chipLabel,
-    this.comingSoon = false,
   });
 
   final String title;
   final String subtitle;
   final List<Widget> children;
   final String? chipLabel;
-  final bool comingSoon;
 
   @override
   State<_SettingsGroup> createState() => _SettingsGroupState();
@@ -655,10 +647,6 @@ class _SettingsGroupState extends State<_SettingsGroup> {
                     ],
                   ),
                 ),
-                if (widget.comingSoon) ...[
-                  const _ComingSoonChip(),
-                  const SizedBox(width: 4),
-                ],
                 AnimatedRotation(
                   turns: _expanded ? 0.5 : 0,
                   duration: const Duration(milliseconds: 150),
@@ -968,10 +956,7 @@ class _SliderSettingRow extends StatelessWidget {
                   for (final entry in marks!.entries)
                     Text(
                       entry.value,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: textSecondary,
-                      ),
+                      style: TextStyle(fontSize: 10, color: textSecondary),
                     ),
                 ],
               ),
@@ -982,23 +967,17 @@ class _SliderSettingRow extends StatelessWidget {
   }
 }
 
-/// A read-only 设置 item: a label and a fixed value (e.g. 渲染引擎 / 高亮主题占位).
+/// A read-only 设置 item: a label and a fixed value (e.g. 渲染引擎).
 class _StaticSettingRow extends StatelessWidget {
-  const _StaticSettingRow({
-    required this.title,
-    required this.value,
-    this.comingSoon = false,
-  });
+  const _StaticSettingRow({required this.title, required this.value});
 
   final String title;
   final String value;
-  final bool comingSoon;
 
   @override
   Widget build(BuildContext context) {
     return _SettingItemShell(
       title: title,
-      comingSoon: comingSoon,
       trailing: Text(
         value,
         style: TextStyle(
@@ -1032,48 +1011,6 @@ class _ComingSoonChip extends StatelessWidget {
           fontWeight: FontWeight.w500,
           color: Color(0xFFB07400),
         ),
-      ),
-    );
-  }
-}
-
-/// A compact info note at the top of an 即将支持 group body, explaining the
-/// settings persist now and take effect once the subsystem lands.
-class _ComingSoonNote extends StatelessWidget {
-  const _ComingSoonNote({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(24, 2, 16, 6),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        border: Border.all(color: theme.dividerColor),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            LucideIcons.info,
-            size: 14,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                fontSize: 11.5,
-                height: 1.4,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
