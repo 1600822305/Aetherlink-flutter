@@ -34,9 +34,17 @@ final class SkillsMpServiceProvider
   @$internal
   @override
   SkillsMpService create() => SkillsMpService();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(String? value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<String?>(value),
+    );
+  }
 }
 
-String _$skillsMpServiceHash() => r'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0';
+String _$skillsMpServiceHash() => r'e56cdf85f6dbd158fdccdcc66c5098427204ce78';
 
 /// Service for interacting with the SkillsMP public API.
 

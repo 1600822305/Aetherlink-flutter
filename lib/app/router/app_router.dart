@@ -36,6 +36,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_sea
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search/add_search_provider_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search/search_provider_detail_page.dart';
 import 'package:aetherlink_flutter/features/theming/presentation/mobile/theme_style_settings_page.dart';
+import 'package:aetherlink_flutter/features/voice/presentation/mobile/voice_settings_page.dart';
 import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
 
 /// Declarative application route table (go_router).
@@ -82,6 +83,7 @@ abstract final class AppRouter {
   static const String networkProxyPath = '/settings/network-proxy';
   static const String behaviorPath = '/settings/behavior';
   static const String settingsSearchPath = '/settings/search';
+  static const String voiceSettingsPath = '/settings/voice';
   static const String welcomePath = '/welcome';
   static const String translatePath = '/translate';
 
@@ -256,6 +258,12 @@ abstract final class AppRouter {
         name: 'behavior',
         pageBuilder: (context, state) =>
             _instant(state, const BehaviorSettingsPage()),
+      ),
+      GoRoute(
+        path: voiceSettingsPath,
+        name: 'voice-settings',
+        pageBuilder: (context, state) =>
+            _instant(state, const VoiceSettingsPage()),
       ),
       GoRoute(
         path: settingsSearchPath,

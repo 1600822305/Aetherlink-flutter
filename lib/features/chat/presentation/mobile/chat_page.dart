@@ -22,6 +22,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_ho
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/system_prompt_bubble.dart';
 import 'package:aetherlink_flutter/shared/domain/chat_interface_settings.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
+import 'package:aetherlink_flutter/features/voice/presentation/widgets/tts_floating_player.dart';
 import 'package:native_keyboard_height/native_keyboard_height.dart';
 import 'package:scrollview_observer/scrollview_observer.dart';
 
@@ -332,6 +333,8 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
                       ),
                     ),
                   ),
+                // TTS floating player overlay.
+                const TtsFloatingPlayer(),
               ],
             ),
           ),
