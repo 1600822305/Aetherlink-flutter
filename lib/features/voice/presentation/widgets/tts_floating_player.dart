@@ -5,9 +5,9 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/voice/application/tts_controller.dart';
 import 'package:aetherlink_flutter/features/voice/domain/tts_playback_state.dart';
 
-/// A floating TTS playback controller that appears at the bottom of the chat
-/// page when TTS is active. Shows play/pause, skip, speed controls, and chunk
-/// progress. Inspired by Kelivo's `TtsFloatingPlayer`.
+/// TTS playback controller bar that appears below the system prompt when TTS
+/// is active. Shows play/pause, skip, speed controls, and chunk progress.
+/// Collapses to zero height when idle. Inspired by Kelivo's `TtsFloatingPlayer`.
 class TtsFloatingPlayer extends ConsumerWidget {
   const TtsFloatingPlayer({super.key});
 
@@ -29,10 +29,10 @@ class TtsFloatingPlayer extends ConsumerWidget {
     final isError = playback.status == TtsStatus.error;
 
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Material(
-        elevation: 8,
-        borderRadius: BorderRadius.circular(16),
+        elevation: 4,
+        borderRadius: BorderRadius.circular(12),
         color: theme.colorScheme.surfaceContainerHigh,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
