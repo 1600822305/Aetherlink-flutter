@@ -86,8 +86,8 @@ enum MessageNavigation {
 ///     are wired — `ChatController._contextSettings()` reads them and applies
 ///     message trimming + `maxTokens` to every `LlmChatRequest`.
 ///     `contextWindowSize` is informational (displayed in sidebar subtitle).
-///   * 输入 / 代码块行为 persist here but are 即将支持 — the subsystems
-///     consuming them are later slices.
+///   * 输入行为 persists here for its composer slice. 代码块显示 settings are
+///     consumed by `CodeBlockView`; Mermaid rendering is still its own slice.
 ///   * 数学 (单美元) is wired — `AppMarkdown` reads `mathEnableSingleDollar`
 ///     via Riverpod and passes it to `GptMarkdown.useDollarSignsForLatex`.
 ///   * 性能节流 / 虚拟化列表 / 代码编辑器主题 / 数学引擎下拉 are Web-only framework tax
@@ -118,7 +118,7 @@ abstract class SidebarSettings with _$SidebarSettings {
     // ── 输入设置 (即将支持) ───────────────────────────────────────────────────
     @Default(false) bool pasteLongTextAsFile,
     @Default(1500) int pasteLongTextThreshold,
-    // ── 代码块设置 (即将支持) ─────────────────────────────────────────────────
+    // ── 代码块设置 ─────────────────────────────────────────────────────────
     @Default(true) bool codeShowLineNumbers,
     @Default(true) bool codeCollapsible,
     @Default(true) bool codeWrappable,
