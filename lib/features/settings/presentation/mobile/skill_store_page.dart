@@ -19,9 +19,11 @@ class SkillStorePage extends ConsumerStatefulWidget {
   ConsumerState<SkillStorePage> createState() => _SkillStorePageState();
 }
 
-class _SkillStorePageState extends ConsumerState<SkillStorePage> {
+class _SkillStorePageState extends ConsumerState<SkillStorePage>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  late final TabController _tabController;
 
   SkillStoreSource _currentSource = SkillStoreSource.skillsmp;
   List<StoreSkillItem> _results = [];
@@ -47,15 +49,28 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
         receiveTimeout: const Duration(seconds: 15),
       ),
     );
+    _tabController = TabController(
+      length: SkillStoreSource.values.length,
+      vsync: this,
+    );
+    _tabController.addListener(_onTabChanged);
     _scrollController.addListener(_onScroll);
   }
 
   @override
   void dispose() {
+    _tabController.dispose();
     _searchController.dispose();
     _scrollController.dispose();
     _dio.close();
     super.dispose();
+  }
+
+  void _onTabChanged() {
+    if (_tabController.indexIsChanging) return;
+    final source = SkillStoreSource.values[_tabController.index];
+    if (source == _currentSource) return;
+    _switchSource(source);
   }
 
   void _onScroll() {
@@ -81,6 +96,36 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
       _lastQuery = '';
       _loading = false;
     });
+    // AI Skill Store supports empty-query browsing (returns popular skills).
+    if (source == SkillStoreSource.aiskillstore) {
+      _loadPopular();
+    }
+  }
+
+  /// Load popular/trending skills for sources that support empty-query listing.
+  Future<void> _loadPopular() async {
+    final epoch = ++_searchEpoch;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final result = await searchAiSkillStore(dio: _dio, query: '', limit: 20);
+      if (epoch != _searchEpoch) return;
+      setState(() {
+        _results = result.skills;
+        _total = result.total;
+        _hasMore = result.hasMore;
+        _rateInfo = result.rateInfo;
+        _loading = false;
+      });
+    } catch (e) {
+      if (epoch != _searchEpoch) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
   }
 
   Future<void> _search({bool reset = true}) async {
@@ -357,54 +402,46 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
   }
 
   Widget _buildSourceTabs(ThemeData theme, ColorScheme cs) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-      child: Container(
-        height: 34,
-        decoration: BoxDecoration(
-          color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(10),
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: cs.onSurface.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: TabBar(
+        controller: _tabController,
+        dividerColor: Colors.transparent,
+        labelColor: cs.onSurface,
+        unselectedLabelColor: cs.onSurface.withValues(alpha: 0.5),
+        labelStyle: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          height: 1.2,
         ),
-        child: Row(
-          children: SkillStoreSource.values.map((source) {
-            final selected = source == _currentSource;
-            return Expanded(
-              child: GestureDetector(
-                onTap: () => _switchSource(source),
-                behavior: HitTestBehavior.opaque,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeInOut,
-                  margin: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    color: selected ? cs.surface : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: selected
-                        ? [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.06),
-                              blurRadius: 3,
-                              offset: const Offset(0, 1),
-                            ),
-                          ]
-                        : null,
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    source.label,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontSize: 12,
-                      fontWeight: selected
-                          ? FontWeight.w600
-                          : FontWeight.normal,
-                      color: selected ? cs.onSurface : cs.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
+        unselectedLabelStyle: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          height: 1.2,
         ),
+        indicatorSize: TabBarIndicatorSize.tab,
+        indicator: BoxDecoration(
+          color: cs.surface,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: [
+            BoxShadow(
+              color: cs.shadow.withValues(alpha: 0.08),
+              blurRadius: 2,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        splashFactory: NoSplash.splashFactory,
+        overlayColor: WidgetStateProperty.all(Colors.transparent),
+        labelPadding: EdgeInsets.zero,
+        tabs: SkillStoreSource.values
+            .map((s) => _SourceTab(icon: s.icon, label: s.label))
+            .toList(),
       ),
     );
   }
@@ -671,6 +708,25 @@ class _StoreSkillCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SourceTab extends StatelessWidget {
+  const _SourceTab({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tab(
+      height: 32,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [Icon(icon, size: 14), const SizedBox(width: 4), Text(label)],
       ),
     );
   }
