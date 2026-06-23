@@ -630,9 +630,16 @@ class _TtsProviderDetailPageState
   late int _bitrate;
   late String _audioFormat;
   List<MiniMaxRemoteVoice> _miniMaxRemoteVoices = [];
+  late double _gain;
+  late int _maxTokens;
 
   bool get _isSystem => widget.kind == TtsProviderKind.system;
   bool get _isVolcano => widget.kind == TtsProviderKind.volcano;
+
+  /// True when SiliconFlow model supports speed/gain (MOSS-TTSD / IndexTTS-2).
+  bool get _sfHasSpeedGain =>
+      widget.kind == TtsProviderKind.siliconflow &&
+      (_model == 'fnlp/MOSS-TTSD-v0.5' || _model == 'IndexTeam/IndexTTS-2');
 
   @override
   void initState() {
@@ -665,6 +672,8 @@ class _TtsProviderDetailPageState
     _sampleRate = p.sampleRate;
     _bitrate = p.bitrate;
     _audioFormat = p.audioFormat;
+    _gain = p.gain;
+    _maxTokens = p.maxTokens;
     _instructionsCtrl = TextEditingController(text: p.instructions);
     _stylePromptCtrl = TextEditingController(text: p.stylePrompt);
     _speaker1NameCtrl = TextEditingController(text: p.speaker1Name);
@@ -716,6 +725,8 @@ class _TtsProviderDetailPageState
     sampleRate: _sampleRate,
     bitrate: _bitrate,
     audioFormat: _audioFormat,
+    gain: _gain,
+    maxTokens: _maxTokens,
     instructions: _instructionsCtrl.text,
     stylePrompt: _stylePromptCtrl.text,
     useMultiSpeaker: _useMultiSpeaker,
@@ -811,9 +822,21 @@ class _TtsProviderDetailPageState
                     _SliderRow(
                       label: '语速',
                       value: _speed,
-                      min: widget.kind == TtsProviderKind.openai ? 0.25 : 0.5,
-                      max: widget.kind == TtsProviderKind.openai ? 4.0 : 2.0,
-                      divisions: widget.kind == TtsProviderKind.openai ? 15 : 6,
+                      min: _sfHasSpeedGain
+                          ? 0.25
+                          : widget.kind == TtsProviderKind.openai
+                          ? 0.25
+                          : 0.5,
+                      max: _sfHasSpeedGain
+                          ? 4.0
+                          : widget.kind == TtsProviderKind.openai
+                          ? 4.0
+                          : 2.0,
+                      divisions: _sfHasSpeedGain
+                          ? 15
+                          : widget.kind == TtsProviderKind.openai
+                          ? 15
+                          : 6,
                       onChanged: (v) => setState(() => _speed = v),
                     ),
                     if (_isVolcano) ...[
@@ -832,6 +855,16 @@ class _TtsProviderDetailPageState
                         max: 2.0,
                         divisions: 6,
                         onChanged: (v) => setState(() => _pitch = v),
+                      ),
+                    ],
+                    if (_sfHasSpeedGain) ...[
+                      _SliderRow(
+                        label: '增益',
+                        value: _gain,
+                        min: -10,
+                        max: 10,
+                        divisions: 20,
+                        onChanged: (v) => setState(() => _gain = v),
                       ),
                     ],
                     if (widget.kind == TtsProviderKind.minimax) ...[
@@ -1311,7 +1344,9 @@ class _TtsProviderDetailPageState
   List<Widget> _buildSiliconFlowVoice() {
     final currentModel = _model.isEmpty ? kSiliconFlowModels.first.id : _model;
     final voices = kSiliconFlowVoices[currentModel] ?? [];
+    final isMossTTSD = currentModel == 'fnlp/MOSS-TTSD-v0.5';
     return [
+      // -- Model & Voice --
       _DropdownField(
         label: '模型',
         value: currentModel,
@@ -1337,6 +1372,42 @@ class _TtsProviderDetailPageState
         items: {for (final v in voices) v.id: '${v.name} - ${v.description}'},
         onChanged: (v) => setState(() => _voice = v),
       ),
+      const SizedBox(height: 12),
+      // -- Audio Format & Sample Rate --
+      Row(
+        children: [
+          Expanded(
+            child: _DropdownField(
+              label: '音频格式',
+              value: _audioFormat.isEmpty ? 'mp3' : _audioFormat,
+              items: {for (final f in kSiliconFlowOutputFormats) f.id: f.name},
+              onChanged: (v) => setState(() => _audioFormat = v),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _DropdownField(
+              label: '采样率',
+              value: _sampleRate > 0 ? _sampleRate.toString() : '44100',
+              items: {for (final s in kSiliconFlowSampleRates) s.id: s.name},
+              onChanged: (v) =>
+                  setState(() => _sampleRate = int.tryParse(v) ?? 44100),
+            ),
+          ),
+        ],
+      ),
+      // -- MOSS-TTSD max_tokens --
+      if (isMossTTSD) ...[
+        const SizedBox(height: 12),
+        _SliderRow(
+          label: 'Max Tokens',
+          value: _maxTokens.toDouble(),
+          min: 256,
+          max: 4096,
+          divisions: 15,
+          onChanged: (v) => setState(() => _maxTokens = v.round()),
+        ),
+      ],
     ];
   }
 
