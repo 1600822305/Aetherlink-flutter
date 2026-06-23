@@ -12,6 +12,8 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_block_renderer.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/bubble_footer_layout.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_toolbar.dart';
+import 'package:aetherlink_flutter/features/chat/application/user_avatar_controller.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/user_avatar_widget.dart';
 import 'package:aetherlink_flutter/shared/domain/message_bubble_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/color_picker.dart';
 
@@ -80,6 +82,7 @@ class ChatMessageBubble extends ConsumerWidget {
         ? settings.showUserAvatar
         : settings.showModelAvatar;
     final showName = isUser ? settings.showUserName : settings.showModelName;
+    final userAvatar = ref.watch(userAvatarControllerProvider);
     final header = (showAvatar || showName)
         ? _MessageHeader(
             isUser: isUser,
@@ -87,6 +90,9 @@ class ChatMessageBubble extends ConsumerWidget {
             showName: showName,
             name: isUser ? '用户' : _modelLabel(),
             time: _formatTime(view.createdAt),
+            userAvatarWidget: isUser
+                ? UserAvatarWidget(avatar: userAvatar, size: 24)
+                : null,
           )
         : null;
 
@@ -234,6 +240,7 @@ class _MessageHeader extends StatelessWidget {
     required this.showName,
     required this.name,
     required this.time,
+    this.userAvatarWidget,
   });
 
   final bool isUser;
@@ -241,28 +248,33 @@ class _MessageHeader extends StatelessWidget {
   final bool showName;
   final String name;
   final String time;
+  final Widget? userAvatarWidget;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final align = isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start;
-    final avatar = Container(
-      width: 24,
-      height: 24,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: isUser ? theme.colorScheme.primary : theme.colorScheme.secondary,
-        borderRadius: BorderRadius.circular(6), // 25% of 24px
-      ),
-      child: Text(
-        isUser ? 'U' : 'AI',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
+    final avatar = (isUser && userAvatarWidget != null)
+        ? userAvatarWidget!
+        : Container(
+            width: 24,
+            height: 24,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: isUser
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.secondary,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              isUser ? 'U' : 'AI',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          );
 
     return Row(
       mainAxisSize: MainAxisSize.min,

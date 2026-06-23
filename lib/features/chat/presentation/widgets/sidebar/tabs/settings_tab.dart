@@ -15,8 +15,10 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/wi
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/dialogs/sidebar_layout_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/sidebar_tokens.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/sidebar_avatar.dart';
+import 'package:aetherlink_flutter/features/chat/application/user_avatar_controller.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/dialogs/avatar_edit_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/sidebar_buttons.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/user_avatar_widget.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 
@@ -30,9 +32,6 @@ const Color _panelButtonBg = Color(0x0A000000);
 const Color _userRowBg = Color(0x1AFFC107);
 
 const Color _userRowAccent = Color(0xFFFFC107);
-
-/// 用户头像 avatar background, `#87d068`.
-const Color _userAvatarBg = Color(0xFF87D068);
 
 class SettingsTab extends ConsumerStatefulWidget {
   const SettingsTab({super.key});
@@ -814,18 +813,7 @@ String _formatInt(int value) {
   return buffer.toString();
 }
 
-/// Shows a transient 即将支持 toast for affordances whose subsystem is not yet
-/// ported (e.g. 头像上传).
-void _showComingSoon(BuildContext context, String what) {
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(
-      SnackBar(
-        content: Text('$what即将支持'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-}
+
 
 class _SettingsDivider extends StatelessWidget {
   const _SettingsDivider();
@@ -916,62 +904,60 @@ class _SettingsEntryRow extends ConsumerWidget {
   }
 }
 
-class _UserAvatarRow extends StatelessWidget {
+class _UserAvatarRow extends ConsumerWidget {
   const _UserAvatarRow();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final textPrimary = theme.colorScheme.onSurface;
     final textSecondary = theme.colorScheme.onSurfaceVariant;
-    return Container(
-      decoration: const BoxDecoration(
-        color: _userRowBg,
-        border: Border(left: BorderSide(color: _userRowAccent, width: 3)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          const SidebarAvatar(
-            text: '我',
-            background: _userAvatarBg,
-            size: 36,
-            fontSize: 22.86,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '用户头像',
-                  style: TextStyle(
-                    fontSize: 14.4,
-                    height: 1.2,
-                    fontWeight: FontWeight.w500,
-                    color: textPrimary,
+    final avatar = ref.watch(userAvatarControllerProvider);
+    return GestureDetector(
+      onTap: () => showAvatarEditSheet(context, ref),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: _userRowBg,
+          border: Border(left: BorderSide(color: _userRowAccent, width: 3)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            UserAvatarWidget(avatar: avatar, size: 36),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '用户头像',
+                    style: TextStyle(
+                      fontSize: 14.4,
+                      height: 1.2,
+                      fontWeight: FontWeight.w500,
+                      color: textPrimary,
+                    ),
                   ),
-                ),
-                Text(
-                  '设置您的个人头像',
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.2,
-                    color: textSecondary,
+                  Text(
+                    '设置您的个人头像',
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.2,
+                      color: textSecondary,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          // 头像上传 / 裁剪子系统未移植。
-          SidebarMutedIconButton(
-            icon: LucideIcons.user,
-            size: 16,
-            box: 28,
-            onPressed: () => _showComingSoon(context, '头像上传'),
-          ),
-        ],
+            SidebarMutedIconButton(
+              icon: LucideIcons.pencil,
+              size: 16,
+              box: 28,
+              onPressed: () => showAvatarEditSheet(context, ref),
+            ),
+          ],
+        ),
       ),
     );
   }

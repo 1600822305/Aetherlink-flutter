@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/message_bubble_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/application/user_avatar_controller.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/user_avatar_widget.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
@@ -67,7 +69,13 @@ class PlainStyleMessage extends ConsumerWidget {
         children: [
           // Avatar (24 px, inline with the first line).
           if (showAvatar) ...[
-            _PlainAvatar(isUser: isUser, name: _modelLabel()),
+            if (isUser)
+              UserAvatarWidget(
+                avatar: ref.watch(userAvatarControllerProvider),
+                size: 24,
+              )
+            else
+              _PlainAvatar(isUser: isUser, name: _modelLabel()),
             const SizedBox(width: 8),
           ],
           // Content column.
