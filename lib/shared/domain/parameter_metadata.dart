@@ -82,6 +82,24 @@ class ParameterMeta {
 
   /// Whether this parameter is enabled by default in a fresh configuration.
   final bool defaultEnabled;
+
+  ParameterMeta copyWith({List<SelectOption>? options}) => ParameterMeta(
+        key: key,
+        label: label,
+        description: description,
+        inputType: inputType,
+        defaultValue: defaultValue,
+        category: category,
+        providers: providers,
+        rangeMin: rangeMin,
+        rangeMax: rangeMax,
+        rangeStep: rangeStep,
+        options: options ?? this.options,
+        marks: marks,
+        unit: unit,
+        showWhen: showWhen,
+        defaultEnabled: defaultEnabled,
+      );
 }
 
 // ─── All parameter definitions ───────────────────────────────────────────────
@@ -332,6 +350,21 @@ const List<ParameterMeta> kParameterMetadata = [
     defaultValue: false,
     category: ParameterCategory.advanced,
     providers: [ProviderType.anthropic],
+  ),
+
+  ParameterMeta(
+    key: 'structuredOutputMode',
+    label: '结构化输出模式',
+    description: '控制结构化输出的生成方式',
+    inputType: ParameterInputType.select,
+    defaultValue: 'auto',
+    category: ParameterCategory.advanced,
+    providers: [ProviderType.anthropic],
+    options: [
+      SelectOption(value: 'auto', label: '自动'),
+      SelectOption(value: 'outputFormat', label: '输出格式'),
+      SelectOption(value: 'jsonTool', label: 'JSON 工具'),
+    ],
   ),
 
   // ==================== 工具参数 ====================

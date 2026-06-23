@@ -52,6 +52,10 @@ class AnthropicAdapter implements LlmGateway {
       if (request.topK != null) 'top_k': request.topK,
       if (request.stopSequences != null && request.stopSequences!.isNotEmpty)
         'stop_sequences': request.stopSequences,
+      if (request.structuredOutputMode != null &&
+          request.structuredOutputMode!.isNotEmpty &&
+          request.structuredOutputMode != 'auto')
+        'structuredOutputMode': request.structuredOutputMode,
       if (request.user != null && request.user!.isNotEmpty)
         'metadata': {'user_id': request.user},
       if (hasThinking)

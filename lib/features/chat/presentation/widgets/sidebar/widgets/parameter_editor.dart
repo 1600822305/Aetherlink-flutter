@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/chat/application/parameter_settings_
 import 'package:aetherlink_flutter/features/chat/domain/entities/parameter_settings.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/parameter_metadata.dart';
+import 'package:aetherlink_flutter/shared/domain/reasoning_model_detection.dart';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -57,6 +58,7 @@ class _ParameterEditorState extends ConsumerState<ParameterEditor> {
     // from model id → fallback to openaiCompatible.  Mirrors web's
     // `detectProviderFromModel(modelId)` in DynamicContextSettings.
     final resolvedProvider = widget.providerType ?? _resolveProviderType(ref);
+    final currentModelId = _resolveModelId(ref);
 
     final allParams = getParametersForProvider(resolvedProvider);
 
@@ -86,6 +88,7 @@ class _ParameterEditorState extends ConsumerState<ParameterEditor> {
               params: grouped[cat]!,
               ps: ps,
               ctrl: ctrl,
+              currentModelId: currentModelId,
             ),
 
         // Empty state.
@@ -129,6 +132,12 @@ class _ParameterEditorState extends ConsumerState<ParameterEditor> {
       return providerTypeFromProtocolKey(explicit);
     }
     return detectProviderFromModel(current.model.id);
+  }
+
+  /// Get the current model ID for dynamic option resolution.
+  static String? _resolveModelId(WidgetRef ref) {
+    final current = ref.watch(appCurrentModelProvider).asData?.value;
+    return current?.model.id;
   }
 }
 
@@ -185,12 +194,14 @@ class _CategoryGroup extends StatelessWidget {
     required this.params,
     required this.ps,
     required this.ctrl,
+    this.currentModelId,
   });
 
   final String label;
   final List<ParameterMeta> params;
   final ParameterSettings ps;
   final ParameterSettingsController ctrl;
+  final String? currentModelId;
 
   @override
   Widget build(BuildContext context) {
@@ -223,7 +234,12 @@ class _CategoryGroup extends StatelessWidget {
               children: [
                 for (var i = 0; i < params.length; i++) ...[
                   if (i > 0) Divider(height: 1, color: theme.dividerColor),
-                  _ParameterRow(meta: params[i], ps: ps, ctrl: ctrl),
+                  _ParameterRow(
+                    meta: params[i],
+                    ps: ps,
+                    ctrl: ctrl,
+                    currentModelId: currentModelId,
+                  ),
                 ],
               ],
             ),
@@ -241,11 +257,13 @@ class _ParameterRow extends StatefulWidget {
     required this.meta,
     required this.ps,
     required this.ctrl,
+    this.currentModelId,
   });
 
   final ParameterMeta meta;
   final ParameterSettings ps;
   final ParameterSettingsController ctrl;
+  final String? currentModelId;
 
   @override
   State<_ParameterRow> createState() => _ParameterRowState();
@@ -262,6 +280,17 @@ class _ParameterRowState extends State<_ParameterRow> {
       ps.getParameterValue(meta.key) ?? meta.defaultValue;
   bool get _enabled => ps.isParameterEnabled(meta.key);
 
+  /// For `reasoningEffort`, dynamically resolve options based on current model.
+  /// Web: `getReasoningEffortOptions(modelId)` in ParameterEditor.
+  ParameterMeta get _resolvedMeta {
+    if (meta.key == 'reasoningEffort') {
+      final dynamicOptions =
+          getReasoningEffortOptions(widget.currentModelId);
+      return meta.copyWith(options: dynamicOptions);
+    }
+    return meta;
+  }
+
   /// Format display value (web: `formatValue`).
   String _formatValue(Object? val) {
     if (val == null) return '默认';
@@ -272,8 +301,9 @@ class _ParameterRowState extends State<_ParameterRow> {
       }
       return val is int ? val.toString() : (val as double).toString();
     }
-    if (meta.options != null) {
-      for (final o in meta.options!) {
+    final resolved = _resolvedMeta;
+    if (resolved.options != null) {
+      for (final o in resolved.options!) {
         if (o.value == val) return o.label;
       }
     }
@@ -426,7 +456,7 @@ class _ParameterRowState extends State<_ParameterRow> {
           onChanged: (v) => ctrl.setParameterValue(meta.key, v),
         ),
       ParameterInputType.select => _SelectInput(
-          meta: meta,
+          meta: _resolvedMeta,
           value: _currentValue,
           onChanged: (v) => ctrl.setParameterValue(meta.key, v),
         ),

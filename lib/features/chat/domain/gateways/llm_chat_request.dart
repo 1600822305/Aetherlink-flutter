@@ -42,6 +42,7 @@ abstract class LlmChatRequest with _$LlmChatRequest {
     int? thinkingBudget,
     bool? includeThoughts,
     bool? cacheControl,
+    String? structuredOutputMode,
     bool? webSearchEnabled,
     bool? codeExecutionEnabled,
     bool? useSearchGrounding,
