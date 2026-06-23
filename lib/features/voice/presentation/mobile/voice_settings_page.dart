@@ -632,9 +632,16 @@ class _TtsProviderDetailPageState
   List<MiniMaxRemoteVoice> _miniMaxRemoteVoices = [];
   late double _gain;
   late int _maxTokens;
+  late double _stability;
+  late double _similarityBoost;
+  late double _elStyle;
+  late bool _useSpeakerBoost;
+  List<ElevenLabsRemoteVoice> _elRemoteVoices = [];
+  bool _elVoicesLoading = false;
 
   bool get _isSystem => widget.kind == TtsProviderKind.system;
   bool get _isVolcano => widget.kind == TtsProviderKind.volcano;
+  bool get _isElevenLabs => widget.kind == TtsProviderKind.elevenlabs;
 
   /// True when SiliconFlow model supports speed/gain (MOSS-TTSD / IndexTTS-2).
   bool get _sfHasSpeedGain =>
@@ -674,6 +681,10 @@ class _TtsProviderDetailPageState
     _audioFormat = p.audioFormat;
     _gain = p.gain;
     _maxTokens = p.maxTokens;
+    _stability = p.stability;
+    _similarityBoost = p.similarityBoost;
+    _elStyle = p.elStyle;
+    _useSpeakerBoost = p.useSpeakerBoost;
     _instructionsCtrl = TextEditingController(text: p.instructions);
     _stylePromptCtrl = TextEditingController(text: p.stylePrompt);
     _speaker1NameCtrl = TextEditingController(text: p.speaker1Name);
@@ -727,6 +738,10 @@ class _TtsProviderDetailPageState
     audioFormat: _audioFormat,
     gain: _gain,
     maxTokens: _maxTokens,
+    stability: _stability,
+    similarityBoost: _similarityBoost,
+    elStyle: _elStyle,
+    useSpeakerBoost: _useSpeakerBoost,
     instructions: _instructionsCtrl.text,
     stylePrompt: _stylePromptCtrl.text,
     useMultiSpeaker: _useMultiSpeaker,
@@ -822,19 +837,22 @@ class _TtsProviderDetailPageState
                     _SliderRow(
                       label: '语速',
                       value: _speed,
-                      min: _sfHasSpeedGain
-                          ? 0.25
-                          : widget.kind == TtsProviderKind.openai
+                      min:
+                          (_sfHasSpeedGain ||
+                              _isElevenLabs ||
+                              widget.kind == TtsProviderKind.openai)
                           ? 0.25
                           : 0.5,
-                      max: _sfHasSpeedGain
-                          ? 4.0
-                          : widget.kind == TtsProviderKind.openai
+                      max:
+                          (_sfHasSpeedGain ||
+                              _isElevenLabs ||
+                              widget.kind == TtsProviderKind.openai)
                           ? 4.0
                           : 2.0,
-                      divisions: _sfHasSpeedGain
-                          ? 15
-                          : widget.kind == TtsProviderKind.openai
+                      divisions:
+                          (_sfHasSpeedGain ||
+                              _isElevenLabs ||
+                              widget.kind == TtsProviderKind.openai)
                           ? 15
                           : 6,
                       onChanged: (v) => setState(() => _speed = v),
@@ -1438,6 +1456,7 @@ class _TtsProviderDetailPageState
 
   List<Widget> _buildElevenLabsVoice() {
     return [
+      // -- Model --
       _DropdownField(
         label: '模型',
         value: _model.isEmpty ? kElevenLabsModels.first.id : _model,
@@ -1448,27 +1467,64 @@ class _TtsProviderDetailPageState
         onChanged: (v) => setState(() => _model = v),
       ),
       const SizedBox(height: 12),
+      // -- Voice (preset + dynamic) --
       _SelectorField(
         label: '语音',
         value: _voice,
         displayText: _voice.isEmpty
             ? '选择语音...'
-            : kElevenLabsVoices
+            : _elRemoteVoices
+                      .where((v) => v.id == _voice)
+                      .map((v) => v.name)
+                      .firstOrNull ??
+                  kElevenLabsVoices
                       .where((v) => v.id == _voice)
                       .map((v) => v.name)
                       .firstOrNull ??
                   _voice,
         onTap: () async {
+          // Fetch cloud voices if we have an API key and haven't yet.
+          if (_elRemoteVoices.isEmpty &&
+              !_elVoicesLoading &&
+              _apiKeyCtrl.text.trim().isNotEmpty) {
+            setState(() => _elVoicesLoading = true);
+            final svc = NetworkTtsService();
+            final voices = await svc.fetchElevenLabsVoices(_currentProvider());
+            if (mounted) {
+              setState(() {
+                _elRemoteVoices = voices;
+                _elVoicesLoading = false;
+              });
+            }
+          }
+          if (!mounted) return;
+          // Build groups: remote voices by category, then preset fallback.
+          final List<SelectorGroup> groups;
+          if (_elRemoteVoices.isNotEmpty) {
+            final byCategory = <String, List<SelectorItem>>{};
+            for (final v in _elRemoteVoices) {
+              final cat = v.category.isEmpty ? 'premade' : v.category;
+              (byCategory[cat] ??= []).add(
+                SelectorItem(key: v.id, label: v.name, subLabel: cat),
+              );
+            }
+            groups = byCategory.entries
+                .map((e) => SelectorGroup(name: e.key, items: e.value))
+                .toList();
+          } else {
+            groups = buildPresetGroups('ElevenLabs 语音', kElevenLabsVoices);
+          }
           final result = await FullScreenVoicePicker.show(
             context,
             title: '选择 ElevenLabs 语音',
-            groups: buildPresetGroups('ElevenLabs 语音', kElevenLabsVoices),
+            groups: groups,
             selectedKey: _voice,
           );
           if (result != null) setState(() => _voice = result);
         },
       ),
       const SizedBox(height: 12),
+      // -- Output Format --
       _DropdownField(
         label: '输出格式',
         value: _outputFormat.isEmpty ? 'mp3_44100_128' : _outputFormat,
@@ -1477,6 +1533,45 @@ class _TtsProviderDetailPageState
             f.id: '${f.name} - ${f.description}',
         },
         onChanged: (v) => setState(() => _outputFormat = v),
+      ),
+      const SizedBox(height: 12),
+      // -- Voice Settings --
+      _SliderRow(
+        label: '稳定性',
+        value: _stability,
+        min: 0,
+        max: 1,
+        divisions: 20,
+        onChanged: (v) => setState(() => _stability = v),
+      ),
+      _SliderRow(
+        label: '相似度',
+        value: _similarityBoost,
+        min: 0,
+        max: 1,
+        divisions: 20,
+        onChanged: (v) => setState(() => _similarityBoost = v),
+      ),
+      _SliderRow(
+        label: '风格',
+        value: _elStyle,
+        min: 0,
+        max: 1,
+        divisions: 20,
+        onChanged: (v) => setState(() => _elStyle = v),
+      ),
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('说话者增强'),
+            Switch.adaptive(
+              value: _useSpeakerBoost,
+              onChanged: (v) => setState(() => _useSpeakerBoost = v),
+            ),
+          ],
+        ),
       ),
     ];
   }
