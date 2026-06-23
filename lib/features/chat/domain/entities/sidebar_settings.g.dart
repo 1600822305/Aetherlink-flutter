@@ -30,6 +30,12 @@ _SidebarSettings _$SidebarSettingsFromJson(
         json['sidebarDisplayMode'],
       ) ??
       SidebarDisplayMode.overlay,
+  settingsLayoutMode:
+      $enumDecodeNullable(
+        _$SettingsLayoutModeEnumMap,
+        json['settingsLayoutMode'],
+      ) ??
+      SettingsLayoutMode.compact,
   contextWindowSize: (json['contextWindowSize'] as num?)?.toInt() ?? 100000,
   contextCount: (json['contextCount'] as num?)?.toInt() ?? 20,
   maxOutputTokens: (json['maxOutputTokens'] as num?)?.toInt() ?? 8192,
@@ -60,6 +66,8 @@ Map<String, dynamic> _$SidebarSettingsToJson(
   'sidebarWidth': instance.sidebarWidth,
   'sidebarDisplayMode':
       _$SidebarDisplayModeEnumMap[instance.sidebarDisplayMode]!,
+  'settingsLayoutMode':
+      _$SettingsLayoutModeEnumMap[instance.settingsLayoutMode]!,
   'contextWindowSize': instance.contextWindowSize,
   'contextCount': instance.contextCount,
   'maxOutputTokens': instance.maxOutputTokens,
@@ -89,4 +97,9 @@ const _$MessageNavigationEnumMap = {
 const _$SidebarDisplayModeEnumMap = {
   SidebarDisplayMode.overlay: 'overlay',
   SidebarDisplayMode.push: 'push',
+};
+
+const _$SettingsLayoutModeEnumMap = {
+  SettingsLayoutMode.compact: 'compact',
+  SettingsLayoutMode.grouped: 'grouped',
 };
