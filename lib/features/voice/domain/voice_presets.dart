@@ -40,6 +40,7 @@ class SelectorItem {
 // ---------------------------------------------------------------------------
 
 const kOpenAIModels = <VoicePreset>[
+  VoicePreset(id: 'gpt-4o-mini-tts', name: 'GPT-4o Mini TTS', description: '新一代低延迟语音合成'),
   VoicePreset(id: 'tts-1', name: 'TTS-1', description: '标准质量，速度快'),
   VoicePreset(id: 'tts-1-hd', name: 'TTS-1-HD', description: '高清质量，更自然'),
 ];

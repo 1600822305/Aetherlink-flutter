@@ -135,7 +135,7 @@ class TtsController extends _$TtsController {
     if (state.status != TtsStatus.paused) return;
     if (state.activeProvider == TtsProviderKind.system) {
       // System TTS doesn't support resume; replay current chunk.
-      final provider = ref.read(activeTtsProviderProvider);
+      final provider = _playbackProvider ?? ref.read(activeTtsProviderProvider);
       if (provider != null && state.currentChunk < _chunks.length) {
         await _playChunk(state.currentChunk, provider);
       }
@@ -152,6 +152,7 @@ class TtsController extends _$TtsController {
     await _player?.stop();
     _cache.clear();
     _chunks = const [];
+    _playbackProvider = null;
     _cleanUpTempFiles();
     state = const TtsPlaybackState();
   }
@@ -162,7 +163,7 @@ class TtsController extends _$TtsController {
       await stop();
       return;
     }
-    final provider = ref.read(activeTtsProviderProvider);
+    final provider = _playbackProvider ?? ref.read(activeTtsProviderProvider);
     if (provider == null) return;
     await _audioPlayer.stop();
     await _playChunk(state.currentChunk + 1, provider);
@@ -171,7 +172,7 @@ class TtsController extends _$TtsController {
   /// Skips to the previous chunk.
   Future<void> skipBackward() async {
     if (state.currentChunk <= 0) return;
-    final provider = ref.read(activeTtsProviderProvider);
+    final provider = _playbackProvider ?? ref.read(activeTtsProviderProvider);
     if (provider == null) return;
     await _audioPlayer.stop();
     await _playChunk(state.currentChunk - 1, provider);
