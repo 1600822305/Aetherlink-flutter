@@ -1,5 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
 import 'package:aetherlink_flutter/app/di/json_kv_notifier.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/shared/domain/user_avatar.dart';
@@ -15,7 +16,7 @@ const String kUserAvatarKey = 'userAvatar';
 class UserAvatarController extends _$UserAvatarController
     with JsonKvNotifier<UserAvatar> {
   @override
-  ChatRepository get kvStore => ref.read(chatRepositoryProvider);
+  ChatRepository get kvStore => ref.read(appSettingsStoreProvider);
 
   @override
   String get storageKey => kUserAvatarKey;
