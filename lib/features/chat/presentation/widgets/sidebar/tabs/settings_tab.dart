@@ -244,6 +244,16 @@ class SettingsTab extends ConsumerWidget {
                 value: s.codeDefaultCollapsed,
                 onChanged: c.setCodeDefaultCollapsed,
               ),
+            _SliderSettingRow(
+              title: '代码字体大小',
+              description: '调整代码块内字体大小（10-24）',
+              value: s.codeFontSize.toDouble(),
+              min: 10,
+              max: 24,
+              divisions: 14,
+              valueLabel: '${s.codeFontSize}',
+              onChanged: (v) => c.setCodeFontSize(v.round()),
+            ),
             _SwitchSettingRow(
               title: 'Mermaid 图表',
               description: '渲染 Mermaid 流程图 / 时序图',

@@ -149,6 +149,9 @@ class SidebarSettingsController extends _$SidebarSettingsController
   void setCodeHighlightTheme(String value) =>
       persist(state.copyWith(codeHighlightTheme: value));
 
+  void setCodeFontSize(int value) =>
+      persist(state.copyWith(codeFontSize: value.clamp(10, 24)));
+
   void setMermaidEnabled(bool value) =>
       persist(state.copyWith(mermaidEnabled: value));
 
