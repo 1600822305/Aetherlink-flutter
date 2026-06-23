@@ -62,7 +62,7 @@ final class TtsControllerProvider
   }
 }
 
-String _$ttsControllerHash() => r'e9b46225b26ea43f0188c8861bdd549f1a7a4082';
+String _$ttsControllerHash() => r'8d200651364e1bb8ef001d3fa04b03cade8c5a3c';
 
 /// The central TTS controller: manages text chunking, synthesis (network or
 /// system), audio playback, prefetching, and exposes an immutable

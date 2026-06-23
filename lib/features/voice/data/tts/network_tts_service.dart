@@ -69,6 +69,8 @@ class NetworkTtsService {
         'voice': provider.voice,
         if (provider.speed != 1.0) 'speed': provider.speed,
         'response_format': format,
+        if (provider.instructions.isNotEmpty)
+          'instructions': provider.instructions,
       },
       options: Options(
         headers: {
