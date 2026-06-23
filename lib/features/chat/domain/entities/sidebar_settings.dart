@@ -123,6 +123,7 @@ abstract class SidebarSettings with _$SidebarSettings {
     @Default(true) bool codeCollapsible,
     @Default(true) bool codeWrappable,
     @Default(false) bool codeDefaultCollapsed,
+    @Default('auto') String codeHighlightTheme,
     @Default(true) bool mermaidEnabled,
     // ── 数学公式设置 ─────────────────────────────────────────────────────────
     // Single-dollar inline math; the engine dropdown (KaTeX/MathJax) is dropped
