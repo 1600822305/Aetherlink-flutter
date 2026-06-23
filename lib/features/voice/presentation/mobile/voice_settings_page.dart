@@ -322,6 +322,7 @@ class _TtsProviderDetailPageState extends ConsumerState<_TtsProviderDetailPage> 
   late final TextEditingController _modelCtrl;
   late final TextEditingController _voiceCtrl;
   late final TextEditingController _regionCtrl;
+  late final TextEditingController _groupIdCtrl;
   late bool _enabled;
   late double _speed;
 
@@ -336,6 +337,7 @@ class _TtsProviderDetailPageState extends ConsumerState<_TtsProviderDetailPage> 
       text: p.kind == TtsProviderKind.gemini ? p.voiceName : p.voice,
     );
     _regionCtrl = TextEditingController(text: p.region);
+    _groupIdCtrl = TextEditingController(text: p.groupId);
     _enabled = p.enabled;
     _speed = p.speed;
   }
@@ -347,6 +349,7 @@ class _TtsProviderDetailPageState extends ConsumerState<_TtsProviderDetailPage> 
     _modelCtrl.dispose();
     _voiceCtrl.dispose();
     _regionCtrl.dispose();
+    _groupIdCtrl.dispose();
     super.dispose();
   }
 
@@ -361,6 +364,7 @@ class _TtsProviderDetailPageState extends ConsumerState<_TtsProviderDetailPage> 
           ? _voiceCtrl.text.trim()
           : '',
       region: _regionCtrl.text.trim(),
+      groupId: _groupIdCtrl.text.trim(),
       speed: _speed,
     );
     ref.read(voiceSettingsControllerProvider.notifier).updateTtsProvider(updated);
@@ -429,6 +433,16 @@ class _TtsProviderDetailPageState extends ConsumerState<_TtsProviderDetailPage> 
                 controller: _regionCtrl,
                 decoration: const InputDecoration(
                   labelText: '区域 (Region)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+            if (widget.kind == TtsProviderKind.minimax) ...[
+              const SizedBox(height: 16),
+              TextField(
+                controller: _groupIdCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Group ID',
                   border: OutlineInputBorder(),
                 ),
               ),
