@@ -8,7 +8,7 @@ class TtsTextChunker {
 
   /// Splits [text] into chunks of at most [maxChunkLength] characters, cutting
   /// at sentence boundaries where possible.
-  static List<TtsTextChunk> split(String text, {int maxChunkLength = 220}) {
+  static List<TtsTextChunk> split(String text, {int maxChunkLength = 450}) {
     final normalized = text.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (normalized.isEmpty) return const <TtsTextChunk>[];
 

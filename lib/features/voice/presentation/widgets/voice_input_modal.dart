@@ -75,25 +75,45 @@ class _VoiceInputSheetState extends ConsumerState<_VoiceInputSheet>
           ),
           const SizedBox(height: 24),
 
-          // Status text.
-          Text(
-            isRecording
-                ? '正在聆听...'
-                : isProcessing
-                    ? '正在识别...'
-                    : isError
-                        ? asrState.error ?? '识别失败'
-                        : '点击开始录音',
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: isError
-                  ? theme.colorScheme.error
-                  : theme.colorScheme.onSurface,
+          // Status chip (matching Web's pill-style indicator).
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            decoration: BoxDecoration(
+              color: isRecording
+                  ? const Color(0xFF4CAF50)
+                  : isError
+                      ? theme.colorScheme.error
+                      : theme.colorScheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              isRecording
+                  ? '正在聆听...'
+                  : isProcessing
+                      ? '正在识别...'
+                      : isError
+                          ? asrState.error ?? '识别失败'
+                          : '点击开始录音',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: isRecording || isError
+                    ? Colors.white
+                    : theme.colorScheme.onSurface,
+              ),
             ),
           ),
           const SizedBox(height: 16),
 
+          // Waveform visualization when recording.
+          if (isRecording)
+            SizedBox(
+              height: 40,
+              child: _WaveformBars(controller: _pulseController),
+            ),
+
           // Recognized text preview.
-          if (asrState.text.isNotEmpty)
+          if (asrState.text.isNotEmpty) ...[
+            if (isRecording) const SizedBox(height: 12),
             Container(
               width: double.infinity,
               constraints: const BoxConstraints(maxHeight: 120),
@@ -110,6 +130,7 @@ class _VoiceInputSheetState extends ConsumerState<_VoiceInputSheet>
                 ),
               ),
             ),
+          ],
           const SizedBox(height: 24),
 
           // Controls row.
@@ -255,5 +276,59 @@ class _CircleButton extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Animated waveform bars matching Web's recording animation.
+class _WaveformBars extends StatelessWidget {
+  const _WaveformBars({required this.controller});
+  final AnimationController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    const barCount = 20;
+    const barWidth = 3.0;
+    const barGap = 2.0;
+    final color = Theme.of(context).colorScheme.primary;
+
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: List.generate(barCount, (i) {
+            // Vary bar heights with different phases for a wave effect.
+            final phase = i / barCount;
+            final raw = (controller.value + phase) % 1.0;
+            // Use sine to create a smooth wave pattern.
+            final t = (raw * 3.14159 * 2).clamp(0.0, 6.28318);
+            final sinVal = _fastSin(t);
+            final scale = 0.3 + 0.7 * ((sinVal + 1.0) / 2.0);
+
+            return Container(
+              width: barWidth,
+              height: 40 * scale,
+              margin: const EdgeInsets.symmetric(horizontal: barGap / 2),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            );
+          }),
+        );
+      },
+    );
+  }
+
+  static double _fastSin(double x) {
+    // Normalize to [-PI, PI]
+    const pi = 3.14159265;
+    const twoPi = 6.2831853;
+    var v = x % twoPi;
+    if (v > pi) v -= twoPi;
+    if (v < -pi) v += twoPi;
+    // Approximation
+    return v * (1.27323954 - 0.40528473 * (v < 0 ? -v : v));
   }
 }
