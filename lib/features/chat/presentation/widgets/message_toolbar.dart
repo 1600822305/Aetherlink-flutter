@@ -247,8 +247,14 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
       if (!_isUser && widget.showTtsButton)
         Consumer(
           builder: (context, ref, _) {
-            final ttsState = ref.watch(ttsControllerProvider);
-            final isPlayingThis = ttsState.messageId == _view.id &&
+            TtsPlaybackState? ttsState;
+            try {
+              ttsState = ref.watch(ttsControllerProvider);
+            } catch (_) {
+              // Provider not ready — show default icon.
+            }
+            final isPlayingThis = ttsState != null &&
+                ttsState.messageId == _view.id &&
                 (ttsState.status == TtsStatus.playing ||
                     ttsState.status == TtsStatus.loading);
             return _ToolbarIconButton(
