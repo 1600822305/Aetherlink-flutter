@@ -304,8 +304,10 @@ class _TtsTab extends StatelessWidget {
     TtsProviderSetting provider,
   ) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) =>
+      PageRouteBuilder<void>(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (_, __, ___) =>
             _TtsProviderDetailPage(kind: kind, provider: provider),
       ),
     );
@@ -362,8 +364,10 @@ class _AsrTab extends StatelessWidget {
     AsrProviderSetting provider,
   ) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) =>
+      PageRouteBuilder<void>(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (_, __, ___) =>
             _AsrProviderDetailPage(kind: kind, provider: provider),
       ),
     );
