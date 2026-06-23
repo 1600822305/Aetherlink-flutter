@@ -70,6 +70,9 @@ abstract class TtsProviderSetting with _$TtsProviderSetting {
     @Default(1.0) double volume,
     @Default(1.0) double pitch,
     @Default('mp3') String encoding,
+    // SiliconFlow-specific
+    @Default(0.0) double gain, // audio gain in dB, [-10, 10]
+    @Default(1600) int maxTokens, // MOSS-TTSD max_tokens
     // OpenAI gpt-4o-mini-tts instructions (controls accent, tone, emotion, etc.)
     @Default('') String instructions,
   }) = _TtsProviderSetting;
