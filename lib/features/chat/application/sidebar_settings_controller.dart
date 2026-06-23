@@ -155,6 +155,10 @@ class SidebarSettingsController extends _$SidebarSettingsController
   void setMermaidEnabled(bool value) =>
       persist(state.copyWith(mermaidEnabled: value));
 
+  // ── 设置 tab 布局模式 ─────────────────────────────────────────────────────
+  void setSettingsLayoutMode(SettingsLayoutMode value) =>
+      persist(state.copyWith(settingsLayoutMode: value));
+
   // ── 数学公式设置 ─────────────────────────────────────────────────────────
   void setMathEnableSingleDollar(bool value) =>
       persist(state.copyWith(mathEnableSingleDollar: value));
