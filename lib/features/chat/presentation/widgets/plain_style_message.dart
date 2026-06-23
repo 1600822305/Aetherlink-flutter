@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/message_bubble_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_block_renderer.dart';
@@ -54,7 +55,10 @@ class PlainStyleMessage extends ConsumerWidget {
             textColor: theme.colorScheme.onSurface,
           );
 
-    final showToolbar = !isStreaming && view.blocks.isNotEmpty;
+    final isSummaryMessage =
+        view.blocks.any((b) => b is ContextSummaryBlock);
+    final showToolbar =
+        !isStreaming && view.blocks.isNotEmpty && !isSummaryMessage;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

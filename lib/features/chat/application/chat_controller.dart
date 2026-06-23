@@ -1200,6 +1200,11 @@ class ChatController extends _$ChatController {
               ),
             );
           }
+          // The prose now lives in [completed]; clear the buffer so the trailing
+          // live MainText block in update() doesn't re-render the same text after
+          // the tool blocks while the tools are still executing. roundText is
+          // already captured above for the message history.
+          buffer.clear();
 
           // Run each requested tool — built-ins in-process, remote tools over a
           // live connection — and render a 工具 block per call.
@@ -2797,10 +2802,15 @@ class ChatController extends _$ChatController {
   Future<ChatMessageView> _viewOf(Message message) async {
     final fetched = await _repo.getMessageBlocksByMessageId(message.id);
     final blocks = _orderBlocks(message.blocks, fetched);
-    final text = blocks
+    final mainText = blocks
         .whereType<MainTextBlock>()
         .map((block) => block.content)
         .join('\n\n');
+    final summaryText = blocks
+        .whereType<ContextSummaryBlock>()
+        .map((block) => block.content)
+        .join('\n\n');
+    final text = mainText.isNotEmpty ? mainText : summaryText;
     final thinking = blocks
         .whereType<ThinkingBlock>()
         .map((block) => block.content)

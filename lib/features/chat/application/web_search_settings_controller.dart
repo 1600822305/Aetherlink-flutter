@@ -20,8 +20,16 @@ class WebSearchSettingsController extends _$WebSearchSettingsController
   String get storageKey => 'webSearchSettings';
 
   @override
-  WebSearchSettings fromStored(Map<String, dynamic> json) =>
-      WebSearchSettings.fromJson(json);
+  WebSearchSettings fromStored(Map<String, dynamic> json) {
+    final settings = WebSearchSettings.fromJson(json);
+    // Guarantee web search works out of the box: if a previously-stored config
+    // has no providers (e.g. an early build that didn't seed one), fall back to
+    // the no-key SearXNG default so the active provider always resolves.
+    if (settings.providers.isEmpty) {
+      return settings.copyWith(providers: const [kDefaultSearchProvider]);
+    }
+    return settings;
+  }
 
   @override
   Map<String, dynamic> toStored(WebSearchSettings value) => value.toJson();

@@ -174,20 +174,20 @@ class _SearchProviderDetailPageState
                 ),
                 Divider(height: 1, color: theme.dividerColor),
 
-                // 设为默认
+                // 设为默认 — 单选语义：已是默认时锁定为开，点击其它提供商可切换。
                 _SwitchRow(
                   icon: LucideIcons.star,
                   accent: const Color(0xFFF59E0B),
                   label: '设为默认搜索引擎',
-                  description: '开启搜索时优先使用此提供商',
+                  description: isActive
+                      ? '当前默认，开启搜索时优先使用此提供商'
+                      : '开启搜索时优先使用此提供商',
                   value: isActive,
-                  onChanged: (v) {
-                    if (v) {
-                      ref
+                  onChanged: isActive
+                      ? null
+                      : (_) => ref
                           .read(webSearchSettingsControllerProvider.notifier)
-                          .setActiveProvider(config.id);
-                    }
-                  },
+                          .setActiveProvider(config.id),
                 ),
                 Divider(height: 1, color: theme.dividerColor),
 
@@ -383,7 +383,10 @@ class _SwitchRow extends StatelessWidget {
   final String label;
   final String description;
   final bool value;
-  final ValueChanged<bool> onChanged;
+
+  /// When `null` the switch is shown disabled (e.g. the active provider's
+  /// "设为默认" toggle, which can only be changed by activating another one).
+  final ValueChanged<bool>? onChanged;
 
   @override
   Widget build(BuildContext context) {

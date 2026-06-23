@@ -90,8 +90,8 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
       ),
       SettingItemData(
         icon: LucideIcons.sliders,
-        title: '辅助模型设置',
-        description: '配置话题命名、AI 意图分析、视觉识别等辅助功能',
+        title: '辅助模型',
+        description: '聊天、标题、翻译、OCR 等默认模型与提示词',
         route: AppRouter.auxiliaryModelPath,
       ),
       SettingItemData(
@@ -104,11 +104,6 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         title: '模型组合',
         description: '创建和管理多模型组合',
         route: AppRouter.modelComboPath,
-      ),
-      SettingItemData(
-        icon: LucideIcons.foldVertical,
-        title: '上下文压缩',
-        description: '智能压缩对话历史，节省Token成本',
       ),
     ],
   ),
@@ -194,6 +189,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.mic,
         title: '语音功能',
         description: '语音识别和文本转语音设置',
+        route: AppRouter.voiceSettingsPath,
       ),
       SettingItemData(
         icon: LucideIcons.shield,
