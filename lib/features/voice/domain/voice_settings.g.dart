@@ -24,6 +24,10 @@ _VoiceSettings _$VoiceSettingsFromJson(
           .toList() ??
       const <AsrProviderSetting>[],
   defaultSpeed: (json['defaultSpeed'] as num?)?.toDouble() ?? 1.0,
+  systemTtsEngine: json['systemTtsEngine'] as String? ?? '',
+  systemTtsLanguage: json['systemTtsLanguage'] as String? ?? '',
+  systemTtsSpeechRate: (json['systemTtsSpeechRate'] as num?)?.toDouble() ?? 0.5,
+  systemTtsPitch: (json['systemTtsPitch'] as num?)?.toDouble() ?? 1.0,
 );
 
 Map<String, dynamic> _$VoiceSettingsToJson(_VoiceSettings instance) =>
@@ -35,4 +39,8 @@ Map<String, dynamic> _$VoiceSettingsToJson(_VoiceSettings instance) =>
       'activeAsrProviderId': instance.activeAsrProviderId,
       'asrProviders': instance.asrProviders.map((e) => e.toJson()).toList(),
       'defaultSpeed': instance.defaultSpeed,
+      'systemTtsEngine': instance.systemTtsEngine,
+      'systemTtsLanguage': instance.systemTtsLanguage,
+      'systemTtsSpeechRate': instance.systemTtsSpeechRate,
+      'systemTtsPitch': instance.systemTtsPitch,
     };

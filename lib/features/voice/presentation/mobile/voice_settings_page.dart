@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/features/voice/application/tts_controller.dart';
 import 'package:aetherlink_flutter/features/voice/application/voice_settings_controller.dart';
+import 'package:aetherlink_flutter/features/voice/data/tts/system_tts_service.dart';
 import 'package:aetherlink_flutter/features/voice/domain/asr_provider_setting.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/network_tts_service.dart';
 import 'package:aetherlink_flutter/features/voice/domain/tts_playback_state.dart';
@@ -261,13 +262,13 @@ class _TabHeader extends StatelessWidget {
 // TTS tab — card grid (matches Web's grid layout)
 // ---------------------------------------------------------------------------
 
-class _TtsTab extends StatelessWidget {
+class _TtsTab extends ConsumerWidget {
   const _TtsTab({required this.settings, required this.ctrl});
   final VoiceSettings settings;
   final VoiceSettingsController ctrl;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final meta = _ttsServiceMeta();
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -297,6 +298,9 @@ class _TtsTab extends StatelessWidget {
                   isActive: isActive,
                   onTap: () => _pushDetail(ctx, kind, provider),
                   onLongPress: () => ctrl.setActiveTtsProvider(provider.id),
+                  onTest: kind == TtsProviderKind.system
+                      ? () => _testSystemTts(ref)
+                      : null,
                 ),
               );
             },
@@ -304,6 +308,12 @@ class _TtsTab extends StatelessWidget {
         ],
       ],
     );
+  }
+
+  void _testSystemTts(WidgetRef ref) {
+    final ttsCtrl = ref.read(ttsControllerProvider.notifier);
+    final provider = defaultTtsProvider(TtsProviderKind.system);
+    ttsCtrl.preview('你好，这是系统语音合成测试。', provider);
   }
 
   void _pushDetail(
@@ -402,6 +412,7 @@ class _ServiceCard extends StatelessWidget {
     required this.isActive,
     required this.onTap,
     required this.onLongPress,
+    this.onTest,
   });
   final IconData icon;
   final Color color;
@@ -412,6 +423,7 @@ class _ServiceCard extends StatelessWidget {
   final bool isActive;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
+  final VoidCallback? onTest;
 
   @override
   Widget build(BuildContext context) {
@@ -484,6 +496,20 @@ class _ServiceCard extends StatelessWidget {
                       ],
                     ),
                   ),
+                  if (onTest != null)
+                    GestureDetector(
+                      onTap: onTest,
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(LucideIcons.volume2, size: 16, color: color),
+                      ),
+                    ),
+                  if (onTest != null) const SizedBox(width: 8),
                   Icon(
                     LucideIcons.chevronRight,
                     size: 16,
@@ -647,6 +673,7 @@ class _TtsProviderDetailPageState
   late String _azureOutputFormat;
   List<AzureRemoteVoice> _azureRemoteVoices = [];
   bool _azureVoicesLoading = false;
+  SystemTtsService? _systemTts;
 
   bool get _isSystem => widget.kind == TtsProviderKind.system;
   bool get _isVolcano => widget.kind == TtsProviderKind.volcano;
@@ -725,6 +752,7 @@ class _TtsProviderDetailPageState
     _stylePromptCtrl.dispose();
     _speaker1NameCtrl.dispose();
     _speaker2NameCtrl.dispose();
+    _systemTts?.dispose();
     super.dispose();
   }
 
@@ -831,7 +859,12 @@ class _TtsProviderDetailPageState
                       value: _enabled,
                       onChanged: (v) => setState(() => _enabled = v),
                     ),
-                    if (!_isSystem) ...[
+                    if (_isSystem) ...[
+                      Divider(height: 24, color: theme.dividerColor),
+                      _SystemTtsConfigSection(
+                        systemTts: _systemTts ??= SystemTtsService(),
+                      ),
+                    ] else ...[
                       Divider(height: 24, color: theme.dividerColor),
                       // -- Credentials --
                       ..._buildCredentialFields(),
@@ -856,6 +889,7 @@ class _TtsProviderDetailPageState
                         ),
                       ],
                     ],
+                    if (!_isSystem) ...[
                     Divider(height: 24, color: theme.dividerColor),
                     // -- Playback sliders (Azure uses its own prosody controls) --
                     if (!_isAzure)
@@ -933,17 +967,16 @@ class _TtsProviderDetailPageState
                       Divider(height: 24, color: theme.dividerColor),
                       ..._buildVolcanoAdvanced(),
                     ],
+                    ], // end if (!_isSystem)
                   ],
                 ),
               ),
-              // ===== Test section (separate card, like Web) =====
-              if (!_isSystem) ...[
-                const SizedBox(height: 10),
-                _TtsTestSection(
-                  testTextCtrl: _testTextCtrl,
-                  buildProvider: _currentProvider,
-                ),
-              ],
+              // ===== Test section =====
+              const SizedBox(height: 10),
+              _TtsTestSection(
+                testTextCtrl: _testTextCtrl,
+                buildProvider: _currentProvider,
+              ),
             ],
           ),
         ),
@@ -2190,6 +2223,230 @@ class _TtsTestSection extends ConsumerWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// System TTS configuration section (engine, language, rate, pitch)
+// ---------------------------------------------------------------------------
+
+class _SystemTtsConfigSection extends ConsumerStatefulWidget {
+  const _SystemTtsConfigSection({required this.systemTts});
+  final SystemTtsService systemTts;
+
+  @override
+  ConsumerState<_SystemTtsConfigSection> createState() =>
+      _SystemTtsConfigSectionState();
+}
+
+class _SystemTtsConfigSectionState
+    extends ConsumerState<_SystemTtsConfigSection> {
+  List<String> _engines = [];
+  List<String> _languages = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadEngineData();
+  }
+
+  Future<void> _loadEngineData() async {
+    final engines = await widget.systemTts.listEngines();
+    final languages = await widget.systemTts.listLanguages();
+    if (!mounted) return;
+    setState(() {
+      _engines = engines;
+      _languages = languages;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final settings = ref.watch(voiceSettingsControllerProvider);
+    final ctrl = ref.read(voiceSettingsControllerProvider.notifier);
+
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+
+    final currentEngine = settings.systemTtsEngine.isEmpty
+        ? (_engines.isNotEmpty ? _engines.first : '')
+        : settings.systemTtsEngine;
+    final currentLanguage = settings.systemTtsLanguage.isEmpty
+        ? (_languages.contains('zh-CN')
+            ? 'zh-CN'
+            : (_languages.contains('en-US')
+                ? 'en-US'
+                : (_languages.isNotEmpty ? _languages.first : '')))
+        : settings.systemTtsLanguage;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '引擎',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 6),
+        _SystemTtsDropdown(
+          value: currentEngine,
+          items: _engines,
+          hint: '自动选择',
+          onChanged: (v) {
+            ctrl.setSystemTtsEngine(v);
+            // Reload languages for new engine.
+            widget.systemTts.applyUserConfig(engineId: v).then((_) async {
+              final langs = await widget.systemTts.listLanguages();
+              if (mounted) setState(() => _languages = langs);
+            });
+          },
+        ),
+        const SizedBox(height: 14),
+        Text(
+          '语言',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 6),
+        _SystemTtsDropdown(
+          value: currentLanguage,
+          items: _languages,
+          hint: '自动选择',
+          onChanged: (v) => ctrl.setSystemTtsLanguage(v),
+        ),
+        const SizedBox(height: 14),
+        _SliderRow(
+          label: '语速',
+          value: settings.systemTtsSpeechRate,
+          min: 0.1,
+          max: 1.0,
+          divisions: 9,
+          onChanged: (v) => ctrl.setSystemTtsSpeechRate(v),
+        ),
+        _SliderRow(
+          label: '音调',
+          value: settings.systemTtsPitch,
+          min: 0.5,
+          max: 2.0,
+          divisions: 6,
+          onChanged: (v) => ctrl.setSystemTtsPitch(v),
+        ),
+      ],
+    );
+  }
+}
+
+class _SystemTtsDropdown extends StatelessWidget {
+  const _SystemTtsDropdown({
+    required this.value,
+    required this.items,
+    required this.hint,
+    required this.onChanged,
+  });
+  final String value;
+  final List<String> items;
+  final String hint;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: items.isEmpty
+          ? null
+          : () async {
+              final picked = await showModalBottomSheet<String>(
+                context: context,
+                backgroundColor: theme.colorScheme.surface,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                ),
+                builder: (ctx) {
+                  return SafeArea(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(ctx).size.height * 0.5,
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) =>
+                            Divider(height: 1, color: theme.dividerColor),
+                        itemBuilder: (_, i) {
+                          final item = items[i];
+                          final selected = item == value;
+                          return ListTile(
+                            dense: true,
+                            title: Text(
+                              item,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: selected
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                                color: selected
+                                    ? theme.colorScheme.primary
+                                    : theme.colorScheme.onSurface,
+                              ),
+                            ),
+                            trailing: selected
+                                ? Icon(
+                                    LucideIcons.check,
+                                    size: 16,
+                                    color: theme.colorScheme.primary,
+                                  )
+                                : null,
+                            onTap: () => Navigator.of(ctx).pop(item),
+                          );
+                        },
+                      ),
+                    ),
+                  );
+                },
+              );
+              if (picked != null) onChanged(picked);
+            },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: theme.dividerColor),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                value.isEmpty ? hint : value,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontSize: 13.5,
+                  color: value.isEmpty
+                      ? theme.hintColor
+                      : theme.colorScheme.onSurface,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Icon(
+              LucideIcons.chevronDown,
+              size: 16,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -53,6 +53,36 @@ class SystemTtsService {
     }
   }
 
+  /// Applies user-configured settings (engine, language, rate, pitch).
+  Future<void> applyUserConfig({
+    String? engineId,
+    String? languageTag,
+    double? speechRate,
+    double? pitch,
+  }) async {
+    await init();
+    if (engineId != null && engineId.isNotEmpty) {
+      try {
+        await _tts!.setEngine(engineId);
+      } catch (_) {}
+    }
+    if (languageTag != null && languageTag.isNotEmpty) {
+      try {
+        await _tts!.setLanguage(languageTag);
+      } catch (_) {}
+    }
+    if (speechRate != null) {
+      try {
+        await _tts!.setSpeechRate(speechRate.clamp(0.1, 1.0));
+      } catch (_) {}
+    }
+    if (pitch != null) {
+      try {
+        await _tts!.setPitch(pitch.clamp(0.5, 2.0));
+      } catch (_) {}
+    }
+  }
+
   Future<void> stop() async {
     _completeSpeaking();
     try {
@@ -256,7 +286,7 @@ class SystemTtsService {
 
   Future<dynamic> _doSpeak(String text) async {
     try {
-      return await _tts!.speak(text);
+      return await _tts!.speak(text, focus: true);
     } catch (_) {
       return null;
     }

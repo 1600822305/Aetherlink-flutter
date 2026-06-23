@@ -209,6 +209,14 @@ class TtsController extends _$TtsController {
     try {
       if (provider.kind == TtsProviderKind.system) {
         _systemTts ??= SystemTtsService();
+        // Apply user-configured engine/language/rate/pitch from settings.
+        final voiceSettings = ref.read(voiceSettingsControllerProvider);
+        await _systemTts!.applyUserConfig(
+          engineId: voiceSettings.systemTtsEngine,
+          languageTag: voiceSettings.systemTtsLanguage,
+          speechRate: voiceSettings.systemTtsSpeechRate,
+          pitch: voiceSettings.systemTtsPitch,
+        );
         state = state.copyWith(status: TtsStatus.playing);
         await _systemTts!.speak(_chunks[index].text, speed: state.speed);
         // System TTS completion — play next chunk.

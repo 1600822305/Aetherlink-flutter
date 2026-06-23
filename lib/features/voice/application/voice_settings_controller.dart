@@ -87,6 +87,20 @@ class VoiceSettingsController extends _$VoiceSettingsController
 
   void setDefaultSpeed(double speed) =>
       persist(state.copyWith(defaultSpeed: speed.clamp(0.5, 2.0)));
+
+  // -- System TTS settings --------------------------------------------------
+
+  void setSystemTtsEngine(String engineId) =>
+      persist(state.copyWith(systemTtsEngine: engineId));
+
+  void setSystemTtsLanguage(String languageTag) =>
+      persist(state.copyWith(systemTtsLanguage: languageTag));
+
+  void setSystemTtsSpeechRate(double rate) =>
+      persist(state.copyWith(systemTtsSpeechRate: rate.clamp(0.1, 1.0)));
+
+  void setSystemTtsPitch(double pitch) =>
+      persist(state.copyWith(systemTtsPitch: pitch.clamp(0.5, 2.0)));
 }
 
 /// Convenience provider: the currently active TTS provider setting, or `null`

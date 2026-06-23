@@ -26,6 +26,14 @@ abstract class VoiceSettings with _$VoiceSettings {
     @Default(<AsrProviderSetting>[]) List<AsrProviderSetting> asrProviders,
     /// Default TTS playback speed (0.5 - 2.0).
     @Default(1.0) double defaultSpeed,
+    /// System TTS engine id (e.g. 'com.google.android.tts').
+    @Default('') String systemTtsEngine,
+    /// System TTS language tag (e.g. 'zh-CN').
+    @Default('') String systemTtsLanguage,
+    /// System TTS speech rate (0.1 - 1.0, platform value; 0.5 is normal).
+    @Default(0.5) double systemTtsSpeechRate,
+    /// System TTS pitch (0.5 - 2.0).
+    @Default(1.0) double systemTtsPitch,
   }) = _VoiceSettings;
 
   factory VoiceSettings.fromJson(Map<String, dynamic> json) =>
