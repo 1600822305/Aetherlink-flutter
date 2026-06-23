@@ -48,6 +48,25 @@ enum SidebarDisplayMode {
   }
 }
 
+/// 设置 tab 布局模式：`compact` 手风琴折叠（默认）；`grouped` 导航进入式（点击分组进入
+/// 独立页面，类似助手 tab 的分组交互）。
+enum SettingsLayoutMode {
+  compact('compact', '折叠'),
+  grouped('grouped', '分组');
+
+  const SettingsLayoutMode(this.id, this.label);
+
+  final String id;
+  final String label;
+
+  static SettingsLayoutMode fromId(String? id) {
+    for (final v in SettingsLayoutMode.values) {
+      if (v.id == id) return v;
+    }
+    return SettingsLayoutMode.compact;
+  }
+}
+
 /// 对话导航 (`settings.messageNavigation`): `none` 不显示（默认）；`buttons` 显示上下
 /// 按钮快速跳转。
 enum MessageNavigation {
@@ -110,6 +129,9 @@ abstract class SidebarSettings with _$SidebarSettings {
     // ── 侧边栏显示方式 (Flutter 特有) ─────────────────────────────────────────
     // overlay 覆盖式（默认，原生抽屉行为）/ push 推开式（聊天页随抽屉右移）。
     @Default(SidebarDisplayMode.overlay) SidebarDisplayMode sidebarDisplayMode,
+    // ── 设置 tab 布局模式 ──────────────────────────────────────────────────
+    // compact 折叠手风琴（默认）/ grouped 导航进入式。
+    @Default(SettingsLayoutMode.compact) SettingsLayoutMode settingsLayoutMode,
     // ── 上下文设置 (已接入 ChatController) ──────────────────────────────────
     @Default(100000) int contextWindowSize,
     @Default(20) int contextCount,
