@@ -36,6 +36,9 @@ class _AssistantTabState extends ConsumerState<AssistantTab> {
   bool _searchOpen = false;
   String _query = '';
 
+  /// When non-null, the user has navigated into this group.
+  String? _activeGroupId;
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -57,6 +60,14 @@ class _AssistantTabState extends ConsumerState<AssistantTab> {
         _query = '';
       }
     });
+  }
+
+  void _enterGroup(String groupId) {
+    setState(() => _activeGroupId = groupId);
+  }
+
+  void _exitGroup() {
+    setState(() => _activeGroupId = null);
   }
 
   @override
@@ -92,50 +103,71 @@ class _AssistantTabState extends ConsumerState<AssistantTab> {
       onSelect: () => _selectAssistant(a.id),
     );
 
+    // If inside a group, show the group's contents.
+    final activeGroup = _activeGroupId != null
+        ? groups.where((g) => g.id == _activeGroupId).firstOrNull
+        : null;
+
+    // If the active group was deleted externally, return to top level.
+    if (_activeGroupId != null && activeGroup == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _activeGroupId = null);
+      });
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
-          child: SidebarTabHeader(
-            title: '所有助手',
-            trailing: [
-              SidebarMutedIconButton(
-                icon: LucideIcons.search,
-                size: 18,
-                box: 28,
-                color: _searchOpen
-                    ? theme.colorScheme.primary
-                    : kSidebarMutedIcon,
-                onPressed: _toggleSearch,
-              ),
-              const SizedBox(width: 8),
-              SidebarPillButton(
-                icon: LucideIcons.folderPlus,
-                label: '创建分组',
-                onPressed: () => showCreateGroupDialog(
-                  context,
-                  ref,
-                  type: GroupType.assistant,
+          child: activeGroup != null
+              ? _GroupDetailHeader(
+                  group: activeGroup,
+                  onBack: _exitGroup,
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
+                )
+              : SidebarTabHeader(
+                  title: '所有助手',
+                  trailing: [
+                    SidebarMutedIconButton(
+                      icon: LucideIcons.search,
+                      size: 18,
+                      box: 28,
+                      color: _searchOpen
+                          ? theme.colorScheme.primary
+                          : kSidebarMutedIcon,
+                      onPressed: _toggleSearch,
+                    ),
+                    const SizedBox(width: 8),
+                    SidebarPillButton(
+                      icon: LucideIcons.folderPlus,
+                      label: '创建分组',
+                      onPressed: () => showCreateGroupDialog(
+                        context,
+                        ref,
+                        type: GroupType.assistant,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    SidebarPillButton(
+                      icon: LucideIcons.plus,
+                      label: '添加助手',
+                      onPressed: () => showAddAssistantDialog(context, ref),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 4),
-              SidebarPillButton(
-                icon: LucideIcons.plus,
-                label: '添加助手',
-                onPressed: () => showAddAssistantDialog(context, ref),
-              ),
-            ],
-          ),
         ),
-        if (_searchOpen)
+        if (_searchOpen && activeGroup == null)
           SidebarSearchField(
             controller: _searchController,
             hint: '搜索助手...',
             onChanged: (v) => setState(() => _query = v),
           ),
         Expanded(
-          child: searching
+          child: activeGroup != null
+              ? _buildGroupDetail(activeGroup, byId, current, counts)
+              : searching
               ? ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   children: [
@@ -145,63 +177,96 @@ class _AssistantTabState extends ConsumerState<AssistantTab> {
                       for (final a in filtered) item(a),
                   ],
                 )
-              // The tab is a non-scrolling column; only the ungrouped list box
-              // scrolls internally (Expanded + internal scroll) and the "共 N 个"
-              // count is glued directly below it — 1:1 with the web
-              // `VirtualizedAssistantList`, where the count sits right under the
-              // box (`mt:1`) inside a container that does not scroll as a whole.
-              : Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (groups.isEmpty)
-                        SidebarEmptyHint(text: '没有助手分组', color: textSecondary)
-                      else
-                        // Groups flow at their natural height so the ungrouped
-                        // box below can `Expanded`-fill the rest of the column —
-                        // a flex group area would split the height 50/50 and
-                        // halve the ungrouped box.
-                        ListView(
-                          padding: EdgeInsets.zero,
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          children: [
-                            for (final g in groups)
-                              SidebarListFrame(
-                                children: [
-                                  SidebarGroupHeader(
-                                    group: g,
-                                    count: g.items
-                                        .where(byId.containsKey)
-                                        .length,
-                                    textPrimary: textPrimary,
-                                    textSecondary: textSecondary,
-                                  ),
-                                  if (g.expanded)
-                                    for (final id in g.items)
-                                      if (byId[id] != null) item(byId[id]!),
-                                ],
-                              ),
-                          ],
-                        ),
-                      SidebarSectionLabel(text: '未分组助手', color: textSecondary),
-                      if (ungrouped.isEmpty)
-                        SidebarEmptyHint(text: '暂无未分组助手', color: textSecondary)
-                      else
-                        Expanded(
-                          child: SidebarListFrame(
-                            scrollable: true,
-                            children: [for (final a in ungrouped) item(a)],
-                          ),
-                        ),
-                      SidebarCountFooter(
-                        text: '共 ${all.length} 个助手',
-                        color: textSecondary,
-                      ),
-                    ],
-                  ),
+              : _buildTopLevel(
+                  groups,
+                  ungrouped,
+                  byId,
+                  all,
+                  current,
+                  counts,
+                  textPrimary,
+                  textSecondary,
+                  item,
                 ),
+        ),
+      ],
+    );
+  }
+
+  /// Top-level view: group entries (clickable) + ungrouped assistants.
+  Widget _buildTopLevel(
+    List<Group> groups,
+    List<Assistant> ungrouped,
+    Map<String, Assistant> byId,
+    List<Assistant> all,
+    Assistant? current,
+    Map<String, int> counts,
+    Color textPrimary,
+    Color textSecondary,
+    Widget Function(Assistant) item,
+  ) {
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      children: [
+        // Group entries
+        if (groups.isNotEmpty) ...[
+          for (final g in groups)
+            _GroupEntry(
+              group: g,
+              count: g.items.where(byId.containsKey).length,
+              textPrimary: textPrimary,
+              textSecondary: textSecondary,
+              onTap: () => _enterGroup(g.id),
+            ),
+          const SizedBox(height: 8),
+        ],
+        // Ungrouped section
+        SidebarSectionLabel(text: '未分组助手', color: textSecondary),
+        if (ungrouped.isEmpty)
+          SidebarEmptyHint(text: '暂无未分组助手', color: textSecondary)
+        else
+          for (final a in ungrouped) item(a),
+        // Footer
+        SidebarCountFooter(text: '共 ${all.length} 个助手', color: textSecondary),
+      ],
+    );
+  }
+
+  /// Inside a group: show only that group's assistants.
+  Widget _buildGroupDetail(
+    Group group,
+    Map<String, Assistant> byId,
+    Assistant? current,
+    Map<String, int> counts,
+  ) {
+    final members = group.items
+        .where(byId.containsKey)
+        .map((id) => byId[id]!)
+        .toList();
+
+    final theme = Theme.of(context);
+    final textSecondary = theme.colorScheme.onSurfaceVariant;
+
+    if (members.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        child: SidebarEmptyHint(text: '该分组暂无助手', color: textSecondary),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      children: [
+        for (final a in members)
+          _AssistantItem(
+            assistant: a,
+            selected: current?.id == a.id,
+            topicCount: counts[a.id] ?? 0,
+            onSelect: () => _selectAssistant(a.id),
+          ),
+        SidebarCountFooter(
+          text: '共 ${members.length} 个助手',
+          color: textSecondary,
         ),
       ],
     );
@@ -401,6 +466,116 @@ class _AssistantItem extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A clickable group entry row in the top-level view. Tapping navigates into
+/// the group to show its member assistants.
+class _GroupEntry extends StatelessWidget {
+  const _GroupEntry({
+    required this.group,
+    required this.count,
+    required this.textPrimary,
+    required this.textSecondary,
+    required this.onTap,
+  });
+
+  final Group group;
+  final int count;
+  final Color textPrimary;
+  final Color textSecondary;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                Icon(LucideIcons.folder, size: 18, color: textSecondary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    group.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.43,
+                      fontWeight: FontWeight.w500,
+                      color: textPrimary,
+                    ),
+                  ),
+                ),
+                Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.66,
+                    color: textSecondary,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(LucideIcons.chevronRight, size: 16, color: textSecondary),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Header shown when inside a group: back arrow + group name + count.
+class _GroupDetailHeader extends ConsumerWidget {
+  const _GroupDetailHeader({
+    required this.group,
+    required this.onBack,
+    required this.textPrimary,
+    required this.textSecondary,
+  });
+
+  final Group group;
+  final VoidCallback onBack;
+  final Color textPrimary;
+  final Color textSecondary;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Row(
+      children: [
+        SidebarMutedIconButton(
+          icon: LucideIcons.arrowLeft,
+          size: 18,
+          box: 28,
+          color: textPrimary,
+          onPressed: onBack,
+        ),
+        const SizedBox(width: 4),
+        Icon(LucideIcons.folder, size: 16, color: textSecondary),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            group.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: textPrimary,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
