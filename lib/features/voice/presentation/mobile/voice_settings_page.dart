@@ -99,7 +99,7 @@ Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
         name: '火山引擎 TTS',
         description: '字节跳动火山引擎，100+ 音色',
         features: ['100+音色', '情感', '多方言'],
-        status: '免费',
+        status: '付费',
       ),
     };
 
@@ -452,10 +452,10 @@ class _ServiceCard extends StatelessWidget {
                         Row(
                           children: [
                             if (isActive)
-                              _Badge(
+                              const _Badge(
                                 label: '当前使用',
-                                bgColor: theme.colorScheme.primaryContainer,
-                                textColor: theme.colorScheme.primary,
+                                bgColor: Color(0xFF22C55E),
+                                textColor: Colors.white,
                               ),
                             if (isActive && status.isNotEmpty)
                               const SizedBox(width: 4),
@@ -626,7 +626,10 @@ class _TtsProviderDetailPageState
     _testTextCtrl = TextEditingController(
       text: '你好，欢迎使用语音合成服务！这是一段测试文本。',
     );
-    _enabled = p.enabled;
+    // "启用此服务" reflects whether this is the single active provider,
+    // matching the original web app's per-service enable toggle.
+    _enabled = ref.read(voiceSettingsControllerProvider).activeTtsProviderId ==
+        p.id;
     _speed = p.speed;
     _volume = p.volume;
     _pitch = p.pitch;
@@ -653,29 +656,44 @@ class _TtsProviderDetailPageState
     super.dispose();
   }
 
-  void _save() {
-    final updated = widget.provider.copyWith(
-      enabled: _enabled,
-      apiKey: _apiKeyCtrl.text.trim(),
-      baseUrl: _baseUrlCtrl.text.trim(),
-      model: _usesModelSelector ? _model : _modelCtrl.text.trim(),
-      voice: widget.kind == TtsProviderKind.gemini ? '' : _voice,
-      voiceName: widget.kind == TtsProviderKind.gemini ? _voiceName : '',
-      region: _regionCtrl.text.trim(),
-      groupId: _groupIdCtrl.text.trim(),
-      speed: _speed,
-      emotion: _emotion,
-      outputFormat: _outputFormat,
-      appId: _appIdCtrl.text.trim(),
-      cluster: _clusterCtrl.text.trim(),
-      resourceId: _resourceId,
-      volume: _volume,
-      pitch: _pitch,
-      apiVersion: _apiVersion,
-      encoding: _encoding,
-    );
-    ref.read(voiceSettingsControllerProvider.notifier).updateTtsProvider(updated);
-    Navigator.of(context).pop();
+  /// Builds a [TtsProviderSetting] from the current (possibly unsaved) form
+  /// values. Used by both save and the live preview/test.
+  TtsProviderSetting _currentProvider() => widget.provider.copyWith(
+        enabled: _enabled,
+        apiKey: _apiKeyCtrl.text.trim(),
+        baseUrl: _baseUrlCtrl.text.trim(),
+        model: _usesModelSelector ? _model : _modelCtrl.text.trim(),
+        voice: widget.kind == TtsProviderKind.gemini ? '' : _voice,
+        voiceName: widget.kind == TtsProviderKind.gemini ? _voiceName : '',
+        region: _regionCtrl.text.trim(),
+        groupId: _groupIdCtrl.text.trim(),
+        speed: _speed,
+        emotion: _emotion,
+        outputFormat: _outputFormat,
+        appId: _appIdCtrl.text.trim(),
+        cluster: _clusterCtrl.text.trim(),
+        resourceId: _resourceId,
+        volume: _volume,
+        pitch: _pitch,
+        apiVersion: _apiVersion,
+        encoding: _encoding,
+      );
+
+  /// Persists the current form values. Called automatically when leaving the
+  /// page (back button or system back gesture).
+  void _persist() {
+    final updated = _currentProvider();
+    final notifier = ref.read(voiceSettingsControllerProvider.notifier);
+    notifier.updateTtsProvider(updated);
+    // Enabling makes this the single active provider (others are implicitly
+    // deactivated since activeTtsProviderId holds only one id). Disabling the
+    // currently-active provider falls back to the system engine.
+    if (_enabled) {
+      notifier.setActiveTtsProvider(updated.id);
+    } else if (ref.read(voiceSettingsControllerProvider).activeTtsProviderId ==
+        updated.id) {
+      notifier.setActiveTtsProvider('system');
+    }
   }
 
   bool get _usesModelSelector => const {
@@ -689,16 +707,17 @@ class _TtsProviderDetailPageState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _persist();
+        Navigator.of(context).pop();
+      },
+      child: Scaffold(
       appBar: ModelSettingsAppBar(
         title: defaultTtsProvider(widget.kind).name,
-        onBack: () => Navigator.of(context).pop(),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ModelTonalButton(label: '保存', onPressed: _save),
-          ),
-        ],
+        onBack: () => Navigator.of(context).maybePop(),
       ),
       body: SafeArea(
         top: false,
@@ -782,10 +801,11 @@ class _TtsProviderDetailPageState
             const SizedBox(height: 10),
             _TtsTestSection(
               testTextCtrl: _testTextCtrl,
-              providerKind: widget.kind,
+              buildProvider: _currentProvider,
             ),
           ],
         ],
+      ),
       ),
       ),
     );
@@ -1225,7 +1245,9 @@ class _AsrProviderDetailPageState
     _baseUrlCtrl = TextEditingController(text: p.baseUrl);
     _modelCtrl = TextEditingController(text: p.model);
     _wsUrlCtrl = TextEditingController(text: p.websocketUrl);
-    _enabled = p.enabled;
+    // "启用此服务" reflects whether this is the single active ASR provider.
+    _enabled = ref.read(voiceSettingsControllerProvider).activeAsrProviderId ==
+        p.id;
     _vadThreshold = p.vadThreshold;
     _silenceDurationMs = p.silenceDurationMs;
   }
@@ -1239,7 +1261,9 @@ class _AsrProviderDetailPageState
     super.dispose();
   }
 
-  void _save() {
+  /// Persists the current form values. Called automatically when leaving the
+  /// page (back button or system back gesture).
+  void _persist() {
     final updated = widget.provider.copyWith(
       enabled: _enabled,
       apiKey: _apiKeyCtrl.text.trim(),
@@ -1249,10 +1273,16 @@ class _AsrProviderDetailPageState
       vadThreshold: _vadThreshold,
       silenceDurationMs: _silenceDurationMs,
     );
-    ref
-        .read(voiceSettingsControllerProvider.notifier)
-        .updateAsrProvider(updated);
-    Navigator.of(context).pop();
+    final notifier = ref.read(voiceSettingsControllerProvider.notifier);
+    notifier.updateAsrProvider(updated);
+    // Enabling makes this the single active ASR provider; disabling the
+    // currently-active provider falls back to the system engine.
+    if (_enabled) {
+      notifier.setActiveAsrProvider(updated.id);
+    } else if (ref.read(voiceSettingsControllerProvider).activeAsrProviderId ==
+        updated.id) {
+      notifier.setActiveAsrProvider('system');
+    }
   }
 
   @override
@@ -1261,16 +1291,17 @@ class _AsrProviderDetailPageState
     final isSystem = widget.kind == AsrProviderKind.system;
     final isRealtime = widget.kind == AsrProviderKind.openaiRealtime;
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _persist();
+        Navigator.of(context).pop();
+      },
+      child: Scaffold(
       appBar: ModelSettingsAppBar(
         title: defaultAsrProvider(widget.kind).name,
-        onBack: () => Navigator.of(context).pop(),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ModelTonalButton(label: '保存', onPressed: _save),
-          ),
-        ],
+        onBack: () => Navigator.of(context).maybePop(),
       ),
       body: SafeArea(
         top: false,
@@ -1344,6 +1375,7 @@ class _AsrProviderDetailPageState
         ],
       ),
       ),
+      ),
     );
   }
 }
@@ -1355,11 +1387,11 @@ class _AsrProviderDetailPageState
 class _TtsTestSection extends ConsumerWidget {
   const _TtsTestSection({
     required this.testTextCtrl,
-    required this.providerKind,
+    required this.buildProvider,
   });
 
   final TextEditingController testTextCtrl;
-  final TtsProviderKind providerKind;
+  final TtsProviderSetting Function() buildProvider;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1407,7 +1439,7 @@ class _TtsTestSection extends ConsumerWidget {
                 } else {
                   final text = testTextCtrl.text.trim();
                   if (text.isEmpty) return;
-                  await ttsCtrl.speak(text, messageId: '__tts_test__');
+                  await ttsCtrl.preview(text, buildProvider());
                 }
               },
               icon: Icon(

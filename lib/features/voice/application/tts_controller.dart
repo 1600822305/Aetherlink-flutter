@@ -35,6 +35,10 @@ class TtsController extends _$TtsController {
   final Map<int, Uint8List> _cache = {};
   CancelToken? _cancelToken;
   StreamSubscription<ProcessingState>? _playerSub;
+  /// The provider driving the current playback session. Set by [speak]/
+  /// [preview]; used for chunk continuation so playback stays consistent even
+  /// if the globally-active provider changes mid-playback.
+  TtsProviderSetting? _playbackProvider;
 
   @override
   TtsPlaybackState build() {
@@ -69,6 +73,35 @@ class TtsController extends _$TtsController {
       return;
     }
 
+    _playbackProvider = provider;
+    final cleaned = TtsTextPreprocessor.preprocess(text);
+    _chunks = TtsTextChunker.split(cleaned);
+    if (_chunks.isEmpty) return;
+
+    final speed = ref.read(voiceSettingsControllerProvider).defaultSpeed;
+
+    state = TtsPlaybackState(
+      status: TtsStatus.loading,
+      messageId: messageId,
+      activeProvider: provider.kind,
+      totalChunks: _chunks.length,
+      speed: speed,
+    );
+
+    await _playChunk(0, provider);
+  }
+
+  /// Plays [text] using a specific [provider] directly, bypassing the globally
+  /// active provider. Used by the settings preview/test so it reflects the
+  /// provider currently being edited (including unsaved form values).
+  Future<void> preview(
+    String text,
+    TtsProviderSetting provider, {
+    String messageId = '__tts_test__',
+  }) async {
+    await stop();
+
+    _playbackProvider = provider;
     final cleaned = TtsTextPreprocessor.preprocess(text);
     _chunks = TtsTextChunker.split(cleaned);
     if (_chunks.isEmpty) return;
@@ -227,7 +260,7 @@ class TtsController extends _$TtsController {
       // Current chunk finished — play next.
       final next = state.currentChunk + 1;
       if (next < _chunks.length) {
-        final provider = ref.read(activeTtsProviderProvider);
+        final provider = _playbackProvider ?? ref.read(activeTtsProviderProvider);
         if (provider != null) {
           _playChunk(next, provider);
         }
