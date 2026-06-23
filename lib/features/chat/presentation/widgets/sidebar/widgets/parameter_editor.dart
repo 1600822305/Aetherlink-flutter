@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/parameter_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/parameter_settings.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
@@ -52,9 +53,12 @@ class _ParameterEditorState extends ConsumerState<ParameterEditor> {
     final ps = ref.watch(parameterSettingsControllerProvider);
     final ctrl = ref.read(parameterSettingsControllerProvider.notifier);
 
-    final allParams = widget.providerType != null
-        ? getParametersForProvider(widget.providerType!)
-        : kParameterMetadata;
+    // Resolve provider type: explicit prop → current model's provider → detect
+    // from model id → fallback to openaiCompatible.  Mirrors web's
+    // `detectProviderFromModel(modelId)` in DynamicContextSettings.
+    final resolvedProvider = widget.providerType ?? _resolveProviderType(ref);
+
+    final allParams = getParametersForProvider(resolvedProvider);
 
     // Group by category, filtering by showWhen.
     final grouped = <ParameterCategory, List<ParameterMeta>>{};
@@ -69,7 +73,7 @@ class _ParameterEditorState extends ConsumerState<ParameterEditor> {
       children: [
         // Provider badge + param count (web: top of ParameterEditor).
         _ProviderBadgeRow(
-          providerType: widget.providerType ?? ProviderType.openaiCompatible,
+          providerType: resolvedProvider,
           paramCount: allParams.length,
         ),
         const SizedBox(height: 8),
@@ -111,6 +115,20 @@ class _ParameterEditorState extends ConsumerState<ParameterEditor> {
     if (!depEnabled) return false;
     final depValue = ps.getParameterValue(sw.key);
     return sw.values.contains(depValue);
+  }
+
+  /// Detect provider type from current model (same as web's
+  /// `detectProviderFromModel(modelId)` called in DynamicContextSettings).
+  static ProviderType _resolveProviderType(WidgetRef ref) {
+    final current = ref.watch(appCurrentModelProvider).asData?.value;
+    if (current == null) return ProviderType.openaiCompatible;
+    // Prefer explicit providerType on the provider/model, fall back to
+    // heuristic detection from model id.
+    final explicit = current.model.providerType ?? current.provider.providerType;
+    if (explicit != null && explicit.isNotEmpty) {
+      return providerTypeFromProtocolKey(explicit);
+    }
+    return detectProviderFromModel(current.model.id);
   }
 }
 
