@@ -48,7 +48,7 @@ final class AuxiliaryModelControllerProvider
 }
 
 String _$auxiliaryModelControllerHash() =>
-    r'1e5730e3a1c07b872e954d60ddb0a3504036b1d6';
+    r'bdbc356a45c8f985a89b29ce9ed0d9a8cec14e8d';
 
 /// Controller that reads/writes the 7 default model selections + prompts
 /// through the [ChatRepository] key/value store.
@@ -131,7 +131,7 @@ final class AuxiliaryModelDisplayNameProvider
 }
 
 String _$auxiliaryModelDisplayNameHash() =>
-    r'1caa9c39f95be2541a01410d14595cef8ba998af';
+    r'e4357a692cee3af911e32d1c3940e39a904cef8f';
 
 /// Resolves a stored model key to a display name like "Provider / Model".
 /// Returns `null` if unresolvable.

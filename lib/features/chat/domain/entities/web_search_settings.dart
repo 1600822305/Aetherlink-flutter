@@ -64,6 +64,15 @@ class SearchProviderConfig {
   int get hashCode => Object.hash(id, name, apiHost, apiKey, isEnabled);
 }
 
+/// The default search provider seeded for every fresh install: SearXNG needs
+/// no API key and falls back to a built-in public instance when [apiHost] is
+/// empty, so web search works out of the box without any setup. Kept as a
+/// const so it can back the default [WebSearchSettings.providers].
+const SearchProviderConfig kDefaultSearchProvider = SearchProviderConfig(
+  id: 'searxng',
+  name: 'SearXNG',
+);
+
 /// Persisted web-search configuration — the Flutter equivalent of the web's
 /// `webSearchSlice` state. Controls how the `builtin_web_search` tool behaves
 /// when the 网络搜索 session mode is active.
@@ -77,7 +86,7 @@ class WebSearchSettings {
     this.language = 'zh-CN',
     this.categories = 'general',
     this.activeProviderId = 'searxng',
-    this.providers = const [],
+    this.providers = const [kDefaultSearchProvider],
   });
 
   /// Maximum number of results returned per search.

@@ -8,9 +8,18 @@ part of 'context_condense_service.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
+/// The provider is a thin shell that resolves all Ref-dependent values
+/// *synchronously* and delegates to the stateless [ContextCondenseService].
+/// Because the service itself never touches Ref, it is immune to provider
+/// disposal during long-running async work.
 
 @ProviderFor(contextCondenseService)
 final contextCondenseServiceProvider = ContextCondenseServiceProvider._();
+
+/// The provider is a thin shell that resolves all Ref-dependent values
+/// *synchronously* and delegates to the stateless [ContextCondenseService].
+/// Because the service itself never touches Ref, it is immune to provider
+/// disposal during long-running async work.
 
 final class ContextCondenseServiceProvider
     extends
@@ -20,6 +29,10 @@ final class ContextCondenseServiceProvider
           ContextCondenseService
         >
     with $Provider<ContextCondenseService> {
+  /// The provider is a thin shell that resolves all Ref-dependent values
+  /// *synchronously* and delegates to the stateless [ContextCondenseService].
+  /// Because the service itself never touches Ref, it is immune to provider
+  /// disposal during long-running async work.
   ContextCondenseServiceProvider._()
     : super(
         from: null,
@@ -55,4 +68,4 @@ final class ContextCondenseServiceProvider
 }
 
 String _$contextCondenseServiceHash() =>
-    r'4c547f24483bc4f2632734831a8e0666cc6dfc68';
+    r'8eefbac881b454539c7a40650935b353e06e5df4';
