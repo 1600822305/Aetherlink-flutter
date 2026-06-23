@@ -41,6 +41,7 @@ _SidebarSettings _$SidebarSettingsFromJson(
   codeCollapsible: json['codeCollapsible'] as bool? ?? true,
   codeWrappable: json['codeWrappable'] as bool? ?? true,
   codeDefaultCollapsed: json['codeDefaultCollapsed'] as bool? ?? false,
+  codeHighlightTheme: json['codeHighlightTheme'] as String? ?? 'auto',
   mermaidEnabled: json['mermaidEnabled'] as bool? ?? true,
   mathEnableSingleDollar: json['mathEnableSingleDollar'] as bool? ?? true,
 );
@@ -68,6 +69,7 @@ Map<String, dynamic> _$SidebarSettingsToJson(
   'codeCollapsible': instance.codeCollapsible,
   'codeWrappable': instance.codeWrappable,
   'codeDefaultCollapsed': instance.codeDefaultCollapsed,
+  'codeHighlightTheme': instance.codeHighlightTheme,
   'mermaidEnabled': instance.mermaidEnabled,
   'mathEnableSingleDollar': instance.mathEnableSingleDollar,
 };

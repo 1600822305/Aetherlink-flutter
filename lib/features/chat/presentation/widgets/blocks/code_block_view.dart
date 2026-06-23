@@ -3,21 +3,19 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_highlight/themes/atom-one-dark-reasonable.dart';
-import 'package:flutter_highlight/themes/github.dart';
-import 'package:highlight/highlight.dart' show Node, highlight;
+import 'package:highlighting/highlighting.dart' show Node, highlight;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
+import 'code_highlight_themes.dart';
 
-/// A fenced code block, ported from the original `CodeBlockView` /
-/// `MarkdownCodeBlock`.
-///
-/// Header shows the language as `<LANG>` (uppercase) on the left and a copy
-/// button on the right. The body consumes the sidebar's code-block display
-/// settings: line numbers, collapsible/default-collapsed state and
+/// A fenced code block with syntax highlighting (190+ languages, 110+ themes),
+/// line numbers, collapsible/default-collapsed state, and
 /// wrap-vs-horizontal-scroll rendering.
+///
+/// Uses the `highlighting` package (highlight.js 11.8.0 Dart port) for parsing
+/// and `flutter_highlighting` themes for styling.
 class CodeBlockView extends ConsumerStatefulWidget {
   const CodeBlockView({required this.language, required this.code, super.key});
 
@@ -63,9 +61,7 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
     final expanded = _effectiveExpanded(settings);
     final normalizedLanguage = _displayLanguage(widget.language);
     final highlightLanguage = _normalizeHighlightLanguage(widget.language);
-    final highlightTheme = _transparentBgTheme(
-      isDark ? atomOneDarkReasonableTheme : githubTheme,
-    );
+    final highlightTheme = _resolveTheme(settings.codeHighlightTheme, isDark);
     final codeStyle = TextStyle(
       fontFamily: 'monospace',
       fontSize: 13,
@@ -264,21 +260,21 @@ class _CodeBlockBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final displayCode = _displayCode(code);
-    final lineCount = _lineCount(displayCode);
-    final content = _CodeBlockContent(
-      code: displayCode.isEmpty ? ' ' : displayCode,
-      highlightLanguage: highlightLanguage,
-      highlightTheme: highlightTheme,
-      lineCount: lineCount,
-      showLineNumbers: showLineNumbers,
-      wrappable: wrappable,
-      codeStyle: codeStyle,
-      lineNumberStyle: lineNumberStyle,
-      gutterBorderColor: gutterBorderColor,
-    );
+    final lines = displayCode.isEmpty ? <String>[''] : displayCode.split('\n');
 
     if (wrappable) {
-      return Padding(padding: const EdgeInsets.all(12), child: content);
+      return Padding(
+        padding: const EdgeInsets.all(12),
+        child: _PerLineCodeView(
+          lines: lines,
+          highlightLanguage: highlightLanguage,
+          highlightTheme: highlightTheme,
+          showLineNumbers: showLineNumbers,
+          codeStyle: codeStyle,
+          lineNumberStyle: lineNumberStyle,
+          gutterBorderColor: gutterBorderColor,
+        ),
+      );
     }
 
     return ScrollConfiguration(
@@ -286,45 +282,46 @@ class _CodeBlockBody extends StatelessWidget {
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.all(12),
-        child: content,
+        child: _SingleBlockCodeView(
+          code: displayCode.isEmpty ? ' ' : displayCode,
+          lineCount: lines.length,
+          highlightLanguage: highlightLanguage,
+          highlightTheme: highlightTheme,
+          showLineNumbers: showLineNumbers,
+          codeStyle: codeStyle,
+          lineNumberStyle: lineNumberStyle,
+          gutterBorderColor: gutterBorderColor,
+        ),
       ),
     );
   }
 }
 
-class _CodeBlockContent extends StatelessWidget {
-  const _CodeBlockContent({
+/// Renders code as a single selectable block (horizontal scroll mode).
+/// Line numbers are a separate column aligned by identical line height.
+class _SingleBlockCodeView extends StatelessWidget {
+  const _SingleBlockCodeView({
     required this.code,
+    required this.lineCount,
     required this.highlightLanguage,
     required this.highlightTheme,
-    required this.lineCount,
     required this.showLineNumbers,
-    required this.wrappable,
     required this.codeStyle,
     required this.lineNumberStyle,
     required this.gutterBorderColor,
   });
 
   final String code;
+  final int lineCount;
   final String? highlightLanguage;
   final Map<String, TextStyle> highlightTheme;
-  final int lineCount;
   final bool showLineNumbers;
-  final bool wrappable;
   final TextStyle codeStyle;
   final TextStyle lineNumberStyle;
   final Color gutterBorderColor;
 
   @override
   Widget build(BuildContext context) {
-    final codeText = _SelectableHighlightView(
-      code,
-      language: highlightLanguage,
-      theme: highlightTheme,
-      style: codeStyle,
-      maxLines: wrappable ? null : lineCount,
-    );
-
     final children = <Widget>[
       if (showLineNumbers) ...[
         _LineNumberGutter(
@@ -334,13 +331,118 @@ class _CodeBlockContent extends StatelessWidget {
         ),
         const SizedBox(width: 12),
       ],
-      if (wrappable) Expanded(child: codeText) else codeText,
+      _SelectableHighlightView(
+        code,
+        language: highlightLanguage,
+        theme: highlightTheme,
+        style: codeStyle,
+        maxLines: lineCount,
+      ),
     ];
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: wrappable ? MainAxisSize.max : MainAxisSize.min,
+      mainAxisSize: MainAxisSize.min,
       children: children,
+    );
+  }
+}
+
+/// Renders code line-by-line so line numbers stay aligned even when lines wrap.
+class _PerLineCodeView extends StatefulWidget {
+  const _PerLineCodeView({
+    required this.lines,
+    required this.highlightLanguage,
+    required this.highlightTheme,
+    required this.showLineNumbers,
+    required this.codeStyle,
+    required this.lineNumberStyle,
+    required this.gutterBorderColor,
+  });
+
+  final List<String> lines;
+  final String? highlightLanguage;
+  final Map<String, TextStyle> highlightTheme;
+  final bool showLineNumbers;
+  final TextStyle codeStyle;
+  final TextStyle lineNumberStyle;
+  final Color gutterBorderColor;
+
+  @override
+  State<_PerLineCodeView> createState() => _PerLineCodeViewState();
+}
+
+class _PerLineCodeViewState extends State<_PerLineCodeView> {
+  late List<List<TextSpan>> _lineSpans;
+
+  @override
+  void initState() {
+    super.initState();
+    _lineSpans = _highlightAllLines();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PerLineCodeView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.lines != widget.lines ||
+        oldWidget.highlightLanguage != widget.highlightLanguage ||
+        !identical(oldWidget.highlightTheme, widget.highlightTheme)) {
+      _lineSpans = _highlightAllLines();
+    }
+  }
+
+  List<List<TextSpan>> _highlightAllLines() {
+    final fullCode = widget.lines.join('\n');
+    final spans = _parseToSpans(
+      fullCode,
+      widget.highlightLanguage,
+      widget.highlightTheme,
+    );
+    return _splitSpansByLine(spans, widget.lines.length);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gutterWidth = widget.showLineNumbers
+        ? math.max(34.0, 18.0 + widget.lines.length.toString().length * 8.0)
+        : 0.0;
+
+    return SelectionArea(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: List.generate(widget.lines.length, (i) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (widget.showLineNumbers) ...[
+                Container(
+                  width: gutterWidth,
+                  padding: const EdgeInsets.only(right: 10),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      right: BorderSide(color: widget.gutterBorderColor),
+                    ),
+                  ),
+                  child: Text(
+                    '${i + 1}',
+                    textAlign: TextAlign.right,
+                    style: widget.lineNumberStyle,
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    style: widget.codeStyle,
+                    children: _lineSpans.length > i ? _lineSpans[i] : null,
+                  ),
+                ),
+              ),
+            ],
+          );
+        }),
+      ),
     );
   }
 }
@@ -371,48 +473,17 @@ class _SelectableHighlightViewState extends State<_SelectableHighlightView> {
   @override
   void initState() {
     super.initState();
-    _spans = _highlightSource();
+    _spans = _parseToSpans(widget.source, widget.language, widget.theme);
   }
 
   @override
   void didUpdateWidget(covariant _SelectableHighlightView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.source == widget.source &&
-        oldWidget.language == widget.language &&
-        oldWidget.style == widget.style &&
-        oldWidget.maxLines == widget.maxLines &&
-        _highlightThemeEquals(oldWidget.theme, widget.theme)) {
-      return;
+    if (oldWidget.source != widget.source ||
+        oldWidget.language != widget.language ||
+        !identical(oldWidget.theme, widget.theme)) {
+      _spans = _parseToSpans(widget.source, widget.language, widget.theme);
     }
-    _spans = _highlightSource();
-  }
-
-  List<TextSpan> _highlightSource() {
-    if (widget.language == null) {
-      return <TextSpan>[TextSpan(text: widget.source)];
-    }
-    try {
-      final result = highlight.parse(widget.source, language: widget.language);
-      return _convertNodes(result.nodes ?? const []);
-    } catch (_) {
-      return <TextSpan>[TextSpan(text: widget.source)];
-    }
-  }
-
-  List<TextSpan> _convertNodes(List<Node> nodes, [TextStyle? inheritedStyle]) {
-    final spans = <TextSpan>[];
-    for (final node in nodes) {
-      final nodeStyle = _mergeHighlightStyle(
-        inheritedStyle,
-        widget.theme[node.className],
-      );
-      if (node.value != null) {
-        spans.add(TextSpan(text: node.value, style: nodeStyle));
-      } else if (node.children != null) {
-        spans.addAll(_convertNodes(node.children!, nodeStyle));
-      }
-    }
-    return spans;
   }
 
   @override
@@ -458,6 +529,91 @@ class _LineNumberGutter extends StatelessWidget {
   }
 }
 
+// ── Highlight helpers ──────────────────────────────────────────────────────
+
+List<TextSpan> _parseToSpans(
+  String source,
+  String? language,
+  Map<String, TextStyle> theme,
+) {
+  if (language == null) {
+    return <TextSpan>[TextSpan(text: source)];
+  }
+  try {
+    final result = highlight.parse(source, languageId: language);
+    return _convertNodes(result.nodes ?? const [], theme);
+  } catch (_) {
+    return <TextSpan>[TextSpan(text: source)];
+  }
+}
+
+List<TextSpan> _convertNodes(
+  List<Node> nodes,
+  Map<String, TextStyle> theme, [
+  TextStyle? inheritedStyle,
+]) {
+  final spans = <TextSpan>[];
+  for (final node in nodes) {
+    final nodeStyle = _mergeStyle(inheritedStyle, theme[node.className]);
+    if (node.value != null) {
+      spans.add(TextSpan(text: node.value, style: nodeStyle));
+    } else if (node.children.isNotEmpty) {
+      spans.addAll(_convertNodes(node.children, theme, nodeStyle));
+    }
+  }
+  return spans;
+}
+
+/// Split a flat list of spans into per-line groups by splitting on '\n'.
+List<List<TextSpan>> _splitSpansByLine(List<TextSpan> spans, int lineCount) {
+  final result = List.generate(lineCount, (_) => <TextSpan>[]);
+  var lineIndex = 0;
+  for (final span in spans) {
+    final text = span.text;
+    if (text == null || !text.contains('\n')) {
+      if (lineIndex < lineCount) result[lineIndex].add(span);
+      continue;
+    }
+    final parts = text.split('\n');
+    for (var i = 0; i < parts.length; i++) {
+      if (i > 0) lineIndex++;
+      if (lineIndex >= lineCount) break;
+      if (parts[i].isNotEmpty) {
+        result[lineIndex].add(TextSpan(text: parts[i], style: span.style));
+      }
+    }
+  }
+  return result;
+}
+
+TextStyle? _mergeStyle(TextStyle? parent, TextStyle? child) {
+  if (parent == null) return child;
+  if (child == null) return parent;
+  return parent.merge(child);
+}
+
+Map<String, TextStyle> _resolveTheme(String themeName, bool isDark) {
+  if (themeName == 'auto') {
+    return _transparentBg(
+      isDark ? kCodeThemeDarkDefault : kCodeThemeLightDefault,
+    );
+  }
+  final resolved = kCodeHighlightThemes[themeName];
+  if (resolved != null) return _transparentBg(resolved);
+  return _transparentBg(
+    isDark ? kCodeThemeDarkDefault : kCodeThemeLightDefault,
+  );
+}
+
+Map<String, TextStyle> _transparentBg(Map<String, TextStyle> base) {
+  final theme = Map<String, TextStyle>.from(base);
+  final root = base['root'];
+  theme['root'] = (root ?? const TextStyle()).copyWith(
+    backgroundColor: Colors.transparent,
+  );
+  return theme;
+}
+
 String _displayLanguage(String language) {
   final trimmed = language.trim();
   return trimmed.isEmpty ? 'text' : trimmed;
@@ -467,53 +623,25 @@ String? _normalizeHighlightLanguage(String language) {
   final normalized = language.trim().toLowerCase();
   if (normalized.isEmpty) return null;
   return switch (normalized) {
-    'js' || 'javascript' => 'javascript',
-    'ts' || 'typescript' => 'typescript',
+    'js' || 'jsx' => 'javascript',
+    'ts' || 'tsx' => 'typescript',
     'sh' || 'zsh' || 'bash' || 'shell' => 'bash',
     'yml' || 'yaml' => 'yaml',
     'py' || 'python' => 'python',
     'rb' || 'ruby' => 'ruby',
     'kt' || 'kotlin' => 'kotlin',
     'c#' || 'cs' || 'csharp' => 'csharp',
-    'objc' || 'objectivec' => 'objectivec',
+    'objc' || 'objective-c' || 'objectivec' => 'objectivec',
     'go' || 'golang' => 'go',
-    'html' || 'xml' => 'xml',
+    'rs' || 'rust' => 'rust',
+    'html' || 'htm' => 'xml',
     'md' || 'markdown' => 'markdown',
     'text' || 'txt' || 'plain' || 'plaintext' => null,
     _ => normalized,
   };
 }
 
-Map<String, TextStyle> _transparentBgTheme(Map<String, TextStyle> base) {
-  final theme = Map<String, TextStyle>.from(base);
-  final root = base['root'];
-  theme['root'] = (root ?? const TextStyle()).copyWith(
-    backgroundColor: Colors.transparent,
-  );
-  return theme;
-}
-
-TextStyle? _mergeHighlightStyle(TextStyle? parent, TextStyle? child) {
-  if (parent == null) return child;
-  if (child == null) return parent;
-  return parent.merge(child);
-}
-
-bool _highlightThemeEquals(Map<String, TextStyle> a, Map<String, TextStyle> b) {
-  if (identical(a, b)) return true;
-  if (a.length != b.length) return false;
-  for (final entry in a.entries) {
-    if (b[entry.key] != entry.value) return false;
-  }
-  return true;
-}
-
 String _displayCode(String code) {
   final normalized = code.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
   return normalized.replaceAll(RegExp(r'\n+$'), '');
-}
-
-int _lineCount(String code) {
-  if (code.isEmpty) return 1;
-  return code.split('\n').length;
 }
