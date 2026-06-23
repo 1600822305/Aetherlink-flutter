@@ -48,6 +48,14 @@ abstract class TtsProviderSetting with _$TtsProviderSetting {
     @Default('') String region,
     // Gemini voiceName (distinct from generic `voice`)
     @Default('') String voiceName,
+    // Gemini style prompt (natural language control of speech style)
+    @Default('') String stylePrompt,
+    // Gemini multi-speaker TTS
+    @Default(false) bool useMultiSpeaker,
+    @Default('') String speaker1Name,
+    @Default('') String speaker1Voice,
+    @Default('') String speaker2Name,
+    @Default('') String speaker2Voice,
     // ElevenLabs
     @Default('') String outputFormat,
     // Volcano-specific
@@ -87,7 +95,7 @@ TtsProviderSetting defaultTtsProvider(TtsProviderKind kind) => switch (kind) {
     kind: TtsProviderKind.gemini,
     name: 'Gemini TTS',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    model: 'gemini-2.5-flash-preview-tts',
+    model: 'gemini-3.1-flash-tts-preview',
     voiceName: 'Kore',
   ),
   TtsProviderKind.minimax => const TtsProviderSetting(
