@@ -248,8 +248,9 @@ class _FullScreenVoicePickerState extends State<FullScreenVoicePicker>
       );
     }
 
+    final bottomPad = MediaQuery.paddingOf(context).bottom;
     return GridView.builder(
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.fromLTRB(12, 12, 12, 12 + bottomPad),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 200,
         mainAxisExtent: 64,
