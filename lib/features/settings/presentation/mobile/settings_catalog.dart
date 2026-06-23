@@ -189,6 +189,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.mic,
         title: '语音功能',
         description: '语音识别和文本转语音设置',
+        route: AppRouter.voiceSettingsPath,
       ),
       SettingItemData(
         icon: LucideIcons.shield,

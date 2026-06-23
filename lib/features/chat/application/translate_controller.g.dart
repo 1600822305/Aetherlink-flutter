@@ -135,20 +135,32 @@ abstract class _$TranslateTargetLanguage extends $Notifier<String> {
 }
 
 /// The persisted translate model key (`providerId\u0000modelId`), or `null` to
-/// fall back to the app's current chat model. Hydrated from / written through to
-/// persisted storage.
+/// fall back to the app's current chat model.
+///
+/// Single source of truth: [AuxiliaryModelController.translateModelKey].
+/// This provider derives its state from the auxiliary controller so that
+/// the sidebar translate page, message toolbar, and settings all share the
+/// same selection.
 
 @ProviderFor(TranslateModelSelection)
 final translateModelSelectionProvider = TranslateModelSelectionProvider._();
 
 /// The persisted translate model key (`providerId\u0000modelId`), or `null` to
-/// fall back to the app's current chat model. Hydrated from / written through to
-/// persisted storage.
+/// fall back to the app's current chat model.
+///
+/// Single source of truth: [AuxiliaryModelController.translateModelKey].
+/// This provider derives its state from the auxiliary controller so that
+/// the sidebar translate page, message toolbar, and settings all share the
+/// same selection.
 final class TranslateModelSelectionProvider
     extends $NotifierProvider<TranslateModelSelection, String?> {
   /// The persisted translate model key (`providerId\u0000modelId`), or `null` to
-  /// fall back to the app's current chat model. Hydrated from / written through to
-  /// persisted storage.
+  /// fall back to the app's current chat model.
+  ///
+  /// Single source of truth: [AuxiliaryModelController.translateModelKey].
+  /// This provider derives its state from the auxiliary controller so that
+  /// the sidebar translate page, message toolbar, and settings all share the
+  /// same selection.
   TranslateModelSelectionProvider._()
     : super(
         from: null,
@@ -177,11 +189,15 @@ final class TranslateModelSelectionProvider
 }
 
 String _$translateModelSelectionHash() =>
-    r'164f7b4ec8dd38cf5c4cbf78be056dd577153ef4';
+    r'1b952c8d8faba62ac5dfb4093ad3ce745914a58e';
 
 /// The persisted translate model key (`providerId\u0000modelId`), or `null` to
-/// fall back to the app's current chat model. Hydrated from / written through to
-/// persisted storage.
+/// fall back to the app's current chat model.
+///
+/// Single source of truth: [AuxiliaryModelController.translateModelKey].
+/// This provider derives its state from the auxiliary controller so that
+/// the sidebar translate page, message toolbar, and settings all share the
+/// same selection.
 
 abstract class _$TranslateModelSelection extends $Notifier<String?> {
   String? build();

@@ -15,6 +15,8 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.da
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_version.dart';
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/token_display.dart';
+import 'package:aetherlink_flutter/features/voice/application/tts_controller.dart';
+import 'package:aetherlink_flutter/features/voice/domain/tts_playback_state.dart';
 
 /// The message bubble bottom toolbar (`MessageActions` `renderMode === 'toolbar'`).
 ///
@@ -82,7 +84,14 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
       );
   }
 
-  void _comingSoon() => _toast('即将支持');
+  void _toggleTts() {
+    final text = _mainText.trim();
+    if (text.isEmpty) {
+      _toast('没有可播放的内容');
+      return;
+    }
+    ref.read(ttsControllerProvider.notifier).speak(text, messageId: _view.id);
+  }
 
   void _regenerate() {
     ref.read(chatControllerProvider.notifier).regenerate(_view.id);
@@ -236,11 +245,21 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
           onTap: _regenerate,
         ),
       if (!_isUser && widget.showTtsButton)
-        _ToolbarIconButton(
-          icon: LucideIcons.volume2,
-          tooltip: '语音播放',
-          color: baseColor,
-          onTap: _comingSoon,
+        Consumer(
+          builder: (context, ref, _) {
+            final ttsState = ref.watch(ttsControllerProvider);
+            final isPlayingThis = ttsState.messageId == _view.id &&
+                (ttsState.status == TtsStatus.playing ||
+                    ttsState.status == TtsStatus.loading);
+            return _ToolbarIconButton(
+              icon: isPlayingThis ? LucideIcons.volumeOff : LucideIcons.volume2,
+              tooltip: isPlayingThis ? '停止播放' : '语音播放',
+              color: isPlayingThis
+                  ? theme.colorScheme.primary
+                  : baseColor,
+              onTap: _toggleTts,
+            );
+          },
         ),
       if (!_isUser)
         _ToolbarIconButton(
