@@ -1,15 +1,17 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
+import 'package:aetherlink_flutter/features/settings/application/skill_store_sources.dart';
 import 'package:aetherlink_flutter/features/settings/application/skills_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/skillsmp_service.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
 
-/// The SkillsMP marketplace browser — search, preview, and import community
-/// skills from https://skillsmp.com.
+/// The unified skill marketplace — search and import from SkillsMP, ClawHub,
+/// and AI Skill Store.
 class SkillStorePage extends ConsumerStatefulWidget {
   const SkillStorePage({super.key});
 
@@ -21,18 +23,27 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
-  List<SkillsMpItem> _results = [];
+  SkillStoreSource _currentSource = SkillStoreSource.skillsmp;
+  List<StoreSkillItem> _results = [];
   bool _loading = false;
   String? _error;
   int _page = 1;
   int _total = 0;
-  int _dailyRemaining = -1;
   bool _hasMore = true;
   String _lastQuery = '';
+  String _rateInfo = '';
+
+  late final Dio _dio;
 
   @override
   void initState() {
     super.initState();
+    _dio = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 15),
+      ),
+    );
     _scrollController.addListener(_onScroll);
   }
 
@@ -40,6 +51,7 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
   void dispose() {
     _searchController.dispose();
     _scrollController.dispose();
+    _dio.close();
     super.dispose();
   }
 
@@ -50,6 +62,20 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
         _hasMore) {
       _loadMore();
     }
+  }
+
+  void _switchSource(SkillStoreSource source) {
+    if (source == _currentSource) return;
+    setState(() {
+      _currentSource = source;
+      _results = [];
+      _error = null;
+      _page = 1;
+      _total = 0;
+      _hasMore = true;
+      _rateInfo = '';
+      _lastQuery = '';
+    });
   }
 
   Future<void> _search({bool reset = true}) async {
@@ -71,18 +97,22 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
     });
 
     try {
-      final service = ref.read(skillsMpServiceProvider.notifier);
-      final result = await service.search(
-        query: query,
-        page: _page,
-        limit: 20,
-        sortBy: 'stars',
-      );
+      late final StoreSearchResult result;
+
+      switch (_currentSource) {
+        case SkillStoreSource.skillsmp:
+          result = await _searchSkillsMP(query);
+        case SkillStoreSource.clawhub:
+          result = await searchClawHub(dio: _dio, query: query, limit: 20);
+        case SkillStoreSource.aiskillstore:
+          result = await searchAiSkillStore(dio: _dio, query: query, limit: 20);
+      }
+
       setState(() {
         _results = reset ? result.skills : [..._results, ...result.skills];
         _total = result.total;
-        _dailyRemaining = result.dailyRemaining;
-        _hasMore = _results.length < _total;
+        _hasMore = result.hasMore;
+        _rateInfo = result.rateInfo;
         _loading = false;
       });
     } catch (e) {
@@ -93,12 +123,43 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
     }
   }
 
+  Future<StoreSearchResult> _searchSkillsMP(String query) async {
+    final service = ref.read(skillsMpServiceProvider.notifier);
+    final result = await service.search(
+      query: query,
+      page: _page,
+      limit: 20,
+      sortBy: 'stars',
+    );
+    return StoreSearchResult(
+      skills: result.skills
+          .map(
+            (item) => StoreSkillItem(
+              id: item.id,
+              name: item.name,
+              author: item.author,
+              description: item.description,
+              url: item.skillUrl,
+              source: SkillStoreSource.skillsmp,
+              stars: item.stars,
+            ),
+          )
+          .toList(),
+      source: SkillStoreSource.skillsmp,
+      total: result.total,
+      hasMore: _results.length + result.skills.length < result.total,
+      rateInfo: result.dailyRemaining >= 0
+          ? '今日剩余 ${result.dailyRemaining} 次'
+          : '',
+    );
+  }
+
   Future<void> _loadMore() async {
     _page++;
     await _search(reset: false);
   }
 
-  Future<void> _importSkill(SkillsMpItem item) async {
+  Future<void> _importSkill(StoreSkillItem item) async {
     final now = DateTime.now().toUtc().toIso8601String();
     final skill = Skill(
       id: generateId('skill'),
@@ -106,10 +167,10 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
       description: item.description,
       source: SkillSource.community,
       emoji: '🌐',
-      tags: [item.author],
+      tags: [item.author, item.source.label],
       content:
-          '<!-- 来源: ${item.skillUrl} -->\n'
-          '<!-- GitHub: ${item.githubUrl} -->\n\n'
+          '<!-- 来源: ${item.url} -->\n'
+          '<!-- 平台: ${item.source.label} -->\n\n'
           '${item.description}',
       author: item.author,
       enabled: true,
@@ -142,7 +203,8 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '填入 API Key 可将每日额度从 50 次提升到 500 次。',
+              '填入 API Key 可将每日额度从 50 次提升到 500 次。\n'
+              '（仅对 SkillsMP 数据源有效）',
               style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
                 color: Theme.of(ctx).colorScheme.onSurfaceVariant,
               ),
@@ -258,8 +320,9 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
       ),
       body: Column(
         children: [
+          _buildSourceTabs(theme, cs),
           _buildSearchBar(theme, cs),
-          if (_dailyRemaining >= 0)
+          if (_rateInfo.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
@@ -267,8 +330,7 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
                   Icon(LucideIcons.info, size: 12, color: cs.onSurfaceVariant),
                   const SizedBox(width: 4),
                   Text(
-                    '今日剩余 $_dailyRemaining 次请求'
-                    '${apiKey != null ? '（已认证）' : '（匿名）'}',
+                    _rateInfo,
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontSize: 11,
                       color: cs.onSurfaceVariant,
@@ -283,9 +345,62 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
     );
   }
 
+  Widget _buildSourceTabs(ThemeData theme, ColorScheme cs) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      child: Container(
+        height: 34,
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: SkillStoreSource.values.map((source) {
+            final selected = source == _currentSource;
+            return Expanded(
+              child: GestureDetector(
+                onTap: () => _switchSource(source),
+                behavior: HitTestBehavior.opaque,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  margin: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: selected ? cs.surface : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: selected
+                        ? [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.06),
+                              blurRadius: 3,
+                              offset: const Offset(0, 1),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    source.label,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 12,
+                      fontWeight: selected
+                          ? FontWeight.w600
+                          : FontWeight.normal,
+                      color: selected ? cs.onSurface : cs.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSearchBar(ThemeData theme, ColorScheme cs) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
       child: Row(
         children: [
           Expanded(
@@ -296,7 +411,7 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
               style: theme.textTheme.bodyMedium?.copyWith(fontSize: 14),
               decoration: InputDecoration(
                 isDense: true,
-                hintText: '搜索技能（如 flutter, SEO, code review）...',
+                hintText: '搜索技能...',
                 hintStyle: theme.textTheme.bodyMedium?.copyWith(
                   fontSize: 14,
                   color: cs.onSurfaceVariant,
@@ -369,14 +484,23 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
               Icon(LucideIcons.globe, size: 40, color: cs.onSurfaceVariant),
               const SizedBox(height: 12),
               Text(
-                _lastQuery.isEmpty
-                    ? '搜索 170 万+ 开源 Agent 技能\n来自 skillsmp.com'
-                    : '没有找到匹配的技能',
+                _lastQuery.isEmpty ? _currentSource.subtitle : '没有找到匹配的技能',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: cs.onSurfaceVariant,
                 ),
               ),
+              if (_lastQuery.isEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  _sourceHint,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 11,
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -396,27 +520,38 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage> {
             child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
           );
         }
-        return _SkillsMpCard(
+        return _StoreSkillCard(
           item: _results[i],
           onImport: () => _importSkill(_results[i]),
           onOpenUrl: () => launchUrl(
-            Uri.parse(_results[i].skillUrl),
+            Uri.parse(_results[i].url),
             mode: LaunchMode.externalApplication,
           ),
         );
       },
     );
   }
+
+  String get _sourceHint {
+    switch (_currentSource) {
+      case SkillStoreSource.skillsmp:
+        return '170 万+ 开源 Agent 技能 · skillsmp.com';
+      case SkillStoreSource.clawhub:
+        return '社区精选 Agent 技能 · clawhub.ai\n3000 次/分钟 · 无需注册';
+      case SkillStoreSource.aiskillstore:
+        return 'USK 标准技能 · aiskillstore.io\n经 AI 安全审核';
+    }
+  }
 }
 
-class _SkillsMpCard extends StatelessWidget {
-  const _SkillsMpCard({
+class _StoreSkillCard extends StatelessWidget {
+  const _StoreSkillCard({
     required this.item,
     required this.onImport,
     required this.onOpenUrl,
   });
 
-  final SkillsMpItem item;
+  final StoreSkillItem item;
   final VoidCallback onImport;
   final VoidCallback onOpenUrl;
 
@@ -460,6 +595,18 @@ class _SkillsMpCard extends StatelessWidget {
                     const SizedBox(width: 2),
                     Text(
                       '${item.stars}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 11,
+                        color: cs.primary,
+                      ),
+                    ),
+                  ],
+                  if (item.downloads > 0) ...[
+                    const SizedBox(width: 6),
+                    Icon(LucideIcons.download, size: 12, color: cs.primary),
+                    const SizedBox(width: 2),
+                    Text(
+                      '${item.downloads}',
                       style: theme.textTheme.bodySmall?.copyWith(
                         fontSize: 11,
                         color: cs.primary,
