@@ -15,7 +15,123 @@ import 'package:aetherlink_flutter/features/voice/domain/voice_settings.dart';
 import 'package:aetherlink_flutter/features/voice/presentation/widgets/full_screen_voice_picker.dart';
 
 // ---------------------------------------------------------------------------
-// 2nd-level page: Dual-tab (TTS / ASR) provider list
+// Service metadata used by the 2nd-level card grid.
+// Mirrors Web's getTTSServices / getASRServices.
+// ---------------------------------------------------------------------------
+
+class _ServiceMeta {
+  const _ServiceMeta({
+    required this.icon,
+    required this.color,
+    required this.name,
+    required this.description,
+    required this.features,
+    this.status = '',
+  });
+  final IconData icon;
+  final Color color;
+  final String name;
+  final String description;
+  final List<String> features;
+  final String status;
+}
+
+Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
+      TtsProviderKind.system: const _ServiceMeta(
+        icon: LucideIcons.smartphone,
+        color: Color(0xFF64748B),
+        name: '系统 TTS',
+        description: '使用设备内置语音合成引擎',
+        features: ['免费', '离线'],
+        status: '免费',
+      ),
+      TtsProviderKind.openai: const _ServiceMeta(
+        icon: LucideIcons.bot,
+        color: Color(0xFF10B981),
+        name: 'OpenAI TTS',
+        description: '高质量 AI 语音合成，支持多种风格',
+        features: ['高品质', '多风格', '流式'],
+        status: '高级',
+      ),
+      TtsProviderKind.gemini: const _ServiceMeta(
+        icon: LucideIcons.sparkles,
+        color: Color(0xFFEA4335),
+        name: 'Gemini TTS',
+        description: 'Google Gemini 语音合成服务',
+        features: ['30种语音', '多语言'],
+        status: '高级',
+      ),
+      TtsProviderKind.minimax: const _ServiceMeta(
+        icon: LucideIcons.audioLines,
+        color: Color(0xFFFF6B35),
+        name: 'MiniMax TTS',
+        description: '海螺 AI 高质量中文语音合成',
+        features: ['14种音色', '情感', '中文优化'],
+        status: '高级',
+      ),
+      TtsProviderKind.siliconflow: const _ServiceMeta(
+        icon: LucideIcons.rocket,
+        color: Color(0xFF9333EA),
+        name: 'SiliconFlow',
+        description: '硅基流动 TTS，高性价比语音合成',
+        features: ['多模型', '高性价比'],
+        status: '推荐',
+      ),
+      TtsProviderKind.azure: const _ServiceMeta(
+        icon: LucideIcons.cloud,
+        color: Color(0xFF3B82F6),
+        name: 'Azure TTS',
+        description: '微软 Azure 认知服务语音合成',
+        features: ['企业级', '多语言', '神经网络'],
+        status: '企业',
+      ),
+      TtsProviderKind.elevenlabs: const _ServiceMeta(
+        icon: LucideIcons.mic,
+        color: Color(0xFF00C7B7),
+        name: 'ElevenLabs',
+        description: '领先的 AI 语音克隆与合成平台',
+        features: ['语音克隆', '超自然', '多模型'],
+        status: '高级',
+      ),
+      TtsProviderKind.volcano: const _ServiceMeta(
+        icon: LucideIcons.flame,
+        color: Color(0xFFFF4500),
+        name: '火山引擎 TTS',
+        description: '字节跳动火山引擎，100+ 音色',
+        features: ['100+音色', '情感', '多方言'],
+        status: '免费',
+      ),
+    };
+
+Map<AsrProviderKind, _ServiceMeta> _asrServiceMeta() => {
+      AsrProviderKind.system: const _ServiceMeta(
+        icon: LucideIcons.smartphone,
+        color: Color(0xFF64748B),
+        name: '系统语音识别',
+        description: '使用设备内置语音识别引擎',
+        features: ['免费', '离线'],
+        status: '免费',
+      ),
+      AsrProviderKind.openaiRealtime: const _ServiceMeta(
+        icon: LucideIcons.radio,
+        color: Color(0xFF10B981),
+        name: 'OpenAI Realtime',
+        description: 'OpenAI 实时语音识别 (WebSocket)',
+        features: ['实时', '高精度'],
+        status: '高级',
+      ),
+      AsrProviderKind.whisper: const _ServiceMeta(
+        icon: LucideIcons.audioWaveform,
+        color: Color(0xFF6366F1),
+        name: 'OpenAI Whisper',
+        description: '高精度离线友好语音转文字',
+        features: ['高精度', '多语言'],
+        status: '高级',
+      ),
+    };
+
+// ---------------------------------------------------------------------------
+// 2nd-level page: Dual-tab (TTS / ASR) provider card grid
 // ---------------------------------------------------------------------------
 
 class VoiceSettingsPage extends ConsumerStatefulWidget {
@@ -60,9 +176,7 @@ class _VoiceSettingsPageState extends ConsumerState<VoiceSettingsPage>
       body: TabBarView(
         controller: _tabCtrl,
         children: [
-          // ---- TTS tab ----
           _TtsTab(settings: settings, ctrl: ctrl),
-          // ---- ASR tab ----
           _AsrTab(settings: settings, ctrl: ctrl),
         ],
       ),
@@ -138,7 +252,7 @@ class _TabHeader extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// TTS tab content
+// TTS tab — card grid (matches Web's grid layout)
 // ---------------------------------------------------------------------------
 
 class _TtsTab extends StatelessWidget {
@@ -148,65 +262,37 @@ class _TtsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final meta = _ttsServiceMeta();
     return ListView(
       padding: EdgeInsets.fromLTRB(
         16, 12, 16, 16 + MediaQuery.paddingOf(context).bottom,
       ),
       children: [
-        // Global TTS toggle + speed
-        _CompactCard(
-          children: [
-            _CompactToggle(
-              icon: LucideIcons.volume2,
-              accent: const Color(0xFF06B6D4),
-              label: '启用语音合成',
-              value: settings.enableTts,
-              onChanged: ctrl.setEnableTts,
-            ),
-            Divider(height: 1, color: theme.dividerColor),
-            _CompactSlider(
-              icon: LucideIcons.gauge,
-              accent: const Color(0xFF8B5CF6),
-              label: '播放速度',
-              value: settings.defaultSpeed,
-              min: 0.5,
-              max: 2.0,
-              divisions: 6,
-              valueLabel: '${settings.defaultSpeed}x',
-              onChanged: ctrl.setDefaultSpeed,
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        // TTS provider list
-        _CompactCard(
-          children: [
-            for (final kind in TtsProviderKind.values) ...[
-              if (kind != TtsProviderKind.values.first)
-                Divider(height: 1, indent: 48, color: theme.dividerColor),
-              Builder(builder: (ctx) {
-                final preset = defaultTtsProvider(kind);
-                final configured = settings.ttsProviders
-                    .where((p) => p.kind == kind)
-                    .toList();
-                final provider =
-                    configured.isNotEmpty ? configured.first : preset;
-                final isActive =
-                    settings.activeTtsProviderId == provider.id;
+        for (final kind in TtsProviderKind.values) ...[
+          Builder(builder: (ctx) {
+            final preset = defaultTtsProvider(kind);
+            final configured =
+                settings.ttsProviders.where((p) => p.kind == kind).toList();
+            final provider = configured.isNotEmpty ? configured.first : preset;
+            final isActive = settings.activeTtsProviderId == provider.id;
+            final m = meta[kind]!;
 
-                return _ProviderTile(
-                  icon: _ttsIcon(kind),
-                  accent: _ttsAccent(kind),
-                  name: preset.name,
-                  isActive: isActive,
-                  onTap: () => _pushDetail(ctx, kind, provider),
-                  onLongPress: () => ctrl.setActiveTtsProvider(provider.id),
-                );
-              }),
-            ],
-          ],
-        ),
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _ServiceCard(
+                icon: m.icon,
+                color: m.color,
+                name: m.name,
+                description: m.description,
+                features: m.features,
+                status: m.status,
+                isActive: isActive,
+                onTap: () => _pushDetail(ctx, kind, provider),
+                onLongPress: () => ctrl.setActiveTtsProvider(provider.id),
+              ),
+            );
+          }),
+        ],
       ],
     );
   }
@@ -217,40 +303,16 @@ class _TtsTab extends StatelessWidget {
     TtsProviderSetting provider,
   ) {
     Navigator.of(context).push(
-      PageRouteBuilder<void>(
-        pageBuilder: (_, __, ___) =>
+      MaterialPageRoute<void>(
+        builder: (_) =>
             _TtsProviderDetailPage(kind: kind, provider: provider),
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
       ),
     );
   }
-
-  static IconData _ttsIcon(TtsProviderKind kind) => switch (kind) {
-    TtsProviderKind.system => LucideIcons.smartphone,
-    TtsProviderKind.openai => LucideIcons.bot,
-    TtsProviderKind.gemini => LucideIcons.sparkles,
-    TtsProviderKind.minimax => LucideIcons.audioLines,
-    TtsProviderKind.siliconflow => LucideIcons.rocket,
-    TtsProviderKind.azure => LucideIcons.cloud,
-    TtsProviderKind.elevenlabs => LucideIcons.mic,
-    TtsProviderKind.volcano => LucideIcons.flame,
-  };
-
-  static Color _ttsAccent(TtsProviderKind kind) => switch (kind) {
-    TtsProviderKind.system => const Color(0xFF64748B),
-    TtsProviderKind.openai => const Color(0xFF10B981),
-    TtsProviderKind.gemini => const Color(0xFF6366F1),
-    TtsProviderKind.minimax => const Color(0xFFF59E0B),
-    TtsProviderKind.siliconflow => const Color(0xFFEF4444),
-    TtsProviderKind.azure => const Color(0xFF0EA5E9),
-    TtsProviderKind.elevenlabs => const Color(0xFF8B5CF6),
-    TtsProviderKind.volcano => const Color(0xFFF97316),
-  };
 }
 
 // ---------------------------------------------------------------------------
-// ASR tab content
+// ASR tab — card grid
 // ---------------------------------------------------------------------------
 
 class _AsrTab extends StatelessWidget {
@@ -260,53 +322,37 @@ class _AsrTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final meta = _asrServiceMeta();
     return ListView(
       padding: EdgeInsets.fromLTRB(
         16, 12, 16, 16 + MediaQuery.paddingOf(context).bottom,
       ),
       children: [
-        // Global ASR toggle
-        _CompactCard(
-          children: [
-            _CompactToggle(
-              icon: LucideIcons.mic,
-              accent: const Color(0xFFEC4899),
-              label: '启用语音识别',
-              value: settings.enableAsr,
-              onChanged: ctrl.setEnableAsr,
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        // ASR provider list
-        _CompactCard(
-          children: [
-            for (final kind in AsrProviderKind.values) ...[
-              if (kind != AsrProviderKind.values.first)
-                Divider(height: 1, indent: 48, color: theme.dividerColor),
-              Builder(builder: (ctx) {
-                final preset = defaultAsrProvider(kind);
-                final configured = settings.asrProviders
-                    .where((p) => p.kind == kind)
-                    .toList();
-                final provider =
-                    configured.isNotEmpty ? configured.first : preset;
-                final isActive =
-                    settings.activeAsrProviderId == provider.id;
+        for (final kind in AsrProviderKind.values) ...[
+          Builder(builder: (ctx) {
+            final preset = defaultAsrProvider(kind);
+            final configured =
+                settings.asrProviders.where((p) => p.kind == kind).toList();
+            final provider = configured.isNotEmpty ? configured.first : preset;
+            final isActive = settings.activeAsrProviderId == provider.id;
+            final m = meta[kind]!;
 
-                return _ProviderTile(
-                  icon: _asrIcon(kind),
-                  accent: _asrAccent(kind),
-                  name: preset.name,
-                  isActive: isActive,
-                  onTap: () => _pushDetail(ctx, kind, provider),
-                  onLongPress: () => ctrl.setActiveAsrProvider(provider.id),
-                );
-              }),
-            ],
-          ],
-        ),
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _ServiceCard(
+                icon: m.icon,
+                color: m.color,
+                name: m.name,
+                description: m.description,
+                features: m.features,
+                status: m.status,
+                isActive: isActive,
+                onTap: () => _pushDetail(ctx, kind, provider),
+                onLongPress: () => ctrl.setActiveAsrProvider(provider.id),
+              ),
+            );
+          }),
+        ],
       ],
     );
   }
@@ -317,30 +363,210 @@ class _AsrTab extends StatelessWidget {
     AsrProviderSetting provider,
   ) {
     Navigator.of(context).push(
-      PageRouteBuilder<void>(
-        pageBuilder: (_, __, ___) =>
+      MaterialPageRoute<void>(
+        builder: (_) =>
             _AsrProviderDetailPage(kind: kind, provider: provider),
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
       ),
     );
   }
+}
 
-  static IconData _asrIcon(AsrProviderKind kind) => switch (kind) {
-    AsrProviderKind.system => LucideIcons.smartphone,
-    AsrProviderKind.openaiRealtime => LucideIcons.radio,
-    AsrProviderKind.whisper => LucideIcons.audioWaveform,
-  };
+// ---------------------------------------------------------------------------
+// Service card — rich card matching Web's grid items
+// ---------------------------------------------------------------------------
 
-  static Color _asrAccent(AsrProviderKind kind) => switch (kind) {
-    AsrProviderKind.system => const Color(0xFF64748B),
-    AsrProviderKind.openaiRealtime => const Color(0xFF10B981),
-    AsrProviderKind.whisper => const Color(0xFF6366F1),
-  };
+class _ServiceCard extends StatelessWidget {
+  const _ServiceCard({
+    required this.icon,
+    required this.color,
+    required this.name,
+    required this.description,
+    required this.features,
+    required this.status,
+    required this.isActive,
+    required this.onTap,
+    required this.onLongPress,
+  });
+  final IconData icon;
+  final Color color;
+  final String name;
+  final String description;
+  final List<String> features;
+  final String status;
+  final bool isActive;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isActive
+                  ? theme.colorScheme.primary.withValues(alpha: 0.5)
+                  : theme.dividerColor,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header: icon + name + badges
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(icon, size: 20, color: color),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            if (isActive)
+                              _Badge(
+                                label: '当前使用',
+                                bgColor: theme.colorScheme.primaryContainer,
+                                textColor: theme.colorScheme.primary,
+                              ),
+                            if (isActive && status.isNotEmpty)
+                              const SizedBox(width: 4),
+                            if (status.isNotEmpty)
+                              _Badge(
+                                label: status,
+                                bgColor: color.withValues(alpha: 0.12),
+                                textColor: color,
+                                outlined: true,
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    LucideIcons.chevronRight,
+                    size: 16,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              // Description
+              Text(
+                description,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  height: 1.35,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 10),
+              // Feature tags
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: features
+                    .map((f) => _FeatureChip(label: f, color: color))
+                    .toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge({
+    required this.label,
+    required this.bgColor,
+    required this.textColor,
+    this.outlined = false,
+  });
+  final String label;
+  final Color bgColor;
+  final Color textColor;
+  final bool outlined;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+      decoration: BoxDecoration(
+        color: outlined ? Colors.transparent : bgColor,
+        borderRadius: BorderRadius.circular(6),
+        border: outlined
+            ? Border.all(color: textColor.withValues(alpha: 0.4))
+            : null,
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: textColor,
+        ),
+      ),
+    );
+  }
+}
+
+class _FeatureChip extends StatelessWidget {
+  const _FeatureChip({required this.label, required this.color});
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
 // 3rd-level: TTS Provider Detail Page
+// Matches Web layout: single Paper card with all settings + separate test card.
 // ---------------------------------------------------------------------------
 
 class _TtsProviderDetailPage extends ConsumerStatefulWidget {
@@ -364,10 +590,8 @@ class _TtsProviderDetailPageState
   late final TextEditingController _modelCtrl;
   late final TextEditingController _regionCtrl;
   late final TextEditingController _groupIdCtrl;
-  // Volcano-specific
   late final TextEditingController _appIdCtrl;
   late final TextEditingController _clusterCtrl;
-  // TTS test
   late final TextEditingController _testTextCtrl;
   late bool _enabled;
   late double _speed;
@@ -375,13 +599,12 @@ class _TtsProviderDetailPageState
   late double _pitch;
   late String _apiVersion;
   late String _encoding;
-  // Selector-based fields (no longer TextEditingController)
   late String _voice;
-  late String _voiceName; // Gemini-only
+  late String _voiceName;
   late String _emotion;
   late String _model;
-  late String _outputFormat; // ElevenLabs
-  late String _resourceId; // Volcano
+  late String _outputFormat;
+  late String _resourceId;
 
   bool get _isSystem => widget.kind == TtsProviderKind.system;
   bool get _isVolcano => widget.kind == TtsProviderKind.volcano;
@@ -440,7 +663,6 @@ class _TtsProviderDetailPageState
       speed: _speed,
       emotion: _emotion,
       outputFormat: _outputFormat,
-      // Volcano
       appId: _appIdCtrl.text.trim(),
       cluster: _clusterCtrl.text.trim(),
       resourceId: _resourceId,
@@ -463,6 +685,7 @@ class _TtsProviderDetailPageState
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: ModelSettingsAppBar(
         title: defaultTtsProvider(widget.kind).name,
@@ -479,105 +702,84 @@ class _TtsProviderDetailPageState
           16, 12, 16, 16 + MediaQuery.paddingOf(context).bottom,
         ),
         children: [
-          // -- Basic settings --
+          // ===== Single main card (matching Web's single Paper) =====
           ModelSettingsCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const ModelSectionTitle('基本设置'),
-                const SizedBox(height: 12),
-                _CompactToggle(
-                  icon: LucideIcons.power,
-                  accent: const Color(0xFF10B981),
-                  label: '启用',
+                // -- Enable switch --
+                _InlineToggle(
+                  label: '启用此服务',
                   value: _enabled,
                   onChanged: (v) => setState(() => _enabled = v),
                 ),
-                if (!_isSystem) ..._buildCredentialFields(),
-              ],
-            ),
-          ),
-          if (!_isSystem) ...[
-            const SizedBox(height: 10),
-            // -- Voice / Model selection --
-            ModelSettingsCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const ModelSectionTitle('音色设置'),
-                  const SizedBox(height: 12),
+                if (!_isSystem) ...[
+                  Divider(height: 24, color: theme.dividerColor),
+                  // -- Credentials --
+                  ..._buildCredentialFields(),
+                  // -- API version + V3 options (Volcano, inline) --
+                  if (_isVolcano) ..._buildVolcanoApiOptions(),
+                  Divider(height: 24, color: theme.dividerColor),
+                  // -- Voice / model selection --
                   ..._buildVoiceSection(),
+                  // -- Encoding (Volcano) --
+                  if (_isVolcano) ...[
+                    const SizedBox(height: 12),
+                    _DropdownField(
+                      label: '音频格式',
+                      value: _encoding,
+                      items: const {
+                        'mp3': 'MP3',
+                        'ogg_opus': 'OGG Opus',
+                        'wav': 'WAV',
+                        'pcm': 'PCM',
+                      },
+                      onChanged: (v) => setState(() => _encoding = v),
+                    ),
+                  ],
                 ],
-              ),
-            ),
-          ],
-          if (!_isSystem) ...[
-            const SizedBox(height: 10),
-            // -- TTS test/preview --
-            _TtsTestSection(
-              testTextCtrl: _testTextCtrl,
-              providerKind: widget.kind,
-            ),
-          ],
-          const SizedBox(height: 10),
-          // -- Playback parameters --
-          ModelSettingsCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const ModelSectionTitle('播放参数'),
-                const SizedBox(height: 8),
-                _CompactSlider(
-                  icon: LucideIcons.gauge,
-                  accent: const Color(0xFF8B5CF6),
-                  label: '播放速度',
+                Divider(height: 24, color: theme.dividerColor),
+                // -- Playback sliders --
+                _SliderRow(
+                  label: '语速',
                   value: _speed,
                   min: 0.5,
                   max: 2.0,
                   divisions: 6,
-                  valueLabel: '${_speed.toStringAsFixed(1)}x',
                   onChanged: (v) => setState(() => _speed = v),
                 ),
                 if (_isVolcano) ...[
-                  const SizedBox(height: 4),
-                  _CompactSlider(
-                    icon: LucideIcons.volume2,
-                    accent: const Color(0xFF06B6D4),
+                  _SliderRow(
                     label: '音量',
                     value: _volume,
                     min: 0.5,
                     max: 2.0,
                     divisions: 6,
-                    valueLabel: '${_volume.toStringAsFixed(1)}x',
                     onChanged: (v) => setState(() => _volume = v),
                   ),
-                  const SizedBox(height: 4),
-                  _CompactSlider(
-                    icon: LucideIcons.music,
-                    accent: const Color(0xFFF59E0B),
+                  _SliderRow(
                     label: '音调',
                     value: _pitch,
                     min: 0.5,
                     max: 2.0,
                     divisions: 6,
-                    valueLabel: '${_pitch.toStringAsFixed(1)}x',
                     onChanged: (v) => setState(() => _pitch = v),
                   ),
+                ],
+                // -- Volcano advanced (cluster, model, resource ID) --
+                if (_isVolcano) ...[
+                  Divider(height: 24, color: theme.dividerColor),
+                  ..._buildVolcanoAdvanced(),
                 ],
               ],
             ),
           ),
-          if (_isVolcano) ...[
+          // ===== Test section (separate card, like Web) =====
+          if (!_isSystem) ...[
             const SizedBox(height: 10),
-            ModelSettingsCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const ModelSectionTitle('高级选项'),
-                  const SizedBox(height: 12),
-                  ..._buildVolcanoAdvanced(),
-                ],
-              ),
+            _TtsTestSection(
+              testTextCtrl: _testTextCtrl,
+              providerKind: widget.kind,
             ),
           ],
         ],
@@ -588,7 +790,6 @@ class _TtsProviderDetailPageState
   // -- Credential fields per engine --
   List<Widget> _buildCredentialFields() {
     return [
-      const SizedBox(height: 12),
       if (_isVolcano) ...[
         ModelFormField(
           label: 'App ID',
@@ -634,6 +835,45 @@ class _TtsProviderDetailPageState
           ),
         ],
       ],
+      const SizedBox(height: 4),
+    ];
+  }
+
+  // -- Volcano API version + V3 options (inline in credentials area) --
+  List<Widget> _buildVolcanoApiOptions() {
+    final showV3 = _apiVersion == 'v3' || _apiVersion == 'auto';
+    return [
+      const SizedBox(height: 12),
+      _DropdownField(
+        label: '接口版本',
+        value: _apiVersion,
+        items: const {
+          'auto': '自动 (根据音色选择)',
+          'v1': 'V1 (传统音色)',
+          'v3': 'V3 (大模型音色)',
+        },
+        onChanged: (v) => setState(() => _apiVersion = v),
+      ),
+      if (showV3) ...[
+        const SizedBox(height: 12),
+        _DropdownField(
+          label: 'Resource ID',
+          value: _resourceId,
+          items: const {
+            '': '自动选择',
+            'volc.service_type.10029': 'BigTTS (豆包大模型)',
+            'seed-tts-2.0': 'Seed TTS 2.0',
+          },
+          onChanged: (v) => setState(() => _resourceId = v),
+        ),
+        const SizedBox(height: 12),
+        ModelFormField(
+          label: '模型 (Model)',
+          hint: '留空使用默认',
+          controller: _modelCtrl,
+        ),
+      ],
+      const SizedBox(height: 4),
     ];
   }
 
@@ -659,7 +899,6 @@ class _TtsProviderDetailPageState
     }
   }
 
-  // ---- OpenAI ----
   List<Widget> _buildOpenAIVoice() {
     return [
       _DropdownField(
@@ -685,7 +924,6 @@ class _TtsProviderDetailPageState
     ];
   }
 
-  // ---- Gemini ----
   List<Widget> _buildGeminiVoice() {
     return [
       _DropdownField(
@@ -712,69 +950,83 @@ class _TtsProviderDetailPageState
     ];
   }
 
-  // ---- MiniMax ----
   List<Widget> _buildMiniMaxVoice() {
     return [
-      _DropdownField(
-        label: '模型',
-        value: _model.isEmpty ? kMiniMaxModels.first.id : _model,
-        items: {for (final m in kMiniMaxModels) m.id: '${m.name} - ${m.description}'},
-        onChanged: (v) => setState(() => _model = v),
+      Row(
+        children: [
+          Expanded(
+            child: _DropdownField(
+              label: '模型',
+              value: _model.isEmpty ? kMiniMaxModels.first.id : _model,
+              items: {for (final m in kMiniMaxModels) m.id: m.name},
+              onChanged: (v) => setState(() => _model = v),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _SelectorField(
+              label: '音色',
+              value: _voice,
+              displayText: _voice.isEmpty
+                  ? '选择...'
+                  : kMiniMaxVoices
+                        .where((v) => v.id == _voice)
+                        .map((v) => v.name)
+                        .firstOrNull ??
+                    _voice,
+              onTap: () async {
+                final result = await FullScreenVoicePicker.show(
+                  context,
+                  title: '选择 MiniMax 音色',
+                  groups: buildPresetGroups('MiniMax 音色', kMiniMaxVoices),
+                  selectedKey: _voice,
+                );
+                if (result != null) setState(() => _voice = result);
+              },
+            ),
+          ),
+        ],
       ),
       const SizedBox(height: 12),
-      _SelectorField(
-        label: '音色',
-        value: _voice,
-        displayText: _voice.isEmpty
-            ? '选择音色...'
-            : kMiniMaxVoices
-                  .where((v) => v.id == _voice)
-                  .map((v) => v.name)
-                  .firstOrNull ??
-              _voice,
-        onTap: () async {
-          final result = await FullScreenVoicePicker.show(
-            context,
-            title: '选择 MiniMax 音色',
-            groups: buildPresetGroups('MiniMax 音色', kMiniMaxVoices),
-            selectedKey: _voice,
-          );
-          if (result != null) setState(() => _voice = result);
-        },
-      ),
-      const SizedBox(height: 12),
-      _SelectorField(
-        label: '情感',
-        value: _emotion,
-        displayText: _emotion.isEmpty
-            ? '选择情感 (可选)...'
-            : kMiniMaxEmotions
-                  .where((e) => e.id == _emotion)
-                  .map((e) => e.name)
-                  .firstOrNull ??
-              _emotion,
-        onTap: () async {
-          final result = await FullScreenVoicePicker.show(
-            context,
-            title: '选择情感风格',
-            groups: buildPresetGroups('MiniMax 情感', kMiniMaxEmotions),
-            selectedKey: _emotion,
-            allowEmpty: true,
-          );
-          if (result != null) setState(() => _emotion = result);
-        },
-      ),
-      const SizedBox(height: 12),
-      _DropdownField(
-        label: '语言增强',
-        value: kMiniMaxLanguageBoost.any((l) => l.id == _voice) ? '' : '',
-        items: {for (final l in kMiniMaxLanguageBoost) l.id: l.name},
-        onChanged: (_) {},
+      Row(
+        children: [
+          Expanded(
+            child: _SelectorField(
+              label: '情感',
+              value: _emotion,
+              displayText: _emotion.isEmpty
+                  ? '默认'
+                  : kMiniMaxEmotions
+                        .where((e) => e.id == _emotion)
+                        .map((e) => e.name)
+                        .firstOrNull ??
+                    _emotion,
+              onTap: () async {
+                final result = await FullScreenVoicePicker.show(
+                  context,
+                  title: '选择情感风格',
+                  groups: buildPresetGroups('MiniMax 情感', kMiniMaxEmotions),
+                  selectedKey: _emotion,
+                  allowEmpty: true,
+                );
+                if (result != null) setState(() => _emotion = result);
+              },
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _DropdownField(
+              label: '语言增强',
+              value: kMiniMaxLanguageBoost.any((l) => l.id == _voice) ? '' : '',
+              items: {for (final l in kMiniMaxLanguageBoost) l.id: l.name},
+              onChanged: (_) {},
+            ),
+          ),
+        ],
       ),
     ];
   }
 
-  // ---- SiliconFlow ----
   List<Widget> _buildSiliconFlowVoice() {
     final currentModel =
         _model.isEmpty ? kSiliconFlowModels.first.id : _model;
@@ -786,7 +1038,6 @@ class _TtsProviderDetailPageState
         items: {for (final m in kSiliconFlowModels) m.id: '${m.name} - ${m.description}'},
         onChanged: (v) => setState(() {
           _model = v;
-          // Reset voice when model changes
           final modelVoices = kSiliconFlowVoices[v];
           if (modelVoices != null &&
               !modelVoices.any((voice) => voice.id == _voice)) {
@@ -806,7 +1057,6 @@ class _TtsProviderDetailPageState
     ];
   }
 
-  // ---- Azure ----
   List<Widget> _buildAzureVoice() {
     return [
       _SelectorField(
@@ -832,7 +1082,6 @@ class _TtsProviderDetailPageState
     ];
   }
 
-  // ---- ElevenLabs ----
   List<Widget> _buildElevenLabsVoice() {
     return [
       _DropdownField(
@@ -872,9 +1121,7 @@ class _TtsProviderDetailPageState
     ];
   }
 
-  // ---- Volcano ----
   List<Widget> _buildVolcanoVoice() {
-    // Resolve display name from voice_type
     final voiceDisplayName = _voice.isEmpty
         ? '选择音色...'
         : kVolcanoVoices.entries
@@ -883,7 +1130,7 @@ class _TtsProviderDetailPageState
               .firstOrNull ??
           _voice;
     final emotionDisplayName = _emotion.isEmpty
-        ? '选择情感 (可选)...'
+        ? '默认'
         : kVolcanoEmotions[_emotion] ?? _emotion;
 
     return [
@@ -927,53 +1174,12 @@ class _TtsProviderDetailPageState
     ];
   }
 
-  // ---- Volcano advanced options ----
   List<Widget> _buildVolcanoAdvanced() {
     return [
       ModelFormField(
         label: 'Cluster',
         hint: 'volcano_tts',
         controller: _clusterCtrl,
-      ),
-      const SizedBox(height: 12),
-      ModelFormField(
-        label: '模型 (Model)',
-        hint: '留空使用默认',
-        controller: _modelCtrl,
-      ),
-      const SizedBox(height: 12),
-      _DropdownField(
-        label: '接口版本',
-        value: _apiVersion,
-        items: const {
-          'auto': '自动 (根据音色选择)',
-          'v1': 'V1 (传统音色)',
-          'v3': 'V3 (大模型音色)',
-        },
-        onChanged: (v) => setState(() => _apiVersion = v),
-      ),
-      const SizedBox(height: 12),
-      _DropdownField(
-        label: '音频格式',
-        value: _encoding,
-        items: const {
-          'mp3': 'MP3',
-          'ogg_opus': 'OGG Opus',
-          'wav': 'WAV',
-          'pcm': 'PCM',
-        },
-        onChanged: (v) => setState(() => _encoding = v),
-      ),
-      const SizedBox(height: 12),
-      _DropdownField(
-        label: 'Resource ID',
-        value: _resourceId,
-        items: const {
-          '': '自动选择',
-          'volc.service_type.10029': 'BigTTS (豆包大模型)',
-          'seed-tts-2.0': 'Seed TTS 2.0',
-        },
-        onChanged: (v) => setState(() => _resourceId = v),
       ),
     ];
   }
@@ -1047,6 +1253,7 @@ class _AsrProviderDetailPageState
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final isSystem = widget.kind == AsrProviderKind.system;
     final isRealtime = widget.kind == AsrProviderKind.openaiRealtime;
 
@@ -1066,21 +1273,18 @@ class _AsrProviderDetailPageState
           16, 12, 16, 16 + MediaQuery.paddingOf(context).bottom,
         ),
         children: [
+          // Single card (matching Web pattern)
           ModelSettingsCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const ModelSectionTitle('基本设置'),
-                const SizedBox(height: 12),
-                _CompactToggle(
-                  icon: LucideIcons.power,
-                  accent: const Color(0xFF10B981),
-                  label: '启用',
+                _InlineToggle(
+                  label: '启用此服务',
                   value: _enabled,
                   onChanged: (v) => setState(() => _enabled = v),
                 ),
                 if (!isSystem) ...[
-                  const SizedBox(height: 12),
+                  Divider(height: 24, color: theme.dividerColor),
                   ModelFormField(
                     label: 'API Key',
                     hint: '输入 API 密钥',
@@ -1110,28 +1314,21 @@ class _AsrProviderDetailPageState
                     controller: _modelCtrl,
                   ),
                   if (isRealtime) ...[
-                    const SizedBox(height: 16),
-                    _CompactSlider(
-                      icon: LucideIcons.activity,
-                      accent: const Color(0xFFF59E0B),
+                    Divider(height: 24, color: theme.dividerColor),
+                    _SliderRow(
                       label: 'VAD 阈值',
                       value: _vadThreshold,
                       min: 0.0,
                       max: 1.0,
                       divisions: 20,
-                      valueLabel: _vadThreshold.toStringAsFixed(2),
                       onChanged: (v) => setState(() => _vadThreshold = v),
                     ),
-                    const SizedBox(height: 8),
-                    _CompactSlider(
-                      icon: LucideIcons.timer,
-                      accent: const Color(0xFFEF4444),
-                      label: '静默时间',
+                    _SliderRow(
+                      label: '静默时间 (ms)',
                       value: _silenceDurationMs.toDouble(),
                       min: 100,
                       max: 2000,
                       divisions: 19,
-                      valueLabel: '$_silenceDurationMs ms',
                       onChanged: (v) =>
                           setState(() => _silenceDurationMs = v.round()),
                     ),
@@ -1251,41 +1448,12 @@ class _TtsTestSection extends ConsumerWidget {
 // Shared compact widgets
 // ---------------------------------------------------------------------------
 
-class _CompactCard extends StatelessWidget {
-  const _CompactCard({required this.children});
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: theme.dividerColor),
-        boxShadow: const [
-          BoxShadow(color: Color(0x0A000000), blurRadius: 8, offset: Offset(0, 2)),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: children,
-      ),
-    );
-  }
-}
-
-class _CompactToggle extends StatelessWidget {
-  const _CompactToggle({
-    required this.icon,
-    required this.accent,
+class _InlineToggle extends StatelessWidget {
+  const _InlineToggle({
     required this.label,
     required this.value,
     required this.onChanged,
   });
-  final IconData icon;
-  final Color accent;
   final String label;
   final bool value;
   final ValueChanged<bool> onChanged;
@@ -1293,104 +1461,55 @@ class _CompactToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      child: Row(
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(7),
-            ),
-            child: Icon(icon, size: 14, color: accent),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              label,
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w600,
-              ),
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
             ),
           ),
-          CustomSwitch(value: value, onChanged: onChanged),
-        ],
-      ),
+        ),
+        CustomSwitch(value: value, onChanged: onChanged),
+      ],
     );
   }
 }
 
-class _CompactSlider extends StatelessWidget {
-  const _CompactSlider({
-    required this.icon,
-    required this.accent,
+class _SliderRow extends StatelessWidget {
+  const _SliderRow({
     required this.label,
     required this.value,
     required this.min,
     required this.max,
     required this.divisions,
-    required this.valueLabel,
     required this.onChanged,
   });
-  final IconData icon;
-  final Color accent;
   final String label;
   final double value;
   final double min;
   final double max;
   final int divisions;
-  final String valueLabel;
   final ValueChanged<double> onChanged;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Column(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
         children: [
-          Row(
-            children: [
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: Icon(icon, size: 14, color: accent),
+          SizedBox(
+            width: 56,
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  label,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Text(
-                valueLabel,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: accent,
-                ),
-              ),
-            ],
-          ),
-          SliderTheme(
-            data: SliderThemeData(
-              activeTrackColor: accent,
-              thumbColor: accent,
-              inactiveTrackColor: accent.withValues(alpha: 0.15),
-              overlayColor: accent.withValues(alpha: 0.08),
-              trackHeight: 3,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
             ),
+          ),
+          Expanded(
             child: Slider(
               value: value,
               min: min,
@@ -1399,81 +1518,18 @@ class _CompactSlider extends StatelessWidget {
               onChanged: onChanged,
             ),
           ),
+          SizedBox(
+            width: 36,
+            child: Text(
+              value.toStringAsFixed(1),
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.primary,
+              ),
+              textAlign: TextAlign.right,
+            ),
+          ),
         ],
-      ),
-    );
-  }
-}
-
-class _ProviderTile extends StatelessWidget {
-  const _ProviderTile({
-    required this.icon,
-    required this.accent,
-    required this.name,
-    required this.isActive,
-    required this.onTap,
-    required this.onLongPress,
-  });
-  final IconData icon;
-  final Color accent;
-  final String name;
-  final bool isActive;
-  final VoidCallback onTap;
-  final VoidCallback onLongPress;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
-          children: [
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(7),
-              ),
-              child: Icon(icon, size: 14, color: accent),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                name,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            if (isActive)
-              Container(
-                margin: const EdgeInsets.only(right: 6),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  '当前使用',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    fontSize: 10,
-                    color: theme.colorScheme.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            Icon(
-              LucideIcons.chevronRight,
-              size: 14,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1521,7 +1577,7 @@ class _DropdownField extends StatelessWidget {
             items: items.entries
                 .map((e) => DropdownMenuItem(
                       value: e.key,
-                      child: Text(e.value),
+                      child: Text(e.value, overflow: TextOverflow.ellipsis),
                     ))
                 .toList(),
             onChanged: (v) {
@@ -1534,7 +1590,6 @@ class _DropdownField extends StatelessWidget {
   }
 }
 
-/// A tappable field that opens a full-screen selector (for voices, emotions, etc.)
 class _SelectorField extends StatelessWidget {
   const _SelectorField({
     required this.label,
