@@ -1200,6 +1200,11 @@ class ChatController extends _$ChatController {
               ),
             );
           }
+          // The prose now lives in [completed]; clear the buffer so the trailing
+          // live MainText block in update() doesn't re-render the same text after
+          // the tool blocks while the tools are still executing. roundText is
+          // already captured above for the message history.
+          buffer.clear();
 
           // Run each requested tool — built-ins in-process, remote tools over a
           // live connection — and render a 工具 block per call.
