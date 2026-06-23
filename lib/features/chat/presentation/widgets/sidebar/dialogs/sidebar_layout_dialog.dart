@@ -1,6 +1,4 @@
-// Sidebar layout dialog (display mode + width with live preview).
-
-import 'dart:async';
+// Sidebar layout dialog — compact layout with live preview.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,8 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
 
-/// Opens the 侧边栏布局 dialog (显示方式 + 宽度). 显示方式切换即时预览（且持久化）；
-/// 宽度拖动实时预览，保存提交、取消恢复原宽度与原显示方式。
+/// Opens the 侧边栏布局 dialog. Changes preview in real-time; 取消 reverts all.
 Future<void> showSidebarLayoutDialog(BuildContext context, WidgetRef ref) {
   return showDialog<void>(
     context: context,
@@ -31,7 +28,6 @@ class _SidebarLayoutDialogState extends ConsumerState<_SidebarLayoutDialog> {
   late final SidebarDisplayMode _originalMode;
   late final SettingsLayoutMode _originalSettingsLayout;
   late double _draft;
-  final TextEditingController _field = TextEditingController();
 
   @override
   void initState() {
@@ -41,19 +37,11 @@ class _SidebarLayoutDialogState extends ConsumerState<_SidebarLayoutDialog> {
     _originalMode = settings.sidebarDisplayMode;
     _originalSettingsLayout = settings.settingsLayoutMode;
     _draft = _originalWidth;
-    _field.text = _draft.round().toString();
-  }
-
-  @override
-  void dispose() {
-    _field.dispose();
-    super.dispose();
   }
 
   void _apply(double value, double maxWidth) {
     final clamped = value.clamp(kSidebarWidthMin, maxWidth).toDouble();
     setState(() => _draft = clamped);
-    _field.text = clamped.round().toString();
     ref
         .read(sidebarSettingsControllerProvider.notifier)
         .previewSidebarWidth(clamped);
@@ -62,6 +50,7 @@ class _SidebarLayoutDialogState extends ConsumerState<_SidebarLayoutDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
     final maxWidth = safeMaxSidebarWidth(MediaQuery.sizeOf(context).width);
     final display = _draft.clamp(kSidebarWidthMin, maxWidth).toDouble();
     final presets = [
@@ -75,115 +64,101 @@ class _SidebarLayoutDialogState extends ConsumerState<_SidebarLayoutDialog> {
     final settingsLayout = ref.watch(
       sidebarSettingsControllerProvider.select((s) => s.settingsLayoutMode),
     );
+
     return AlertDialog(
-      // M2 默认对话框背景写死为白/grey[800]、不跟随主题，故显式取 surface。
       backgroundColor: theme.colorScheme.surface,
-      title: const Text('侧边栏布局'),
+      titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      title: Text(
+        '侧边栏布局',
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onSurface,
+        ),
+      ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _DialogSectionLabel(text: '显示方式', color: theme.colorScheme.onSurface),
-          const SizedBox(height: 8),
+          // ── 显示方式 ──────────────────────────────
+          _SectionRow(
+            label: '显示方式',
+            hint: mode == SidebarDisplayMode.overlay ? '抽屉覆盖聊天页' : '抽屉推开聊天页',
+            muted: muted,
+          ),
+          const SizedBox(height: 6),
           SegmentedButton<SidebarDisplayMode>(
             showSelectedIcon: false,
+            style: _segmentedStyle(theme),
             segments: [
               for (final v in SidebarDisplayMode.values)
                 ButtonSegment<SidebarDisplayMode>(
                   value: v,
-                  label: Text(v.label),
+                  label: Text(v.label, style: const TextStyle(fontSize: 13)),
                 ),
             ],
             selected: {mode},
-            // 即时切换（持久化），用户立刻看到覆盖/推开效果；取消时再恢复原值。
             onSelectionChanged: (sel) =>
                 controller.setSidebarDisplayMode(sel.first),
           ),
-          const SizedBox(height: 8),
-          Text(
-            '覆盖：抽屉滑入盖在聊天页上；推开：抽屉滑入时把聊天页向右推开',
-            style: TextStyle(
-              fontSize: 12,
-              height: 1.3,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+
+          const SizedBox(height: 14),
+
+          // ── 设置布局 ──────────────────────────────
+          _SectionRow(
+            label: '设置布局',
+            hint: settingsLayout == SettingsLayoutMode.compact
+                ? '手风琴展开收起'
+                : '点击分组进入',
+            muted: muted,
           ),
-          const SizedBox(height: 16),
-          _DialogSectionLabel(
-            text: '设置 tab 布局',
-            color: theme.colorScheme.onSurface,
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           SegmentedButton<SettingsLayoutMode>(
             showSelectedIcon: false,
+            style: _segmentedStyle(theme),
             segments: [
               for (final v in SettingsLayoutMode.values)
                 ButtonSegment<SettingsLayoutMode>(
                   value: v,
-                  label: Text(v.label),
+                  label: Text(v.label, style: const TextStyle(fontSize: 13)),
                 ),
             ],
             selected: {settingsLayout},
             onSelectionChanged: (sel) =>
                 controller.setSettingsLayoutMode(sel.first),
           ),
-          const SizedBox(height: 8),
-          Text(
-            '折叠：手风琴展开/收起设置分组；分组：点击分组进入独立页面',
-            style: TextStyle(
-              fontSize: 12,
-              height: 1.3,
-              color: theme.colorScheme.onSurfaceVariant,
+
+          const SizedBox(height: 14),
+
+          // ── 宽度 ─────────────────────────────────
+          _SectionRow(
+            label: '宽度',
+            hint: '${display.round()}px',
+            muted: muted,
+          ),
+          SliderTheme(
+            data: SliderThemeData(
+              overlayShape: SliderComponentShape.noOverlay,
+              trackHeight: 3,
+            ),
+            child: Slider(
+              value: display,
+              min: kSidebarWidthMin,
+              max: maxWidth,
+              onChanged: (v) => _apply(v, maxWidth),
             ),
           ),
-          const SizedBox(height: 16),
-          _DialogSectionLabel(text: '宽度', color: theme.colorScheme.onSurface),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '当前: ${display.round()}px',
-                  style: const TextStyle(fontWeight: FontWeight.w500),
-                ),
-              ),
-              Text(
-                '${kSidebarWidthMin.round()} – ${maxWidth.round()}px',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-          Slider(
-            value: display,
-            min: kSidebarWidthMin,
-            max: maxWidth,
-            onChanged: (v) => _apply(v, maxWidth),
-          ),
-          TextField(
-            controller: _field,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              isDense: true,
-              suffixText: 'px',
-              labelText: '自定义宽度',
-            ),
-            onSubmitted: (raw) {
-              final parsed = double.tryParse(raw.trim());
-              if (parsed != null) _apply(parsed, maxWidth);
-            },
-          ),
-          const SizedBox(height: 12),
           Wrap(
-            spacing: 8,
+            spacing: 6,
+            runSpacing: 4,
             children: [
               for (final p in presets)
-                ChoiceChip(
-                  label: Text('${p.round()}'),
+                _PresetChip(
+                  label: '${p.round()}',
                   selected: display.round() == p.round(),
-                  onSelected: (_) => _apply(p, maxWidth),
+                  onTap: () => _apply(p, maxWidth),
                 ),
             ],
           ),
@@ -192,7 +167,6 @@ class _SidebarLayoutDialogState extends ConsumerState<_SidebarLayoutDialog> {
       actions: [
         TextButton(
           onPressed: () {
-            // 取消恢复原宽度（预览未持久化）与原显示方式。
             FocusScope.of(context).unfocus();
             controller.previewSidebarWidth(_originalWidth);
             controller.setSidebarDisplayMode(_originalMode);
@@ -212,20 +186,93 @@ class _SidebarLayoutDialogState extends ConsumerState<_SidebarLayoutDialog> {
       ],
     );
   }
+
+  ButtonStyle _segmentedStyle(ThemeData theme) {
+    return ButtonStyle(
+      visualDensity: VisualDensity.compact,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      padding: WidgetStateProperty.all(
+        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      ),
+    );
+  }
 }
 
-/// 小节标题（侧边栏布局对话框内的「显示方式 / 宽度」分组标签）。
-class _DialogSectionLabel extends StatelessWidget {
-  const _DialogSectionLabel({required this.text, required this.color});
+/// Section header: label on the left, hint text on the right.
+class _SectionRow extends StatelessWidget {
+  const _SectionRow({
+    required this.label,
+    required this.hint,
+    required this.muted,
+  });
 
-  final String text;
-  final Color color;
+  final String label;
+  final String hint;
+  final Color muted;
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color),
+    return Row(
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+        const Spacer(),
+        Text(
+          hint,
+          style: TextStyle(fontSize: 11, color: muted),
+        ),
+      ],
+    );
+  }
+}
+
+/// Compact preset chip (smaller than ChoiceChip).
+class _PresetChip extends StatelessWidget {
+  const _PresetChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: selected
+              ? theme.colorScheme.primary.withValues(alpha: 0.12)
+              : (isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04)),
+          borderRadius: BorderRadius.circular(6),
+          border: selected
+              ? Border.all(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.4))
+              : null,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+            color: selected
+                ? theme.colorScheme.primary
+                : theme.colorScheme.onSurface,
+          ),
+        ),
+      ),
     );
   }
 }
