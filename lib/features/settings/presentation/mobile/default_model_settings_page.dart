@@ -644,8 +644,8 @@ class _RecommendedActionsCard extends StatelessWidget {
   const _RecommendedActionsCard();
 
   static const String _subheader = '推荐操作';
-  static const String _assistantTitle = '辅助模型设置';
-  static const String _assistantDesc = '设置话题命名、AI 意图分析等辅助功能的模型';
+  static const String _assistantTitle = '辅助模型';
+  static const String _assistantDesc = '聊天、标题、翻译、OCR 等默认模型与提示词';
   static const String _selectorTitle = '模型选择器样式';
   // The original defaults `modelSelectorStyle` to 'dialog' (`defaults.ts`), so
   // the static placeholder shows the dialog state's label + `List` icon.
@@ -691,11 +691,12 @@ class _RecommendedActionsCard extends StatelessWidget {
               ),
             ),
           ),
-          const _ActionRow(
+          _ActionRow(
             icon: LucideIcons.bot,
             accent: _assistantAccent,
             title: _assistantTitle,
             description: _assistantDesc,
+            onTap: () => context.push(AppRouter.auxiliaryModelPath),
           ),
           const Divider(height: 1, thickness: 1),
           const _ActionRow(

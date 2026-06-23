@@ -97,4 +97,9 @@ abstract interface class ChatRepository {
   /// Persists a single preference value under [key]. Port of the web
   /// `dexieStorage.saveSetting`.
   Future<void> saveSetting(String key, String value);
+
+  // --- Transactions ---------------------------------------------------------
+
+  /// Runs [action] inside a single database transaction.
+  Future<T> runInTransaction<T>(Future<T> Function() action);
 }

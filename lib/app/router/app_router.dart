@@ -27,13 +27,16 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_p
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/model_provider_detail_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/multi_key_management_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/settings_search_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/skill_editor_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/skill_store_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/skills_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/top_toolbar_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search/add_search_provider_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search/search_provider_detail_page.dart';
 import 'package:aetherlink_flutter/features/theming/presentation/mobile/theme_style_settings_page.dart';
+import 'package:aetherlink_flutter/features/voice/presentation/mobile/voice_settings_page.dart';
 import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
 
 /// Declarative application route table (go_router).
@@ -69,6 +72,7 @@ abstract final class AppRouter {
       '/settings/mcp-assistant/$serverId/domain/$domain';
   static const String agentPromptsPath = '/settings/agent-prompts';
   static const String skillsPath = '/settings/skills';
+  static const String skillStorePath = '/settings/skills/store';
   static String skillEditorPath(String skillId) => '/settings/skills/$skillId';
   static const String quickPhrasesPath = '/settings/quick-phrases';
   static const String webSearchPath = '/settings/web-search';
@@ -78,6 +82,8 @@ abstract final class AppRouter {
   static const String modelComboPath = '/settings/model-combo';
   static const String networkProxyPath = '/settings/network-proxy';
   static const String behaviorPath = '/settings/behavior';
+  static const String settingsSearchPath = '/settings/search';
+  static const String voiceSettingsPath = '/settings/voice';
   static const String welcomePath = '/welcome';
   static const String translatePath = '/translate';
 
@@ -200,6 +206,12 @@ abstract final class AppRouter {
             _instant(state, const SkillsSettingsPage()),
       ),
       GoRoute(
+        path: skillStorePath,
+        name: 'skill-store',
+        pageBuilder: (context, state) =>
+            _instant(state, const SkillStorePage()),
+      ),
+      GoRoute(
         path: '$skillsPath/:skillId',
         name: 'skill-editor',
         pageBuilder: (context, state) => _instant(
@@ -246,6 +258,18 @@ abstract final class AppRouter {
         name: 'behavior',
         pageBuilder: (context, state) =>
             _instant(state, const BehaviorSettingsPage()),
+      ),
+      GoRoute(
+        path: voiceSettingsPath,
+        name: 'voice-settings',
+        pageBuilder: (context, state) =>
+            _instant(state, const VoiceSettingsPage()),
+      ),
+      GoRoute(
+        path: settingsSearchPath,
+        name: 'settings-search',
+        pageBuilder: (context, state) =>
+            _instant(state, const SettingsSearchPage()),
       ),
       GoRoute(
         path: defaultModelPath,

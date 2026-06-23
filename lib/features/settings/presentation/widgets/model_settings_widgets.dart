@@ -23,14 +23,19 @@ class ModelSettingsAppBar extends StatelessWidget
     required this.title,
     this.actions,
     this.onBack,
+    this.bottom,
   });
 
   final String title;
   final List<Widget>? actions;
   final VoidCallback? onBack;
+  final PreferredSizeWidget? bottom;
 
   @override
-  Size get preferredSize => const Size.fromHeight(56);
+  Size get preferredSize {
+    final bottomHeight = bottom?.preferredSize.height ?? 0;
+    return Size.fromHeight(56 + bottomHeight);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -61,6 +66,7 @@ class ModelSettingsAppBar extends StatelessWidget
       ),
       title: Text(title),
       actions: actions,
+      bottom: bottom,
     );
   }
 }

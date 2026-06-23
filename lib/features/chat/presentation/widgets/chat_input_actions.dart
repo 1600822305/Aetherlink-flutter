@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/shared/domain/input_box_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_actions.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_menu_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/search_settings_sheet.dart';
+import 'package:aetherlink_flutter/features/voice/presentation/widgets/voice_input_modal.dart';
 
 /// The chat composer's [InputBoxActions]: the single place that owns every
 /// input-box action's behavior and state, replacing the original's three
@@ -101,11 +102,12 @@ class ChatInputActions implements InputBoxActions {
         _pickImages(context, fromCamera: true);
       case InputBoxAction.fileUpload:
         _pickFile(context);
+      case InputBoxAction.voice:
+        _openVoiceInput(context);
       case InputBoxAction.knowledge:
       case InputBoxAction.note:
       case InputBoxAction.aiDebate:
       case InputBoxAction.multiModel:
-      case InputBoxAction.voice:
         _comingSoon(context);
     }
   }
@@ -135,6 +137,13 @@ class ChatInputActions implements InputBoxActions {
 
   void _openQuickPhrase(BuildContext context) =>
       showQuickPhraseSheet(context, onInsert: insertText);
+
+  Future<void> _openVoiceInput(BuildContext context) async {
+    final text = await showVoiceInputModal(context);
+    if (text != null && text.isNotEmpty) {
+      insertText(text);
+    }
+  }
 
   /// Picks image(s) — a single capture from the camera, or one or more from the
   /// gallery — and stages each as an image attachment (port of `UploadMenu`'s
