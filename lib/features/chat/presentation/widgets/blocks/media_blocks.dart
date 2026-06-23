@@ -9,7 +9,21 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 /// (`base64Data` or a `data:` URL) and falls back to a network URL. The
 /// original's `[图片:ID]` Dexie references have no Flutter equivalent yet, so
 /// they resolve to null (rendered as the load-failure placeholder).
+///
+/// Results are cached by block identity so `base64Decode` doesn't repeat on
+/// every parent rebuild.
 ImageProvider? _imageProvider(ImageBlock block) {
+  final cached = _imageProviderCache[block.id];
+  if (cached != null) return cached;
+
+  final result = _resolveImageProvider(block);
+  if (result != null) _imageProviderCache[block.id] = result;
+  return result;
+}
+
+final Map<String, ImageProvider> _imageProviderCache = {};
+
+ImageProvider? _resolveImageProvider(ImageBlock block) {
   final b64 = block.base64Data;
   if (b64 != null && b64.isNotEmpty) {
     try {

@@ -23,6 +23,13 @@ class InlineToolChip extends StatefulWidget {
 class _InlineToolChipState extends State<InlineToolChip> {
   bool _expanded = false;
 
+  // Cached formatted strings to avoid JSON re-encoding on every rebuild
+  // (InlineToolChip lives inside ThinkingBlock which rebuilds frequently).
+  String? _cachedParams;
+  String? _cachedResult;
+  Object? _lastArgs;
+  Object? _lastContent;
+
   bool get _isProcessing =>
       widget.block.status == MessageBlockStatus.streaming ||
       widget.block.status == MessageBlockStatus.processing ||
@@ -73,8 +80,16 @@ class _InlineToolChipState extends State<InlineToolChip> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final statusColor = _statusColor(theme);
-    final params = _formatParams();
-    final result = _formatResult();
+    if (!identical(widget.block.arguments, _lastArgs)) {
+      _lastArgs = widget.block.arguments;
+      _cachedParams = _formatParams();
+    }
+    if (!identical(widget.block.content, _lastContent)) {
+      _lastContent = widget.block.content;
+      _cachedResult = _formatResult();
+    }
+    final params = _cachedParams ?? '';
+    final result = _cachedResult ?? '';
     final hasDetails = params.isNotEmpty || result.isNotEmpty;
 
     return Container(

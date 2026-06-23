@@ -48,6 +48,12 @@ class ToolBlockView extends ConsumerStatefulWidget {
 class _ToolBlockViewState extends ConsumerState<ToolBlockView> {
   bool _expanded = false;
 
+  // Cached formatted strings to avoid JSON re-encoding on every rebuild.
+  String? _cachedParams;
+  String? _cachedResult;
+  Object? _lastArgs;
+  Object? _lastContent;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -84,8 +90,16 @@ class _ToolBlockViewState extends ConsumerState<ToolBlockView> {
         ? _toolSuccessColor
         : theme.colorScheme.primary;
 
-    final params = _prettyArgs(block.arguments);
-    final result = _formatResult(block.content);
+    if (!identical(block.arguments, _lastArgs)) {
+      _lastArgs = block.arguments;
+      _cachedParams = _prettyArgs(block.arguments);
+    }
+    if (!identical(block.content, _lastContent)) {
+      _lastContent = block.content;
+      _cachedResult = _formatResult(block.content);
+    }
+    final params = _cachedParams ?? '';
+    final result = _cachedResult ?? '';
 
     final headerBg = isDark
         ? theme.colorScheme.surface.withValues(alpha: 0.5)

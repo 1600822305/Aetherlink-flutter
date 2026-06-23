@@ -42,6 +42,14 @@ class _ThinkingBlockViewState extends ConsumerState<ThinkingBlockView> {
   bool _copied = false;
   Timer? _timer;
 
+  /// Cached preview to avoid re-scanning content lines 10×/sec during streaming.
+  String? _cachedPreview;
+  String _lastContentForPreview = '';
+
+  /// Last displayed seconds label to skip rebuilds when the timer ticks but
+  /// the rounded display value hasn't changed.
+  String _lastSecondsLabel = '';
+
   bool get _isThinking => widget.block.status == MessageBlockStatus.streaming;
 
   @override
@@ -60,8 +68,14 @@ class _ThinkingBlockViewState extends ConsumerState<ThinkingBlockView> {
 
   void _syncTimer() {
     if (_isThinking && _timer == null) {
+      _lastSecondsLabel = _thinkingSeconds().toStringAsFixed(1);
       _timer = Timer.periodic(const Duration(milliseconds: 100), (_) {
-        if (mounted) setState(() {});
+        if (!mounted) return;
+        final newLabel = _thinkingSeconds().toStringAsFixed(1);
+        if (newLabel != _lastSecondsLabel) {
+          _lastSecondsLabel = newLabel;
+          setState(() {});
+        }
       });
     } else if (!_isThinking && _timer != null) {
       _timer!.cancel();
@@ -99,18 +113,30 @@ class _ThinkingBlockViewState extends ConsumerState<ThinkingBlockView> {
 
   /// The latest "step" of the reasoning, mirroring `ThinkingCompactStyle`'s
   /// `previewContent`: everything from the last Markdown heading / bold line.
+  ///
+  /// Cached so the regex scan doesn't repeat on every timer-driven rebuild.
   String _previewContent() {
     final content = widget.block.content;
-    if (content.isEmpty) return '';
+    if (content == _lastContentForPreview && _cachedPreview != null) {
+      return _cachedPreview!;
+    }
+    _lastContentForPreview = content;
+    if (content.isEmpty) {
+      _cachedPreview = '';
+      return '';
+    }
     final lines = content.split('\n');
-    final headingOrBold = RegExp(r'^(#{1,6}\s|\*\*.+\*\*$)');
     for (var i = lines.length - 1; i >= 0; i--) {
-      if (headingOrBold.hasMatch(lines[i].trim())) {
-        return lines.sublist(i).join('\n');
+      if (_headingOrBold.hasMatch(lines[i].trim())) {
+        _cachedPreview = lines.sublist(i).join('\n');
+        return _cachedPreview!;
       }
     }
+    _cachedPreview = content;
     return content;
   }
+
+  static final RegExp _headingOrBold = RegExp(r'^(#{1,6}\s|\*\*.+\*\*$)');
 
   @override
   Widget build(BuildContext context) {
