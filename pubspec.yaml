@@ -65,7 +65,7 @@ dependencies:
   # Voice feature: TTS + ASR
   flutter_tts: ^4.2.0
   just_audio: ^0.9.46
-  record: ^5.2.1
+  record: ^7.1.0
   web_socket_channel: ^3.0.2
   permission_handler: ^11.3.1
 
