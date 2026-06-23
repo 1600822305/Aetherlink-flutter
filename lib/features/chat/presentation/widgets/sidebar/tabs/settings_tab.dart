@@ -17,6 +17,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/si
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/sidebar_avatar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/sidebar_buttons.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 
 /// 设置 entry leading gear, `#1976d2`.
 const Color _cogBlue = Color(0xFF1976D2);
@@ -1158,7 +1159,7 @@ class _SwitchSettingRow extends StatelessWidget {
       title: title,
       description: description,
       comingSoon: comingSoon,
-      trailing: Switch(value: value, onChanged: onChanged),
+      trailing: CustomSwitch(value: value, onChanged: onChanged),
     );
   }
 }
@@ -1183,26 +1184,42 @@ class _SelectSettingRow<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final currentLabel =
+        options.where((o) => o.$1 == value).firstOrNull?.$2 ?? '';
     return _SettingItemShell(
       title: title,
       description: description,
       comingSoon: comingSoon,
-      trailing: DropdownButton<T>(
-        value: value,
-        isDense: true,
-        underline: const SizedBox.shrink(),
-        borderRadius: BorderRadius.circular(8),
-        style: TextStyle(
-          fontSize: 13,
-          color: Theme.of(context).colorScheme.onSurface,
+      trailing: PopupMenuButton<T>(
+        initialValue: value,
+        onSelected: onChanged,
+        popUpAnimationStyle: AnimationStyle.noAnimation,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
         ),
-        items: [
+        position: PopupMenuPosition.under,
+        itemBuilder: (_) => [
           for (final (v, label) in options)
-            DropdownMenuItem<T>(value: v, child: Text(label)),
+            PopupMenuItem<T>(value: v, child: Text(label)),
         ],
-        onChanged: (v) {
-          if (v != null) onChanged(v);
-        },
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              currentLabel,
+              style: TextStyle(
+                fontSize: 13,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+            Icon(
+              Icons.arrow_drop_down,
+              size: 20,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+          ],
+        ),
       ),
     );
   }
