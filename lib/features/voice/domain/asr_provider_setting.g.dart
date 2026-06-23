@@ -19,8 +19,11 @@ _AsrProviderSetting _$AsrProviderSettingFromJson(Map<String, dynamic> json) =>
       websocketUrl: json['websocketUrl'] as String? ?? '',
       responseFormat: json['responseFormat'] as String? ?? '',
       temperature: (json['temperature'] as num?)?.toDouble() ?? 0.0,
+      prompt: json['prompt'] as String? ?? '',
       vadThreshold: (json['vadThreshold'] as num?)?.toDouble() ?? 0.5,
       silenceDurationMs: (json['silenceDurationMs'] as num?)?.toInt() ?? 500,
+      prefixPaddingMs: (json['prefixPaddingMs'] as num?)?.toInt() ?? 300,
+      realtimeDelay: json['realtimeDelay'] as String? ?? '',
     );
 
 Map<String, dynamic> _$AsrProviderSettingToJson(_AsrProviderSetting instance) =>
@@ -36,8 +39,11 @@ Map<String, dynamic> _$AsrProviderSettingToJson(_AsrProviderSetting instance) =>
       'websocketUrl': instance.websocketUrl,
       'responseFormat': instance.responseFormat,
       'temperature': instance.temperature,
+      'prompt': instance.prompt,
       'vadThreshold': instance.vadThreshold,
       'silenceDurationMs': instance.silenceDurationMs,
+      'prefixPaddingMs': instance.prefixPaddingMs,
+      'realtimeDelay': instance.realtimeDelay,
     };
 
 const _$AsrProviderKindEnumMap = {

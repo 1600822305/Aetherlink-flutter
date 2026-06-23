@@ -13,12 +13,7 @@ import 'package:aetherlink_flutter/features/voice/domain/asr_provider_setting.da
 part 'asr_controller.g.dart';
 
 /// ASR recording status.
-enum AsrStatus {
-  idle,
-  recording,
-  processing,
-  error,
-}
+enum AsrStatus { idle, recording, processing, error }
 
 /// The ASR controller: manages microphone recording, speech recognition
 /// (system native, real-time streaming, or batch Whisper), and exposes the
@@ -30,6 +25,7 @@ class AsrController extends _$AsrController {
   OpenaiRealtimeAsrService? _realtimeAsr;
   SystemAsrService? _systemAsr;
   StreamSubscription<String>? _realtimeSub;
+  StreamSubscription<String>? _realtimeErrorSub;
   StreamSubscription<String>? _systemTextSub;
   StreamSubscription<String>? _systemErrorSub;
   StreamSubscription<bool>? _systemStatusSub;
@@ -56,11 +52,7 @@ class AsrController extends _$AsrController {
 
     final provider = ref.read(activeAsrProviderProvider);
     if (provider == null) {
-      state = (
-        status: AsrStatus.error,
-        text: state.text,
-        error: '未配置语音识别服务',
-      );
+      state = (status: AsrStatus.error, text: state.text, error: '未配置语音识别服务');
       return;
     }
 
@@ -68,11 +60,7 @@ class AsrController extends _$AsrController {
     if (provider.kind != AsrProviderKind.system) {
       final hasPermission = await _recorder.hasPermission();
       if (!hasPermission) {
-        state = (
-          status: AsrStatus.error,
-          text: state.text,
-          error: '需要麦克风权限',
-        );
+        state = (status: AsrStatus.error, text: state.text, error: '需要麦克风权限');
         return;
       }
     }
@@ -90,11 +78,7 @@ class AsrController extends _$AsrController {
           await _startBatchRecording();
       }
     } catch (e) {
-      state = (
-        status: AsrStatus.error,
-        text: state.text,
-        error: '录音启动失败: $e',
-      );
+      state = (status: AsrStatus.error, text: state.text, error: '录音启动失败: $e');
     }
   }
 
@@ -121,6 +105,8 @@ class AsrController extends _$AsrController {
     _audioStreamSub = null;
     await _realtimeSub?.cancel();
     _realtimeSub = null;
+    await _realtimeErrorSub?.cancel();
+    _realtimeErrorSub = null;
     await _realtimeAsr?.stop();
     await _systemTextSub?.cancel();
     _systemTextSub = null;
@@ -163,11 +149,7 @@ class AsrController extends _$AsrController {
       // "error_speech_timeout" / "error_no_match" are transient — don't
       // override good text the user already got.
       if (err.contains('timeout') || err.contains('no_match')) return;
-      state = (
-        status: AsrStatus.error,
-        text: state.text,
-        error: '识别错误: $err',
-      );
+      state = (status: AsrStatus.error, text: state.text, error: '识别错误: $err');
     });
 
     _systemStatusSub = _systemAsr!.statusStream.listen((listening) {
@@ -218,11 +200,16 @@ class AsrController extends _$AsrController {
       },
     );
 
-    // Start recording and stream PCM16 audio to the WebSocket.
+    // Listen for server-side errors.
+    _realtimeErrorSub = _realtimeAsr!.errorStream.listen((err) {
+      state = (status: AsrStatus.error, text: state.text, error: '识别错误: $err');
+    });
+
+    // Stream PCM16 audio at 24 kHz (official Realtime API requirement).
     final stream = await _recorder.startStream(
       const RecordConfig(
         encoder: AudioEncoder.pcm16bits,
-        sampleRate: 16000,
+        sampleRate: OpenaiRealtimeAsrService.sampleRate,
         numChannels: 1,
       ),
     );
@@ -236,11 +223,17 @@ class AsrController extends _$AsrController {
     _audioStreamSub = null;
     await _recorder.stop();
 
+    // For gpt-realtime-whisper (no server VAD), manually commit the buffer
+    // so that transcription of the final audio is triggered.
+    _realtimeAsr?.commitAudioBuffer();
+
     // Give a short delay for final transcription events.
     await Future<void>.delayed(const Duration(milliseconds: 500));
 
     await _realtimeSub?.cancel();
     _realtimeSub = null;
+    await _realtimeErrorSub?.cancel();
+    _realtimeErrorSub = null;
     await _realtimeAsr?.stop();
     _realtimeAsr = null;
 
@@ -284,11 +277,7 @@ class AsrController extends _$AsrController {
       final text = await _whisper.transcribe(wavBytes, provider);
       state = (status: AsrStatus.idle, text: text, error: null);
     } catch (e) {
-      state = (
-        status: AsrStatus.error,
-        text: state.text,
-        error: '语音识别失败: $e',
-      );
+      state = (status: AsrStatus.error, text: state.text, error: '语音识别失败: $e');
     } finally {
       _audioBuffer.clear();
     }
@@ -297,6 +286,7 @@ class AsrController extends _$AsrController {
   void _dispose() {
     _audioStreamSub?.cancel();
     _realtimeSub?.cancel();
+    _realtimeErrorSub?.cancel();
     _recorderSub?.cancel();
     _systemTextSub?.cancel();
     _systemErrorSub?.cancel();
