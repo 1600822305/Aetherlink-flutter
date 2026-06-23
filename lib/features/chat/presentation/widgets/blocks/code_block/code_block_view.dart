@@ -79,8 +79,8 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
     final border = isDark ? Colors.white12 : Colors.black12;
 
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => CodeBlockFullScreen(
+      PageRouteBuilder<void>(
+        pageBuilder: (_, __, ___) => CodeBlockFullScreen(
           code: widget.code,
           language: widget.language,
           highlightLanguage: highlightLanguage,
@@ -90,6 +90,8 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
           gutterBorderColor: border,
           showLineNumbers: settings.codeShowLineNumbers,
         ),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
       ),
     );
   }

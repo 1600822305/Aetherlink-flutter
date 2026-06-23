@@ -108,47 +108,50 @@ class _CodeBlockFullScreenState extends State<CodeBlockFullScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          if (_showSearch)
-            CodeBlockSearchBar(
-              code: dc,
-              onChanged: _onSearchChanged,
-              onClose: () => setState(() {
-                _showSearch = false;
-                _searchQuery = '';
-              }),
-              labelColor: labelColor,
-            ),
-          Expanded(
-            child: InteractiveViewer(
-              minScale: 0.5,
-              maxScale: 4.0,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(12),
-                child: useDiff
-                    ? DiffCodeView(
-                        lines: lines,
-                        showLineNumbers: widget.showLineNumbers,
-                        codeStyle: widget.codeStyle,
-                        lineNumberStyle: widget.lineNumberStyle,
-                        gutterBorderColor: widget.gutterBorderColor,
-                      )
-                    : PerLineCodeView(
-                        lines: lines,
-                        highlightLanguage: widget.highlightLanguage,
-                        highlightTheme: widget.highlightTheme,
-                        showLineNumbers: widget.showLineNumbers,
-                        codeStyle: widget.codeStyle,
-                        lineNumberStyle: widget.lineNumberStyle,
-                        gutterBorderColor: widget.gutterBorderColor,
-                        searchQuery: _searchQuery,
-                        currentMatchIndex: _currentMatchIndex,
-                      ),
+      body: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            if (_showSearch)
+              CodeBlockSearchBar(
+                code: dc,
+                onChanged: _onSearchChanged,
+                onClose: () => setState(() {
+                  _showSearch = false;
+                  _searchQuery = '';
+                }),
+                labelColor: labelColor,
+              ),
+            Expanded(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 4.0,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(12),
+                  child: useDiff
+                      ? DiffCodeView(
+                          lines: lines,
+                          showLineNumbers: widget.showLineNumbers,
+                          codeStyle: widget.codeStyle,
+                          lineNumberStyle: widget.lineNumberStyle,
+                          gutterBorderColor: widget.gutterBorderColor,
+                        )
+                      : PerLineCodeView(
+                          lines: lines,
+                          highlightLanguage: widget.highlightLanguage,
+                          highlightTheme: widget.highlightTheme,
+                          showLineNumbers: widget.showLineNumbers,
+                          codeStyle: widget.codeStyle,
+                          lineNumberStyle: widget.lineNumberStyle,
+                          gutterBorderColor: widget.gutterBorderColor,
+                          searchQuery: _searchQuery,
+                          currentMatchIndex: _currentMatchIndex,
+                        ),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
