@@ -8,10 +8,7 @@ import 'package:aetherlink_flutter/features/voice/domain/tts_provider_setting.da
 /// The result of a network TTS synthesis call: raw audio bytes and their MIME
 /// type so the player knows the codec.
 class TtsSynthesisResult {
-  const TtsSynthesisResult({
-    required this.bytes,
-    required this.mimeType,
-  });
+  const TtsSynthesisResult({required this.bytes, required this.mimeType});
 
   final Uint8List bytes;
   final String mimeType;
@@ -38,16 +35,30 @@ class NetworkTtsService {
     return switch (provider.kind) {
       TtsProviderKind.openai => _synthesizeOpenAi(text, provider, cancelToken),
       TtsProviderKind.gemini => _synthesizeGemini(text, provider, cancelToken),
-      TtsProviderKind.minimax => _synthesizeMiniMax(text, provider, cancelToken),
-      TtsProviderKind.siliconflow =>
-        _synthesizeSiliconFlow(text, provider, cancelToken),
-      TtsProviderKind.elevenlabs =>
-        _synthesizeElevenLabs(text, provider, cancelToken),
+      TtsProviderKind.minimax => _synthesizeMiniMax(
+        text,
+        provider,
+        cancelToken,
+      ),
+      TtsProviderKind.siliconflow => _synthesizeSiliconFlow(
+        text,
+        provider,
+        cancelToken,
+      ),
+      TtsProviderKind.elevenlabs => _synthesizeElevenLabs(
+        text,
+        provider,
+        cancelToken,
+      ),
       TtsProviderKind.azure => _synthesizeAzure(text, provider, cancelToken),
-      TtsProviderKind.volcano =>
-        _synthesizeVolcano(text, provider, cancelToken),
-      TtsProviderKind.system =>
-        throw UnsupportedError('System TTS uses flutter_tts, not network'),
+      TtsProviderKind.volcano => _synthesizeVolcano(
+        text,
+        provider,
+        cancelToken,
+      ),
+      TtsProviderKind.system => throw UnsupportedError(
+        'System TTS uses flutter_tts, not network',
+      ),
     };
   }
 
@@ -88,6 +99,7 @@ class NetworkTtsService {
   }
 
   /// Gemini TTS via generateContent with audio modality.
+  /// Supports single-speaker, multi-speaker (up to 2), and style prompts.
   Future<TtsSynthesisResult> _synthesizeGemini(
     String text,
     TtsProviderSetting provider,
@@ -97,6 +109,49 @@ class NetworkTtsService {
       provider.baseUrl,
       '/models/${provider.model}:generateContent',
     );
+
+    // Build the input text — prepend style prompt if present.
+    final inputText = provider.stylePrompt.isNotEmpty
+        ? '${provider.stylePrompt}\n$text'
+        : text;
+
+    // Build speechConfig — multi-speaker or single-speaker.
+    final Map<String, dynamic> speechConfig;
+    if (provider.useMultiSpeaker &&
+        provider.speaker1Name.isNotEmpty &&
+        provider.speaker1Voice.isNotEmpty) {
+      final speakers = <Map<String, dynamic>>[
+        {
+          'speaker': provider.speaker1Name,
+          'voiceConfig': {
+            'prebuiltVoiceConfig': {'voiceName': provider.speaker1Voice},
+          },
+        },
+      ];
+      if (provider.speaker2Name.isNotEmpty &&
+          provider.speaker2Voice.isNotEmpty) {
+        speakers.add({
+          'speaker': provider.speaker2Name,
+          'voiceConfig': {
+            'prebuiltVoiceConfig': {'voiceName': provider.speaker2Voice},
+          },
+        });
+      }
+      speechConfig = {
+        'multiSpeakerVoiceConfig': {'speakerVoiceConfigs': speakers},
+      };
+    } else {
+      speechConfig = {
+        'voiceConfig': {
+          'prebuiltVoiceConfig': {
+            'voiceName': provider.voiceName.isNotEmpty
+                ? provider.voiceName
+                : 'Kore',
+          },
+        },
+      };
+    }
+
     final response = await _dio.post<Map<String, dynamic>>(
       url,
       data: {
@@ -104,21 +159,13 @@ class NetworkTtsService {
           {
             'role': 'user',
             'parts': [
-              {'text': text},
+              {'text': inputText},
             ],
           },
         ],
         'generationConfig': {
           'responseModalities': ['AUDIO'],
-          'speechConfig': {
-            'voiceConfig': {
-              'prebuiltVoiceConfig': {
-                'voiceName': provider.voiceName.isNotEmpty
-                    ? provider.voiceName
-                    : 'Kore',
-              },
-            },
-          },
+          'speechConfig': speechConfig,
         },
         'model': provider.model,
       },
@@ -136,13 +183,16 @@ class NetworkTtsService {
     if (candidates == null || candidates.isEmpty) {
       throw Exception('Gemini TTS: empty candidates');
     }
-    final parts = ((candidates[0] as Map<String, dynamic>)['content']
-        as Map<String, dynamic>)['parts'] as List<dynamic>?;
+    final parts =
+        ((candidates[0] as Map<String, dynamic>)['content']
+                as Map<String, dynamic>)['parts']
+            as List<dynamic>?;
     if (parts == null || parts.isEmpty) {
       throw Exception('Gemini TTS: empty audio parts');
     }
     final inline =
-        (parts[0] as Map<String, dynamic>)['inlineData'] as Map<String, dynamic>?;
+        (parts[0] as Map<String, dynamic>)['inlineData']
+            as Map<String, dynamic>?;
     if (inline == null) throw Exception('Gemini TTS: no inlineData');
     final dataB64 = (inline['data'] ?? '').toString();
     if (dataB64.isEmpty) throw Exception('Gemini TTS: empty audio data');
@@ -186,7 +236,9 @@ class NetworkTtsService {
     final json = response.data!;
     final baseResp = json['base_resp'] as Map<String, dynamic>?;
     if (baseResp != null && baseResp['status_code'] != 0) {
-      throw Exception('MiniMax TTS: ${baseResp['status_msg'] ?? 'unknown error'}');
+      throw Exception(
+        'MiniMax TTS: ${baseResp['status_msg'] ?? 'unknown error'}',
+      );
     }
     final data = json['data'] as Map<String, dynamic>?;
     final audioHex = (data?['audio'] ?? '').toString();
@@ -239,16 +291,17 @@ class NetworkTtsService {
     TtsProviderSetting provider,
     CancelToken? cancelToken,
   ) async {
-    final voiceId = provider.voice.isNotEmpty ? provider.voice : '21m00Tcm4TlvDq8ikWAM';
-    final url = _joinUrl(
-      provider.baseUrl,
-      '/v1/text-to-speech/$voiceId',
-    );
+    final voiceId = provider.voice.isNotEmpty
+        ? provider.voice
+        : '21m00Tcm4TlvDq8ikWAM';
+    final url = _joinUrl(provider.baseUrl, '/v1/text-to-speech/$voiceId');
     final response = await _dio.post<List<int>>(
       url,
       data: {
         'text': text,
-        'model_id': provider.model.isNotEmpty ? provider.model : 'eleven_multilingual_v2',
+        'model_id': provider.model.isNotEmpty
+            ? provider.model
+            : 'eleven_multilingual_v2',
         'output_format': provider.outputFormat.isNotEmpty
             ? provider.outputFormat
             : 'mp3_44100_128',
@@ -275,12 +328,14 @@ class NetworkTtsService {
     CancelToken? cancelToken,
   ) async {
     final region = provider.region.isNotEmpty ? provider.region : 'eastus';
-    final url = 'https://$region.tts.speech.microsoft.com/'
+    final url =
+        'https://$region.tts.speech.microsoft.com/'
         'cognitiveservices/v1';
     final voiceName = provider.voice.isNotEmpty
         ? provider.voice
         : 'zh-CN-XiaoxiaoMultilingualNeural';
-    final ssml = '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" '
+    final ssml =
+        '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" '
         'xml:lang="zh-CN">'
         '<voice name="$voiceName">${_escapeXml(text)}</voice></speak>';
     final response = await _dio.post<List<int>>(
@@ -392,8 +447,7 @@ class NetworkTtsService {
   ) async {
     const url = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
 
-    int toRate(double ratio) =>
-        (((ratio - 1) * 100).clamp(-50, 100)).round();
+    int toRate(double ratio) => (((ratio - 1) * 100).clamp(-50, 100)).round();
 
     final audioParams = <String, dynamic>{
       'format': provider.encoding.isNotEmpty ? provider.encoding : 'mp3',
@@ -448,7 +502,8 @@ class NetworkTtsService {
         } else {
           final code = chunk['code'];
           if (code != null && code != 0 && code != 20000000) {
-            errorMsg = '火山引擎 TTS V3 错误: ${chunk['message'] ?? ''} (code: $code)';
+            errorMsg =
+                '火山引擎 TTS V3 错误: ${chunk['message'] ?? ''} (code: $code)';
           }
         }
       } catch (_) {
@@ -527,7 +582,9 @@ class NetworkTtsService {
   // -- Helpers ---------------------------------------------------------------
 
   static String _joinUrl(String base, String path) {
-    final trimmed = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+    final trimmed = base.endsWith('/')
+        ? base.substring(0, base.length - 1)
+        : base;
     return '$trimmed$path';
   }
 

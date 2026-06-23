@@ -37,98 +37,98 @@ class _ServiceMeta {
 }
 
 Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
-      TtsProviderKind.system: const _ServiceMeta(
-        icon: LucideIcons.smartphone,
-        color: Color(0xFF64748B),
-        name: '系统 TTS',
-        description: '使用设备内置语音合成引擎',
-        features: ['免费', '离线'],
-        status: '免费',
-      ),
-      TtsProviderKind.openai: const _ServiceMeta(
-        icon: LucideIcons.bot,
-        color: Color(0xFF10B981),
-        name: 'OpenAI TTS',
-        description: '高质量 AI 语音合成，支持多种风格',
-        features: ['高品质', '多风格', '流式'],
-        status: '高级',
-      ),
-      TtsProviderKind.gemini: const _ServiceMeta(
-        icon: LucideIcons.sparkles,
-        color: Color(0xFFEA4335),
-        name: 'Gemini TTS',
-        description: 'Google Gemini 语音合成服务',
-        features: ['30种语音', '多语言'],
-        status: '高级',
-      ),
-      TtsProviderKind.minimax: const _ServiceMeta(
-        icon: LucideIcons.audioLines,
-        color: Color(0xFFFF6B35),
-        name: 'MiniMax TTS',
-        description: '海螺 AI 高质量中文语音合成',
-        features: ['14种音色', '情感', '中文优化'],
-        status: '高级',
-      ),
-      TtsProviderKind.siliconflow: const _ServiceMeta(
-        icon: LucideIcons.rocket,
-        color: Color(0xFF9333EA),
-        name: 'SiliconFlow',
-        description: '硅基流动 TTS，高性价比语音合成',
-        features: ['多模型', '高性价比'],
-        status: '推荐',
-      ),
-      TtsProviderKind.azure: const _ServiceMeta(
-        icon: LucideIcons.cloud,
-        color: Color(0xFF3B82F6),
-        name: 'Azure TTS',
-        description: '微软 Azure 认知服务语音合成',
-        features: ['企业级', '多语言', '神经网络'],
-        status: '企业',
-      ),
-      TtsProviderKind.elevenlabs: const _ServiceMeta(
-        icon: LucideIcons.mic,
-        color: Color(0xFF00C7B7),
-        name: 'ElevenLabs',
-        description: '领先的 AI 语音克隆与合成平台',
-        features: ['语音克隆', '超自然', '多模型'],
-        status: '高级',
-      ),
-      TtsProviderKind.volcano: const _ServiceMeta(
-        icon: LucideIcons.flame,
-        color: Color(0xFFFF4500),
-        name: '火山引擎 TTS',
-        description: '字节跳动火山引擎，100+ 音色',
-        features: ['100+音色', '情感', '多方言'],
-        status: '付费',
-      ),
-    };
+  TtsProviderKind.system: const _ServiceMeta(
+    icon: LucideIcons.smartphone,
+    color: Color(0xFF64748B),
+    name: '系统 TTS',
+    description: '使用设备内置语音合成引擎',
+    features: ['免费', '离线'],
+    status: '免费',
+  ),
+  TtsProviderKind.openai: const _ServiceMeta(
+    icon: LucideIcons.bot,
+    color: Color(0xFF10B981),
+    name: 'OpenAI TTS',
+    description: '高质量 AI 语音合成，支持多种风格',
+    features: ['高品质', '多风格', '流式'],
+    status: '高级',
+  ),
+  TtsProviderKind.gemini: const _ServiceMeta(
+    icon: LucideIcons.sparkles,
+    color: Color(0xFFEA4335),
+    name: 'Gemini TTS',
+    description: 'Google Gemini 语音合成服务',
+    features: ['30种语音', '多语言'],
+    status: '高级',
+  ),
+  TtsProviderKind.minimax: const _ServiceMeta(
+    icon: LucideIcons.audioLines,
+    color: Color(0xFFFF6B35),
+    name: 'MiniMax TTS',
+    description: '海螺 AI 高质量中文语音合成',
+    features: ['14种音色', '情感', '中文优化'],
+    status: '高级',
+  ),
+  TtsProviderKind.siliconflow: const _ServiceMeta(
+    icon: LucideIcons.rocket,
+    color: Color(0xFF9333EA),
+    name: 'SiliconFlow',
+    description: '硅基流动 TTS，高性价比语音合成',
+    features: ['多模型', '高性价比'],
+    status: '推荐',
+  ),
+  TtsProviderKind.azure: const _ServiceMeta(
+    icon: LucideIcons.cloud,
+    color: Color(0xFF3B82F6),
+    name: 'Azure TTS',
+    description: '微软 Azure 认知服务语音合成',
+    features: ['企业级', '多语言', '神经网络'],
+    status: '企业',
+  ),
+  TtsProviderKind.elevenlabs: const _ServiceMeta(
+    icon: LucideIcons.mic,
+    color: Color(0xFF00C7B7),
+    name: 'ElevenLabs',
+    description: '领先的 AI 语音克隆与合成平台',
+    features: ['语音克隆', '超自然', '多模型'],
+    status: '高级',
+  ),
+  TtsProviderKind.volcano: const _ServiceMeta(
+    icon: LucideIcons.flame,
+    color: Color(0xFFFF4500),
+    name: '火山引擎 TTS',
+    description: '字节跳动火山引擎，100+ 音色',
+    features: ['100+音色', '情感', '多方言'],
+    status: '付费',
+  ),
+};
 
 Map<AsrProviderKind, _ServiceMeta> _asrServiceMeta() => {
-      AsrProviderKind.system: const _ServiceMeta(
-        icon: LucideIcons.smartphone,
-        color: Color(0xFF64748B),
-        name: '系统语音识别',
-        description: '使用设备内置语音识别引擎',
-        features: ['免费', '离线'],
-        status: '免费',
-      ),
-      AsrProviderKind.openaiRealtime: const _ServiceMeta(
-        icon: LucideIcons.radio,
-        color: Color(0xFF10B981),
-        name: 'OpenAI Realtime',
-        description: 'OpenAI 实时语音识别 (WebSocket)',
-        features: ['实时', '高精度'],
-        status: '高级',
-      ),
-      AsrProviderKind.whisper: const _ServiceMeta(
-        icon: LucideIcons.audioWaveform,
-        color: Color(0xFF6366F1),
-        name: 'OpenAI Whisper',
-        description: '高精度离线友好语音转文字',
-        features: ['高精度', '多语言'],
-        status: '高级',
-      ),
-    };
+  AsrProviderKind.system: const _ServiceMeta(
+    icon: LucideIcons.smartphone,
+    color: Color(0xFF64748B),
+    name: '系统语音识别',
+    description: '使用设备内置语音识别引擎',
+    features: ['免费', '离线'],
+    status: '免费',
+  ),
+  AsrProviderKind.openaiRealtime: const _ServiceMeta(
+    icon: LucideIcons.radio,
+    color: Color(0xFF10B981),
+    name: 'OpenAI Realtime',
+    description: 'OpenAI 实时语音识别 (WebSocket)',
+    features: ['实时', '高精度'],
+    status: '高级',
+  ),
+  AsrProviderKind.whisper: const _ServiceMeta(
+    icon: LucideIcons.audioWaveform,
+    color: Color(0xFF6366F1),
+    name: 'OpenAI Whisper',
+    description: '高精度离线友好语音转文字',
+    features: ['高精度', '多语言'],
+    status: '高级',
+  ),
+};
 
 // ---------------------------------------------------------------------------
 // 2nd-level page: Dual-tab (TTS / ASR) provider card grid
@@ -223,8 +223,10 @@ class _TabHeader extends StatelessWidget {
         labelColor: theme.colorScheme.onSurface,
         unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
         labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-        unselectedLabelStyle:
-            const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+        unselectedLabelStyle: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+        ),
         tabs: const [
           Tab(
             height: 32,
@@ -270,29 +272,34 @@ class _TtsTab extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
         for (final kind in TtsProviderKind.values) ...[
-          Builder(builder: (ctx) {
-            final preset = defaultTtsProvider(kind);
-            final configured =
-                settings.ttsProviders.where((p) => p.kind == kind).toList();
-            final provider = configured.isNotEmpty ? configured.first : preset;
-            final isActive = settings.activeTtsProviderId == provider.id;
-            final m = meta[kind]!;
+          Builder(
+            builder: (ctx) {
+              final preset = defaultTtsProvider(kind);
+              final configured = settings.ttsProviders
+                  .where((p) => p.kind == kind)
+                  .toList();
+              final provider = configured.isNotEmpty
+                  ? configured.first
+                  : preset;
+              final isActive = settings.activeTtsProviderId == provider.id;
+              final m = meta[kind]!;
 
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _ServiceCard(
-                icon: m.icon,
-                color: m.color,
-                name: m.name,
-                description: m.description,
-                features: m.features,
-                status: m.status,
-                isActive: isActive,
-                onTap: () => _pushDetail(ctx, kind, provider),
-                onLongPress: () => ctrl.setActiveTtsProvider(provider.id),
-              ),
-            );
-          }),
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _ServiceCard(
+                  icon: m.icon,
+                  color: m.color,
+                  name: m.name,
+                  description: m.description,
+                  features: m.features,
+                  status: m.status,
+                  isActive: isActive,
+                  onTap: () => _pushDetail(ctx, kind, provider),
+                  onLongPress: () => ctrl.setActiveTtsProvider(provider.id),
+                ),
+              );
+            },
+          ),
         ],
       ],
     );
@@ -330,29 +337,34 @@ class _AsrTab extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
         for (final kind in AsrProviderKind.values) ...[
-          Builder(builder: (ctx) {
-            final preset = defaultAsrProvider(kind);
-            final configured =
-                settings.asrProviders.where((p) => p.kind == kind).toList();
-            final provider = configured.isNotEmpty ? configured.first : preset;
-            final isActive = settings.activeAsrProviderId == provider.id;
-            final m = meta[kind]!;
+          Builder(
+            builder: (ctx) {
+              final preset = defaultAsrProvider(kind);
+              final configured = settings.asrProviders
+                  .where((p) => p.kind == kind)
+                  .toList();
+              final provider = configured.isNotEmpty
+                  ? configured.first
+                  : preset;
+              final isActive = settings.activeAsrProviderId == provider.id;
+              final m = meta[kind]!;
 
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _ServiceCard(
-                icon: m.icon,
-                color: m.color,
-                name: m.name,
-                description: m.description,
-                features: m.features,
-                status: m.status,
-                isActive: isActive,
-                onTap: () => _pushDetail(ctx, kind, provider),
-                onLongPress: () => ctrl.setActiveAsrProvider(provider.id),
-              ),
-            );
-          }),
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _ServiceCard(
+                  icon: m.icon,
+                  color: m.color,
+                  name: m.name,
+                  description: m.description,
+                  features: m.features,
+                  status: m.status,
+                  isActive: isActive,
+                  onTap: () => _pushDetail(ctx, kind, provider),
+                  onLongPress: () => ctrl.setActiveAsrProvider(provider.id),
+                ),
+              );
+            },
+          ),
         ],
       ],
     );
@@ -573,10 +585,7 @@ class _FeatureChip extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _TtsProviderDetailPage extends ConsumerStatefulWidget {
-  const _TtsProviderDetailPage({
-    required this.kind,
-    required this.provider,
-  });
+  const _TtsProviderDetailPage({required this.kind, required this.provider});
 
   final TtsProviderKind kind;
   final TtsProviderSetting provider;
@@ -597,7 +606,13 @@ class _TtsProviderDetailPageState
   late final TextEditingController _clusterCtrl;
   late final TextEditingController _testTextCtrl;
   late final TextEditingController _instructionsCtrl;
+  late final TextEditingController _stylePromptCtrl;
+  late final TextEditingController _speaker1NameCtrl;
+  late final TextEditingController _speaker2NameCtrl;
   late bool _enabled;
+  late bool _useMultiSpeaker;
+  late String _speaker1Voice;
+  late String _speaker2Voice;
   late double _speed;
   late double _volume;
   late double _pitch;
@@ -624,13 +639,11 @@ class _TtsProviderDetailPageState
     _groupIdCtrl = TextEditingController(text: p.groupId);
     _appIdCtrl = TextEditingController(text: p.appId);
     _clusterCtrl = TextEditingController(text: p.cluster);
-    _testTextCtrl = TextEditingController(
-      text: '你好，欢迎使用语音合成服务！这是一段测试文本。',
-    );
+    _testTextCtrl = TextEditingController(text: '你好，欢迎使用语音合成服务！这是一段测试文本。');
     // "启用此服务" reflects whether this is the single active provider,
     // matching the original web app's per-service enable toggle.
-    _enabled = ref.read(voiceSettingsControllerProvider).activeTtsProviderId ==
-        p.id;
+    _enabled =
+        ref.read(voiceSettingsControllerProvider).activeTtsProviderId == p.id;
     _speed = p.speed;
     _volume = p.volume;
     _pitch = p.pitch;
@@ -643,6 +656,12 @@ class _TtsProviderDetailPageState
     _outputFormat = p.outputFormat;
     _resourceId = p.resourceId;
     _instructionsCtrl = TextEditingController(text: p.instructions);
+    _stylePromptCtrl = TextEditingController(text: p.stylePrompt);
+    _speaker1NameCtrl = TextEditingController(text: p.speaker1Name);
+    _speaker2NameCtrl = TextEditingController(text: p.speaker2Name);
+    _useMultiSpeaker = p.useMultiSpeaker;
+    _speaker1Voice = p.speaker1Voice;
+    _speaker2Voice = p.speaker2Voice;
   }
 
   @override
@@ -656,32 +675,41 @@ class _TtsProviderDetailPageState
     _clusterCtrl.dispose();
     _testTextCtrl.dispose();
     _instructionsCtrl.dispose();
+    _stylePromptCtrl.dispose();
+    _speaker1NameCtrl.dispose();
+    _speaker2NameCtrl.dispose();
     super.dispose();
   }
 
   /// Builds a [TtsProviderSetting] from the current (possibly unsaved) form
   /// values. Used by both save and the live preview/test.
   TtsProviderSetting _currentProvider() => widget.provider.copyWith(
-        enabled: _enabled,
-        apiKey: _apiKeyCtrl.text.trim(),
-        baseUrl: _baseUrlCtrl.text.trim(),
-        model: _usesModelSelector ? _model : _modelCtrl.text.trim(),
-        voice: widget.kind == TtsProviderKind.gemini ? '' : _voice,
-        voiceName: widget.kind == TtsProviderKind.gemini ? _voiceName : '',
-        region: _regionCtrl.text.trim(),
-        groupId: _groupIdCtrl.text.trim(),
-        speed: _speed,
-        emotion: _emotion,
-        outputFormat: _outputFormat,
-        appId: _appIdCtrl.text.trim(),
-        cluster: _clusterCtrl.text.trim(),
-        resourceId: _resourceId,
-        volume: _volume,
-        pitch: _pitch,
-        apiVersion: _apiVersion,
-        encoding: _encoding,
-        instructions: _instructionsCtrl.text,
-      );
+    enabled: _enabled,
+    apiKey: _apiKeyCtrl.text.trim(),
+    baseUrl: _baseUrlCtrl.text.trim(),
+    model: _usesModelSelector ? _model : _modelCtrl.text.trim(),
+    voice: widget.kind == TtsProviderKind.gemini ? '' : _voice,
+    voiceName: widget.kind == TtsProviderKind.gemini ? _voiceName : '',
+    region: _regionCtrl.text.trim(),
+    groupId: _groupIdCtrl.text.trim(),
+    speed: _speed,
+    emotion: _emotion,
+    outputFormat: _outputFormat,
+    appId: _appIdCtrl.text.trim(),
+    cluster: _clusterCtrl.text.trim(),
+    resourceId: _resourceId,
+    volume: _volume,
+    pitch: _pitch,
+    apiVersion: _apiVersion,
+    encoding: _encoding,
+    instructions: _instructionsCtrl.text,
+    stylePrompt: _stylePromptCtrl.text,
+    useMultiSpeaker: _useMultiSpeaker,
+    speaker1Name: _speaker1NameCtrl.text.trim(),
+    speaker1Voice: _speaker1Voice,
+    speaker2Name: _speaker2NameCtrl.text.trim(),
+    speaker2Voice: _speaker2Voice,
+  );
 
   /// Persists the current form values. Called automatically when leaving the
   /// page (back button or system back gesture).
@@ -701,12 +729,12 @@ class _TtsProviderDetailPageState
   }
 
   bool get _usesModelSelector => const {
-        TtsProviderKind.openai,
-        TtsProviderKind.minimax,
-        TtsProviderKind.siliconflow,
-        TtsProviderKind.elevenlabs,
-        TtsProviderKind.gemini,
-      }.contains(widget.kind);
+    TtsProviderKind.openai,
+    TtsProviderKind.minimax,
+    TtsProviderKind.siliconflow,
+    TtsProviderKind.elevenlabs,
+    TtsProviderKind.gemini,
+  }.contains(widget.kind);
 
   @override
   Widget build(BuildContext context) {
@@ -719,98 +747,98 @@ class _TtsProviderDetailPageState
         Navigator.of(context).pop();
       },
       child: Scaffold(
-      appBar: ModelSettingsAppBar(
-        title: defaultTtsProvider(widget.kind).name,
-        onBack: () => Navigator.of(context).maybePop(),
-      ),
-      body: SafeArea(
-        top: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          children: [
-            // ===== Single main card (matching Web's single Paper) =====
-            ModelSettingsCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // -- Enable switch --
-                _InlineToggle(
-                  label: '启用此服务',
-                  value: _enabled,
-                  onChanged: (v) => setState(() => _enabled = v),
-                ),
-                if (!_isSystem) ...[
-                  Divider(height: 24, color: theme.dividerColor),
-                  // -- Credentials --
-                  ..._buildCredentialFields(),
-                  // -- API version + V3 options (Volcano, inline) --
-                  if (_isVolcano) ..._buildVolcanoApiOptions(),
-                  Divider(height: 24, color: theme.dividerColor),
-                  // -- Voice / model selection --
-                  ..._buildVoiceSection(),
-                  // -- Encoding (Volcano) --
-                  if (_isVolcano) ...[
-                    const SizedBox(height: 12),
-                    _DropdownField(
-                      label: '音频格式',
-                      value: _encoding,
-                      items: const {
-                        'mp3': 'MP3',
-                        'ogg_opus': 'OGG Opus',
-                        'wav': 'WAV',
-                        'pcm': 'PCM',
-                      },
-                      onChanged: (v) => setState(() => _encoding = v),
+        appBar: ModelSettingsAppBar(
+          title: defaultTtsProvider(widget.kind).name,
+          onBack: () => Navigator.of(context).maybePop(),
+        ),
+        body: SafeArea(
+          top: false,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            children: [
+              // ===== Single main card (matching Web's single Paper) =====
+              ModelSettingsCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // -- Enable switch --
+                    _InlineToggle(
+                      label: '启用此服务',
+                      value: _enabled,
+                      onChanged: (v) => setState(() => _enabled = v),
                     ),
+                    if (!_isSystem) ...[
+                      Divider(height: 24, color: theme.dividerColor),
+                      // -- Credentials --
+                      ..._buildCredentialFields(),
+                      // -- API version + V3 options (Volcano, inline) --
+                      if (_isVolcano) ..._buildVolcanoApiOptions(),
+                      Divider(height: 24, color: theme.dividerColor),
+                      // -- Voice / model selection --
+                      ..._buildVoiceSection(),
+                      // -- Encoding (Volcano) --
+                      if (_isVolcano) ...[
+                        const SizedBox(height: 12),
+                        _DropdownField(
+                          label: '音频格式',
+                          value: _encoding,
+                          items: const {
+                            'mp3': 'MP3',
+                            'ogg_opus': 'OGG Opus',
+                            'wav': 'WAV',
+                            'pcm': 'PCM',
+                          },
+                          onChanged: (v) => setState(() => _encoding = v),
+                        ),
+                      ],
+                    ],
+                    Divider(height: 24, color: theme.dividerColor),
+                    // -- Playback sliders --
+                    _SliderRow(
+                      label: '语速',
+                      value: _speed,
+                      min: widget.kind == TtsProviderKind.openai ? 0.25 : 0.5,
+                      max: widget.kind == TtsProviderKind.openai ? 4.0 : 2.0,
+                      divisions: widget.kind == TtsProviderKind.openai ? 15 : 6,
+                      onChanged: (v) => setState(() => _speed = v),
+                    ),
+                    if (_isVolcano) ...[
+                      _SliderRow(
+                        label: '音量',
+                        value: _volume,
+                        min: 0.5,
+                        max: 2.0,
+                        divisions: 6,
+                        onChanged: (v) => setState(() => _volume = v),
+                      ),
+                      _SliderRow(
+                        label: '音调',
+                        value: _pitch,
+                        min: 0.5,
+                        max: 2.0,
+                        divisions: 6,
+                        onChanged: (v) => setState(() => _pitch = v),
+                      ),
+                    ],
+                    // -- Volcano advanced (cluster, model, resource ID) --
+                    if (_isVolcano) ...[
+                      Divider(height: 24, color: theme.dividerColor),
+                      ..._buildVolcanoAdvanced(),
+                    ],
                   ],
-                ],
-                Divider(height: 24, color: theme.dividerColor),
-                // -- Playback sliders --
-                _SliderRow(
-                  label: '语速',
-                  value: _speed,
-                  min: widget.kind == TtsProviderKind.openai ? 0.25 : 0.5,
-                  max: widget.kind == TtsProviderKind.openai ? 4.0 : 2.0,
-                  divisions: widget.kind == TtsProviderKind.openai ? 15 : 6,
-                  onChanged: (v) => setState(() => _speed = v),
                 ),
-                if (_isVolcano) ...[
-                  _SliderRow(
-                    label: '音量',
-                    value: _volume,
-                    min: 0.5,
-                    max: 2.0,
-                    divisions: 6,
-                    onChanged: (v) => setState(() => _volume = v),
-                  ),
-                  _SliderRow(
-                    label: '音调',
-                    value: _pitch,
-                    min: 0.5,
-                    max: 2.0,
-                    divisions: 6,
-                    onChanged: (v) => setState(() => _pitch = v),
-                  ),
-                ],
-                // -- Volcano advanced (cluster, model, resource ID) --
-                if (_isVolcano) ...[
-                  Divider(height: 24, color: theme.dividerColor),
-                  ..._buildVolcanoAdvanced(),
-                ],
+              ),
+              // ===== Test section (separate card, like Web) =====
+              if (!_isSystem) ...[
+                const SizedBox(height: 10),
+                _TtsTestSection(
+                  testTextCtrl: _testTextCtrl,
+                  buildProvider: _currentProvider,
+                ),
               ],
-            ),
+            ],
           ),
-          // ===== Test section (separate card, like Web) =====
-          if (!_isSystem) ...[
-            const SizedBox(height: 10),
-            _TtsTestSection(
-              testTextCtrl: _testTextCtrl,
-              buildProvider: _currentProvider,
-            ),
-          ],
-        ],
-      ),
-      ),
+        ),
       ),
     );
   }
@@ -933,21 +961,27 @@ class _TtsProviderDetailPageState
       _DropdownField(
         label: '模型',
         value: _model,
-        items: {for (final m in kOpenAIModels) m.id: '${m.name} - ${m.description}'},
+        items: {
+          for (final m in kOpenAIModels) m.id: '${m.name} - ${m.description}',
+        },
         onChanged: (v) => setState(() => _model = v),
       ),
       const SizedBox(height: 12),
       _DropdownField(
         label: '语音',
         value: _voice.isEmpty ? kOpenAIVoices.first.id : _voice,
-        items: {for (final v in kOpenAIVoices) v.id: '${v.name} - ${v.description}'},
+        items: {
+          for (final v in kOpenAIVoices) v.id: '${v.name} - ${v.description}',
+        },
         onChanged: (v) => setState(() => _voice = v),
       ),
       const SizedBox(height: 12),
       _DropdownField(
         label: '输出格式',
         value: _outputFormat.isEmpty ? 'mp3' : _outputFormat,
-        items: {for (final f in kOpenAIFormats) f.id: '${f.name} - ${f.description}'},
+        items: {
+          for (final f in kOpenAIFormats) f.id: '${f.name} - ${f.description}',
+        },
         onChanged: (v) => setState(() => _outputFormat = v),
       ),
       if (isGpt4oMiniTts) ...[
@@ -971,19 +1005,80 @@ class _TtsProviderDetailPageState
         onChanged: (v) => setState(() => _model = v),
       ),
       const SizedBox(height: 12),
-      _SelectorField(
-        label: '语音',
-        value: _voiceName,
-        displayText: _voiceName.isEmpty ? '选择语音...' : _voiceName,
-        onTap: () async {
-          final result = await FullScreenVoicePicker.show(
-            context,
-            title: '选择 Gemini 语音',
-            groups: buildPresetGroups('Gemini 语音', kGeminiVoices),
-            selectedKey: _voiceName,
-          );
-          if (result != null) setState(() => _voiceName = result);
-        },
+      // -- Multi-speaker toggle --
+      _InlineToggle(
+        label: '多说话人模式',
+        value: _useMultiSpeaker,
+        onChanged: (v) => setState(() => _useMultiSpeaker = v),
+      ),
+      const SizedBox(height: 12),
+      if (!_useMultiSpeaker) ...[
+        // -- Single speaker voice selection --
+        _SelectorField(
+          label: '语音',
+          value: _voiceName,
+          displayText: _voiceName.isEmpty ? '选择语音...' : _voiceName,
+          onTap: () async {
+            final result = await FullScreenVoicePicker.show(
+              context,
+              title: '选择 Gemini 语音',
+              groups: buildPresetGroups('Gemini 语音', kGeminiVoices),
+              selectedKey: _voiceName,
+            );
+            if (result != null) setState(() => _voiceName = result);
+          },
+        ),
+      ] else ...[
+        // -- Multi-speaker config (up to 2 speakers) --
+        ModelFormField(
+          label: '说话人 1 名称',
+          hint: '例如 Joe（需和文本中的名称一致）',
+          controller: _speaker1NameCtrl,
+        ),
+        const SizedBox(height: 8),
+        _SelectorField(
+          label: '说话人 1 语音',
+          value: _speaker1Voice,
+          displayText: _speaker1Voice.isEmpty ? '选择语音...' : _speaker1Voice,
+          onTap: () async {
+            final result = await FullScreenVoicePicker.show(
+              context,
+              title: '说话人 1 语音',
+              groups: buildPresetGroups('Gemini 语音', kGeminiVoices),
+              selectedKey: _speaker1Voice,
+            );
+            if (result != null) setState(() => _speaker1Voice = result);
+          },
+        ),
+        const SizedBox(height: 12),
+        ModelFormField(
+          label: '说话人 2 名称',
+          hint: '例如 Jane（需和文本中的名称一致）',
+          controller: _speaker2NameCtrl,
+        ),
+        const SizedBox(height: 8),
+        _SelectorField(
+          label: '说话人 2 语音',
+          value: _speaker2Voice,
+          displayText: _speaker2Voice.isEmpty ? '选择语音...' : _speaker2Voice,
+          onTap: () async {
+            final result = await FullScreenVoicePicker.show(
+              context,
+              title: '说话人 2 语音',
+              groups: buildPresetGroups('Gemini 语音', kGeminiVoices),
+              selectedKey: _speaker2Voice,
+            );
+            if (result != null) setState(() => _speaker2Voice = result);
+          },
+        ),
+      ],
+      const SizedBox(height: 12),
+      // -- Style prompt --
+      ModelFormField(
+        label: '风格提示词 (Style Prompt)',
+        hint: '例如：Say in a cheerful tone / 用温柔低语的方式说',
+        controller: _stylePromptCtrl,
+        maxLines: 3,
       ),
     ];
   }
@@ -1008,10 +1103,10 @@ class _TtsProviderDetailPageState
               displayText: _voice.isEmpty
                   ? '选择...'
                   : kMiniMaxVoices
-                        .where((v) => v.id == _voice)
-                        .map((v) => v.name)
-                        .firstOrNull ??
-                    _voice,
+                            .where((v) => v.id == _voice)
+                            .map((v) => v.name)
+                            .firstOrNull ??
+                        _voice,
               onTap: () async {
                 final result = await FullScreenVoicePicker.show(
                   context,
@@ -1035,10 +1130,10 @@ class _TtsProviderDetailPageState
               displayText: _emotion.isEmpty
                   ? '默认'
                   : kMiniMaxEmotions
-                        .where((e) => e.id == _emotion)
-                        .map((e) => e.name)
-                        .firstOrNull ??
-                    _emotion,
+                            .where((e) => e.id == _emotion)
+                            .map((e) => e.name)
+                            .firstOrNull ??
+                        _emotion,
               onTap: () async {
                 final result = await FullScreenVoicePicker.show(
                   context,
@@ -1066,14 +1161,16 @@ class _TtsProviderDetailPageState
   }
 
   List<Widget> _buildSiliconFlowVoice() {
-    final currentModel =
-        _model.isEmpty ? kSiliconFlowModels.first.id : _model;
+    final currentModel = _model.isEmpty ? kSiliconFlowModels.first.id : _model;
     final voices = kSiliconFlowVoices[currentModel] ?? [];
     return [
       _DropdownField(
         label: '模型',
         value: currentModel,
-        items: {for (final m in kSiliconFlowModels) m.id: '${m.name} - ${m.description}'},
+        items: {
+          for (final m in kSiliconFlowModels)
+            m.id: '${m.name} - ${m.description}',
+        },
         onChanged: (v) => setState(() {
           _model = v;
           final modelVoices = kSiliconFlowVoices[v];
@@ -1103,10 +1200,10 @@ class _TtsProviderDetailPageState
         displayText: _voice.isEmpty
             ? '选择语音...'
             : kAzureVoices
-                  .where((v) => v.id == _voice)
-                  .map((v) => '${v.name} (${v.id})')
-                  .firstOrNull ??
-              _voice,
+                      .where((v) => v.id == _voice)
+                      .map((v) => '${v.name} (${v.id})')
+                      .firstOrNull ??
+                  _voice,
         onTap: () async {
           final result = await FullScreenVoicePicker.show(
             context,
@@ -1125,7 +1222,10 @@ class _TtsProviderDetailPageState
       _DropdownField(
         label: '模型',
         value: _model.isEmpty ? kElevenLabsModels.first.id : _model,
-        items: {for (final m in kElevenLabsModels) m.id: '${m.name} - ${m.description}'},
+        items: {
+          for (final m in kElevenLabsModels)
+            m.id: '${m.name} - ${m.description}',
+        },
         onChanged: (v) => setState(() => _model = v),
       ),
       const SizedBox(height: 12),
@@ -1135,10 +1235,10 @@ class _TtsProviderDetailPageState
         displayText: _voice.isEmpty
             ? '选择语音...'
             : kElevenLabsVoices
-                  .where((v) => v.id == _voice)
-                  .map((v) => v.name)
-                  .firstOrNull ??
-              _voice,
+                      .where((v) => v.id == _voice)
+                      .map((v) => v.name)
+                      .firstOrNull ??
+                  _voice,
         onTap: () async {
           final result = await FullScreenVoicePicker.show(
             context,
@@ -1153,7 +1253,10 @@ class _TtsProviderDetailPageState
       _DropdownField(
         label: '输出格式',
         value: _outputFormat.isEmpty ? 'mp3_44100_128' : _outputFormat,
-        items: {for (final f in kElevenLabsOutputFormats) f.id: '${f.name} - ${f.description}'},
+        items: {
+          for (final f in kElevenLabsOutputFormats)
+            f.id: '${f.name} - ${f.description}',
+        },
         onChanged: (v) => setState(() => _outputFormat = v),
       ),
     ];
@@ -1163,10 +1266,10 @@ class _TtsProviderDetailPageState
     final voiceDisplayName = _voice.isEmpty
         ? '选择音色...'
         : kVolcanoVoices.entries
-              .where((e) => e.value == _voice)
-              .map((e) => e.key)
-              .firstOrNull ??
-          _voice;
+                  .where((e) => e.value == _voice)
+                  .map((e) => e.key)
+                  .firstOrNull ??
+              _voice;
     final emotionDisplayName = _emotion.isEmpty
         ? '默认'
         : kVolcanoEmotions[_emotion] ?? _emotion;
@@ -1228,10 +1331,7 @@ class _TtsProviderDetailPageState
 // ---------------------------------------------------------------------------
 
 class _AsrProviderDetailPage extends ConsumerStatefulWidget {
-  const _AsrProviderDetailPage({
-    required this.kind,
-    required this.provider,
-  });
+  const _AsrProviderDetailPage({required this.kind, required this.provider});
 
   final AsrProviderKind kind;
   final AsrProviderSetting provider;
@@ -1260,8 +1360,8 @@ class _AsrProviderDetailPageState
     _modelCtrl = TextEditingController(text: p.model);
     _wsUrlCtrl = TextEditingController(text: p.websocketUrl);
     // "启用此服务" reflects whether this is the single active ASR provider.
-    _enabled = ref.read(voiceSettingsControllerProvider).activeAsrProviderId ==
-        p.id;
+    _enabled =
+        ref.read(voiceSettingsControllerProvider).activeAsrProviderId == p.id;
     _vadThreshold = p.vadThreshold;
     _silenceDurationMs = p.silenceDurationMs;
   }
@@ -1313,82 +1413,82 @@ class _AsrProviderDetailPageState
         Navigator.of(context).pop();
       },
       child: Scaffold(
-      appBar: ModelSettingsAppBar(
-        title: defaultAsrProvider(widget.kind).name,
-        onBack: () => Navigator.of(context).maybePop(),
-      ),
-      body: SafeArea(
-        top: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          children: [
-            // Single card (matching Web pattern)
-            ModelSettingsCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _InlineToggle(
-                  label: '启用此服务',
-                  value: _enabled,
-                  onChanged: (v) => setState(() => _enabled = v),
+        appBar: ModelSettingsAppBar(
+          title: defaultAsrProvider(widget.kind).name,
+          onBack: () => Navigator.of(context).maybePop(),
+        ),
+        body: SafeArea(
+          top: false,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            children: [
+              // Single card (matching Web pattern)
+              ModelSettingsCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _InlineToggle(
+                      label: '启用此服务',
+                      value: _enabled,
+                      onChanged: (v) => setState(() => _enabled = v),
+                    ),
+                    if (!isSystem) ...[
+                      Divider(height: 24, color: theme.dividerColor),
+                      ModelFormField(
+                        label: 'API Key',
+                        hint: '输入 API 密钥',
+                        controller: _apiKeyCtrl,
+                        obscureText: true,
+                      ),
+                      if (!isRealtime) ...[
+                        const SizedBox(height: 12),
+                        ModelFormField(
+                          label: 'Base URL',
+                          hint: '输入服务地址',
+                          controller: _baseUrlCtrl,
+                        ),
+                      ],
+                      if (isRealtime) ...[
+                        const SizedBox(height: 12),
+                        ModelFormField(
+                          label: 'WebSocket URL',
+                          hint: '输入 WebSocket 地址',
+                          controller: _wsUrlCtrl,
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      ModelFormField(
+                        label: '模型',
+                        hint: '输入模型名称',
+                        controller: _modelCtrl,
+                      ),
+                      if (isRealtime) ...[
+                        Divider(height: 24, color: theme.dividerColor),
+                        _SliderRow(
+                          label: 'VAD 阈值',
+                          value: _vadThreshold,
+                          min: 0.0,
+                          max: 1.0,
+                          divisions: 20,
+                          onChanged: (v) => setState(() => _vadThreshold = v),
+                        ),
+                        _SliderRow(
+                          label: '静默时间 (ms)',
+                          value: _silenceDurationMs.toDouble(),
+                          min: 100,
+                          max: 2000,
+                          divisions: 19,
+                          onChanged: (v) =>
+                              setState(() => _silenceDurationMs = v.round()),
+                        ),
+                      ],
+                    ],
+                  ],
                 ),
-                if (!isSystem) ...[
-                  Divider(height: 24, color: theme.dividerColor),
-                  ModelFormField(
-                    label: 'API Key',
-                    hint: '输入 API 密钥',
-                    controller: _apiKeyCtrl,
-                    obscureText: true,
-                  ),
-                  if (!isRealtime) ...[
-                    const SizedBox(height: 12),
-                    ModelFormField(
-                      label: 'Base URL',
-                      hint: '输入服务地址',
-                      controller: _baseUrlCtrl,
-                    ),
-                  ],
-                  if (isRealtime) ...[
-                    const SizedBox(height: 12),
-                    ModelFormField(
-                      label: 'WebSocket URL',
-                      hint: '输入 WebSocket 地址',
-                      controller: _wsUrlCtrl,
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  ModelFormField(
-                    label: '模型',
-                    hint: '输入模型名称',
-                    controller: _modelCtrl,
-                  ),
-                  if (isRealtime) ...[
-                    Divider(height: 24, color: theme.dividerColor),
-                    _SliderRow(
-                      label: 'VAD 阈值',
-                      value: _vadThreshold,
-                      min: 0.0,
-                      max: 1.0,
-                      divisions: 20,
-                      onChanged: (v) => setState(() => _vadThreshold = v),
-                    ),
-                    _SliderRow(
-                      label: '静默时间 (ms)',
-                      value: _silenceDurationMs.toDouble(),
-                      min: 100,
-                      max: 2000,
-                      divisions: 19,
-                      onChanged: (v) =>
-                          setState(() => _silenceDurationMs = v.round()),
-                    ),
-                  ],
-                ],
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
-      ),
+        ),
       ),
     );
   }
@@ -1411,7 +1511,8 @@ class _TtsTestSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final ttsState = ref.watch(ttsControllerProvider);
-    final isPlaying = ttsState.status == TtsStatus.playing ||
+    final isPlaying =
+        ttsState.status == TtsStatus.playing ||
         ttsState.status == TtsStatus.loading;
     final isTestMessage = ttsState.messageId == '__tts_test__';
 
@@ -1626,10 +1727,12 @@ class _DropdownField extends StatelessWidget {
             underline: const SizedBox.shrink(),
             style: theme.textTheme.bodyMedium?.copyWith(fontSize: 13.5),
             items: items.entries
-                .map((e) => DropdownMenuItem(
-                      value: e.key,
-                      child: Text(e.value, overflow: TextOverflow.ellipsis),
-                    ))
+                .map(
+                  (e) => DropdownMenuItem(
+                    value: e.key,
+                    child: Text(e.value, overflow: TextOverflow.ellipsis),
+                  ),
+                )
                 .toList(),
             onChanged: (v) {
               if (v != null) onChanged(v);
