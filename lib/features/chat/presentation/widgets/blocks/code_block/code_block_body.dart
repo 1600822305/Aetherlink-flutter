@@ -178,11 +178,15 @@ class PerLineCodeView extends StatefulWidget {
 class _PerLineCodeViewState extends State<PerLineCodeView> {
   late List<List<TextSpan>> _lineSpans;
   Timer? _debounce;
-  bool _pendingHighlight = false;
+
+  /// Cached joined code string for cheap equality checks. Lists are recreated
+  /// on each parent rebuild but the joined content usually matches.
+  late String _cachedCode;
 
   @override
   void initState() {
     super.initState();
+    _cachedCode = widget.lines.join('\n');
     _lineSpans = _highlightAllLines();
   }
 
@@ -198,27 +202,26 @@ class _PerLineCodeViewState extends State<PerLineCodeView> {
     final themeChanged =
         !identical(oldWidget.highlightTheme, widget.highlightTheme);
     final langChanged = oldWidget.highlightLanguage != widget.highlightLanguage;
-    final codeChanged = oldWidget.lines != widget.lines;
+    final newCode = widget.lines.join('\n');
+    final codeChanged = newCode != _cachedCode;
 
     if (themeChanged || langChanged) {
       _debounce?.cancel();
+      _cachedCode = newCode;
       _lineSpans = _highlightAllLines();
-      _pendingHighlight = false;
     } else if (codeChanged) {
+      _cachedCode = newCode;
       if (widget.isStreaming) {
-        _pendingHighlight = true;
         _debounce?.cancel();
         _debounce = Timer(const Duration(milliseconds: 50), () {
           if (!mounted) return;
           setState(() {
             _lineSpans = _highlightAllLines();
-            _pendingHighlight = false;
           });
         });
       } else {
         _debounce?.cancel();
         _lineSpans = _highlightAllLines();
-        _pendingHighlight = false;
       }
     }
   }
@@ -239,8 +242,16 @@ class _PerLineCodeViewState extends State<PerLineCodeView> {
         ? math.max(34.0, 18.0 + widget.lines.length.toString().length * 8.0)
         : 0.0;
 
-    final effectiveSpans =
-        _pendingHighlight ? _lineSpans : _lineSpans;
+    // During streaming debounce, reuse the last highlighted spans (they'll be
+    // slightly stale but avoid a flash of un-highlighted text).
+    final effectiveSpans = _lineSpans;
+
+    // Precompute per-line global match offsets once (avoids O(N²) in build).
+    final hasSearch = widget.searchQuery != null &&
+        widget.searchQuery!.isNotEmpty;
+    final matchOffsets = hasSearch
+        ? _precomputeMatchOffsets(widget.lines, widget.searchQuery!)
+        : const <int>[];
 
     return SelectionArea(
       child: Column(
@@ -248,14 +259,13 @@ class _PerLineCodeViewState extends State<PerLineCodeView> {
         children: List.generate(widget.lines.length, (i) {
           final lineSpans =
               effectiveSpans.length > i ? effectiveSpans[i] : <TextSpan>[];
-          final decorated = widget.searchQuery != null &&
-                  widget.searchQuery!.isNotEmpty
+          final decorated = hasSearch
               ? applySearchHighlight(
                   lineSpans,
                   widget.searchQuery!,
                   widget.codeStyle,
                   widget.currentMatchIndex,
-                  _globalMatchOffset(i),
+                  matchOffsets.length > i ? matchOffsets[i] : 0,
                 )
               : lineSpans;
 
@@ -294,21 +304,25 @@ class _PerLineCodeViewState extends State<PerLineCodeView> {
     );
   }
 
-  int _globalMatchOffset(int lineIndex) {
-    if (widget.searchQuery == null || widget.searchQuery!.isEmpty) return 0;
-    var offset = 0;
-    final query = widget.searchQuery!.toLowerCase();
-    for (var i = 0; i < lineIndex && i < widget.lines.length; i++) {
-      final line = widget.lines[i].toLowerCase();
+  /// Precompute cumulative match counts per line so each line knows its global
+  /// offset in O(N) total instead of O(N²).
+  static List<int> _precomputeMatchOffsets(
+      List<String> lines, String query) {
+    final lowerQuery = query.toLowerCase();
+    final offsets = List<int>.filled(lines.length, 0);
+    var cumulative = 0;
+    for (var i = 0; i < lines.length; i++) {
+      offsets[i] = cumulative;
+      final line = lines[i].toLowerCase();
       var start = 0;
       while (true) {
-        final idx = line.indexOf(query, start);
+        final idx = line.indexOf(lowerQuery, start);
         if (idx == -1) break;
-        offset++;
+        cumulative++;
         start = idx + 1;
       }
     }
-    return offset;
+    return offsets;
   }
 }
 
@@ -392,6 +406,8 @@ class _SelectableHighlightViewState extends State<SelectableHighlightView> {
   }
 }
 
+/// Line number gutter. Caches the joined text to avoid rebuilding it every
+/// frame.
 class LineNumberGutter extends StatelessWidget {
   const LineNumberGutter({
     required this.lineCount,
@@ -414,13 +430,20 @@ class LineNumberGutter extends StatelessWidget {
         border: Border(right: BorderSide(color: borderColor)),
       ),
       child: Text(
-        List.generate(lineCount, (i) => '${i + 1}').join('\n'),
+        _gutterTextCache.putIfAbsent(
+          lineCount,
+          () => List.generate(lineCount, (i) => '${i + 1}').join('\n'),
+        ),
         textAlign: TextAlign.right,
         style: style,
       ),
     );
   }
 }
+
+/// LRU-ish cache for gutter text strings, keyed by line count.
+/// Keeps at most 32 entries to bound memory.
+final Map<int, String> _gutterTextCache = {};
 
 /// Apply search highlight to spans, coloring matches yellow / current orange.
 List<TextSpan> applySearchHighlight(
