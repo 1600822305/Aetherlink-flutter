@@ -1,9 +1,11 @@
 // ignore_for_file: experimental_member_use
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/features/voice/application/voice_settings_controller.dart';
@@ -150,6 +152,7 @@ class TtsController extends _$TtsController {
     await _player?.stop();
     _cache.clear();
     _chunks = const [];
+    _cleanUpTempFiles();
     state = const TtsPlaybackState();
   }
 
@@ -212,8 +215,14 @@ class TtsController extends _$TtsController {
       state = state.copyWith(status: TtsStatus.playing);
       await _audioPlayer.setSpeed(state.speed);
       _playerSub ??= _audioPlayer.processingStateStream.listen(_onProcessingStateChanged);
-      final source = _BytesAudioSource(bytes);
-      await _audioPlayer.setAudioSource(source);
+
+      // Write to a temp file for reliable playback across Android devices.
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/tts_chunk_$index.audio');
+      await file.writeAsBytes(bytes, flush: true);
+      await _audioPlayer.setAudioSource(
+        AudioSource.uri(Uri.file(file.path)),
+      );
       await _audioPlayer.play();
 
       // Prefetch the next few chunks.
@@ -270,29 +279,21 @@ class TtsController extends _$TtsController {
     }
   }
 
+  void _cleanUpTempFiles() {
+    getTemporaryDirectory().then((dir) {
+      for (final f in dir.listSync()) {
+        if (f is File && f.path.contains('tts_chunk_')) {
+          f.deleteSync();
+        }
+      }
+    }).catchError((Object _) {});
+  }
+
   void _dispose() {
     _cancelToken?.cancel();
     _playerSub?.cancel();
     _player?.dispose();
     _systemTts?.dispose();
-  }
-}
-
-/// Custom [StreamAudioSource] that serves in-memory bytes to just_audio.
-class _BytesAudioSource extends StreamAudioSource {
-  _BytesAudioSource(this._bytes);
-  final Uint8List _bytes;
-
-  @override
-  Future<StreamAudioResponse> request([int? start, int? end]) async {
-    final s = start ?? 0;
-    final e = end ?? _bytes.length;
-    return StreamAudioResponse(
-      sourceLength: _bytes.length,
-      contentLength: e - s,
-      offset: s,
-      stream: Stream.value(_bytes.sublist(s, e)),
-      contentType: 'audio/mpeg',
-    );
+    _cleanUpTempFiles();
   }
 }
