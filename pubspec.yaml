@@ -63,6 +63,8 @@ dependencies:
   highlighting: ^0.9.0+11.8.0
   native_keyboard_height:
     path: packages/native_keyboard_height
+  flutter_mermaid:
+    path: packages/flutter_mermaid
   scrollview_observer: ^1.27.0
   # Voice feature: TTS + ASR
   flutter_tts: ^4.2.0

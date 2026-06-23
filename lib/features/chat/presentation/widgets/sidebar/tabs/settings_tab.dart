@@ -253,10 +253,9 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       ),
     _SwitchSettingRow(
       title: 'Mermaid 图表',
-      description: '渲染 Mermaid 流程图 / 时序图',
+      description: '渲染 Mermaid 流程图 / 时序图 / 饼图 / 甘特图等',
       value: s.mermaidEnabled,
       onChanged: c.setMermaidEnabled,
-      comingSoon: true,
     ),
   ];
 

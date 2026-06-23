@@ -9,6 +9,7 @@ import 'code_block_body.dart';
 import 'code_block_fullscreen.dart';
 import 'code_block_search.dart';
 import 'code_highlight_utils.dart';
+import 'mermaid_view.dart';
 
 /// A fenced code block with syntax highlighting (190+ languages, 110+ themes),
 /// line numbers, collapsible/default-collapsed state, wrap-vs-horizontal-scroll,
@@ -105,6 +106,14 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
 
   @override
   Widget build(BuildContext context) {
+    final settings = ref.watch(sidebarSettingsControllerProvider);
+
+    // Mermaid: dispatch to dedicated renderer when enabled.
+    if (settings.mermaidEnabled &&
+        widget.language.toLowerCase() == 'mermaid') {
+      return MermaidBlockView(code: widget.code);
+    }
+
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final bg = isDark ? const Color(0xF21E1E1E) : const Color(0xF2FAFAFA);
@@ -112,7 +121,6 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
         isDark ? const Color(0xF2282828) : const Color(0xF2F0F0F0);
     final border = isDark ? Colors.white12 : Colors.black12;
     final labelColor = isDark ? Colors.white70 : Colors.black54;
-    final settings = ref.watch(sidebarSettingsControllerProvider);
     final expanded = _effectiveExpanded(settings);
     final normalizedLanguage = displayLanguage(widget.language);
     final highlightLanguage = normalizeHighlightLanguage(widget.language);

@@ -1,0 +1,29 @@
+name: flutter_mermaid
+description: A pure Dart/Flutter library for rendering Mermaid diagrams without WebView or external dependencies. Supports flowcharts, sequence diagrams, pie charts, Gantt charts, timelines, Kanban boards, radar charts, and XY charts.
+version: 0.1.0
+homepage: https://github.com/JackCaow/flutter-mermaid
+repository: https://github.com/JackCaow/flutter-mermaid
+issue_tracker: https://github.com/JackCaow/flutter-mermaid/issues
+
+topics:
+  - mermaid
+  - diagram
+  - flowchart
+  - chart
+  - visualization
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
