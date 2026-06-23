@@ -19,6 +19,18 @@ class MiniMaxRemoteVoice {
   final String category; // system, cloned, generated
 }
 
+/// A voice entry returned by ElevenLabs' `/v1/voices` API.
+class ElevenLabsRemoteVoice {
+  const ElevenLabsRemoteVoice({
+    required this.id,
+    required this.name,
+    this.category = 'premade',
+  });
+  final String id;
+  final String name;
+  final String category; // premade, cloned, generated, professional
+}
+
 /// The result of a network TTS synthesis call: raw audio bytes and their MIME
 /// type so the player knows the codec.
 class TtsSynthesisResult {
@@ -455,7 +467,8 @@ class NetworkTtsService {
     );
   }
 
-  /// ElevenLabs TTS.
+  /// ElevenLabs TTS — `output_format` is a **URL query parameter** (not body).
+  /// `voice_settings` controls stability / similarity / style / speed.
   Future<TtsSynthesisResult> _synthesizeElevenLabs(
     String text,
     TtsProviderSetting provider,
@@ -463,8 +476,24 @@ class NetworkTtsService {
   ) async {
     final voiceId = provider.voice.isNotEmpty
         ? provider.voice
-        : '21m00Tcm4TlvDq8ikWAM';
-    final url = _joinUrl(provider.baseUrl, '/v1/text-to-speech/$voiceId');
+        : 'JBFqnCBsd6RMkjVDRZzb';
+    final outputFmt = provider.outputFormat.isNotEmpty
+        ? provider.outputFormat
+        : 'mp3_44100_128';
+    final url =
+        '${_joinUrl(provider.baseUrl, '/v1/text-to-speech/$voiceId')}'
+        '?output_format=$outputFmt';
+
+    final voiceSettings = <String, dynamic>{
+      'stability': provider.stability,
+      'similarity_boost': provider.similarityBoost,
+      'style': provider.elStyle,
+      'use_speaker_boost': provider.useSpeakerBoost,
+    };
+    if (provider.speed != 1.0) {
+      voiceSettings['speed'] = provider.speed;
+    }
+
     final response = await _dio.post<List<int>>(
       url,
       data: {
@@ -472,9 +501,7 @@ class NetworkTtsService {
         'model_id': provider.model.isNotEmpty
             ? provider.model
             : 'eleven_multilingual_v2',
-        'output_format': provider.outputFormat.isNotEmpty
-            ? provider.outputFormat
-            : 'mp3_44100_128',
+        'voice_settings': voiceSettings,
       },
       options: Options(
         headers: {
@@ -487,8 +514,42 @@ class NetworkTtsService {
     );
     return TtsSynthesisResult(
       bytes: Uint8List.fromList(response.data!),
-      mimeType: 'audio/mpeg',
+      mimeType: _elevenLabsMimeType(outputFmt),
     );
+  }
+
+  String _elevenLabsMimeType(String format) {
+    if (format.startsWith('mp3_')) return 'audio/mpeg';
+    if (format.startsWith('pcm_')) return 'audio/wav';
+    if (format.startsWith('ulaw_')) return 'audio/basic';
+    if (format.startsWith('alaw_')) return 'audio/basic';
+    if (format.startsWith('opus_')) return 'audio/opus';
+    if (format.startsWith('wav_')) return 'audio/wav';
+    return 'audio/mpeg';
+  }
+
+  /// Fetch dynamic voice list from ElevenLabs `/v1/voices` API.
+  Future<List<ElevenLabsRemoteVoice>> fetchElevenLabsVoices(
+    TtsProviderSetting provider,
+  ) async {
+    final url = _joinUrl(provider.baseUrl, '/v1/voices');
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        url,
+        options: Options(headers: {'xi-api-key': provider.apiKey}),
+      );
+      final voices = response.data?['voices'] as List<dynamic>? ?? [];
+      return voices.map((v) {
+        final m = v as Map<String, dynamic>;
+        return ElevenLabsRemoteVoice(
+          id: m['voice_id'] as String? ?? '',
+          name: m['name'] as String? ?? '',
+          category: m['category'] as String? ?? 'premade',
+        );
+      }).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   /// Azure Cognitive Services TTS.

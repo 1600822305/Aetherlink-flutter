@@ -62,6 +62,10 @@ abstract class TtsProviderSetting with _$TtsProviderSetting {
     @Default('') String speaker2Voice,
     // ElevenLabs
     @Default('') String outputFormat,
+    @Default(0.5) double stability, // ElevenLabs voice stability [0,1]
+    @Default(0.75) double similarityBoost, // ElevenLabs similarity [0,1]
+    @Default(0.0) double elStyle, // ElevenLabs style exaggeration [0,1]
+    @Default(true) bool useSpeakerBoost, // ElevenLabs speaker boost
     // Volcano-specific
     @Default('') String appId,
     @Default('') String cluster,
@@ -137,7 +141,12 @@ TtsProviderSetting defaultTtsProvider(TtsProviderKind kind) => switch (kind) {
     name: 'ElevenLabs TTS',
     baseUrl: 'https://api.elevenlabs.io',
     model: 'eleven_multilingual_v2',
+    voice: 'JBFqnCBsd6RMkjVDRZzb',
     outputFormat: 'mp3_44100_128',
+    stability: 0.5,
+    similarityBoost: 0.75,
+    elStyle: 0.0,
+    useSpeakerBoost: true,
   ),
   TtsProviderKind.volcano => const TtsProviderSetting(
     id: 'volcano',
