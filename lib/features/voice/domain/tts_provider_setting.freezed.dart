@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$TtsProviderSetting {
 
- String get id; TtsProviderKind get kind; String get name; bool get enabled; String get apiKey; String get baseUrl; String get model; String get voice; String get emotion; double get speed; String get region; String get voiceName; String get outputFormat;
+ String get id; TtsProviderKind get kind; String get name; bool get enabled; String get apiKey; String get baseUrl; String get model; String get voice; String get groupId; String get emotion; double get speed; String get region; String get voiceName; String get outputFormat;
 /// Create a copy of TtsProviderSetting
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $TtsProviderSettingCopyWith<TtsProviderSetting> get copyWith => _$TtsProviderSet
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is TtsProviderSetting&&(identical(other.id, id) || other.id == id)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.name, name) || other.name == name)&&(identical(other.enabled, enabled) || other.enabled == enabled)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.baseUrl, baseUrl) || other.baseUrl == baseUrl)&&(identical(other.model, model) || other.model == model)&&(identical(other.voice, voice) || other.voice == voice)&&(identical(other.emotion, emotion) || other.emotion == emotion)&&(identical(other.speed, speed) || other.speed == speed)&&(identical(other.region, region) || other.region == region)&&(identical(other.voiceName, voiceName) || other.voiceName == voiceName)&&(identical(other.outputFormat, outputFormat) || other.outputFormat == outputFormat));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is TtsProviderSetting&&(identical(other.id, id) || other.id == id)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.name, name) || other.name == name)&&(identical(other.enabled, enabled) || other.enabled == enabled)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.baseUrl, baseUrl) || other.baseUrl == baseUrl)&&(identical(other.model, model) || other.model == model)&&(identical(other.voice, voice) || other.voice == voice)&&(identical(other.groupId, groupId) || other.groupId == groupId)&&(identical(other.emotion, emotion) || other.emotion == emotion)&&(identical(other.speed, speed) || other.speed == speed)&&(identical(other.region, region) || other.region == region)&&(identical(other.voiceName, voiceName) || other.voiceName == voiceName)&&(identical(other.outputFormat, outputFormat) || other.outputFormat == outputFormat));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,kind,name,enabled,apiKey,baseUrl,model,voice,emotion,speed,region,voiceName,outputFormat);
+int get hashCode => Object.hash(runtimeType,id,kind,name,enabled,apiKey,baseUrl,model,voice,groupId,emotion,speed,region,voiceName,outputFormat);
 
 @override
 String toString() {
-  return 'TtsProviderSetting(id: $id, kind: $kind, name: $name, enabled: $enabled, apiKey: $apiKey, baseUrl: $baseUrl, model: $model, voice: $voice, emotion: $emotion, speed: $speed, region: $region, voiceName: $voiceName, outputFormat: $outputFormat)';
+  return 'TtsProviderSetting(id: $id, kind: $kind, name: $name, enabled: $enabled, apiKey: $apiKey, baseUrl: $baseUrl, model: $model, voice: $voice, groupId: $groupId, emotion: $emotion, speed: $speed, region: $region, voiceName: $voiceName, outputFormat: $outputFormat)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $TtsProviderSettingCopyWith<$Res>  {
   factory $TtsProviderSettingCopyWith(TtsProviderSetting value, $Res Function(TtsProviderSetting) _then) = _$TtsProviderSettingCopyWithImpl;
 @useResult
 $Res call({
- String id, TtsProviderKind kind, String name, bool enabled, String apiKey, String baseUrl, String model, String voice, String emotion, double speed, String region, String voiceName, String outputFormat
+ String id, TtsProviderKind kind, String name, bool enabled, String apiKey, String baseUrl, String model, String voice, String groupId, String emotion, double speed, String region, String voiceName, String outputFormat
 });
 
 
@@ -65,7 +65,7 @@ class _$TtsProviderSettingCopyWithImpl<$Res>
 
 /// Create a copy of TtsProviderSetting
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? kind = null,Object? name = null,Object? enabled = null,Object? apiKey = null,Object? baseUrl = null,Object? model = null,Object? voice = null,Object? emotion = null,Object? speed = null,Object? region = null,Object? voiceName = null,Object? outputFormat = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? kind = null,Object? name = null,Object? enabled = null,Object? apiKey = null,Object? baseUrl = null,Object? model = null,Object? voice = null,Object? groupId = null,Object? emotion = null,Object? speed = null,Object? region = null,Object? voiceName = null,Object? outputFormat = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
@@ -75,6 +75,7 @@ as bool,apiKey: null == apiKey ? _self.apiKey : apiKey // ignore: cast_nullable_
 as String,baseUrl: null == baseUrl ? _self.baseUrl : baseUrl // ignore: cast_nullable_to_non_nullable
 as String,model: null == model ? _self.model : model // ignore: cast_nullable_to_non_nullable
 as String,voice: null == voice ? _self.voice : voice // ignore: cast_nullable_to_non_nullable
+as String,groupId: null == groupId ? _self.groupId : groupId // ignore: cast_nullable_to_non_nullable
 as String,emotion: null == emotion ? _self.emotion : emotion // ignore: cast_nullable_to_non_nullable
 as String,speed: null == speed ? _self.speed : speed // ignore: cast_nullable_to_non_nullable
 as double,region: null == region ? _self.region : region // ignore: cast_nullable_to_non_nullable
@@ -165,10 +166,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  TtsProviderKind kind,  String name,  bool enabled,  String apiKey,  String baseUrl,  String model,  String voice,  String emotion,  double speed,  String region,  String voiceName,  String outputFormat)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  TtsProviderKind kind,  String name,  bool enabled,  String apiKey,  String baseUrl,  String model,  String voice,  String groupId,  String emotion,  double speed,  String region,  String voiceName,  String outputFormat)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _TtsProviderSetting() when $default != null:
-return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.baseUrl,_that.model,_that.voice,_that.emotion,_that.speed,_that.region,_that.voiceName,_that.outputFormat);case _:
+return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.baseUrl,_that.model,_that.voice,_that.groupId,_that.emotion,_that.speed,_that.region,_that.voiceName,_that.outputFormat);case _:
   return orElse();
 
 }
@@ -186,10 +187,10 @@ return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  TtsProviderKind kind,  String name,  bool enabled,  String apiKey,  String baseUrl,  String model,  String voice,  String emotion,  double speed,  String region,  String voiceName,  String outputFormat)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  TtsProviderKind kind,  String name,  bool enabled,  String apiKey,  String baseUrl,  String model,  String voice,  String groupId,  String emotion,  double speed,  String region,  String voiceName,  String outputFormat)  $default,) {final _that = this;
 switch (_that) {
 case _TtsProviderSetting():
-return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.baseUrl,_that.model,_that.voice,_that.emotion,_that.speed,_that.region,_that.voiceName,_that.outputFormat);case _:
+return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.baseUrl,_that.model,_that.voice,_that.groupId,_that.emotion,_that.speed,_that.region,_that.voiceName,_that.outputFormat);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -206,10 +207,10 @@ return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  TtsProviderKind kind,  String name,  bool enabled,  String apiKey,  String baseUrl,  String model,  String voice,  String emotion,  double speed,  String region,  String voiceName,  String outputFormat)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  TtsProviderKind kind,  String name,  bool enabled,  String apiKey,  String baseUrl,  String model,  String voice,  String groupId,  String emotion,  double speed,  String region,  String voiceName,  String outputFormat)?  $default,) {final _that = this;
 switch (_that) {
 case _TtsProviderSetting() when $default != null:
-return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.baseUrl,_that.model,_that.voice,_that.emotion,_that.speed,_that.region,_that.voiceName,_that.outputFormat);case _:
+return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.baseUrl,_that.model,_that.voice,_that.groupId,_that.emotion,_that.speed,_that.region,_that.voiceName,_that.outputFormat);case _:
   return null;
 
 }
@@ -221,7 +222,7 @@ return $default(_that.id,_that.kind,_that.name,_that.enabled,_that.apiKey,_that.
 @JsonSerializable()
 
 class _TtsProviderSetting implements TtsProviderSetting {
-  const _TtsProviderSetting({required this.id, required this.kind, this.name = '', this.enabled = false, this.apiKey = '', this.baseUrl = '', this.model = '', this.voice = '', this.emotion = '', this.speed = 1.0, this.region = '', this.voiceName = '', this.outputFormat = ''});
+  const _TtsProviderSetting({required this.id, required this.kind, this.name = '', this.enabled = false, this.apiKey = '', this.baseUrl = '', this.model = '', this.voice = '', this.groupId = '', this.emotion = '', this.speed = 1.0, this.region = '', this.voiceName = '', this.outputFormat = ''});
   factory _TtsProviderSetting.fromJson(Map<String, dynamic> json) => _$TtsProviderSettingFromJson(json);
 
 @override final  String id;
@@ -232,6 +233,7 @@ class _TtsProviderSetting implements TtsProviderSetting {
 @override@JsonKey() final  String baseUrl;
 @override@JsonKey() final  String model;
 @override@JsonKey() final  String voice;
+@override@JsonKey() final  String groupId;
 @override@JsonKey() final  String emotion;
 @override@JsonKey() final  double speed;
 @override@JsonKey() final  String region;
@@ -251,16 +253,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _TtsProviderSetting&&(identical(other.id, id) || other.id == id)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.name, name) || other.name == name)&&(identical(other.enabled, enabled) || other.enabled == enabled)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.baseUrl, baseUrl) || other.baseUrl == baseUrl)&&(identical(other.model, model) || other.model == model)&&(identical(other.voice, voice) || other.voice == voice)&&(identical(other.emotion, emotion) || other.emotion == emotion)&&(identical(other.speed, speed) || other.speed == speed)&&(identical(other.region, region) || other.region == region)&&(identical(other.voiceName, voiceName) || other.voiceName == voiceName)&&(identical(other.outputFormat, outputFormat) || other.outputFormat == outputFormat));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _TtsProviderSetting&&(identical(other.id, id) || other.id == id)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.name, name) || other.name == name)&&(identical(other.enabled, enabled) || other.enabled == enabled)&&(identical(other.apiKey, apiKey) || other.apiKey == apiKey)&&(identical(other.baseUrl, baseUrl) || other.baseUrl == baseUrl)&&(identical(other.model, model) || other.model == model)&&(identical(other.voice, voice) || other.voice == voice)&&(identical(other.groupId, groupId) || other.groupId == groupId)&&(identical(other.emotion, emotion) || other.emotion == emotion)&&(identical(other.speed, speed) || other.speed == speed)&&(identical(other.region, region) || other.region == region)&&(identical(other.voiceName, voiceName) || other.voiceName == voiceName)&&(identical(other.outputFormat, outputFormat) || other.outputFormat == outputFormat));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,kind,name,enabled,apiKey,baseUrl,model,voice,emotion,speed,region,voiceName,outputFormat);
+int get hashCode => Object.hash(runtimeType,id,kind,name,enabled,apiKey,baseUrl,model,voice,groupId,emotion,speed,region,voiceName,outputFormat);
 
 @override
 String toString() {
-  return 'TtsProviderSetting(id: $id, kind: $kind, name: $name, enabled: $enabled, apiKey: $apiKey, baseUrl: $baseUrl, model: $model, voice: $voice, emotion: $emotion, speed: $speed, region: $region, voiceName: $voiceName, outputFormat: $outputFormat)';
+  return 'TtsProviderSetting(id: $id, kind: $kind, name: $name, enabled: $enabled, apiKey: $apiKey, baseUrl: $baseUrl, model: $model, voice: $voice, groupId: $groupId, emotion: $emotion, speed: $speed, region: $region, voiceName: $voiceName, outputFormat: $outputFormat)';
 }
 
 
@@ -271,7 +273,7 @@ abstract mixin class _$TtsProviderSettingCopyWith<$Res> implements $TtsProviderS
   factory _$TtsProviderSettingCopyWith(_TtsProviderSetting value, $Res Function(_TtsProviderSetting) _then) = __$TtsProviderSettingCopyWithImpl;
 @override @useResult
 $Res call({
- String id, TtsProviderKind kind, String name, bool enabled, String apiKey, String baseUrl, String model, String voice, String emotion, double speed, String region, String voiceName, String outputFormat
+ String id, TtsProviderKind kind, String name, bool enabled, String apiKey, String baseUrl, String model, String voice, String groupId, String emotion, double speed, String region, String voiceName, String outputFormat
 });
 
 
@@ -288,7 +290,7 @@ class __$TtsProviderSettingCopyWithImpl<$Res>
 
 /// Create a copy of TtsProviderSetting
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? kind = null,Object? name = null,Object? enabled = null,Object? apiKey = null,Object? baseUrl = null,Object? model = null,Object? voice = null,Object? emotion = null,Object? speed = null,Object? region = null,Object? voiceName = null,Object? outputFormat = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? kind = null,Object? name = null,Object? enabled = null,Object? apiKey = null,Object? baseUrl = null,Object? model = null,Object? voice = null,Object? groupId = null,Object? emotion = null,Object? speed = null,Object? region = null,Object? voiceName = null,Object? outputFormat = null,}) {
   return _then(_TtsProviderSetting(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
@@ -298,6 +300,7 @@ as bool,apiKey: null == apiKey ? _self.apiKey : apiKey // ignore: cast_nullable_
 as String,baseUrl: null == baseUrl ? _self.baseUrl : baseUrl // ignore: cast_nullable_to_non_nullable
 as String,model: null == model ? _self.model : model // ignore: cast_nullable_to_non_nullable
 as String,voice: null == voice ? _self.voice : voice // ignore: cast_nullable_to_non_nullable
+as String,groupId: null == groupId ? _self.groupId : groupId // ignore: cast_nullable_to_non_nullable
 as String,emotion: null == emotion ? _self.emotion : emotion // ignore: cast_nullable_to_non_nullable
 as String,speed: null == speed ? _self.speed : speed // ignore: cast_nullable_to_non_nullable
 as double,region: null == region ? _self.region : region // ignore: cast_nullable_to_non_nullable
