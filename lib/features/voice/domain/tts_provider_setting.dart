@@ -41,6 +41,7 @@ abstract class TtsProviderSetting with _$TtsProviderSetting {
     @Default('') String model,
     @Default('') String voice,
     // MiniMax-specific
+    @Default('') String groupId,
     @Default('') String emotion,
     @Default(1.0) double speed,
     // Azure-specific
@@ -83,10 +84,10 @@ TtsProviderSetting defaultTtsProvider(TtsProviderKind kind) => switch (kind) {
     id: 'minimax',
     kind: TtsProviderKind.minimax,
     name: 'MiniMax TTS',
-    baseUrl: 'https://api.minimaxi.com/v1',
-    model: 'speech-2.6-turbo',
-    voice: 'female-shaonv',
-    emotion: 'calm',
+    baseUrl: 'https://api.minimaxi.chat',
+    model: 'speech-02-hd',
+    voice: 'female-tianmei',
+    emotion: 'neutral',
   ),
   TtsProviderKind.siliconflow => const TtsProviderSetting(
     id: 'siliconflow',
@@ -94,7 +95,7 @@ TtsProviderSetting defaultTtsProvider(TtsProviderKind kind) => switch (kind) {
     name: '硅基流动 TTS',
     baseUrl: 'https://api.siliconflow.cn/v1',
     model: 'FunAudioLLM/CosyVoice2-0.5B',
-    voice: '中文女',
+    voice: 'alex',
   ),
   TtsProviderKind.azure => const TtsProviderSetting(
     id: 'azure',

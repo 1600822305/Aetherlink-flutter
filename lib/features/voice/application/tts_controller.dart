@@ -1,8 +1,9 @@
+// ignore_for_file: experimental_member_use
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:dio/dio.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/features/voice/application/voice_settings_controller.dart';
@@ -31,12 +32,12 @@ class TtsController extends _$TtsController {
   List<TtsTextChunk> _chunks = const [];
   final Map<int, Uint8List> _cache = {};
   CancelToken? _cancelToken;
-  StreamSubscription<PlayerState>? _playerSub;
+  StreamSubscription<ProcessingState>? _playerSub;
 
   @override
   TtsPlaybackState build() {
     ref.onDispose(_dispose);
-    _playerSub = _player.onPlayerStateChanged.listen(_onPlayerStateChanged);
+    _playerSub = _player.processingStateStream.listen(_onProcessingStateChanged);
     return const TtsPlaybackState();
   }
 
@@ -102,7 +103,7 @@ class TtsController extends _$TtsController {
         await _playChunk(state.currentChunk, provider);
       }
     } else {
-      await _player.resume();
+      await _player.play();
       state = state.copyWith(status: TtsStatus.playing);
     }
   }
@@ -139,9 +140,9 @@ class TtsController extends _$TtsController {
   }
 
   /// Sets playback speed.
-  void setSpeed(double speed) {
+  Future<void> setSpeed(double speed) async {
     final clamped = speed.clamp(0.5, 2.0);
-    _player.setPlaybackRate(clamped);
+    await _player.setSpeed(clamped);
     state = state.copyWith(speed: clamped);
   }
 
@@ -170,12 +171,14 @@ class TtsController extends _$TtsController {
         return;
       }
 
-      // Network TTS: synthesize (or use cache), then play via AudioPlayer.
+      // Network TTS: synthesize (or use cache), then play via just_audio.
       final bytes = await _synthesizeWithCache(index, provider);
 
       state = state.copyWith(status: TtsStatus.playing);
-      await _player.setPlaybackRate(state.speed);
-      await _player.play(BytesSource(bytes));
+      await _player.setSpeed(state.speed);
+      final source = _BytesAudioSource(bytes);
+      await _player.setAudioSource(source);
+      await _player.play();
 
       // Prefetch the next few chunks.
       _prefetch(index + 1, provider, count: 3);
@@ -215,8 +218,9 @@ class TtsController extends _$TtsController {
     }
   }
 
-  void _onPlayerStateChanged(PlayerState playerState) {
-    if (playerState == PlayerState.completed && state.status == TtsStatus.playing) {
+  void _onProcessingStateChanged(ProcessingState processingState) {
+    if (processingState == ProcessingState.completed &&
+        state.status == TtsStatus.playing) {
       // Current chunk finished — play next.
       final next = state.currentChunk + 1;
       if (next < _chunks.length) {
@@ -235,5 +239,24 @@ class TtsController extends _$TtsController {
     _playerSub?.cancel();
     _player.dispose();
     _systemTts?.dispose();
+  }
+}
+
+/// Custom [StreamAudioSource] that serves in-memory bytes to just_audio.
+class _BytesAudioSource extends StreamAudioSource {
+  _BytesAudioSource(this._bytes);
+  final Uint8List _bytes;
+
+  @override
+  Future<StreamAudioResponse> request([int? start, int? end]) async {
+    final s = start ?? 0;
+    final e = end ?? _bytes.length;
+    return StreamAudioResponse(
+      sourceLength: _bytes.length,
+      contentLength: e - s,
+      offset: s,
+      stream: Stream.value(_bytes.sublist(s, e)),
+      contentType: 'audio/mpeg',
+    );
   }
 }
