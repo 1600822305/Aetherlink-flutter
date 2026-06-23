@@ -18,6 +18,7 @@ _AsrProviderSetting _$AsrProviderSettingFromJson(Map<String, dynamic> json) =>
       language: json['language'] as String? ?? '',
       websocketUrl: json['websocketUrl'] as String? ?? '',
       responseFormat: json['responseFormat'] as String? ?? '',
+      temperature: (json['temperature'] as num?)?.toDouble() ?? 0.0,
       vadThreshold: (json['vadThreshold'] as num?)?.toDouble() ?? 0.5,
       silenceDurationMs: (json['silenceDurationMs'] as num?)?.toInt() ?? 500,
     );
@@ -34,6 +35,7 @@ Map<String, dynamic> _$AsrProviderSettingToJson(_AsrProviderSetting instance) =>
       'language': instance.language,
       'websocketUrl': instance.websocketUrl,
       'responseFormat': instance.responseFormat,
+      'temperature': instance.temperature,
       'vadThreshold': instance.vadThreshold,
       'silenceDurationMs': instance.silenceDurationMs,
     };

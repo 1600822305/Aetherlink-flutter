@@ -68,6 +68,7 @@ dependencies:
   record: ^7.1.0
   web_socket_channel: ^3.0.2
   permission_handler: ^11.3.1
+  speech_to_text: ^7.4.0
 
 dev_dependencies:
   flutter_test:

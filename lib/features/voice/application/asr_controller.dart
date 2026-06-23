@@ -6,6 +6,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/features/voice/application/voice_settings_controller.dart';
 import 'package:aetherlink_flutter/features/voice/data/asr/openai_realtime_asr_service.dart';
+import 'package:aetherlink_flutter/features/voice/data/asr/system_asr_service.dart';
 import 'package:aetherlink_flutter/features/voice/data/asr/whisper_asr_service.dart';
 import 'package:aetherlink_flutter/features/voice/domain/asr_provider_setting.dart';
 
@@ -20,16 +21,18 @@ enum AsrStatus {
 }
 
 /// The ASR controller: manages microphone recording, speech recognition
-/// (real-time streaming or batch Whisper), and exposes the recognized text.
-///
-/// Architecture follows RikkaHub's `ASRController` pattern but uses Riverpod
-/// `Notifier`.
+/// (system native, real-time streaming, or batch Whisper), and exposes the
+/// recognized text.
 @riverpod
 class AsrController extends _$AsrController {
   final AudioRecorder _recorder = AudioRecorder();
   final WhisperAsrService _whisper = WhisperAsrService();
   OpenaiRealtimeAsrService? _realtimeAsr;
+  SystemAsrService? _systemAsr;
   StreamSubscription<String>? _realtimeSub;
+  StreamSubscription<String>? _systemTextSub;
+  StreamSubscription<String>? _systemErrorSub;
+  StreamSubscription<bool>? _systemStatusSub;
   StreamSubscription<RecordState>? _recorderSub;
 
   /// Accumulated audio bytes for Whisper mode.
@@ -37,6 +40,9 @@ class AsrController extends _$AsrController {
 
   /// Stream subscription for audio data in streaming mode.
   StreamSubscription<Uint8List>? _audioStreamSub;
+
+  /// Tracks the last final text from system ASR to avoid duplicates.
+  String _lastSystemText = '';
 
   @override
   ({AsrStatus status, String text, String? error}) build() {
@@ -48,16 +54,6 @@ class AsrController extends _$AsrController {
   Future<void> startRecording() async {
     if (state.status == AsrStatus.recording) return;
 
-    final hasPermission = await _recorder.hasPermission();
-    if (!hasPermission) {
-      state = (
-        status: AsrStatus.error,
-        text: state.text,
-        error: '需要麦克风权限',
-      );
-      return;
-    }
-
     final provider = ref.read(activeAsrProviderProvider);
     if (provider == null) {
       state = (
@@ -68,13 +64,30 @@ class AsrController extends _$AsrController {
       return;
     }
 
+    // System ASR doesn't need the record package permission check.
+    if (provider.kind != AsrProviderKind.system) {
+      final hasPermission = await _recorder.hasPermission();
+      if (!hasPermission) {
+        state = (
+          status: AsrStatus.error,
+          text: state.text,
+          error: '需要麦克风权限',
+        );
+        return;
+      }
+    }
+
     state = (status: AsrStatus.recording, text: '', error: null);
+    _lastSystemText = '';
 
     try {
-      if (provider.kind == AsrProviderKind.openaiRealtime) {
-        await _startRealtimeRecording(provider);
-      } else {
-        await _startBatchRecording();
+      switch (provider.kind) {
+        case AsrProviderKind.system:
+          await _startSystemRecording(provider);
+        case AsrProviderKind.openaiRealtime:
+          await _startRealtimeRecording(provider);
+        case AsrProviderKind.whisper:
+          await _startBatchRecording();
       }
     } catch (e) {
       state = (
@@ -91,10 +104,14 @@ class AsrController extends _$AsrController {
 
     final provider = ref.read(activeAsrProviderProvider);
 
-    if (provider?.kind == AsrProviderKind.openaiRealtime) {
-      await _stopRealtimeRecording();
-    } else {
-      await _stopBatchRecording(provider);
+    switch (provider?.kind) {
+      case AsrProviderKind.system:
+        await _stopSystemRecording();
+      case AsrProviderKind.openaiRealtime:
+        await _stopRealtimeRecording();
+      case AsrProviderKind.whisper:
+      case null:
+        await _stopBatchRecording(provider);
     }
   }
 
@@ -105,9 +122,77 @@ class AsrController extends _$AsrController {
     await _realtimeSub?.cancel();
     _realtimeSub = null;
     await _realtimeAsr?.stop();
+    await _systemTextSub?.cancel();
+    _systemTextSub = null;
+    await _systemErrorSub?.cancel();
+    _systemErrorSub = null;
+    await _systemStatusSub?.cancel();
+    _systemStatusSub = null;
+    await _systemAsr?.cancel();
     await _recorder.cancel();
     _audioBuffer.clear();
+    _lastSystemText = '';
     state = (status: AsrStatus.idle, text: '', error: null);
+  }
+
+  // -- System native ASR (speech_to_text) ------------------------------------
+
+  Future<void> _startSystemRecording(AsrProviderSetting provider) async {
+    _systemAsr = SystemAsrService();
+    final available = await _systemAsr!.initialize();
+    if (!available) {
+      _systemAsr = null;
+      state = (
+        status: AsrStatus.error,
+        text: state.text,
+        error: '系统语音识别不可用，请检查设备是否支持',
+      );
+      return;
+    }
+
+    _systemTextSub = _systemAsr!.textStream.listen((text) {
+      // speech_to_text emits the full recognized text each time (not deltas),
+      // so we replace the state text directly.
+      if (text.isNotEmpty) {
+        _lastSystemText = text;
+        state = (status: AsrStatus.recording, text: text, error: null);
+      }
+    });
+
+    _systemErrorSub = _systemAsr!.errorStream.listen((err) {
+      // "error_speech_timeout" / "error_no_match" are transient — don't
+      // override good text the user already got.
+      if (err.contains('timeout') || err.contains('no_match')) return;
+      state = (
+        status: AsrStatus.error,
+        text: state.text,
+        error: '识别错误: $err',
+      );
+    });
+
+    _systemStatusSub = _systemAsr!.statusStream.listen((listening) {
+      // When the engine stops on its own (e.g. silence timeout), update state.
+      if (!listening && state.status == AsrStatus.recording) {
+        state = (status: AsrStatus.idle, text: _lastSystemText, error: null);
+      }
+    });
+
+    await _systemAsr!.start(
+      localeId: provider.language.isNotEmpty ? provider.language : '',
+      partialResults: true,
+    );
+  }
+
+  Future<void> _stopSystemRecording() async {
+    await _systemAsr?.stop();
+    await _systemTextSub?.cancel();
+    _systemTextSub = null;
+    await _systemErrorSub?.cancel();
+    _systemErrorSub = null;
+    await _systemStatusSub?.cancel();
+    _systemStatusSub = null;
+    _systemAsr = null;
+    state = (status: AsrStatus.idle, text: _lastSystemText, error: null);
   }
 
   // -- Real-time streaming ASR -----------------------------------------------
@@ -213,7 +298,11 @@ class AsrController extends _$AsrController {
     _audioStreamSub?.cancel();
     _realtimeSub?.cancel();
     _recorderSub?.cancel();
+    _systemTextSub?.cancel();
+    _systemErrorSub?.cancel();
+    _systemStatusSub?.cancel();
     _realtimeAsr?.dispose();
+    _systemAsr?.dispose();
     _recorder.dispose();
   }
 
