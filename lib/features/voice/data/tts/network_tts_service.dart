@@ -40,7 +40,7 @@ class NetworkTtsService {
       TtsProviderKind.gemini => _synthesizeGemini(text, provider, cancelToken),
       TtsProviderKind.minimax => _synthesizeMiniMax(text, provider, cancelToken),
       TtsProviderKind.siliconflow =>
-        _synthesizeOpenAi(text, provider, cancelToken),
+        _synthesizeSiliconFlow(text, provider, cancelToken),
       TtsProviderKind.elevenlabs =>
         _synthesizeElevenLabs(text, provider, cancelToken),
       TtsProviderKind.azure => _synthesizeAzure(text, provider, cancelToken),
@@ -146,14 +146,18 @@ class NetworkTtsService {
     return TtsSynthesisResult(bytes: wav, mimeType: 'audio/wav');
   }
 
-  /// MiniMax TTS via streaming SSE endpoint.
+  /// MiniMax TTS via T2A v2 endpoint.
   Future<TtsSynthesisResult> _synthesizeMiniMax(
     String text,
     TtsProviderSetting provider,
     CancelToken? cancelToken,
   ) async {
-    final url = _joinUrl(provider.baseUrl, '/t2a_v2');
-    final response = await _dio.post<String>(
+    final groupId = provider.groupId;
+    final path = groupId.isNotEmpty
+        ? '/v1/t2a_v2?GroupId=$groupId'
+        : '/v1/t2a_v2';
+    final url = _joinUrl(provider.baseUrl, path);
+    final response = await _dio.post<Map<String, dynamic>>(
       url,
       data: {
         'model': provider.model,
@@ -161,7 +165,7 @@ class NetworkTtsService {
         'stream': false,
         'voice_setting': {
           'voice_id': provider.voice,
-          'emotion': provider.emotion.isNotEmpty ? provider.emotion : 'calm',
+          'emotion': provider.emotion.isNotEmpty ? provider.emotion : 'neutral',
           'speed': provider.speed,
         },
       },
@@ -170,19 +174,56 @@ class NetworkTtsService {
           'Authorization': 'Bearer ${provider.apiKey}',
           'Content-Type': 'application/json',
         },
-        responseType: ResponseType.json,
       ),
       cancelToken: cancelToken,
     );
 
-    final json = response.data is String
-        ? jsonDecode(response.data as String) as Map<String, dynamic>
-        : response.data as Map<String, dynamic>;
+    final json = response.data!;
+    final baseResp = json['base_resp'] as Map<String, dynamic>?;
+    if (baseResp != null && baseResp['status_code'] != 0) {
+      throw Exception('MiniMax TTS: ${baseResp['status_msg'] ?? 'unknown error'}');
+    }
     final data = json['data'] as Map<String, dynamic>?;
     final audioHex = (data?['audio'] ?? '').toString();
     if (audioHex.isEmpty) throw Exception('MiniMax TTS: empty audio');
     return TtsSynthesisResult(
       bytes: _hexToBytes(audioHex),
+      mimeType: 'audio/mpeg',
+    );
+  }
+
+  /// SiliconFlow TTS — uses OpenAI-compatible `/audio/speech` endpoint but
+  /// requires `model:voiceName` format for the `voice` field.
+  Future<TtsSynthesisResult> _synthesizeSiliconFlow(
+    String text,
+    TtsProviderSetting provider,
+    CancelToken? cancelToken,
+  ) async {
+    final url = _joinUrl(provider.baseUrl, '/audio/speech');
+    // SiliconFlow expects voice in `model:voiceName` format.
+    var voice = provider.voice;
+    if (voice.isNotEmpty && !voice.contains(':')) {
+      voice = '${provider.model}:$voice';
+    }
+    final response = await _dio.post<List<int>>(
+      url,
+      data: {
+        'model': provider.model,
+        'input': text,
+        'voice': voice,
+        'response_format': 'mp3',
+      },
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer ${provider.apiKey}',
+          'Content-Type': 'application/json',
+        },
+        responseType: ResponseType.bytes,
+      ),
+      cancelToken: cancelToken,
+    );
+    return TtsSynthesisResult(
+      bytes: Uint8List.fromList(response.data!),
       mimeType: 'audio/mpeg',
     );
   }
