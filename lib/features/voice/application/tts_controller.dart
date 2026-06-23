@@ -165,7 +165,11 @@ class TtsController extends _$TtsController {
     }
     final provider = _playbackProvider ?? ref.read(activeTtsProviderProvider);
     if (provider == null) return;
-    await _audioPlayer.stop();
+    if (provider.kind == TtsProviderKind.system) {
+      await _systemTts?.stop();
+    } else {
+      await _audioPlayer.stop();
+    }
     await _playChunk(state.currentChunk + 1, provider);
   }
 
@@ -174,7 +178,11 @@ class TtsController extends _$TtsController {
     if (state.currentChunk <= 0) return;
     final provider = _playbackProvider ?? ref.read(activeTtsProviderProvider);
     if (provider == null) return;
-    await _audioPlayer.stop();
+    if (provider.kind == TtsProviderKind.system) {
+      await _systemTts?.stop();
+    } else {
+      await _audioPlayer.stop();
+    }
     await _playChunk(state.currentChunk - 1, provider);
   }
 
