@@ -40,6 +40,7 @@ _Model _$ModelFromJson(Map<String, dynamic> json) => _Model(
   providerExtraHeaders: (json['providerExtraHeaders'] as Map<String, dynamic>?)
       ?.map((k, e) => MapEntry(k, e as String)),
   providerExtraBody: json['providerExtraBody'] as Map<String, dynamic>?,
+  parameterScope: json['parameterScope'] as String?,
 );
 
 Map<String, dynamic> _$ModelToJson(_Model instance) => <String, dynamic>{
@@ -69,6 +70,7 @@ Map<String, dynamic> _$ModelToJson(_Model instance) => <String, dynamic>{
   'extraBody': ?instance.extraBody,
   'providerExtraHeaders': ?instance.providerExtraHeaders,
   'providerExtraBody': ?instance.providerExtraBody,
+  'parameterScope': ?instance.parameterScope,
 };
 
 const _$ModelTypeEnumMap = {
