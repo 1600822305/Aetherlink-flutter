@@ -1824,9 +1824,11 @@ class _AsrProviderDetailPageState
   late final TextEditingController _baseUrlCtrl;
   late final TextEditingController _modelCtrl;
   late final TextEditingController _wsUrlCtrl;
+  late final TextEditingController _languageCtrl;
   late bool _enabled;
   late double _vadThreshold;
   late int _silenceDurationMs;
+  late double _temperature;
 
   @override
   void initState() {
@@ -1836,11 +1838,13 @@ class _AsrProviderDetailPageState
     _baseUrlCtrl = TextEditingController(text: p.baseUrl);
     _modelCtrl = TextEditingController(text: p.model);
     _wsUrlCtrl = TextEditingController(text: p.websocketUrl);
+    _languageCtrl = TextEditingController(text: p.language);
     // "启用此服务" reflects whether this is the single active ASR provider.
     _enabled =
         ref.read(voiceSettingsControllerProvider).activeAsrProviderId == p.id;
     _vadThreshold = p.vadThreshold;
     _silenceDurationMs = p.silenceDurationMs;
+    _temperature = p.temperature;
   }
 
   @override
@@ -1849,6 +1853,7 @@ class _AsrProviderDetailPageState
     _baseUrlCtrl.dispose();
     _modelCtrl.dispose();
     _wsUrlCtrl.dispose();
+    _languageCtrl.dispose();
     super.dispose();
   }
 
@@ -1861,8 +1866,10 @@ class _AsrProviderDetailPageState
       baseUrl: _baseUrlCtrl.text.trim(),
       model: _modelCtrl.text.trim(),
       websocketUrl: _wsUrlCtrl.text.trim(),
+      language: _languageCtrl.text.trim(),
       vadThreshold: _vadThreshold,
       silenceDurationMs: _silenceDurationMs,
+      temperature: _temperature,
     );
     final notifier = ref.read(voiceSettingsControllerProvider.notifier);
     notifier.updateAsrProvider(updated);
@@ -1881,6 +1888,7 @@ class _AsrProviderDetailPageState
     final theme = Theme.of(context);
     final isSystem = widget.kind == AsrProviderKind.system;
     final isRealtime = widget.kind == AsrProviderKind.openaiRealtime;
+    final isWhisper = widget.kind == AsrProviderKind.whisper;
 
     return PopScope(
       canPop: false,
@@ -1909,6 +1917,22 @@ class _AsrProviderDetailPageState
                       value: _enabled,
                       onChanged: (v) => setState(() => _enabled = v),
                     ),
+                    if (isSystem) ...[
+                      Divider(height: 24, color: theme.dividerColor),
+                      ModelFormField(
+                        label: '识别语言',
+                        hint: '如 zh_CN、en_US（留空自动检测）',
+                        controller: _languageCtrl,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '使用设备内置语音识别引擎，无需 API Key。'
+                        '识别语言留空时自动使用系统语言。',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ],
                     if (!isSystem) ...[
                       Divider(height: 24, color: theme.dividerColor),
                       ModelFormField(
@@ -1939,6 +1963,12 @@ class _AsrProviderDetailPageState
                         hint: '输入模型名称',
                         controller: _modelCtrl,
                       ),
+                      const SizedBox(height: 12),
+                      ModelFormField(
+                        label: '识别语言',
+                        hint: '如 zh、en（留空自动检测）',
+                        controller: _languageCtrl,
+                      ),
                       if (isRealtime) ...[
                         Divider(height: 24, color: theme.dividerColor),
                         _SliderRow(
@@ -1957,6 +1987,17 @@ class _AsrProviderDetailPageState
                           divisions: 19,
                           onChanged: (v) =>
                               setState(() => _silenceDurationMs = v.round()),
+                        ),
+                      ],
+                      if (isWhisper) ...[
+                        Divider(height: 24, color: theme.dividerColor),
+                        _SliderRow(
+                          label: 'Temperature',
+                          value: _temperature,
+                          min: 0.0,
+                          max: 1.0,
+                          divisions: 20,
+                          onChanged: (v) => setState(() => _temperature = v),
                         ),
                       ],
                     ],

@@ -9,19 +9,15 @@ part of 'asr_controller.dart';
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
 /// The ASR controller: manages microphone recording, speech recognition
-/// (real-time streaming or batch Whisper), and exposes the recognized text.
-///
-/// Architecture follows RikkaHub's `ASRController` pattern but uses Riverpod
-/// `Notifier`.
+/// (system native, real-time streaming, or batch Whisper), and exposes the
+/// recognized text.
 
 @ProviderFor(AsrController)
 final asrControllerProvider = AsrControllerProvider._();
 
 /// The ASR controller: manages microphone recording, speech recognition
-/// (real-time streaming or batch Whisper), and exposes the recognized text.
-///
-/// Architecture follows RikkaHub's `ASRController` pattern but uses Riverpod
-/// `Notifier`.
+/// (system native, real-time streaming, or batch Whisper), and exposes the
+/// recognized text.
 final class AsrControllerProvider
     extends
         $NotifierProvider<
@@ -29,10 +25,8 @@ final class AsrControllerProvider
           ({String? error, AsrStatus status, String text})
         > {
   /// The ASR controller: manages microphone recording, speech recognition
-  /// (real-time streaming or batch Whisper), and exposes the recognized text.
-  ///
-  /// Architecture follows RikkaHub's `ASRController` pattern but uses Riverpod
-  /// `Notifier`.
+  /// (system native, real-time streaming, or batch Whisper), and exposes the
+  /// recognized text.
   AsrControllerProvider._()
     : super(
         from: null,
@@ -65,13 +59,11 @@ final class AsrControllerProvider
   }
 }
 
-String _$asrControllerHash() => r'36ad2cc9abb55a26c804c68a431b9ba613ce3dbc';
+String _$asrControllerHash() => r'068c81b3401ab5f955153f928ae4b49f4c9b9dc4';
 
 /// The ASR controller: manages microphone recording, speech recognition
-/// (real-time streaming or batch Whisper), and exposes the recognized text.
-///
-/// Architecture follows RikkaHub's `ASRController` pattern but uses Riverpod
-/// `Notifier`.
+/// (system native, real-time streaming, or batch Whisper), and exposes the
+/// recognized text.
 
 abstract class _$AsrController
     extends $Notifier<({String? error, AsrStatus status, String text})> {

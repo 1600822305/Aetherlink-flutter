@@ -33,6 +33,7 @@ class WhisperAsrService {
       'response_format': provider.responseFormat.isNotEmpty
           ? provider.responseFormat
           : 'json',
+      'temperature': provider.temperature.toString(),
     });
 
     final response = await _dio.post<Map<String, dynamic>>(

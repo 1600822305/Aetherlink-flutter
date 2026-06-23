@@ -31,6 +31,7 @@ abstract class AsrProviderSetting with _$AsrProviderSetting {
     @Default('') String websocketUrl,
     // Whisper-specific
     @Default('') String responseFormat,
+    @Default(0.0) double temperature, // Whisper temperature [0,1]
     // VAD threshold (0.0-1.0)
     @Default(0.5) double vadThreshold,
     @Default(500) int silenceDurationMs,
