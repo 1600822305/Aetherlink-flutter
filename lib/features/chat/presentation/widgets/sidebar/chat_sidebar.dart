@@ -15,9 +15,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/ta
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
 
 const String _assistantTabLabel = '助手';
-
 const String _topicTabLabel = '话题';
-
 const String _settingsTabLabel = '设置';
 
 class ChatSidebar extends ConsumerStatefulWidget {
@@ -161,39 +159,50 @@ class _SidebarTabBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final textPrimary = theme.colorScheme.onSurface;
+    final cs = theme.colorScheme;
 
     return Container(
-      // Tabs container: `border-bottom: 1px solid divider`, `margin: 0 10px`,
-      // `padding: 10px 0`.
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: theme.dividerColor)),
+        color: cs.onSurface.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       child: TabBar(
         controller: controller,
         dividerColor: Colors.transparent,
-        labelColor: textPrimary,
-        unselectedLabelColor: textPrimary.withValues(alpha: 0.6),
+        labelColor: cs.onSurface,
+        unselectedLabelColor: cs.onSurface.withValues(alpha: 0.5),
         labelStyle: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w500,
-          height: 1.25,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          height: 1.2,
         ),
         unselectedLabelStyle: const TextStyle(
-          fontSize: 16,
+          fontSize: 12,
           fontWeight: FontWeight.w500,
-          height: 1.25,
+          height: 1.2,
         ),
         indicatorSize: TabBarIndicatorSize.tab,
-        // Indicator: full tab width, height 2px, solid onSurface (#1E293B).
-        indicator: UnderlineTabIndicator(
-          borderSide: BorderSide(width: 2, color: textPrimary),
+        indicator: BoxDecoration(
+          color: cs.surface,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: [
+            BoxShadow(
+              color: cs.shadow.withValues(alpha: 0.08),
+              blurRadius: 2,
+              offset: const Offset(0, 1),
+            ),
+          ],
         ),
+        splashFactory: NoSplash.splashFactory,
+        overlayColor: WidgetStateProperty.all(Colors.transparent),
+        labelPadding: EdgeInsets.zero,
         tabs: const [
-          _SidebarTab(icon: LucideIcons.bot, label: _assistantTabLabel),
-          _SidebarTab(icon: LucideIcons.messageSquare, label: _topicTabLabel),
-          _SidebarTab(icon: LucideIcons.settings, label: _settingsTabLabel),
+          _SidebarTab(icon: LucideIcons.sparkles, label: _assistantTabLabel),
+          _SidebarTab(
+              icon: LucideIcons.messagesSquare, label: _topicTabLabel),
+          _SidebarTab(icon: LucideIcons.sliders, label: _settingsTabLabel),
         ],
       ),
     );
@@ -208,12 +217,17 @@ class _SidebarTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Tab box 58px tall; icon 18px with a 2px gap above the label.
     return Tab(
-      height: 58,
-      iconMargin: const EdgeInsets.only(bottom: 2),
-      icon: Icon(icon, size: 18),
-      text: label,
+      height: 32,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14),
+          const SizedBox(width: 4),
+          Text(label),
+        ],
+      ),
     );
   }
 }
