@@ -659,31 +659,32 @@ class _SettingsGroupDetailHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        SidebarMutedIconButton(
-          icon: LucideIcons.arrowLeft,
-          size: 18,
-          box: 28,
-          color: textPrimary,
-          onPressed: onBack,
-        ),
-        const SizedBox(width: 4),
-        Icon(icon, size: 16, color: textSecondary),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: textPrimary,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onBack,
+      child: SizedBox(
+        height: 44,
+        child: Row(
+          children: [
+            Icon(LucideIcons.arrowLeft, size: 18, color: textPrimary),
+            const SizedBox(width: 8),
+            Icon(icon, size: 16, color: textSecondary),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: textPrimary,
+                ),
+              ),
             ),
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
