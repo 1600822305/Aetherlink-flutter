@@ -22,6 +22,13 @@ _TtsProviderSetting _$TtsProviderSettingFromJson(Map<String, dynamic> json) =>
       region: json['region'] as String? ?? '',
       voiceName: json['voiceName'] as String? ?? '',
       outputFormat: json['outputFormat'] as String? ?? '',
+      appId: json['appId'] as String? ?? '',
+      cluster: json['cluster'] as String? ?? '',
+      apiVersion: json['apiVersion'] as String? ?? 'auto',
+      resourceId: json['resourceId'] as String? ?? '',
+      volume: (json['volume'] as num?)?.toDouble() ?? 1.0,
+      pitch: (json['pitch'] as num?)?.toDouble() ?? 1.0,
+      encoding: json['encoding'] as String? ?? 'mp3',
     );
 
 Map<String, dynamic> _$TtsProviderSettingToJson(_TtsProviderSetting instance) =>
@@ -40,6 +47,13 @@ Map<String, dynamic> _$TtsProviderSettingToJson(_TtsProviderSetting instance) =>
       'region': instance.region,
       'voiceName': instance.voiceName,
       'outputFormat': instance.outputFormat,
+      'appId': instance.appId,
+      'cluster': instance.cluster,
+      'apiVersion': instance.apiVersion,
+      'resourceId': instance.resourceId,
+      'volume': instance.volume,
+      'pitch': instance.pitch,
+      'encoding': instance.encoding,
     };
 
 const _$TtsProviderKindEnumMap = {

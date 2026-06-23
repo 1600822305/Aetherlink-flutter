@@ -50,6 +50,14 @@ abstract class TtsProviderSetting with _$TtsProviderSetting {
     @Default('') String voiceName,
     // ElevenLabs
     @Default('') String outputFormat,
+    // Volcano-specific
+    @Default('') String appId,
+    @Default('') String cluster,
+    @Default('auto') String apiVersion,
+    @Default('') String resourceId,
+    @Default(1.0) double volume,
+    @Default(1.0) double pitch,
+    @Default('mp3') String encoding,
   }) = _TtsProviderSetting;
 
   factory TtsProviderSetting.fromJson(Map<String, dynamic> json) =>
@@ -117,7 +125,9 @@ TtsProviderSetting defaultTtsProvider(TtsProviderKind kind) => switch (kind) {
     id: 'volcano',
     kind: TtsProviderKind.volcano,
     name: '火山引擎 TTS',
-    model: 'zh_female_cancan_mars_bigtts',
-    voice: 'zh_female_cancan_mars_bigtts',
+    voice: 'BV001_streaming',
+    cluster: 'volcano_tts',
+    apiVersion: 'auto',
+    encoding: 'mp3',
   ),
 };
