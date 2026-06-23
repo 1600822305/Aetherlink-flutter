@@ -34,9 +34,6 @@ const Color _userRowAccent = Color(0xFFFFC107);
 /// 用户头像 avatar background, `#87d068`.
 const Color _userAvatarBg = Color(0xFF87D068);
 
-/// 兼容 API chip outline, MUI `grey.400` `#bdbdbd`.
-const Color _chipBorderColor = Color(0xFFBDBDBD);
-
 class SettingsTab extends ConsumerStatefulWidget {
   const SettingsTab({super.key});
 
@@ -287,6 +284,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
   static const _groupDescriptors = <({String id, String title, IconData icon})>[
     (id: 'general', title: '常规设置', icon: LucideIcons.settings2),
     (id: 'context', title: '上下文设置', icon: LucideIcons.messageSquare),
+    (id: 'parameters', title: '参数管理', icon: LucideIcons.sliders),
     (id: 'input', title: '输入设置', icon: LucideIcons.keyboard),
     (id: 'code', title: '代码块设置', icon: LucideIcons.code),
     (id: 'math', title: '数学公式设置', icon: LucideIcons.sigma),
@@ -298,6 +296,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
     'context' =>
       '窗口: ${s.contextWindowSize > 0 ? _formatInt(s.contextWindowSize) : '自动'}'
           ' | 输出: ${s.enableMaxOutputTokens ? _formatInt(s.maxOutputTokens) : '默认'}',
+    'parameters' => '模型参数配置与自定义参数',
     'input' => '粘贴和输入相关的功能设置',
     'code' => '配置代码显示和编辑功能',
     'math' => '渲染引擎: KaTeX',
@@ -311,7 +310,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
     SidebarSettingsController c,
   ) => switch (id) {
     'general' => _generalChildren(s, c),
-    'context' => [..._contextChildren(s, c), const Divider(height: 16), const ParameterEditor()],
+    'context' => _contextChildren(s, c),
+    'parameters' => const [ParameterEditor()],
     'input' => _inputChildren(s, c),
     'code' => _codeChildren(s, c),
     'math' => _mathChildren(s, c),
@@ -352,9 +352,18 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
           children: _generalChildren(s, c),
         ),
         const _SettingsDivider(),
-        _DynamicContextSettingsGroup(
-          settings: s,
-          contextChildren: _contextChildren(s, c),
+        _SettingsGroup(
+          title: '上下文设置',
+          subtitle:
+              '窗口: ${s.contextWindowSize > 0 ? _formatInt(s.contextWindowSize) : '自动'}'
+              ' | 输出: ${s.enableMaxOutputTokens ? _formatInt(s.maxOutputTokens) : '默认'}',
+          children: _contextChildren(s, c),
+        ),
+        const _SettingsDivider(),
+        const _SettingsGroup(
+          title: '参数管理',
+          subtitle: '模型参数配置与自定义参数',
+          children: [ParameterEditor()],
         ),
         const _SettingsDivider(),
         _SettingsGroup(
@@ -454,216 +463,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// 1:1 port of the web `DynamicContextSettings`: a single collapsible group
-/// that combines context settings + ParameterEditor, with a provider chip in
-/// the title and a gear icon that opens a full-screen parameter dialog.
-class _DynamicContextSettingsGroup extends StatefulWidget {
-  const _DynamicContextSettingsGroup({
-    required this.settings,
-    required this.contextChildren,
-  });
-
-  final SidebarSettings settings;
-  final List<Widget> contextChildren;
-
-  @override
-  State<_DynamicContextSettingsGroup> createState() =>
-      _DynamicContextSettingsGroupState();
-}
-
-class _DynamicContextSettingsGroupState
-    extends State<_DynamicContextSettingsGroup> {
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final textPrimary = theme.colorScheme.onSurface;
-    final textSecondary = theme.colorScheme.onSurfaceVariant;
-    final s = widget.settings;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Tappable header: title row with provider chip + gear icon + chevron.
-        InkWell(
-          onTap: () => setState(() => _expanded = !_expanded),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              '上下文设置',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 15.2,
-                                height: 1.2,
-                                fontWeight: FontWeight.w500,
-                                color: textPrimary,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          // Provider chip (web: outlined chip in header).
-                          Container(
-                            height: 20,
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 8),
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              border: Border.all(color: _chipBorderColor),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Text(
-                              '兼容 API',
-                              style: TextStyle(
-                                fontSize: 10.4,
-                                height: 1,
-                                fontWeight: FontWeight.w500,
-                                color: textPrimary,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Text(
-                        '窗口: ${s.contextWindowSize > 0 ? _formatInt(s.contextWindowSize) : '自动'}'
-                        ' | 输出: ${s.enableMaxOutputTokens ? _formatInt(s.maxOutputTokens) : '默认'}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          height: 1.2,
-                          color: textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Gear icon -> opens parameter editor dialog (web: Settings icon).
-                Tooltip(
-                  message: '参数编辑器',
-                  child: InkWell(
-                    onTap: () => _openParameterDialog(context),
-                    borderRadius: BorderRadius.circular(12),
-                    child: const Padding(
-                      padding: EdgeInsets.all(4),
-                      child: Icon(LucideIcons.settings, size: 14, color: kSidebarMutedIcon),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 2),
-                AnimatedRotation(
-                  turns: _expanded ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 150),
-                  child: const Icon(
-                    LucideIcons.chevronDown,
-                    size: 16,
-                    color: kSidebarMutedIcon,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        // Collapsible content: context settings + divider + ParameterEditor.
-        if (_expanded)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(0, 0, 0, 6),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                ...widget.contextChildren,
-                const Divider(height: 16),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
-                  child: ParameterEditor(),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  /// Opens a dialog containing the full ParameterEditor (web: gear icon dialog).
-  void _openParameterDialog(BuildContext context) {
-    final theme = Theme.of(context);
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => Dialog(
-        insetPadding: const EdgeInsets.all(16),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(ctx).size.height * 0.8,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Dialog title bar.
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
-                child: Row(
-                  children: [
-                    const Icon(LucideIcons.settings, size: 20),
-                    const SizedBox(width: 8),
-                    const Text(
-                      '参数编辑器',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      height: 20,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Text(
-                        '兼容 API',
-                        style: TextStyle(
-                          fontSize: 10.4,
-                          height: 1,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      icon: const Icon(LucideIcons.x, size: 18),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              // Scrollable parameter editor.
-              const Flexible(
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.all(16),
-                  child: ParameterEditor(),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
