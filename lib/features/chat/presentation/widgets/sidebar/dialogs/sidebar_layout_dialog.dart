@@ -29,6 +29,7 @@ class _SidebarLayoutDialog extends ConsumerStatefulWidget {
 class _SidebarLayoutDialogState extends ConsumerState<_SidebarLayoutDialog> {
   late final double _originalWidth;
   late final SidebarDisplayMode _originalMode;
+  late final SettingsLayoutMode _originalSettingsLayout;
   late double _draft;
   final TextEditingController _field = TextEditingController();
 
@@ -38,6 +39,7 @@ class _SidebarLayoutDialogState extends ConsumerState<_SidebarLayoutDialog> {
     final settings = ref.read(sidebarSettingsControllerProvider);
     _originalWidth = settings.sidebarWidth;
     _originalMode = settings.sidebarDisplayMode;
+    _originalSettingsLayout = settings.settingsLayoutMode;
     _draft = _originalWidth;
     _field.text = _draft.round().toString();
   }
@@ -70,6 +72,9 @@ class _SidebarLayoutDialogState extends ConsumerState<_SidebarLayoutDialog> {
     final mode = ref.watch(
       sidebarSettingsControllerProvider.select((s) => s.sidebarDisplayMode),
     );
+    final settingsLayout = ref.watch(
+      sidebarSettingsControllerProvider.select((s) => s.settingsLayoutMode),
+    );
     return AlertDialog(
       // M2 默认对话框背景写死为白/grey[800]、不跟随主题，故显式取 surface。
       backgroundColor: theme.colorScheme.surface,
@@ -97,6 +102,34 @@ class _SidebarLayoutDialogState extends ConsumerState<_SidebarLayoutDialog> {
           const SizedBox(height: 8),
           Text(
             '覆盖：抽屉滑入盖在聊天页上；推开：抽屉滑入时把聊天页向右推开',
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.3,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _DialogSectionLabel(
+            text: '设置 tab 布局',
+            color: theme.colorScheme.onSurface,
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<SettingsLayoutMode>(
+            showSelectedIcon: false,
+            segments: [
+              for (final v in SettingsLayoutMode.values)
+                ButtonSegment<SettingsLayoutMode>(
+                  value: v,
+                  label: Text(v.label),
+                ),
+            ],
+            selected: {settingsLayout},
+            onSelectionChanged: (sel) =>
+                controller.setSettingsLayoutMode(sel.first),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '折叠：手风琴展开/收起设置分组；分组：点击分组进入独立页面',
             style: TextStyle(
               fontSize: 12,
               height: 1.3,
@@ -163,6 +196,7 @@ class _SidebarLayoutDialogState extends ConsumerState<_SidebarLayoutDialog> {
             FocusScope.of(context).unfocus();
             controller.previewSidebarWidth(_originalWidth);
             controller.setSidebarDisplayMode(_originalMode);
+            controller.setSettingsLayoutMode(_originalSettingsLayout);
             Navigator.of(context).pop();
           },
           child: const Text('取消'),

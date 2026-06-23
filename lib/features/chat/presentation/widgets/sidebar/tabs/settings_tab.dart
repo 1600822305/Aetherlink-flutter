@@ -35,13 +35,335 @@ const Color _userAvatarBg = Color(0xFF87D068);
 /// 兼容 API chip outline, MUI `grey.400` `#bdbdbd`.
 const Color _chipBorderColor = Color(0xFFBDBDBD);
 
-class SettingsTab extends ConsumerWidget {
+class SettingsTab extends ConsumerStatefulWidget {
   const SettingsTab({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsTab> createState() => _SettingsTabState();
+}
+
+class _SettingsTabState extends ConsumerState<SettingsTab> {
+  /// When non-null, the user has navigated into this group (grouped mode).
+  String? _activeGroupId;
+
+  void _enterGroup(String groupId) {
+    setState(() => _activeGroupId = groupId);
+  }
+
+  void _exitGroup() {
+    setState(() => _activeGroupId = null);
+  }
+
+  // ── Group children builders (shared by both modes) ─────────────────────
+
+  List<Widget> _generalChildren(SidebarSettings s, SidebarSettingsController c) => [
+    _SwitchSettingRow(
+      title: '消息分割线',
+      description: '在消息之间显示分割线',
+      value: s.showMessageDivider,
+      onChanged: c.setShowMessageDivider,
+    ),
+    _SwitchSettingRow(
+      title: '代码块可复制',
+      description: '允许复制代码块的内容',
+      value: s.copyableCodeBlocks,
+      onChanged: c.setCopyableCodeBlocks,
+    ),
+    _SwitchSettingRow(
+      title: '渲染用户输入',
+      description: '渲染用户输入的 Markdown 格式（关闭后用户消息显示为纯文本）',
+      value: s.renderUserInputAsMarkdown,
+      onChanged: c.setRenderUserInputAsMarkdown,
+      comingSoon: true,
+    ),
+    _SwitchSettingRow(
+      title: '自动下滑',
+      description: '新消息时自动滚动到聊天底部',
+      value: s.autoScrollToBottom,
+      onChanged: c.setAutoScrollToBottom,
+    ),
+    _SelectSettingRow<MessageStyle>(
+      title: '消息样式',
+      description: '选择聊天消息的显示样式',
+      value: s.messageStyle,
+      options: [for (final v in MessageStyle.values) (v, v.label)],
+      onChanged: c.setMessageStyle,
+    ),
+    _SelectSettingRow<MessageNavigation>(
+      title: '对话导航',
+      description: '显示上下按钮快速跳转到上一条/下一条消息',
+      value: s.messageNavigation,
+      options: [for (final v in MessageNavigation.values) (v, v.label)],
+      onChanged: c.setMessageNavigation,
+      comingSoon: true,
+    ),
+    _SwitchSettingRow(
+      title: 'Token 用量指示',
+      description: '在右侧显示上下文 Token 用量呼吸灯',
+      value: s.showContextTokenIndicator,
+      onChanged: c.setShowContextTokenIndicator,
+      comingSoon: true,
+    ),
+  ];
+
+  List<Widget> _contextChildren(SidebarSettings s, SidebarSettingsController c) => [
+    _SliderSettingRow(
+      title: '上下文消息数量',
+      description: '携带的历史消息条数，0 = 无记忆（每次独立对话）',
+      value: s.contextCount.toDouble(),
+      min: 0,
+      max: 100,
+      divisions: 100,
+      valueLabel: s.contextCount >= 100 ? '最大' : '${s.contextCount}',
+      marks: {0.0: '0', 50.0: '50', 100.0: '最大'},
+      onChanged: (v) => c.setContextCount(v.round()),
+    ),
+    _SwitchSettingRow(
+      title: '启用最大输出限制',
+      description: '关闭则使用模型默认值',
+      value: s.enableMaxOutputTokens,
+      onChanged: c.setEnableMaxOutputTokens,
+    ),
+    if (s.enableMaxOutputTokens)
+      _NumberSettingRow(
+        title: '最大输出 Token',
+        description: '单次回复的 token 上限',
+        value: s.maxOutputTokens,
+        min: 256,
+        max: 200000,
+        onChanged: c.setMaxOutputTokens,
+      ),
+    _NumberSettingRow(
+      title: '上下文窗口大小',
+      description: '模型可处理的总 Token 数（仅供参考，不限制实际发送）',
+      value: s.contextWindowSize,
+      min: 1000,
+      max: 2000000,
+      onChanged: c.setContextWindowSize,
+    ),
+  ];
+
+  List<Widget> _inputChildren(SidebarSettings s, SidebarSettingsController c) => [
+    _SwitchSettingRow(
+      title: '长文本粘贴为文件',
+      description: '粘贴超长文本时自动转为文件附件',
+      value: s.pasteLongTextAsFile,
+      onChanged: c.setPasteLongTextAsFile,
+    ),
+    if (s.pasteLongTextAsFile)
+      _NumberSettingRow(
+        title: '触发阈值',
+        description: '超过该字符数转为文件',
+        value: s.pasteLongTextThreshold,
+        min: 100,
+        max: 10000,
+        onChanged: c.setPasteLongTextThreshold,
+      ),
+  ];
+
+  List<Widget> _codeChildren(SidebarSettings s, SidebarSettingsController c) => [
+    _SelectSettingRow<String>(
+      title: '代码高亮主题',
+      description: '190+ 语言语法高亮，28 种精选主题',
+      value: s.codeHighlightTheme,
+      options: const [
+        ('auto', '自动（跟随主题）'),
+        ('atom-one-dark-reasonable', 'Atom One Dark Reasonable'),
+        ('atom-one-dark', 'Atom One Dark'),
+        ('github-dark', 'GitHub Dark'),
+        ('github-dark-dimmed', 'GitHub Dark Dimmed'),
+        ('vs2015', 'VS2015 Dark'),
+        ('monokai-sublime', 'Monokai Sublime'),
+        ('dracula', 'Dracula'),
+        ('nord', 'Nord'),
+        ('solarized-dark', 'Solarized Dark'),
+        ('tokyo-night-dark', 'Tokyo Night Dark'),
+        ('androidstudio', 'Android Studio'),
+        ('night-owl', 'Night Owl'),
+        ('stackoverflow-dark', 'StackOverflow Dark'),
+        ('gruvbox-dark', 'Gruvbox Dark'),
+        ('a11y-dark', 'A11y Dark'),
+        ('shades-of-purple', 'Shades of Purple'),
+        ('panda-syntax-dark', 'Panda Dark'),
+        ('github', 'GitHub'),
+        ('atom-one-light', 'Atom One Light'),
+        ('vs', 'VS Light'),
+        ('xcode', 'Xcode'),
+        ('idea', 'IntelliJ IDEA'),
+        ('solarized-light', 'Solarized Light'),
+        ('tokyo-night-light', 'Tokyo Night Light'),
+        ('stackoverflow-light', 'StackOverflow Light'),
+        ('gruvbox-light', 'Gruvbox Light'),
+        ('a11y-light', 'A11y Light'),
+        ('panda-syntax-light', 'Panda Light'),
+      ],
+      onChanged: c.setCodeHighlightTheme,
+    ),
+    _SwitchSettingRow(
+      title: '显示行号',
+      description: '在代码块左侧显示行号',
+      value: s.codeShowLineNumbers,
+      onChanged: c.setCodeShowLineNumbers,
+    ),
+    _SwitchSettingRow(
+      title: '可折叠',
+      description: '允许折叠/展开代码块',
+      value: s.codeCollapsible,
+      onChanged: c.setCodeCollapsible,
+    ),
+    _SwitchSettingRow(
+      title: '自动换行',
+      description: '过长的代码行自动换行',
+      value: s.codeWrappable,
+      onChanged: c.setCodeWrappable,
+    ),
+    if (s.codeCollapsible)
+      _SwitchSettingRow(
+        title: '默认折叠',
+        description: '代码块默认以折叠状态显示',
+        value: s.codeDefaultCollapsed,
+        onChanged: c.setCodeDefaultCollapsed,
+      ),
+    _SliderSettingRow(
+      title: '代码字体大小',
+      description: '调整代码块内字体大小（10-24）',
+      value: s.codeFontSize.toDouble(),
+      min: 10,
+      max: 24,
+      divisions: 14,
+      valueLabel: '${s.codeFontSize}',
+      onChanged: (v) => c.setCodeFontSize(v.round()),
+    ),
+    _SwitchSettingRow(
+      title: 'Mermaid 图表',
+      description: '渲染 Mermaid 流程图 / 时序图',
+      value: s.mermaidEnabled,
+      onChanged: c.setMermaidEnabled,
+      comingSoon: true,
+    ),
+  ];
+
+  List<Widget> _mathChildren(SidebarSettings s, SidebarSettingsController c) => [
+    const _StaticSettingRow(
+      title: '渲染引擎',
+      value: 'KaTeX（flutter_math，原生渲染）',
+    ),
+    _SwitchSettingRow(
+      title: '单美元符号',
+      description: r'识别 $...$ 作为行内公式',
+      value: s.mathEnableSingleDollar,
+      onChanged: c.setMathEnableSingleDollar,
+    ),
+  ];
+
+  // ── Group descriptors for grouped mode ─────────────────────────────────
+
+  static const _groupDescriptors = <({
+    String id,
+    String title,
+    IconData icon,
+  })>[
+    (id: 'general', title: '常规设置', icon: LucideIcons.settings2),
+    (id: 'context', title: '上下文设置', icon: LucideIcons.messageSquare),
+    (id: 'input', title: '输入设置', icon: LucideIcons.keyboard),
+    (id: 'code', title: '代码块设置', icon: LucideIcons.code),
+    (id: 'math', title: '数学公式设置', icon: LucideIcons.sigma),
+    (id: 'mcp', title: 'MCP 工具', icon: LucideIcons.wrench),
+  ];
+
+  String _groupSubtitle(String id, SidebarSettings s) => switch (id) {
+    'general' => '7 个基础功能设置',
+    'context' =>
+      '消息: ${s.contextCount >= 100 ? '最大' : '${s.contextCount} 条'}'
+      ' | 输出: ${s.enableMaxOutputTokens ? _formatInt(s.maxOutputTokens) : '默认'}',
+    'input' => '粘贴和输入相关的功能设置',
+    'code' => '配置代码显示和编辑功能',
+    'math' => '渲染引擎: KaTeX',
+    'mcp' => 'MCP 服务器与工具调用',
+    _ => '',
+  };
+
+  List<Widget> _groupChildren(String id, SidebarSettings s, SidebarSettingsController c) =>
+      switch (id) {
+        'general' => _generalChildren(s, c),
+        'context' => _contextChildren(s, c),
+        'input' => _inputChildren(s, c),
+        'code' => _codeChildren(s, c),
+        'math' => _mathChildren(s, c),
+        _ => const [],
+      };
+
+  // ── Build ──────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
     final s = ref.watch(sidebarSettingsControllerProvider);
     final c = ref.read(sidebarSettingsControllerProvider.notifier);
+    final isGrouped = s.settingsLayoutMode == SettingsLayoutMode.grouped;
+
+    if (isGrouped && _activeGroupId != null) {
+      return _buildGroupDetail(s, c);
+    }
+
+    if (isGrouped) {
+      return _buildGroupedTopLevel(s, c);
+    }
+
+    return _buildCompact(s, c);
+  }
+
+  /// Compact mode: existing accordion layout.
+  Widget _buildCompact(SidebarSettings s, SidebarSettingsController c) {
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      children: [
+        const _SettingsEntryRow(),
+        const _SettingsDivider(),
+        const _UserAvatarRow(),
+        const _SettingsDivider(),
+        _SettingsGroup(
+          title: '常规设置',
+          subtitle: '7 个基础功能设置',
+          children: _generalChildren(s, c),
+        ),
+        const _SettingsDivider(),
+        _SettingsGroup(
+          title: '上下文设置',
+          subtitle:
+              '消息: ${s.contextCount >= 100 ? '最大' : '${s.contextCount} 条'}'
+              ' | 输出: ${s.enableMaxOutputTokens ? _formatInt(s.maxOutputTokens) : '默认'}',
+          chipLabel: '兼容 API',
+          children: _contextChildren(s, c),
+        ),
+        const _SettingsDivider(),
+        _SettingsGroup(
+          title: '输入设置',
+          subtitle: '粘贴和输入相关的功能设置',
+          children: _inputChildren(s, c),
+        ),
+        const _SettingsDivider(),
+        _SettingsGroup(
+          title: '代码块设置',
+          subtitle: '配置代码显示和编辑功能',
+          children: _codeChildren(s, c),
+        ),
+        const _SettingsDivider(),
+        _SettingsGroup(
+          title: '数学公式设置',
+          subtitle: '渲染引擎: KaTeX',
+          children: _mathChildren(s, c),
+        ),
+        const _SettingsDivider(),
+        const _McpToolsGroup(),
+      ],
+    );
+  }
+
+  /// Grouped mode top-level: group entry rows (clickable, navigate into).
+  Widget _buildGroupedTopLevel(SidebarSettings s, SidebarSettingsController c) {
+    final theme = Theme.of(context);
+    final textPrimary = theme.colorScheme.onSurface;
+    final textSecondary = theme.colorScheme.onSurfaceVariant;
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -50,240 +372,62 @@ class SettingsTab extends ConsumerWidget {
         const _SettingsDivider(),
         const _UserAvatarRow(),
         const _SettingsDivider(),
-        // 常规设置 (7 项) — fully migrated. 消息分割线 / 代码块可复制 drive the chat
-        // view now; the rest persist and light up as their chat widgets land.
-        // 「侧边栏显示方式」已并入底部「侧边栏布局」对话框（与宽度同管）。
-        _SettingsGroup(
-          title: '常规设置',
-          subtitle: '7 个基础功能设置',
-          children: [
-            _SwitchSettingRow(
-              title: '消息分割线',
-              description: '在消息之间显示分割线',
-              value: s.showMessageDivider,
-              onChanged: c.setShowMessageDivider,
-            ),
-            _SwitchSettingRow(
-              title: '代码块可复制',
-              description: '允许复制代码块的内容',
-              value: s.copyableCodeBlocks,
-              onChanged: c.setCopyableCodeBlocks,
-            ),
-            _SwitchSettingRow(
-              title: '渲染用户输入',
-              description: '渲染用户输入的 Markdown 格式（关闭后用户消息显示为纯文本）',
-              value: s.renderUserInputAsMarkdown,
-              onChanged: c.setRenderUserInputAsMarkdown,
-              comingSoon: true,
-            ),
-            _SwitchSettingRow(
-              title: '自动下滑',
-              description: '新消息时自动滚动到聊天底部',
-              value: s.autoScrollToBottom,
-              onChanged: c.setAutoScrollToBottom,
-            ),
-            _SelectSettingRow<MessageStyle>(
-              title: '消息样式',
-              description: '选择聊天消息的显示样式',
-              value: s.messageStyle,
-              options: [for (final v in MessageStyle.values) (v, v.label)],
-              onChanged: c.setMessageStyle,
-            ),
-            _SelectSettingRow<MessageNavigation>(
-              title: '对话导航',
-              description: '显示上下按钮快速跳转到上一条/下一条消息',
-              value: s.messageNavigation,
-              options: [for (final v in MessageNavigation.values) (v, v.label)],
-              onChanged: c.setMessageNavigation,
-              comingSoon: true,
-            ),
-            _SwitchSettingRow(
-              title: 'Token 用量指示',
-              description: '在右侧显示上下文 Token 用量呼吸灯',
-              value: s.showContextTokenIndicator,
-              onChanged: c.setShowContextTokenIndicator,
-              comingSoon: true,
-            ),
-          ],
+        for (final g in _groupDescriptors)
+          _SettingsGroupEntry(
+            icon: g.icon,
+            title: g.title,
+            subtitle: _groupSubtitle(g.id, s),
+            textPrimary: textPrimary,
+            textSecondary: textSecondary,
+            onTap: () => _enterGroup(g.id),
+          ),
+      ],
+    );
+  }
+
+  /// Grouped mode detail: inside a specific group, with back header.
+  Widget _buildGroupDetail(SidebarSettings s, SidebarSettingsController c) {
+    final theme = Theme.of(context);
+    final textPrimary = theme.colorScheme.onSurface;
+    final textSecondary = theme.colorScheme.onSurfaceVariant;
+
+    final descriptor = _groupDescriptors.where((g) => g.id == _activeGroupId).firstOrNull;
+    if (descriptor == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _activeGroupId = null);
+      });
+      return const SizedBox.shrink();
+    }
+
+    final isMcp = _activeGroupId == 'mcp';
+    final children = isMcp ? <Widget>[] : _groupChildren(_activeGroupId!, s, c);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Back header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+          child: _SettingsGroupDetailHeader(
+            icon: descriptor.icon,
+            title: descriptor.title,
+            onBack: _exitGroup,
+            textPrimary: textPrimary,
+            textSecondary: textSecondary,
+          ),
         ),
         const _SettingsDivider(),
-        // 上下文设置 — contextCount / maxOutputTokens wired in ChatController.
-        _SettingsGroup(
-          title: '上下文设置',
-          subtitle:
-              '消息: ${s.contextCount >= 100 ? '最大' : '${s.contextCount} 条'}'
-              ' | 输出: ${s.enableMaxOutputTokens ? _formatInt(s.maxOutputTokens) : '默认'}',
-          chipLabel: '兼容 API',
-          children: [
-            _SliderSettingRow(
-              title: '上下文消息数量',
-              description: '携带的历史消息条数，0 = 无记忆（每次独立对话）',
-              value: s.contextCount.toDouble(),
-              min: 0,
-              max: 100,
-              divisions: 100,
-              valueLabel: s.contextCount >= 100 ? '最大' : '${s.contextCount}',
-              marks: {0.0: '0', 50.0: '50', 100.0: '最大'},
-              onChanged: (v) => c.setContextCount(v.round()),
-            ),
-            _SwitchSettingRow(
-              title: '启用最大输出限制',
-              description: '关闭则使用模型默认值',
-              value: s.enableMaxOutputTokens,
-              onChanged: c.setEnableMaxOutputTokens,
-            ),
-            if (s.enableMaxOutputTokens)
-              _NumberSettingRow(
-                title: '最大输出 Token',
-                description: '单次回复的 token 上限',
-                value: s.maxOutputTokens,
-                min: 256,
-                max: 200000,
-                onChanged: c.setMaxOutputTokens,
-              ),
-            _NumberSettingRow(
-              title: '上下文窗口大小',
-              description: '模型可处理的总 Token 数（仅供参考，不限制实际发送）',
-              value: s.contextWindowSize,
-              min: 1000,
-              max: 2000000,
-              onChanged: c.setContextWindowSize,
-            ),
-          ],
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            children: [
+              if (isMcp)
+                const _McpToolsGroupContent()
+              else
+                for (final child in children) child,
+            ],
+          ),
         ),
-        const _SettingsDivider(),
-        // 输入设置 — UI + persist.
-        _SettingsGroup(
-          title: '输入设置',
-          subtitle: '粘贴和输入相关的功能设置',
-          children: [
-            _SwitchSettingRow(
-              title: '长文本粘贴为文件',
-              description: '粘贴超长文本时自动转为文件附件',
-              value: s.pasteLongTextAsFile,
-              onChanged: c.setPasteLongTextAsFile,
-            ),
-            if (s.pasteLongTextAsFile)
-              _NumberSettingRow(
-                title: '触发阈值',
-                description: '超过该字符数转为文件',
-                value: s.pasteLongTextThreshold,
-                min: 100,
-                max: 10000,
-                onChanged: c.setPasteLongTextThreshold,
-              ),
-          ],
-        ),
-        const _SettingsDivider(),
-        // 代码块设置 — UI + persist; CodeBlockView consumes display settings.
-        _SettingsGroup(
-          title: '代码块设置',
-          subtitle: '配置代码显示和编辑功能',
-          children: [
-            _SelectSettingRow<String>(
-              title: '代码高亮主题',
-              description: '190+ 语言语法高亮，28 种精选主题',
-              value: s.codeHighlightTheme,
-              options: const [
-                ('auto', '自动（跟随主题）'),
-                // Dark
-                ('atom-one-dark-reasonable', 'Atom One Dark Reasonable'),
-                ('atom-one-dark', 'Atom One Dark'),
-                ('github-dark', 'GitHub Dark'),
-                ('github-dark-dimmed', 'GitHub Dark Dimmed'),
-                ('vs2015', 'VS2015 Dark'),
-                ('monokai-sublime', 'Monokai Sublime'),
-                ('dracula', 'Dracula'),
-                ('nord', 'Nord'),
-                ('solarized-dark', 'Solarized Dark'),
-                ('tokyo-night-dark', 'Tokyo Night Dark'),
-                ('androidstudio', 'Android Studio'),
-                ('night-owl', 'Night Owl'),
-                ('stackoverflow-dark', 'StackOverflow Dark'),
-                ('gruvbox-dark', 'Gruvbox Dark'),
-                ('a11y-dark', 'A11y Dark'),
-                ('shades-of-purple', 'Shades of Purple'),
-                ('panda-syntax-dark', 'Panda Dark'),
-                // Light
-                ('github', 'GitHub'),
-                ('atom-one-light', 'Atom One Light'),
-                ('vs', 'VS Light'),
-                ('xcode', 'Xcode'),
-                ('idea', 'IntelliJ IDEA'),
-                ('solarized-light', 'Solarized Light'),
-                ('tokyo-night-light', 'Tokyo Night Light'),
-                ('stackoverflow-light', 'StackOverflow Light'),
-                ('gruvbox-light', 'Gruvbox Light'),
-                ('a11y-light', 'A11y Light'),
-                ('panda-syntax-light', 'Panda Light'),
-              ],
-              onChanged: c.setCodeHighlightTheme,
-            ),
-            _SwitchSettingRow(
-              title: '显示行号',
-              description: '在代码块左侧显示行号',
-              value: s.codeShowLineNumbers,
-              onChanged: c.setCodeShowLineNumbers,
-            ),
-            _SwitchSettingRow(
-              title: '可折叠',
-              description: '允许折叠/展开代码块',
-              value: s.codeCollapsible,
-              onChanged: c.setCodeCollapsible,
-            ),
-            _SwitchSettingRow(
-              title: '自动换行',
-              description: '过长的代码行自动换行',
-              value: s.codeWrappable,
-              onChanged: c.setCodeWrappable,
-            ),
-            if (s.codeCollapsible)
-              _SwitchSettingRow(
-                title: '默认折叠',
-                description: '代码块默认以折叠状态显示',
-                value: s.codeDefaultCollapsed,
-                onChanged: c.setCodeDefaultCollapsed,
-              ),
-            _SliderSettingRow(
-              title: '代码字体大小',
-              description: '调整代码块内字体大小（10-24）',
-              value: s.codeFontSize.toDouble(),
-              min: 10,
-              max: 24,
-              divisions: 14,
-              valueLabel: '${s.codeFontSize}',
-              onChanged: (v) => c.setCodeFontSize(v.round()),
-            ),
-            _SwitchSettingRow(
-              title: 'Mermaid 图表',
-              description: '渲染 Mermaid 流程图 / 时序图',
-              value: s.mermaidEnabled,
-              onChanged: c.setMermaidEnabled,
-              comingSoon: true,
-            ),
-          ],
-        ),
-        const _SettingsDivider(),
-        // 数学公式设置 — 引擎下拉删除（Flutter 用 flutter_math 原生渲染）。
-        _SettingsGroup(
-          title: '数学公式设置',
-          subtitle: '渲染引擎: KaTeX',
-          children: [
-            const _StaticSettingRow(
-              title: '渲染引擎',
-              value: 'KaTeX（flutter_math，原生渲染）',
-            ),
-            _SwitchSettingRow(
-              title: '单美元符号',
-              description: r'识别 $...$ 作为行内公式',
-              value: s.mathEnableSingleDollar,
-              onChanged: c.setMathEnableSingleDollar,
-            ),
-          ],
-        ),
-        const _SettingsDivider(),
-        // MCP 工具 — 总开关 / 调用模式 / 内联服务器列表，均已接入对话（工具调用）。
-        const _McpToolsGroup(),
       ],
     );
   }
@@ -344,6 +488,182 @@ class _McpToolsGroup extends ConsumerWidget {
             LucideIcons.chevronRight,
             size: 16,
             color: kSidebarMutedIcon,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// MCP tools content without the wrapping [_SettingsGroup] accordion — used by
+/// the grouped-mode detail view which provides its own header/back navigation.
+class _McpToolsGroupContent extends ConsumerWidget {
+  const _McpToolsGroupContent();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tools = ref.watch(mcpToolsControllerProvider);
+    final controller = ref.read(mcpToolsControllerProvider.notifier);
+    final servers =
+        ref.watch(mcpServersProvider).asData?.value ?? const <McpServer>[];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SwitchSettingRow(
+          title: '启用 MCP 工具',
+          description: '在对话中向模型提供已激活服务器的工具',
+          value: tools.enabled,
+          onChanged: (v) => controller.setEnabled(enabled: v),
+        ),
+        _SelectSettingRow<McpMode>(
+          title: '工具调用模式',
+          description: '函数调用：模型自动调用工具（推荐）；提示词注入：通过提示词指导 AI 使用工具',
+          value: tools.mode,
+          options: [for (final m in McpMode.values) (m, m.label)],
+          onChanged: controller.setMode,
+        ),
+        if (servers.isEmpty)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 6, 16, 6),
+            child: Text(
+              '还没有配置 MCP 服务器',
+              style: TextStyle(fontSize: 12, color: kSidebarMutedIcon),
+            ),
+          )
+        else
+          for (final server in servers)
+            _McpServerRow(server: server, toolsEnabled: tools.enabled),
+        _SettingItemShell(
+          title: '管理服务器',
+          description: '添加、导入与配置 MCP 服务器',
+          onTap: () => context.push(AppRouter.mcpServerPath),
+          trailing: const Icon(
+            LucideIcons.chevronRight,
+            size: 16,
+            color: kSidebarMutedIcon,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Clickable group entry row for grouped mode top-level view. Similar to the
+/// assistant tab's `_GroupEntry` — icon + title + subtitle + chevron.
+class _SettingsGroupEntry extends StatelessWidget {
+  const _SettingsGroupEntry({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.textPrimary,
+    required this.textSecondary,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color textPrimary;
+  final Color textSecondary;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                Icon(icon, size: 18, color: textSecondary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          height: 1.43,
+                          fontWeight: FontWeight.w500,
+                          color: textPrimary,
+                        ),
+                      ),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.66,
+                          color: textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(LucideIcons.chevronRight, size: 16, color: textSecondary),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Header shown when inside a settings group detail: back arrow + icon + title.
+class _SettingsGroupDetailHeader extends StatelessWidget {
+  const _SettingsGroupDetailHeader({
+    required this.icon,
+    required this.title,
+    required this.onBack,
+    required this.textPrimary,
+    required this.textSecondary,
+  });
+
+  final IconData icon;
+  final String title;
+  final VoidCallback onBack;
+  final Color textPrimary;
+  final Color textSecondary;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SidebarMutedIconButton(
+          icon: LucideIcons.arrowLeft,
+          size: 18,
+          box: 28,
+          color: textPrimary,
+          onPressed: onBack,
+        ),
+        const SizedBox(width: 4),
+        Icon(icon, size: 16, color: textSecondary),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: textPrimary,
+            ),
           ),
         ),
       ],
