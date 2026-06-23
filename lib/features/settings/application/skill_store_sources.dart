@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/widgets.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// Unified data model for a skill from any marketplace source.
 class StoreSkillItem {
@@ -44,13 +46,14 @@ class StoreSearchResult {
 
 /// Available skill store data sources.
 enum SkillStoreSource {
-  skillsmp('SkillsMP', '170万+ 技能'),
-  clawhub('ClawHub', '社区精选'),
-  aiskillstore('AI Skill Store', 'USK 标准');
+  skillsmp('SkillsMP', '170万+ 技能', LucideIcons.boxes),
+  clawhub('ClawHub', '社区精选', LucideIcons.globe),
+  aiskillstore('AI Skill Store', 'USK 标准', LucideIcons.shieldCheck);
 
-  const SkillStoreSource(this.label, this.subtitle);
+  const SkillStoreSource(this.label, this.subtitle, this.icon);
   final String label;
   final String subtitle;
+  final IconData icon;
 }
 
 /// Fetches skills from ClawHub (OpenClaw).
