@@ -133,7 +133,7 @@ class SidebarSettingsController extends _$SidebarSettingsController
   void setPasteLongTextThreshold(int value) =>
       persist(state.copyWith(pasteLongTextThreshold: value));
 
-  // ── 代码块设置 (即将支持) ─────────────────────────────────────────────────
+  // ── 代码块设置 ─────────────────────────────────────────────────────────
   void setCodeShowLineNumbers(bool value) =>
       persist(state.copyWith(codeShowLineNumbers: value));
 
