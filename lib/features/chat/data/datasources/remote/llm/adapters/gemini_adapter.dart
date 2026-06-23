@@ -45,12 +45,11 @@ class GeminiAdapter implements LlmGateway {
         'responseMimeType': request.responseFormat == 'json'
             ? 'application/json'
             : 'text/plain',
-      if (request.includeThoughts == true)
-        'thinkingConfig': {'includeThoughts': true},
-      if (request.thinkingBudget != null)
+      if (request.includeThoughts == true || request.thinkingBudget != null)
         'thinkingConfig': {
           'includeThoughts': request.includeThoughts ?? true,
-          'thinkingBudget': request.thinkingBudget,
+          if (request.thinkingBudget != null)
+            'thinkingBudget': request.thinkingBudget,
         },
     };
 
@@ -92,7 +91,7 @@ class GeminiAdapter implements LlmGateway {
           ])
             {
               'category': cat,
-              'threshold': _safetyThreshold(request.safetyLevel!),
+              'threshold': request.safetyLevel,
             },
         ],
       ...?request.customParameters,
@@ -259,15 +258,6 @@ class GeminiAdapter implements LlmGateway {
   static String _roleValue(MessageRole role) => switch (role) {
     MessageRole.assistant => 'model',
     _ => 'user',
-  };
-
-  /// Maps a human-readable safety level to a Gemini harm block threshold.
-  static String _safetyThreshold(String level) => switch (level) {
-    'none' => 'BLOCK_NONE',
-    'low' => 'BLOCK_ONLY_HIGH',
-    'medium' => 'BLOCK_MEDIUM_AND_ABOVE',
-    'high' => 'BLOCK_LOW_AND_ABOVE',
-    _ => 'BLOCK_MEDIUM_AND_ABOVE',
   };
 
   static String _streamUrl(String? baseUrl, String modelId) {

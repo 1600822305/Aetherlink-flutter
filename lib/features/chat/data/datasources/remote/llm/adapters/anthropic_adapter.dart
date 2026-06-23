@@ -43,7 +43,16 @@ class AnthropicAdapter implements LlmGateway {
       'model': model.id,
       // Anthropic requires max_tokens; fall back to a sane default.
       'max_tokens': request.maxTokens ?? 4096,
-      if (request.system != null) 'system': request.system,
+      if (request.system != null)
+        'system': request.cacheControl == true
+            ? [
+                {
+                  'type': 'text',
+                  'text': request.system,
+                  'cache_control': {'type': 'ephemeral'},
+                },
+              ]
+            : request.system,
       'messages': messages,
       'stream': request.stream,
       if (request.temperature != null && !hasThinking)
@@ -52,10 +61,7 @@ class AnthropicAdapter implements LlmGateway {
       if (request.topK != null) 'top_k': request.topK,
       if (request.stopSequences != null && request.stopSequences!.isNotEmpty)
         'stop_sequences': request.stopSequences,
-      if (request.structuredOutputMode != null &&
-          request.structuredOutputMode!.isNotEmpty &&
-          request.structuredOutputMode != 'auto')
-        'structuredOutputMode': request.structuredOutputMode,
+
       if (request.user != null && request.user!.isNotEmpty)
         'metadata': {'user_id': request.user},
       if (hasThinking)
@@ -63,9 +69,18 @@ class AnthropicAdapter implements LlmGateway {
           'type': 'enabled',
           'budget_tokens': request.thinkingBudget,
         },
-      if (request.webSearchEnabled == true)
+      if (request.webSearchEnabled == true ||
+          request.codeExecutionEnabled == true ||
+          (tools != null && tools.isNotEmpty))
         'tools': [
-          {'type': 'web_search_20250305', 'name': 'web_search', 'max_uses': 5},
+          if (request.webSearchEnabled == true)
+            {
+              'type': 'web_search_20250305',
+              'name': 'web_search',
+              'max_uses': 5,
+            },
+          if (request.codeExecutionEnabled == true)
+            {'type': 'code_execution_20250825'},
           if (tools != null)
             for (final t in tools)
               {
@@ -73,15 +88,6 @@ class AnthropicAdapter implements LlmGateway {
                 'description': t.description,
                 'input_schema': t.inputSchema,
               },
-        ]
-      else if (tools != null && tools.isNotEmpty)
-        'tools': [
-          for (final t in tools)
-            {
-              'name': t.name,
-              'description': t.description,
-              'input_schema': t.inputSchema,
-            },
         ],
       ...?request.customParameters,
       ...?request.extraBody,

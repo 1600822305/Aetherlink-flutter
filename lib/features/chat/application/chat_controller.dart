@@ -945,10 +945,17 @@ class ChatController extends _$ChatController {
   /// (number of history messages to include).
   ({int contextCount, int? maxTokens}) _contextSettings() {
     final s = ref.read(sidebarSettingsControllerProvider);
-    return (
-      contextCount: s.contextCount,
-      maxTokens: s.enableMaxOutputTokens ? s.maxOutputTokens : null,
-    );
+    // Prefer ParameterSettings maxOutputTokens when enabled (unified parameter
+    // system), falling back to the legacy SidebarSettings value.
+    final ps = ref.read(parameterSettingsControllerProvider);
+    int? maxTokens;
+    if (ps.isParameterEnabled('maxOutputTokens')) {
+      final v = ps.getParameterValue('maxOutputTokens');
+      maxTokens = v is int ? v : (v is num ? v.toInt() : null);
+    } else if (s.enableMaxOutputTokens) {
+      maxTokens = s.maxOutputTokens;
+    }
+    return (contextCount: s.contextCount, maxTokens: maxTokens);
   }
 
   /// Reads the parameter settings and returns a record of fields suitable for

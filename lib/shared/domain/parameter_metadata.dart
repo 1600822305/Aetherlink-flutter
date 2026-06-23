@@ -431,7 +431,10 @@ ProviderType detectProviderFromModel(String? modelId) {
   if (id.contains('gemini') || id.contains('palm')) {
     return ProviderType.gemini;
   }
-  if (id.contains('gpt') || id.contains('o1') || id.contains('o3')) {
+  if (id.contains('gpt') ||
+      id.contains('o1') ||
+      id.contains('o3') ||
+      id.contains('o4')) {
     return ProviderType.openai;
   }
   return ProviderType.openaiCompatible;
