@@ -71,8 +71,6 @@ class _McpServerSettingsPageState extends ConsumerState<McpServerSettingsPage>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final onExternalTab = _index == 0;
-
     return Scaffold(
       appBar: AppBar(
         backgroundColor: theme.colorScheme.surface,
@@ -103,13 +101,39 @@ class _McpServerSettingsPageState extends ConsumerState<McpServerSettingsPage>
         ),
         title: const Text(_title),
         actions: [
-          if (onExternalTab)
+          if (_index == 0)
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: ModelTonalButton(
                 label: '添加',
                 icon: LucideIcons.plus,
                 onPressed: () => _openAddServer(context, ref),
+              ),
+            ),
+          if (_index == 1)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ModelTonalButton(
+                label: '添加',
+                icon: LucideIcons.plus,
+                onPressed: () => _openAddBuiltinPicker(
+                  context,
+                  ref,
+                  McpServerCategory.builtin,
+                ),
+              ),
+            ),
+          if (_index == 2)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ModelTonalButton(
+                label: '添加',
+                icon: LucideIcons.plus,
+                onPressed: () => _openAddBuiltinPicker(
+                  context,
+                  ref,
+                  McpServerCategory.assistant,
+                ),
               ),
             ),
         ],
@@ -149,6 +173,42 @@ void _toast(BuildContext context, String message) {
     ..showSnackBar(
       SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
     );
+}
+
+/// Opens the 添加内置工具 / 智能助手 bottom-sheet picker, showing only the
+/// templates that haven't been added yet. Tapping one adds it immediately.
+Future<void> _openAddBuiltinPicker(
+  BuildContext context,
+  WidgetRef ref,
+  McpServerCategory category,
+) async {
+  final servers =
+      ref.read(mcpServersProvider).asData?.value ?? const <McpServer>[];
+  final addedNames = servers.map((s) => s.name).toSet();
+  final available = kBuiltinMcpServers
+      .where((s) => s.category == category && !addedNames.contains(s.name))
+      .toList();
+
+  if (available.isEmpty) {
+    _toast(
+      context,
+      category == McpServerCategory.assistant
+          ? '所有智能助手已添加'
+          : '所有内置工具已添加',
+    );
+    return;
+  }
+
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _AddBuiltinPickerSheet(
+      category: category,
+      available: available,
+      parentRef: ref,
+    ),
+  );
 }
 
 /// Opens the 添加 MCP 服务器 form and, on confirm, validates and persists the
@@ -440,54 +500,86 @@ class _ExternalServerRow extends ConsumerWidget {
 
 // ─────────────────────────── Tab 1: 内置工具 ───────────────────────────
 
-class _BuiltinTab extends StatelessWidget {
+/// Shows only the **already-added** built-in tools with toggle switches.
+/// The AppBar "添加" button opens a picker for not-yet-added tools.
+class _BuiltinTab extends ConsumerWidget {
   const _BuiltinTab();
 
   @override
-  Widget build(BuildContext context) {
-    return _TemplateList(
-      title: '添加内置 MCP 服务器',
-      description: '选择并启用内置工具，无需配置即可使用',
-      templates: kBuiltinMcpServers
-          .where((s) => s.category == McpServerCategory.builtin)
-          .toList(),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final servers =
+        ref.watch(mcpServersProvider).asData?.value ?? const <McpServer>[];
+    final builtinNames = kBuiltinMcpServers
+        .where((s) => s.category == McpServerCategory.builtin)
+        .map((s) => s.name)
+        .toSet();
+    final added = servers.where((s) => builtinNames.contains(s.name)).toList();
+
+    return _AddedServerList(
+      added: added,
+      emptyIcon: LucideIcons.cpu,
+      emptyColor: const Color(0xFF4CAF50),
+      emptyTitle: '还没有启用内置工具',
+      emptyHint: '点击右上角「添加」按钮选择内置工具',
+      category: McpServerCategory.builtin,
     );
   }
 }
 
 // ─────────────────────────── Tab 2: 智能助手 ───────────────────────────
 
-class _AssistantTab extends StatelessWidget {
+/// Shows only the **already-added** assistant tools.
+class _AssistantTab extends ConsumerWidget {
   const _AssistantTab();
 
   @override
-  Widget build(BuildContext context) {
-    return _TemplateList(
-      title: '智能助手',
-      description: 'AI 智能助手可以在对话中直接管理应用设置，敏感操作需要用户确认',
-      templates: kBuiltinMcpServers
-          .where((s) => s.category == McpServerCategory.assistant)
-          .toList(),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final servers =
+        ref.watch(mcpServersProvider).asData?.value ?? const <McpServer>[];
+    final assistantNames = kBuiltinMcpServers
+        .where((s) => s.category == McpServerCategory.assistant)
+        .map((s) => s.name)
+        .toSet();
+    final added =
+        servers.where((s) => assistantNames.contains(s.name)).toList();
+
+    return _AddedServerList(
+      added: added,
+      emptyIcon: LucideIcons.bot,
+      emptyColor: const Color(0xFF8B5CF6),
+      emptyTitle: '还没有启用智能助手',
+      emptyHint: '点击右上角「添加」按钮选择智能助手',
+      category: McpServerCategory.assistant,
     );
   }
 }
 
-/// A single card holding a header (title + description), a divider and the
-/// template rows — the shared layout of the 内置工具 / 智能助手 tabs.
-class _TemplateList extends StatelessWidget {
-  const _TemplateList({
-    required this.title,
-    required this.description,
-    required this.templates,
+/// Shared layout for the 内置工具 / 智能助手 tabs: shows only the already-added
+/// servers with toggle switches, empty state when none are added.
+class _AddedServerList extends ConsumerWidget {
+  const _AddedServerList({
+    required this.added,
+    required this.emptyIcon,
+    required this.emptyColor,
+    required this.emptyTitle,
+    required this.emptyHint,
+    required this.category,
   });
 
-  final String title;
-  final String description;
-  final List<McpServer> templates;
+  final List<McpServer> added;
+  final IconData emptyIcon;
+  final Color emptyColor;
+  final String emptyTitle;
+  final String emptyHint;
+  final McpServerCategory category;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final isAssistant = category == McpServerCategory.assistant;
+    final color =
+        isAssistant ? const Color(0xFF8B5CF6) : const Color(0xFF4CAF50);
+
     return ListView(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -496,179 +588,343 @@ class _TemplateList extends StatelessWidget {
         16 + MediaQuery.paddingOf(context).bottom,
       ),
       children: [
-        _Card(
-          padding: EdgeInsets.zero,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      description,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+        if (added.isEmpty)
+          _Card(
+            child: Column(
+              children: [
+                Icon(emptyIcon, size: 48, color: emptyColor),
+                const SizedBox(height: 16),
+                Text(
+                  emptyTitle,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              Divider(height: 1, color: theme.dividerColor),
-              for (var i = 0; i < templates.length; i++) ...[
-                _TemplateRow(template: templates[i]),
-                if (i < templates.length - 1)
-                  Divider(height: 1, indent: 16, color: theme.dividerColor),
+                const SizedBox(height: 8),
+                Text(
+                  emptyHint,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  onPressed: () => _openAddBuiltinPicker(
+                    context,
+                    ref,
+                    category,
+                  ),
+                  icon: const Icon(LucideIcons.plus, size: 18),
+                  label: Text(isAssistant ? '添加智能助手' : '添加内置工具'),
+                ),
               ],
-            ],
+            ),
+          )
+        else
+          _Card(
+            padding: EdgeInsets.zero,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < added.length; i++) ...[
+                  _AddedBuiltinRow(
+                    server: added[i],
+                    color: color,
+                    isAssistant: isAssistant,
+                  ),
+                  if (i < added.length - 1)
+                    Divider(
+                      height: 1,
+                      indent: 16,
+                      color: theme.dividerColor,
+                    ),
+                ],
+              ],
+            ),
           ),
-        ),
       ],
     );
   }
 }
 
-/// A built-in template row: tinted avatar, name + 内存服务器 type chip, the
-/// 2-line description, tag chips and either the green 添加 button (not yet added)
-/// or — once added — a 运行中 chip, an active switch and a tap target to the
-/// detail page (port of `BuiltinServerListItem`).
-class _TemplateRow extends ConsumerWidget {
-  const _TemplateRow({required this.template});
+/// A row for an already-added built-in/assistant server: tinted avatar, name,
+/// type chip, running chip, toggle switch, tap to open detail.
+class _AddedBuiltinRow extends ConsumerWidget {
+  const _AddedBuiltinRow({
+    required this.server,
+    required this.color,
+    required this.isAssistant,
+  });
 
-  final McpServer template;
+  final McpServer server;
+  final Color color;
+  final bool isAssistant;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final isAssistant = template.category == McpServerCategory.assistant;
-    final color = isAssistant
-        ? const Color(0xFF8B5CF6)
-        : const Color(0xFF4CAF50);
+    final tags = server.tags ?? const <String>[];
 
-    final servers =
-        ref.watch(mcpServersProvider).asData?.value ?? const <McpServer>[];
-    final added = _firstWhereOrNull(servers, (s) => s.name == template.name);
-    final tags = template.tags ?? const <String>[];
-
-    final row = Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Icon(
-              isAssistant ? LucideIcons.bot : LucideIcons.cpu,
-              size: 20,
-              color: color,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text(
-                      template.name,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    _Chip(label: '内存服务器', color: color, filled: true),
-                    if (added?.isActive ?? false)
-                      const _Chip(label: '运行中', color: Color(0xFF22C55E)),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  template.description ?? '',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    height: 1.4,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                if (tags.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (final tag in tags)
-                        _Chip(
-                          label: tag,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          if (added == null)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: _AddButton(
-                onPressed: () async {
-                  await ref
-                      .read(mcpServersProvider.notifier)
-                      .addBuiltin(template);
-                  if (context.mounted) {
-                    _toast(context, '内置服务器 ${template.name} 添加成功');
-                  }
-                },
-              ),
-            )
-          else
-            CustomSwitch(
-              value: added.isActive,
-              onChanged: (v) => ref
-                  .read(mcpServersProvider.notifier)
-                  .toggleActive(added.id, isActive: v),
-            ),
-        ],
-      ),
-    );
-
-    if (added == null) return row;
     return InkWell(
       onTap: () {
         if (isAssistant) {
-          context.push(AppRouter.mcpAssistantDetailPath(added.id));
+          context.push(AppRouter.mcpAssistantDetailPath(server.id));
         } else {
-          context.push('${AppRouter.mcpServerPath}/${added.id}');
+          context.push('${AppRouter.mcpServerPath}/${server.id}');
         }
       },
-      child: row,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Icon(
+                isAssistant ? LucideIcons.bot : LucideIcons.cpu,
+                size: 20,
+                color: color,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        server.name,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      _Chip(label: '内存服务器', color: color, filled: true),
+                      if (server.isActive)
+                        const _Chip(
+                          label: '运行中',
+                          color: Color(0xFF22C55E),
+                        ),
+                    ],
+                  ),
+                  if ((server.description ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      server.description!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        height: 1.4,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                  if (tags.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final tag in tags)
+                          _Chip(
+                            label: tag,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            CustomSwitch(
+              value: server.isActive,
+              onChanged: (v) => ref
+                  .read(mcpServersProvider.notifier)
+                  .toggleActive(server.id, isActive: v),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
 
-T? _firstWhereOrNull<T>(List<T> list, bool Function(T) test) {
-  for (final item in list) {
-    if (test(item)) return item;
+/// The bottom-sheet picker for adding built-in tools or assistants.
+class _AddBuiltinPickerSheet extends StatelessWidget {
+  const _AddBuiltinPickerSheet({
+    required this.category,
+    required this.available,
+    required this.parentRef,
+  });
+
+  final McpServerCategory category;
+  final List<McpServer> available;
+  final WidgetRef parentRef;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isAssistant = category == McpServerCategory.assistant;
+    final color =
+        isAssistant ? const Color(0xFF8B5CF6) : const Color(0xFF4CAF50);
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+      ),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle
+          Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 8),
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.onSurfaceVariant
+                    .withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          // Title
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+            child: Row(
+              children: [
+                Icon(
+                  isAssistant ? LucideIcons.bot : LucideIcons.cpu,
+                  size: 20,
+                  color: color,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isAssistant ? '添加智能助手' : '添加内置工具',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: theme.dividerColor),
+          // List
+          Flexible(
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.paddingOf(context).bottom + 16,
+              ),
+              itemCount: available.length,
+              separatorBuilder: (_, __) => Divider(
+                height: 1,
+                indent: 16,
+                color: theme.dividerColor,
+              ),
+              itemBuilder: (ctx, i) {
+                final tpl = available[i];
+                final tags = tpl.tags ?? const <String>[];
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Icon(
+                          isAssistant ? LucideIcons.bot : LucideIcons.cpu,
+                          size: 20,
+                          color: color,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              tpl.name,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if ((tpl.description ?? '').isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                tpl.description!,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  height: 1.4,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                            if (tags.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: [
+                                  for (final tag in tags)
+                                    _Chip(
+                                      label: tag,
+                                      color:
+                                          theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: _AddButton(
+                          onPressed: () async {
+                            await parentRef
+                                .read(mcpServersProvider.notifier)
+                                .addBuiltin(tpl);
+                            if (ctx.mounted) {
+                              Navigator.of(ctx).pop();
+                              _toast(ctx, '${tpl.name} 添加成功');
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
   }
-  return null;
 }
 
 /// The green contained 添加 button from `BuiltinServerListItem`.
