@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Required by image_cropper (uCrop) for Android 15+ edge-to-edge -->
-    <style name="Ucrop.CropTheme" parent="Theme.AppCompat.Light.NoActionBar">
-        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
-    </style>
-</resources>
