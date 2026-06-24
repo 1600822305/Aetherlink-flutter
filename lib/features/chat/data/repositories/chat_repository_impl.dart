@@ -33,8 +33,14 @@ class ChatRepositoryImpl implements ChatRepository {
   Future<void> deleteTopic(String id) {
     return _db.transaction(() async {
       final messages = await _db.messageDao.getByTopicId(id);
-      final blockIds = [for (final message in messages) ...message.blocks];
-      await _db.messageBlockDao.deleteByIds(blockIds);
+      final blockIds = <String>[];
+      for (final message in messages) {
+        blockIds.addAll(message.blocks);
+        blockIds.addAll(_versionAndSnapshotBlockIds(message));
+      }
+      if (blockIds.isNotEmpty) {
+        await _db.messageBlockDao.deleteByIds(blockIds);
+      }
       await _db.messageDao.deleteByTopicId(id);
       await _db.topicDao.deleteById(id);
     });
@@ -70,6 +76,15 @@ class ChatRepositoryImpl implements ChatRepository {
   @override
   Future<void> deleteMessage(String id) {
     return _db.transaction(() async {
+      // Also delete blocks belonging to versions and the latest-content
+      // snapshot so they do not remain as orphaned rows.
+      final message = await _db.messageDao.getById(id);
+      if (message != null) {
+        final extraIds = _versionAndSnapshotBlockIds(message);
+        if (extraIds.isNotEmpty) {
+          await _db.messageBlockDao.deleteByIds(extraIds);
+        }
+      }
       await _db.messageBlockDao.deleteByMessageId(id);
       await _db.messageDao.deleteById(id);
     });
@@ -145,4 +160,27 @@ class ChatRepositoryImpl implements ChatRepository {
   @override
   Future<T> runInTransaction<T>(Future<T> Function() action) =>
       _db.transaction(action);
+
+  // --- Helpers --------------------------------------------------------------
+
+  /// Collects block IDs from a message's versions and its latest-content
+  /// snapshot metadata. These blocks use synthetic messageId values
+  /// (e.g. 'version_xxx', 'latest_xxx') that are not caught by a simple
+  /// `deleteByMessageId` call.
+  List<String> _versionAndSnapshotBlockIds(Message message) {
+    final ids = <String>[];
+    for (final version in message.versions ?? const []) {
+      ids.addAll(version.blocks);
+    }
+    final snapshot = message.metadata?['latestSnapshot'];
+    if (snapshot is Map) {
+      final blocks = snapshot['blocks'];
+      if (blocks is List) {
+        for (final id in blocks) {
+          if (id is String) ids.add(id);
+        }
+      }
+    }
+    return ids;
+  }
 }
