@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/backup/domain/backup_file_item.dart'
 import 'package:aetherlink_flutter/features/backup/domain/backup_manifest.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 
+import 'backup_preview_page.dart';
 import 'cloud_backup_page.dart';
 import 'import_data_page.dart';
 import 'backup_reminder_page.dart';
@@ -889,9 +890,20 @@ class _BackupFileRowState extends State<_BackupFileRow> {
   Widget build(BuildContext context) {
     final theme = widget.theme;
     final item = widget.item;
-    return GestureDetector(
-      onTap: _armed ? () => setState(() => _armed = false) : null,
-      behavior: HitTestBehavior.opaque,
+    return InkWell(
+      onTap: () {
+        if (_armed) {
+          setState(() => _armed = false);
+          return;
+        }
+        Navigator.of(context).push(
+          PageRouteBuilder<void>(
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            pageBuilder: (_, __, ___) => BackupPreviewPage(item: item),
+          ),
+        );
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         child: Row(
@@ -926,6 +938,12 @@ class _BackupFileRowState extends State<_BackupFileRow> {
                 ],
               ),
             ),
+            Icon(
+              LucideIcons.chevronRight,
+              size: 16,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 4),
             IconButton(
               icon: Icon(LucideIcons.trash2, size: 16),
               color: _armed ? theme.colorScheme.error : null,
