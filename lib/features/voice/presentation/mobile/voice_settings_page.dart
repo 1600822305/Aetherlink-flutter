@@ -119,6 +119,22 @@ Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
     features: ['22+音色', '10语言', '指令控制', '流式输出'],
     status: '高级',
   ),
+  TtsProviderKind.groq: const _ServiceMeta(
+    icon: LucideIcons.zap,
+    color: Color(0xFFF55036),
+    name: 'Groq TTS',
+    description: 'Groq PlayAI 超低延迟语音合成',
+    features: ['23音色', '极速推理', '多格式'],
+    status: '高级',
+  ),
+  TtsProviderKind.xai: const _ServiceMeta(
+    icon: LucideIcons.brain,
+    color: Color(0xFF000000),
+    name: 'xAI TTS',
+    description: 'xAI Grok 多语言语音合成',
+    features: ['5音色', '20+语言', '自动检测', '延迟优化'],
+    status: '高级',
+  ),
 };
 
 Map<AsrProviderKind, _ServiceMeta> _asrServiceMeta() => {
@@ -707,6 +723,17 @@ class _TtsProviderDetailPageState
   late bool _qwenOptimizeInstructions;
   late TextEditingController _qwenInstructionsCtrl;
 
+  // Groq-specific
+  late int _groqSampleRate;
+
+  // xAI-specific
+  late String _xaiLanguage;
+  late String _xaiCodec;
+  late int _xaiSampleRate;
+  late int _xaiBitRate;
+  late bool _xaiTextNormalization;
+  late int _xaiOptimizeStreamingLatency;
+
   bool get _isSystem => widget.kind == TtsProviderKind.system;
   bool get _isVolcano => widget.kind == TtsProviderKind.volcano;
   bool get _isElevenLabs => widget.kind == TtsProviderKind.elevenlabs;
@@ -779,6 +806,15 @@ class _TtsProviderDetailPageState
     _qwenLanguageType = p.qwenLanguageType;
     _qwenOptimizeInstructions = p.qwenOptimizeInstructions;
     _qwenInstructionsCtrl = TextEditingController(text: p.qwenInstructions);
+    // Groq
+    _groqSampleRate = p.groqSampleRate;
+    // xAI
+    _xaiLanguage = p.xaiLanguage;
+    _xaiCodec = p.xaiCodec;
+    _xaiSampleRate = p.xaiSampleRate;
+    _xaiBitRate = p.xaiBitRate;
+    _xaiTextNormalization = p.xaiTextNormalization;
+    _xaiOptimizeStreamingLatency = p.xaiOptimizeStreamingLatency;
   }
 
   @override
@@ -853,6 +889,13 @@ class _TtsProviderDetailPageState
     qwenLanguageType: _qwenLanguageType,
     qwenInstructions: _qwenInstructionsCtrl.text,
     qwenOptimizeInstructions: _qwenOptimizeInstructions,
+    groqSampleRate: _groqSampleRate,
+    xaiLanguage: _xaiLanguage,
+    xaiCodec: _xaiCodec,
+    xaiSampleRate: _xaiSampleRate,
+    xaiBitRate: _xaiBitRate,
+    xaiTextNormalization: _xaiTextNormalization,
+    xaiOptimizeStreamingLatency: _xaiOptimizeStreamingLatency,
   );
 
   /// Persists the current form values. Called automatically when leaving the
@@ -880,6 +923,7 @@ class _TtsProviderDetailPageState
     TtsProviderKind.gemini,
     TtsProviderKind.mimo,
     TtsProviderKind.qwen,
+    TtsProviderKind.groq,
   }.contains(widget.kind);
 
   @override
@@ -950,22 +994,28 @@ class _TtsProviderDetailPageState
                         _SliderRow(
                           label: '语速',
                           value: _speed,
-                          min:
-                              (_sfHasSpeedGain ||
-                                  _isElevenLabs ||
-                                  widget.kind == TtsProviderKind.openai)
+                          min: widget.kind == TtsProviderKind.xai
+                              ? 0.7
+                              : (_sfHasSpeedGain ||
+                                    _isElevenLabs ||
+                                    widget.kind == TtsProviderKind.openai ||
+                                    widget.kind == TtsProviderKind.groq)
                               ? 0.25
                               : 0.5,
-                          max:
-                              (_sfHasSpeedGain ||
-                                  _isElevenLabs ||
-                                  widget.kind == TtsProviderKind.openai)
+                          max: widget.kind == TtsProviderKind.xai
+                              ? 1.5
+                              : (_sfHasSpeedGain ||
+                                    _isElevenLabs ||
+                                    widget.kind == TtsProviderKind.openai ||
+                                    widget.kind == TtsProviderKind.groq)
                               ? 4.0
                               : 2.0,
-                          divisions:
-                              (_sfHasSpeedGain ||
-                                  _isElevenLabs ||
-                                  widget.kind == TtsProviderKind.openai)
+                          divisions: widget.kind == TtsProviderKind.xai
+                              ? 8
+                              : (_sfHasSpeedGain ||
+                                    _isElevenLabs ||
+                                    widget.kind == TtsProviderKind.openai ||
+                                    widget.kind == TtsProviderKind.groq)
                               ? 15
                               : 6,
                           onChanged: (v) => setState(() => _speed = v),
@@ -1151,6 +1201,10 @@ class _TtsProviderDetailPageState
         return _buildMimoVoice();
       case TtsProviderKind.qwen:
         return _buildQwenVoice();
+      case TtsProviderKind.groq:
+        return _buildGroqVoice();
+      case TtsProviderKind.xai:
+        return _buildXaiVoice();
     }
   }
 
@@ -2010,6 +2064,195 @@ class _TtsProviderDetailPageState
         ),
         const SizedBox(height: 12),
       ],
+    ];
+  }
+
+  List<Widget> _buildGroqVoice() {
+    return [
+      // -- Model selection --
+      _DropdownField(
+        label: '模型',
+        value: _model.isEmpty ? 'playai-tts' : _model,
+        items: const {
+          'playai-tts': 'PlayAI TTS - 英语语音合成',
+          'playai-tts-arabic': 'PlayAI TTS Arabic - 阿拉伯语',
+        },
+        onChanged: (v) => setState(() => _model = v),
+      ),
+      const SizedBox(height: 12),
+      // -- Voice selection (23 voices) --
+      _DropdownField(
+        label: '音色',
+        value: _voice.isEmpty ? 'Fritz-PlayAI' : _voice,
+        items: const {
+          'Ahmad-PlayAI': 'Ahmad',
+          'Amira-PlayAI': 'Amira',
+          'Arista-PlayAI': 'Arista',
+          'Atlas-PlayAI': 'Atlas',
+          'Basil-PlayAI': 'Basil',
+          'Briggs-PlayAI': 'Briggs',
+          'Calum-PlayAI': 'Calum',
+          'Celeste-PlayAI': 'Celeste',
+          'Cheyenne-PlayAI': 'Cheyenne',
+          'Chip-PlayAI': 'Chip',
+          'Cillian-PlayAI': 'Cillian',
+          'Deedee-PlayAI': 'Deedee',
+          'Fritz-PlayAI': 'Fritz',
+          'Gail-PlayAI': 'Gail',
+          'Indigo-PlayAI': 'Indigo',
+          'Khalid-PlayAI': 'Khalid',
+          'Mamaw-PlayAI': 'Mamaw',
+          'Mason-PlayAI': 'Mason',
+          'Mikail-PlayAI': 'Mikail',
+          'Mitch-PlayAI': 'Mitch',
+          'Nasser-PlayAI': 'Nasser',
+          'Quinn-PlayAI': 'Quinn',
+          'Thunder-PlayAI': 'Thunder',
+        },
+        onChanged: (v) => setState(() => _voice = v),
+      ),
+      const SizedBox(height: 12),
+      // -- Audio format --
+      _DropdownField(
+        label: '音频格式',
+        value: _audioFormat.isEmpty ? 'wav' : _audioFormat,
+        items: const {
+          'wav': 'WAV - 无损音频',
+          'mp3': 'MP3 - 通用压缩',
+          'flac': 'FLAC - 无损压缩',
+          'ogg': 'OGG - 开源格式',
+          'mulaw': 'μ-law - 电话编码',
+        },
+        onChanged: (v) => setState(() => _audioFormat = v),
+      ),
+      const SizedBox(height: 12),
+      // -- Sample rate --
+      _DropdownField(
+        label: '采样率',
+        value: _groqSampleRate.toString(),
+        items: const {
+          '8000': '8000 Hz',
+          '16000': '16000 Hz',
+          '22050': '22050 Hz',
+          '24000': '24000 Hz (默认)',
+          '32000': '32000 Hz',
+          '44100': '44100 Hz',
+          '48000': '48000 Hz',
+        },
+        onChanged: (v) =>
+            setState(() => _groqSampleRate = int.tryParse(v) ?? 24000),
+      ),
+    ];
+  }
+
+  List<Widget> _buildXaiVoice() {
+    return [
+      // -- Voice selection (5 voices) --
+      _DropdownField(
+        label: '音色',
+        value: _voice.isEmpty ? 'eve' : _voice,
+        items: const {
+          'eve': 'Eve - 活力女声',
+          'ara': 'Ara - 温暖女声',
+          'rex': 'Rex - 自信男声',
+          'sal': 'Sal - 柔和男声',
+          'leo': 'Leo - 权威男声',
+        },
+        onChanged: (v) => setState(() => _voice = v),
+      ),
+      const SizedBox(height: 12),
+      // -- Language selection (20+ languages) --
+      _DropdownField(
+        label: '语言',
+        value: _xaiLanguage,
+        items: const {
+          'auto': 'Auto - 自动检测',
+          'en': 'English - 英语',
+          'zh': 'Chinese - 中文',
+          'ja': 'Japanese - 日语',
+          'ko': 'Korean - 韩语',
+          'fr': 'French - 法语',
+          'de': 'German - 德语',
+          'it': 'Italian - 意大利语',
+          'pt-BR': 'Portuguese (BR) - 巴西葡语',
+          'pt-PT': 'Portuguese (PT) - 葡萄牙语',
+          'es-MX': 'Spanish (MX) - 墨西哥西语',
+          'es-ES': 'Spanish (ES) - 西班牙语',
+          'ru': 'Russian - 俄语',
+          'ar-EG': 'Arabic (EG) - 埃及阿语',
+          'ar-SA': 'Arabic (SA) - 沙特阿语',
+          'ar-AE': 'Arabic (AE) - 阿联酋阿语',
+          'bn': 'Bengali - 孟加拉语',
+          'hi': 'Hindi - 印地语',
+          'id': 'Indonesian - 印尼语',
+          'tr': 'Turkish - 土耳其语',
+          'vi': 'Vietnamese - 越南语',
+        },
+        onChanged: (v) => setState(() => _xaiLanguage = v),
+      ),
+      const SizedBox(height: 12),
+      // -- Codec --
+      _DropdownField(
+        label: '编码格式',
+        value: _xaiCodec,
+        items: const {
+          'mp3': 'MP3 - 通用压缩',
+          'wav': 'WAV - 无损音频',
+          'pcm': 'PCM - 原始音频流',
+          'mulaw': 'μ-law - 电话编码',
+          'alaw': 'A-law - 欧洲电话编码',
+        },
+        onChanged: (v) => setState(() => _xaiCodec = v),
+      ),
+      const SizedBox(height: 12),
+      // -- Sample rate --
+      _DropdownField(
+        label: '采样率',
+        value: _xaiSampleRate.toString(),
+        items: const {
+          '8000': '8000 Hz',
+          '16000': '16000 Hz',
+          '22050': '22050 Hz',
+          '24000': '24000 Hz (默认)',
+          '32000': '32000 Hz',
+          '44100': '44100 Hz',
+          '48000': '48000 Hz',
+        },
+        onChanged: (v) =>
+            setState(() => _xaiSampleRate = int.tryParse(v) ?? 24000),
+      ),
+      const SizedBox(height: 12),
+      // -- Bit rate --
+      _DropdownField(
+        label: '比特率',
+        value: _xaiBitRate.toString(),
+        items: const {
+          '64000': '64 kbps',
+          '96000': '96 kbps',
+          '128000': '128 kbps (默认)',
+          '192000': '192 kbps',
+          '256000': '256 kbps',
+          '320000': '320 kbps',
+        },
+        onChanged: (v) =>
+            setState(() => _xaiBitRate = int.tryParse(v) ?? 128000),
+      ),
+      const SizedBox(height: 12),
+      // -- Text normalization toggle --
+      _InlineToggle(
+        label: '文本规范化 (Text Normalization)',
+        value: _xaiTextNormalization,
+        onChanged: (v) => setState(() => _xaiTextNormalization = v),
+      ),
+      const SizedBox(height: 12),
+      // -- Optimize streaming latency --
+      _DropdownField(
+        label: '延迟优化',
+        value: _xaiOptimizeStreamingLatency.toString(),
+        items: const {'0': '0 - 最佳质量', '1': '1 - 平衡', '2': '2 - 最低延迟'},
+        onChanged: (v) =>
+            setState(() => _xaiOptimizeStreamingLatency = int.tryParse(v) ?? 0),
+      ),
     ];
   }
 

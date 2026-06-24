@@ -62,6 +62,14 @@ _TtsProviderSetting _$TtsProviderSettingFromJson(
   qwenLanguageType: json['qwenLanguageType'] as String? ?? 'Auto',
   qwenInstructions: json['qwenInstructions'] as String? ?? '',
   qwenOptimizeInstructions: json['qwenOptimizeInstructions'] as bool? ?? false,
+  groqSampleRate: (json['groqSampleRate'] as num?)?.toInt() ?? 24000,
+  xaiLanguage: json['xaiLanguage'] as String? ?? 'auto',
+  xaiCodec: json['xaiCodec'] as String? ?? 'mp3',
+  xaiSampleRate: (json['xaiSampleRate'] as num?)?.toInt() ?? 24000,
+  xaiBitRate: (json['xaiBitRate'] as num?)?.toInt() ?? 128000,
+  xaiTextNormalization: json['xaiTextNormalization'] as bool? ?? false,
+  xaiOptimizeStreamingLatency:
+      (json['xaiOptimizeStreamingLatency'] as num?)?.toInt() ?? 0,
 );
 
 Map<String, dynamic> _$TtsProviderSettingToJson(_TtsProviderSetting instance) =>
@@ -117,6 +125,13 @@ Map<String, dynamic> _$TtsProviderSettingToJson(_TtsProviderSetting instance) =>
       'qwenLanguageType': instance.qwenLanguageType,
       'qwenInstructions': instance.qwenInstructions,
       'qwenOptimizeInstructions': instance.qwenOptimizeInstructions,
+      'groqSampleRate': instance.groqSampleRate,
+      'xaiLanguage': instance.xaiLanguage,
+      'xaiCodec': instance.xaiCodec,
+      'xaiSampleRate': instance.xaiSampleRate,
+      'xaiBitRate': instance.xaiBitRate,
+      'xaiTextNormalization': instance.xaiTextNormalization,
+      'xaiOptimizeStreamingLatency': instance.xaiOptimizeStreamingLatency,
     };
 
 const _$TtsProviderKindEnumMap = {
@@ -130,4 +145,6 @@ const _$TtsProviderKindEnumMap = {
   TtsProviderKind.volcano: 'volcano',
   TtsProviderKind.mimo: 'mimo',
   TtsProviderKind.qwen: 'qwen',
+  TtsProviderKind.groq: 'groq',
+  TtsProviderKind.xai: 'xai',
 };

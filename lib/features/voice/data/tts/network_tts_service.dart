@@ -104,6 +104,8 @@ class NetworkTtsService {
       ),
       TtsProviderKind.mimo => _synthesizeMimo(text, provider, cancelToken),
       TtsProviderKind.qwen => _synthesizeQwen(text, provider, cancelToken),
+      TtsProviderKind.groq => _synthesizeGroq(text, provider, cancelToken),
+      TtsProviderKind.xai => _synthesizeXai(text, provider, cancelToken),
       TtsProviderKind.system => throw UnsupportedError(
         'System TTS uses flutter_tts, not network',
       ),
@@ -1260,5 +1262,101 @@ class NetworkTtsService {
     final bytes = buffer.buffer.asUint8List();
     bytes.setRange(44, 44 + dataSize, pcm);
     return bytes;
+  }
+
+  // ─── Groq TTS ──────────────────────────────────────────────
+
+  /// Groq PlayAI TTS — OpenAI-compatible endpoint.
+  Future<TtsSynthesisResult> _synthesizeGroq(
+    String text,
+    TtsProviderSetting provider,
+    CancelToken? cancelToken,
+  ) async {
+    final url = _joinUrl(provider.baseUrl, '/audio/speech');
+    final format = provider.audioFormat.isNotEmpty
+        ? provider.audioFormat
+        : 'wav';
+    final response = await _dio.post<List<int>>(
+      url,
+      data: {
+        'model': provider.model,
+        'input': text,
+        'voice': provider.voice,
+        'response_format': format,
+        if (provider.groqSampleRate != 24000)
+          'sample_rate': provider.groqSampleRate,
+        if (provider.speed != 1.0) 'speed': provider.speed,
+      },
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer ${provider.apiKey}',
+          'Content-Type': 'application/json',
+        },
+        responseType: ResponseType.bytes,
+      ),
+      cancelToken: cancelToken,
+    );
+    final mimeType = switch (format) {
+      'mp3' => 'audio/mpeg',
+      'flac' => 'audio/flac',
+      'ogg' => 'audio/ogg',
+      'mulaw' => 'audio/basic',
+      _ => 'audio/wav',
+    };
+    return TtsSynthesisResult(
+      bytes: Uint8List.fromList(response.data!),
+      mimeType: mimeType,
+    );
+  }
+
+  // ─── xAI TTS ───────────────────────────────────────────────
+
+  /// xAI (Grok) TTS — POST /v1/tts, returns raw audio bytes.
+  Future<TtsSynthesisResult> _synthesizeXai(
+    String text,
+    TtsProviderSetting provider,
+    CancelToken? cancelToken,
+  ) async {
+    final url = _joinUrl(provider.baseUrl, '/tts');
+    final codec = provider.xaiCodec.isNotEmpty ? provider.xaiCodec : 'mp3';
+    final response = await _dio.post<List<int>>(
+      url,
+      data: {
+        'text': text,
+        'voice_id': provider.voice,
+        'language': provider.xaiLanguage,
+        if (codec != 'mp3' ||
+            provider.xaiSampleRate != 24000 ||
+            provider.xaiBitRate != 128000)
+          'output_format': {
+            'codec': codec,
+            'sample_rate': provider.xaiSampleRate,
+            'bit_rate': provider.xaiBitRate,
+          },
+        if (provider.speed != 1.0) 'speed': provider.speed,
+        if (provider.xaiTextNormalization) 'text_normalization': true,
+        if (provider.xaiOptimizeStreamingLatency > 0)
+          'optimize_streaming_latency': provider.xaiOptimizeStreamingLatency,
+      },
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer ${provider.apiKey}',
+          'Content-Type': 'application/json',
+        },
+        responseType: ResponseType.bytes,
+      ),
+      cancelToken: cancelToken,
+    );
+    final mimeType = switch (codec) {
+      'wav' => 'audio/wav',
+      'pcm' => 'audio/pcm',
+      'mulaw' => 'audio/basic',
+      'alaw' => 'audio/basic',
+      _ => 'audio/mpeg',
+    };
+    return TtsSynthesisResult(
+      bytes: Uint8List.fromList(response.data!),
+      mimeType: mimeType,
+    );
   }
 }

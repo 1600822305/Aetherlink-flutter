@@ -27,6 +27,10 @@ enum TtsProviderKind {
   mimo,
   @JsonValue('qwen')
   qwen,
+  @JsonValue('groq')
+  groq,
+  @JsonValue('xai')
+  xai,
 }
 
 /// A single TTS provider's configuration — API key, base URL, model, voice,
@@ -105,6 +109,18 @@ abstract class TtsProviderSetting with _$TtsProviderSetting {
     @Default(false)
     bool
     qwenOptimizeInstructions, // rewrite instructions for better naturalness
+    // Groq-specific
+    @Default(24000)
+    int groqSampleRate, // 8000/16000/22050/24000/32000/44100/48000
+    // xAI-specific
+    @Default('auto') String xaiLanguage, // BCP-47 language code or 'auto'
+    @Default('mp3') String xaiCodec, // mp3/wav/pcm/mulaw/alaw
+    @Default(24000) int xaiSampleRate, // output sample rate
+    @Default(128000) int xaiBitRate, // output bit rate (for mp3)
+    @Default(false)
+    bool xaiTextNormalization, // normalize numbers/symbols to spoken form
+    @Default(0)
+    int xaiOptimizeStreamingLatency, // 0=best quality, 1/2=lower latency
   }) = _TtsProviderSetting;
 
   factory TtsProviderSetting.fromJson(Map<String, dynamic> json) =>
@@ -203,5 +219,26 @@ TtsProviderSetting defaultTtsProvider(TtsProviderKind kind) => switch (kind) {
     model: 'qwen3-tts-flash',
     voice: 'Cherry',
     qwenLanguageType: 'Auto',
+  ),
+  TtsProviderKind.groq => const TtsProviderSetting(
+    id: 'groq',
+    kind: TtsProviderKind.groq,
+    name: 'Groq TTS',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    model: 'playai-tts',
+    voice: 'Fritz-PlayAI',
+    audioFormat: 'wav',
+    groqSampleRate: 24000,
+  ),
+  TtsProviderKind.xai => const TtsProviderSetting(
+    id: 'xai',
+    kind: TtsProviderKind.xai,
+    name: 'xAI TTS',
+    baseUrl: 'https://api.x.ai/v1',
+    voice: 'eve',
+    xaiLanguage: 'auto',
+    xaiCodec: 'mp3',
+    xaiSampleRate: 24000,
+    xaiBitRate: 128000,
   ),
 };
