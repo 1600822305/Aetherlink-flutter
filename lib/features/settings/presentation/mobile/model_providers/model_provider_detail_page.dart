@@ -13,6 +13,7 @@ import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_reques
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_model_catalog.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/fetched_models_sheet.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/provider_config_utils.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
@@ -724,33 +725,59 @@ class _ModelProviderDetailPageState
         return;
       }
       final existingIds = {for (final m in provider.models) m.id};
-      final selected = await showModalBottomSheet<List<LlmModelInfo>>(
+      final result = await showModalBottomSheet<FetchedModelsResult>(
         context: context,
         isScrollControlled: true,
-        builder: (_) =>
-            _FetchedModelsSheet(models: fetched, existingIds: existingIds),
+        backgroundColor: Colors.transparent,
+        builder: (_) => FetchedModelsSheet(
+          models: fetched,
+          existingIds: existingIds,
+          providerId: provider.id,
+        ),
       );
-      if (selected == null || selected.isEmpty || !mounted) return;
-      await ref
-          .read(modelStoreProvider.notifier)
-          .addModels(
-            providerId: provider.id,
-            models: [
-              for (final info in selected)
-                Model(
-                  id: info.id,
-                  name: info.name ?? info.id,
-                  provider: provider.name,
-                  providerType: provider.providerType,
-                  description: info.description,
-                  enabled: true,
-                ),
-            ],
+      if (result == null || !mounted) return;
+      final notifier = ref.read(modelStoreProvider.notifier);
+      // Add newly selected models
+      if (result.toAdd.isNotEmpty) {
+        await notifier.addModels(
+          providerId: provider.id,
+          models: [
+            for (final info in result.toAdd)
+              Model(
+                id: info.id,
+                name: info.name ?? info.id,
+                provider: provider.name,
+                providerType: provider.providerType,
+                description: info.description,
+                enabled: true,
+              ),
+          ],
+        );
+      }
+      // Remove toggled-off existing models
+      if (result.toRemove.isNotEmpty) {
+        final removeIds = result.toRemove.toSet();
+        final current = await ref.read(appModelRepositoryProvider).getProvider(provider.id);
+        if (current != null) {
+          await notifier.saveProvider(
+            current.copyWith(
+              models: [
+                for (final m in current.models)
+                  if (!removeIds.contains(m.id)) m,
+              ],
+            ),
           );
+        }
+      }
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text('已添加 ${selected.length} 个模型')),
-      );
+      final msgs = <String>[];
+      if (result.toAdd.isNotEmpty) msgs.add('添加 ${result.toAdd.length}');
+      if (result.toRemove.isNotEmpty) msgs.add('移除 ${result.toRemove.length}');
+      if (msgs.isNotEmpty) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('已${msgs.join("、")} 个模型')),
+        );
+      }
     } catch (_) {
       if (!mounted) return;
       messenger.showSnackBar(
@@ -1261,95 +1288,7 @@ class _EditProviderDialogState extends State<_EditProviderDialog> {
   }
 }
 
-/// A bottom sheet listing the models fetched from a provider's catalog. Models
-/// already on the provider are shown disabled (already added); the rest are
-/// pre-checked. 「添加」 pops the selected [LlmModelInfo]s; cancel pops null.
-class _FetchedModelsSheet extends StatefulWidget {
-  const _FetchedModelsSheet({required this.models, required this.existingIds});
 
-  final List<LlmModelInfo> models;
-  final Set<String> existingIds;
-
-  @override
-  State<_FetchedModelsSheet> createState() => _FetchedModelsSheetState();
-}
-
-class _FetchedModelsSheetState extends State<_FetchedModelsSheet> {
-  late final Set<String> _selected = {
-    for (final m in widget.models)
-      if (!widget.existingIds.contains(m.id)) m.id,
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '获取到 ${widget.models.length} 个模型',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('取消'),
-                ),
-              ],
-            ),
-          ),
-          Flexible(
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: widget.models.length,
-              itemBuilder: (context, index) {
-                final model = widget.models[index];
-                final already = widget.existingIds.contains(model.id);
-                return CheckboxListTile(
-                  value: already || _selected.contains(model.id),
-                  onChanged: already
-                      ? null
-                      : (checked) => setState(() {
-                          if (checked ?? false) {
-                            _selected.add(model.id);
-                          } else {
-                            _selected.remove(model.id);
-                          }
-                        }),
-                  title: Text(model.name ?? model.id),
-                  subtitle: Text(already ? '${model.id} · 已添加' : model.id),
-                );
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _selected.isEmpty
-                    ? null
-                    : () => Navigator.of(context).pop([
-                        for (final m in widget.models)
-                          if (_selected.contains(m.id)) m,
-                      ]),
-                child: Text('添加 (${_selected.length})'),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 /// The 自定义获取端点 dialog. It owns the endpoint field's
 /// [TextEditingController] so the controller is disposed by the framework when
