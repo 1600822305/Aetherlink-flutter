@@ -140,7 +140,11 @@ class WebDavAutoSyncService {
       if (files.length <= _maxBackups) return;
 
       // Sort newest first by date.
-      files.sort((a, b) => b.lastModified.compareTo(a.lastModified));
+      files.sort(
+        (a, b) => (b.lastModified ?? DateTime(0)).compareTo(
+          a.lastModified ?? DateTime(0),
+        ),
+      );
       final toDelete = files.sublist(_maxBackups);
       for (final item in toDelete) {
         await client.delete(item);

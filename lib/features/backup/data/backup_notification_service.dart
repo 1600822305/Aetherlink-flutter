@@ -106,6 +106,8 @@ class BackupNotificationService {
       tzScheduled,
       details,
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
       matchDateTimeComponents: null,
     );
   }
