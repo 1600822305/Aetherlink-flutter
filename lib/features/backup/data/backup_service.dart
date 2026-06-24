@@ -120,12 +120,28 @@ class BackupService {
     return File(outPath);
   }
 
-  /// Restores data from a ZIP backup file.
+  /// Restores data from a backup file (ZIP or Web JSON format).
   /// Returns a [RestoreResult] with success/skipped/failed counts.
   Future<RestoreResult> restoreFromFile(
-    File zipFile, {
+    File file, {
     RestoreMode mode = RestoreMode.overwrite,
   }) async {
+    final ext = p.extension(file.path).toLowerCase();
+
+    // Detect Web JSON backup format.
+    if (ext == '.json') {
+      return _restoreFromWebJson(file, mode);
+    }
+
+    // Default: ZIP backup.
+    return _restoreFromZip(file, mode);
+  }
+
+  /// Restores from a Flutter ZIP backup.
+  Future<RestoreResult> _restoreFromZip(
+    File zipFile,
+    RestoreMode mode,
+  ) async {
     // 1. Extract ZIP.
     final extractDir = await _extractZip(zipFile);
 
@@ -160,6 +176,258 @@ class BackupService {
       try {
         await extractDir.delete(recursive: true);
       } catch (_) {}
+    }
+  }
+
+  /// Restores from a Web-created JSON backup.
+  ///
+  /// Web backup structure:
+  /// ```json
+  /// {
+  ///   "topics": [ { ..., "messages": [ { ..., "blocks": [...] } ] } ],
+  ///   "assistants": [...],
+  ///   "settings": { ... },
+  ///   "localStorage": { ... },
+  ///   "appInfo": { "version": "...", "name": "AetherLink", "backupVersion": N },
+  ///   "timestamp": 123456
+  /// }
+  /// ```
+  ///
+  /// The key difference from Flutter's ZIP format: messages and blocks are
+  /// nested inside topics instead of stored in flat separate files.
+  Future<RestoreResult> _restoreFromWebJson(
+    File jsonFile,
+    RestoreMode mode,
+  ) async {
+    final content = await jsonFile.readAsString();
+    final Map<String, dynamic> root;
+    try {
+      root = jsonDecode(content) as Map<String, dynamic>;
+    } catch (_) {
+      throw const FormatException('无法解析 JSON 备份文件');
+    }
+
+    // Validate: must have topics or assistants or appInfo.
+    final hasTopics = root['topics'] is List;
+    final hasAssistants = root['assistants'] is List;
+    final hasAppInfo = root['appInfo'] is Map;
+    if (!hasTopics && !hasAssistants && !hasAppInfo) {
+      throw const FormatException(
+        '不是有效的 AetherLink Web 备份文件',
+      );
+    }
+
+    // Safety net.
+    await createAutoBackup(reason: 'pre_restore');
+
+    // Flatten nested structure.
+    final flatData = _flattenWebBackup(root);
+
+    // Write to database.
+    return await _writeData(flatData, mode, db.schemaVersion);
+  }
+
+  /// Flattens a Web backup's nested JSON into the same flat structure
+  /// used by Flutter's ZIP backup.
+  _RawBackupData _flattenWebBackup(Map<String, dynamic> root) {
+    final topicsJson = <Map<String, dynamic>>[];
+    final messagesJson = <Map<String, dynamic>>[];
+    final blocksJson = <Map<String, dynamic>>[];
+    final assistantsJson = <Map<String, dynamic>>[];
+    final settingsJson = <Map<String, dynamic>>[];
+
+    // --- Topics + Messages + Blocks ---
+    final rawTopics = root['topics'] as List<dynamic>? ?? [];
+    for (final rawTopic in rawTopics) {
+      if (rawTopic is! Map<String, dynamic>) continue;
+      final topicId = (rawTopic['id'] ?? '').toString();
+      if (topicId.isEmpty) continue;
+
+      // Extract nested messages before stripping them from the topic.
+      final rawMessages = rawTopic['messages'] as List<dynamic>? ?? [];
+      final messageIds = <String>[];
+
+      for (final rawMsg in rawMessages) {
+        if (rawMsg is! Map<String, dynamic>) continue;
+        final msgId = (rawMsg['id'] ?? '').toString();
+        if (msgId.isEmpty) continue;
+
+        messageIds.add(msgId);
+
+        // Extract nested blocks from the message.
+        final rawBlocks = rawMsg['blocks'];
+        final blockIds = <String>[];
+
+        if (rawBlocks is List) {
+          for (final rawBlock in rawBlocks) {
+            if (rawBlock is Map<String, dynamic>) {
+              // Full block object — flatten it.
+              final blockId = (rawBlock['id'] ?? '').toString();
+              if (blockId.isEmpty) continue;
+
+              // Ensure messageId is set on the block.
+              final blockJson = Map<String, dynamic>.from(rawBlock);
+              blockJson['messageId'] = msgId;
+
+              // Normalize status.
+              blockJson['status'] =
+                  _normalizeStatus(blockJson['status']?.toString());
+
+              // Ensure createdAt is present.
+              blockJson['createdAt'] ??=
+                  rawMsg['createdAt'] ?? DateTime.now().toIso8601String();
+
+              blocksJson.add(blockJson);
+              blockIds.add(blockId);
+            } else if (rawBlock is String) {
+              // Block is just an ID reference (shouldn't happen in Web
+              // backup, but handle gracefully).
+              blockIds.add(rawBlock);
+            }
+          }
+        }
+
+        // Build flat message (blocks = list of IDs only).
+        final msgJson = Map<String, dynamic>.from(rawMsg);
+        msgJson.remove('messages'); // remove any nested messages (shouldn't exist but be safe)
+        msgJson['blocks'] = blockIds;
+        msgJson['topicId'] = topicId;
+
+        // Normalize role.
+        msgJson['role'] ??= 'user';
+
+        // Normalize status.
+        msgJson['status'] = _normalizeStatus(msgJson['status']?.toString());
+
+        // Ensure createdAt is present.
+        msgJson['createdAt'] ??= DateTime.now().toIso8601String();
+
+        // Ensure assistantId is present.
+        msgJson['assistantId'] ??=
+            rawTopic['assistantId'] ?? 'default';
+
+        // Handle versions — flatten block objects inside versions.
+        if (msgJson['versions'] is List) {
+          final versions = (msgJson['versions'] as List).map((v) {
+            if (v is! Map<String, dynamic>) return v;
+            final vJson = Map<String, dynamic>.from(v);
+            // Version blocks may be full objects or just IDs.
+            if (vJson['blocks'] is List) {
+              final vBlockIds = <String>[];
+              for (final vb in vJson['blocks'] as List) {
+                if (vb is Map<String, dynamic>) {
+                  final vbId = (vb['id'] ?? '').toString();
+                  if (vbId.isNotEmpty) {
+                    final vbJson = Map<String, dynamic>.from(vb);
+                    vbJson['messageId'] = msgId;
+                    vbJson['status'] =
+                        _normalizeStatus(vbJson['status']?.toString());
+                    vbJson['createdAt'] ??= DateTime.now().toIso8601String();
+                    blocksJson.add(vbJson);
+                    vBlockIds.add(vbId);
+                  }
+                } else if (vb is String) {
+                  vBlockIds.add(vb);
+                }
+              }
+              vJson['blocks'] = vBlockIds;
+            }
+            return vJson;
+          }).toList();
+          msgJson['versions'] = versions;
+        }
+
+        messagesJson.add(msgJson);
+      }
+
+      // Build flat topic (messageIds = list of IDs, no nested messages).
+      final topicJson = Map<String, dynamic>.from(rawTopic);
+      topicJson.remove('messages');
+      topicJson['messageIds'] = messageIds;
+
+      // Map Web's 'name'/'title' to Flutter's 'name'.
+      topicJson['name'] ??= topicJson['title'] ?? '未命名对话';
+      topicJson.remove('title');
+
+      // Ensure required fields.
+      topicJson['assistantId'] ??= 'default';
+      topicJson['createdAt'] ??= DateTime.now().toIso8601String();
+      topicJson['updatedAt'] ??= topicJson['createdAt'];
+
+      topicsJson.add(topicJson);
+    }
+
+    // --- Assistants ---
+    final rawAssistants = root['assistants'] as List<dynamic>? ?? [];
+    for (final rawAst in rawAssistants) {
+      if (rawAst is! Map<String, dynamic>) continue;
+      final astId = (rawAst['id'] ?? '').toString();
+      if (astId.isEmpty) continue;
+
+      final astJson = Map<String, dynamic>.from(rawAst);
+      // Drop Web-only fields that don't exist in Flutter model.
+      astJson.remove('icon'); // ReactNode, not serializable
+      astJson.remove('topics'); // Runtime-only in Web
+
+      assistantsJson.add(astJson);
+    }
+
+    // --- Settings / localStorage → KV pairs ---
+    // Web stores settings as a JSON object + localStorage object.
+    // Flutter stores them in app_setting_rows (key-value table).
+    final rawSettings = root['settings'];
+    if (rawSettings is Map<String, dynamic>) {
+      // Store the whole settings object as a single KV entry.
+      settingsJson.add({
+        'key': 'web_settings',
+        'value': jsonEncode(rawSettings),
+      });
+    }
+
+    final rawLocalStorage = root['localStorage'];
+    if (rawLocalStorage is Map<String, dynamic>) {
+      for (final entry in rawLocalStorage.entries) {
+        final key = entry.key;
+        final value = entry.value;
+        settingsJson.add({
+          'key': key,
+          'value': value is String ? value : jsonEncode(value),
+        });
+      }
+    }
+
+    return _RawBackupData(
+      topics: topicsJson,
+      messages: messagesJson,
+      messageBlocks: blocksJson,
+      assistants: assistantsJson,
+      providers: const [],
+      groups: const [],
+      settings: settingsJson,
+    );
+  }
+
+  /// Normalizes Web status values to Flutter-compatible status strings.
+  static String _normalizeStatus(String? status) {
+    switch (status) {
+      case 'success':
+      case 'pending':
+      case 'processing':
+      case 'streaming':
+      case 'error':
+      case 'paused':
+        return status!;
+      case 'complete':
+        return 'success';
+      case 'sending':
+        return 'success';
+      case 'searching':
+        return 'processing';
+      case null:
+      case '':
+        return 'success';
+      default:
+        return 'success';
     }
   }
 
@@ -220,8 +488,17 @@ class BackupService {
   }
 
   /// Returns the manifest from a backup file without restoring.
-  Future<BackupManifest> peekManifest(File zipFile) async {
-    final extractDir = await _extractZip(zipFile);
+  /// Supports both ZIP and Web JSON formats.
+  Future<BackupManifest> peekManifest(File file) async {
+    final ext = p.extension(file.path).toLowerCase();
+
+    // Web JSON backup — synthesize a manifest from the JSON content.
+    if (ext == '.json') {
+      return _peekWebJsonManifest(file);
+    }
+
+    // ZIP backup.
+    final extractDir = await _extractZip(file);
     try {
       final manifestFile = File(p.join(extractDir.path, 'manifest.json'));
       if (!await manifestFile.exists()) {
@@ -233,6 +510,59 @@ class BackupService {
         await extractDir.delete(recursive: true);
       } catch (_) {}
     }
+  }
+
+  /// Synthesizes a [BackupManifest] from a Web JSON backup for preview.
+  Future<BackupManifest> _peekWebJsonManifest(File jsonFile) async {
+    final content = await jsonFile.readAsString();
+    final root = jsonDecode(content) as Map<String, dynamic>;
+
+    final rawTopics = root['topics'] as List<dynamic>? ?? [];
+    final rawAssistants = root['assistants'] as List<dynamic>? ?? [];
+
+    // Count messages and blocks by walking the nested structure.
+    int messageCount = 0;
+    int blockCount = 0;
+    for (final t in rawTopics) {
+      if (t is! Map) continue;
+      final msgs = t['messages'] as List<dynamic>? ?? [];
+      messageCount += msgs.length;
+      for (final m in msgs) {
+        if (m is! Map) continue;
+        final blocks = m['blocks'];
+        if (blocks is List) blockCount += blocks.length;
+      }
+    }
+
+    final appInfo = root['appInfo'] as Map<String, dynamic>? ?? {};
+    final timestamp = root['timestamp'];
+    String createdAt;
+    if (timestamp is int) {
+      createdAt =
+          DateTime.fromMillisecondsSinceEpoch(timestamp).toUtc().toIso8601String();
+    } else {
+      createdAt = DateTime.now().toUtc().toIso8601String();
+    }
+
+    return BackupManifest(
+      createdAt: createdAt,
+      schemaVersion: appInfo['backupVersion'] as int? ?? 1,
+      deviceInfo: 'Web (${appInfo['name'] ?? 'AetherLink'})',
+      stats: BackupStats(
+        topics: rawTopics.length,
+        messages: messageCount,
+        messageBlocks: blockCount,
+        assistants: rawAssistants.length,
+        providers: 0,
+        groups: 0,
+        settings: (root['localStorage'] as Map?)?.length ?? 0,
+      ),
+      options: const BackupOptions(
+        includeMessages: true,
+        includeProviders: false,
+        includeSettings: true,
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
