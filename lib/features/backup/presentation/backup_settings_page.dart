@@ -889,53 +889,57 @@ class _BackupFileRowState extends State<_BackupFileRow> {
   Widget build(BuildContext context) {
     final theme = widget.theme;
     final item = widget.item;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      child: Row(
-        children: [
-          Icon(
-            item.isAuto ? LucideIcons.shieldCheck : LucideIcons.archive,
-            size: 18,
-            color: item.isAuto
-                ? theme.colorScheme.secondary
-                : theme.colorScheme.primary,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.displayName,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  '${item.sizeDisplay} | ${_formatDate(item.lastModified)}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontSize: 11,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
+    return GestureDetector(
+      onTap: _armed ? () => setState(() => _armed = false) : null,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: Row(
+          children: [
+            Icon(
+              item.isAuto ? LucideIcons.shieldCheck : LucideIcons.archive,
+              size: 18,
+              color: item.isAuto
+                  ? theme.colorScheme.secondary
+                  : theme.colorScheme.primary,
             ),
-          ),
-          IconButton(
-            icon: Icon(LucideIcons.trash2, size: 16),
-            color: _armed ? theme.colorScheme.error : null,
-            onPressed: () {
-              if (_armed) {
-                widget.onDelete();
-              } else {
-                setState(() => _armed = true);
-              }
-            },
-            visualDensity: VisualDensity.compact,
-          ),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.displayName,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    '${item.sizeDisplay} | ${_formatDate(item.lastModified)}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 11,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: Icon(LucideIcons.trash2, size: 16),
+              color: _armed ? theme.colorScheme.error : null,
+              onPressed: () {
+                if (_armed) {
+                  widget.onDelete();
+                } else {
+                  setState(() => _armed = true);
+                }
+              },
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -168,16 +168,21 @@ class BackupController extends _$BackupController {
         includeProviders: true,
         includeSettings: true,
       );
+      final bytes = await file.readAsBytes();
       final savePath = await FilePicker.saveFile(
         dialogTitle: '保存备份文件',
         fileName: p.basename(file.path),
         type: FileType.custom,
         allowedExtensions: ['zip'],
-        bytes: await file.readAsBytes(),
+        bytes: bytes,
       );
       if (savePath == null) {
         state = state.copyWith(status: BackupStatus.success, message: '已取消保存');
         return;
+      }
+      // On desktop, FilePicker.saveFile doesn't write bytes — write manually.
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        await File(savePath).writeAsBytes(bytes);
       }
       await _reminder.recordBackupCompleted();
       final locals = await _service.listLocalBackups();
@@ -209,16 +214,21 @@ class BackupController extends _$BackupController {
         includeProviders: includeProviders,
         includeSettings: includeSettings,
       );
+      final bytes = await file.readAsBytes();
       final savePath = await FilePicker.saveFile(
         dialogTitle: '保存备份文件',
         fileName: p.basename(file.path),
         type: FileType.custom,
         allowedExtensions: ['zip'],
-        bytes: await file.readAsBytes(),
+        bytes: bytes,
       );
       if (savePath == null) {
         state = state.copyWith(status: BackupStatus.success, message: '已取消保存');
         return;
+      }
+      // On desktop, FilePicker.saveFile doesn't write bytes — write manually.
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        await File(savePath).writeAsBytes(bytes);
       }
       await _reminder.recordBackupCompleted();
       final locals = await _service.listLocalBackups();
