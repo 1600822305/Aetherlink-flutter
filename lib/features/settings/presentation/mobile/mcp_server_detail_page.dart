@@ -153,6 +153,8 @@ class _McpServerDetailPageState extends ConsumerState<McpServerDetailPage> {
   /// Opens a live connection to the server using the *current* form values
   /// (URL / 类型 / 请求头 / 超时, no save required) and runs `tools/list`,
   /// surfacing the discovered tools — the real connection behind the 测试 button.
+  /// The temporary connection is closed after the test to avoid leaking orphaned
+  /// clients in the global pool (the snapshot may differ from the saved config).
   Future<void> _testConnection() async {
     final base = _server;
     if (base == null || !_isHttp) return;
@@ -171,10 +173,9 @@ class _McpServerDetailPageState extends ConsumerState<McpServerDetailPage> {
       headers: _mapFrom(_headers),
       timeout: int.tryParse(_timeout.text.trim()) ?? 60,
     );
+    final manager = ref.read(remoteMcpConnectionManagerProvider);
     try {
-      final tools = await ref
-          .read(remoteMcpConnectionManagerProvider)
-          .listTools(snapshot);
+      final tools = await manager.listTools(snapshot);
       if (!mounted) return;
       setState(() {
         _discovered = [for (final tool in tools) tool.definition];
@@ -189,6 +190,10 @@ class _McpServerDetailPageState extends ConsumerState<McpServerDetailPage> {
         _testError = message;
       });
       _toast('连接失败: $message');
+    } finally {
+      // Close the temporary test connection so it doesn't linger in the pool
+      // when the snapshot's URL/type differs from the persisted server config.
+      manager.closeServer(snapshot);
     }
   }
 
