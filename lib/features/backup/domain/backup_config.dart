@@ -55,14 +55,14 @@ class WebDavConfig {
   }
 
   Map<String, dynamic> toJson() => {
-        'url': url,
-        'username': username,
-        'password': password,
-        'path': path,
-        'includeMessages': includeMessages,
-        'includeProviders': includeProviders,
-        'includeSettings': includeSettings,
-      };
+    'url': url,
+    'username': username,
+    'password': password,
+    'path': path,
+    'includeMessages': includeMessages,
+    'includeProviders': includeProviders,
+    'includeSettings': includeSettings,
+  };
 
   factory WebDavConfig.fromJson(Map<String, dynamic> json) {
     return WebDavConfig(
@@ -153,18 +153,18 @@ class S3Config {
   }
 
   Map<String, dynamic> toJson() => {
-        'endpoint': endpoint,
-        'region': region,
-        'bucket': bucket,
-        'accessKeyId': accessKeyId,
-        'secretAccessKey': secretAccessKey,
-        'sessionToken': sessionToken,
-        'prefix': prefix,
-        'pathStyle': pathStyle,
-        'includeMessages': includeMessages,
-        'includeProviders': includeProviders,
-        'includeSettings': includeSettings,
-      };
+    'endpoint': endpoint,
+    'region': region,
+    'bucket': bucket,
+    'accessKeyId': accessKeyId,
+    'secretAccessKey': secretAccessKey,
+    'sessionToken': sessionToken,
+    'prefix': prefix,
+    'pathStyle': pathStyle,
+    'includeMessages': includeMessages,
+    'includeProviders': includeProviders,
+    'includeSettings': includeSettings,
+  };
 
   factory S3Config.fromJson(Map<String, dynamic> json) {
     return S3Config(

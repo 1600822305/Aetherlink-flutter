@@ -77,8 +77,11 @@ class _ImportDataPageState extends ConsumerState<ImportDataPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Row(
                   children: [
-                    Icon(LucideIcons.info,
-                        size: 14, color: theme.colorScheme.onSurfaceVariant),
+                    Icon(
+                      LucideIcons.info,
+                      size: 14,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -119,7 +122,9 @@ class _ImportDataPageState extends ConsumerState<ImportDataPage> {
   }
 
   Future<void> _showImportDialog(
-      BackupController controller, String source) async {
+    BackupController controller,
+    String source,
+  ) async {
     final mode = await showDialog<RestoreMode>(
       context: context,
       builder: (ctx) => AlertDialog(

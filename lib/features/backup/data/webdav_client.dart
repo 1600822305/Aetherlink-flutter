@@ -69,7 +69,8 @@ class WebDavClient {
       'Content-Type': 'application/xml; charset=utf-8',
       ..._authHeaders(),
     });
-    req.body = '<?xml version="1.0" encoding="utf-8" ?>\n'
+    req.body =
+        '<?xml version="1.0" encoding="utf-8" ?>\n'
         '<d:propfind xmlns:d="DAV:">\n'
         '  <d:prop>\n'
         '    <d:displayname/>\n'
@@ -149,8 +150,9 @@ class WebDavClient {
 
   Map<String, String> _authHeaders() {
     if (config.username.trim().isEmpty) return {};
-    final token =
-        base64Encode(utf8.encode('${config.username}:${config.password}'));
+    final token = base64Encode(
+      utf8.encode('${config.username}:${config.password}'),
+    );
     return {'Authorization': 'Basic $token'};
   }
 
@@ -164,7 +166,8 @@ class WebDavClient {
       'Content-Type': 'application/xml; charset=utf-8',
       ..._authHeaders(),
     });
-    checkReq.body = '<?xml version="1.0" encoding="utf-8" ?>\n'
+    checkReq.body =
+        '<?xml version="1.0" encoding="utf-8" ?>\n'
         '<d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>';
 
     final client = http.Client();
@@ -177,14 +180,13 @@ class WebDavClient {
       // Try MKCOL to create it.
       final mkcolReq = http.Request('MKCOL', uri);
       mkcolReq.headers.addAll(_authHeaders());
-      final mkcolRes =
-          await client.send(mkcolReq).then(http.Response.fromStream);
+      final mkcolRes = await client
+          .send(mkcolReq)
+          .then(http.Response.fromStream);
       if (mkcolRes.statusCode < 200 || mkcolRes.statusCode >= 300) {
         // 405 Method Not Allowed often means it already exists.
         if (mkcolRes.statusCode != 405) {
-          throw Exception(
-            'WebDAV MKCOL failed: HTTP ${mkcolRes.statusCode}',
-          );
+          throw Exception('WebDAV MKCOL failed: HTTP ${mkcolRes.statusCode}');
         }
       }
     } finally {
@@ -245,25 +247,29 @@ class WebDavClient {
         ).firstMatch(name);
         if (match != null) {
           try {
-            final timestamp = match.group(1)!.replaceAll(
-                  RegExp(r'T(\d{2})-(\d{2})-(\d{2})'),
-                  r'T$1:$2:$3',
-                );
+            final timestamp = match
+                .group(1)!
+                .replaceAll(RegExp(r'T(\d{2})-(\d{2})-(\d{2})'), r'T$1:$2:$3');
             mtime = DateTime.parse(timestamp);
           } catch (_) {}
         }
       }
 
-      items.add(BackupFileItem(
-        href: Uri.parse(abs),
-        displayName: name,
-        size: size,
-        lastModified: mtime,
-      ));
+      items.add(
+        BackupFileItem(
+          href: Uri.parse(abs),
+          displayName: name,
+          size: size,
+          lastModified: mtime,
+        ),
+      );
     }
 
-    items.sort((a, b) => (b.lastModified ?? DateTime(0))
-        .compareTo(a.lastModified ?? DateTime(0)));
+    items.sort(
+      (a, b) => (b.lastModified ?? DateTime(0)).compareTo(
+        a.lastModified ?? DateTime(0),
+      ),
+    );
     return items;
   }
 }

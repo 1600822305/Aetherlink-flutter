@@ -41,8 +41,7 @@ class _DiagnosticPageState extends ConsumerState<DiagnosticPage> {
                   accent: const Color(0xFF2563EB),
                   label: _isRunning ? '诊断中...' : '运行健康检查',
                   description: '检查数据库完整性，查找孤立数据',
-                  onTap:
-                      _isRunning ? null : () => _runDiagnostic(controller),
+                  onTap: _isRunning ? null : () => _runDiagnostic(controller),
                 ),
                 if (!(_result?.isHealthy ?? true))
                   Column(
@@ -84,9 +83,9 @@ class _DiagnosticPageState extends ConsumerState<DiagnosticPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _isRunning = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('诊断失败: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('诊断失败: $e')));
       }
     }
   }
@@ -109,9 +108,9 @@ class _DiagnosticPageState extends ConsumerState<DiagnosticPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _isRunning = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('修复失败: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('修复失败: $e')));
       }
     }
   }
@@ -152,32 +151,45 @@ class _DiagnosticPageState extends ConsumerState<DiagnosticPage> {
             _statRow(theme, '助手数', '${result.assistantCount}'),
             _statRow(theme, '分组数', '${result.groupCount}'),
             if (result.orphanedMessages > 0)
-              _statRow(theme, '孤立消息', '${result.orphanedMessages}',
-                  isWarning: true),
+              _statRow(
+                theme,
+                '孤立消息',
+                '${result.orphanedMessages}',
+                isWarning: true,
+              ),
             if (result.orphanedBlocks > 0)
-              _statRow(theme, '孤立消息块', '${result.orphanedBlocks}',
-                  isWarning: true),
+              _statRow(
+                theme,
+                '孤立消息块',
+                '${result.orphanedBlocks}',
+                isWarning: true,
+              ),
             if (result.issues.isNotEmpty) ...[
               const SizedBox(height: 10),
-              ...result.issues.map((i) => Padding(
-                    padding: const EdgeInsets.only(top: 3),
-                    child: Row(
-                      children: [
-                        const Icon(LucideIcons.alertCircle,
-                            size: 14, color: Colors.orange),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            i,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              fontSize: 12,
-                              color: Colors.orange,
-                            ),
+              ...result.issues.map(
+                (i) => Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        LucideIcons.alertCircle,
+                        size: 14,
+                        color: Colors.orange,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          i,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontSize: 12,
+                            color: Colors.orange,
                           ),
                         ),
-                      ],
-                    ),
-                  )),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ],
         ),
@@ -185,17 +197,18 @@ class _DiagnosticPageState extends ConsumerState<DiagnosticPage> {
     );
   }
 
-  Widget _statRow(ThemeData theme, String label, String value,
-      {bool isWarning = false}) {
+  Widget _statRow(
+    ThemeData theme,
+    String label,
+    String value, {
+    bool isWarning = false,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: theme.textTheme.bodySmall?.copyWith(fontSize: 13),
-          ),
+          Text(label, style: theme.textTheme.bodySmall?.copyWith(fontSize: 13)),
           Text(
             value,
             style: theme.textTheme.bodySmall?.copyWith(

@@ -143,11 +143,13 @@ class _LocalBackupPageState extends ConsumerState<LocalBackupPage> {
             ),
           ),
           Divider(height: 1, color: theme.dividerColor),
-          ...state.localBackups.map((item) => _BackupFileRow(
-                item: item,
-                theme: theme,
-                onDelete: () => controller.deleteLocalBackup(item.displayName),
-              )),
+          ...state.localBackups.map(
+            (item) => _BackupFileRow(
+              item: item,
+              theme: theme,
+              onDelete: () => controller.deleteLocalBackup(item.displayName),
+            ),
+          ),
         ],
       ),
     );
@@ -218,8 +220,11 @@ class _SelectiveBackupDialogState extends State<_SelectiveBackupDialog> {
               color: const Color(0xFF9333EA).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(LucideIcons.settings,
-                size: 18, color: Color(0xFF9333EA)),
+            child: const Icon(
+              LucideIcons.settings,
+              size: 18,
+              color: Color(0xFF9333EA),
+            ),
           ),
           const SizedBox(width: 12),
           const Text('精细化备份'),
@@ -457,8 +462,11 @@ class _RestoreConfirmDialogState extends State<_RestoreConfirmDialog> {
             const SizedBox(height: 8),
             Row(
               children: [
-                Icon(LucideIcons.shieldCheck,
-                    size: 16, color: theme.colorScheme.secondary),
+                Icon(
+                  LucideIcons.shieldCheck,
+                  size: 16,
+                  color: theme.colorScheme.secondary,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -491,9 +499,10 @@ class _RestoreConfirmDialogState extends State<_RestoreConfirmDialog> {
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         children: [
-          Text('$label: ',
-              style:
-                  const TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+          Text(
+            '$label: ',
+            style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+          ),
           Text(value, style: const TextStyle(fontSize: 13)),
         ],
       ),
