@@ -867,7 +867,7 @@ class _RecommendedChip extends StatelessWidget {
 }
 
 /// A backup file row in the history section.
-class _BackupFileRow extends StatelessWidget {
+class _BackupFileRow extends StatefulWidget {
   final BackupFileItem item;
   final ThemeData theme;
   final VoidCallback onDelete;
@@ -879,7 +879,16 @@ class _BackupFileRow extends StatelessWidget {
   });
 
   @override
+  State<_BackupFileRow> createState() => _BackupFileRowState();
+}
+
+class _BackupFileRowState extends State<_BackupFileRow> {
+  bool _armed = false;
+
+  @override
   Widget build(BuildContext context) {
+    final theme = widget.theme;
+    final item = widget.item;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       child: Row(
@@ -915,8 +924,15 @@ class _BackupFileRow extends StatelessWidget {
             ),
           ),
           IconButton(
-            icon: const Icon(LucideIcons.trash2, size: 16),
-            onPressed: onDelete,
+            icon: Icon(LucideIcons.trash2, size: 16),
+            color: _armed ? theme.colorScheme.error : null,
+            onPressed: () {
+              if (_armed) {
+                widget.onDelete();
+              } else {
+                setState(() => _armed = true);
+              }
+            },
             visualDensity: VisualDensity.compact,
           ),
         ],

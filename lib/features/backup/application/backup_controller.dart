@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:share_plus/share_plus.dart';
 
 import 'package:aetherlink_flutter/features/backup/data/backup_reminder_service.dart';
 import 'package:aetherlink_flutter/features/backup/data/backup_service.dart';
@@ -160,7 +159,7 @@ class BackupController extends _$BackupController {
   // Local backup
   // ---------------------------------------------------------------------------
 
-  /// Creates a backup ZIP and shares it via the system share sheet.
+  /// Creates a backup ZIP and lets the user choose where to save it.
   Future<void> createAndShareBackup() async {
     state = state.copyWith(status: BackupStatus.working, message: '正在创建备份...');
     try {
@@ -169,7 +168,17 @@ class BackupController extends _$BackupController {
         includeProviders: true,
         includeSettings: true,
       );
-      await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
+      final savePath = await FilePicker.saveFile(
+        dialogTitle: '保存备份文件',
+        fileName: p.basename(file.path),
+        type: FileType.custom,
+        allowedExtensions: ['zip'],
+        bytes: await file.readAsBytes(),
+      );
+      if (savePath == null) {
+        state = state.copyWith(status: BackupStatus.success, message: '已取消保存');
+        return;
+      }
       await _reminder.recordBackupCompleted();
       final locals = await _service.listLocalBackups();
       state = state.copyWith(
@@ -200,7 +209,17 @@ class BackupController extends _$BackupController {
         includeProviders: includeProviders,
         includeSettings: includeSettings,
       );
-      await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
+      final savePath = await FilePicker.saveFile(
+        dialogTitle: '保存备份文件',
+        fileName: p.basename(file.path),
+        type: FileType.custom,
+        allowedExtensions: ['zip'],
+        bytes: await file.readAsBytes(),
+      );
+      if (savePath == null) {
+        state = state.copyWith(status: BackupStatus.success, message: '已取消保存');
+        return;
+      }
       await _reminder.recordBackupCompleted();
       final locals = await _service.listLocalBackups();
       state = state.copyWith(
