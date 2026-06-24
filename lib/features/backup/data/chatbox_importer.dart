@@ -26,14 +26,14 @@ class ChatboxImportResult {
 
 /// Imports data from ChatboxAI backup JSON format into the app database.
 ///
-/// ChatboxAI export format:
-/// ```json
-/// {
-///   "settings": { "providers": { "openai": { "apiKey": "...", ... } } },
-///   "chat-sessions-list": [ { "id": "...", "name": "..." } ],
-///   "session:<id>": { "messages": [ { "role": "user", "content": "..." } ] }
-/// }
-/// ```
+/// Supports both legacy and v1.21+ formats including:
+/// - `contentParts` (text / image / tool-call)
+/// - `reasoningContent` (thinking blocks)
+/// - Error messages
+/// - Multi-thread sessions (`threads` array)
+/// - Message forks (`messageForksHash`)
+/// - File and link attachments
+/// - New format detection (`__exported_items` / `__exported_at`)
 class ChatboxImporter {
   ChatboxImporter._();
 
@@ -81,7 +81,9 @@ class ChatboxImporter {
     final hasSessions = root['chat-sessions-list'] is List;
     final settings = root['settings'];
     final hasProviders = settings is Map && (settings['providers'] is Map);
-    if (!hasSessions && !hasProviders) {
+    final hasExportedItems = root['__exported_items'] is List;
+    final hasExportedAt = root['__exported_at'] is String;
+    if (!hasSessions && !hasProviders && !hasExportedItems && !hasExportedAt) {
       throw Exception(
         '不是有效的 ChatboxAI 导出文件（缺少 "chat-sessions-list" 或 "settings.providers"）',
       );
@@ -164,83 +166,352 @@ class ChatboxImporter {
       if (sessionData is! Map) continue;
 
       final title = (meta['name'] ?? meta['title'] ?? '').toString();
-      final createdAtMs = (meta['createdAt'] as num?)?.toInt();
+      final createdAtMs = (meta['createdAt'] as num?)?.toInt() ??
+          (sessionData['createdAt'] as num?)?.toInt();
       final createdAt = createdAtMs != null
           ? DateTime.fromMillisecondsSinceEpoch(createdAtMs)
           : DateTime.now();
 
-      final topicId = generateId('topic');
+      // Collect all messages from the session (main + threads + forks)
+      final allMsgMaps = _collectAllMessages(sessionData, title);
 
-      if (mode == RestoreMode.merge) {
-        // Skip if a topic with same original ID exists (use id as name check)
-        // Since IDs won't match, we just append in merge mode.
-      }
+      for (final group in allMsgMaps) {
+        final topicId = generateId('topic');
+        final messageIds = <String>[];
 
-      // Import messages first to build block list
-      final messages = sessionData['messages'];
-      if (messages is! List) continue;
+        for (final msg in group.messages) {
+          final role = (msg['role'] ?? '').toString().toLowerCase();
+          final messageRole = _parseRole(role);
+          if (messageRole == null) continue;
 
-      final messageIds = <String>[];
-      for (final msg in messages) {
-        if (msg is! Map) continue;
-        final role = (msg['role'] ?? '').toString().toLowerCase();
-        final messageRole = _parseRole(role);
-        if (messageRole == null) continue;
+          final msgCreatedAtMs = (msg['timestamp'] as num?)?.toInt() ??
+              (msg['createdAt'] as num?)?.toInt();
+          final msgCreatedAt = msgCreatedAtMs != null
+              ? DateTime.fromMillisecondsSinceEpoch(msgCreatedAtMs)
+              : createdAt;
 
-        final content = (msg['content'] ?? '').toString();
-        if (content.isEmpty) continue;
+          final msgId = generateId('msg');
 
-        final msgCreatedAtMs = (msg['createdAt'] as num?)?.toInt();
-        final msgCreatedAt = msgCreatedAtMs != null
-            ? DateTime.fromMillisecondsSinceEpoch(msgCreatedAtMs)
-            : createdAt;
+          // Create blocks from contentParts / content / reasoningContent / error
+          final blocks = _createBlocks(msg, msgId, msgCreatedAt);
+          if (blocks.isEmpty) continue;
 
-        final msgId = generateId('msg');
-        final blockId = generateId('block');
+          final blockIds = <String>[];
+          for (final block in blocks) {
+            await db.messageBlockDao.upsert(block);
+            blockIds.add(block.id);
+          }
 
-        // Create message block
-        final block = MessageBlock.mainText(
-          id: blockId,
-          messageId: msgId,
-          status: MessageBlockStatus.success,
-          createdAt: msgCreatedAt,
-          content: content,
-        );
-        await db.messageBlockDao.upsert(block);
+          final hasError = msg['error'] != null &&
+              msg['error'].toString().trim().isNotEmpty;
+          final message = Message(
+            id: msgId,
+            role: messageRole,
+            assistantId: defaultAssistantId,
+            topicId: topicId,
+            createdAt: msgCreatedAt,
+            status: hasError ? MessageStatus.error : MessageStatus.success,
+            blocks: blockIds,
+          );
+          await db.messageDao.upsert(message);
+          messageIds.add(msgId);
+          msgCount++;
+        }
 
-        // Create message
-        final message = Message(
-          id: msgId,
-          role: messageRole,
+        if (messageIds.isEmpty) continue;
+
+        final topic = Topic(
+          id: topicId,
           assistantId: defaultAssistantId,
-          topicId: topicId,
-          createdAt: msgCreatedAt,
-          status: MessageStatus.success,
-          blocks: [blockId],
+          name: group.name.isNotEmpty ? group.name : '导入的对话',
+          createdAt: createdAt,
+          updatedAt: createdAt,
+          messageIds: messageIds,
+          messageCount: messageIds.length,
         );
-        await db.messageDao.upsert(message);
-        messageIds.add(msgId);
-        msgCount++;
+        await db.topicDao.upsert(topic);
+        convCount++;
       }
-
-      if (messageIds.isEmpty) continue;
-
-      // Create topic
-      final topic = Topic(
-        id: topicId,
-        assistantId: defaultAssistantId,
-        name: title.isNotEmpty ? title : '导入的对话',
-        createdAt: createdAt,
-        updatedAt: createdAt,
-        messageIds: messageIds,
-        messageCount: messageIds.length,
-      );
-      await db.topicDao.upsert(topic);
-      convCount++;
     }
 
     return (conversations: convCount, messages: msgCount);
   }
+
+  // ---------------------------------------------------------------------------
+  // Collect all messages (main thread + historical threads + forks)
+  // ---------------------------------------------------------------------------
+
+  static List<_MessageGroup> _collectAllMessages(
+    Map sessionData,
+    String sessionTitle,
+  ) {
+    final groups = <_MessageGroup>[];
+
+    // Check for multi-thread sessions
+    final threads = sessionData['threads'];
+    if (threads is List && threads.length > 1) {
+      // Multi-thread: create separate topic per thread
+      for (final thread in threads) {
+        if (thread is! Map) continue;
+        final threadName = (thread['name'] ?? '').toString();
+        final threadMessages = thread['messages'];
+        if (threadMessages is! List || threadMessages.isEmpty) continue;
+
+        final name = threadName.isNotEmpty
+            ? '$sessionTitle - $threadName'
+            : sessionTitle;
+        groups.add(_MessageGroup(
+          name: name,
+          messages: threadMessages.cast<Map>(),
+        ));
+      }
+
+      // Also include main messages if present
+      final mainMessages = sessionData['messages'];
+      if (mainMessages is List && mainMessages.isNotEmpty) {
+        groups.add(_MessageGroup(
+          name: sessionTitle,
+          messages: mainMessages.cast<Map>(),
+        ));
+      }
+
+      if (groups.isNotEmpty) return groups;
+    }
+
+    // Single thread or no threads: use main messages
+    final mainMessages = sessionData['messages'];
+    if (mainMessages is List && mainMessages.isNotEmpty) {
+      final allMsgs = <Map>[...mainMessages.cast<Map>()];
+
+      // Also include single-thread messages if present
+      if (threads is List && threads.length == 1) {
+        final thread = threads[0];
+        if (thread is Map) {
+          final threadMessages = thread['messages'];
+          if (threadMessages is List) {
+            allMsgs.addAll(threadMessages.cast<Map>());
+          }
+        }
+      }
+
+      // Collect fork messages from messageForksHash
+      _collectForkMessages(mainMessages, allMsgs);
+
+      groups.add(_MessageGroup(name: sessionTitle, messages: allMsgs));
+    }
+
+    return groups;
+  }
+
+  /// Recursively collect messages from messageForksHash fields.
+  static void _collectForkMessages(List mainMessages, List<Map> allMsgs) {
+    for (final msg in mainMessages) {
+      if (msg is! Map) continue;
+      final forks = msg['messageForksHash'];
+      if (forks is! Map) continue;
+
+      for (final forkEntry in forks.values) {
+        if (forkEntry is! Map) continue;
+        final lists = forkEntry['lists'];
+        if (lists is! List) continue;
+
+        for (final fork in lists) {
+          if (fork is! Map) continue;
+          final forkMessages = fork['messages'];
+          if (forkMessages is! List) continue;
+
+          allMsgs.addAll(forkMessages.cast<Map>());
+          // Recurse into fork messages that may also have forks
+          _collectForkMessages(forkMessages, allMsgs);
+        }
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Block creation from a single ChatboxAI message
+  // ---------------------------------------------------------------------------
+
+  static List<MessageBlock> _createBlocks(
+    Map msg,
+    String messageId,
+    DateTime createdAt,
+  ) {
+    final blocks = <MessageBlock>[];
+
+    // 1. Process contentParts (new format)
+    final contentParts = msg['contentParts'];
+    bool hasMainText = false;
+
+    if (contentParts is List && contentParts.isNotEmpty) {
+      for (final part in contentParts) {
+        if (part is! Map) continue;
+        final partType = (part['type'] ?? '').toString();
+
+        switch (partType) {
+          case 'text':
+            final text = (part['text'] ?? '').toString().trim();
+            if (text.isNotEmpty) {
+              blocks.add(MessageBlock.mainText(
+                id: generateId('block'),
+                messageId: messageId,
+                status: MessageBlockStatus.success,
+                createdAt: createdAt,
+                content: text,
+              ));
+              hasMainText = true;
+            }
+            break;
+
+          case 'image':
+            final url = (part['url'] ?? '').toString();
+            final storageKey = (part['storageKey'] ?? '').toString();
+            blocks.add(MessageBlock.image(
+              id: generateId('block'),
+              messageId: messageId,
+              status: MessageBlockStatus.success,
+              createdAt: createdAt,
+              url: url.isNotEmpty ? url : storageKey,
+              mimeType: 'image/png',
+              metadata: {
+                if (storageKey.isNotEmpty) 'storageKey': storageKey,
+                if (url.isNotEmpty) 'originalUrl': url,
+              },
+            ));
+            break;
+
+          case 'tool-call':
+            final toolCallId =
+                (part['toolCallId'] ?? generateId('tool')).toString();
+            final toolName = (part['toolName'] ?? '').toString();
+            blocks.add(MessageBlock.tool(
+              id: generateId('block'),
+              messageId: messageId,
+              status: part['result'] != null
+                  ? MessageBlockStatus.success
+                  : MessageBlockStatus.processing,
+              createdAt: createdAt,
+              toolId: toolCallId,
+              toolName: toolName.isNotEmpty ? toolName : null,
+              arguments: part['args'] is Map
+                  ? Map<String, dynamic>.from(part['args'] as Map)
+                  : null,
+              content: part['result'],
+            ));
+            break;
+        }
+      }
+    }
+
+    // 2. Fallback: legacy `content` field (if no main_text from contentParts)
+    if (!hasMainText) {
+      final content = (msg['content'] ?? '').toString().trim();
+      if (content.isNotEmpty) {
+        blocks.add(MessageBlock.mainText(
+          id: generateId('block'),
+          messageId: messageId,
+          status: MessageBlockStatus.success,
+          createdAt: createdAt,
+          content: content,
+        ));
+        hasMainText = true;
+      }
+    }
+
+    // 3. Reasoning / thinking content
+    final reasoning = (msg['reasoningContent'] ?? '').toString().trim();
+    if (reasoning.isNotEmpty) {
+      blocks.add(MessageBlock.thinking(
+        id: generateId('block'),
+        messageId: messageId,
+        status: MessageBlockStatus.success,
+        createdAt: createdAt,
+        content: reasoning,
+      ));
+    }
+
+    // 4. Error messages
+    final errorMsg = (msg['error'] ?? '').toString().trim();
+    if (errorMsg.isNotEmpty) {
+      final errorCode = msg['errorCode'];
+      blocks.add(MessageBlock.error(
+        id: generateId('block'),
+        messageId: messageId,
+        status: MessageBlockStatus.error,
+        createdAt: createdAt,
+        content: errorMsg,
+        message: errorMsg,
+        code: errorCode != null ? errorCode.toString() : null,
+      ));
+    }
+
+    // 5. File attachments
+    final files = msg['files'];
+    if (files is List) {
+      for (final f in files) {
+        if (f is! Map) continue;
+        final fileName = (f['name'] ?? '').toString();
+        final fileUrl =
+            (f['url'] ?? f['storageKey'] ?? '').toString();
+        final fileType = (f['fileType'] ?? 'application/octet-stream').toString();
+        if (fileName.isEmpty && fileUrl.isEmpty) continue;
+
+        blocks.add(MessageBlock.file(
+          id: generateId('block'),
+          messageId: messageId,
+          status: MessageBlockStatus.success,
+          createdAt: createdAt,
+          name: fileName.isNotEmpty ? fileName : 'file',
+          url: fileUrl,
+          mimeType: fileType,
+        ));
+      }
+    }
+
+    // 6. Links as metadata on the main text block (no dedicated link block type)
+    final links = msg['links'];
+    if (links is List && links.isNotEmpty && blocks.isNotEmpty) {
+      // Attach link metadata to the first main_text block
+      for (int i = 0; i < blocks.length; i++) {
+        final b = blocks[i];
+        if (b is MainTextBlock) {
+          final linkData = <Map<String, dynamic>>[];
+          for (final link in links) {
+            if (link is! Map) continue;
+            linkData.add({
+              'url': (link['url'] ?? '').toString(),
+              'title': (link['title'] ?? '').toString(),
+            });
+          }
+          blocks[i] = b.copyWith(
+            metadata: {
+              ...?b.metadata,
+              'importedLinks': linkData,
+            },
+          );
+          break;
+        }
+      }
+    }
+
+    // 7. If no blocks at all, create a placeholder
+    if (blocks.isEmpty) {
+      blocks.add(MessageBlock.mainText(
+        id: generateId('block'),
+        messageId: messageId,
+        status: MessageBlockStatus.success,
+        createdAt: createdAt,
+        content: '[空消息]',
+        metadata: {'isEmpty': true},
+      ));
+    }
+
+    return blocks;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
 
   static MessageRole? _parseRole(String role) {
     switch (role) {
@@ -250,8 +521,17 @@ class ChatboxImporter {
         return MessageRole.assistant;
       case 'system':
         return MessageRole.system;
+      case 'tool':
+        return MessageRole.assistant;
       default:
         return null;
     }
   }
+}
+
+/// A group of messages to be imported as a single topic.
+class _MessageGroup {
+  final String name;
+  final List<Map> messages;
+  const _MessageGroup({required this.name, required this.messages});
 }
