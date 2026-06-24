@@ -19,8 +19,8 @@ class SystemTtsService {
 
   static const int _maxRetries = 5;
   static const Duration _retryDelay = Duration(milliseconds: 180);
-  static const Duration _bindTimeout = Duration(seconds: 5);
-  static const Duration _rebindTimeout = Duration(seconds: 2);
+  static const Duration _bindTimeout = Duration(seconds: 8);
+  static const Duration _rebindTimeout = Duration(seconds: 5);
 
   Completer<void>? _speakingCompleter;
 
@@ -52,6 +52,9 @@ class SystemTtsService {
   }
 
   /// Applies user-configured settings (engine, language, rate, pitch).
+  ///
+  /// Note: calling setEngine triggers native TTS re-creation, so we must
+  /// wait for re-binding before applying language/rate/pitch.
   Future<void> applyUserConfig({
     String? engineId,
     String? languageTag,
@@ -62,6 +65,9 @@ class SystemTtsService {
     if (engineId != null && engineId.isNotEmpty) {
       try {
         await _tts!.setEngine(engineId);
+        // setEngine recreates native TTS — wait for re-binding.
+        _engineReady = false;
+        await _ensureBound(timeout: _rebindTimeout);
       } catch (_) {}
     }
     if (languageTag != null && languageTag.isNotEmpty) {
@@ -166,23 +172,32 @@ class SystemTtsService {
     } catch (_) {}
   }
 
-  /// Poll until the engine reports available languages.
-  Future<void> _ensureBound({Duration timeout = const Duration(seconds: 3)}) async {
+  /// Poll until the engine reports a non-empty language list.
+  ///
+  /// The native plugin catches NullPointerException from
+  /// `tts.availableLanguages` and returns an *empty* list (not null).
+  /// So we must check `isNotEmpty` — checking `!= null` would always
+  /// pass immediately even when the engine hasn't actually bound.
+  Future<void> _ensureBound({Duration timeout = const Duration(seconds: 5)}) async {
     if (_engineReady) return;
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
       try {
         final langs = await _tts!.getLanguages;
-        if (langs != null) {
+        if (langs is List && langs.isNotEmpty) {
           _engineReady = true;
           return;
         }
       } catch (_) {}
-      await Future<void>.delayed(const Duration(milliseconds: 120));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
     }
   }
 
   /// Select the best engine — prefer Google TTS.
+  ///
+  /// IMPORTANT: `setEngine()` on the native side RECREATES the
+  /// TextToSpeech instance (resets ttsStatus to null), so we must
+  /// wait for re-binding afterwards.
   Future<void> _selectEngine() async {
     try {
       final engines = await _tts!.getEngines;
@@ -198,6 +213,9 @@ class SystemTtsService {
         chosen ??= engines.first.toString();
         try {
           await _tts!.setEngine(chosen);
+          // setEngine recreates the native TTS — wait for re-binding.
+          _engineReady = false;
+          await _ensureBound(timeout: _rebindTimeout);
         } catch (_) {}
       }
     } catch (_) {}
