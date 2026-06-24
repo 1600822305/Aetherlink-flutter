@@ -307,6 +307,148 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
   ],
+  '@aether/fetch': [
+    McpToolDefinition(
+      name: 'fetch_url_as_html',
+      description: '获取指定 URL 的网页内容，返回 HTML 格式',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'url': {
+            'type': 'string',
+            'format': 'uri',
+            'description': '要获取的 URL 地址',
+          },
+          'headers': {
+            'type': 'object',
+            'description': '可选的 HTTP 请求头',
+            'additionalProperties': {'type': 'string'},
+          },
+        },
+        'required': ['url'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'fetch_url_as_json',
+      description: '获取指定 URL 的内容，解析为 JSON 格式返回',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'url': {
+            'type': 'string',
+            'format': 'uri',
+            'description': '要获取的 URL 地址',
+          },
+          'headers': {
+            'type': 'object',
+            'description': '可选的 HTTP 请求头',
+            'additionalProperties': {'type': 'string'},
+          },
+        },
+        'required': ['url'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'fetch_url_as_text',
+      description: '获取指定 URL 的内容，返回提取后的纯文本（自动去除 HTML 标签和脚本）',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'url': {
+            'type': 'string',
+            'format': 'uri',
+            'description': '要获取的 URL 地址',
+          },
+          'headers': {
+            'type': 'object',
+            'description': '可选的 HTTP 请求头',
+            'additionalProperties': {'type': 'string'},
+          },
+        },
+        'required': ['url'],
+      },
+    ),
+  ],
+  '@aether/metaso-search': [
+    McpToolDefinition(
+      name: 'metaso_search',
+      description: '秘塔AI搜索。通过 scope 选择范围：webpage/document/scholar/image/video/podcast',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'query': {'type': 'string', 'description': '搜索关键词'},
+          'scope': {
+            'type': 'string',
+            'enum': ['webpage', 'document', 'scholar', 'image', 'video', 'podcast'],
+            'description': '搜索范围',
+            'default': 'webpage',
+          },
+          'size': {
+            'type': 'number',
+            'description': '返回结果数量',
+            'default': 10,
+          },
+          'includeRawContent': {
+            'type': 'boolean',
+            'description': '是否抓取来源原文（响应较慢）',
+            'default': false,
+          },
+        },
+        'required': ['query'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'metaso_reader',
+      description: '提取网页正文，返回纯文本',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'url': {
+            'type': 'string',
+            'format': 'uri',
+            'description': '目标 URL',
+          },
+        },
+        'required': ['url'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'metaso_chat',
+      description: '秘塔AI对话，基于实时搜索提供带引用的回答',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'query': {'type': 'string', 'description': '问题或查询内容'},
+          'scope': {
+            'type': 'string',
+            'enum': ['webpage', 'document', 'scholar', 'video', 'podcast'],
+            'description': '知识范围',
+            'default': 'webpage',
+          },
+          'model': {
+            'type': 'string',
+            'enum': ['fast', 'fast_thinking', 'ds-r1'],
+            'description': '模型选择',
+            'default': 'fast',
+          },
+        },
+        'required': ['query'],
+      },
+    ),
+  ],
+  '@aether/grok-search': [
+    McpToolDefinition(
+      name: 'web_search',
+      description: '使用 AI 模型进行联网搜索。支持多维度搜索（自动拆分复杂查询为多个子问题并行搜索）',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'query': {'type': 'string', 'description': '搜索查询内容'},
+        },
+        'required': ['query'],
+      },
+    ),
+  ],
   '@aether/settings': [
     // ── Provider-level tools ──
     McpToolDefinition(
@@ -463,6 +605,9 @@ const Set<String> kLocallyRunnableBuiltins = {
   '@aether/calculator',
   '@aether/time',
   '@aether/searxng',
+  '@aether/fetch',
+  '@aether/metaso-search',
+  '@aether/grok-search',
 };
 
 /// Servers that run in-process but need Riverpod [Ref] (settings assistant).
