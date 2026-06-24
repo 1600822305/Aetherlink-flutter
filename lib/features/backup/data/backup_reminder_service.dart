@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:aetherlink_flutter/features/backup/data/backup_notification_service.dart';
+
 /// Manages backup reminder scheduling and notification state.
 /// Tracks when the last backup was performed and determines
 /// whether to show a reminder based on user-configured intervals.
@@ -47,7 +49,13 @@ class BackupReminderService {
       anchor.day + _intervalDays,
     );
     final minutes = _reminderMinutesOfDay!;
-    return DateTime(date.year, date.month, date.day, minutes ~/ 60, minutes % 60);
+    return DateTime(
+      date.year,
+      date.month,
+      date.day,
+      minutes ~/ 60,
+      minutes % 60,
+    );
   }
 
   Future<void> load() async {
@@ -80,6 +88,7 @@ class BackupReminderService {
       _snoozedForSession = false;
     }
     await _persist();
+    await _syncSystemNotification();
   }
 
   Future<void> setEnabled(bool value) async {
@@ -110,13 +119,29 @@ class BackupReminderService {
   void startPeriodicCheck(void Function() onDue) {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (shouldShowReminder) onDue();
+      if (shouldShowReminder) {
+        onDue();
+        BackupNotificationService().showImmediateReminder();
+      }
     });
   }
 
   void dispose() {
     _timer?.cancel();
     _timer = null;
+  }
+
+  /// Schedule or cancel the system notification based on current state.
+  Future<void> _syncSystemNotification() async {
+    final notifier = BackupNotificationService();
+    if (!_enabled) {
+      await notifier.cancelBackupReminder();
+      return;
+    }
+    final next = nextReminderAt;
+    if (next != null && next.isAfter(DateTime.now())) {
+      await notifier.scheduleBackupReminder(next);
+    }
   }
 
   Future<void> _persist() async {
