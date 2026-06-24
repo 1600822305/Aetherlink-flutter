@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
@@ -58,6 +59,7 @@ class _ModelProviderDetailPageState
   bool _useMultiKey = false;
   bool _testMode = false;
   bool _alwaysShowTestButton = false;
+  bool _kvLoaded = false;
   String _search = '';
   String? _testingModelId;
   String? _groupPendingDelete;
@@ -85,6 +87,25 @@ class _ModelProviderDetailPageState
     _useResponsesAPI = provider.useResponsesAPI ?? false;
     _useMultiKey = provider.apiKeys?.isNotEmpty ?? false;
     _initialized = true;
+    _loadKvSettings(provider.id);
+  }
+
+  Future<void> _loadKvSettings(String providerId) async {
+    if (_kvLoaded) return;
+    _kvLoaded = true;
+    final store = ref.read(appSettingsStoreProvider);
+    final results = await Future.wait([
+      store.getSetting('alwaysShowTestButton_$providerId'),
+      store.getSetting('useMultiKey_$providerId'),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _alwaysShowTestButton = results[0] == 'true';
+      // KV store takes precedence over data-derived value
+      if (results[1] != null) {
+        _useMultiKey = results[1] == 'true';
+      }
+    });
   }
 
   Future<void> _save(ModelProvider provider) async {
@@ -103,6 +124,19 @@ class _ModelProviderDetailPageState
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('已保存')));
+  }
+
+  /// Auto-save a single toggle field immediately.
+  Future<void> _autoSaveToggle(
+    ModelProvider provider, {
+    bool? isEnabled,
+    bool? useResponsesAPI,
+  }) async {
+    final updated = provider.copyWith(
+      isEnabled: isEnabled ?? _isEnabled,
+      useResponsesAPI: useResponsesAPI ?? _useResponsesAPI,
+    );
+    await ref.read(modelStoreProvider.notifier).saveProvider(updated);
   }
 
   @override
@@ -141,7 +175,10 @@ class _ModelProviderDetailPageState
               children: [
                 CustomSwitch(
                   value: _isEnabled,
-                  onChanged: (v) => setState(() => _isEnabled = v),
+                  onChanged: (v) {
+                    setState(() => _isEnabled = v);
+                    _autoSaveToggle(provider, isEnabled: v);
+                  },
                 ),
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
@@ -255,7 +292,15 @@ class _ModelProviderDetailPageState
                   const SizedBox(width: 8),
                   CustomSwitch(
                     value: _useMultiKey,
-                    onChanged: (v) => setState(() => _useMultiKey = v),
+                    onChanged: (v) {
+                      setState(() => _useMultiKey = v);
+                      ref
+                          .read(appSettingsStoreProvider)
+                          .saveSetting(
+                            'useMultiKey_${provider.id}',
+                            v.toString(),
+                          );
+                    },
                   ),
                 ],
               ),
@@ -316,7 +361,10 @@ class _ModelProviderDetailPageState
                     const Spacer(),
                     CustomSwitch(
                       value: _useResponsesAPI,
-                      onChanged: (v) => setState(() => _useResponsesAPI = v),
+                      onChanged: (v) {
+                        setState(() => _useResponsesAPI = v);
+                        _autoSaveToggle(provider, useResponsesAPI: v);
+                      },
                     ),
                   ],
                 ),
@@ -425,7 +473,15 @@ class _ModelProviderDetailPageState
                   ),
                   CustomSwitch(
                     value: _alwaysShowTestButton,
-                    onChanged: (v) => setState(() => _alwaysShowTestButton = v),
+                    onChanged: (v) {
+                      setState(() => _alwaysShowTestButton = v);
+                      ref
+                          .read(appSettingsStoreProvider)
+                          .saveSetting(
+                            'alwaysShowTestButton_${provider.id}',
+                            v.toString(),
+                          );
+                    },
                   ),
                 ],
               ),
@@ -1401,19 +1457,18 @@ class _ParameterScopeRow extends StatelessWidget {
             Text('参数能力范围', style: labelStyle),
             const SizedBox(width: 6),
             Tooltip(
-              message: '设置后，参数编辑器将按指定的模型家族显示可用参数，\n'
+              message:
+                  '设置后，参数编辑器将按指定的模型家族显示可用参数，\n'
                   '覆盖自动检测结果。适用于第三方 API 转发场景。',
-              child: Icon(
-                LucideIcons.info,
-                size: 15,
-                color: hintStyle.color,
-              ),
+              child: Icon(LucideIcons.info, size: 15, color: hintStyle.color),
             ),
           ],
         ),
         const SizedBox(height: 8),
         DropdownButtonFormField<String?>(
-          initialValue: _parameterScopeOptions.any((o) => o.$1 == value) ? value : null,
+          initialValue: _parameterScopeOptions.any((o) => o.$1 == value)
+              ? value
+              : null,
           isExpanded: true,
           decoration: InputDecoration(
             isDense: true,
@@ -1433,10 +1488,7 @@ class _ParameterScopeRow extends StatelessWidget {
           onChanged: onChanged,
         ),
         const SizedBox(height: 4),
-        Text(
-          '设置此供应商下所有模型的参数显示范围（模型级设置优先）',
-          style: hintStyle,
-        ),
+        Text('设置此供应商下所有模型的参数显示范围（模型级设置优先）', style: hintStyle),
       ],
     );
   }

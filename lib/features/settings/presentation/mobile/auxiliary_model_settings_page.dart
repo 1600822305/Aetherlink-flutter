@@ -252,7 +252,9 @@ class _ModelConfigTab extends ConsumerStatefulWidget {
 class _ModelConfigTabState extends ConsumerState<_ModelConfigTab>
     with AutomaticKeepAliveClientMixin {
   TextEditingController? _promptController;
-  bool _promptInitialized = false;
+
+  /// Track last synced prompt value to detect hydration updates.
+  String? _lastSyncedPrompt;
 
   @override
   bool get wantKeepAlive => true;
@@ -364,10 +366,17 @@ class _ModelConfigTabState extends ConsumerState<_ModelConfigTab>
     final ctrl = ref.read(auxiliaryModelControllerProvider.notifier);
     final desc = widget.descriptor;
 
-    // Sync prompt controller on first build
-    if (desc.hasPrompt && !_promptInitialized && _promptController != null) {
-      _promptController!.text = _promptValue(state);
-      _promptInitialized = true;
+    // Sync prompt controller when the state value changes (handles async
+    // hydration completing after the first build).
+    if (desc.hasPrompt && _promptController != null) {
+      final currentPrompt = _promptValue(state);
+      if (_lastSyncedPrompt != currentPrompt) {
+        _lastSyncedPrompt = currentPrompt;
+        // Only update the text field if the user is not actively editing.
+        if (_promptController!.text != currentPrompt) {
+          _promptController!.text = currentPrompt;
+        }
+      }
     }
 
     final modelKey = _modelKey(state);
