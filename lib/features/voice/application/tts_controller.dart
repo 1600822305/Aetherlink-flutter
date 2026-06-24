@@ -45,6 +45,11 @@ class TtsController extends _$TtsController {
   @override
   TtsPlaybackState build() {
     ref.onDispose(_dispose);
+    // Eagerly start system TTS initialization so the engine has time to bind
+    // before the user presses speak. On some devices (e.g. MIUI) binding can
+    // take several seconds after TextToSpeech creation.
+    _systemTts = SystemTtsService();
+    _systemTts!.init().catchError((_) {});
     return const TtsPlaybackState();
   }
 
@@ -209,17 +214,19 @@ class TtsController extends _$TtsController {
     try {
       if (provider.kind == TtsProviderKind.system) {
         _systemTts ??= SystemTtsService();
-        // Apply user-configured engine/language/rate/pitch from settings.
-        // Convert UI speed (1.0 = normal, 2.0 = 2x) to platform rate
-        // (0.5 = normal) using kelivo's formula: speed / 2.
-        final voiceSettings = ref.read(voiceSettingsControllerProvider);
-        final platformRate = (state.speed / 2).clamp(0.1, 1.0);
-        await _systemTts!.applyUserConfig(
-          engineId: voiceSettings.systemTtsEngine,
-          languageTag: voiceSettings.systemTtsLanguage,
-          speechRate: platformRate,
-          pitch: voiceSettings.systemTtsPitch,
-        );
+        // Apply user config only on the first chunk of a session.
+        // setEngine() recreates the native TTS instance — calling it
+        // per-chunk would destroy the binding each time.
+        if (index == 0) {
+          final voiceSettings = ref.read(voiceSettingsControllerProvider);
+          final platformRate = (state.speed / 2).clamp(0.1, 1.0);
+          await _systemTts!.applyUserConfig(
+            engineId: voiceSettings.systemTtsEngine,
+            languageTag: voiceSettings.systemTtsLanguage,
+            speechRate: platformRate,
+            pitch: voiceSettings.systemTtsPitch,
+          );
+        }
         state = state.copyWith(status: TtsStatus.playing);
         await _systemTts!.speak(_chunks[index].text);
         // System TTS completion — play next chunk.
