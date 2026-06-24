@@ -160,6 +160,39 @@ class BackupController extends _$BackupController {
     }
   }
 
+  /// Creates a selective backup with chosen data types and shares it.
+  Future<void> createSelectiveBackup({
+    required bool includeMessages,
+    required bool includeProviders,
+    required bool includeSettings,
+  }) async {
+    state = state.copyWith(status: BackupStatus.working, message: '正在创建精细化备份...');
+    try {
+      final file = await _service.createBackup(
+        includeMessages: includeMessages,
+        includeProviders: includeProviders,
+        includeSettings: includeSettings,
+      );
+      await SharePlus.instance.share(
+        ShareParams(files: [XFile(file.path)]),
+      );
+      await _reminder.recordBackupCompleted();
+      final locals = await _service.listLocalBackups();
+      state = state.copyWith(
+        status: BackupStatus.success,
+        message: '精细化备份创建成功',
+        localBackups: locals,
+        lastBackupAt: () => _reminder.lastBackupAt,
+        nextReminderAt: () => _reminder.nextReminderAt,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        status: BackupStatus.error,
+        message: '备份失败: $e',
+      );
+    }
+  }
+
   /// Picks a local ZIP file and restores from it.
   Future<BackupManifest?> pickAndPeekBackup() async {
     final result = await FilePicker.pickFiles(
@@ -177,6 +210,15 @@ class BackupController extends _$BackupController {
         status: BackupStatus.error,
         message: '无法读取备份文件: $e',
       );
+      return null;
+    }
+  }
+
+  /// Peeks at a backup manifest from a given file path (no file picking).
+  Future<BackupManifest?> peekBackupManifest(String filePath) async {
+    try {
+      return await _service.peekManifest(File(filePath));
+    } catch (e) {
       return null;
     }
   }
