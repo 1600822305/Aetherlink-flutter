@@ -746,10 +746,16 @@ class BackupController extends _$BackupController {
         db: db,
       );
       final locals = await _service.listLocalBackups();
+      final parts = <String>[
+        '${result.conversations} 个对话',
+        '${result.messages} 条消息',
+        '${result.providers} 个服务商',
+        if (result.assistants > 0) '${result.assistants} 个助手',
+        if (result.models > 0) '${result.models} 个模型',
+      ];
       state = state.copyWith(
         status: BackupStatus.success,
-        message:
-            '导入成功: ${result.conversations} 个对话, ${result.messages} 条消息, ${result.providers} 个服务商',
+        message: '导入成功: ${parts.join(", ")}',
         localBackups: locals,
       );
     } catch (e) {

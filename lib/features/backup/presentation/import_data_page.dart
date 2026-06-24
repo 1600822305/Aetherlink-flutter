@@ -74,7 +74,8 @@ class _ImportDataPageState extends ConsumerState<ImportDataPage> {
                       icon: LucideIcons.cherry,
                       accent: const Color(0xFFE11D48),
                       label: '导入 Cherry Studio',
-                      description: '从 Cherry Studio 备份文件导入（ZIP/JSON）',
+                      description:
+                          '请使用 Cherry Studio「导出到手机」功能生成的备份文件',
                       onTap: () => _showImportDialog(controller, 'cherry'),
                     ),
                   ],
