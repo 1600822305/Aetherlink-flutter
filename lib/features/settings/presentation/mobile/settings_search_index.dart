@@ -187,6 +187,14 @@ const List<SettingsSearchEntry> kSettingsSearchIndex = <SettingsSearchEntry>[
     keywords: ['skill', '技能', 'MCP', '工具'],
   ),
   SettingsSearchEntry(
+    icon: LucideIcons.store,
+    title: '技能商店',
+    description: '浏览和安装 AI 技能扩展',
+    route: AppRouter.skillStorePath,
+    group: '提示词与工具',
+    keywords: ['skill store', '技能商店', '扩展', '插件', '安装'],
+  ),
+  SettingsSearchEntry(
     icon: LucideIcons.globe,
     title: '网络搜索',
     description: '配置网络搜索和相关服务',
@@ -223,6 +231,42 @@ const List<SettingsSearchEntry> kSettingsSearchIndex = <SettingsSearchEntry>[
   ),
 
   // ── 系统 ──
+  SettingsSearchEntry(
+    icon: LucideIcons.mic,
+    title: '语音功能',
+    description: '语音识别和文本转语音设置',
+    route: AppRouter.voiceSettingsPath,
+    group: '系统',
+    keywords: [
+      'voice',
+      '语音',
+      'TTS',
+      'ASR',
+      '语音合成',
+      '语音识别',
+      '朗读',
+      '文本转语音',
+    ],
+  ),
+  SettingsSearchEntry(
+    icon: LucideIcons.volume2,
+    title: '系统 TTS 配置',
+    description: '引擎选择、语言、语速和音调设置',
+    route: AppRouter.voiceSettingsPath,
+    group: '语音功能',
+    keywords: [
+      'TTS',
+      'system tts',
+      '系统语音',
+      '引擎',
+      '语速',
+      '音调',
+      'engine',
+      'pitch',
+      'rate',
+      '朗读',
+    ],
+  ),
   SettingsSearchEntry(
     icon: LucideIcons.shield,
     title: '网络代理',
