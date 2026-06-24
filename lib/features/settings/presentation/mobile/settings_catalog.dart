@@ -178,7 +178,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
       SettingItemData(
         icon: LucideIcons.hardDrive,
         title: '备份与恢复',
-        description: '本地/WebDAV 备份、数据恢复',
+        description: '本地/WebDAV/S3 备份、数据恢复',
         route: AppRouter.backupSettingsPath,
       ),
       SettingItemData(

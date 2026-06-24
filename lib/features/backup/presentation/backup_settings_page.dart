@@ -20,19 +20,35 @@ class BackupSettingsPage extends ConsumerStatefulWidget {
 }
 
 class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
+  // WebDAV controllers
   late final TextEditingController _urlController;
   late final TextEditingController _usernameController;
   late final TextEditingController _passwordController;
   late final TextEditingController _pathController;
+  // S3 controllers
+  late final TextEditingController _s3EndpointController;
+  late final TextEditingController _s3RegionController;
+  late final TextEditingController _s3BucketController;
+  late final TextEditingController _s3AccessKeyController;
+  late final TextEditingController _s3SecretKeyController;
+  late final TextEditingController _s3PrefixController;
 
   @override
   void initState() {
     super.initState();
-    final config = ref.read(backupControllerProvider).webDavConfig;
+    final state = ref.read(backupControllerProvider);
+    final config = state.webDavConfig;
     _urlController = TextEditingController(text: config.url);
     _usernameController = TextEditingController(text: config.username);
     _passwordController = TextEditingController(text: config.password);
     _pathController = TextEditingController(text: config.path);
+    final s3 = state.s3Config;
+    _s3EndpointController = TextEditingController(text: s3.endpoint);
+    _s3RegionController = TextEditingController(text: s3.region);
+    _s3BucketController = TextEditingController(text: s3.bucket);
+    _s3AccessKeyController = TextEditingController(text: s3.accessKeyId);
+    _s3SecretKeyController = TextEditingController(text: s3.secretAccessKey);
+    _s3PrefixController = TextEditingController(text: s3.prefix);
   }
 
   @override
@@ -41,6 +57,12 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
     _usernameController.dispose();
     _passwordController.dispose();
     _pathController.dispose();
+    _s3EndpointController.dispose();
+    _s3RegionController.dispose();
+    _s3BucketController.dispose();
+    _s3AccessKeyController.dispose();
+    _s3SecretKeyController.dispose();
+    _s3PrefixController.dispose();
     super.dispose();
   }
 
@@ -81,6 +103,10 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
               _buildLocalBackupSection(controller, state, theme),
               const SizedBox(height: 16),
               _buildWebDavSection(controller, state, theme),
+              const SizedBox(height: 16),
+              _buildS3Section(controller, state, theme),
+              const SizedBox(height: 16),
+              _buildReminderSection(controller, state, theme),
               const SizedBox(height: 16),
               _buildLocalBackupListSection(state, controller, theme),
             ],
@@ -299,6 +325,352 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
           ? 'aetherlink_backups'
           : _pathController.text,
     ));
+  }
+
+  // ---------------------------------------------------------------------------
+  // S3 section
+  // ---------------------------------------------------------------------------
+
+  Widget _buildS3Section(
+    BackupController controller,
+    BackupState state,
+    ThemeData theme,
+  ) {
+    return ModelSettingsCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'S3 云存储备份',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '支持 AWS S3、Cloudflare R2、MinIO 等兼容服务',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _s3EndpointController,
+            decoration: const InputDecoration(
+              labelText: 'Endpoint',
+              hintText: 'https://s3.amazonaws.com',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (_) => _saveS3Config(controller),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _s3RegionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Region',
+                    hintText: 'us-east-1',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (_) => _saveS3Config(controller),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _s3BucketController,
+                  decoration: const InputDecoration(
+                    labelText: 'Bucket',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (_) => _saveS3Config(controller),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _s3AccessKeyController,
+            decoration: const InputDecoration(
+              labelText: 'Access Key ID',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (_) => _saveS3Config(controller),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _s3SecretKeyController,
+            decoration: const InputDecoration(
+              labelText: 'Secret Access Key',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            obscureText: true,
+            onChanged: (_) => _saveS3Config(controller),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _s3PrefixController,
+            decoration: const InputDecoration(
+              labelText: '前缀/目录',
+              hintText: 'aetherlink_backups',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (_) => _saveS3Config(controller),
+          ),
+          const SizedBox(height: 12),
+          SwitchListTile(
+            title: const Text('Path Style'),
+            subtitle: const Text('自托管/MinIO 推荐开启'),
+            value: state.s3Config.pathStyle,
+            onChanged: (v) {
+              controller.updateS3Config(state.s3Config.copyWith(pathStyle: v));
+            },
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(LucideIcons.wifi, size: 18),
+                  label: const Text('测试连接'),
+                  onPressed: state.status == BackupStatus.working
+                      ? null
+                      : controller.testS3Connection,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton.icon(
+                  icon: const Icon(LucideIcons.cloudUpload, size: 18),
+                  label: const Text('备份'),
+                  onPressed: state.status == BackupStatus.working ||
+                          !state.s3Config.isConfigured
+                      ? null
+                      : controller.backupToS3,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              icon: const Icon(LucideIcons.cloudDownload, size: 18),
+              label: const Text('从 S3 恢复'),
+              onPressed: state.status == BackupStatus.working ||
+                      !state.s3Config.isConfigured
+                  ? null
+                  : () => _showS3FileList(controller),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _saveS3Config(BackupController controller) {
+    controller.updateS3Config(S3Config(
+      endpoint: _s3EndpointController.text,
+      region: _s3RegionController.text.isEmpty
+          ? 'us-east-1'
+          : _s3RegionController.text,
+      bucket: _s3BucketController.text,
+      accessKeyId: _s3AccessKeyController.text,
+      secretAccessKey: _s3SecretKeyController.text,
+      prefix: _s3PrefixController.text.isEmpty
+          ? 'aetherlink_backups'
+          : _s3PrefixController.text,
+      pathStyle: ref.read(backupControllerProvider).s3Config.pathStyle,
+    ));
+  }
+
+  Future<void> _showS3FileList(BackupController controller) async {
+    await controller.loadS3Backups();
+    if (!mounted) return;
+
+    final state = ref.read(backupControllerProvider);
+    if (state.s3Backups.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('S3 没有备份文件')),
+      );
+      return;
+    }
+
+    final selected = await showModalBottomSheet<BackupFileItem>(
+      context: context,
+      builder: (context) => _RemoteFileListSheet(files: state.s3Backups),
+    );
+    if (selected == null || !mounted) return;
+
+    final mode = await _showRestoreDialog(null);
+    if (mode == null) return;
+
+    await controller.restoreFromS3(selected, mode);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reminder section
+  // ---------------------------------------------------------------------------
+
+  Widget _buildReminderSection(
+    BackupController controller,
+    BackupState state,
+    ThemeData theme,
+  ) {
+    return ModelSettingsCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '备份提醒',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '定期提醒你进行备份，保护数据安全',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SwitchListTile(
+            title: const Text('启用备份提醒'),
+            value: state.reminderEnabled,
+            onChanged: (v) async {
+              if (v && state.reminderMinutesOfDay == null) {
+                // Default to 10:00 if no time set.
+                await controller.saveReminderSchedule(
+                  enabled: true,
+                  intervalDays: state.reminderIntervalDays,
+                  minutesOfDay: 10 * 60,
+                );
+              } else {
+                await controller.setReminderEnabled(v);
+              }
+            },
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+          if (state.reminderEnabled) ...[
+            const SizedBox(height: 12),
+            _buildIntervalSelector(controller, state, theme),
+            const SizedBox(height: 12),
+            _buildTimeSelector(controller, state, theme),
+            const SizedBox(height: 12),
+            if (state.lastBackupAt != null)
+              _reminderInfoRow(
+                theme,
+                '上次备份',
+                _formatDate(state.lastBackupAt),
+              ),
+            if (state.nextReminderAt != null)
+              _reminderInfoRow(
+                theme,
+                '下次提醒',
+                _formatDate(state.nextReminderAt),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIntervalSelector(
+    BackupController controller,
+    BackupState state,
+    ThemeData theme,
+  ) {
+    return Row(
+      children: [
+        Text('间隔: ', style: theme.textTheme.bodyMedium),
+        const SizedBox(width: 8),
+        Expanded(
+          child: DropdownButtonFormField<int>(
+            value: state.reminderIntervalDays,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            items: const [
+              DropdownMenuItem(value: 1, child: Text('每天')),
+              DropdownMenuItem(value: 3, child: Text('每 3 天')),
+              DropdownMenuItem(value: 7, child: Text('每周')),
+              DropdownMenuItem(value: 14, child: Text('每两周')),
+              DropdownMenuItem(value: 30, child: Text('每月')),
+            ],
+            onChanged: (v) {
+              if (v == null) return;
+              controller.saveReminderSchedule(
+                enabled: true,
+                intervalDays: v,
+                minutesOfDay: state.reminderMinutesOfDay ?? 10 * 60,
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTimeSelector(
+    BackupController controller,
+    BackupState state,
+    ThemeData theme,
+  ) {
+    final minutes = state.reminderMinutesOfDay ?? 10 * 60;
+    final time = TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60);
+    return Row(
+      children: [
+        Text('提醒时间: ', style: theme.textTheme.bodyMedium),
+        const SizedBox(width: 8),
+        OutlinedButton(
+          onPressed: () async {
+            final picked = await showTimePicker(
+              context: context,
+              initialTime: time,
+            );
+            if (picked == null) return;
+            final newMinutes = picked.hour * 60 + picked.minute;
+            await controller.saveReminderSchedule(
+              enabled: true,
+              intervalDays: state.reminderIntervalDays,
+              minutesOfDay: newMinutes,
+            );
+          },
+          child: Text(time.format(context)),
+        ),
+      ],
+    );
+  }
+
+  Widget _reminderInfoRow(ThemeData theme, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Text('$label: ', style: theme.textTheme.bodySmall),
+          Text(
+            value,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _showRemoteFileList(BackupController controller) async {

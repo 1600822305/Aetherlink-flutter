@@ -278,7 +278,7 @@ const List<SettingsSearchEntry> kSettingsSearchIndex = <SettingsSearchEntry>[
   SettingsSearchEntry(
     icon: LucideIcons.hardDrive,
     title: '备份与恢复',
-    description: '本地/WebDAV 备份、数据恢复',
+    description: '本地/WebDAV/S3 备份、数据恢复、备份提醒',
     route: AppRouter.backupSettingsPath,
     group: '数据与知识',
     keywords: [
@@ -287,11 +287,17 @@ const List<SettingsSearchEntry> kSettingsSearchIndex = <SettingsSearchEntry>[
       '备份',
       '恢复',
       'WebDAV',
+      'S3',
+      'R2',
+      'MinIO',
+      '云存储',
       '数据',
       '导出',
       '导入',
       'export',
       'import',
+      '提醒',
+      'reminder',
     ],
   ),
   SettingsSearchEntry(
