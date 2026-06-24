@@ -310,9 +310,17 @@ class FlutterTtsPlugin : MethodCallHandler, FlutterPlugin {
                 }
                 val b = speak(text, focus)
                 if (!b) {
-                    synchronized(this@FlutterTtsPlugin) {
-                        val suspendedCall = Runnable { onMethodCall(call, result) }
-                        pendingMethodCalls.add(suspendedCall)
+                    if (ttsStatus == null) {
+                        // Engine is re-initializing; suspend until ready.
+                        synchronized(this@FlutterTtsPlugin) {
+                            val suspendedCall = Runnable { onMethodCall(call, result) }
+                            pendingMethodCalls.add(suspendedCall)
+                        }
+                    } else {
+                        // Engine reported init but speak still failed (common on
+                        // MIUI where service connection lags). Return failure to
+                        // Dart so its retry logic handles it with proper delays.
+                        result.success(0)
                     }
                     return
                 }
@@ -664,38 +672,26 @@ class FlutterTtsPlugin : MethodCallHandler, FlutterPlugin {
     private fun speak(text: String, focus: Boolean): Boolean {
         val uuid: String = UUID.randomUUID().toString()
         utterances[uuid] = text
-        if (ismServiceConnectionUsable(tts)) {
+        return if (ismServiceConnectionUsable(tts)) {
             if(focus){
                 requestAudioFocus()
             }
 
-            val result = if (silencems > 0) {
+            if (silencems > 0) {
                 tts!!.playSilentUtterance(
                     silencems.toLong(),
                     TextToSpeech.QUEUE_FLUSH,
                     SILENCE_PREFIX + uuid
                 )
-                tts!!.speak(text, TextToSpeech.QUEUE_ADD, bundle, uuid)
+                tts!!.speak(text, TextToSpeech.QUEUE_ADD, bundle, uuid) == 0
             } else {
-                tts!!.speak(text, queueMode, bundle, uuid)
+                tts!!.speak(text, queueMode, bundle, uuid) == 0
             }
-
-            if (result == TextToSpeech.SUCCESS) {
-                return true
-            }
-            // tts.speak() failed despite ismServiceConnectionUsable being true.
-            // This happens on MIUI/some ROMs where the Connection object exists
-            // but the IPC binder hasn't fully connected yet.
-            // Fall through to the recovery path below.
-            Log.d(tag, "speak returned ERROR despite service connection being usable, recreating TTS")
-            utterances.remove(uuid)
+        } else {
+            ttsStatus = null
+            tts = TextToSpeech(context, onInitListenerWithoutCallback, selectedEngine)
+            false
         }
-
-        // Recovery: recreate the TTS engine. The pending method call (added by
-        // onMethodCall) will be re-run once the new engine finishes init.
-        ttsStatus = null
-        tts = TextToSpeech(context, onInitListenerWithoutCallback, selectedEngine)
-        return false
     }
 
     private fun stop() {
