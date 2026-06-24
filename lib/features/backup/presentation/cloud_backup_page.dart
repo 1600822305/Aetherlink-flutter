@@ -7,7 +7,7 @@ import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_file_item.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 
-/// Detail page for cloud backup (WebDAV + S3).
+/// Detail page for cloud backup (WebDAV + S3) with top tab navigation.
 class CloudBackupPage extends ConsumerStatefulWidget {
   const CloudBackupPage({super.key});
 
@@ -15,7 +15,10 @@ class CloudBackupPage extends ConsumerStatefulWidget {
   ConsumerState<CloudBackupPage> createState() => _CloudBackupPageState();
 }
 
-class _CloudBackupPageState extends ConsumerState<CloudBackupPage> {
+class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+
   late final TextEditingController _urlController;
   late final TextEditingController _usernameController;
   late final TextEditingController _passwordController;
@@ -30,6 +33,11 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) setState(() {});
+    });
+
     final state = ref.read(backupControllerProvider);
     final config = state.webDavConfig;
     _urlController = TextEditingController(text: config.url);
@@ -47,6 +55,7 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage> {
 
   @override
   void dispose() {
+    _tabController.dispose();
     _urlController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
@@ -85,17 +94,59 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage> {
       appBar: const ModelSettingsAppBar(title: '云备份'),
       body: Stack(
         children: [
-          ListView(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              16,
-              16,
-              16 + MediaQuery.paddingOf(context).bottom,
-            ),
+          Column(
             children: [
-              _buildWebDavSection(controller, state, theme),
-              const SizedBox(height: 16),
-              _buildS3Section(controller, state, theme),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  border:
+                      Border(bottom: BorderSide(color: theme.dividerColor)),
+                ),
+                child: TabBar(
+                  controller: _tabController,
+                  labelColor: theme.colorScheme.primary,
+                  unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+                  indicatorColor: theme.colorScheme.primary,
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  dividerColor: Colors.transparent,
+                  labelStyle: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  unselectedLabelStyle: const TextStyle(fontSize: 14),
+                  tabs: const [
+                    Tab(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(LucideIcons.server, size: 16),
+                          SizedBox(width: 6),
+                          Text('WebDAV'),
+                        ],
+                      ),
+                    ),
+                    Tab(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(LucideIcons.cloud, size: 16),
+                          SizedBox(width: 6),
+                          Text('S3'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildWebDavTab(controller, state, theme),
+                    _buildS3Tab(controller, state, theme),
+                  ],
+                ),
+              ),
             ],
           ),
           if (state.status == BackupStatus.working)
@@ -123,108 +174,355 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage> {
   }
 
   // ---------------------------------------------------------------------------
-  // WebDAV section
+  // WebDAV Tab
   // ---------------------------------------------------------------------------
 
-  Widget _buildWebDavSection(
+  Widget _buildWebDavTab(
     BackupController controller,
     BackupState state,
     ThemeData theme,
   ) {
-    return ModelSettingsCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'WebDAV',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
+    final isWorking = state.status == BackupStatus.working;
+    return ListView(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        16 + MediaQuery.paddingOf(context).bottom,
+      ),
+      children: [
+        _Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '服务器配置',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _urlController,
+                  decoration: const InputDecoration(
+                    labelText: '服务器地址',
+                    hintText: 'https://dav.example.com',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  style: const TextStyle(fontSize: 14),
+                  onChanged: (_) => _saveWebDavConfig(controller),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _usernameController,
+                        decoration: const InputDecoration(
+                          labelText: '用户名',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                        ),
+                        style: const TextStyle(fontSize: 14),
+                        onChanged: (_) => _saveWebDavConfig(controller),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: _passwordController,
+                        decoration: const InputDecoration(
+                          labelText: '密码',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                        ),
+                        style: const TextStyle(fontSize: 14),
+                        obscureText: true,
+                        onChanged: (_) => _saveWebDavConfig(controller),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _pathController,
+                  decoration: const InputDecoration(
+                    labelText: '备份路径',
+                    hintText: 'aetherlink_backups',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  style: const TextStyle(fontSize: 14),
+                  onChanged: (_) => _saveWebDavConfig(controller),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _urlController,
-            decoration: const InputDecoration(
-              labelText: '服务器地址',
-              hintText: 'https://dav.example.com',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            onChanged: (_) => _saveWebDavConfig(controller),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _usernameController,
-            decoration: const InputDecoration(
-              labelText: '用户名',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            onChanged: (_) => _saveWebDavConfig(controller),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _passwordController,
-            decoration: const InputDecoration(
-              labelText: '密码',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            obscureText: true,
-            onChanged: (_) => _saveWebDavConfig(controller),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _pathController,
-            decoration: const InputDecoration(
-              labelText: '备份路径',
-              hintText: 'aetherlink_backups',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            onChanged: (_) => _saveWebDavConfig(controller),
-          ),
-          const SizedBox(height: 16),
-          Row(
+        ),
+        const SizedBox(height: 12),
+        _Card(
+          child: Column(
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  icon: const Icon(LucideIcons.wifi, size: 18),
-                  label: const Text('测试连接'),
-                  onPressed: state.status == BackupStatus.working
-                      ? null
-                      : controller.testWebDavConnection,
-                ),
+              _ActionRow(
+                icon: LucideIcons.wifi,
+                accent: const Color(0xFF0EA5E9),
+                label: '测试连接',
+                description: '验证 WebDAV 服务器配置是否正确',
+                onTap: isWorking ? null : controller.testWebDavConnection,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton.icon(
-                  icon: const Icon(LucideIcons.cloudUpload, size: 18),
-                  label: const Text('备份'),
-                  onPressed: state.status == BackupStatus.working ||
-                          !state.webDavConfig.isConfigured
-                      ? null
-                      : controller.backupToWebDav,
-                ),
+              Divider(height: 1, color: theme.dividerColor),
+              _ActionRow(
+                icon: LucideIcons.cloudUpload,
+                accent: const Color(0xFF2563EB),
+                label: '备份到 WebDAV',
+                description: '将数据上传到 WebDAV 服务器',
+                onTap: isWorking || !state.webDavConfig.isConfigured
+                    ? null
+                    : controller.backupToWebDav,
+              ),
+              Divider(height: 1, color: theme.dividerColor),
+              _ActionRow(
+                icon: LucideIcons.cloudDownload,
+                accent: const Color(0xFF059669),
+                label: '从 WebDAV 恢复',
+                description: '从远程备份文件恢复数据',
+                onTap: isWorking || !state.webDavConfig.isConfigured
+                    ? null
+                    : () => _showRemoteFileList(controller),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              icon: const Icon(LucideIcons.cloudDownload, size: 18),
-              label: const Text('从 WebDAV 恢复'),
-              onPressed: state.status == BackupStatus.working ||
-                      !state.webDavConfig.isConfigured
-                  ? null
-                  : () => _showRemoteFileList(controller),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // S3 Tab
+  // ---------------------------------------------------------------------------
+
+  Widget _buildS3Tab(
+    BackupController controller,
+    BackupState state,
+    ThemeData theme,
+  ) {
+    final isWorking = state.status == BackupStatus.working;
+    return ListView(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        16 + MediaQuery.paddingOf(context).bottom,
+      ),
+      children: [
+        _Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      '存储配置',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '支持 AWS S3、R2、MinIO',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _s3EndpointController,
+                  decoration: const InputDecoration(
+                    labelText: 'Endpoint',
+                    hintText: 'https://s3.amazonaws.com',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  style: const TextStyle(fontSize: 14),
+                  onChanged: (_) => _saveS3Config(controller),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _s3RegionController,
+                        decoration: const InputDecoration(
+                          labelText: 'Region',
+                          hintText: 'us-east-1',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                        ),
+                        style: const TextStyle(fontSize: 14),
+                        onChanged: (_) => _saveS3Config(controller),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: _s3BucketController,
+                        decoration: const InputDecoration(
+                          labelText: 'Bucket',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                        ),
+                        style: const TextStyle(fontSize: 14),
+                        onChanged: (_) => _saveS3Config(controller),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _s3AccessKeyController,
+                        decoration: const InputDecoration(
+                          labelText: 'Access Key ID',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                        ),
+                        style: const TextStyle(fontSize: 14),
+                        onChanged: (_) => _saveS3Config(controller),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: _s3SecretKeyController,
+                        decoration: const InputDecoration(
+                          labelText: 'Secret Key',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                        ),
+                        style: const TextStyle(fontSize: 14),
+                        obscureText: true,
+                        onChanged: (_) => _saveS3Config(controller),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _s3PrefixController,
+                  decoration: const InputDecoration(
+                    labelText: '前缀/目录',
+                    hintText: 'aetherlink_backups',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  style: const TextStyle(fontSize: 14),
+                  onChanged: (_) => _saveS3Config(controller),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Path Style',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '自托管/MinIO 推荐开启',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    CustomSwitch(
+                      value: state.s3Config.pathStyle,
+                      onChanged: (v) {
+                        controller
+                            .updateS3Config(state.s3Config.copyWith(pathStyle: v));
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _Card(
+          child: Column(
+            children: [
+              _ActionRow(
+                icon: LucideIcons.wifi,
+                accent: const Color(0xFF0EA5E9),
+                label: '测试连接',
+                description: '验证 S3 存储配置是否正确',
+                onTap: isWorking ? null : controller.testS3Connection,
+              ),
+              Divider(height: 1, color: theme.dividerColor),
+              _ActionRow(
+                icon: LucideIcons.cloudUpload,
+                accent: const Color(0xFF2563EB),
+                label: '备份到 S3',
+                description: '将数据上传到 S3 存储',
+                onTap: isWorking || !state.s3Config.isConfigured
+                    ? null
+                    : controller.backupToS3,
+              ),
+              Divider(height: 1, color: theme.dividerColor),
+              _ActionRow(
+                icon: LucideIcons.cloudDownload,
+                accent: const Color(0xFF059669),
+                label: '从 S3 恢复',
+                description: '从远程备份文件恢复数据',
+                onTap: isWorking || !state.s3Config.isConfigured
+                    ? null
+                    : () => _showS3FileList(controller),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Config helpers
+  // ---------------------------------------------------------------------------
 
   void _saveWebDavConfig(BackupController controller) {
     controller.updateWebDavConfig(WebDavConfig(
@@ -236,6 +534,26 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage> {
           : _pathController.text,
     ));
   }
+
+  void _saveS3Config(BackupController controller) {
+    controller.updateS3Config(S3Config(
+      endpoint: _s3EndpointController.text,
+      region: _s3RegionController.text.isEmpty
+          ? 'us-east-1'
+          : _s3RegionController.text,
+      bucket: _s3BucketController.text,
+      accessKeyId: _s3AccessKeyController.text,
+      secretAccessKey: _s3SecretKeyController.text,
+      prefix: _s3PrefixController.text.isEmpty
+          ? 'aetherlink_backups'
+          : _s3PrefixController.text,
+      pathStyle: ref.read(backupControllerProvider).s3Config.pathStyle,
+    ));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Remote file selection
+  // ---------------------------------------------------------------------------
 
   Future<void> _showRemoteFileList(BackupController controller) async {
     await controller.loadRemoteBackups();
@@ -259,173 +577,6 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage> {
     if (mode == null) return;
 
     await controller.restoreFromWebDav(selected, mode);
-  }
-
-  // ---------------------------------------------------------------------------
-  // S3 section
-  // ---------------------------------------------------------------------------
-
-  Widget _buildS3Section(
-    BackupController controller,
-    BackupState state,
-    ThemeData theme,
-  ) {
-    return ModelSettingsCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'S3 云存储',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '支持 AWS S3、Cloudflare R2、MinIO 等兼容服务',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _s3EndpointController,
-            decoration: const InputDecoration(
-              labelText: 'Endpoint',
-              hintText: 'https://s3.amazonaws.com',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            onChanged: (_) => _saveS3Config(controller),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _s3RegionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Region',
-                    hintText: 'us-east-1',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  onChanged: (_) => _saveS3Config(controller),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextField(
-                  controller: _s3BucketController,
-                  decoration: const InputDecoration(
-                    labelText: 'Bucket',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  onChanged: (_) => _saveS3Config(controller),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _s3AccessKeyController,
-            decoration: const InputDecoration(
-              labelText: 'Access Key ID',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            onChanged: (_) => _saveS3Config(controller),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _s3SecretKeyController,
-            decoration: const InputDecoration(
-              labelText: 'Secret Access Key',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            obscureText: true,
-            onChanged: (_) => _saveS3Config(controller),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _s3PrefixController,
-            decoration: const InputDecoration(
-              labelText: '前缀/目录',
-              hintText: 'aetherlink_backups',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            onChanged: (_) => _saveS3Config(controller),
-          ),
-          const SizedBox(height: 12),
-          SwitchListTile(
-            title: const Text('Path Style'),
-            subtitle: const Text('自托管/MinIO 推荐开启'),
-            value: state.s3Config.pathStyle,
-            onChanged: (v) {
-              controller.updateS3Config(state.s3Config.copyWith(pathStyle: v));
-            },
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  icon: const Icon(LucideIcons.wifi, size: 18),
-                  label: const Text('测试连接'),
-                  onPressed: state.status == BackupStatus.working
-                      ? null
-                      : controller.testS3Connection,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton.icon(
-                  icon: const Icon(LucideIcons.cloudUpload, size: 18),
-                  label: const Text('备份'),
-                  onPressed: state.status == BackupStatus.working ||
-                          !state.s3Config.isConfigured
-                      ? null
-                      : controller.backupToS3,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              icon: const Icon(LucideIcons.cloudDownload, size: 18),
-              label: const Text('从 S3 恢复'),
-              onPressed: state.status == BackupStatus.working ||
-                      !state.s3Config.isConfigured
-                  ? null
-                  : () => _showS3FileList(controller),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _saveS3Config(BackupController controller) {
-    controller.updateS3Config(S3Config(
-      endpoint: _s3EndpointController.text,
-      region: _s3RegionController.text.isEmpty
-          ? 'us-east-1'
-          : _s3RegionController.text,
-      bucket: _s3BucketController.text,
-      accessKeyId: _s3AccessKeyController.text,
-      secretAccessKey: _s3SecretKeyController.text,
-      prefix: _s3PrefixController.text.isEmpty
-          ? 'aetherlink_backups'
-          : _s3PrefixController.text,
-      pathStyle: ref.read(backupControllerProvider).s3Config.pathStyle,
-    ));
   }
 
   Future<void> _showS3FileList(BackupController controller) async {
@@ -452,10 +603,6 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage> {
     await controller.restoreFromS3(selected, mode);
   }
 
-  // ---------------------------------------------------------------------------
-  // Shared helpers
-  // ---------------------------------------------------------------------------
-
   Future<RestoreMode?> _showRestoreDialog() {
     return showDialog<RestoreMode>(
       context: context,
@@ -481,9 +628,100 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Remote file list bottom sheet
-// ---------------------------------------------------------------------------
+// =============================================================================
+// Shared Widgets
+// =============================================================================
+
+class _Card extends StatelessWidget {
+  const _Card({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.dividerColor),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+class _ActionRow extends StatelessWidget {
+  const _ActionRow({
+    required this.icon,
+    required this.accent,
+    required this.label,
+    required this.description,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color accent;
+  final String label;
+  final String description;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, size: 16, color: accent),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    description,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 12,
+                      height: 1.3,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _RemoteFileListSheet extends StatelessWidget {
   final List<BackupFileItem> files;
@@ -520,6 +758,7 @@ class _RemoteFileListSheet extends StatelessWidget {
                   subtitle: Text(
                     '${item.sizeDisplay} | ${_formatDate(item.lastModified)}',
                   ),
+                  dense: true,
                   onTap: () => Navigator.pop(context, item),
                 );
               },

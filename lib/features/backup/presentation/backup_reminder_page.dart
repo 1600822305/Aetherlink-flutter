@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/backup/application/backup_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
@@ -29,61 +30,91 @@ class _BackupReminderPageState extends ConsumerState<BackupReminderPage> {
           16 + MediaQuery.paddingOf(context).bottom,
         ),
         children: [
-          ModelSettingsCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '定期提醒',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+          _Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color:
+                              const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(LucideIcons.bell,
+                            size: 16, color: Color(0xFFF59E0B)),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '定期提醒',
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '定期提醒你进行备份，保护数据安全',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontSize: 12,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      CustomSwitch(
+                        value: state.reminderEnabled,
+                        onChanged: (v) async {
+                          if (v && state.reminderMinutesOfDay == null) {
+                            await controller.saveReminderSchedule(
+                              enabled: true,
+                              intervalDays: state.reminderIntervalDays,
+                              minutesOfDay: 10 * 60,
+                            );
+                          } else {
+                            await controller.setReminderEnabled(v);
+                          }
+                        },
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '定期提醒你进行备份，保护数据安全',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SwitchListTile(
-                  title: const Text('启用备份提醒'),
-                  value: state.reminderEnabled,
-                  onChanged: (v) async {
-                    if (v && state.reminderMinutesOfDay == null) {
-                      await controller.saveReminderSchedule(
-                        enabled: true,
-                        intervalDays: state.reminderIntervalDays,
-                        minutesOfDay: 10 * 60,
-                      );
-                    } else {
-                      await controller.setReminderEnabled(v);
-                    }
-                  },
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                ),
-                if (state.reminderEnabled) ...[
-                  const SizedBox(height: 12),
-                  _buildIntervalSelector(controller, state, theme),
-                  const SizedBox(height: 12),
-                  _buildTimeSelector(controller, state, theme),
-                  const SizedBox(height: 12),
-                  if (state.lastBackupAt != null)
-                    _reminderInfoRow(
-                      theme,
-                      '上次备份',
-                      _formatDate(state.lastBackupAt),
+                  if (state.reminderEnabled) ...[
+                    const SizedBox(height: 14),
+                    Divider(height: 1, color: theme.dividerColor),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildIntervalSelector(
+                              controller, state, theme),
+                        ),
+                        const SizedBox(width: 12),
+                        _buildTimeSelector(controller, state, theme),
+                      ],
                     ),
-                  if (state.nextReminderAt != null)
-                    _reminderInfoRow(
-                      theme,
-                      '下次提醒',
-                      _formatDate(state.nextReminderAt),
-                    ),
+                    if (state.lastBackupAt != null ||
+                        state.nextReminderAt != null) ...[
+                      const SizedBox(height: 12),
+                      if (state.lastBackupAt != null)
+                        _infoRow(theme, LucideIcons.clock, '上次备份',
+                            _formatDate(state.lastBackupAt)),
+                      if (state.nextReminderAt != null)
+                        _infoRow(theme, LucideIcons.calendarClock, '下次提醒',
+                            _formatDate(state.nextReminderAt)),
+                    ],
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ],
@@ -96,37 +127,30 @@ class _BackupReminderPageState extends ConsumerState<BackupReminderPage> {
     BackupState state,
     ThemeData theme,
   ) {
-    return Row(
-      children: [
-        Text('间隔: ', style: theme.textTheme.bodyMedium),
-        const SizedBox(width: 8),
-        Expanded(
-          child: DropdownButtonFormField<int>(
-            value: state.reminderIntervalDays,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              isDense: true,
-              contentPadding:
-                  EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            ),
-            items: const [
-              DropdownMenuItem(value: 1, child: Text('每天')),
-              DropdownMenuItem(value: 3, child: Text('每 3 天')),
-              DropdownMenuItem(value: 7, child: Text('每周')),
-              DropdownMenuItem(value: 14, child: Text('每两周')),
-              DropdownMenuItem(value: 30, child: Text('每月')),
-            ],
-            onChanged: (v) {
-              if (v == null) return;
-              controller.saveReminderSchedule(
-                enabled: true,
-                intervalDays: v,
-                minutesOfDay: state.reminderMinutesOfDay ?? 10 * 60,
-              );
-            },
-          ),
-        ),
+    return DropdownButtonFormField<int>(
+      value: state.reminderIntervalDays,
+      decoration: const InputDecoration(
+        labelText: '间隔',
+        border: OutlineInputBorder(),
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      ),
+      style: theme.textTheme.bodyMedium?.copyWith(fontSize: 14),
+      items: const [
+        DropdownMenuItem(value: 1, child: Text('每天')),
+        DropdownMenuItem(value: 3, child: Text('每 3 天')),
+        DropdownMenuItem(value: 7, child: Text('每周')),
+        DropdownMenuItem(value: 14, child: Text('每两周')),
+        DropdownMenuItem(value: 30, child: Text('每月')),
       ],
+      onChanged: (v) {
+        if (v == null) return;
+        controller.saveReminderSchedule(
+          enabled: true,
+          intervalDays: v,
+          minutesOfDay: state.reminderMinutesOfDay ?? 10 * 60,
+        );
+      },
     );
   }
 
@@ -137,39 +161,44 @@ class _BackupReminderPageState extends ConsumerState<BackupReminderPage> {
   ) {
     final minutes = state.reminderMinutesOfDay ?? 10 * 60;
     final time = TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60);
-    return Row(
-      children: [
-        Text('提醒时间: ', style: theme.textTheme.bodyMedium),
-        const SizedBox(width: 8),
-        OutlinedButton(
-          onPressed: () async {
-            final picked = await showTimePicker(
-              context: context,
-              initialTime: time,
-            );
-            if (picked == null) return;
-            final newMinutes = picked.hour * 60 + picked.minute;
-            await controller.saveReminderSchedule(
-              enabled: true,
-              intervalDays: state.reminderIntervalDays,
-              minutesOfDay: newMinutes,
-            );
-          },
-          child: Text(time.format(context)),
-        ),
-      ],
+    return OutlinedButton.icon(
+      icon: const Icon(LucideIcons.clock, size: 16),
+      label: Text(time.format(context)),
+      onPressed: () async {
+        final picked = await showTimePicker(
+          context: context,
+          initialTime: time,
+        );
+        if (picked == null) return;
+        final newMinutes = picked.hour * 60 + picked.minute;
+        await controller.saveReminderSchedule(
+          enabled: true,
+          intervalDays: state.reminderIntervalDays,
+          minutesOfDay: newMinutes,
+        );
+      },
     );
   }
 
-  Widget _reminderInfoRow(ThemeData theme, String label, String value) {
+  Widget _infoRow(
+      ThemeData theme, IconData icon, String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
-          Text('$label: ', style: theme.textTheme.bodySmall),
+          Icon(icon, size: 14, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Text(
+            '$label: ',
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
           Text(
             value,
             style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: 12,
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
@@ -182,5 +211,35 @@ class _BackupReminderPageState extends ConsumerState<BackupReminderPage> {
     if (dt == null) return '';
     return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
         '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+// =============================================================================
+// Shared Widget
+// =============================================================================
+
+class _Card extends StatelessWidget {
+  const _Card({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.dividerColor),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: child,
+    );
   }
 }
