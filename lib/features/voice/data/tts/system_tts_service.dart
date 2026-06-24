@@ -4,14 +4,16 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
-/// Robust wrapper around `flutter_tts` for system (on-device) TTS.
+/// System (on-device) TTS service — closely mirrors Kelivo's TtsProvider.
 ///
-/// Mirrors Kelivo's engine initialization strategy:
-/// 1. Create FlutterTts and "kick" the engine (getLanguages/getEngines)
-/// 2. Poll until the engine is bound (getLanguages returns non-null)
-/// 3. Select the best engine (prefer Google)
-/// 4. Apply config (rate, pitch, volume, language, queue mode)
-/// 5. On speak failure: retry → re-select engine → recreate engine
+/// Architecture (matching kelivo):
+/// - Uses QUEUE_ADD (1) so native `speak()` returns immediately with a status
+///   code. This avoids the fatal hang that QUEUE_FLUSH causes when the engine
+///   isn't bound (the native plugin queues the call and never returns a result).
+/// - Relies on the completion handler callback to know when speech finishes.
+/// - Uses a [Completer] so callers can `await speak(text)` and only continue
+///   after the utterance completes.
+/// - Retry escalation: speak → re-select engine → recreate engine.
 class SystemTtsService {
   FlutterTts? _tts;
   bool _initialized = false;
@@ -19,8 +21,8 @@ class SystemTtsService {
 
   static const int _maxRetries = 5;
   static const Duration _retryDelay = Duration(milliseconds: 180);
-  static const Duration _bindTimeout = Duration(seconds: 8);
-  static const Duration _rebindTimeout = Duration(seconds: 5);
+  static const Duration _bindTimeout = Duration(seconds: 5);
+  static const Duration _rebindTimeout = Duration(seconds: 2);
 
   Completer<void>? _speakingCompleter;
 
@@ -42,19 +44,37 @@ class SystemTtsService {
     _initialized = true;
   }
 
-  /// Speaks [text] using the device's built-in TTS engine.
+  /// Speaks [text] and waits until the utterance finishes.
+  ///
   /// The speech rate / pitch should be pre-configured via [applyUserConfig].
+  /// Internally uses kelivo's retry escalation if the first attempt fails.
   Future<void> speak(String text) async {
     await init();
-    if (!await _trySpeak(text)) {
+    await _ensureBound();
+
+    final ok = await _trySpeak(text);
+    if (!ok) {
       throw Exception('系统 TTS 引擎无法朗读，请检查设备 TTS 设置');
     }
+
+    // speak was queued successfully — wait for the completion handler to fire.
+    // Completer is created here (after success) to avoid error callbacks during
+    // retries from prematurely resolving it.
+    //
+    // Timeout guard: if the native engine silently fails (e.g. "speak failed:
+    // not bound" is logged but the Kotlin plugin returned success anyway because
+    // ismServiceConnectionUsable passed), no completion callback fires. Without
+    // a timeout we'd hang forever. 30s is generous for any utterance chunk.
+    _speakingCompleter = Completer<void>();
+    await _speakingCompleter!.future.timeout(
+      const Duration(seconds: 30),
+      onTimeout: () {
+        _completeSpeaking();
+      },
+    );
   }
 
   /// Applies user-configured settings (engine, language, rate, pitch).
-  ///
-  /// Note: calling setEngine triggers native TTS re-creation, so we must
-  /// wait for re-binding before applying language/rate/pitch.
   Future<void> applyUserConfig({
     String? engineId,
     String? languageTag,
@@ -65,9 +85,9 @@ class SystemTtsService {
     if (engineId != null && engineId.isNotEmpty) {
       try {
         await _tts!.setEngine(engineId);
-        // setEngine recreates native TTS — wait for re-binding.
-        _engineReady = false;
-        await _ensureBound(timeout: _rebindTimeout);
+        // setEngine() on native side recreates the TextToSpeech instance.
+        // The await above already blocks until the new engine's init listener
+        // fires (engineResult.success is called in onInitListenerWithCallback).
       } catch (_) {}
     }
     if (languageTag != null && languageTag.isNotEmpty) {
@@ -76,8 +96,9 @@ class SystemTtsService {
       } catch (_) {}
     }
     if (speechRate != null) {
+      _currentRate = speechRate.clamp(0.1, 1.0);
       try {
-        await _tts!.setSpeechRate(speechRate.clamp(0.1, 1.0));
+        await _tts!.setSpeechRate(_currentRate);
       } catch (_) {}
     }
     if (pitch != null) {
@@ -97,13 +118,6 @@ class SystemTtsService {
   Future<void> pause() async {
     try {
       await _tts?.pause();
-    } catch (_) {}
-  }
-
-  Future<void> resume() async {
-    try {
-      // flutter_tts doesn't have a resume method; Kelivo restarts the chunk.
-      // We rely on TtsController to handle resume by replaying the chunk.
     } catch (_) {}
   }
 
@@ -136,7 +150,7 @@ class SystemTtsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Engine lifecycle (mirrors Kelivo's _kickEngine / _ensureBound / _selectEngine)
+  // Engine lifecycle (mirrors Kelivo exactly)
   // ---------------------------------------------------------------------------
 
   void _bindHandlers() {
@@ -162,7 +176,8 @@ class SystemTtsService {
     });
   }
 
-  /// Wake up the engine by calling getLanguages/getEngines.
+  /// Wake up the engine — getLanguages/getEngines will block (via native
+  /// method channel queueing) until the TextToSpeech init listener fires.
   Future<void> _kickEngine() async {
     try {
       await _tts!.getLanguages;
@@ -172,32 +187,31 @@ class SystemTtsService {
     } catch (_) {}
   }
 
-  /// Poll until the engine reports a non-empty language list.
+  /// Poll until the engine reports available languages (matching kelivo).
   ///
-  /// The native plugin catches NullPointerException from
-  /// `tts.availableLanguages` and returns an *empty* list (not null).
-  /// So we must check `isNotEmpty` — checking `!= null` would always
-  /// pass immediately even when the engine hasn't actually bound.
-  Future<void> _ensureBound({Duration timeout = const Duration(seconds: 5)}) async {
+  /// Note: on the native side, when ttsStatus is null (during init), method
+  /// calls are queued and never return until init completes. So the first
+  /// `getLanguages` call after init will naturally block until ready. This
+  /// polling loop handles the edge case where the engine returns empty
+  /// languages briefly after initialization.
+  Future<void> _ensureBound({
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
     if (_engineReady) return;
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
       try {
         final langs = await _tts!.getLanguages;
-        if (langs is List && langs.isNotEmpty) {
+        if (langs != null) {
           _engineReady = true;
           return;
         }
       } catch (_) {}
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await Future.delayed(const Duration(milliseconds: 120));
     }
   }
 
-  /// Select the best engine — prefer Google TTS.
-  ///
-  /// IMPORTANT: `setEngine()` on the native side RECREATES the
-  /// TextToSpeech instance (resets ttsStatus to null), so we must
-  /// wait for re-binding afterwards.
+  /// Select the best engine — prefer Google TTS (matching kelivo).
   Future<void> _selectEngine() async {
     try {
       final engines = await _tts!.getEngines;
@@ -213,15 +227,12 @@ class SystemTtsService {
         chosen ??= engines.first.toString();
         try {
           await _tts!.setEngine(chosen);
-          // setEngine recreates the native TTS — wait for re-binding.
-          _engineReady = false;
-          await _ensureBound(timeout: _rebindTimeout);
         } catch (_) {}
       }
     } catch (_) {}
   }
 
-  /// Apply configuration: rate, pitch, volume, language, queue mode.
+  /// Apply default configuration (matching kelivo's _applyConfig).
   Future<void> _applyConfig() async {
     try {
       await _tts!.setSpeechRate(0.5);
@@ -233,7 +244,7 @@ class SystemTtsService {
       await _tts!.setVolume(1.0);
     } catch (_) {}
 
-    // Pick language based on device locale
+    // Pick language based on device locale (matching kelivo)
     final loc = ui.PlatformDispatcher.instance.locale;
     final defaultTag = _localeToTag(loc);
     try {
@@ -253,14 +264,21 @@ class SystemTtsService {
     try {
       await _tts!.awaitSpeakCompletion(true);
     } catch (_) {}
-    // QUEUE_FLUSH (0) is required for awaitSpeakCompletion to work —
-    // the Kotlin plugin only defers the result when queueMode == QUEUE_FLUSH.
     try {
-      await _tts!.setQueueMode(0);
+      await _tts!.awaitSynthCompletion(true);
+    } catch (_) {}
+    // QUEUE_ADD (1) — matching kelivo. With QUEUE_ADD, native speak() returns
+    // immediately with a success/failure code. We use the completion handler
+    // callback to know when speech actually finishes.
+    // DO NOT use QUEUE_FLUSH (0): it causes speak() to hang forever if the
+    // engine's service connection is not usable (native queues the call in
+    // pendingMethodCalls and never returns a result).
+    try {
+      await _tts!.setQueueMode(1);
     } catch (_) {}
   }
 
-  /// Recreate the engine from scratch (last resort).
+  /// Recreate the engine from scratch (last resort, matching kelivo).
   Future<void> _recreateEngine() async {
     try {
       await _tts?.stop();
@@ -275,41 +293,56 @@ class SystemTtsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Speak with retry (mirrors Kelivo's _trySpeak)
+  // Speak with retry (mirrors Kelivo's _trySpeak exactly)
   // ---------------------------------------------------------------------------
 
-  /// Try to speak, with escalating retry strategies.
+  /// Try to speak with escalating retry strategies (matching kelivo).
+  ///
+  /// With QUEUE_ADD, `_tts.speak()` returns immediately with a status code:
+  /// - 1 (or true): speak was successfully queued to the TTS engine
+  /// - 0/null/false: speak failed (engine not bound, etc.)
+  ///
+  /// This does NOT mean speech has finished — only that it was accepted.
+  /// The completion handler fires when the utterance actually completes.
   Future<bool> _trySpeak(String text) async {
     await _ensureBound();
 
-    // Attempt 1: just speak
-    if (_speakOk(await _doSpeak(text))) return true;
+    // Set speech rate before each speak (matching kelivo's _trySpeak)
+    try {
+      await _tts!.setSpeechRate(_currentRate);
+    } catch (_) {}
 
-    // Attempt 2: re-select engine, retry up to _maxRetries times
+    // Attempt 1: just speak
+    dynamic res;
+    try {
+      res = await _tts!.speak(text, focus: true);
+    } catch (_) {}
+    if (_speakOk(res)) return true;
+
+    // Attempt 2: re-select engine, retry
     await _selectEngine();
     for (var i = 0; i < _maxRetries; i++) {
       await Future<void>.delayed(_retryDelay);
-      if (_speakOk(await _doSpeak(text))) return true;
+      try {
+        res = await _tts!.speak(text, focus: true);
+      } catch (_) {}
+      if (_speakOk(res)) return true;
     }
 
-    // Attempt 3: completely recreate engine, retry up to _maxRetries times
+    // Attempt 3: completely recreate engine, retry
     await _recreateEngine();
     for (var i = 0; i < _maxRetries; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 200));
-      if (_speakOk(await _doSpeak(text))) return true;
+      try {
+        res = await _tts!.speak(text, focus: true);
+      } catch (_) {}
+      if (_speakOk(res)) return true;
     }
 
     return false;
   }
 
-  Future<dynamic> _doSpeak(String text) async {
-    try {
-      return await _tts!.speak(text, focus: true);
-    } catch (_) {
-      return null;
-    }
-  }
-
+  /// Check if the native speak() result indicates success (matching kelivo).
   bool _speakOk(dynamic res) {
     if (res == null) return false;
     if (res is int) return res == 1;
@@ -322,6 +355,14 @@ class SystemTtsService {
     final c = _speakingCompleter;
     if (c != null && !c.isCompleted) c.complete();
     _speakingCompleter = null;
+  }
+
+  /// Current speech rate to apply before each speak call.
+  double _currentRate = 0.5;
+
+  /// Sets the speech rate for subsequent speak calls.
+  void setSpeechRate(double rate) {
+    _currentRate = rate.clamp(0.1, 1.0);
   }
 
   static String _localeToTag(ui.Locale l) {
