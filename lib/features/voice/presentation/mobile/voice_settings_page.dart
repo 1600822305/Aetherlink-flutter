@@ -303,7 +303,7 @@ class _TtsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final meta = _ttsServiceMeta();
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       children: [
         for (final kind in TtsProviderKind.values) ...[
           Builder(
@@ -319,7 +319,7 @@ class _TtsTab extends ConsumerWidget {
               final m = meta[kind]!;
 
               return Padding(
-                padding: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.only(bottom: 8),
                 child: _ServiceCard(
                   icon: m.icon,
                   color: m.color,
@@ -377,7 +377,7 @@ class _AsrTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final meta = _asrServiceMeta();
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       children: [
         for (final kind in AsrProviderKind.values) ...[
           Builder(
@@ -393,7 +393,7 @@ class _AsrTab extends StatelessWidget {
               final m = meta[kind]!;
 
               return Padding(
-                padding: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.only(bottom: 8),
                 child: _ServiceCard(
                   icon: m.icon,
                   color: m.color,
@@ -462,116 +462,108 @@ class _ServiceCard extends StatelessWidget {
     final theme = Theme.of(context);
     return Material(
       color: theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(10),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(10),
         child: Container(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: isActive
                   ? theme.colorScheme.primary.withValues(alpha: 0.5)
                   : theme.dividerColor,
             ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              // Header: icon + name + badges
-              Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(icon, size: 20, color: color),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              // Icon
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 16, color: color),
+              ),
+              const SizedBox(width: 10),
+              // Name + feature subtitle
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
                       children: [
-                        Text(
-                          name,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,
+                        Flexible(
+                          child: Text(
+                            name,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13.5,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        const SizedBox(height: 3),
-                        Row(
-                          children: [
-                            if (isActive)
-                              const _Badge(
-                                label: '当前使用',
-                                bgColor: Color(0xFF22C55E),
-                                textColor: Colors.white,
-                              ),
-                            if (isActive && status.isNotEmpty)
-                              const SizedBox(width: 4),
-                            if (status.isNotEmpty)
-                              _Badge(
-                                label: status,
-                                bgColor: color.withValues(alpha: 0.12),
-                                textColor: color,
-                                outlined: true,
-                              ),
-                          ],
-                        ),
+                        if (isActive) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF22C55E),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ],
+                        if (status.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          _Badge(
+                            label: status,
+                            bgColor: color.withValues(alpha: 0.12),
+                            textColor: color,
+                            outlined: true,
+                          ),
+                        ],
                       ],
                     ),
-                  ),
-                  if (onTest != null)
-                    GestureDetector(
-                      onTap: onTest,
-                      child: Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          LucideIcons.volume2,
-                          size: 16,
-                          color: color,
-                        ),
+                    const SizedBox(height: 2),
+                    Text(
+                      features.join(' · '),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontSize: 11,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  if (onTest != null) const SizedBox(width: 8),
-                  Icon(
-                    LucideIcons.chevronRight,
-                    size: 16,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              // Description
-              Text(
-                description,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  height: 1.35,
+                  ],
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 10),
-              // Feature tags
-              Wrap(
-                spacing: 4,
-                runSpacing: 4,
-                children: features
-                    .map((f) => _FeatureChip(label: f, color: color))
-                    .toList(),
+              if (onTest != null) ...[
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: onTest,
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(LucideIcons.volume2, size: 14, color: color),
+                  ),
+                ),
+              ],
+              const SizedBox(width: 6),
+              Icon(
+                LucideIcons.chevronRight,
+                size: 14,
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ],
           ),
@@ -610,32 +602,6 @@ class _Badge extends StatelessWidget {
           fontSize: 10,
           fontWeight: FontWeight.w600,
           color: textColor,
-        ),
-      ),
-    );
-  }
-}
-
-class _FeatureChip extends StatelessWidget {
-  const _FeatureChip({required this.label, required this.color});
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 10.5,
-          fontWeight: FontWeight.w600,
-          color: color,
         ),
       ),
     );
