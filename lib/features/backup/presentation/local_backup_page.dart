@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/backup/application/backup_controller
 import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_file_item.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_manifest.dart';
+import 'package:aetherlink_flutter/features/backup/presentation/backup_preview_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 
 /// Detail page for local backup & restore operations.
@@ -652,46 +653,63 @@ class _BackupFileRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      child: Row(
-        children: [
-          Icon(
-            item.isAuto ? LucideIcons.shieldCheck : LucideIcons.archive,
-            size: 18,
-            color: item.isAuto
-                ? theme.colorScheme.secondary
-                : theme.colorScheme.primary,
+    return InkWell(
+      onTap: () {
+        Navigator.of(context).push(
+          PageRouteBuilder<void>(
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            pageBuilder: (_, __, ___) => BackupPreviewPage(item: item),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.displayName,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  '${item.sizeDisplay} | ${_formatDate(item.lastModified)}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontSize: 11,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: Row(
+          children: [
+            Icon(
+              item.isAuto ? LucideIcons.shieldCheck : LucideIcons.archive,
+              size: 18,
+              color: item.isAuto
+                  ? theme.colorScheme.secondary
+                  : theme.colorScheme.primary,
             ),
-          ),
-          IconButton(
-            icon: const Icon(LucideIcons.trash2, size: 16),
-            onPressed: onDelete,
-            visualDensity: VisualDensity.compact,
-          ),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.displayName,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    '${item.sizeDisplay} | ${_formatDate(item.lastModified)}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 11,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              LucideIcons.chevronRight,
+              size: 16,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              icon: const Icon(LucideIcons.trash2, size: 16),
+              onPressed: onDelete,
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ),
       ),
     );
   }
