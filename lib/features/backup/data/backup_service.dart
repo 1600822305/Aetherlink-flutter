@@ -451,38 +451,72 @@ class BackupService {
     );
   }
 
+  /// Accepted ModelType enum wire values (see `shared/domain/model_type.dart`).
+  static const _knownModelTypes = <String>{
+    'chat', 'vision', 'audio', 'embedding', 'tool', 'reasoning',
+    'image_gen', 'video_gen', 'function_calling', 'web_search',
+    'rerank', 'code_gen', 'translation', 'transcription',
+  };
+
   /// Normalizes a Web ModelProvider JSON to match Flutter's ModelProvider shape.
-  /// Web and Flutter share the same field names so mostly pass-through, but
-  /// we ensure models[] is present and strip web-only fields.
+  ///
+  /// `ModelProvider.fromJson` requires `id`, `name`, `avatar`, `color` and
+  /// each nested `Model.fromJson` requires `id`, `name`, `provider`. If any
+  /// model is missing these the ENTIRE provider deserialization throws, so we
+  /// filter invalid models and fill defaults for the provider itself.
   static Map<String, dynamic> _normalizeWebProvider(Map<String, dynamic> p) {
     final json = Map<String, dynamic>.from(p);
 
-    // Ensure required fields have defaults
+    // Ensure required provider fields (all required String in ModelProvider).
     json['id'] ??= '';
-    json['name'] ??= json['id'] ?? '';
+    json['name'] ??= (json['id'] ?? '').toString().isNotEmpty
+        ? json['id']
+        : 'Unknown';
     json['avatar'] ??= (json['name'] ?? 'P').toString().isNotEmpty
         ? (json['name'] ?? 'P').toString().substring(0, 1).toUpperCase()
         : 'P';
     json['color'] ??= '#10a37f';
     json['isEnabled'] ??= false;
 
-    // Ensure models is a List<Map> (not null)
+    // Ensure models is a List (not null).
     if (json['models'] is! List) {
       json['models'] = <dynamic>[];
     }
 
-    // Normalize each model within the provider
+    // Normalize each model, filtering out entries that would crash fromJson.
+    // Model.fromJson requires: id (String), name (String), provider (String).
     final models = <Map<String, dynamic>>[];
     for (final m in json['models'] as List) {
-      if (m is Map<String, dynamic>) {
-        final modelJson = Map<String, dynamic>.from(m);
-        modelJson['provider'] ??= json['id'];
-        models.add(modelJson);
+      if (m is! Map<String, dynamic>) continue;
+      final modelJson = Map<String, dynamic>.from(m);
+
+      // id is required — skip models without one.
+      final modelId = modelJson['id'];
+      if (modelId == null || modelId.toString().isEmpty) continue;
+
+      // name defaults to id if missing.
+      modelJson['name'] ??= modelId.toString();
+
+      // provider defaults to the parent provider's id.
+      modelJson['provider'] ??= json['id'];
+
+      // Filter modelTypes to known enum values to prevent fromJson crash.
+      // ModelType enum only accepts specific string values; unknown values
+      // would cause the entire Model.fromJson to throw.
+      if (modelJson['modelTypes'] is List) {
+        modelJson['modelTypes'] = (modelJson['modelTypes'] as List)
+            .where((t) => _knownModelTypes.contains(t))
+            .toList();
       }
+
+      // Strip web-only model fields.
+      modelJson.remove('useCorsPlugin');
+
+      models.add(modelJson);
     }
     json['models'] = models;
 
-    // Strip web-only fields that don't exist in Flutter model
+    // Strip web-only provider fields that don't exist in Flutter.
     json.remove('useCorsPlugin');
     json.remove('customModelEndpoint');
 
