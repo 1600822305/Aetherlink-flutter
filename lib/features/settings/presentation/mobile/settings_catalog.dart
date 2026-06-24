@@ -176,6 +176,12 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         description: '管理数据存储和隐私选项',
       ),
       SettingItemData(
+        icon: LucideIcons.hardDrive,
+        title: '备份与恢复',
+        description: '本地/WebDAV 备份、数据恢复',
+        route: AppRouter.backupSettingsPath,
+      ),
+      SettingItemData(
         icon: LucideIcons.database,
         title: 'Notion 集成',
         description: '配置Notion数据库导出设置',
