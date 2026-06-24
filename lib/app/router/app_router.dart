@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/translate_page.dart';
+import 'package:aetherlink_flutter/features/backup/presentation/backup_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/agent_prompts_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/auxiliary_model_settings_page.dart';
@@ -84,6 +85,7 @@ abstract final class AppRouter {
   static const String behaviorPath = '/settings/behavior';
   static const String settingsSearchPath = '/settings/search';
   static const String voiceSettingsPath = '/settings/voice';
+  static const String backupSettingsPath = '/settings/backup';
   static const String welcomePath = '/welcome';
   static const String translatePath = '/translate';
 
@@ -264,6 +266,12 @@ abstract final class AppRouter {
         name: 'voice-settings',
         pageBuilder: (context, state) =>
             _instant(state, const VoiceSettingsPage()),
+      ),
+      GoRoute(
+        path: backupSettingsPath,
+        name: 'backup-settings',
+        pageBuilder: (context, state) =>
+            _instant(state, const BackupSettingsPage()),
       ),
       GoRoute(
         path: settingsSearchPath,
