@@ -95,8 +95,11 @@ class BackupService {
     );
 
     // 5. Pack ZIP in isolate.
-    final timestamp =
-        DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
+    final timestamp = DateTime.now()
+        .toIso8601String()
+        .replaceAll(':', '-')
+        .split('.')
+        .first;
     final backupDir = await _backupDirectory();
     final outPath = p.join(backupDir.path, 'aetherlink_backup_$timestamp.zip');
 
@@ -118,7 +121,8 @@ class BackupService {
   }
 
   /// Restores data from a ZIP backup file.
-  Future<void> restoreFromFile(
+  /// Returns a [RestoreResult] with success/skipped/failed counts.
+  Future<RestoreResult> restoreFromFile(
     File zipFile, {
     RestoreMode mode = RestoreMode.overwrite,
   }) async {
@@ -131,8 +135,9 @@ class BackupService {
       if (!await manifestFile.exists()) {
         throw const FormatException('Invalid backup: manifest.json not found');
       }
-      final manifest =
-          BackupManifest.fromJsonString(await manifestFile.readAsString());
+      final manifest = BackupManifest.fromJsonString(
+        await manifestFile.readAsString(),
+      );
 
       // 3. Verify checksum.
       final verified = await _verifyChecksum(extractDir, manifest.checksum);
@@ -149,7 +154,7 @@ class BackupService {
       final backupData = await _parseExtractedData(extractDir, manifest);
 
       // 6. Write to database in a transaction.
-      await _writeData(backupData, mode, manifest.schemaVersion);
+      return await _writeData(backupData, mode, manifest.schemaVersion);
     } finally {
       // Cleanup extracted directory.
       try {
@@ -163,8 +168,11 @@ class BackupService {
     final file = await createBackup();
     // Rename to indicate it's auto-created.
     final dir = file.parent;
-    final timestamp =
-        DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
+    final timestamp = DateTime.now()
+        .toIso8601String()
+        .replaceAll(':', '-')
+        .split('.')
+        .first;
     final newName = 'auto_${reason}_$timestamp.zip';
     await file.rename(p.join(dir.path, newName));
 
@@ -182,18 +190,23 @@ class BackupService {
       if (entity is File && entity.path.endsWith('.zip')) {
         final stat = await entity.stat();
         final name = p.basename(entity.path);
-        items.add(BackupFileItem(
-          href: entity.uri,
-          displayName: name,
-          size: stat.size,
-          lastModified: stat.modified,
-          isAuto: name.startsWith('auto_'),
-        ));
+        items.add(
+          BackupFileItem(
+            href: entity.uri,
+            displayName: name,
+            size: stat.size,
+            lastModified: stat.modified,
+            isAuto: name.startsWith('auto_'),
+          ),
+        );
       }
     }
     // Most recent first.
-    items.sort((a, b) =>
-        (b.lastModified ?? DateTime(0)).compareTo(a.lastModified ?? DateTime(0)));
+    items.sort(
+      (a, b) => (b.lastModified ?? DateTime(0)).compareTo(
+        a.lastModified ?? DateTime(0),
+      ),
+    );
     return items;
   }
 
@@ -401,11 +414,15 @@ class BackupService {
     );
   }
 
-  Future<void> _writeData(
+  Future<RestoreResult> _writeData(
     _RawBackupData data,
     RestoreMode mode,
     int sourceSchema,
   ) async {
+    int succeeded = 0;
+    int skipped = 0;
+    int failed = 0;
+
     await db.transaction(() async {
       if (mode == RestoreMode.overwrite) {
         // Clear all tables.
@@ -421,127 +438,219 @@ class BackupService {
       // Write topics.
       for (final json in data.topics) {
         final id = json['id'] as String? ?? '';
-        if (id.isEmpty) continue;
+        if (id.isEmpty) {
+          skipped++;
+          continue;
+        }
         if (mode == RestoreMode.merge) {
           final existing = await db.topicDao.getById(id);
-          if (existing != null) continue;
+          if (existing != null) {
+            skipped++;
+            continue;
+          }
         }
-        await _rawInsertTopic(json);
+        if (await _rawInsertTopic(json)) {
+          succeeded++;
+        } else {
+          failed++;
+        }
       }
 
       // Write messages.
       for (final json in data.messages) {
         final id = json['id'] as String? ?? '';
-        if (id.isEmpty) continue;
+        if (id.isEmpty) {
+          skipped++;
+          continue;
+        }
         if (mode == RestoreMode.merge) {
           final existing = await db.messageDao.getById(id);
-          if (existing != null) continue;
+          if (existing != null) {
+            skipped++;
+            continue;
+          }
         }
-        await _rawInsertMessage(json);
+        if (await _rawInsertMessage(json)) {
+          succeeded++;
+        } else {
+          failed++;
+        }
       }
 
       // Write message blocks.
       for (final json in data.messageBlocks) {
         final id = json['id'] as String? ?? '';
-        if (id.isEmpty) continue;
+        if (id.isEmpty) {
+          skipped++;
+          continue;
+        }
         if (mode == RestoreMode.merge) {
           final existing = await db.messageBlockDao.getById(id);
-          if (existing != null) continue;
+          if (existing != null) {
+            skipped++;
+            continue;
+          }
         }
-        await _rawInsertMessageBlock(json);
+        if (await _rawInsertMessageBlock(json)) {
+          succeeded++;
+        } else {
+          failed++;
+        }
       }
 
       // Write assistants.
       for (final json in data.assistants) {
         final id = json['id'] as String? ?? '';
-        if (id.isEmpty) continue;
+        if (id.isEmpty) {
+          skipped++;
+          continue;
+        }
         if (mode == RestoreMode.merge) {
           final existing = await db.assistantDao.getById(id);
-          if (existing != null) continue;
+          if (existing != null) {
+            skipped++;
+            continue;
+          }
         }
-        await _rawInsertAssistant(json);
+        if (await _rawInsertAssistant(json)) {
+          succeeded++;
+        } else {
+          failed++;
+        }
       }
 
       // Write providers.
       for (final json in data.providers) {
         final id = json['id'] as String? ?? '';
-        if (id.isEmpty) continue;
+        if (id.isEmpty) {
+          skipped++;
+          continue;
+        }
         if (mode == RestoreMode.merge) {
           final existing = await db.providerDao.getById(id);
-          if (existing != null) continue;
+          if (existing != null) {
+            skipped++;
+            continue;
+          }
         }
-        await _rawInsertProvider(json);
+        if (await _rawInsertProvider(json)) {
+          succeeded++;
+        } else {
+          failed++;
+        }
       }
 
       // Write groups.
       for (final json in data.groups) {
         final id = json['id'] as String? ?? '';
-        if (id.isEmpty) continue;
+        if (id.isEmpty) {
+          skipped++;
+          continue;
+        }
         if (mode == RestoreMode.merge) {
           final existing = await db.groupDao.getById(id);
-          if (existing != null) continue;
+          if (existing != null) {
+            skipped++;
+            continue;
+          }
         }
-        await _rawInsertGroup(json);
+        if (await _rawInsertGroup(json)) {
+          succeeded++;
+        } else {
+          failed++;
+        }
       }
 
       // Write settings.
       for (final json in data.settings) {
         final key = json['key'] as String? ?? '';
-        if (key.isEmpty) continue;
+        if (key.isEmpty) {
+          skipped++;
+          continue;
+        }
         if (mode == RestoreMode.merge) {
           final existing = await db.appSettingDao.getValue(key);
-          if (existing != null) continue;
+          if (existing != null) {
+            skipped++;
+            continue;
+          }
         }
         final value = json['value'] as String? ?? '';
-        await db.appSettingDao.setValue(key, value);
+        try {
+          await db.appSettingDao.setValue(key, value);
+          succeeded++;
+        } catch (_) {
+          failed++;
+        }
       }
     });
+
+    return RestoreResult(
+      succeeded: succeeded,
+      skipped: skipped,
+      failed: failed,
+    );
   }
 
-  // Raw insert helpers using the DAOs' domain models with lenient parsing.
-  Future<void> _rawInsertTopic(Map<String, dynamic> json) async {
+  // Raw insert helpers. Returns true on success, false on failure.
+  Future<bool> _rawInsertTopic(Map<String, dynamic> json) async {
     try {
-      final topic =
-          Topic.fromJson(json); // freezed-generated, ignores unknown fields
+      final topic = Topic.fromJson(json);
       await db.topicDao.upsert(topic);
+      return true;
     } catch (_) {
-      // Skip malformed records silently during restore.
+      return false;
     }
   }
 
-  Future<void> _rawInsertMessage(Map<String, dynamic> json) async {
+  Future<bool> _rawInsertMessage(Map<String, dynamic> json) async {
     try {
       final message = Message.fromJson(json);
       await db.messageDao.upsert(message);
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
-  Future<void> _rawInsertMessageBlock(Map<String, dynamic> json) async {
+  Future<bool> _rawInsertMessageBlock(Map<String, dynamic> json) async {
     try {
       final block = MessageBlock.fromJson(json);
       await db.messageBlockDao.upsert(block);
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
-  Future<void> _rawInsertAssistant(Map<String, dynamic> json) async {
+  Future<bool> _rawInsertAssistant(Map<String, dynamic> json) async {
     try {
       final assistant = Assistant.fromJson(json);
       await db.assistantDao.upsert(assistant);
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
-  Future<void> _rawInsertProvider(Map<String, dynamic> json) async {
+  Future<bool> _rawInsertProvider(Map<String, dynamic> json) async {
     try {
       final provider = ModelProvider.fromJson(json);
       await db.providerDao.upsert(provider);
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
-  Future<void> _rawInsertGroup(Map<String, dynamic> json) async {
+  Future<bool> _rawInsertGroup(Map<String, dynamic> json) async {
     try {
       final group = Group.fromJson(json);
       await db.groupDao.upsert(group);
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -595,6 +704,25 @@ class BackupService {
     } catch (_) {
       return '';
     }
+  }
+}
+
+/// Result of a restore operation with record-level statistics.
+class RestoreResult {
+  final int succeeded;
+  final int skipped;
+  final int failed;
+
+  const RestoreResult({this.succeeded = 0, this.skipped = 0, this.failed = 0});
+
+  int get total => succeeded + skipped + failed;
+
+  String get summary {
+    final parts = <String>[];
+    if (succeeded > 0) parts.add('成功 $succeeded');
+    if (skipped > 0) parts.add('跳过 $skipped');
+    if (failed > 0) parts.add('失败 $failed');
+    return parts.join('，');
   }
 }
 
