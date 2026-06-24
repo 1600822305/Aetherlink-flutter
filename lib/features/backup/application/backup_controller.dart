@@ -9,6 +9,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:aetherlink_flutter/features/backup/data/backup_reminder_service.dart';
 import 'package:aetherlink_flutter/features/backup/data/backup_service.dart';
 import 'package:aetherlink_flutter/features/backup/data/chatbox_importer.dart';
+import 'package:aetherlink_flutter/features/backup/data/chatbox_txt_importer.dart';
 import 'package:aetherlink_flutter/features/backup/data/cherry_importer.dart';
 import 'package:aetherlink_flutter/features/backup/data/database_diagnostic_service.dart';
 import 'package:aetherlink_flutter/features/backup/data/s3_client.dart';
@@ -693,6 +694,34 @@ class BackupController extends _$BackupController {
         status: BackupStatus.success,
         message:
             '导入成功: ${result.conversations} 个对话, ${result.messages} 条消息, ${result.providers} 个服务商',
+        localBackups: locals,
+      );
+    } catch (e) {
+      state = state.copyWith(status: BackupStatus.error, message: '导入失败: $e');
+    }
+  }
+
+  /// Import from a ChatboxAI TXT export file.
+  Future<void> importFromChatboxTxt(File file, RestoreMode mode) async {
+    state = state.copyWith(
+      status: BackupStatus.working,
+      message: '正在导入 ChatboxAI TXT 数据...',
+    );
+    try {
+      if (mode == RestoreMode.overwrite) {
+        await _service.createAutoBackup(reason: 'ChatboxAI TXT 导入前自动备份');
+      }
+      final db = ref.read(appDatabaseProvider);
+      final result = await ChatboxTxtImporter.import(
+        file: file,
+        mode: mode,
+        db: db,
+      );
+      final locals = await _service.listLocalBackups();
+      state = state.copyWith(
+        status: BackupStatus.success,
+        message:
+            '导入成功: ${result.conversations} 个对话, ${result.messages} 条消息',
         localBackups: locals,
       );
     } catch (e) {

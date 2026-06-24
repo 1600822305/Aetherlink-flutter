@@ -57,9 +57,17 @@ class _ImportDataPageState extends ConsumerState<ImportDataPage> {
                     _ActionRow(
                       icon: LucideIcons.messageSquare,
                       accent: const Color(0xFF2563EB),
-                      label: '导入 ChatboxAI',
-                      description: '从 ChatboxAI 导出的 JSON 文件导入对话数据',
+                      label: '导入 ChatboxAI (JSON)',
+                      description: '从 ChatboxAI 导出的 JSON 备份文件导入',
                       onTap: () => _showImportDialog(controller, 'chatbox'),
+                    ),
+                    Divider(height: 1, color: theme.dividerColor),
+                    _ActionRow(
+                      icon: LucideIcons.fileText,
+                      accent: const Color(0xFF7C3AED),
+                      label: '导入 ChatboxAI (TXT)',
+                      description: '从 ChatboxAI 导出的 TXT 聊天记录导入',
+                      onTap: () => _showImportDialog(controller, 'chatbox-txt'),
                     ),
                     Divider(height: 1, color: theme.dividerColor),
                     _ActionRow(
@@ -148,7 +156,18 @@ class _ImportDataPageState extends ConsumerState<ImportDataPage> {
     );
     if (mode == null) return;
 
-    final extensions = source == 'chatbox' ? ['json'] : ['zip', 'json', 'bak'];
+    final List<String> extensions;
+    switch (source) {
+      case 'chatbox':
+        extensions = ['json'];
+        break;
+      case 'chatbox-txt':
+        extensions = ['txt'];
+        break;
+      default:
+        extensions = ['zip', 'json', 'bak'];
+        break;
+    }
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: extensions,
@@ -159,10 +178,16 @@ class _ImportDataPageState extends ConsumerState<ImportDataPage> {
     if (filePath == null) return;
     final file = File(filePath);
 
-    if (source == 'chatbox') {
-      await controller.importFromChatbox(file, mode);
-    } else {
-      await controller.importFromCherryStudio(file, mode);
+    switch (source) {
+      case 'chatbox':
+        await controller.importFromChatbox(file, mode);
+        break;
+      case 'chatbox-txt':
+        await controller.importFromChatboxTxt(file, mode);
+        break;
+      default:
+        await controller.importFromCherryStudio(file, mode);
+        break;
     }
   }
 }
