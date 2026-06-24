@@ -9,6 +9,9 @@ import 'package:share_plus/share_plus.dart';
 
 import 'package:aetherlink_flutter/features/backup/data/backup_reminder_service.dart';
 import 'package:aetherlink_flutter/features/backup/data/backup_service.dart';
+import 'package:aetherlink_flutter/features/backup/data/chatbox_importer.dart';
+import 'package:aetherlink_flutter/features/backup/data/cherry_importer.dart';
+import 'package:aetherlink_flutter/features/backup/data/database_diagnostic_service.dart';
 import 'package:aetherlink_flutter/features/backup/data/s3_client.dart';
 import 'package:aetherlink_flutter/features/backup/data/webdav_client.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
@@ -492,6 +495,82 @@ class BackupController extends _$BackupController {
     if (s.isEmpty) return '';
     if (!s.endsWith('/')) s = '$s/';
     return s;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Phase 3: Third-party import
+  // ---------------------------------------------------------------------------
+
+  /// Import from a ChatboxAI export file.
+  Future<void> importFromChatbox(File file, RestoreMode mode) async {
+    state = state.copyWith(status: BackupStatus.working, message: '正在导入 ChatboxAI 数据...');
+    try {
+      // Safety: create auto-backup before overwrite import
+      if (mode == RestoreMode.overwrite) {
+        await _service.createAutoBackup();
+      }
+      final db = ref.read(appDatabaseProvider);
+      final result = await ChatboxImporter.import(file: file, mode: mode, db: db);
+      final locals = await _service.listLocalBackups();
+      state = state.copyWith(
+        status: BackupStatus.success,
+        message: '导入成功: ${result.conversations} 个对话, ${result.messages} 条消息, ${result.providers} 个服务商',
+        localBackups: locals,
+      );
+    } catch (e) {
+      state = state.copyWith(status: BackupStatus.error, message: '导入失败: $e');
+    }
+  }
+
+  /// Import from a Cherry Studio backup file.
+  Future<void> importFromCherryStudio(File file, RestoreMode mode) async {
+    state = state.copyWith(status: BackupStatus.working, message: '正在导入 Cherry Studio 数据...');
+    try {
+      if (mode == RestoreMode.overwrite) {
+        await _service.createAutoBackup();
+      }
+      final db = ref.read(appDatabaseProvider);
+      final result = await CherryImporter.import(file: file, mode: mode, db: db);
+      final locals = await _service.listLocalBackups();
+      state = state.copyWith(
+        status: BackupStatus.success,
+        message: '导入成功: ${result.conversations} 个对话, ${result.messages} 条消息, ${result.providers} 个服务商',
+        localBackups: locals,
+      );
+    } catch (e) {
+      state = state.copyWith(status: BackupStatus.error, message: '导入失败: $e');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Phase 3: Database diagnostic
+  // ---------------------------------------------------------------------------
+
+  /// Run database diagnostic.
+  Future<DiagnosticResult> runDiagnostic() async {
+    final db = ref.read(appDatabaseProvider);
+    final service = DatabaseDiagnosticService(db: db);
+    return service.runDiagnostic();
+  }
+
+  /// Repair database (remove orphaned records).
+  Future<RepairResult> repairDatabase() async {
+    state = state.copyWith(status: BackupStatus.working, message: '正在修复数据库...');
+    try {
+      // Auto-backup before repair
+      await _service.createAutoBackup();
+      final db = ref.read(appDatabaseProvider);
+      final service = DatabaseDiagnosticService(db: db);
+      final result = await service.repair();
+      state = state.copyWith(
+        status: BackupStatus.success,
+        message: '修复完成: 清理了 ${result.orphanedMessagesRemoved} 条孤立消息, ${result.orphanedBlocksRemoved} 个孤立消息块',
+      );
+      return result;
+    } catch (e) {
+      state = state.copyWith(status: BackupStatus.error, message: '修复失败: $e');
+      rethrow;
+    }
   }
 }
 

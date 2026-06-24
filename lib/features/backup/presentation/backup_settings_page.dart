@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/backup/application/backup_controller.dart';
+import 'package:aetherlink_flutter/features/backup/data/database_diagnostic_service.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_file_item.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_manifest.dart';
@@ -107,6 +108,10 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
               _buildS3Section(controller, state, theme),
               const SizedBox(height: 16),
               _buildReminderSection(controller, state, theme),
+              const SizedBox(height: 16),
+              _buildImportSection(controller, theme),
+              const SizedBox(height: 16),
+              _buildDiagnosticSection(controller, theme),
               const SizedBox(height: 16),
               _buildLocalBackupListSection(state, controller, theme),
             ],
@@ -750,6 +755,244 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
                       controller.deleteLocalBackup(item.displayName),
                 ),
               )),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Third-party import section
+  // ---------------------------------------------------------------------------
+
+  Widget _buildImportSection(BackupController controller, ThemeData theme) {
+    return ModelSettingsCard(
+      title: '导入第三方数据',
+      children: [
+        ListTile(
+          leading: const Icon(LucideIcons.download, size: 20),
+          title: const Text('导入 ChatboxAI'),
+          subtitle: const Text('从 ChatboxAI 导出的 JSON 文件导入'),
+          trailing: const Icon(LucideIcons.chevronRight, size: 16),
+          onTap: () => _showImportDialog(controller, 'chatbox'),
+        ),
+        const Divider(height: 1, indent: 56),
+        ListTile(
+          leading: const Icon(LucideIcons.download, size: 20),
+          title: const Text('导入 Cherry Studio'),
+          subtitle: const Text('从 Cherry Studio 备份文件导入（ZIP/JSON）'),
+          trailing: const Icon(LucideIcons.chevronRight, size: 16),
+          onTap: () => _showImportDialog(controller, 'cherry'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showImportDialog(
+      BackupController controller, String source) async {
+    final mode = await showDialog<RestoreMode>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('选择导入模式'),
+        content: const Text('覆盖模式会清除现有数据再导入；\n合并模式会保留现有数据，仅添加新数据。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, RestoreMode.merge),
+            child: const Text('合并'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, RestoreMode.overwrite),
+            child: const Text('覆盖'),
+          ),
+        ],
+      ),
+    );
+    if (mode == null) return;
+
+    final extensions = source == 'chatbox' ? ['json'] : ['zip', 'json', 'bak'];
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: extensions,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    final filePath = result.files.single.path;
+    if (filePath == null) return;
+    final file = File(filePath);
+
+    if (source == 'chatbox') {
+      await controller.importFromChatbox(file, mode);
+    } else {
+      await controller.importFromCherryStudio(file, mode);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Database diagnostic section
+  // ---------------------------------------------------------------------------
+
+  Widget _buildDiagnosticSection(BackupController controller, ThemeData theme) {
+    return ModelSettingsCard(
+      title: '数据库诊断',
+      children: [
+        ListTile(
+          leading: const Icon(LucideIcons.database, size: 20),
+          title: const Text('运行诊断'),
+          subtitle: const Text('检查数据库完整性，查找孤立数据'),
+          trailing: const Icon(LucideIcons.chevronRight, size: 16),
+          onTap: () => _showDiagnosticDialog(controller),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showDiagnosticDialog(BackupController controller) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('正在诊断...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final result = await controller.runDiagnostic();
+      if (!mounted) return;
+      Navigator.pop(context);
+
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                result.isHealthy
+                    ? LucideIcons.circleCheck
+                    : LucideIcons.triangleAlert,
+                color: result.isHealthy ? Colors.green : Colors.orange,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(result.isHealthy ? '数据库健康' : '发现问题'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _diagRow('数据库大小', result.databaseSizeDisplay),
+                _diagRow('对话数', '${result.topicCount}'),
+                _diagRow('消息数', '${result.messageCount}'),
+                _diagRow('消息块数', '${result.messageBlockCount}'),
+                _diagRow('服务商数', '${result.providerCount}'),
+                _diagRow('助手数', '${result.assistantCount}'),
+                _diagRow('分组数', '${result.groupCount}'),
+                if (result.orphanedMessages > 0)
+                  _diagRow('孤立消息', '${result.orphanedMessages}',
+                      isWarning: true),
+                if (result.orphanedBlocks > 0)
+                  _diagRow('孤立消息块', '${result.orphanedBlocks}',
+                      isWarning: true),
+                if (result.issues.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Text('问题列表:',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  ...result.issues.map((i) => Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text('• $i',
+                            style: const TextStyle(color: Colors.orange)),
+                      )),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('关闭'),
+            ),
+            if (!result.isHealthy)
+              FilledButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _performRepair(controller);
+                },
+                child: const Text('修复'),
+              ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('诊断失败: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _performRepair(BackupController controller) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('正在修复...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final result = await controller.repairDatabase();
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '修复完成: 清理了 ${result.orphanedMessagesRemoved} 条孤立消息, '
+            '${result.orphanedBlocksRemoved} 个孤立消息块',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('修复失败: $e')),
+        );
+      }
+    }
+  }
+
+  Widget _diagRow(String label, String value, {bool isWarning = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.w500,
+              color: isWarning ? Colors.orange : null,
+            ),
+          ),
         ],
       ),
     );
