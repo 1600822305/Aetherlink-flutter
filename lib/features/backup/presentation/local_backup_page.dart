@@ -159,7 +159,7 @@ class _LocalBackupPageState extends ConsumerState<LocalBackupPage> {
   Future<void> _pickAndRestore(BackupController controller) async {
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['zip'],
+      allowedExtensions: ['zip', 'json'],
     );
     if (result == null || result.files.isEmpty) return;
     final path = result.files.first.path;
