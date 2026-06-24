@@ -431,9 +431,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
     }
 
     final isMcp = _activeGroupId == 'mcp';
-    final children = isMcp
-        ? <Widget>[]
-        : _groupChildren(_activeGroupId!, s, c);
+    final children = isMcp ? <Widget>[] : _groupChildren(_activeGroupId!, s, c);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -720,59 +718,70 @@ class _McpServerRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final color = _mcpTypeColor(server.type);
-    return InkWell(
-      onTap: () => context.push('${AppRouter.mcpServerPath}/${server.id}'),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 6, 16, 6),
-        child: Row(
-          children: [
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(_mcpTypeIcon(server.type), size: 15, color: color),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 6, 16, 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: () =>
+                  context.push('${AppRouter.mcpServerPath}/${server.id}'),
+              child: Row(
                 children: [
-                  Text(
-                    server.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13.5,
-                      height: 1.3,
-                      color: theme.colorScheme.onSurface,
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(
+                      _mcpTypeIcon(server.type),
+                      size: 15,
+                      color: color,
                     ),
                   ),
-                  Text(
-                    _mcpTypeShortLabel(server.type),
-                    style: TextStyle(
-                      fontSize: 11,
-                      height: 1.3,
-                      color: theme.colorScheme.onSurfaceVariant,
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          server.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            height: 1.3,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        Text(
+                          _mcpTypeShortLabel(server.type),
+                          style: TextStyle(
+                            fontSize: 11,
+                            height: 1.3,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            CustomSwitch(
-              value: server.isActive,
-              onChanged: toolsEnabled
-                  ? (v) => ref
-                        .read(mcpServersProvider.notifier)
-                        .toggleActive(server.id, isActive: v)
-                  : null,
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 8),
+          CustomSwitch(
+            value: server.isActive,
+            onChanged: toolsEnabled
+                ? (v) => ref
+                      .read(mcpServersProvider.notifier)
+                      .toggleActive(server.id, isActive: v)
+                : null,
+          ),
+        ],
       ),
     );
   }
@@ -812,8 +821,6 @@ String _formatInt(int value) {
   }
   return buffer.toString();
 }
-
-
 
 class _SettingsDivider extends StatelessWidget {
   const _SettingsDivider();
@@ -1018,7 +1025,6 @@ class _SettingsGroupState extends State<_SettingsGroup> {
                               ),
                             ),
                           ),
-
                         ],
                       ),
                       Text(

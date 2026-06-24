@@ -192,9 +192,7 @@ Future<void> _openAddBuiltinPicker(
   if (available.isEmpty) {
     _toast(
       context,
-      category == McpServerCategory.assistant
-          ? '所有智能助手已添加'
-          : '所有内置工具已添加',
+      category == McpServerCategory.assistant ? '所有智能助手已添加' : '所有内置工具已添加',
     );
     return;
   }
@@ -431,68 +429,79 @@ class _ExternalServerRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     const color = Color(0xFF2196F3);
-    return InkWell(
-      onTap: () => context.push('${AppRouter.mcpServerPath}/${server.id}'),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Icon(LucideIcons.server, size: 20, color: color),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: () =>
+                  context.push('${AppRouter.mcpServerPath}/${server.id}'),
+              child: Row(
                 children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(
-                        server.name,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      _Chip(
-                        label: mcpServerTypeLabel(server.type),
-                        color: color,
-                        filled: true,
-                      ),
-                    ],
-                  ),
-                  if ((server.description ?? '').isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      server.description!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        height: 1.4,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                  ],
+                    child: const Icon(
+                      LucideIcons.server,
+                      size: 20,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              server.name,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            _Chip(
+                              label: mcpServerTypeLabel(server.type),
+                              color: color,
+                              filled: true,
+                            ),
+                          ],
+                        ),
+                        if ((server.description ?? '').isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            server.description!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              height: 1.4,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            CustomSwitch(
-              value: server.isActive,
-              onChanged: (v) => ref
-                  .read(mcpServersProvider.notifier)
-                  .toggleActive(server.id, isActive: v),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 8),
+          CustomSwitch(
+            value: server.isActive,
+            onChanged: (v) => ref
+                .read(mcpServersProvider.notifier)
+                .toggleActive(server.id, isActive: v),
+          ),
+        ],
       ),
     );
   }
@@ -540,8 +549,9 @@ class _AssistantTab extends ConsumerWidget {
         .where((s) => s.category == McpServerCategory.assistant)
         .map((s) => s.name)
         .toSet();
-    final added =
-        servers.where((s) => assistantNames.contains(s.name)).toList();
+    final added = servers
+        .where((s) => assistantNames.contains(s.name))
+        .toList();
 
     return _AddedServerList(
       added: added,
@@ -577,8 +587,9 @@ class _AddedServerList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isAssistant = category == McpServerCategory.assistant;
-    final color =
-        isAssistant ? const Color(0xFF8B5CF6) : const Color(0xFF4CAF50);
+    final color = isAssistant
+        ? const Color(0xFF8B5CF6)
+        : const Color(0xFF4CAF50);
 
     return ListView(
       padding: EdgeInsets.fromLTRB(
@@ -610,11 +621,8 @@ class _AddedServerList extends ConsumerWidget {
                 ),
                 const SizedBox(height: 20),
                 FilledButton.icon(
-                  onPressed: () => _openAddBuiltinPicker(
-                    context,
-                    ref,
-                    category,
-                  ),
+                  onPressed: () =>
+                      _openAddBuiltinPicker(context, ref, category),
                   icon: const Icon(LucideIcons.plus, size: 18),
                   label: Text(isAssistant ? '添加智能助手' : '添加内置工具'),
                 ),
@@ -634,11 +642,7 @@ class _AddedServerList extends ConsumerWidget {
                     isAssistant: isAssistant,
                   ),
                   if (i < added.length - 1)
-                    Divider(
-                      height: 1,
-                      indent: 16,
-                      color: theme.dividerColor,
-                    ),
+                    Divider(height: 1, indent: 16, color: theme.dividerColor),
                 ],
               ],
             ),
@@ -666,94 +670,101 @@ class _AddedBuiltinRow extends ConsumerWidget {
     final theme = Theme.of(context);
     final tags = server.tags ?? const <String>[];
 
-    return InkWell(
-      onTap: () {
-        if (isAssistant) {
-          context.push(AppRouter.mcpAssistantDetailPath(server.id));
-        } else {
-          context.push('${AppRouter.mcpServerPath}/${server.id}');
-        }
-      },
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Icon(
-                isAssistant ? LucideIcons.bot : LucideIcons.cpu,
-                size: 20,
-                color: color,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: () {
+                if (isAssistant) {
+                  context.push(AppRouter.mcpAssistantDetailPath(server.id));
+                } else {
+                  context.push('${AppRouter.mcpServerPath}/${server.id}');
+                }
+              },
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(
-                        server.name,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      _Chip(label: '内存服务器', color: color, filled: true),
-                      if (server.isActive)
-                        const _Chip(
-                          label: '运行中',
-                          color: Color(0xFF22C55E),
-                        ),
-                    ],
-                  ),
-                  if ((server.description ?? '').isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      server.description!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        height: 1.4,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                  ],
-                  if (tags.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
+                    child: Icon(
+                      isAssistant ? LucideIcons.bot : LucideIcons.cpu,
+                      size: 20,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        for (final tag in tags)
-                          _Chip(
-                            label: tag,
-                            color: theme.colorScheme.onSurfaceVariant,
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              server.name,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            _Chip(label: '内存服务器', color: color, filled: true),
+                            if (server.isActive)
+                              const _Chip(
+                                label: '运行中',
+                                color: Color(0xFF22C55E),
+                              ),
+                          ],
+                        ),
+                        if ((server.description ?? '').isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            server.description!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              height: 1.4,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
+                        ],
+                        if (tags.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              for (final tag in tags)
+                                _Chip(
+                                  label: tag,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
-                  ],
+                  ),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            CustomSwitch(
-              value: server.isActive,
-              onChanged: (v) => ref
-                  .read(mcpServersProvider.notifier)
-                  .toggleActive(server.id, isActive: v),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 8),
+          CustomSwitch(
+            value: server.isActive,
+            onChanged: (v) => ref
+                .read(mcpServersProvider.notifier)
+                .toggleActive(server.id, isActive: v),
+          ),
+        ],
       ),
     );
   }
@@ -775,8 +786,9 @@ class _AddBuiltinPickerSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isAssistant = category == McpServerCategory.assistant;
-    final color =
-        isAssistant ? const Color(0xFF8B5CF6) : const Color(0xFF4CAF50);
+    final color = isAssistant
+        ? const Color(0xFF8B5CF6)
+        : const Color(0xFF4CAF50);
 
     return Container(
       constraints: BoxConstraints(
@@ -796,8 +808,9 @@ class _AddBuiltinPickerSheet extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: theme.colorScheme.onSurfaceVariant
-                    .withValues(alpha: 0.3),
+                color: theme.colorScheme.onSurfaceVariant.withValues(
+                  alpha: 0.3,
+                ),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -833,11 +846,8 @@ class _AddBuiltinPickerSheet extends StatelessWidget {
                 bottom: MediaQuery.paddingOf(context).bottom + 16,
               ),
               itemCount: available.length,
-              separatorBuilder: (_, __) => Divider(
-                height: 1,
-                indent: 16,
-                color: theme.dividerColor,
-              ),
+              separatorBuilder: (_, __) =>
+                  Divider(height: 1, indent: 16, color: theme.dividerColor),
               itemBuilder: (ctx, i) {
                 final tpl = available[i];
                 final tags = tpl.tags ?? const <String>[];
@@ -891,8 +901,7 @@ class _AddBuiltinPickerSheet extends StatelessWidget {
                                   for (final tag in tags)
                                     _Chip(
                                       label: tag,
-                                      color:
-                                          theme.colorScheme.onSurfaceVariant,
+                                      color: theme.colorScheme.onSurfaceVariant,
                                     ),
                                 ],
                               ),
