@@ -25,6 +25,7 @@ class SystemTtsService {
   static const Duration _rebindTimeout = Duration(seconds: 2);
 
   Completer<void>? _speakingCompleter;
+  Future<void>? _initFuture;
 
   VoidCallback? onStart;
   VoidCallback? onComplete;
@@ -33,8 +34,14 @@ class SystemTtsService {
   void Function(String)? onError;
 
   /// Initializes the TTS engine. Must be called before [speak].
+  /// Concurrent calls share the same initialization future (no double-init).
   Future<void> init() async {
     if (_initialized) return;
+    _initFuture ??= _doInit();
+    await _initFuture;
+  }
+
+  Future<void> _doInit() async {
     _tts = FlutterTts();
     _bindHandlers();
     await _kickEngine();
@@ -110,6 +117,7 @@ class SystemTtsService {
 
   Future<void> stop() async {
     _completeSpeaking();
+    if (!_initialized) return;
     try {
       await _tts?.stop();
     } catch (_) {}
