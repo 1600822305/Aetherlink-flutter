@@ -458,6 +458,14 @@ class BackupService {
     'rerank', 'code_gen', 'translation', 'transcription',
   };
 
+  /// Accepted TopToolbarComponent enum names (see
+  /// `shared/domain/top_toolbar_settings.dart`).
+  static const _knownToolbarComponents = <String>{
+    'menuButton', 'topicName', 'newTopicButton', 'clearButton',
+    'searchButton', 'modelSelector', 'settingsButton',
+    'condenseButton', 'miniMapButton',
+  };
+
   /// Normalizes a Web ModelProvider JSON to match Flutter's ModelProvider shape.
   ///
   /// `ModelProvider.fromJson` requires `id`, `name`, `avatar`, `color` and
@@ -523,68 +531,209 @@ class BackupService {
     return json;
   }
 
-  /// Extracts individual user settings from a Web settings/userSettings map
-  /// and stores them as dedicated KV pairs in [settingsJson].
+  /// Extracts user settings from a Web settings/userSettings map and composes
+  /// them into the compound JSON blob keys that Flutter's settings controllers
+  /// actually read.
+  ///
+  /// Flutter stores settings as compound JSON objects under specific keys
+  /// (e.g. `behaviorSettings`, `messageBubbleSettings`) — NOT as individual
+  /// scalar keys like the web does. This method maps web fields into the
+  /// correct Flutter compound structures.
   static void _extractUserSettings(
     Map<String, dynamic> settings,
     List<Map<String, dynamic>> settingsJson,
   ) {
-    // List of settings keys that are meaningful to the Flutter app.
-    const directKeys = [
-      'theme',
-      'fontSize',
-      'language',
-      'sendWithEnter',
-      'messageStyle',
-      'showUserAvatar',
-      'showModelAvatar',
-      'showModelName',
-      'codeShowLineNumbers',
-      'codeCollapsible',
-      'codeWrapping',
-      'codeWrappable',
-      'pasteLongTextAsFile',
-      'pasteLongTextThreshold',
-      'renderUserInputAsMarkdown',
-      'enableTopicNaming',
-      'topicNamingModelId',
-      'defaultModelId',
-      'currentModelId',
-      'thinkingDisplayStyle',
-      'thoughtAutoCollapse',
-      'autoScrollToBottom',
-      'mobileInputMethodEnterAsNewline',
-    ];
+    // --- Direct scalar keys (Flutter reads these individually) ---
+    _addScalar(settingsJson, 'theme', settings['theme']);
+    _addScalar(settingsJson, 'fontSize', settings['fontSize']);
+    _addScalar(settingsJson, 'defaultModelId', settings['defaultModelId']);
+    _addScalar(settingsJson, 'currentModelId', settings['currentModelId']);
+    _addScalar(settingsJson, 'inputBoxStyle', settings['inputBoxStyle']);
 
-    for (final key in directKeys) {
-      final value = settings[key];
-      if (value == null) continue;
+    // Input box button layout (stored as JSON arrays of button ids)
+    final leftButtons = settings['integratedInputLeftButtons'];
+    if (leftButtons is List) {
       settingsJson.add({
-        'key': key,
-        'value': value is String ? value : jsonEncode(value),
+        'key': 'integratedInputLeftButtons',
+        'value': jsonEncode(leftButtons),
+      });
+    }
+    final rightButtons = settings['integratedInputRightButtons'];
+    if (rightButtons is List) {
+      settingsJson.add({
+        'key': 'integratedInputRightButtons',
+        'value': jsonEncode(rightButtons),
       });
     }
 
-    // Store complex nested settings as JSON blobs
-    const nestedKeys = [
-      'topToolbar',
-      'hapticFeedback',
-      'contextCondense',
-      'chatBackground',
-      'customBubbleColors',
-      'systemPromptVariables',
-      'toolbarButtons',
-      'webSearch',
-    ];
-
-    for (final key in nestedKeys) {
-      final value = settings[key];
-      if (value == null) continue;
+    // --- behaviorSettings (compound JSON blob) ---
+    final behaviorJson = <String, dynamic>{};
+    if (settings['sendWithEnter'] != null) {
+      behaviorJson['sendWithEnter'] = settings['sendWithEnter'];
+    }
+    if (settings['mobileInputMethodEnterAsNewline'] != null) {
+      behaviorJson['mobileInputMethodEnterAsNewline'] =
+          settings['mobileInputMethodEnterAsNewline'];
+    }
+    if (settings['hapticFeedback'] is Map) {
+      behaviorJson['hapticFeedback'] = settings['hapticFeedback'];
+    }
+    if (behaviorJson.isNotEmpty) {
       settingsJson.add({
-        'key': key,
-        'value': jsonEncode(value),
+        'key': 'behaviorSettings',
+        'value': jsonEncode(behaviorJson),
       });
     }
+
+    // --- messageBubbleSettings (compound JSON blob) ---
+    final bubbleJson = <String, dynamic>{};
+    if (settings['messageActionMode'] != null) {
+      bubbleJson['messageActionMode'] = settings['messageActionMode'];
+    }
+    if (settings['showMicroBubbles'] != null) {
+      bubbleJson['showMicroBubbles'] = settings['showMicroBubbles'];
+    }
+    if (settings['showTTSButton'] != null) {
+      bubbleJson['showTTSButton'] = settings['showTTSButton'];
+    }
+    if (settings['versionSwitchStyle'] != null) {
+      bubbleJson['versionSwitchStyle'] = settings['versionSwitchStyle'];
+    }
+    if (settings['messageBubbleMaxWidth'] != null) {
+      bubbleJson['messageBubbleMaxWidth'] = settings['messageBubbleMaxWidth'];
+    }
+    if (settings['userMessageMaxWidth'] != null) {
+      bubbleJson['userMessageMaxWidth'] = settings['userMessageMaxWidth'];
+    }
+    if (settings['messageBubbleMinWidth'] != null) {
+      bubbleJson['messageBubbleMinWidth'] = settings['messageBubbleMinWidth'];
+    }
+    if (settings['showUserAvatar'] != null) {
+      bubbleJson['showUserAvatar'] = settings['showUserAvatar'];
+    }
+    if (settings['showUserName'] != null) {
+      bubbleJson['showUserName'] = settings['showUserName'];
+    }
+    if (settings['showModelAvatar'] != null) {
+      bubbleJson['showModelAvatar'] = settings['showModelAvatar'];
+    }
+    if (settings['showModelName'] != null) {
+      bubbleJson['showModelName'] = settings['showModelName'];
+    }
+    if (settings['hideUserBubble'] != null) {
+      bubbleJson['hideUserBubble'] = settings['hideUserBubble'];
+    }
+    if (settings['hideAIBubble'] != null) {
+      bubbleJson['hideAIBubble'] = settings['hideAIBubble'];
+    }
+    if (settings['customBubbleColors'] is Map) {
+      bubbleJson['customBubbleColors'] = settings['customBubbleColors'];
+    }
+    if (bubbleJson.isNotEmpty) {
+      settingsJson.add({
+        'key': 'messageBubbleSettings',
+        'value': jsonEncode(bubbleJson),
+      });
+    }
+
+    // --- thinkingSettings (compound JSON blob) ---
+    final thinkingJson = <String, dynamic>{};
+    if (settings['thinkingDisplayStyle'] != null) {
+      // Web key is 'thinkingDisplayStyle', Flutter field is 'displayStyle'
+      thinkingJson['displayStyle'] = settings['thinkingDisplayStyle'];
+    }
+    if (settings['thoughtAutoCollapse'] != null) {
+      thinkingJson['thoughtAutoCollapse'] = settings['thoughtAutoCollapse'];
+    }
+    if (settings['thinkingToolInline'] != null) {
+      thinkingJson['thinkingToolInline'] = settings['thinkingToolInline'];
+    }
+    if (thinkingJson.isNotEmpty) {
+      settingsJson.add({
+        'key': 'thinkingSettings',
+        'value': jsonEncode(thinkingJson),
+      });
+    }
+
+    // --- chatInterfaceSettings (compound JSON blob) ---
+    final chatIfJson = <String, dynamic>{};
+    if (settings['multiModelDisplayStyle'] != null) {
+      chatIfJson['multiModelDisplayStyle'] =
+          settings['multiModelDisplayStyle'];
+    }
+    if (settings['showToolDetails'] != null) {
+      chatIfJson['showToolDetails'] = settings['showToolDetails'];
+    }
+    if (settings['showCitationDetails'] != null) {
+      chatIfJson['showCitationDetails'] = settings['showCitationDetails'];
+    }
+    if (settings['showSystemPromptBubble'] != null) {
+      chatIfJson['showSystemPromptBubble'] =
+          settings['showSystemPromptBubble'];
+    }
+    if (settings['chatBackground'] is Map) {
+      chatIfJson['background'] = settings['chatBackground'];
+    }
+    if (chatIfJson.isNotEmpty) {
+      settingsJson.add({
+        'key': 'chatInterfaceSettings',
+        'value': jsonEncode(chatIfJson),
+      });
+    }
+
+    // --- topToolbarSettings (compound JSON blob) ---
+    final webToolbar = settings['topToolbar'];
+    if (webToolbar is Map<String, dynamic>) {
+      final toolbarJson = <String, dynamic>{};
+      // Map componentPositions → positions (Flutter field name).
+      // Filter to known components only — TopToolbarComponent is a required
+      // enum field, so unknown ids would crash fromJson.
+      final positions = webToolbar['componentPositions'];
+      if (positions is List) {
+        toolbarJson['positions'] = [
+          for (final p in positions)
+            if (p is Map<String, dynamic> &&
+                p['id'] != null &&
+                _knownToolbarComponents.contains(p['id']))
+              {
+                'component': p['id'],
+                'x': (p['x'] as num?)?.toDouble() ?? 50.0,
+                'y': (p['y'] as num?)?.toDouble() ?? 50.0,
+              },
+        ];
+      }
+      if (webToolbar['modelSelectorDisplayStyle'] != null) {
+        toolbarJson['modelSelectorDisplayStyle'] =
+            webToolbar['modelSelectorDisplayStyle'];
+      }
+      if (toolbarJson.isNotEmpty) {
+        settingsJson.add({
+          'key': 'topToolbarSettings',
+          'value': jsonEncode(toolbarJson),
+        });
+      }
+    }
+
+    // --- systemPromptVariables (direct JSON blob) ---
+    if (settings['systemPromptVariables'] is Map) {
+      settingsJson.add({
+        'key': 'systemPromptVariables',
+        'value': jsonEncode(settings['systemPromptVariables']),
+      });
+    }
+  }
+
+  /// Adds a scalar setting to [settingsJson] if non-null.
+  static void _addScalar(
+    List<Map<String, dynamic>> settingsJson,
+    String key,
+    Object? value,
+  ) {
+    if (value == null) return;
+    settingsJson.add({
+      'key': key,
+      'value': value is String ? value : jsonEncode(value),
+    });
   }
 
   /// Normalizes Web status values to Flutter-compatible status strings.
