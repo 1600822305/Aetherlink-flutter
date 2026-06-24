@@ -43,3 +43,13 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Generated code (build_runner / freezed / json_serializable / drift / riverpod)
+# Reproducible via `dart run build_runner build`; not tracked to avoid churn.
+*.g.dart
+*.freezed.dart
+
+# Flutter tool-generated plugin registrants
+**/GeneratedPluginRegistrant.swift
+windows/flutter/generated_plugin_registrant.cc
+windows/flutter/generated_plugins.cmake

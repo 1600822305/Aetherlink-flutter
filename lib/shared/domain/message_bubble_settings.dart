@@ -4,8 +4,8 @@ part 'message_bubble_settings.freezed.dart';
 part 'message_bubble_settings.g.dart';
 
 /// 消息操作显示模式 (`settings.messageActionMode`, `MessageBubbleSettings.tsx`):
-/// `bubbles` 在气泡上方显示小功能气泡 + 右上角三点菜单（默认）；`toolbar` 在气泡底部
-/// 显示完整操作工具栏。
+/// `bubbles` 在气泡上方显示小功能气泡 + 右上角三点菜单；`toolbar` 在气泡底部
+/// 显示完整操作工具栏（默认）。
 enum MessageActionMode {
   bubbles('bubbles'),
   toolbar('toolbar');
@@ -19,7 +19,7 @@ enum MessageActionMode {
     for (final v in MessageActionMode.values) {
       if (v.id == id) return v;
     }
-    return MessageActionMode.bubbles;
+    return MessageActionMode.toolbar;
   }
 }
 
@@ -62,13 +62,13 @@ abstract class CustomBubbleColors with _$CustomBubbleColors {
 /// renders, a port of the original `settings` slice fields read by
 /// `MessageBubbleSettings.tsx` / `BubbleStyleMessage.tsx`.
 ///
-/// Defaults mirror the original component fallbacks: bubbles action mode, micro
+/// Defaults mirror the original component fallbacks: toolbar action mode, micro
 /// bubbles + TTS on, popup version switch, widths 99/80/50 (%), avatars + names
 /// shown, bubbles not hidden and empty custom colors (so the theme tokens win).
 @freezed
 abstract class MessageBubbleSettings with _$MessageBubbleSettings {
   const factory MessageBubbleSettings({
-    @Default(MessageActionMode.bubbles) MessageActionMode messageActionMode,
+    @Default(MessageActionMode.toolbar) MessageActionMode messageActionMode,
     @Default(true) bool showMicroBubbles,
     @Default(true) bool showTTSButton,
     @Default(VersionSwitchStyle.popup) VersionSwitchStyle versionSwitchStyle,

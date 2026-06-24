@@ -96,8 +96,8 @@ class _FunctionCard extends StatelessWidget {
   final MessageBubbleSettingsController controller;
 
   static const Map<MessageActionMode, String> _modes = {
-    MessageActionMode.bubbles: '功能气泡模式（默认）',
-    MessageActionMode.toolbar: '底部工具栏模式',
+    MessageActionMode.bubbles: '功能气泡模式',
+    MessageActionMode.toolbar: '底部工具栏模式（默认）',
   };
   static const Map<VersionSwitchStyle, String> _versionStyles = {
     VersionSwitchStyle.popup: '弹出列表（默认）',
