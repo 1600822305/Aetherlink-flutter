@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/shared/utils/provider_icons.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/features/voice/application/tts_controller.dart';
 import 'package:aetherlink_flutter/features/voice/application/voice_settings_controller.dart';
@@ -23,14 +24,14 @@ import 'package:aetherlink_flutter/features/voice/presentation/widgets/full_scre
 
 class _ServiceMeta {
   const _ServiceMeta({
-    required this.icon,
+    required this.providerId,
     required this.color,
     required this.name,
     required this.description,
     required this.features,
     this.status = '',
   });
-  final IconData icon;
+  final String providerId;
   final Color color;
   final String name;
   final String description;
@@ -40,7 +41,7 @@ class _ServiceMeta {
 
 Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
   TtsProviderKind.system: const _ServiceMeta(
-    icon: LucideIcons.smartphone,
+    providerId: 'custom',
     color: Color(0xFF64748B),
     name: '系统 TTS',
     description: '使用设备内置语音合成引擎',
@@ -48,7 +49,7 @@ Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
     status: '免费',
   ),
   TtsProviderKind.openai: const _ServiceMeta(
-    icon: LucideIcons.bot,
+    providerId: 'openai',
     color: Color(0xFF10B981),
     name: 'OpenAI TTS',
     description: '高质量 AI 语音合成，支持多种风格',
@@ -56,7 +57,7 @@ Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
     status: '高级',
   ),
   TtsProviderKind.gemini: const _ServiceMeta(
-    icon: LucideIcons.sparkles,
+    providerId: 'gemini',
     color: Color(0xFFEA4335),
     name: 'Gemini TTS',
     description: 'Google Gemini 语音合成服务',
@@ -64,7 +65,7 @@ Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
     status: '高级',
   ),
   TtsProviderKind.minimax: const _ServiceMeta(
-    icon: LucideIcons.audioLines,
+    providerId: 'minimax',
     color: Color(0xFFFF6B35),
     name: 'MiniMax TTS',
     description: '海螺 AI 高质量中文语音合成',
@@ -72,7 +73,7 @@ Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
     status: '高级',
   ),
   TtsProviderKind.siliconflow: const _ServiceMeta(
-    icon: LucideIcons.rocket,
+    providerId: 'siliconflow',
     color: Color(0xFF9333EA),
     name: 'SiliconFlow',
     description: '硅基流动 TTS，高性价比语音合成',
@@ -80,7 +81,7 @@ Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
     status: '推荐',
   ),
   TtsProviderKind.azure: const _ServiceMeta(
-    icon: LucideIcons.cloud,
+    providerId: 'azure-openai',
     color: Color(0xFF3B82F6),
     name: 'Azure TTS',
     description: '微软 Azure 认知服务语音合成',
@@ -88,7 +89,7 @@ Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
     status: '企业',
   ),
   TtsProviderKind.elevenlabs: const _ServiceMeta(
-    icon: LucideIcons.mic,
+    providerId: 'elevenlabs',
     color: Color(0xFF00C7B7),
     name: 'ElevenLabs',
     description: '领先的 AI 语音克隆与合成平台',
@@ -96,7 +97,7 @@ Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
     status: '高级',
   ),
   TtsProviderKind.volcano: const _ServiceMeta(
-    icon: LucideIcons.flame,
+    providerId: 'volcengine',
     color: Color(0xFFFF4500),
     name: '火山引擎 TTS',
     description: '字节跳动火山引擎，100+ 音色',
@@ -104,7 +105,7 @@ Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
     status: '付费',
   ),
   TtsProviderKind.mimo: const _ServiceMeta(
-    icon: LucideIcons.radio,
+    providerId: 'mimo',
     color: Color(0xFFFF6A00),
     name: 'MiMo TTS',
     description: '小米 MiMo 语音合成，支持语音设计与克隆',
@@ -112,7 +113,7 @@ Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
     status: '高级',
   ),
   TtsProviderKind.qwen: const _ServiceMeta(
-    icon: LucideIcons.languages,
+    providerId: 'dashscope',
     color: Color(0xFF6236FF),
     name: 'Qwen TTS',
     description: '阿里通义千问语音合成，支持指令控制表现力',
@@ -120,7 +121,7 @@ Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
     status: '高级',
   ),
   TtsProviderKind.groq: const _ServiceMeta(
-    icon: LucideIcons.zap,
+    providerId: 'groq',
     color: Color(0xFFF55036),
     name: 'Groq TTS',
     description: 'Groq PlayAI 超低延迟语音合成',
@@ -128,7 +129,7 @@ Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
     status: '高级',
   ),
   TtsProviderKind.xai: const _ServiceMeta(
-    icon: LucideIcons.brain,
+    providerId: 'grok',
     color: Color(0xFF000000),
     name: 'xAI TTS',
     description: 'xAI Grok 多语言语音合成',
@@ -139,7 +140,7 @@ Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
 
 Map<AsrProviderKind, _ServiceMeta> _asrServiceMeta() => {
   AsrProviderKind.system: const _ServiceMeta(
-    icon: LucideIcons.smartphone,
+    providerId: 'custom',
     color: Color(0xFF64748B),
     name: '系统语音识别',
     description: '使用设备内置语音识别引擎',
@@ -147,7 +148,7 @@ Map<AsrProviderKind, _ServiceMeta> _asrServiceMeta() => {
     status: '免费',
   ),
   AsrProviderKind.openaiRealtime: const _ServiceMeta(
-    icon: LucideIcons.radio,
+    providerId: 'openai',
     color: Color(0xFF10B981),
     name: 'OpenAI Realtime',
     description: 'OpenAI 实时语音识别 (WebSocket)',
@@ -155,7 +156,7 @@ Map<AsrProviderKind, _ServiceMeta> _asrServiceMeta() => {
     status: '高级',
   ),
   AsrProviderKind.whisper: const _ServiceMeta(
-    icon: LucideIcons.audioWaveform,
+    providerId: 'openai',
     color: Color(0xFF6366F1),
     name: 'OpenAI Whisper',
     description: '高精度离线友好语音转文字',
@@ -321,7 +322,7 @@ class _TtsTab extends ConsumerWidget {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: _ServiceCard(
-                  icon: m.icon,
+                  providerId: m.providerId,
                   color: m.color,
                   name: m.name,
                   description: m.description,
@@ -395,7 +396,7 @@ class _AsrTab extends StatelessWidget {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: _ServiceCard(
-                  icon: m.icon,
+                  providerId: m.providerId,
                   color: m.color,
                   name: m.name,
                   description: m.description,
@@ -435,7 +436,7 @@ class _AsrTab extends StatelessWidget {
 
 class _ServiceCard extends StatelessWidget {
   const _ServiceCard({
-    required this.icon,
+    required this.providerId,
     required this.color,
     required this.name,
     required this.description,
@@ -446,7 +447,7 @@ class _ServiceCard extends StatelessWidget {
     required this.onLongPress,
     this.onTest,
   });
-  final IconData icon;
+  final String providerId;
   final Color color;
   final String name;
   final String description;
@@ -488,7 +489,17 @@ class _ServiceCard extends StatelessWidget {
                   color: color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(icon, size: 16, color: color),
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Image.asset(
+                    getProviderIcon(
+                      providerId,
+                      isDark: Theme.of(context).brightness == Brightness.dark,
+                    ),
+                    width: 20,
+                    height: 20,
+                  ),
+                ),
               ),
               const SizedBox(width: 10),
               // Name + feature subtitle
