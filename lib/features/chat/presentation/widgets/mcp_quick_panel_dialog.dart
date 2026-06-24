@@ -721,38 +721,45 @@ class _ServerRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final row = Padding(
+    final leftContent = Row(
+      children: [
+        avatar,
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14.5,
+                  color: tokens.textPrimary,
+                ),
+              ),
+              if (subtitle != null) ...[const SizedBox(height: 3), subtitle!],
+            ],
+          ),
+        ),
+      ],
+    );
+    return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
       child: Row(
         children: [
-          avatar,
-          const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14.5,
-                    color: tokens.textPrimary,
-                  ),
-                ),
-                if (subtitle != null) ...[const SizedBox(height: 3), subtitle!],
-              ],
-            ),
+            child: onTap == null
+                ? leftContent
+                : InkWell(onTap: onTap, child: leftContent),
           ),
           const SizedBox(width: 8),
           trailing,
         ],
       ),
     );
-    if (onTap == null) return row;
-    return InkWell(onTap: onTap, child: row);
   }
 }
 
