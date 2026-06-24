@@ -43,7 +43,8 @@ class DiagnosticResult {
     return '${(databaseSizeBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
-  bool get isHealthy => issues.isEmpty && orphanedMessages == 0 && orphanedBlocks == 0;
+  bool get isHealthy =>
+      issues.isEmpty && orphanedMessages == 0 && orphanedBlocks == 0;
 }
 
 /// Repair result.
@@ -62,52 +63,28 @@ class DatabaseDiagnosticService {
 
   DatabaseDiagnosticService({required this.db});
 
-  /// Run a full diagnostic on the database.
+  /// Run a full diagnostic on the database using SQL COUNT/JOIN queries
+  /// to avoid loading all records into memory.
   Future<DiagnosticResult> runDiagnostic() async {
     final docDir = await getApplicationDocumentsDirectory();
     final dbPath = p.join(docDir.path, 'aetherlink.sqlite');
     final dbFile = File(dbPath);
     final dbSize = await dbFile.exists() ? await dbFile.length() : 0;
 
-    // Count records
-    final topics = await db.topicDao.getAll();
-    final topicCount = topics.length;
-    final topicIds = topics.map((t) => t.id).toSet();
+    // Count records via SQL
+    final topicCount = await _countTable('topic_rows');
+    final messageCount = await _countTable('message_rows');
+    final blockCount = await _countTable('message_block_rows');
+    final providerCount = await _countTable('provider_rows');
+    final assistantCount = await _countTable('assistant_rows');
+    final groupCount = await _countTable('group_rows');
+    final settingCount = await _countTable('app_setting_rows');
 
-    final messages = await db.messageDao.getAll();
-    final messageCount = messages.length;
+    // Find orphaned messages via LEFT JOIN
+    final orphanedMessages = await _countOrphanedMessages();
 
-    final blocks = await db.messageBlockDao.getAll();
-    final blockCount = blocks.length;
-
-    final providers = await db.providerDao.getAll();
-    final providerCount = providers.length;
-
-    final assistants = await db.assistantDao.getAll();
-    final assistantCount = assistants.length;
-
-    final groups = await db.groupDao.getAll();
-    final groupCount = groups.length;
-
-    // Count settings
-    final settingCount = await _countSettings();
-
-    // Find orphaned messages (topicId references a non-existent topic)
-    int orphanedMessages = 0;
-    for (final msg in messages) {
-      if (!topicIds.contains(msg.topicId)) {
-        orphanedMessages++;
-      }
-    }
-
-    // Find orphaned blocks (messageId references a non-existent message)
-    final messageIds = messages.map((m) => m.id).toSet();
-    int orphanedBlocks = 0;
-    for (final block in blocks) {
-      if (!messageIds.contains(block.messageId)) {
-        orphanedBlocks++;
-      }
-    }
+    // Find orphaned blocks via LEFT JOIN
+    final orphanedBlocks = await _countOrphanedBlocks();
 
     // Identify issues
     final issues = <String>[];
@@ -137,33 +114,10 @@ class DatabaseDiagnosticService {
     );
   }
 
-  /// Remove orphaned messages and blocks.
+  /// Remove orphaned messages and blocks using SQL DELETE with subqueries.
   Future<RepairResult> repair() async {
-    final topics = await db.topicDao.getAll();
-    final topicIds = topics.map((t) => t.id).toSet();
-
-    final messages = await db.messageDao.getAll();
-    final messageIds = messages.map((m) => m.id).toSet();
-
-    int removedMessages = 0;
-    int removedBlocks = 0;
-
-    // Remove orphaned messages
-    for (final msg in messages) {
-      if (!topicIds.contains(msg.topicId)) {
-        await db.messageDao.deleteById(msg.id);
-        removedMessages++;
-      }
-    }
-
-    // Remove orphaned blocks
-    final blocks = await db.messageBlockDao.getAll();
-    for (final block in blocks) {
-      if (!messageIds.contains(block.messageId)) {
-        await db.messageBlockDao.deleteById(block.id);
-        removedBlocks++;
-      }
-    }
+    final removedMessages = await _deleteOrphanedMessages();
+    final removedBlocks = await _deleteOrphanedBlocks();
 
     return RepairResult(
       orphanedMessagesRemoved: removedMessages,
@@ -171,12 +125,76 @@ class DatabaseDiagnosticService {
     );
   }
 
-  Future<int> _countSettings() async {
+  Future<int> _countTable(String tableName) async {
     try {
-      final result = await db.customSelect(
-        'SELECT COUNT(*) AS cnt FROM app_setting_rows',
-      ).getSingle();
+      final result = await db
+          .customSelect('SELECT COUNT(*) AS cnt FROM $tableName')
+          .getSingle();
       return result.read<int>('cnt');
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<int> _countOrphanedMessages() async {
+    try {
+      final result = await db
+          .customSelect(
+            'SELECT COUNT(*) AS cnt FROM message_rows m '
+            'LEFT JOIN topic_rows t ON m.topic_id = t.id '
+            'WHERE t.id IS NULL',
+          )
+          .getSingle();
+      return result.read<int>('cnt');
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<int> _countOrphanedBlocks() async {
+    try {
+      final result = await db
+          .customSelect(
+            'SELECT COUNT(*) AS cnt FROM message_block_rows b '
+            'LEFT JOIN message_rows m ON b.message_id = m.id '
+            'WHERE m.id IS NULL',
+          )
+          .getSingle();
+      return result.read<int>('cnt');
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<int> _deleteOrphanedMessages() async {
+    try {
+      final count = await _countOrphanedMessages();
+      if (count == 0) return 0;
+      await db.customStatement(
+        'DELETE FROM message_rows WHERE id IN ('
+        '  SELECT m.id FROM message_rows m '
+        '  LEFT JOIN topic_rows t ON m.topic_id = t.id '
+        '  WHERE t.id IS NULL'
+        ')',
+      );
+      return count;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<int> _deleteOrphanedBlocks() async {
+    try {
+      final count = await _countOrphanedBlocks();
+      if (count == 0) return 0;
+      await db.customStatement(
+        'DELETE FROM message_block_rows WHERE id IN ('
+        '  SELECT b.id FROM message_block_rows b '
+        '  LEFT JOIN message_rows m ON b.message_id = m.id '
+        '  WHERE m.id IS NULL'
+        ')',
+      );
+      return count;
     } catch (_) {
       return 0;
     }
