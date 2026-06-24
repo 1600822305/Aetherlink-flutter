@@ -55,6 +55,9 @@ _TtsProviderSetting _$TtsProviderSettingFromJson(Map<String, dynamic> json) =>
       gain: (json['gain'] as num?)?.toDouble() ?? 0.0,
       maxTokens: (json['maxTokens'] as num?)?.toInt() ?? 1600,
       instructions: json['instructions'] as String? ?? '',
+      mimoVoiceDescription: json['mimoVoiceDescription'] as String? ?? '',
+      mimoOptimizeTextPreview: json['mimoOptimizeTextPreview'] as bool? ?? false,
+      mimoVoiceCloneAudio: json['mimoVoiceCloneAudio'] as String? ?? '',
     );
 
 Map<String, dynamic> _$TtsProviderSettingToJson(_TtsProviderSetting instance) =>
@@ -104,6 +107,9 @@ Map<String, dynamic> _$TtsProviderSettingToJson(_TtsProviderSetting instance) =>
       'gain': instance.gain,
       'maxTokens': instance.maxTokens,
       'instructions': instance.instructions,
+      'mimoVoiceDescription': instance.mimoVoiceDescription,
+      'mimoOptimizeTextPreview': instance.mimoOptimizeTextPreview,
+      'mimoVoiceCloneAudio': instance.mimoVoiceCloneAudio,
     };
 
 const _$TtsProviderKindEnumMap = {
@@ -115,4 +121,5 @@ const _$TtsProviderKindEnumMap = {
   TtsProviderKind.azure: 'azure',
   TtsProviderKind.elevenlabs: 'elevenlabs',
   TtsProviderKind.volcano: 'volcano',
+  TtsProviderKind.mimo: 'mimo',
 };

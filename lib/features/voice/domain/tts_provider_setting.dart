@@ -23,6 +23,8 @@ enum TtsProviderKind {
   elevenlabs,
   @JsonValue('volcano')
   volcano,
+  @JsonValue('mimo')
+  mimo,
 }
 
 /// A single TTS provider's configuration — API key, base URL, model, voice,
@@ -86,6 +88,10 @@ abstract class TtsProviderSetting with _$TtsProviderSetting {
     @Default(1600) int maxTokens, // MOSS-TTSD max_tokens
     // OpenAI gpt-4o-mini-tts instructions (controls accent, tone, emotion, etc.)
     @Default('') String instructions,
+    // MiMo-specific
+    @Default('') String mimoVoiceDescription, // voice description for voicedesign model
+    @Default(false) bool mimoOptimizeTextPreview, // polish text in voicedesign mode
+    @Default('') String mimoVoiceCloneAudio, // base64 audio sample for voiceclone model
   }) = _TtsProviderSetting;
 
   factory TtsProviderSetting.fromJson(Map<String, dynamic> json) =>
@@ -166,5 +172,14 @@ TtsProviderSetting defaultTtsProvider(TtsProviderKind kind) => switch (kind) {
     cluster: 'volcano_tts',
     apiVersion: 'auto',
     encoding: 'mp3',
+  ),
+  TtsProviderKind.mimo => const TtsProviderSetting(
+    id: 'mimo',
+    kind: TtsProviderKind.mimo,
+    name: 'MiMo TTS',
+    baseUrl: 'https://api.xiaomimimo.com/v1',
+    model: 'mimo-v2.5-tts',
+    voice: 'mimo_default',
+    audioFormat: 'wav',
   ),
 };
