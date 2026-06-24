@@ -664,32 +664,48 @@ class FlutterTtsPlugin : MethodCallHandler, FlutterPlugin {
     private fun speak(text: String, focus: Boolean): Boolean {
         val uuid: String = UUID.randomUUID().toString()
         utterances[uuid] = text
-        return if (ismServiceConnectionUsable(tts)) {
+        if (ismServiceConnectionUsable(tts)) {
             if(focus){
                 requestAudioFocus()
             }
 
-            if (silencems > 0) {
+            val result = if (silencems > 0) {
                 tts!!.playSilentUtterance(
                     silencems.toLong(),
                     TextToSpeech.QUEUE_FLUSH,
                     SILENCE_PREFIX + uuid
                 )
-                tts!!.speak(text, TextToSpeech.QUEUE_ADD, bundle, uuid) == 0
+                tts!!.speak(text, TextToSpeech.QUEUE_ADD, bundle, uuid)
             } else {
-                tts!!.speak(text, queueMode, bundle, uuid) == 0
+                tts!!.speak(text, queueMode, bundle, uuid)
             }
-        } else {
-            ttsStatus = null
-            tts = TextToSpeech(context, onInitListenerWithoutCallback, selectedEngine)
-            false
+
+            if (result == TextToSpeech.SUCCESS) {
+                return true
+            }
+            // tts.speak() failed despite ismServiceConnectionUsable being true.
+            // This happens on MIUI/some ROMs where the Connection object exists
+            // but the IPC binder hasn't fully connected yet.
+            // Fall through to the recovery path below.
+            Log.d(tag, "speak returned ERROR despite service connection being usable, recreating TTS")
+            utterances.remove(uuid)
         }
+
+        // Recovery: recreate the TTS engine. The pending method call (added by
+        // onMethodCall) will be re-run once the new engine finishes init.
+        ttsStatus = null
+        tts = TextToSpeech(context, onInitListenerWithoutCallback, selectedEngine)
+        return false
     }
 
     private fun stop() {
         if (awaitSynthCompletion) synth = false
         if (awaitSpeakCompletion) speaking = false
-        tts!!.stop()
+        try {
+            tts?.stop()
+        } catch (e: Exception) {
+            Log.d(tag, "stop() failed: ${e.message}")
+        }
     }
 
     private val maxSpeechInputLength: Int
