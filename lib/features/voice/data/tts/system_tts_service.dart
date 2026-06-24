@@ -43,11 +43,9 @@ class SystemTtsService {
   }
 
   /// Speaks [text] using the device's built-in TTS engine.
-  Future<void> speak(String text, {double speed = 1.0}) async {
+  /// The speech rate / pitch should be pre-configured via [applyUserConfig].
+  Future<void> speak(String text) async {
     await init();
-    try {
-      await _tts!.setSpeechRate(speed.clamp(0.1, 1.0));
-    } catch (_) {}
     if (!await _trySpeak(text)) {
       throw Exception('系统 TTS 引擎无法朗读，请检查设备 TTS 设置');
     }
@@ -237,8 +235,10 @@ class SystemTtsService {
     try {
       await _tts!.awaitSpeakCompletion(true);
     } catch (_) {}
+    // QUEUE_FLUSH (0) is required for awaitSpeakCompletion to work —
+    // the Kotlin plugin only defers the result when queueMode == QUEUE_FLUSH.
     try {
-      await _tts!.setQueueMode(1);
+      await _tts!.setQueueMode(0);
     } catch (_) {}
   }
 
