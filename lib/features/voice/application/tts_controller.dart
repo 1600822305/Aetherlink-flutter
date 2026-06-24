@@ -210,15 +210,18 @@ class TtsController extends _$TtsController {
       if (provider.kind == TtsProviderKind.system) {
         _systemTts ??= SystemTtsService();
         // Apply user-configured engine/language/rate/pitch from settings.
+        // Convert UI speed (1.0 = normal, 2.0 = 2x) to platform rate
+        // (0.5 = normal) using kelivo's formula: speed / 2.
         final voiceSettings = ref.read(voiceSettingsControllerProvider);
+        final platformRate = (state.speed / 2).clamp(0.1, 1.0);
         await _systemTts!.applyUserConfig(
           engineId: voiceSettings.systemTtsEngine,
           languageTag: voiceSettings.systemTtsLanguage,
-          speechRate: voiceSettings.systemTtsSpeechRate,
+          speechRate: platformRate,
           pitch: voiceSettings.systemTtsPitch,
         );
         state = state.copyWith(status: TtsStatus.playing);
-        await _systemTts!.speak(_chunks[index].text, speed: state.speed);
+        await _systemTts!.speak(_chunks[index].text);
         // System TTS completion — play next chunk.
         if (state.status == TtsStatus.playing) {
           await _playChunk(index + 1, provider);
