@@ -2621,6 +2621,10 @@ class ChatController extends _$ChatController {
   /// `builtin_web_search` tool is always injected — independent of the MCP 工具
   /// 总开关 — so the model can request web searches even if MCP tools are off.
   Future<_McpSetup> _mcpSetup() async {
+    // Ensure persisted toggles have been loaded from DB before reading — fixes
+    // a cold-start race where the default (enabled=false) was used for the
+    // first message sent before _hydrate() completed.
+    await ref.read(mcpToolsControllerProvider.notifier).hydrated;
     final toolsState = ref.read(mcpToolsControllerProvider);
 
     final assistant = await _repo.getAssistant(_assistantId);
@@ -2843,6 +2847,12 @@ class ChatController extends _$ChatController {
         isError: true,
       );
     }
+    if (!server.isActive) {
+      return McpToolResult(
+        '服务器 "${server.name}" 未启用，请先在设置中启用该服务器',
+        isError: true,
+      );
+    }
     try {
       final tools = await _bridgeServerTools(server);
       if (tools.isEmpty) {
@@ -2893,6 +2903,12 @@ class ChatController extends _$ChatController {
         isError: true,
       );
     }
+    if (!server.isActive) {
+      return McpToolResult(
+        '服务器 "${server.name}" 未启用，请先在设置中启用该服务器',
+        isError: true,
+      );
+    }
     if (kRefDependentBuiltins.contains(server.name)) {
       return await runSettingsTool(ref, toolName, toolArgs);
     }
@@ -2912,6 +2928,9 @@ class ChatController extends _$ChatController {
 
   /// The tools a server exposes for the bridge: built-ins use the static
   /// catalogue (minus `disabledTools`); remote servers are discovered live.
+  /// For remote servers the original wire names are returned (not the
+  /// function-call-safe exposed names) so `_bridgeCallTool` can pass them
+  /// directly to the server.
   Future<List<McpToolDefinition>> _bridgeServerTools(McpServer server) async {
     if (kBuiltinMcpTools.containsKey(server.name)) {
       final disabled = server.disabledTools?.toSet() ?? const <String>{};
@@ -2923,7 +2942,17 @@ class ChatController extends _$ChatController {
       final discovered = await ref
           .read(remoteMcpConnectionManagerProvider)
           .listTools(server);
-      return [for (final t in discovered) t.definition];
+      // Use original wire names (toolName) — not the function-call-safe
+      // definition.name — so the bridge can dispatch them directly to the
+      // server without a reverse mapping.
+      return [
+        for (final t in discovered)
+          McpToolDefinition(
+            name: t.toolName,
+            description: t.definition.description,
+            inputSchema: t.definition.inputSchema,
+          ),
+      ];
     }
     return const <McpToolDefinition>[];
   }

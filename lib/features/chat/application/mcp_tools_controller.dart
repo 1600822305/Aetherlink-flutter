@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
@@ -80,6 +82,14 @@ class McpToolsState {
 /// whether and how to expose MCP tools to the model.
 @Riverpod(keepAlive: true)
 class McpToolsController extends _$McpToolsController {
+  final Completer<void> _hydrationDone = Completer<void>();
+
+  /// Completes once the persisted state has been loaded from the DB. Callers
+  /// that need guaranteed-correct values (e.g. the chat send pipeline) should
+  /// `await ref.read(mcpToolsControllerProvider.notifier).hydrated;` before
+  /// reading the state.
+  Future<void> get hydrated => _hydrationDone.future;
+
   @override
   McpToolsState build() {
     _hydrate();
@@ -87,17 +97,21 @@ class McpToolsController extends _$McpToolsController {
   }
 
   Future<void> _hydrate() async {
-    final repo = ref.read(chatRepositoryProvider);
-    final enabled = await repo.getSetting(kMcpToolsEnabledKey);
-    final mode = await repo.getSetting(kMcpModeKey);
-    final bridgeMode = await repo.getSetting(kMcpBridgeModeKey);
-    final skillsEnabled = await repo.getSetting(kSkillsEnabledKey);
-    state = McpToolsState(
-      enabled: enabled == 'true',
-      mode: McpMode.fromStorage(mode),
-      bridgeMode: bridgeMode == 'true',
-      skillsEnabled: skillsEnabled == 'true',
-    );
+    try {
+      final repo = ref.read(chatRepositoryProvider);
+      final enabled = await repo.getSetting(kMcpToolsEnabledKey);
+      final mode = await repo.getSetting(kMcpModeKey);
+      final bridgeMode = await repo.getSetting(kMcpBridgeModeKey);
+      final skillsEnabled = await repo.getSetting(kSkillsEnabledKey);
+      state = McpToolsState(
+        enabled: enabled == 'true',
+        mode: McpMode.fromStorage(mode),
+        bridgeMode: bridgeMode == 'true',
+        skillsEnabled: skillsEnabled == 'true',
+      );
+    } finally {
+      if (!_hydrationDone.isCompleted) _hydrationDone.complete();
+    }
   }
 
   /// Toggles 启用 MCP 工具 (`toggleToolsEnabled`).
