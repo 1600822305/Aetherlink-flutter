@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/settings/application/font_size_contr
 import 'package:aetherlink_flutter/features/settings/application/theme_mode_controller.dart';
 import 'package:aetherlink_flutter/features/settings/domain/app_theme_mode.dart';
 import 'package:aetherlink_flutter/features/theming/application/theme_controller.dart';
+import 'package:aetherlink_flutter/features/voice/application/tts_controller.dart';
 import 'package:aetherlink_flutter/features/welcome/application/onboarding_controller.dart';
 
 /// Root application widget (composition root).
@@ -44,6 +45,11 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
     Haptics.instance.updateSettings(
       ref.read(appBehaviorSettingsProvider).hapticFeedback,
     );
+    // Eagerly warm up the system TTS engine at app startup (matching kelivo's
+    // ChangeNotifierProvider(create: (_) => TtsProvider()) in main.dart).
+    // On MIUI devices binding takes several seconds; starting early ensures
+    // the engine is ready by the time the user presses speak.
+    ref.read(ttsControllerProvider);
   }
 
   @override

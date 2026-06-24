@@ -42,12 +42,17 @@ class SystemTtsService {
   }
 
   Future<void> _doInit() async {
-    _tts = FlutterTts();
-    _bindHandlers();
-    await _kickEngine();
-    await _ensureBound(timeout: _bindTimeout);
-    await _selectEngine();
-    await _applyConfig();
+    try {
+      _tts = FlutterTts();
+      _bindHandlers();
+      await _kickEngine();
+      await _ensureBound(timeout: _bindTimeout);
+      await _selectEngine();
+      await _applyConfig();
+    } catch (_) {
+      // Best-effort init. Even if binding fails here (common on MIUI),
+      // _trySpeak's retry logic will handle it when speak is actually called.
+    }
     _initialized = true;
   }
 
