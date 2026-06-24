@@ -63,6 +63,8 @@ const _dark = <String, String>{
   'poe': '$_base/dark/poe.png',
   'google': '$_base/dark/google.png',
   'volcengine': '$_base/dark/doubao.png',
+  'mimo': '$_base/dark/mimo.png',
+  'elevenlabs': '$_base/dark/elevenlabs.png',
   'model-combo': '$_base/dark/openai.png',
   'custom': '$_base/dark/openai.png',
 };
@@ -124,6 +126,8 @@ const _light = <String, String>{
   'poe': '$_base/light/poe.png',
   'google': '$_base/light/google.png',
   'volcengine': '$_base/light/doubao.png',
+  'mimo': '$_base/light/mimo.png',
+  'elevenlabs': '$_base/light/elevenlabs.png',
   'model-combo': '$_base/light/openai.png',
   'custom': '$_base/light/openai.png',
 };
