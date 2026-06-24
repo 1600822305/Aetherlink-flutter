@@ -44,5 +44,11 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Allow querying TTS engine services on Android 11+ (API 30).
+             Without this, the system blocks bindService() to any TTS engine,
+             causing "not bound to TTS engine" on every speak() call. -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
     </queries>
 </manifest>
