@@ -48,8 +48,10 @@ class CherryImporter {
     final root = await _readCherryBackupFile(file);
 
     // Parse localStorage persist data
-    final localStorage = (root['localStorage'] as Map?)
-            ?.map((k, v) => MapEntry(k.toString(), v)) ??
+    final localStorage =
+        (root['localStorage'] as Map?)?.map(
+          (k, v) => MapEntry(k.toString(), v),
+        ) ??
         const <String, dynamic>{};
     final persistStr = (localStorage['persist:cherry-studio'] ?? '') as String;
     if (persistStr.isEmpty) {
@@ -84,8 +86,8 @@ class CherryImporter {
         (assistantsSlice['assistants'] as List?) ?? const <dynamic>[];
 
     // Parse IndexedDB
-    final indexedDB = (root['indexedDB'] as Map?)
-            ?.map((k, v) => MapEntry(k.toString(), v)) ??
+    final indexedDB =
+        (root['indexedDB'] as Map?)?.map((k, v) => MapEntry(k.toString(), v)) ??
         const <String, dynamic>{};
     final List<dynamic> cherryTopicsWithMessages =
         (indexedDB['topics'] as List?) ?? const <dynamic>[];
@@ -99,8 +101,9 @@ class CherryImporter {
       final topics = (a['topics'] as List?) ?? const <dynamic>[];
       for (final t in topics) {
         if (t is Map && t['id'] != null) {
-          topicMeta[t['id'].toString()] =
-              t.map((k, v) => MapEntry(k.toString(), v));
+          topicMeta[t['id'].toString()] = t.map(
+            (k, v) => MapEntry(k.toString(), v),
+          );
         }
       }
     }
@@ -140,8 +143,9 @@ class CherryImporter {
 
       if (text != null && text.isNotEmpty) {
         final prev = blockTextByMessageId[messageId];
-        blockTextByMessageId[messageId] =
-            prev == null || prev.isEmpty ? text : '$prev\n$text';
+        blockTextByMessageId[messageId] = prev == null || prev.isEmpty
+            ? text
+            : '$prev\n$text';
       }
     }
 
@@ -153,8 +157,7 @@ class CherryImporter {
         await db.delete(db.providerRows).go();
       }
 
-      final providerCount =
-          await _importProviders(cherryProviders, mode, db);
+      final providerCount = await _importProviders(cherryProviders, mode, db);
       final convResult = await _importConversations(
         topicMeta: topicMeta,
         topicMessages: topicMessages,
@@ -201,8 +204,10 @@ class CherryImporter {
       for (final entry in archive) {
         if (!entry.isFile) continue;
         try {
-          final content = utf8.decode(entry.content as List<int>,
-              allowMalformed: true);
+          final content = utf8.decode(
+            entry.content as List<int>,
+            allowMalformed: true,
+          );
           final obj = tryParse(content);
           if (obj != null) return obj;
         } catch (_) {}
@@ -325,8 +330,7 @@ class CherryImporter {
         if (content.isEmpty) continue;
 
         final msgCreatedAtStr = (msg['createdAt'] ?? '').toString();
-        final msgCreatedAt =
-            DateTime.tryParse(msgCreatedAtStr) ?? createdAt;
+        final msgCreatedAt = DateTime.tryParse(msgCreatedAtStr) ?? createdAt;
 
         final msgId = generateId('msg');
         final blockId = generateId('block');

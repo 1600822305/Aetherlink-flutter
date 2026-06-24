@@ -42,16 +42,16 @@ class BackupManifest {
   });
 
   Map<String, dynamic> toJson() => {
-        'version': version,
-        'appVersion': appVersion,
-        'platform': platform,
-        'schemaVersion': schemaVersion,
-        'createdAt': createdAt,
-        'deviceInfo': deviceInfo,
-        'checksum': checksum,
-        'stats': stats.toJson(),
-        'options': options.toJson(),
-      };
+    'version': version,
+    'appVersion': appVersion,
+    'platform': platform,
+    'schemaVersion': schemaVersion,
+    'createdAt': createdAt,
+    'deviceInfo': deviceInfo,
+    'checksum': checksum,
+    'stats': stats.toJson(),
+    'options': options.toJson(),
+  };
 
   factory BackupManifest.fromJson(Map<String, dynamic> json) {
     return BackupManifest(
@@ -100,14 +100,14 @@ class BackupStats {
   });
 
   Map<String, dynamic> toJson() => {
-        'topics': topics,
-        'messages': messages,
-        'messageBlocks': messageBlocks,
-        'assistants': assistants,
-        'providers': providers,
-        'groups': groups,
-        'settings': settings,
-      };
+    'topics': topics,
+    'messages': messages,
+    'messageBlocks': messageBlocks,
+    'assistants': assistants,
+    'providers': providers,
+    'groups': groups,
+    'settings': settings,
+  };
 
   factory BackupStats.fromJson(Map<String, dynamic> json) {
     return BackupStats(
@@ -135,10 +135,10 @@ class BackupOptions {
   });
 
   Map<String, dynamic> toJson() => {
-        'includeMessages': includeMessages,
-        'includeProviders': includeProviders,
-        'includeSettings': includeSettings,
-      };
+    'includeMessages': includeMessages,
+    'includeProviders': includeProviders,
+    'includeSettings': includeSettings,
+  };
 
   factory BackupOptions.fromJson(Map<String, dynamic> json) {
     return BackupOptions(

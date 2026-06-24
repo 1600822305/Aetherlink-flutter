@@ -191,8 +191,9 @@ class S3BackupClient {
     final baseSegs = _normalizedBasePathSegments(base, cfg);
     final host = cfg.pathStyle ? base.host : '${cfg.bucket}.${base.host}';
     final segs = cfg.pathStyle ? [...baseSegs, cfg.bucket] : [...baseSegs];
-    final queryStr =
-        (query != null && query.isNotEmpty) ? _canonicalQuery(query) : null;
+    final queryStr = (query != null && query.isNotEmpty)
+        ? _canonicalQuery(query)
+        : null;
     return Uri(
       scheme: base.scheme.isEmpty ? 'https' : base.scheme,
       host: host,
@@ -264,15 +265,19 @@ class S3BackupClient {
       if (k != 0) return k;
       return _awsEncode(a.$2).compareTo(_awsEncode(b.$2));
     });
-    return pairs.map((p) => '${_awsEncode(p.$1)}=${_awsEncode(p.$2)}').join('&');
+    return pairs
+        .map((p) => '${_awsEncode(p.$1)}=${_awsEncode(p.$2)}')
+        .join('&');
   }
 
   static String _canonicalHeaders(Map<String, String> headers) {
     final entries = headers.entries
-        .map((e) => MapEntry(
-              e.key.toLowerCase().trim(),
-              e.value.trim().replaceAll(RegExp(r'\s+'), ' '),
-            ))
+        .map(
+          (e) => MapEntry(
+            e.key.toLowerCase().trim(),
+            e.value.trim().replaceAll(RegExp(r'\s+'), ' '),
+          ),
+        )
         .toList();
     entries.sort((a, b) => a.key.compareTo(b.key));
     final sb = StringBuffer();
@@ -284,7 +289,8 @@ class S3BackupClient {
 
   static String _signedHeaders(Map<String, String> headers) {
     final names =
-        headers.keys.map((k) => k.toLowerCase().trim()).toSet().toList()..sort();
+        headers.keys.map((k) => k.toLowerCase().trim()).toSet().toList()
+          ..sort();
     return names.join(';');
   }
 
@@ -354,8 +360,7 @@ class S3BackupClient {
     ].join('\n');
     final canonicalRequestHash = _hashHex(utf8.encode(canonicalRequest));
     final scope = '$dateStamp/${cfg.region.trim()}/s3/aws4_request';
-    final sts =
-        'AWS4-HMAC-SHA256\n$amzDate\n$scope\n$canonicalRequestHash';
+    final sts = 'AWS4-HMAC-SHA256\n$amzDate\n$scope\n$canonicalRequestHash';
     final sig = _signature(
       secretAccessKey: cfg.secretAccessKey,
       dateStamp: dateStamp,
@@ -418,8 +423,7 @@ class S3BackupClient {
     ].join('\n');
     final canonicalRequestHash = _hashHex(utf8.encode(canonicalRequest));
     final scope = '$dateStamp/${cfg.region.trim()}/s3/aws4_request';
-    final sts =
-        'AWS4-HMAC-SHA256\n$amzDate\n$scope\n$canonicalRequestHash';
+    final sts = 'AWS4-HMAC-SHA256\n$amzDate\n$scope\n$canonicalRequestHash';
     final sig = _signature(
       secretAccessKey: cfg.secretAccessKey,
       dateStamp: dateStamp,
@@ -481,8 +485,7 @@ class S3BackupClient {
     ].join('\n');
     final canonicalRequestHash = _hashHex(utf8.encode(canonicalRequest));
     final scope = '$dateStamp/${cfg.region.trim()}/s3/aws4_request';
-    final sts =
-        'AWS4-HMAC-SHA256\n$amzDate\n$scope\n$canonicalRequestHash';
+    final sts = 'AWS4-HMAC-SHA256\n$amzDate\n$scope\n$canonicalRequestHash';
     final sig = _signature(
       secretAccessKey: cfg.secretAccessKey,
       dateStamp: dateStamp,
@@ -569,23 +572,30 @@ class S3BackupClient {
         .map((e) => _itemFromManifestEntry(cfg, e))
         .toList();
 
-    items.sort((a, b) =>
-        (b.lastModified ?? DateTime(0)).compareTo(a.lastModified ?? DateTime(0)));
+    items.sort(
+      (a, b) => (b.lastModified ?? DateTime(0)).compareTo(
+        a.lastModified ?? DateTime(0),
+      ),
+    );
     return items;
   }
 
   Future<void> _writeManifest(S3Config cfg, List<BackupFileItem> items) async {
-    final encoded = utf8.encode(jsonEncode({
-      'version': 1,
-      'items': items
-          .map((item) => {
+    final encoded = utf8.encode(
+      jsonEncode({
+        'version': 1,
+        'items': items
+            .map(
+              (item) => {
                 'key': _keyFromItem(item),
                 'displayName': item.displayName,
                 'size': item.size,
                 'lastModified': item.lastModified?.toUtc().toIso8601String(),
-              })
-          .toList(),
-    }));
+              },
+            )
+            .toList(),
+      }),
+    );
     final res = await _sendSigned(
       cfg,
       method: 'PUT',
@@ -644,7 +654,8 @@ class S3BackupClient {
           'list-type': '2',
           if (prefix.isNotEmpty) 'prefix': prefix,
           'max-keys': '1000',
-          if (continuationToken != null) 'continuation-token': continuationToken,
+          if (continuationToken != null)
+            'continuation-token': continuationToken,
         },
       );
       if (res.statusCode != 200) {
@@ -663,19 +674,22 @@ class S3BackupClient {
         final name = _displayNameFromKey(key);
         if (!name.toLowerCase().endsWith('.zip')) continue;
 
-        items.add(BackupFileItem(
-          href: Uri(
-            scheme: 's3',
-            host: cfg.bucket.trim(),
-            pathSegments: key.split('/').where((s) => s.isNotEmpty).toList(),
+        items.add(
+          BackupFileItem(
+            href: Uri(
+              scheme: 's3',
+              host: cfg.bucket.trim(),
+              pathSegments: key.split('/').where((s) => s.isNotEmpty).toList(),
+            ),
+            displayName: name,
+            size: size,
+            lastModified: mtime,
           ),
-          displayName: name,
-          size: size,
-          lastModified: mtime,
-        ));
+        );
       }
 
-      final isTruncated = doc
+      final isTruncated =
+          doc
               .findAllElements('IsTruncated', namespace: '*')
               .map((e) => e.innerText.trim().toLowerCase())
               .firstWhere((s) => s.isNotEmpty, orElse: () => 'false') ==
@@ -684,8 +698,9 @@ class S3BackupClient {
           .findAllElements('NextContinuationToken', namespace: '*')
           .map((e) => e.innerText.trim())
           .firstWhere((s) => s.isNotEmpty, orElse: () => '');
-      continuationToken =
-          isTruncated && nextToken.isNotEmpty ? nextToken : null;
+      continuationToken = isTruncated && nextToken.isNotEmpty
+          ? nextToken
+          : null;
     } while (continuationToken != null);
 
     return items;
@@ -732,8 +747,11 @@ class S3BackupClient {
     }
 
     final items = merged.values.toList();
-    items.sort((a, b) =>
-        (b.lastModified ?? DateTime(0)).compareTo(a.lastModified ?? DateTime(0)));
+    items.sort(
+      (a, b) => (b.lastModified ?? DateTime(0)).compareTo(
+        a.lastModified ?? DateTime(0),
+      ),
+    );
     return items;
   }
 
@@ -788,16 +806,18 @@ class S3BackupClient {
       String v => int.tryParse(v.trim()) ?? 0,
       _ => 0,
     };
-    final lastModified =
-        _parseDateTime((entry['lastModified'] as String?) ?? '');
+    final lastModified = _parseDateTime(
+      (entry['lastModified'] as String?) ?? '',
+    );
     return BackupFileItem(
       href: Uri(
         scheme: 's3',
         host: cfg.bucket.trim(),
         pathSegments: key.split('/').where((s) => s.isNotEmpty).toList(),
       ),
-      displayName:
-          name != null && name.isNotEmpty ? name : _displayNameFromKey(key),
+      displayName: name != null && name.isNotEmpty
+          ? name
+          : _displayNameFromKey(key),
       size: size,
       lastModified: lastModified,
     );

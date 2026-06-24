@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/backup/application/backup_controller.dart';
+import 'package:aetherlink_flutter/features/backup/data/webdav_auto_sync_service.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_file_item.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
@@ -99,8 +100,7 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
               DecoratedBox(
                 decoration: BoxDecoration(
                   color: theme.colorScheme.surface,
-                  border:
-                      Border(bottom: BorderSide(color: theme.dividerColor)),
+                  border: Border(bottom: BorderSide(color: theme.dividerColor)),
                 ),
                 child: TabBar(
                   controller: _tabController,
@@ -212,8 +212,10 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
                     hintText: 'https://dav.example.com',
                     border: OutlineInputBorder(),
                     isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                   ),
                   style: const TextStyle(fontSize: 14),
                   onChanged: (_) => _saveWebDavConfig(controller),
@@ -229,7 +231,9 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
                           border: OutlineInputBorder(),
                           isDense: true,
                           contentPadding: EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10),
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
                         ),
                         style: const TextStyle(fontSize: 14),
                         onChanged: (_) => _saveWebDavConfig(controller),
@@ -244,7 +248,9 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
                           border: OutlineInputBorder(),
                           isDense: true,
                           contentPadding: EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10),
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
                         ),
                         style: const TextStyle(fontSize: 14),
                         obscureText: true,
@@ -261,8 +267,10 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
                     hintText: 'aetherlink_backups',
                     border: OutlineInputBorder(),
                     isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                   ),
                   style: const TextStyle(fontSize: 14),
                   onChanged: (_) => _saveWebDavConfig(controller),
@@ -305,8 +313,177 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
             ],
           ),
         ),
+        const SizedBox(height: 12),
+        _buildAutoSyncSection(controller, state, theme),
       ],
     );
+  }
+
+  Widget _buildAutoSyncSection(
+    BackupController controller,
+    BackupState state,
+    ThemeData theme,
+  ) {
+    return _Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8B5CF6).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    LucideIcons.refreshCw,
+                    size: 16,
+                    color: Color(0xFF8B5CF6),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '自动同步',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                CustomSwitch(
+                  value: state.autoSyncEnabled,
+                  onChanged: !state.webDavConfig.isConfigured
+                      ? null
+                      : (v) {
+                          controller.saveAutoSyncSettings(
+                            enabled: v,
+                            intervalMinutes: state.autoSyncIntervalMinutes,
+                            maxBackups: state.autoSyncMaxBackups,
+                          );
+                        },
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '定期自动备份到 WebDAV 服务器',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 12,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            if (state.autoSyncEnabled) ...[
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '同步间隔',
+                      style: theme.textTheme.bodyMedium?.copyWith(fontSize: 13),
+                    ),
+                  ),
+                  DropdownButton<int>(
+                    value:
+                        kAutoSyncIntervalOptions.contains(
+                          state.autoSyncIntervalMinutes,
+                        )
+                        ? state.autoSyncIntervalMinutes
+                        : kAutoSyncIntervalOptions.first,
+                    isDense: true,
+                    underline: const SizedBox.shrink(),
+                    style: theme.textTheme.bodyMedium?.copyWith(fontSize: 13),
+                    items: kAutoSyncIntervalOptions
+                        .map(
+                          (m) => DropdownMenuItem(
+                            value: m,
+                            child: Text(_intervalLabel(m)),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      controller.saveAutoSyncSettings(
+                        enabled: state.autoSyncEnabled,
+                        intervalMinutes: v,
+                        maxBackups: state.autoSyncMaxBackups,
+                      );
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '保留备份数',
+                      style: theme.textTheme.bodyMedium?.copyWith(fontSize: 13),
+                    ),
+                  ),
+                  DropdownButton<int>(
+                    value: state.autoSyncMaxBackups.clamp(1, 20),
+                    isDense: true,
+                    underline: const SizedBox.shrink(),
+                    style: theme.textTheme.bodyMedium?.copyWith(fontSize: 13),
+                    items: [3, 5, 10, 15, 20]
+                        .map(
+                          (n) =>
+                              DropdownMenuItem(value: n, child: Text('$n 个')),
+                        )
+                        .toList(),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      controller.saveAutoSyncSettings(
+                        enabled: state.autoSyncEnabled,
+                        intervalMinutes: state.autoSyncIntervalMinutes,
+                        maxBackups: v,
+                      );
+                    },
+                  ),
+                ],
+              ),
+              if (state.lastAutoSyncAt != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  '上次同步: ${_formatDateTime(state.lastAutoSyncAt!)}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 11,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: state.status == BackupStatus.working
+                      ? null
+                      : controller.triggerAutoSyncNow,
+                  icon: const Icon(LucideIcons.upload, size: 14),
+                  label: const Text('立即同步'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _intervalLabel(int minutes) {
+    if (minutes < 60) return '$minutes 分钟';
+    if (minutes < 1440) return '${minutes ~/ 60} 小时';
+    return '${minutes ~/ 1440} 天';
+  }
+
+  String _formatDateTime(DateTime dt) {
+    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
+        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
   // ---------------------------------------------------------------------------
@@ -360,8 +537,10 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
                     hintText: 'https://s3.amazonaws.com',
                     border: OutlineInputBorder(),
                     isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                   ),
                   style: const TextStyle(fontSize: 14),
                   onChanged: (_) => _saveS3Config(controller),
@@ -378,7 +557,9 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
                           border: OutlineInputBorder(),
                           isDense: true,
                           contentPadding: EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10),
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
                         ),
                         style: const TextStyle(fontSize: 14),
                         onChanged: (_) => _saveS3Config(controller),
@@ -393,7 +574,9 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
                           border: OutlineInputBorder(),
                           isDense: true,
                           contentPadding: EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10),
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
                         ),
                         style: const TextStyle(fontSize: 14),
                         onChanged: (_) => _saveS3Config(controller),
@@ -412,7 +595,9 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
                           border: OutlineInputBorder(),
                           isDense: true,
                           contentPadding: EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10),
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
                         ),
                         style: const TextStyle(fontSize: 14),
                         onChanged: (_) => _saveS3Config(controller),
@@ -427,7 +612,9 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
                           border: OutlineInputBorder(),
                           isDense: true,
                           contentPadding: EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10),
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
                         ),
                         style: const TextStyle(fontSize: 14),
                         obscureText: true,
@@ -444,8 +631,10 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
                     hintText: 'aetherlink_backups',
                     border: OutlineInputBorder(),
                     isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                   ),
                   style: const TextStyle(fontSize: 14),
                   onChanged: (_) => _saveS3Config(controller),
@@ -472,8 +661,9 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
                     CustomSwitch(
                       value: state.s3Config.pathStyle,
                       onChanged: (v) {
-                        controller
-                            .updateS3Config(state.s3Config.copyWith(pathStyle: v));
+                        controller.updateS3Config(
+                          state.s3Config.copyWith(pathStyle: v),
+                        );
                       },
                     ),
                   ],
@@ -525,30 +715,34 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
   // ---------------------------------------------------------------------------
 
   void _saveWebDavConfig(BackupController controller) {
-    controller.updateWebDavConfig(WebDavConfig(
-      url: _urlController.text,
-      username: _usernameController.text,
-      password: _passwordController.text,
-      path: _pathController.text.isEmpty
-          ? 'aetherlink_backups'
-          : _pathController.text,
-    ));
+    controller.updateWebDavConfig(
+      WebDavConfig(
+        url: _urlController.text,
+        username: _usernameController.text,
+        password: _passwordController.text,
+        path: _pathController.text.isEmpty
+            ? 'aetherlink_backups'
+            : _pathController.text,
+      ),
+    );
   }
 
   void _saveS3Config(BackupController controller) {
-    controller.updateS3Config(S3Config(
-      endpoint: _s3EndpointController.text,
-      region: _s3RegionController.text.isEmpty
-          ? 'us-east-1'
-          : _s3RegionController.text,
-      bucket: _s3BucketController.text,
-      accessKeyId: _s3AccessKeyController.text,
-      secretAccessKey: _s3SecretKeyController.text,
-      prefix: _s3PrefixController.text.isEmpty
-          ? 'aetherlink_backups'
-          : _s3PrefixController.text,
-      pathStyle: ref.read(backupControllerProvider).s3Config.pathStyle,
-    ));
+    controller.updateS3Config(
+      S3Config(
+        endpoint: _s3EndpointController.text,
+        region: _s3RegionController.text.isEmpty
+            ? 'us-east-1'
+            : _s3RegionController.text,
+        bucket: _s3BucketController.text,
+        accessKeyId: _s3AccessKeyController.text,
+        secretAccessKey: _s3SecretKeyController.text,
+        prefix: _s3PrefixController.text.isEmpty
+            ? 'aetherlink_backups'
+            : _s3PrefixController.text,
+        pathStyle: ref.read(backupControllerProvider).s3Config.pathStyle,
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -561,9 +755,9 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
 
     final state = ref.read(backupControllerProvider);
     if (state.remoteBackups.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('远程没有备份文件')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('远程没有备份文件')));
       return;
     }
 
@@ -585,9 +779,9 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
 
     final state = ref.read(backupControllerProvider);
     if (state.s3Backups.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('S3 没有备份文件')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('S3 没有备份文件')));
       return;
     }
 
@@ -736,10 +930,7 @@ class _RemoteFileListSheet extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
-            child: Text(
-              '选择要恢复的备份',
-              style: theme.textTheme.titleMedium,
-            ),
+            child: Text('选择要恢复的备份', style: theme.textTheme.titleMedium),
           ),
           const Divider(height: 1),
           Flexible(

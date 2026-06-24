@@ -111,10 +111,7 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(
-            title: '备份与恢复',
-            description: '创建本地备份或从备份文件恢复数据',
-          ),
+          _SectionHeader(title: '备份与恢复', description: '创建本地备份或从备份文件恢复数据'),
           Divider(height: 1, color: theme.dividerColor),
           _ActionRow(
             icon: LucideIcons.download,
@@ -130,7 +127,9 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
             label: '精细化备份',
             description: '选择需要备份的数据类型，按需导出',
             trailing: _RecommendedChip(),
-            onTap: isWorking ? null : () => _showSelectiveBackupDialog(controller),
+            onTap: isWorking
+                ? null
+                : () => _showSelectiveBackupDialog(controller),
           ),
           Divider(height: 1, color: theme.dividerColor),
           _ActionRow(
@@ -154,10 +153,7 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(
-            title: '云备份',
-            description: '通过 WebDAV 或 S3 将数据同步到云端',
-          ),
+          _SectionHeader(title: '云备份', description: '通过 WebDAV 或 S3 将数据同步到云端'),
           Divider(height: 1, color: theme.dividerColor),
           _NavigationRow(
             icon: LucideIcons.cloud,
@@ -180,10 +176,7 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(
-            title: '数据迁移',
-            description: '从其他应用导入聊天记录和配置',
-          ),
+          _SectionHeader(title: '数据迁移', description: '从其他应用导入聊天记录和配置'),
           Divider(height: 1, color: theme.dividerColor),
           _NavigationRow(
             icon: LucideIcons.folderInput,
@@ -210,10 +203,7 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(
-            title: '维护',
-            description: '数据库诊断与备份提醒设置',
-          ),
+          _SectionHeader(title: '维护', description: '数据库诊断与备份提醒设置'),
           Divider(height: 1, color: theme.dividerColor),
           _NavigationRow(
             icon: LucideIcons.bell,
@@ -250,16 +240,15 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(
-            title: '本地备份历史',
-            description: '最近的备份文件',
-          ),
+          _SectionHeader(title: '本地备份历史', description: '最近的备份文件'),
           Divider(height: 1, color: theme.dividerColor),
-          ...state.localBackups.map((item) => _BackupFileRow(
-                item: item,
-                theme: theme,
-                onDelete: () => controller.deleteLocalBackup(item.displayName),
-              )),
+          ...state.localBackups.map(
+            (item) => _BackupFileRow(
+              item: item,
+              theme: theme,
+              onDelete: () => controller.deleteLocalBackup(item.displayName),
+            ),
+          ),
         ],
       ),
     );
@@ -344,7 +333,11 @@ class _SelectiveBackupDialogState extends State<_SelectiveBackupDialog> {
               color: const Color(0xFF9333EA).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(LucideIcons.settings, size: 18, color: Color(0xFF9333EA)),
+            child: const Icon(
+              LucideIcons.settings,
+              size: 18,
+              color: Color(0xFF9333EA),
+            ),
           ),
           const SizedBox(width: 12),
           const Text('精细化备份'),
@@ -583,8 +576,11 @@ class _RestoreConfirmDialogState extends State<_RestoreConfirmDialog> {
             const SizedBox(height: 8),
             Row(
               children: [
-                Icon(LucideIcons.shieldCheck,
-                    size: 16, color: theme.colorScheme.secondary),
+                Icon(
+                  LucideIcons.shieldCheck,
+                  size: 16,
+                  color: theme.colorScheme.secondary,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -617,9 +613,10 @@ class _RestoreConfirmDialogState extends State<_RestoreConfirmDialog> {
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         children: [
-          Text('$label: ',
-              style:
-                  const TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+          Text(
+            '$label: ',
+            style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+          ),
           Text(value, style: const TextStyle(fontSize: 13)),
         ],
       ),

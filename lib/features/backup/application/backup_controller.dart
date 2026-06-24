@@ -13,6 +13,7 @@ import 'package:aetherlink_flutter/features/backup/data/chatbox_importer.dart';
 import 'package:aetherlink_flutter/features/backup/data/cherry_importer.dart';
 import 'package:aetherlink_flutter/features/backup/data/database_diagnostic_service.dart';
 import 'package:aetherlink_flutter/features/backup/data/s3_client.dart';
+import 'package:aetherlink_flutter/features/backup/data/webdav_auto_sync_service.dart';
 import 'package:aetherlink_flutter/features/backup/data/webdav_client.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_file_item.dart';
@@ -40,6 +41,10 @@ class BackupState {
   final int? reminderMinutesOfDay;
   final DateTime? lastBackupAt;
   final DateTime? nextReminderAt;
+  final bool autoSyncEnabled;
+  final int autoSyncIntervalMinutes;
+  final int autoSyncMaxBackups;
+  final DateTime? lastAutoSyncAt;
 
   const BackupState({
     this.status = BackupStatus.idle,
@@ -54,6 +59,10 @@ class BackupState {
     this.reminderMinutesOfDay,
     this.lastBackupAt,
     this.nextReminderAt,
+    this.autoSyncEnabled = false,
+    this.autoSyncIntervalMinutes = 60,
+    this.autoSyncMaxBackups = 5,
+    this.lastAutoSyncAt,
   });
 
   BackupState copyWith({
@@ -69,6 +78,10 @@ class BackupState {
     int? Function()? reminderMinutesOfDay,
     DateTime? Function()? lastBackupAt,
     DateTime? Function()? nextReminderAt,
+    bool? autoSyncEnabled,
+    int? autoSyncIntervalMinutes,
+    int? autoSyncMaxBackups,
+    DateTime? Function()? lastAutoSyncAt,
   }) {
     return BackupState(
       status: status ?? this.status,
@@ -84,8 +97,16 @@ class BackupState {
           ? reminderMinutesOfDay()
           : this.reminderMinutesOfDay,
       lastBackupAt: lastBackupAt != null ? lastBackupAt() : this.lastBackupAt,
-      nextReminderAt:
-          nextReminderAt != null ? nextReminderAt() : this.nextReminderAt,
+      nextReminderAt: nextReminderAt != null
+          ? nextReminderAt()
+          : this.nextReminderAt,
+      autoSyncEnabled: autoSyncEnabled ?? this.autoSyncEnabled,
+      autoSyncIntervalMinutes:
+          autoSyncIntervalMinutes ?? this.autoSyncIntervalMinutes,
+      autoSyncMaxBackups: autoSyncMaxBackups ?? this.autoSyncMaxBackups,
+      lastAutoSyncAt: lastAutoSyncAt != null
+          ? lastAutoSyncAt()
+          : this.lastAutoSyncAt,
     );
   }
 }
@@ -99,6 +120,7 @@ class BackupController extends _$BackupController {
   late final BackupService _service;
   final S3BackupClient _s3Client = const S3BackupClient();
   final BackupReminderService _reminder = BackupReminderService();
+  final WebDavAutoSyncService _autoSync = WebDavAutoSyncService();
 
   @override
   BackupState build() {
@@ -114,6 +136,9 @@ class BackupController extends _$BackupController {
       final savedWebDav = await _loadWebDavConfig();
       final savedS3 = await _loadS3Config();
       await _reminder.load();
+      await _autoSync.load();
+      _autoSync.configure(backupService: _service, webDavConfig: savedWebDav);
+      _autoSync.resumeIfEnabled();
       state = state.copyWith(
         localBackups: locals,
         webDavConfig: savedWebDav,
@@ -123,6 +148,10 @@ class BackupController extends _$BackupController {
         reminderMinutesOfDay: () => _reminder.reminderMinutesOfDay,
         lastBackupAt: () => _reminder.lastBackupAt,
         nextReminderAt: () => _reminder.nextReminderAt,
+        autoSyncEnabled: _autoSync.enabled,
+        autoSyncIntervalMinutes: _autoSync.intervalMinutes,
+        autoSyncMaxBackups: _autoSync.maxBackups,
+        lastAutoSyncAt: () => _autoSync.lastSyncAt,
       );
     } catch (_) {}
   }
@@ -140,9 +169,7 @@ class BackupController extends _$BackupController {
         includeProviders: true,
         includeSettings: true,
       );
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path)]),
-      );
+      await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
       await _reminder.recordBackupCompleted();
       final locals = await _service.listLocalBackups();
       state = state.copyWith(
@@ -153,10 +180,7 @@ class BackupController extends _$BackupController {
         nextReminderAt: () => _reminder.nextReminderAt,
       );
     } catch (e) {
-      state = state.copyWith(
-        status: BackupStatus.error,
-        message: '备份失败: $e',
-      );
+      state = state.copyWith(status: BackupStatus.error, message: '备份失败: $e');
     }
   }
 
@@ -166,16 +190,17 @@ class BackupController extends _$BackupController {
     required bool includeProviders,
     required bool includeSettings,
   }) async {
-    state = state.copyWith(status: BackupStatus.working, message: '正在创建精细化备份...');
+    state = state.copyWith(
+      status: BackupStatus.working,
+      message: '正在创建精细化备份...',
+    );
     try {
       final file = await _service.createBackup(
         includeMessages: includeMessages,
         includeProviders: includeProviders,
         includeSettings: includeSettings,
       );
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path)]),
-      );
+      await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
       await _reminder.recordBackupCompleted();
       final locals = await _service.listLocalBackups();
       state = state.copyWith(
@@ -186,10 +211,7 @@ class BackupController extends _$BackupController {
         nextReminderAt: () => _reminder.nextReminderAt,
       );
     } catch (e) {
-      state = state.copyWith(
-        status: BackupStatus.error,
-        message: '备份失败: $e',
-      );
+      state = state.copyWith(status: BackupStatus.error, message: '备份失败: $e');
     }
   }
 
@@ -227,18 +249,18 @@ class BackupController extends _$BackupController {
   Future<void> restoreFromLocal(String filePath, RestoreMode mode) async {
     state = state.copyWith(status: BackupStatus.working, message: '正在恢复数据...');
     try {
-      await _service.restoreFromFile(File(filePath), mode: mode);
+      final result = await _service.restoreFromFile(File(filePath), mode: mode);
       final locals = await _service.listLocalBackups();
+      final msg = result.failed > 0
+          ? '恢复完成（${result.summary}）'
+          : '数据恢复成功（${result.succeeded} 条记录）';
       state = state.copyWith(
-        status: BackupStatus.success,
-        message: '数据恢复成功',
+        status: result.failed > 0 ? BackupStatus.success : BackupStatus.success,
+        message: msg,
         localBackups: locals,
       );
     } catch (e) {
-      state = state.copyWith(
-        status: BackupStatus.error,
-        message: '恢复失败: $e',
-      );
+      state = state.copyWith(status: BackupStatus.error, message: '恢复失败: $e');
     }
   }
 
@@ -263,20 +285,17 @@ class BackupController extends _$BackupController {
     try {
       final client = WebDavClient(config: state.webDavConfig);
       await client.testConnection();
-      state = state.copyWith(
-        status: BackupStatus.success,
-        message: '连接成功',
-      );
+      state = state.copyWith(status: BackupStatus.success, message: '连接成功');
     } catch (e) {
-      state = state.copyWith(
-        status: BackupStatus.error,
-        message: '连接失败: $e',
-      );
+      state = state.copyWith(status: BackupStatus.error, message: '连接失败: $e');
     }
   }
 
   Future<void> backupToWebDav() async {
-    state = state.copyWith(status: BackupStatus.working, message: '正在备份到 WebDAV...');
+    state = state.copyWith(
+      status: BackupStatus.working,
+      message: '正在备份到 WebDAV...',
+    );
     try {
       final file = await _service.createBackup();
       final client = WebDavClient(config: state.webDavConfig);
@@ -314,13 +333,16 @@ class BackupController extends _$BackupController {
   }
 
   Future<void> restoreFromWebDav(BackupFileItem item, RestoreMode mode) async {
-    state =
-        state.copyWith(status: BackupStatus.working, message: '正在从 WebDAV 恢复...');
+    state = state.copyWith(
+      status: BackupStatus.working,
+      message: '正在从 WebDAV 恢复...',
+    );
     try {
       final client = WebDavClient(config: state.webDavConfig);
       final file = await client.download(item);
+      RestoreResult result;
       try {
-        await _service.restoreFromFile(file, mode: mode);
+        result = await _service.restoreFromFile(file, mode: mode);
       } finally {
         try {
           await file.delete();
@@ -328,9 +350,12 @@ class BackupController extends _$BackupController {
         } catch (_) {}
       }
       final locals = await _service.listLocalBackups();
+      final msg = result.failed > 0
+          ? '从 WebDAV 恢复完成（${result.summary}）'
+          : '从 WebDAV 恢复成功（${result.succeeded} 条记录）';
       state = state.copyWith(
         status: BackupStatus.success,
-        message: '从 WebDAV 恢复成功',
+        message: msg,
         localBackups: locals,
       );
     } catch (e) {
@@ -369,13 +394,13 @@ class BackupController extends _$BackupController {
   }
 
   Future<void> testS3Connection() async {
-    state = state.copyWith(status: BackupStatus.working, message: '正在测试 S3 连接...');
+    state = state.copyWith(
+      status: BackupStatus.working,
+      message: '正在测试 S3 连接...',
+    );
     try {
       await _s3Client.test(state.s3Config);
-      state = state.copyWith(
-        status: BackupStatus.success,
-        message: 'S3 连接成功',
-      );
+      state = state.copyWith(status: BackupStatus.success, message: 'S3 连接成功');
     } catch (e) {
       state = state.copyWith(
         status: BackupStatus.error,
@@ -385,7 +410,10 @@ class BackupController extends _$BackupController {
   }
 
   Future<void> backupToS3() async {
-    state = state.copyWith(status: BackupStatus.working, message: '正在备份到 S3...');
+    state = state.copyWith(
+      status: BackupStatus.working,
+      message: '正在备份到 S3...',
+    );
     try {
       final file = await _service.createBackup(
         includeMessages: state.s3Config.includeMessages,
@@ -427,18 +455,28 @@ class BackupController extends _$BackupController {
   }
 
   Future<void> restoreFromS3(BackupFileItem item, RestoreMode mode) async {
-    state = state.copyWith(status: BackupStatus.working, message: '正在从 S3 恢复...');
+    state = state.copyWith(
+      status: BackupStatus.working,
+      message: '正在从 S3 恢复...',
+    );
     File? file;
     try {
       final key = item.href.pathSegments.join('/');
       final tmp = await getTemporaryDirectory();
       file = File(p.join(tmp.path, item.displayName));
-      await _s3Client.downloadToFile(state.s3Config, key: key, destination: file);
-      await _service.restoreFromFile(file, mode: mode);
+      await _s3Client.downloadToFile(
+        state.s3Config,
+        key: key,
+        destination: file,
+      );
+      final result = await _service.restoreFromFile(file, mode: mode);
       final locals = await _service.listLocalBackups();
+      final msg = result.failed > 0
+          ? '从 S3 恢复完成（${result.summary}）'
+          : '从 S3 恢复成功（${result.succeeded} 条记录）';
       state = state.copyWith(
         status: BackupStatus.success,
-        message: '从 S3 恢复成功',
+        message: msg,
         localBackups: locals,
       );
     } catch (e) {
@@ -505,6 +543,67 @@ class BackupController extends _$BackupController {
   bool get shouldShowReminder => _reminder.shouldShowReminder;
 
   // ---------------------------------------------------------------------------
+  // WebDAV auto-sync
+  // ---------------------------------------------------------------------------
+
+  Future<void> saveAutoSyncSettings({
+    required bool enabled,
+    required int intervalMinutes,
+    required int maxBackups,
+  }) async {
+    _autoSync.configure(
+      backupService: _service,
+      webDavConfig: state.webDavConfig,
+    );
+    await _autoSync.saveSettings(
+      enabled: enabled,
+      intervalMinutes: intervalMinutes,
+      maxBackups: maxBackups,
+    );
+    state = state.copyWith(
+      autoSyncEnabled: _autoSync.enabled,
+      autoSyncIntervalMinutes: _autoSync.intervalMinutes,
+      autoSyncMaxBackups: _autoSync.maxBackups,
+      lastAutoSyncAt: () => _autoSync.lastSyncAt,
+    );
+  }
+
+  Future<void> triggerAutoSyncNow() async {
+    if (!state.webDavConfig.isConfigured) {
+      state = state.copyWith(
+        status: BackupStatus.error,
+        message: '请先配置 WebDAV 服务器',
+      );
+      return;
+    }
+    _autoSync.configure(
+      backupService: _service,
+      webDavConfig: state.webDavConfig,
+    );
+    state = state.copyWith(
+      status: BackupStatus.working,
+      message: '正在同步到 WebDAV...',
+    );
+    final ok = await _autoSync.syncNow();
+    if (ok) {
+      final remotes = await WebDavClient(
+        config: state.webDavConfig,
+      ).listFiles();
+      state = state.copyWith(
+        status: BackupStatus.success,
+        message: '自动同步完成',
+        remoteBackups: remotes,
+        lastAutoSyncAt: () => _autoSync.lastSyncAt,
+      );
+    } else {
+      state = state.copyWith(
+        status: BackupStatus.error,
+        message: '同步失败: ${_autoSync.lastError ?? "未知错误"}',
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Config persistence (stored in AppSettingRows)
   // ---------------------------------------------------------------------------
 
@@ -545,18 +644,26 @@ class BackupController extends _$BackupController {
 
   /// Import from a ChatboxAI export file.
   Future<void> importFromChatbox(File file, RestoreMode mode) async {
-    state = state.copyWith(status: BackupStatus.working, message: '正在导入 ChatboxAI 数据...');
+    state = state.copyWith(
+      status: BackupStatus.working,
+      message: '正在导入 ChatboxAI 数据...',
+    );
     try {
       // Safety: create auto-backup before overwrite import
       if (mode == RestoreMode.overwrite) {
         await _service.createAutoBackup(reason: 'ChatboxAI 导入前自动备份');
       }
       final db = ref.read(appDatabaseProvider);
-      final result = await ChatboxImporter.import(file: file, mode: mode, db: db);
+      final result = await ChatboxImporter.import(
+        file: file,
+        mode: mode,
+        db: db,
+      );
       final locals = await _service.listLocalBackups();
       state = state.copyWith(
         status: BackupStatus.success,
-        message: '导入成功: ${result.conversations} 个对话, ${result.messages} 条消息, ${result.providers} 个服务商',
+        message:
+            '导入成功: ${result.conversations} 个对话, ${result.messages} 条消息, ${result.providers} 个服务商',
         localBackups: locals,
       );
     } catch (e) {
@@ -566,17 +673,25 @@ class BackupController extends _$BackupController {
 
   /// Import from a Cherry Studio backup file.
   Future<void> importFromCherryStudio(File file, RestoreMode mode) async {
-    state = state.copyWith(status: BackupStatus.working, message: '正在导入 Cherry Studio 数据...');
+    state = state.copyWith(
+      status: BackupStatus.working,
+      message: '正在导入 Cherry Studio 数据...',
+    );
     try {
       if (mode == RestoreMode.overwrite) {
         await _service.createAutoBackup(reason: 'Cherry Studio 导入前自动备份');
       }
       final db = ref.read(appDatabaseProvider);
-      final result = await CherryImporter.import(file: file, mode: mode, db: db);
+      final result = await CherryImporter.import(
+        file: file,
+        mode: mode,
+        db: db,
+      );
       final locals = await _service.listLocalBackups();
       state = state.copyWith(
         status: BackupStatus.success,
-        message: '导入成功: ${result.conversations} 个对话, ${result.messages} 条消息, ${result.providers} 个服务商',
+        message:
+            '导入成功: ${result.conversations} 个对话, ${result.messages} 条消息, ${result.providers} 个服务商',
         localBackups: locals,
       );
     } catch (e) {
@@ -606,7 +721,8 @@ class BackupController extends _$BackupController {
       final result = await service.repair();
       state = state.copyWith(
         status: BackupStatus.success,
-        message: '修复完成: 清理了 ${result.orphanedMessagesRemoved} 条孤立消息, ${result.orphanedBlocksRemoved} 个孤立消息块',
+        message:
+            '修复完成: 清理了 ${result.orphanedMessagesRemoved} 条孤立消息, ${result.orphanedBlocksRemoved} 个孤立消息块',
       );
       return result;
     } catch (e) {
@@ -615,5 +731,3 @@ class BackupController extends _$BackupController {
     }
   }
 }
-
-

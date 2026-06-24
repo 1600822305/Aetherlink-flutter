@@ -42,12 +42,16 @@ class _BackupReminderPageState extends ConsumerState<BackupReminderPage> {
                         width: 30,
                         height: 30,
                         decoration: BoxDecoration(
-                          color:
-                              const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                          color: const Color(
+                            0xFFF59E0B,
+                          ).withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Icon(LucideIcons.bell,
-                            size: 16, color: Color(0xFFF59E0B)),
+                        child: const Icon(
+                          LucideIcons.bell,
+                          size: 16,
+                          color: Color(0xFFF59E0B),
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -96,7 +100,10 @@ class _BackupReminderPageState extends ConsumerState<BackupReminderPage> {
                       children: [
                         Expanded(
                           child: _buildIntervalSelector(
-                              controller, state, theme),
+                            controller,
+                            state,
+                            theme,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         _buildTimeSelector(controller, state, theme),
@@ -106,11 +113,19 @@ class _BackupReminderPageState extends ConsumerState<BackupReminderPage> {
                         state.nextReminderAt != null) ...[
                       const SizedBox(height: 12),
                       if (state.lastBackupAt != null)
-                        _infoRow(theme, LucideIcons.clock, '上次备份',
-                            _formatDate(state.lastBackupAt)),
+                        _infoRow(
+                          theme,
+                          LucideIcons.clock,
+                          '上次备份',
+                          _formatDate(state.lastBackupAt),
+                        ),
                       if (state.nextReminderAt != null)
-                        _infoRow(theme, LucideIcons.calendarClock, '下次提醒',
-                            _formatDate(state.nextReminderAt)),
+                        _infoRow(
+                          theme,
+                          LucideIcons.calendarClock,
+                          '下次提醒',
+                          _formatDate(state.nextReminderAt),
+                        ),
                     ],
                   ],
                 ],
@@ -180,8 +195,7 @@ class _BackupReminderPageState extends ConsumerState<BackupReminderPage> {
     );
   }
 
-  Widget _infoRow(
-      ThemeData theme, IconData icon, String label, String value) {
+  Widget _infoRow(ThemeData theme, IconData icon, String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
