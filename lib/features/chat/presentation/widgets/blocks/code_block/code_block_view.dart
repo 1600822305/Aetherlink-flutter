@@ -138,6 +138,7 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
           lineNumberStyle: lineNumberStyle,
           gutterBorderColor: border,
           showLineNumbers: cs.showLineNumbers,
+          wrappable: cs.wrappable,
         ),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,

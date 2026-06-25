@@ -18,6 +18,7 @@ class CodeBlockFullScreen extends StatefulWidget {
     required this.lineNumberStyle,
     required this.gutterBorderColor,
     required this.showLineNumbers,
+    required this.wrappable,
     super.key,
   });
 
@@ -29,6 +30,7 @@ class CodeBlockFullScreen extends StatefulWidget {
   final TextStyle lineNumberStyle;
   final Color gutterBorderColor;
   final bool showLineNumbers;
+  final bool wrappable;
 
   @override
   State<CodeBlockFullScreen> createState() => _CodeBlockFullScreenState();
@@ -124,35 +126,104 @@ class _CodeBlockFullScreenState extends State<CodeBlockFullScreen> {
                 labelColor: labelColor,
               ),
             Expanded(
-              child: InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 4.0,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(12),
-                  child: useDiff
-                      ? DiffCodeView(
-                          lines: lines,
-                          showLineNumbers: widget.showLineNumbers,
-                          codeStyle: widget.codeStyle,
-                          lineNumberStyle: widget.lineNumberStyle,
-                          gutterBorderColor: widget.gutterBorderColor,
-                        )
-                      : PerLineCodeView(
-                          lines: lines,
-                          highlightLanguage: widget.highlightLanguage,
-                          highlightTheme: widget.highlightTheme,
-                          showLineNumbers: widget.showLineNumbers,
-                          codeStyle: widget.codeStyle,
-                          lineNumberStyle: widget.lineNumberStyle,
-                          gutterBorderColor: widget.gutterBorderColor,
-                          searchQuery: _searchQuery,
-                          currentMatchIndex: _currentMatchIndex,
-                        ),
-                ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // `InteractiveViewer` owns all gestures so a two-finger
+                  // pinch reliably forms (no inner scroll view to steal the
+                  // first pointer): one finger pans, two fingers zoom — like
+                  // an image viewer. `constrained: false` lets the content
+                  // take its natural size and be freely panned/zoomed.
+                  return InteractiveViewer(
+                    constrained: false,
+                    panEnabled: true,
+                    scaleEnabled: true,
+                    minScale: 0.5,
+                    maxScale: 4.0,
+                    // Pin the content's edges to the viewport (like MT / mobile
+                    // text editors): no overscroll past the top-left origin, so
+                    // empty space never appears before the code starts.
+                    boundaryMargin: EdgeInsets.zero,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minWidth: constraints.maxWidth,
+                        minHeight: constraints.maxHeight,
+                      ),
+                      child: _buildContent(
+                        dc,
+                        lines,
+                        useDiff,
+                        constraints.maxWidth,
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Builds the code content, honoring the code-block "wrap" setting (mirrors
+  /// the inline [CodeBlockBody] logic). Wrap/diff modes are pinned to the
+  /// viewport width so text wraps; non-wrap mode keeps its natural (possibly
+  /// overflowing) width so [InteractiveViewer] can pan across long lines.
+  Widget _buildContent(
+    String dc,
+    List<String> lines,
+    bool useDiff,
+    double viewportWidth,
+  ) {
+    if (useDiff) {
+      return SizedBox(
+        width: viewportWidth,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: DiffCodeView(
+            lines: lines,
+            showLineNumbers: widget.showLineNumbers,
+            codeStyle: widget.codeStyle,
+            lineNumberStyle: widget.lineNumberStyle,
+            gutterBorderColor: widget.gutterBorderColor,
+          ),
+        ),
+      );
+    }
+
+    if (widget.wrappable) {
+      return SizedBox(
+        width: viewportWidth,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: PerLineCodeView(
+            lines: lines,
+            highlightLanguage: widget.highlightLanguage,
+            highlightTheme: widget.highlightTheme,
+            showLineNumbers: widget.showLineNumbers,
+            codeStyle: widget.codeStyle,
+            lineNumberStyle: widget.lineNumberStyle,
+            gutterBorderColor: widget.gutterBorderColor,
+            searchQuery: _searchQuery,
+            currentMatchIndex: _currentMatchIndex,
+          ),
+        ),
+      );
+    }
+
+    // Non-wrap: keep each line on a single row at its natural width; horizontal
+    // panning is handled by the enclosing InteractiveViewer.
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: SingleBlockCodeView(
+        code: dc.isEmpty ? ' ' : dc,
+        lineCount: lines.length,
+        highlightLanguage: widget.highlightLanguage,
+        highlightTheme: widget.highlightTheme,
+        showLineNumbers: widget.showLineNumbers,
+        codeStyle: widget.codeStyle,
+        lineNumberStyle: widget.lineNumberStyle,
+        gutterBorderColor: widget.gutterBorderColor,
       ),
     );
   }
