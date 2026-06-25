@@ -12,13 +12,10 @@ import 'package:aetherlink_flutter/features/notes/domain/note_node.dart';
 /// tap a note to open the editor. Advanced management (rename/delete/sort)
 /// lives on the full page, reachable via the expand button.
 ///
-/// [onNavigate] is invoked right before pushing a route so the host (the chat
-/// sidebar) can close the drawer — the notes feature can't import chat's
-/// `SidebarScope`, so the host passes the close callback down.
+/// Opening a note/page pushes a route *over* the (overlay) sidebar without
+/// closing it, so returning lands back on the same browsing spot.
 class NotesSidebarPanel extends ConsumerWidget {
-  const NotesSidebarPanel({this.onNavigate, super.key});
-
-  final VoidCallback? onNavigate;
+  const NotesSidebarPanel({super.key});
 
   static const Color _folderColor = Color(0xFFF59E0B);
   static const Color _fileColor = Color(0xFF3B82F6);
@@ -69,10 +66,7 @@ class NotesSidebarPanel extends ConsumerWidget {
                 icon: const Icon(LucideIcons.maximize2, size: 16),
                 color: theme.colorScheme.onSurfaceVariant,
                 tooltip: '打开完整笔记',
-                onPressed: () {
-                  onNavigate?.call();
-                  context.push(AppRouter.notesPath);
-                },
+                onPressed: () => context.push(AppRouter.notesPath),
               ),
             ],
           ),
@@ -131,7 +125,6 @@ class NotesSidebarPanel extends ConsumerWidget {
       controller.enterFolder(node);
       return;
     }
-    onNavigate?.call();
     await context.push(AppRouter.noteEditorPath(node.relativePath, node.title));
     await controller.refresh();
   }
@@ -167,7 +160,6 @@ class NotesSidebarPanel extends ConsumerWidget {
     final title = name.toLowerCase().endsWith('.md')
         ? name.substring(0, name.length - 3)
         : name;
-    onNavigate?.call();
     await context.push(AppRouter.noteEditorPath(relPath, title));
     await controller.refresh();
   }

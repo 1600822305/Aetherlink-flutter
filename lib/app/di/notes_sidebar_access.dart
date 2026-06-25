@@ -35,14 +35,11 @@ class NotesSidebarTabToggle {
 NotesSidebarTabToggle notesSidebarTabToggle(Ref ref) =>
     NotesSidebarTabToggle(ref);
 
-/// Builds the embedded notes browser for the chat sidebar 笔记 Tab.
+/// The embedded notes browser for the chat sidebar 笔记 Tab.
 ///
 /// The browser widget lives in `notes/presentation`; composing it into the chat
 /// sidebar would otherwise break the feature-boundary rule, so it's injected
-/// here in `app/`. [onNavigate] lets the host close the drawer before the panel
-/// pushes a route.
-typedef NotesSidebarPanelBuilder = Widget Function({VoidCallback? onNavigate});
-
+/// here in `app/`. It pushes routes *over* the sidebar (which is an overlay, not
+/// a route) without closing it, so no close callback is needed.
 @Riverpod(keepAlive: true)
-NotesSidebarPanelBuilder notesSidebarPanelBuilder(Ref ref) =>
-    ({VoidCallback? onNavigate}) => NotesSidebarPanel(onNavigate: onNavigate);
+Widget notesSidebarPanel(Ref ref) => const NotesSidebarPanel();

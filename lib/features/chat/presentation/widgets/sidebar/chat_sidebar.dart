@@ -122,11 +122,7 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
                 children: [
                   AssistantTab(onGoToTopics: () => tabController.animateTo(1)),
                   const TopicTab(),
-                  if (showNotes)
-                    ref.watch(notesSidebarPanelBuilderProvider)(
-                      onNavigate: () =>
-                          SidebarScope.maybeOf(context)?.closeSidebar(),
-                    ),
+                  if (showNotes) ref.watch(notesSidebarPanelProvider),
                   const SettingsTab(),
                 ],
               ),
