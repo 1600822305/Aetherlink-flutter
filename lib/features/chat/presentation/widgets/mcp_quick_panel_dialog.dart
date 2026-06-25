@@ -67,6 +67,9 @@ class _Tokens {
   Color get border => _cs.onSurface.withValues(alpha: 0.12);
   Color get primary => _cs.primary;
   Color get hover => _cs.primary.withValues(alpha: dark ? 0.16 : 0.08);
+  // Pill-style tab strip "track" — matches the 语音功能 settings page so the
+  // chat panel and the settings page share the same segmented-control look.
+  Color get tabTrack => _cs.onSurface.withValues(alpha: 0.06);
 
   // 运行中 chip / 管理服务器 button accent (web #10b981).
   static const Color success = Color(0xFF10B981);
@@ -267,9 +270,12 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
   }
 
   Widget _mainTabs(_Tokens t) {
-    return DecoratedBox(
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: t.border)),
+        color: t.tabTrack,
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         children: [
@@ -381,14 +387,26 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
   }
 
   Widget _toolsContent(_Tokens t, List<McpServer> servers) {
+    // Match the MCP server settings page: each sub-tab only lists the servers
+    // the user has already added. Adding new built-in / assistant tools is now
+    // exclusively done from the settings page's 「添加」 button — the quick
+    // panel is a runtime switchboard, not a catalog.
     final external = servers
         .where((s) => !isBuiltinMcpServerName(s.name))
         .toList();
-    final builtinTemplates = kBuiltinMcpServers
+    final builtinNames = kBuiltinMcpServers
         .where((s) => s.category != McpServerCategory.assistant)
-        .toList();
-    final assistantTemplates = kBuiltinMcpServers
+        .map((s) => s.name)
+        .toSet();
+    final assistantNames = kBuiltinMcpServers
         .where((s) => s.category == McpServerCategory.assistant)
+        .map((s) => s.name)
+        .toSet();
+    final builtinAdded = servers
+        .where((s) => builtinNames.contains(s.name))
+        .toList();
+    final assistantAdded = servers
+        .where((s) => assistantNames.contains(s.name))
         .toList();
 
     return Column(
@@ -398,8 +416,8 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
         Expanded(
           child: switch (_subTab) {
             0 => _externalList(t, external),
-            1 => _builtinList(t, servers, builtinTemplates),
-            _ => _assistantList(t, servers, assistantTemplates),
+            1 => _builtinList(t, builtinAdded),
+            _ => _assistantList(t, assistantAdded),
           },
         ),
       ],
@@ -413,13 +431,15 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
         icon: icon,
         label: label,
         active: _subTab == index,
-        compact: true,
         onTap: () => setState(() => _subTab = index),
       ),
     );
-    return DecoratedBox(
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: t.border)),
+        color: t.tabTrack,
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         children: [
@@ -463,92 +483,78 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
     );
   }
 
-  Widget _builtinList(
-    _Tokens t,
-    List<McpServer> servers,
-    List<McpServer> templates,
-  ) {
-    if (templates.isEmpty) {
-      return _SubEmpty(tokens: t, title: '暂无内置工具');
+  Widget _builtinList(_Tokens t, List<McpServer> added) {
+    if (added.isEmpty) {
+      return _SubEmpty(
+        tokens: t,
+        icon: LucideIcons.cpu,
+        title: '还没有启用内置工具',
+        subtitle: '前往下方「管理 MCP 服务器」添加',
+      );
     }
     return ListView.separated(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      itemCount: templates.length,
+      itemCount: added.length,
       separatorBuilder: (_, _) => _rowDivider(t),
       itemBuilder: (context, i) {
-        final tpl = templates[i];
-        final added = _added(servers, tpl.name);
+        final server = added[i];
         return _ServerRow(
           tokens: t,
           avatar: const _EmojiAvatar(emoji: '⚙️', color: Color(0xFF4CAF50)),
-          title: tpl.name,
-          subtitle: _DescText(text: tpl.description ?? '内置工具', tokens: t),
-          trailing: added == null
-              ? _AddButton(
-                  tokens: t,
-                  onTap: () =>
-                      ref.read(mcpServersProvider.notifier).addBuiltin(tpl),
-                )
-              : _McpSwitch(
-                  value: added.isActive,
-                  onChanged: (v) => ref
-                      .read(mcpServersProvider.notifier)
-                      .toggleActive(added.id, isActive: v),
-                ),
+          title: server.name,
+          subtitle: _DescText(text: server.description ?? '内置工具', tokens: t),
+          trailing: _McpSwitch(
+            value: server.isActive,
+            onChanged: (v) => ref
+                .read(mcpServersProvider.notifier)
+                .toggleActive(server.id, isActive: v),
+          ),
         );
       },
     );
   }
 
-  Widget _assistantList(
-    _Tokens t,
-    List<McpServer> servers,
-    List<McpServer> templates,
-  ) {
-    if (templates.isEmpty) {
-      return _SubEmpty(tokens: t, title: '暂无智能助手');
+  Widget _assistantList(_Tokens t, List<McpServer> added) {
+    if (added.isEmpty) {
+      return _SubEmpty(
+        tokens: t,
+        icon: LucideIcons.bot,
+        title: '还没有启用智能助手',
+        subtitle: '前往下方「管理 MCP 服务器」添加',
+      );
     }
     return ListView.separated(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      itemCount: templates.length,
+      itemCount: added.length,
       separatorBuilder: (_, _) => _rowDivider(t),
       itemBuilder: (context, i) {
-        final tpl = templates[i];
-        final added = _added(servers, tpl.name);
+        final server = added[i];
         return _ServerRow(
           tokens: t,
-          onTap: added == null
-              ? null
-              : () {
-                  _close();
-                  context.push(AppRouter.mcpAssistantDetailPath(added.id));
-                },
+          onTap: () {
+            _close();
+            context.push(AppRouter.mcpAssistantDetailPath(server.id));
+          },
           avatar: const _EmojiAvatar(emoji: '🤖', color: Color(0xFF2196F3)),
-          title: tpl.name,
-          subtitle: _DescText(text: tpl.description ?? '智能助手', tokens: t),
-          trailing: added == null
-              ? _AddButton(
-                  tokens: t,
-                  onTap: () =>
-                      ref.read(mcpServersProvider.notifier).addBuiltin(tpl),
-                )
-              : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _McpSwitch(
-                      value: added.isActive,
-                      onChanged: (v) => ref
-                          .read(mcpServersProvider.notifier)
-                          .toggleActive(added.id, isActive: v),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      LucideIcons.chevronRight,
-                      size: 16,
-                      color: t.textSecondary.withValues(alpha: 0.5),
-                    ),
-                  ],
-                ),
+          title: server.name,
+          subtitle: _DescText(text: server.description ?? '智能助手', tokens: t),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _McpSwitch(
+                value: server.isActive,
+                onChanged: (v) => ref
+                    .read(mcpServersProvider.notifier)
+                    .toggleActive(server.id, isActive: v),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                LucideIcons.chevronRight,
+                size: 16,
+                color: t.textSecondary.withValues(alpha: 0.5),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -690,13 +696,6 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
 
   Widget _rowDivider(_Tokens t) =>
       Divider(height: 1, indent: 60, color: t.border);
-
-  McpServer? _added(List<McpServer> servers, String name) {
-    for (final s in servers) {
-      if (s.name == name) return s;
-    }
-    return null;
-  }
 }
 
 // ─────────────────────────── Shared widgets ───────────────────────────
@@ -840,31 +839,6 @@ class _DescText extends StatelessWidget {
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
       style: TextStyle(fontSize: 12, height: 1.35, color: tokens.textSecondary),
-    );
-  }
-}
-
-class _AddButton extends StatelessWidget {
-  const _AddButton({required this.tokens, required this.onTap});
-  final _Tokens tokens;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton(
-      onPressed: () {
-        Haptics.instance.onSwitch();
-        onTap();
-      },
-      style: OutlinedButton.styleFrom(
-        foregroundColor: tokens.primary,
-        side: BorderSide(color: tokens.border),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        minimumSize: const Size(0, 32),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-      child: const Text('添加', style: TextStyle(fontSize: 13)),
     );
   }
 }
@@ -1104,74 +1078,72 @@ class _McpSwitch extends StatelessWidget {
   }
 }
 
-class _TabButton extends StatefulWidget {
+/// Pill-style tab pill matching the 语音功能 settings page `_TabHeader` (and the
+/// MCP server settings page) — the white "card" that slides under the active
+/// tab, with onSurface text and a soft 1px shadow. Rendered inside a [Container]
+/// "track" (see [_mainTabs] / [_subTabs]).
+class _TabButton extends StatelessWidget {
   const _TabButton({
     required this.tokens,
     required this.icon,
     required this.label,
     required this.active,
     required this.onTap,
-    this.compact = false,
   });
 
   final _Tokens tokens;
   final IconData icon;
   final String label;
   final bool active;
-  final bool compact;
   final VoidCallback onTap;
 
   @override
-  State<_TabButton> createState() => _TabButtonState();
-}
-
-class _TabButtonState extends State<_TabButton> {
-  bool _hover = false;
-
-  @override
   Widget build(BuildContext context) {
-    final t = widget.tokens;
-    final color = widget.active ? t.primary : t.textSecondary;
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: widget.onTap,
-        behavior: HitTestBehavior.opaque,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: widget.compact
-              ? const EdgeInsets.fromLTRB(8, 9, 8, 7)
-              : const EdgeInsets.fromLTRB(16, 11, 16, 9),
-          decoration: BoxDecoration(
-            color: _hover && !widget.active ? t.hover : Colors.transparent,
-            border: Border(
-              bottom: BorderSide(
-                width: 2,
-                color: widget.active ? t.primary : Colors.transparent,
-              ),
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(widget.icon, size: widget.compact ? 14 : 15, color: color),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  widget.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: widget.compact ? 12.5 : 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: color,
+    final color = active ? tokens.textPrimary : tokens.textSecondary;
+    // Pill segmented controls swap state instantly (iOS UISegmentedControl
+    // behaviour). An AnimatedContainer here would cross-fade the white
+    // "card" + shadow on both buttons for 200ms, producing a visible flicker
+    // — Flutter's built-in TabBar avoids that by sliding a single shared
+    // indicator between tabs, but we're hand-rolling the strip here, so the
+    // safest equivalent is just a static [Container].
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        height: 32,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: active ? tokens.bgPaper : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: active
+              ? const [
+                  BoxShadow(
+                    color: Color(0x14000000),
+                    blurRadius: 4,
+                    offset: Offset(0, 1),
                   ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 15, color: color),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                  color: color,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
