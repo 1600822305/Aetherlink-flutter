@@ -16,6 +16,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_ho
 
 const String _assistantTabLabel = '助手';
 const String _topicTabLabel = '话题';
+const String _notesTabLabel = '笔记';
 const String _settingsTabLabel = '设置';
 
 class ChatSidebar extends ConsumerStatefulWidget {
@@ -27,25 +28,30 @@ class ChatSidebar extends ConsumerStatefulWidget {
 
 class _ChatSidebarState extends ConsumerState<ChatSidebar>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
+  TabController? _tabController;
 
-  @override
-  void initState() {
-    super.initState();
+  /// (Re)creates the tab controller when the tab count changes (the 笔记 Tab is
+  /// added/removed by the [SidebarSettings.showNotesSidebarTab] toggle). The
+  /// previous index is preserved (clamped) so toggling keeps the active tab.
+  void _syncController(int length) {
+    final existing = _tabController;
+    if (existing != null && existing.length == length) return;
     // Open on the session's last tab (in-memory [SidebarTabIndex]); it is not
     // persisted, so a fresh app launch starts on the default 助手 tab.
+    final int prevIndex = existing?.index ?? ref.read(sidebarTabIndexProvider);
+    existing?.removeListener(_onTabChanged);
+    existing?.dispose();
     _tabController = TabController(
-      length: 3,
+      length: length,
       vsync: this,
-      initialIndex: ref.read(sidebarTabIndexProvider),
-    );
-    _tabController.addListener(_onTabChanged);
+      initialIndex: prevIndex.clamp(0, length - 1),
+    )..addListener(_onTabChanged);
   }
 
   void _onTabChanged() {
     // Remember the active tab for this session so reopening the drawer keeps it
     // (in-memory only — a restart resets to the default tab).
-    final index = _tabController.index;
+    final index = _tabController!.index;
     if (ref.read(sidebarTabIndexProvider) != index) {
       ref.read(sidebarTabIndexProvider.notifier).set(index);
     }
@@ -57,14 +63,21 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _tabController?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final showTranslate = _tabController.index != 2;
+    final showNotes = ref.watch(
+      sidebarSettingsControllerProvider.select((s) => s.showNotesSidebarTab),
+    );
+    final tabCount = showNotes ? 4 : 3;
+    _syncController(tabCount);
+    final tabController = _tabController!;
+    final settingsIndex = tabCount - 1;
+    final showTranslate = tabController.index != settingsIndex;
     // 设置 tab 的「侧边栏宽度」对话框驱动这里；按当前屏宽 clamp 到安全范围
     // (`getSafeMaxSidebarWidth`)，对话框拖动时实时预览。
     final rawWidth = ref.watch(
@@ -97,18 +110,18 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
         child: Column(
           children: [
             const _CloseRow(),
-            _SidebarTabBar(controller: _tabController),
+            _SidebarTabBar(controller: tabController, showNotes: showNotes),
             Expanded(
-              // IndexedStack keeps all three tabs alive permanently so
-              // switching tabs never triggers an async reload — the "共 N 个"
-              // footer and all list content render instantly.
-              // Swipe between tabs is already disabled, so TabBarView's page
-              // animation is unnecessary.
+              // IndexedStack keeps all tabs alive permanently so switching tabs
+              // never triggers an async reload — the "共 N 个" footer and all
+              // list content render instantly. Swipe between tabs is already
+              // disabled, so TabBarView's page animation is unnecessary.
               child: IndexedStack(
-                index: _tabController.index,
+                index: tabController.index,
                 children: [
-                  AssistantTab(onGoToTopics: () => _tabController.animateTo(1)),
+                  AssistantTab(onGoToTopics: () => tabController.animateTo(1)),
                   const TopicTab(),
+                  if (showNotes) const _NotesTabPanel(),
                   const SettingsTab(),
                 ],
               ),
@@ -146,9 +159,10 @@ class _CloseRow extends StatelessWidget {
 }
 
 class _SidebarTabBar extends StatelessWidget {
-  const _SidebarTabBar({required this.controller});
+  const _SidebarTabBar({required this.controller, this.showNotes = false});
 
   final TabController controller;
+  final bool showNotes;
 
   @override
   Widget build(BuildContext context) {
@@ -192,11 +206,15 @@ class _SidebarTabBar extends StatelessWidget {
         splashFactory: NoSplash.splashFactory,
         overlayColor: WidgetStateProperty.all(Colors.transparent),
         labelPadding: EdgeInsets.zero,
-        tabs: const [
-          _SidebarTab(icon: LucideIcons.sparkles, label: _assistantTabLabel),
-          _SidebarTab(
+        tabs: [
+          const _SidebarTab(
+              icon: LucideIcons.sparkles, label: _assistantTabLabel),
+          const _SidebarTab(
               icon: LucideIcons.messagesSquare, label: _topicTabLabel),
-          _SidebarTab(icon: LucideIcons.sliders, label: _settingsTabLabel),
+          if (showNotes)
+            const _SidebarTab(
+                icon: LucideIcons.fileText, label: _notesTabLabel),
+          const _SidebarTab(icon: LucideIcons.sliders, label: _settingsTabLabel),
         ],
       ),
     );
@@ -221,6 +239,65 @@ class _SidebarTab extends StatelessWidget {
           const SizedBox(width: 4),
           Text(label),
         ],
+      ),
+    );
+  }
+}
+
+/// The sidebar 笔记 Tab content. The full notes browser lives in the `notes`
+/// feature; the import-boundary rule forbids chat from embedding it, so this
+/// panel navigates to the notes route (via [AppRouter]) and closes the drawer.
+class _NotesTabPanel extends StatelessWidget {
+  const _NotesTabPanel();
+
+  void _open(BuildContext context, String route) {
+    SidebarScope.maybeOf(context)?.closeSidebar();
+    context.push(route);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              LucideIcons.fileText,
+              size: 44,
+              color: theme.colorScheme.primary.withValues(alpha: 0.85),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _notesTabLabel,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '本地 Markdown 笔记，支持文件夹、排序与收藏',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: () => _open(context, AppRouter.notesPath),
+              icon: const Icon(LucideIcons.arrowRight, size: 16),
+              label: const Text('打开笔记'),
+            ),
+            const SizedBox(height: 4),
+            TextButton(
+              onPressed: () => _open(context, AppRouter.notesSettingsPath),
+              child: const Text('笔记设置'),
+            ),
+          ],
+        ),
       ),
     );
   }

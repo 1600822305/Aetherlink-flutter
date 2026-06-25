@@ -132,6 +132,9 @@ abstract class SidebarSettings with _$SidebarSettings {
     // ── 设置 tab 布局模式 ──────────────────────────────────────────────────
     // compact 折叠手风琴（默认）/ grouped 导航进入式。
     @Default(SettingsLayoutMode.compact) SettingsLayoutMode settingsLayoutMode,
+    // ── 侧边栏笔记入口 ────────────────────────────────────────────────────
+    // 开启后侧边栏新增「笔记」Tab（位于 话题 与 设置 之间）。默认关闭。
+    @Default(false) bool showNotesSidebarTab,
     // ── 上下文设置 (已接入 ChatController) ──────────────────────────────────
     @Default(100000) int contextWindowSize,
     @Default(20) int contextCount,

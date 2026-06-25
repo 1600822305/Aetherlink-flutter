@@ -106,7 +106,9 @@ class SidebarTabIndex extends _$SidebarTabIndex {
   int build() => 0;
 
   void set(int index) {
-    if (index < 0 || index > 2) return;
+    // 0=助手 1=话题 [2=笔记] last=设置; the 笔记 Tab is optional so the max
+    // valid index is 3 when it is enabled.
+    if (index < 0 || index > 3) return;
     state = index;
   }
 }

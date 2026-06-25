@@ -165,6 +165,11 @@ class SidebarSettingsController extends _$SidebarSettingsController
   void setSettingsLayoutMode(SettingsLayoutMode value) =>
       persist(state.copyWith(settingsLayoutMode: value));
 
+  // ── 侧边栏笔记入口 ────────────────────────────────────────────────────────
+  /// Toggles the sidebar 笔记 Tab (wired: [ChatSidebar] adds/removes the tab).
+  void setShowNotesSidebarTab(bool value) =>
+      persist(state.copyWith(showNotesSidebarTab: value));
+
   // ── 数学公式设置 ─────────────────────────────────────────────────────────
   void setMathEnableSingleDollar(bool value) =>
       persist(state.copyWith(mathEnableSingleDollar: value));

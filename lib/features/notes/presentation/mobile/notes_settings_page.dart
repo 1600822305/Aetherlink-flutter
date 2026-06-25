@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/notes_sidebar_access.dart';
 import 'package:aetherlink_flutter/features/notes/application/notes_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 
@@ -17,6 +18,7 @@ class NotesSettingsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final store = ref.watch(notesFileStoreProvider);
+    final sidebarTabEnabled = ref.watch(notesSidebarTabEnabledProvider);
 
     return Scaffold(
       appBar: const ModelSettingsAppBar(title: '笔记设置'),
@@ -48,6 +50,48 @@ class NotesSettingsPage extends ConsumerWidget {
                   icon: LucideIcons.folderOpen,
                   label: '更改存储目录',
                   description: '选择自定义目录（即将支持）',
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _Card(
+            title: '侧边栏',
+            description: '在聊天侧边栏快速进入笔记',
+            child: Row(
+              children: [
+                Icon(
+                  LucideIcons.panelLeft,
+                  size: 20,
+                  color: theme.colorScheme.onSurface,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '显示笔记入口',
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '在聊天侧边栏新增「笔记」Tab',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: sidebarTabEnabled,
+                  onChanged: (v) =>
+                      ref.read(notesSidebarTabToggleProvider).set(v),
                 ),
               ],
             ),
