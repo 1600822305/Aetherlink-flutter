@@ -171,11 +171,6 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         description: '配置本地笔记存储路径和显示选项',
       ),
       SettingItemData(
-        icon: LucideIcons.database,
-        title: '数据设置',
-        description: '管理数据存储和隐私选项',
-      ),
-      SettingItemData(
         icon: LucideIcons.hardDrive,
         title: '备份与恢复',
         description: '本地/WebDAV/S3 备份、数据恢复',
