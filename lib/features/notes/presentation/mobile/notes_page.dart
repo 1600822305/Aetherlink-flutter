@@ -5,7 +5,9 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/notes/application/notes_controller.dart';
+import 'package:aetherlink_flutter/features/notes/application/notes_search_controller.dart';
 import 'package:aetherlink_flutter/features/notes/domain/note_node.dart';
+import 'package:aetherlink_flutter/features/notes/domain/note_search_result.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 
 /// The notes hub — a file-tree browser over the on-device notes directory.
@@ -26,6 +28,8 @@ class NotesPage extends ConsumerWidget {
     final theme = Theme.of(context);
     final state = ref.watch(notesControllerProvider);
     final controller = ref.read(notesControllerProvider.notifier);
+    final search = ref.watch(notesSearchControllerProvider);
+    final searchCtrl = ref.read(notesSearchControllerProvider.notifier);
 
     return Scaffold(
       appBar: ModelSettingsAppBar(
@@ -36,9 +40,12 @@ class NotesPage extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(LucideIcons.search, size: 20),
-            color: theme.colorScheme.onSurfaceVariant,
+            color: search.active
+                ? theme.colorScheme.primary
+                : theme.colorScheme.onSurfaceVariant,
             tooltip: '搜索',
-            onPressed: () => _comingSoon(context, '笔记搜索'),
+            onPressed: () =>
+                search.active ? searchCtrl.close() : searchCtrl.open(),
           ),
           _SortMenu(
             current: state.sort,
@@ -61,11 +68,56 @@ class NotesPage extends ConsumerWidget {
       ),
       body: Column(
         children: [
-          _Breadcrumbs(state: state, controller: controller),
-          Divider(height: 1, color: theme.dividerColor),
-          Expanded(child: _buildBody(context, ref, theme, state, controller)),
+          if (search.active)
+            _SearchBar(
+              loading: search.loading,
+              onChanged: searchCtrl.search,
+              onClose: searchCtrl.close,
+            ),
+          if (search.active && search.hasQuery)
+            Expanded(child: _buildSearchResults(context, ref, theme, search))
+          else ...[
+            _Breadcrumbs(state: state, controller: controller),
+            Divider(height: 1, color: theme.dividerColor),
+            Expanded(child: _buildBody(context, ref, theme, state, controller)),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _buildSearchResults(
+    BuildContext context,
+    WidgetRef ref,
+    ThemeData theme,
+    NotesSearchState search,
+  ) {
+    if (search.loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (search.results.isEmpty) {
+      return Center(
+        child: Text(
+          '未找到匹配的笔记',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+    return ListView.separated(
+      padding: EdgeInsets.only(
+        bottom: 96 + MediaQuery.paddingOf(context).bottom,
+      ),
+      itemCount: search.results.length,
+      separatorBuilder: (_, _) => Divider(height: 1, color: theme.dividerColor),
+      itemBuilder: (context, index) {
+        final result = search.results[index];
+        return _SearchResultRow(
+          result: result,
+          onTap: () => _openEditor(context, ref, result.node),
+        );
+      },
     );
   }
 
@@ -331,9 +383,6 @@ class NotesPage extends ConsumerWidget {
       ? name.substring(0, name.length - 3)
       : name;
 
-  void _comingSoon(BuildContext context, String label) =>
-      _toast(context, '$label 即将推出');
-
   void _toast(BuildContext context, String message) {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
@@ -496,6 +545,203 @@ class _NoteRow extends StatelessWidget {
   static String _formatTime(DateTime t) {
     String two(int v) => v.toString().padLeft(2, '0');
     return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
+  }
+}
+
+class _SearchBar extends StatelessWidget {
+  const _SearchBar({
+    required this.loading,
+    required this.onChanged,
+    required this.onClose,
+  });
+
+  final bool loading;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(bottom: BorderSide(color: theme.dividerColor)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            LucideIcons.search,
+            size: 18,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              autofocus: true,
+              onChanged: onChanged,
+              textInputAction: TextInputAction.search,
+              style: theme.textTheme.bodyMedium,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: '搜索笔记名称或内容…',
+              ),
+            ),
+          ),
+          if (loading)
+            const Padding(
+              padding: EdgeInsets.all(8),
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          IconButton(
+            icon: const Icon(LucideIcons.x, size: 18),
+            color: theme.colorScheme.onSurfaceVariant,
+            tooltip: '关闭搜索',
+            onPressed: onClose,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SearchResultRow extends StatelessWidget {
+  const _SearchResultRow({required this.result, required this.onTap});
+
+  final NoteSearchResult result;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final node = result.node;
+    final snippet = result.matches.isNotEmpty ? result.matches.first : null;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: Icon(
+                LucideIcons.fileText,
+                size: 20,
+                color: NotesPage._fileColor,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          node.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                      if (result.matchType == NoteMatchType.both) ...[
+                        const SizedBox(width: 6),
+                        _MatchBadge(),
+                      ],
+                    ],
+                  ),
+                  if (node.relativePath.contains('/')) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      node.relativePath,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant
+                            .withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ],
+                  if (snippet != null) ...[
+                    const SizedBox(height: 4),
+                    _HighlightedSnippet(match: snippet),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MatchBadge extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        '全',
+        style: theme.textTheme.labelSmall?.copyWith(
+          fontSize: 10,
+          color: theme.colorScheme.onPrimary,
+        ),
+      ),
+    );
+  }
+}
+
+class _HighlightedSnippet extends StatelessWidget {
+  const _HighlightedSnippet({required this.match});
+
+  final NoteSearchMatch match;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final base = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final text = match.context;
+    final start = match.matchStart.clamp(0, text.length);
+    final end = match.matchEnd.clamp(start, text.length);
+    return Text.rich(
+      TextSpan(
+        style: base,
+        children: [
+          TextSpan(text: text.substring(0, start)),
+          TextSpan(
+            text: text.substring(start, end),
+            style: base?.copyWith(
+              backgroundColor:
+                  theme.colorScheme.primary.withValues(alpha: 0.18),
+              color: theme.colorScheme.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          TextSpan(text: text.substring(end)),
+        ],
+      ),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+    );
   }
 }
 

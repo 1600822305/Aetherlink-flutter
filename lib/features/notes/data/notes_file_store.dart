@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:aetherlink_flutter/features/notes/domain/note_node.dart';
+import 'package:aetherlink_flutter/features/notes/domain/note_search_result.dart';
 
 /// Filesystem-backed store for notes — the Flutter port of Cherry Studio's
 /// `SimpleNoteService` / `NotesService`. Notes are real `.md` files under a
@@ -134,6 +135,154 @@ class NotesFileStore {
       final file = File(abs);
       if (file.existsSync()) await file.delete();
     }
+  }
+
+  /// Recursively full-text-searches all notes under the root, matching both
+  /// file names and content. Pure-Dart port of Cherry Studio's
+  /// `NotesSearchService` (no native plugin): folder/file walk + regex match,
+  /// relevance-scored. Returns results sorted by descending score.
+  Future<List<NoteSearchResult>> search(
+    String keyword, {
+    bool caseSensitive = false,
+    int maxResults = 100,
+    int maxMatchesPerFile = 10,
+    int contextLength = 40,
+    int maxFileSizeBytes = 2 * 1024 * 1024,
+    int maxDepth = 8,
+  }) async {
+    final trimmed = keyword.trim();
+    if (trimmed.isEmpty) return const <NoteSearchResult>[];
+    final root = (await _root()).path;
+    final pattern = RegExp(
+      RegExp.escape(trimmed),
+      caseSensitive: caseSensitive,
+    );
+
+    final results = <NoteSearchResult>[];
+    await _walk(
+      Directory(root),
+      root,
+      pattern,
+      0,
+      maxDepth,
+      maxMatchesPerFile,
+      contextLength,
+      maxFileSizeBytes,
+      maxResults,
+      results,
+    );
+    results.sort((a, b) => b.score.compareTo(a.score));
+    return results;
+  }
+
+  Future<void> _walk(
+    Directory dir,
+    String root,
+    RegExp pattern,
+    int depth,
+    int maxDepth,
+    int maxMatchesPerFile,
+    int contextLength,
+    int maxFileSizeBytes,
+    int maxResults,
+    List<NoteSearchResult> out,
+  ) async {
+    if (depth > maxDepth || out.length >= maxResults) return;
+    final List<FileSystemEntity> entries;
+    try {
+      entries = dir.listSync(followLinks: false);
+    } on FileSystemException {
+      return;
+    }
+    for (final entity in entries) {
+      if (out.length >= maxResults) return;
+      final name = p.basename(entity.path);
+      if (name.startsWith('.')) continue;
+
+      if (entity is Directory) {
+        await _walk(entity, root, pattern, depth + 1, maxDepth,
+            maxMatchesPerFile, contextLength, maxFileSizeBytes, maxResults, out);
+        continue;
+      }
+      if (entity is! File || !name.toLowerCase().endsWith('.md')) continue;
+
+      final stat = entity.statSync();
+      final node = NoteNode(
+        name: name,
+        relativePath: _rel(root, entity.path),
+        isDirectory: false,
+        modifiedAt: stat.modified,
+        createdAt: stat.changed,
+        size: stat.size,
+      );
+
+      final nameMatches = pattern.hasMatch(node.title);
+      var matches = const <NoteSearchMatch>[];
+      if (stat.size <= maxFileSizeBytes) {
+        matches = _matchContent(
+          await entity.readAsString().catchError((_) => ''),
+          pattern,
+          maxMatchesPerFile,
+          contextLength,
+        );
+      }
+      if (!nameMatches && matches.isEmpty) continue;
+
+      final type = nameMatches && matches.isNotEmpty
+          ? NoteMatchType.both
+          : (nameMatches ? NoteMatchType.filename : NoteMatchType.content);
+      out.add(
+        NoteSearchResult(
+          node: node,
+          matchType: type,
+          matches: matches,
+          score: _score(node, pattern, nameMatches, matches.length),
+        ),
+      );
+    }
+  }
+
+  List<NoteSearchMatch> _matchContent(
+    String content,
+    RegExp pattern,
+    int maxMatches,
+    int contextLength,
+  ) {
+    if (content.isEmpty) return const <NoteSearchMatch>[];
+    final out = <NoteSearchMatch>[];
+    final lines = content.split('\n');
+    for (var i = 0; i < lines.length && out.length < maxMatches; i++) {
+      final line = lines[i];
+      for (final m in pattern.allMatches(line)) {
+        const before = 2;
+        final ctxStart = (m.start - before).clamp(0, line.length);
+        final ctxEnd = (m.end + contextLength).clamp(0, line.length);
+        final prefix = ctxStart > 0 ? '…' : '';
+        final context = prefix + line.substring(ctxStart, ctxEnd);
+        out.add(
+          NoteSearchMatch(
+            lineNumber: i + 1,
+            context: context,
+            matchStart: prefix.length + (m.start - ctxStart),
+            matchEnd: prefix.length + (m.end - ctxStart),
+          ),
+        );
+        if (out.length >= maxMatches) break;
+      }
+    }
+    return out;
+  }
+
+  int _score(NoteNode node, RegExp pattern, bool nameMatches, int contentHits) {
+    var score = 0;
+    final title = node.title;
+    if (nameMatches) {
+      score += pattern.stringMatch(title) == title ? 200 : 100;
+    }
+    score += (contentHits * 2).clamp(0, 50);
+    final days = DateTime.now().difference(node.modifiedAt).inDays;
+    score += (10 - days).clamp(0, 10); // recency boost
+    return score;
   }
 
   /// Returns a name not already taken in [parentAbs], appending ` (n)` on
