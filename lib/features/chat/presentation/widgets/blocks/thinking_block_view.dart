@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_s
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
 import 'package:aetherlink_flutter/shared/domain/thinking_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/thinking_styled_view.dart';
+import 'package:aetherlink_flutter/shared/widgets/thinking_timeline_view.dart';
 
 /// Renders a `THINKING` block, mirroring `ThinkingBlock.tsx`.
 ///
@@ -140,9 +141,24 @@ class _ThinkingBlockViewState extends ConsumerState<ThinkingBlockView> {
 
   @override
   Widget build(BuildContext context) {
-    final style = ref.watch(
-      thinkingSettingsProvider.select((s) => s.displayStyle),
-    );
+    final settings = ref.watch(thinkingSettingsProvider);
+    final style = settings.displayStyle;
+
+    // Timeline style: delegate to ThinkingTimelineView which manages its own
+    // state (expand/collapse per step, streaming timer, etc.).
+    if (style == ThinkingDisplayStyle.timeline) {
+      return ThinkingTimelineView(
+        thinkingContent: widget.block.content,
+        thinkingSeconds: _thinkingSeconds(),
+        isThinking: _isThinking,
+        inlineToolBlocks: widget.inlineToolBlocks,
+        thoughtAutoCollapse: settings.thoughtAutoCollapse,
+        markdownBuilder: (context, content, style) =>
+            AppMarkdown(content: content, style: style),
+      );
+    }
+
+    // Legacy styles: build inline tool chips widget and pass to ThinkingStyledView.
     final inlineTools = widget.inlineToolBlocks.isEmpty
         ? null
         : Column(

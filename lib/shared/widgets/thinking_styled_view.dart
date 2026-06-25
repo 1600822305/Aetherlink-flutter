@@ -70,6 +70,22 @@ class ThinkingStyledView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     switch (style) {
+      case ThinkingDisplayStyle.timeline:
+        // Timeline style is handled upstream by ThinkingBlockView which renders
+        // ThinkingTimelineView directly. If we reach here (e.g. in the settings
+        // preview), fall through to compact as a reasonable approximation.
+        return _ThinkingCompactView(
+          content: content,
+          isThinking: isThinking,
+          seconds: seconds,
+          expanded: expanded,
+          copied: copied,
+          onToggleExpanded: onToggleExpanded,
+          onCopy: onCopy,
+          markdownBuilder: markdownBuilder,
+          previewContent: previewContent,
+          inlineTools: inlineTools,
+        );
       case ThinkingDisplayStyle.hidden:
         return const SizedBox.shrink();
       case ThinkingDisplayStyle.full:
