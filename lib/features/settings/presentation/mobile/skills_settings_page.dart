@@ -213,8 +213,18 @@ class _SkillsSettingsPageState extends ConsumerState<SkillsSettingsPage>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final all = ref.watch(skillsProvider).asData?.value ?? const <Skill>[];
-    final builtin = all.where((s) => s.source == SkillSource.builtin).toList();
-    final custom = all.where((s) => s.source != SkillSource.builtin).toList();
+    // Single-pass split + enabled count.
+    final builtin = <Skill>[];
+    final custom = <Skill>[];
+    var enabledCount = 0;
+    for (final s in all) {
+      if (s.source == SkillSource.builtin) {
+        builtin.add(s);
+      } else {
+        custom.add(s);
+      }
+      if (s.enabled) enabledCount++;
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -275,22 +285,18 @@ class _SkillsSettingsPageState extends ConsumerState<SkillsSettingsPage>
       ),
       body: Column(
         children: [
-          _searchHeader(theme, builtin, custom),
+          _searchHeader(theme, all.length, enabledCount),
           _TabBarHeader(controller: _tabController),
           Expanded(
             child: GestureDetector(
               onHorizontalDragStart: (_) => _swipeDx = 0,
               onHorizontalDragUpdate: (d) => _swipeDx += d.delta.dx,
               onHorizontalDragEnd: (_) => _onSwipeEnd(),
-              child: IndexedStack(
-                index: _index,
-                sizing: StackFit.expand,
-                children: [
-                  _builtinTab(theme, builtin),
-                  _customTab(theme, custom),
-                  const _TutorialTab(),
-                ],
-              ),
+              child: _index == 2
+                  ? const _TutorialTab()
+                  : _index == 1
+                      ? _customTab(theme, custom)
+                      : _builtinTab(theme, builtin),
             ),
           ),
         ],
@@ -300,14 +306,7 @@ class _SkillsSettingsPageState extends ConsumerState<SkillsSettingsPage>
 
   // —— search + stats header (pinned above the tab strip) ——
 
-  Widget _searchHeader(
-    ThemeData theme,
-    List<Skill> builtin,
-    List<Skill> custom,
-  ) {
-    final total = builtin.length + custom.length;
-    final enabled = [...builtin, ...custom].where((s) => s.enabled).length;
-
+  Widget _searchHeader(ThemeData theme, int total, int enabled) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Column(
@@ -384,7 +383,7 @@ class _SkillsSettingsPageState extends ConsumerState<SkillsSettingsPage>
   Widget _builtinTab(ThemeData theme, List<Skill> builtin) {
     final skills = _filter(builtin);
     if (skills.isEmpty) return _noResults(theme);
-    final bottomPad = MediaQuery.of(context).padding.bottom;
+    final bottomPad = MediaQuery.paddingOf(context).bottom;
     return ListView.separated(
       padding: EdgeInsets.fromLTRB(16, 12, 16, 24 + bottomPad),
       itemCount: skills.length,
@@ -398,7 +397,7 @@ class _SkillsSettingsPageState extends ConsumerState<SkillsSettingsPage>
     if (skills.isEmpty) {
       return _query.trim().isNotEmpty ? _noResults(theme) : _customEmpty(theme);
     }
-    final bottomPad = MediaQuery.of(context).padding.bottom;
+    final bottomPad = MediaQuery.paddingOf(context).bottom;
     return ListView.separated(
       padding: EdgeInsets.fromLTRB(16, 12, 16, 24 + bottomPad),
       itemCount: skills.length,

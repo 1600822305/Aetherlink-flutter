@@ -114,7 +114,13 @@ class _SkillEditorPageState extends ConsumerState<SkillEditorPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final skillsAsync = ref.watch(skillsProvider);
+    final skillsAsync = ref.watch(
+      skillsProvider.select(
+        (async) => async.whenData(
+          (list) => list.where((s) => s.id == widget.skillId).firstOrNull,
+        ),
+      ),
+    );
 
     return skillsAsync.when(
       loading: () =>
@@ -123,8 +129,7 @@ class _SkillEditorPageState extends ConsumerState<SkillEditorPage> {
         appBar: AppBar(title: const Text('技能编辑')),
         body: const Center(child: Text('加载技能失败')),
       ),
-      data: (skills) {
-        final skill = skills.where((s) => s.id == widget.skillId).firstOrNull;
+      data: (skill) {
         if (skill == null) {
           return Scaffold(
             appBar: AppBar(
@@ -145,9 +150,6 @@ class _SkillEditorPageState extends ConsumerState<SkillEditorPage> {
 
   Widget _buildEditor(ThemeData theme, Skill skill) {
     final isBuiltin = skill.source == SkillSource.builtin;
-    final title =
-        '${_emojiController.text.isEmpty ? skill.emoji ?? '' : _emojiController.text} '
-        '${skill.name}';
 
     return Scaffold(
       appBar: AppBar(
@@ -174,7 +176,18 @@ class _SkillEditorPageState extends ConsumerState<SkillEditorPage> {
           fontWeight: FontWeight.w600,
           color: theme.colorScheme.onSurface,
         ),
-        title: Text(title.trim(), overflow: TextOverflow.ellipsis),
+        title: ListenableBuilder(
+          listenable: Listenable.merge([_emojiController, _nameController]),
+          builder: (_, _) {
+            final emoji = _emojiController.text.isEmpty
+                ? skill.emoji ?? ''
+                : _emojiController.text;
+            return Text(
+              '$emoji ${_nameController.text}'.trim(),
+              overflow: TextOverflow.ellipsis,
+            );
+          },
+        ),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 8),
@@ -188,7 +201,7 @@ class _SkillEditorPageState extends ConsumerState<SkillEditorPage> {
       ),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
-          16, 16, 16, 24 + MediaQuery.of(context).padding.bottom,
+          16, 16, 16, 24 + MediaQuery.paddingOf(context).bottom,
         ),
         children: [
           _basicInfoCard(theme, isBuiltin),
@@ -225,7 +238,6 @@ class _SkillEditorPageState extends ConsumerState<SkillEditorPage> {
                   controller: _emojiController,
                   enabled: !isBuiltin,
                   hint: '🔧',
-                  onChanged: (_) => setState(() {}),
                 ),
               ),
               const SizedBox(width: 12),
@@ -234,7 +246,6 @@ class _SkillEditorPageState extends ConsumerState<SkillEditorPage> {
                   label: '技能名称',
                   controller: _nameController,
                   enabled: !isBuiltin,
-                  onChanged: (_) => setState(() {}),
                 ),
               ),
             ],
