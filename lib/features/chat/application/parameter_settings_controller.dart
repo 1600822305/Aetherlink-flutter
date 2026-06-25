@@ -4,6 +4,7 @@ import 'package:aetherlink_flutter/app/di/json_kv_notifier.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/parameter_settings.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/parameter_editor.dart';
 
 part 'parameter_settings_controller.g.dart';
 
@@ -15,7 +16,8 @@ const String kParameterSettingsKey = 'parameterSettings';
 /// reactive state + Drift key/value persistence.
 @Riverpod(keepAlive: true)
 class ParameterSettingsController extends _$ParameterSettingsController
-    with JsonKvNotifier<ParameterSettings> {
+    with JsonKvNotifier<ParameterSettings>
+    implements ParameterDelegate {
   @override
   ChatRepository get kvStore => ref.read(chatRepositoryProvider);
 

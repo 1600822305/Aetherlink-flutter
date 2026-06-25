@@ -20,8 +20,11 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/parameter_settings.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/agent_prompt_selector.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/parameter_editor.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
+import 'package:aetherlink_flutter/shared/domain/custom_parameter.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
 
 /// Opens the 编辑助手 dialog for [assistant]. Full-screen on mobile, an 80vh
@@ -67,6 +70,49 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
   late List<String> _skillIds = List<String>.from(
     widget.assistant.skillIds ?? const <String>[],
   );
+  late ParameterSettings _paramSettings = _initParamSettings();
+  late final _AssistantParamDelegate _paramDelegate =
+      _AssistantParamDelegate((ps) => setState(() => _paramSettings = ps))
+        ..attach(_initParamSettings());
+
+  ParameterSettings _initParamSettings() {
+    final a = widget.assistant;
+    final values = <String, dynamic>{};
+    final flags = <String, bool>{};
+    if (a.temperature != null) {
+      values['temperature'] = a.temperature;
+      flags['temperature'] = true;
+    }
+    if (a.topP != null) {
+      values['topP'] = a.topP;
+      flags['topP'] = true;
+    }
+    if (a.maxTokens != null) {
+      values['maxTokens'] = a.maxTokens;
+      flags['maxTokens'] = true;
+    }
+    if (a.frequencyPenalty != null) {
+      values['frequencyPenalty'] = a.frequencyPenalty;
+      flags['frequencyPenalty'] = true;
+    }
+    if (a.presencePenalty != null) {
+      values['presencePenalty'] = a.presencePenalty;
+      flags['presencePenalty'] = true;
+    }
+    final customParams = (a.customParameters ?? const [])
+        .map((cp) => <String, dynamic>{
+              'name': cp.name,
+              'value': cp.value,
+              'type': cp.type.name,
+              'enabled': true,
+            })
+        .toList();
+    return ParameterSettings(
+      values: values,
+      enabledFlags: flags,
+      customParameters: customParams,
+    );
+  }
 
   bool _saving = false;
 
@@ -120,6 +166,7 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
             systemPrompt: _promptController.text.trim(),
             memoryEnabled: _memoryEnabled,
             skillIds: _skillIds,
+            paramSettings: _paramSettings,
           );
       if (mounted) Navigator.of(context).pop();
     } catch (_) {
@@ -160,9 +207,9 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
                   controller: _promptController,
                   onPickPreset: _pickPreset,
                 ),
-                const _ComingSoonTab(
-                  icon: LucideIcons.settings2,
-                  text: '即将支持：模型参数编辑\n(温度 / Top-P / 最大 Token 等)',
+                _ParameterTab(
+                  settings: _paramSettings,
+                  delegate: _paramDelegate,
                 ),
                 const _ComingSoonTab(
                   icon: LucideIcons.wand2,
@@ -773,7 +820,87 @@ class _Card extends StatelessWidget {
   }
 }
 
-/// A whole-tab 「即将支持」 placeholder (for 参数 / 正则) — centered icon + text,
+// ─── Parameter tab ─────────────────────────────────────────────────────────
+
+/// Wraps [ParameterEditor] in a scrollable tab body, operating on the
+/// local per-assistant [ParameterSettings] instead of the global provider.
+class _ParameterTab extends StatelessWidget {
+  const _ParameterTab({required this.settings, required this.delegate});
+
+  final ParameterSettings settings;
+  final ParameterDelegate delegate;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        ParameterEditor(
+          settings: settings,
+          delegate: delegate,
+        ),
+      ],
+    );
+  }
+}
+
+/// Local [ParameterDelegate] that mutates an in-memory [ParameterSettings] and
+/// calls back with the new value so the dialog's [setState] can rebuild the
+/// parameter tab.
+class _AssistantParamDelegate implements ParameterDelegate {
+  _AssistantParamDelegate(this._onChanged);
+
+  final ValueChanged<ParameterSettings> _onChanged;
+  ParameterSettings _ps = const ParameterSettings();
+
+  /// Must be called once from the dialog state to sync the initial value.
+  void attach(ParameterSettings initial) => _ps = initial;
+
+  @override
+  void setParameterValue(String key, Object? value) {
+    final next = Map<String, dynamic>.of(_ps.values);
+    next[key] = value;
+    _ps = _ps.copyWith(values: next);
+    _onChanged(_ps);
+  }
+
+  @override
+  void setParameterEnabled(String key, bool enabled) {
+    final next = Map<String, bool>.of(_ps.enabledFlags);
+    next[key] = enabled;
+    _ps = _ps.copyWith(enabledFlags: next);
+    _onChanged(_ps);
+  }
+
+  @override
+  void addCustomParameter(Map<String, dynamic> param) {
+    final next = List<Map<String, dynamic>>.of(_ps.customParameters)..add(param);
+    _ps = _ps.copyWith(customParameters: next);
+    _onChanged(_ps);
+  }
+
+  @override
+  void removeCustomParameter(int index) {
+    final next = List<Map<String, dynamic>>.of(_ps.customParameters);
+    if (index >= 0 && index < next.length) {
+      next.removeAt(index);
+      _ps = _ps.copyWith(customParameters: next);
+      _onChanged(_ps);
+    }
+  }
+
+  @override
+  void updateCustomParameter(int index, Map<String, dynamic> param) {
+    final next = List<Map<String, dynamic>>.of(_ps.customParameters);
+    if (index >= 0 && index < next.length) {
+      next[index] = param;
+      _ps = _ps.copyWith(customParameters: next);
+      _onChanged(_ps);
+    }
+  }
+}
+
+/// A whole-tab 「即将支持」 placeholder (for 正则) — centered icon + text,
 /// so an unfinished tab reads as deliberately deferred, not broken.
 class _ComingSoonTab extends StatelessWidget {
   const _ComingSoonTab({required this.icon, required this.text});

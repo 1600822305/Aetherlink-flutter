@@ -28,21 +28,47 @@ const _providerNames = <ProviderType, String>{
   ProviderType.openaiCompatible: '兼容API',
 };
 
+// ─── Delegate interface ──────────────────────────────────────────────────────
+
+/// Abstract interface for parameter mutation. Allows `ParameterEditor` to work
+/// with both the global [ParameterSettingsController] and local per-assistant
+/// state (e.g. in 编辑助手 Dialog).
+abstract class ParameterDelegate {
+  void setParameterValue(String key, Object? value);
+  void setParameterEnabled(String key, bool enabled);
+  void addCustomParameter(Map<String, dynamic> param);
+  void removeCustomParameter(int index);
+  void updateCustomParameter(int index, Map<String, dynamic> param);
+}
+
 // ─── Main widget ─────────────────────────────────────────────────────────────
 
 /// 1:1 port of the web `ParameterEditor` component.
 ///
 /// Renders: provider badge + param count → category-grouped bordered lists →
 /// custom parameters collapsible section.
+///
+/// When [settings] and [delegate] are provided, the editor operates on
+/// external state (e.g. per-assistant parameters) instead of the global
+/// [parameterSettingsControllerProvider].
 class ParameterEditor extends ConsumerStatefulWidget {
   const ParameterEditor({
     super.key,
     this.providerType,
     this.showCustomParameters = true,
+    this.settings,
+    this.delegate,
   });
 
   final ProviderType? providerType;
   final bool showCustomParameters;
+
+  /// When non-null, the editor uses this state instead of watching the global
+  /// provider. Must be paired with [delegate].
+  final ParameterSettings? settings;
+
+  /// Mutation callbacks for external state. Required when [settings] is set.
+  final ParameterDelegate? delegate;
 
   @override
   ConsumerState<ParameterEditor> createState() => _ParameterEditorState();
@@ -51,8 +77,15 @@ class ParameterEditor extends ConsumerStatefulWidget {
 class _ParameterEditorState extends ConsumerState<ParameterEditor> {
   @override
   Widget build(BuildContext context) {
-    final ps = ref.watch(parameterSettingsControllerProvider);
-    final ctrl = ref.read(parameterSettingsControllerProvider.notifier);
+    final ParameterSettings ps;
+    final ParameterDelegate ctrl;
+    if (widget.settings != null && widget.delegate != null) {
+      ps = widget.settings!;
+      ctrl = widget.delegate!;
+    } else {
+      ps = ref.watch(parameterSettingsControllerProvider);
+      ctrl = ref.read(parameterSettingsControllerProvider.notifier);
+    }
 
     // Resolve parameter scope via canonical priority chain
     // (see docs/PARAMETER_SCOPE_DESIGN.md).
@@ -100,7 +133,7 @@ class _ParameterEditorState extends ConsumerState<ParameterEditor> {
               label: _categoryNames[cat.name] ?? cat.name,
               params: grouped[cat]!,
               ps: ps,
-              ctrl: ctrl,
+              delegate: ctrl,
               currentModelId: currentModelId,
             ),
 
@@ -118,7 +151,7 @@ class _ParameterEditorState extends ConsumerState<ParameterEditor> {
         // Custom parameters.
         if (widget.showCustomParameters) ...[
           const SizedBox(height: 8),
-          _CustomParametersSection(ps: ps, ctrl: ctrl),
+          _CustomParametersSection(ps: ps, delegate: ctrl),
         ],
       ],
     );
@@ -276,14 +309,14 @@ class _CategoryGroup extends StatelessWidget {
     required this.label,
     required this.params,
     required this.ps,
-    required this.ctrl,
+    required this.delegate,
     this.currentModelId,
   });
 
   final String label;
   final List<ParameterMeta> params;
   final ParameterSettings ps;
-  final ParameterSettingsController ctrl;
+  final ParameterDelegate delegate;
   final String? currentModelId;
 
   @override
@@ -320,7 +353,7 @@ class _CategoryGroup extends StatelessWidget {
                   _ParameterRow(
                     meta: params[i],
                     ps: ps,
-                    ctrl: ctrl,
+                    delegate: delegate,
                     currentModelId: currentModelId,
                   ),
                 ],
@@ -339,13 +372,13 @@ class _ParameterRow extends StatefulWidget {
   const _ParameterRow({
     required this.meta,
     required this.ps,
-    required this.ctrl,
+    required this.delegate,
     this.currentModelId,
   });
 
   final ParameterMeta meta;
   final ParameterSettings ps;
-  final ParameterSettingsController ctrl;
+  final ParameterDelegate delegate;
   final String? currentModelId;
 
   @override
@@ -357,7 +390,7 @@ class _ParameterRowState extends State<_ParameterRow> {
 
   ParameterMeta get meta => widget.meta;
   ParameterSettings get ps => widget.ps;
-  ParameterSettingsController get ctrl => widget.ctrl;
+  ParameterDelegate get ctrl => widget.delegate;
 
   Object? get _currentValue =>
       ps.getParameterValue(meta.key) ?? meta.defaultValue;
@@ -831,10 +864,10 @@ class _TextInputState extends State<_TextInput> {
 // ─── Custom parameters section (1:1 with web) ───────────────────────────────
 
 class _CustomParametersSection extends StatefulWidget {
-  const _CustomParametersSection({required this.ps, required this.ctrl});
+  const _CustomParametersSection({required this.ps, required this.delegate});
 
   final ParameterSettings ps;
-  final ParameterSettingsController ctrl;
+  final ParameterDelegate delegate;
 
   @override
   State<_CustomParametersSection> createState() =>
@@ -918,8 +951,8 @@ class _CustomParametersSectionState extends State<_CustomParametersSection> {
                   if (i > 0) Divider(height: 1, color: theme.dividerColor),
                   _CustomParameterRow(
                     param: params[i],
-                    onUpdate: (p) => widget.ctrl.updateCustomParameter(i, p),
-                    onRemove: () => widget.ctrl.removeCustomParameter(i),
+                    onUpdate: (p) => widget.delegate.updateCustomParameter(i, p),
+                    onRemove: () => widget.delegate.removeCustomParameter(i),
                   ),
                 ],
                 if (params.isNotEmpty)
@@ -1012,7 +1045,7 @@ class _CustomParametersSectionState extends State<_CustomParametersSection> {
   void _addParameter() {
     final key = _newKeyCtrl.text.trim();
     if (key.isEmpty) return;
-    widget.ctrl.addCustomParameter({
+    widget.delegate.addCustomParameter({
       'name': key,
       'value': _inferValue(_newValueCtrl.text),
       'enabled': true,

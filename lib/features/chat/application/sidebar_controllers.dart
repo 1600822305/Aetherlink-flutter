@@ -6,7 +6,9 @@ import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/parameter_settings.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
+import 'package:aetherlink_flutter/shared/domain/custom_parameter.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/quick_phrase.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
@@ -316,31 +318,77 @@ class Assistants extends _$Assistants {
     await _reload();
   }
 
-  /// Persists the quick-wired fields edited in 编辑助手 (`EditAssistantDialog`):
-  /// 名称 / 系统提示词 / 记忆开关 / 技能绑定 — the port of the web `handleSave`
-  /// (`dexieStorage.saveAssistant` + the `assistantUpdated` event). [_reload]
-  /// refreshes [currentAssistant] so dependents re-render.
+  /// Persists the fields edited in 编辑助手 (`EditAssistantDialog`):
+  /// 名称 / 系统提示词 / 记忆开关 / 技能绑定 / 模型参数 — the port of the web
+  /// `handleSave` (`dexieStorage.saveAssistant` + the `assistantUpdated`
+  /// event). [_reload] refreshes [currentAssistant] so dependents re-render.
   Future<void> applyEdits(
     String id, {
     required String name,
     required String systemPrompt,
     required bool memoryEnabled,
     required List<String> skillIds,
+    ParameterSettings? paramSettings,
   }) async {
     final assistant = await _repo.getAssistant(id);
     if (assistant == null) {
       throw StateError('没有找到助手信息');
     }
-    await _repo.saveAssistant(
-      assistant.copyWith(
-        name: name,
-        systemPrompt: systemPrompt,
-        memoryEnabled: memoryEnabled,
-        skillIds: skillIds,
-        updatedAt: DateTime.now(),
-      ),
+    var updated = assistant.copyWith(
+      name: name,
+      systemPrompt: systemPrompt,
+      memoryEnabled: memoryEnabled,
+      skillIds: skillIds,
+      updatedAt: DateTime.now(),
     );
+    if (paramSettings != null) {
+      updated = _applyParamSettings(updated, paramSettings);
+    }
+    await _repo.saveAssistant(updated);
     await _reload();
+  }
+
+  /// Converts [ParameterSettings] back to the flat fields on [Assistant].
+  static Assistant _applyParamSettings(
+    Assistant assistant,
+    ParameterSettings ps,
+  ) {
+    final vals = ps.values;
+    final flags = ps.enabledFlags;
+    return assistant.copyWith(
+      temperature: flags['temperature'] == true
+          ? (vals['temperature'] as num?)?.toDouble()
+          : null,
+      topP:
+          flags['topP'] == true ? (vals['topP'] as num?)?.toDouble() : null,
+      maxTokens: flags['maxTokens'] == true
+          ? (vals['maxTokens'] as num?)?.toInt()
+          : null,
+      frequencyPenalty: flags['frequencyPenalty'] == true
+          ? (vals['frequencyPenalty'] as num?)?.toDouble()
+          : null,
+      presencePenalty: flags['presencePenalty'] == true
+          ? (vals['presencePenalty'] as num?)?.toDouble()
+          : null,
+      customParameters: ps.customParameters
+          .map(
+            (cp) => CustomParameter(
+              name: (cp['name'] as String?) ?? '',
+              value: cp['value'],
+              type: _parseCustomParamType(cp['type']),
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  static CustomParameterType _parseCustomParamType(Object? raw) {
+    if (raw is String) {
+      for (final t in CustomParameterType.values) {
+        if (t.name == raw) return t;
+      }
+    }
+    return CustomParameterType.string;
   }
 
   /// Toggles whether [skillId] is bound to [assistantId] — the port of
