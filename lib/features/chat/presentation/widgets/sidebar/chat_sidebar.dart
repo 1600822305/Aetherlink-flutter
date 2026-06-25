@@ -27,7 +27,7 @@ class ChatSidebar extends ConsumerStatefulWidget {
 }
 
 class _ChatSidebarState extends ConsumerState<ChatSidebar>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   TabController? _tabController;
 
   /// (Re)creates the tab controller when the tab count changes (the 笔记 Tab is
