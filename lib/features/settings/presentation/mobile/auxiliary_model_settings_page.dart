@@ -111,11 +111,7 @@ class _TabGroup {
 /// Tab layout: the three general-purpose chat models (聊天/快速/标题) share one
 /// "通用" tab; the remaining feature models keep a dedicated tab each.
 const _groups = <_TabGroup>[
-  _TabGroup(
-    label: '通用',
-    icon: LucideIcons.sparkles,
-    modelIndices: [0, 1, 2],
-  ),
+  _TabGroup(label: '通用', icon: LucideIcons.sparkles, modelIndices: [0, 1, 2]),
   _TabGroup(label: '建议', icon: LucideIcons.lightbulb, modelIndices: [3]),
   _TabGroup(label: '翻译', icon: LucideIcons.languages, modelIndices: [4]),
   _TabGroup(label: 'OCR', icon: LucideIcons.eye, modelIndices: [5]),
@@ -197,9 +193,7 @@ class _AuxiliaryModelSettingsPageState
         top: false,
         child: TabBarView(
           controller: _tabController,
-          children: [
-            for (final group in _groups) _GroupTab(group: group),
-          ],
+          children: [for (final group in _groups) _GroupTab(group: group)],
         ),
       ),
     );
@@ -295,8 +289,12 @@ class _GroupTabState extends State<_GroupTab>
       padding: const EdgeInsets.all(12),
       children: [
         for (var i = 0; i < indices.length; i++) ...[
-          if (i > 0) const SizedBox(height: 12),
-          _ModelSection(index: indices[i], descriptor: _models[indices[i]]),
+          if (i > 0) SizedBox(height: indices.length > 1 ? 8 : 12),
+          _ModelSection(
+            index: indices[i],
+            descriptor: _models[indices[i]],
+            compact: indices.length > 1,
+          ),
         ],
       ],
     );
@@ -304,10 +302,17 @@ class _GroupTabState extends State<_GroupTab>
 }
 
 class _ModelSection extends ConsumerStatefulWidget {
-  const _ModelSection({required this.index, required this.descriptor});
+  const _ModelSection({
+    required this.index,
+    required this.descriptor,
+    this.compact = false,
+  });
 
   final int index;
   final _TabDescriptor descriptor;
+
+  /// Compact single-row layout used when several models share one tab (通用).
+  final bool compact;
 
   @override
   ConsumerState<_ModelSection> createState() => _ModelSectionState();
@@ -424,6 +429,7 @@ class _ModelSectionState extends ConsumerState<_ModelSection> {
     final state = ref.watch(auxiliaryModelControllerProvider);
     final ctrl = ref.read(auxiliaryModelControllerProvider.notifier);
     final desc = widget.descriptor;
+    final compact = widget.compact;
 
     // Sync prompt controller when the state value changes (handles async
     // hydration completing after the first build).
@@ -463,159 +469,184 @@ class _ModelSectionState extends ConsumerState<_ModelSection> {
       }
     }
 
+    void openSelector() => widget.index == 0
+        ? showModelSelectorDialog(context)
+        : showModelSelectorDialog(
+            context,
+            onSelect: (p, m) => _onModelSelect(ctrl, p, m),
+            selectedProviderId: selectedProviderId,
+            selectedModelId: selectedModelId,
+          );
+    final canClear = desc.clearable && modelKey != null && modelKey.isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // ── Header card ──
         _SectionCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Icon + title + description header
-              Container(
-                padding: const EdgeInsets.all(14),
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.015),
-                child: Row(
+          child: compact
+              ? _CompactModelRow(
+                  icon: desc.icon,
+                  iconColor: desc.iconColor,
+                  label: desc.label,
+                  displayName: displayName,
+                  onTap: openSelector,
+                  onClear: canClear ? () => _onClear(ctrl) : null,
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // Icon + title + description header
                     Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: desc.iconColor.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(10),
+                      padding: const EdgeInsets.all(14),
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: 0.015,
                       ),
-                      child: Icon(desc.icon, size: 20, color: desc.iconColor),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
                         children: [
-                          Text(
-                            '${desc.label}模型',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: theme.colorScheme.onSurface,
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: desc.iconColor.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              desc.icon,
+                              size: 20,
+                              color: desc.iconColor,
                             ),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            desc.description,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              fontSize: 12.5,
-                              color: theme.colorScheme.onSurfaceVariant,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${desc.label}模型',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  desc.description,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    fontSize: 12.5,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
+                    const Divider(height: 1),
 
-              // Optional toggle (suggestion model)
-              if (desc.hasToggle) ...[
-                _ToggleRow(
-                  title: '启用${desc.label}',
-                  description: '开启后将使用此模型生成建议',
-                  value: state.enableSuggestion,
-                  onChanged: ctrl.setEnableSuggestion,
-                ),
-                const Divider(height: 1),
-              ],
-
-              // Model picker row
-              InkWell(
-                onTap: () => widget.index == 0
-                    // Chat tab: let the dialog use its default path which
-                    // properly awaits selectCurrentModel; the controller's
-                    // listener syncs chatModelKey automatically.
-                    ? showModelSelectorDialog(context)
-                    : showModelSelectorDialog(
-                        context,
-                        onSelect: (p, m) => _onModelSelect(ctrl, p, m),
-                        selectedProviderId: selectedProviderId,
-                        selectedModelId: selectedModelId,
+                    // Optional toggle (suggestion model)
+                    if (desc.hasToggle) ...[
+                      _ToggleRow(
+                        title: '启用${desc.label}',
+                        description: '开启后将使用此模型生成建议',
+                        value: state.enableSuggestion,
+                        onChanged: ctrl.setEnableSuggestion,
                       ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
-                  ),
-                  child: Row(
-                    children: [
-                      Text(
-                        '选择模型',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: theme.colorScheme.onSurface,
+                      const Divider(height: 1),
+                    ],
+
+                    // Model picker row
+                    InkWell(
+                      onTap: () => widget.index == 0
+                          // Chat tab: let the dialog use its default path which
+                          // properly awaits selectCurrentModel; the controller's
+                          // listener syncs chatModelKey automatically.
+                          ? showModelSelectorDialog(context)
+                          : showModelSelectorDialog(
+                              context,
+                              onSelect: (p, m) => _onModelSelect(ctrl, p, m),
+                              selectedProviderId: selectedProviderId,
+                              selectedModelId: selectedModelId,
+                            ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        child: Row(
+                          children: [
+                            Text(
+                              '选择模型',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                            ),
+                            const Spacer(),
+                            Flexible(
+                              child: Text(
+                                displayName,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontSize: 13,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              LucideIcons.chevronRight,
+                              size: 16,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ],
                         ),
                       ),
-                      const Spacer(),
-                      Flexible(
-                        child: Text(
-                          displayName,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontSize: 13,
-                            color: theme.colorScheme.onSurfaceVariant,
+                    ),
+
+                    // Optional clear button
+                    if (desc.clearable &&
+                        modelKey != null &&
+                        modelKey.isNotEmpty) ...[
+                      const Divider(height: 1),
+                      InkWell(
+                        onTap: () => _onClear(ctrl),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          child: Row(
+                            children: [
+                              Icon(
+                                LucideIcons.x,
+                                size: 16,
+                                color: theme.colorScheme.error,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '清除选择',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontSize: 13,
+                                  color: theme.colorScheme.error,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        LucideIcons.chevronRight,
-                        size: 16,
-                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ],
-                  ),
+                  ],
                 ),
-              ),
-
-              // Optional clear button
-              if (desc.clearable &&
-                  modelKey != null &&
-                  modelKey.isNotEmpty) ...[
-                const Divider(height: 1),
-                InkWell(
-                  onTap: () => _onClear(ctrl),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          LucideIcons.x,
-                          size: 16,
-                          color: theme.colorScheme.error,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '清除选择',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontSize: 13,
-                            color: theme.colorScheme.error,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
         ),
 
         // ── Prompt card ──
         if (desc.hasPrompt && _promptController != null) ...[
-          const SizedBox(height: 12),
+          SizedBox(height: compact ? 8 : 12),
           _SectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -650,8 +681,8 @@ class _ModelSectionState extends ConsumerState<_ModelSection> {
                     children: [
                       TextField(
                         controller: _promptController,
-                        maxLines: 8,
-                        minLines: 3,
+                        maxLines: compact ? 6 : 8,
+                        minLines: compact ? 2 : 3,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           fontSize: 14,
                         ),
@@ -697,7 +728,7 @@ class _ModelSectionState extends ConsumerState<_ModelSection> {
         ],
 
         // ── Footnote ──
-        if (desc.footnote != null) ...[
+        if (!compact && desc.footnote != null) ...[
           const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -745,6 +776,87 @@ class _SectionCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [child],
+      ),
+    );
+  }
+}
+
+/// Compact single-row model picker used inside grouped tabs (e.g. 通用):
+/// `[icon] label  …  model name  [clear?]  >`.
+class _CompactModelRow extends StatelessWidget {
+  const _CompactModelRow({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.displayName,
+    required this.onTap,
+    this.onClear,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final String displayName;
+  final VoidCallback onTap;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, size: 16, color: iconColor),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                displayName,
+                textAlign: TextAlign.right,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontSize: 13,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (onClear != null)
+              GestureDetector(
+                onTap: onClear,
+                behavior: HitTestBehavior.opaque,
+                child: const Padding(
+                  padding: EdgeInsets.only(left: 6),
+                  child: Icon(LucideIcons.x, size: 15),
+                ),
+              ),
+            const SizedBox(width: 4),
+            Icon(
+              LucideIcons.chevronRight,
+              size: 16,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
       ),
     );
   }
