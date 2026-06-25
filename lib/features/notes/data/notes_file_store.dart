@@ -57,11 +57,6 @@ class NotesFileStore {
   /// The absolute path of the notes root (for display in settings).
   Future<String> rootPath() async => (await _root()).path;
 
-  /// The absolute filesystem path of a note/folder, e.g. for sharing the real
-  /// `.md` file through the OS share sheet.
-  Future<String> absolutePath(String relPath) async =>
-      _abs((await _root()).path, relPath);
-
   String _abs(String root, String relPath) =>
       relPath.isEmpty ? root : p.join(root, p.joinAll(relPath.split('/')));
 

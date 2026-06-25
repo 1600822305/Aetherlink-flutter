@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -436,10 +440,9 @@ class NotesPage extends ConsumerWidget {
     }
   }
 
-  /// Exports a note: share the real `.md` file via the OS share sheet, or copy
-  /// its Markdown to the clipboard. First slice of phase-3 export (Cherry's
-  /// export ships many formats; Markdown is the baseline). Image / other formats
-  /// come later.
+  /// Exports a note: save the `.md` to a user-chosen location, or copy its
+  /// Markdown to the clipboard. First slice of phase-3 export (Cherry's export
+  /// ships many formats; Markdown is the baseline). Image / other formats later.
   Future<void> _exportNote(
     BuildContext context,
     WidgetRef ref,
@@ -452,11 +455,12 @@ class NotesPage extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(LucideIcons.share2),
-              title: const Text('分享 Markdown 文件'),
+              leading: const Icon(LucideIcons.download),
+              title: const Text('另存为 Markdown 文件'),
+              subtitle: const Text('选择保存位置'),
               onTap: () {
                 Navigator.pop(sheetContext);
-                _shareNoteFile(context, ref, node);
+                _saveNoteFile(context, ref, node);
               },
             ),
             ListTile(
@@ -473,17 +477,30 @@ class NotesPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _shareNoteFile(
+  Future<void> _saveNoteFile(
     BuildContext context,
     WidgetRef ref,
     NoteNode node,
   ) async {
     try {
-      final path =
-          await ref.read(notesFileStoreProvider).absolutePath(node.relativePath);
-      await ref.read(shareApiProvider).shareFiles([path], subject: node.title);
+      final content =
+          await ref.read(notesFileStoreProvider).read(node.relativePath);
+      final bytes = utf8.encode(content);
+      final path = await FilePicker.saveFile(
+        dialogTitle: '导出笔记',
+        fileName: '${node.title}.md',
+        type: FileType.custom,
+        allowedExtensions: const ['md'],
+        bytes: Uint8List.fromList(bytes),
+      );
+      if (path == null) return; // cancelled
+      // On desktop, FilePicker.saveFile doesn't write bytes — write manually.
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        await File(path).writeAsString(content);
+      }
+      if (context.mounted) _toast(context, '已导出');
     } catch (e) {
-      if (context.mounted) _toast(context, '分享失败：$e');
+      if (context.mounted) _toast(context, '导出失败：$e');
     }
   }
 
