@@ -333,7 +333,6 @@ class _WidthCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return _Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -368,22 +367,6 @@ class _WidthCard extends StatelessWidget {
             min: 10,
             max: 90,
             onChanged: controller.setMessageBubbleMinWidth,
-          ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.04),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: theme.dividerColor),
-            ),
-            child: Text(
-              '较小的宽度适合手机等窄屏设备，较大的宽度适合平板和电脑。',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                height: 1.5,
-              ),
-            ),
           ),
         ],
       ),
