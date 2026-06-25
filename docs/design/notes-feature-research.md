@@ -433,20 +433,42 @@ Cherry Studio 用**双层架构**：
 
 **与 §9.4 MVP 的差异**：原计划「Drift 小表存收藏/展开状态」，实现时改用现有 KV 设置表存收藏（更轻、无需 schema 迁移）；展开状态因当前是「逐层进入」而非「展开式树」，暂未涉及。
 
-### 10.2 占位（UI 已就位，功能后续填）
+### 10.2 第二期 — ✅ 已完成（2026-06-25）
 
-全文搜索、导入（文件/文件夹）、**自选存储目录（互通载体，第二期 + Android SAF）**、AI 自动命名、导出、目录大纲、编辑器默认模式/字号等设置项 —— 均以「即将推出」禁用态呈现。
+5 项全部完成。跨 feature 部分一律走 `app/` 组合层（不破坏边界规则）。
 
-### 10.3 后续阶段（未开始）
+| 项 | 实现 | 关键文件 |
+|----|------|----------|
+| ① 全文搜索 | 纯 Dart 递归遍历，匹配文件名+内容，相关性评分（名/内容/新近度）、上下文高亮、300ms 防抖 + 过期令牌 | `domain/note_search_result.dart`、`data/notes_file_store.dart`(search)、`application/notes_search_controller.dart`、`presentation/mobile/notes_page.dart` |
+| ② 侧边栏笔记 Tab | 开关（默认关）控制聊天侧边栏第 4 个「笔记」Tab，**真嵌入式浏览器**（折叠/列表/新建/收藏/展开全屏） | `chat` 域 `SidebarSettings.showNotesSidebarTab`、`app/di/notes_sidebar_access.dart`、`presentation/mobile/notes_sidebar_panel.dart` |
+| ③ 聊天「添加笔记」附件 | 笔记选择浮层 → 读内容 → 作为 text 附件进入聊天暂存区；接通已有「添加笔记」菜单项 | `presentation/mobile/note_picker.dart`、`app/di/notes_attachment_access.dart`、`chat/.../chat_input_actions.dart` |
+| ④ AI 自动命名 | 复用**辅助模型的标题模型**（回退当前对话模型），一次性 LLM 调用生成标题并重命名 | `app/di/notes_ai_access.dart`、`presentation/mobile/notes_page.dart`(菜单「AI 命名」) |
+| ⑤ 自选目录 / 互通 | `file_picker` 选目录 + 持久化（`NotesStoragePath`），file store 可配根目录（Android 不可用时回退默认）；设置页「更改目录/恢复默认」。**机制可复用给工作区** | `data/notes_file_store.dart`(customRoot)、`application/notes_controller.dart`、`presentation/mobile/notes_settings_page.dart` |
 
-- **第二期**：全文搜索（Dart）+ 侧边栏笔记 Tab + 聊天「添加笔记」附件 + AI 自动命名 + **自选目录/互通（Android SAF）**。
-- **第三期**：拖拽移动、目录大纲、表格/任务清单/数学、导出（Markdown/图片）。
+**⑤ 的限制**：Android 任意目录的完整支持需 SAF（`saf_util`/`saf_stream` 等现成插件），本期先用 `file_picker`；将来工作区一并升级到 SAF 时共用同一套自选目录机制。
+
+### 10.3 仍是占位（UI 在、功能未接）
+
+导入（文件/文件夹）、导出、目录大纲 ToC、编辑器默认模式/字号/显示大纲等设置项 —— 「即将推出」禁用态。
+
+### 10.4 后续阶段（未开始）
+
+- **第三期**：导入（文件/文件夹、保留层级）、拖拽移动、目录大纲、表格/任务清单/数学公式、导出（Markdown/图片）、Android SAF 自选目录。
 - **第四期（待知识库就绪）**：笔记↔知识库联动。
 
-### 10.4 相关提交
+### 10.5 相关提交
 
+第一期：
 - `feat(notes): add local markdown notes MVP (browser, editor, settings)`
 - `fix(notes): add bottom safe-area inset to editor source and preview`
+
+第二期：
+- `feat(notes): full-text search over note names and content`
+- `feat(notes): optional 笔记 tab in the chat sidebar`
+- `fix(notes): use TickerProviderStateMixin for rebuildable sidebar TabController`
+- `feat(notes): embed a real notes browser in the sidebar tab`
+- `fix(notes): keep sidebar open when opening a note from the notes tab`
+- ③④⑤（自选目录 / AI 命名 / 聊天附件）— 本批次
 
 ---
 
