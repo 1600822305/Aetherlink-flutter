@@ -447,16 +447,30 @@ Cherry Studio 用**双层架构**：
 
 **⑤ 的限制**：Android 任意目录的完整支持需 SAF（`saf_util`/`saf_stream` 等现成插件），本期先用 `file_picker`；将来工作区一并升级到 SAF 时共用同一套自选目录机制。
 
-### 10.3 仍是占位（UI 在、功能未接）
+### 10.3 第三期 — 🚧 进行中（2026-06-25）
 
-导入（文件/文件夹）、导出、目录大纲 ToC、编辑器默认模式/字号/显示大纲等设置项 —— 「即将推出」禁用态。
+| 项 | 状态 | 实现 | 关键文件 |
+|----|------|------|----------|
+| 导出（Markdown） | ✅ 已完成 | 笔记菜单「导出」接线：经 `ShareApi`（ADR-0007 抽象）分享真实 `.md` 文件，或经 `ClipboardApi` 复制正文到剪贴板；仅对文件项显示 | `data/notes_file_store.dart`(`absolutePath`)、`presentation/mobile/notes_page.dart`(`_exportNote`/`_shareNoteFile`/`_copyNoteMarkdown`) |
+| 导入（文件/文件夹） | ⬜ 未开始 | — | — |
+| 拖拽移动 | ⬜ 未开始 | — | — |
+| 目录大纲 ToC | ⬜ 未开始 | — | — |
+| 表格/任务清单/数学公式 | ⬜ 未开始 | — | — |
+| 导出（图片） | ⬜ 未开始 | 可复用代码块全屏截图能力 | — |
+| Android SAF 自选目录 | ⬜ 未开始 | 与工作区共用 | — |
 
-### 10.4 后续阶段（未开始）
+> 说明：导出第一片只做 Markdown（分享文件 / 复制内容），对齐 §9.2「第一期可只做 Markdown 分享」。图片及其他格式后续再做。
 
-- **第三期**：导入（文件/文件夹、保留层级）、拖拽移动、目录大纲、表格/任务清单/数学公式、导出（Markdown/图片）、Android SAF 自选目录。
+### 10.4 仍是占位（UI 在、功能未接）
+
+导入（新建菜单）、目录大纲 ToC、编辑器默认模式/字号/显示大纲等设置项 —— 「即将推出」禁用态。
+
+### 10.5 后续阶段（未开始）
+
+- **第三期（剩余）**：导入（文件/文件夹、保留层级）、拖拽移动、目录大纲、表格/任务清单/数学公式、导出（图片）、Android SAF 自选目录。
 - **第四期（待知识库就绪）**：笔记↔知识库联动。
 
-### 10.5 相关提交
+### 10.6 相关提交
 
 第一期：
 - `feat(notes): add local markdown notes MVP (browser, editor, settings)`
@@ -469,6 +483,9 @@ Cherry Studio 用**双层架构**：
 - `feat(notes): embed a real notes browser in the sidebar tab`
 - `fix(notes): keep sidebar open when opening a note from the notes tab`
 - ③④⑤（自选目录 / AI 命名 / 聊天附件）— 本批次
+
+第三期：
+- `feat(notes): export a note as a shared Markdown file or to the clipboard`
 
 ---
 

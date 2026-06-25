@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/notes_ai_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/notes/application/notes_controller.dart';
 import 'package:aetherlink_flutter/features/notes/application/notes_search_controller.dart';
 import 'package:aetherlink_flutter/features/notes/domain/note_node.dart';
@@ -282,13 +283,16 @@ class NotesPage extends ConsumerWidget {
                 _promptRename(context, ref, node);
               },
             ),
-            const ListTile(
-              enabled: false,
-              leading: Icon(LucideIcons.share2),
-              title: Text('导出'),
-              subtitle: Text('即将支持'),
-              onTap: null,
-            ),
+            if (!node.isDirectory)
+              ListTile(
+                leading: const Icon(LucideIcons.share2),
+                title: const Text('导出'),
+                subtitle: const Text('分享 Markdown 文件或复制内容'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _exportNote(context, ref, node);
+                },
+              ),
             ListTile(
               leading: Icon(LucideIcons.trash2, color: Theme.of(context).colorScheme.error),
               title: Text(
@@ -355,6 +359,72 @@ class NotesPage extends ConsumerWidget {
     } catch (e) {
       messenger.clearSnackBars();
       if (context.mounted) _toast(context, 'AI 命名失败：$e');
+    }
+  }
+
+  /// Exports a note: share the real `.md` file via the OS share sheet, or copy
+  /// its Markdown to the clipboard. First slice of phase-3 export (Cherry's
+  /// export ships many formats; Markdown is the baseline). Image / other formats
+  /// come later.
+  Future<void> _exportNote(
+    BuildContext context,
+    WidgetRef ref,
+    NoteNode node,
+  ) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(LucideIcons.share2),
+              title: const Text('分享 Markdown 文件'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _shareNoteFile(context, ref, node);
+              },
+            ),
+            ListTile(
+              leading: const Icon(LucideIcons.copy),
+              title: const Text('复制 Markdown 到剪贴板'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _copyNoteMarkdown(context, ref, node);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _shareNoteFile(
+    BuildContext context,
+    WidgetRef ref,
+    NoteNode node,
+  ) async {
+    try {
+      final path =
+          await ref.read(notesFileStoreProvider).absolutePath(node.relativePath);
+      await ref.read(shareApiProvider).shareFiles([path], subject: node.title);
+    } catch (e) {
+      if (context.mounted) _toast(context, '分享失败：$e');
+    }
+  }
+
+  Future<void> _copyNoteMarkdown(
+    BuildContext context,
+    WidgetRef ref,
+    NoteNode node,
+  ) async {
+    try {
+      final content =
+          await ref.read(notesFileStoreProvider).read(node.relativePath);
+      await ref.read(clipboardApiProvider).copyText(content);
+      if (context.mounted) _toast(context, '已复制到剪贴板');
+    } catch (e) {
+      if (context.mounted) _toast(context, '复制失败：$e');
     }
   }
 
