@@ -34,10 +34,6 @@ class NotesPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final state = ref.watch(notesControllerProvider);
-    final controller = ref.read(notesControllerProvider.notifier);
-    final search = ref.watch(notesSearchControllerProvider);
-    final searchCtrl = ref.read(notesSearchControllerProvider.notifier);
 
     return Scaffold(
       appBar: ModelSettingsAppBar(
@@ -47,19 +43,6 @@ class NotesPage extends ConsumerWidget {
             : context.go(AppRouter.settingsPath),
         actions: [
           IconButton(
-            icon: const Icon(LucideIcons.search, size: 20),
-            color: search.active
-                ? theme.colorScheme.primary
-                : theme.colorScheme.onSurfaceVariant,
-            tooltip: '搜索',
-            onPressed: () =>
-                search.active ? searchCtrl.close() : searchCtrl.open(),
-          ),
-          _SortMenu(
-            current: state.sort,
-            onSelected: controller.setSort,
-          ),
-          IconButton(
             icon: const Icon(LucideIcons.settings, size: 20),
             color: theme.colorScheme.onSurfaceVariant,
             tooltip: '笔记设置',
@@ -68,33 +51,131 @@ class NotesPage extends ConsumerWidget {
           const SizedBox(width: 4),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showCreateMenu(context, ref),
-        backgroundColor: theme.colorScheme.primary,
-        foregroundColor: theme.colorScheme.onPrimary,
-        child: const Icon(LucideIcons.plus),
-      ),
-      body: Column(
-        children: [
-          if (search.active)
-            _SearchBar(
-              loading: search.loading,
-              onChanged: searchCtrl.search,
-              onClose: searchCtrl.close,
+      body: Padding(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          16 + MediaQuery.paddingOf(context).bottom,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(child: _buildFileCard(context, ref, theme)),
+            const SizedBox(height: 8),
+            Text(
+              '注意：笔记功能依赖于本地文件系统访问权限。请确保已授予应用相应的存储权限。',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
-          if (search.active && search.hasQuery)
-            Expanded(child: _buildSearchResults(context, ref, theme, search))
-          else ...[
-            _Breadcrumbs(
-              state: state,
-              controller: controller,
-              onMoveTo: (dragged, destPath) =>
-                  _move(context, ref, dragged, destPath),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The web 「笔记文件」 management card: a header toolbar (new note /
+  /// new folder / sort / favorites / search), an inline breadcrumb, the file
+  /// list and a bottom import affordance — all inside one rounded card.
+  Widget _buildFileCard(BuildContext context, WidgetRef ref, ThemeData theme) {
+    final state = ref.watch(notesControllerProvider);
+    final controller = ref.read(notesControllerProvider.notifier);
+    final search = ref.watch(notesSearchControllerProvider);
+    final searchCtrl = ref.read(notesSearchControllerProvider.notifier);
+    final searching = search.active && search.hasQuery;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.dividerColor),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
+              child: Row(
+                children: [
+                  Text(
+                    '笔记文件',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(LucideIcons.filePlus, size: 18),
+                    color: theme.colorScheme.onSurfaceVariant,
+                    tooltip: '新建笔记',
+                    onPressed: () =>
+                        _promptCreate(context, ref, isFolder: false),
+                  ),
+                  IconButton(
+                    icon: const Icon(LucideIcons.folderPlus, size: 18),
+                    color: theme.colorScheme.onSurfaceVariant,
+                    tooltip: '新建文件夹',
+                    onPressed: () =>
+                        _promptCreate(context, ref, isFolder: true),
+                  ),
+                  _SortMenu(
+                    current: state.sort,
+                    onSelected: controller.setSort,
+                  ),
+                  IconButton(
+                    icon: const Icon(LucideIcons.star, size: 18),
+                    color: theme.disabledColor,
+                    tooltip: '收藏（即将推出）',
+                    onPressed: null,
+                  ),
+                  IconButton(
+                    icon: const Icon(LucideIcons.search, size: 18),
+                    color: search.active
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                    tooltip: '搜索',
+                    onPressed: () =>
+                        search.active ? searchCtrl.close() : searchCtrl.open(),
+                  ),
+                ],
+              ),
             ),
             Divider(height: 1, color: theme.dividerColor),
-            Expanded(child: _buildBody(context, ref, theme, state, controller)),
+            if (search.active)
+              _SearchBar(
+                loading: search.loading,
+                onChanged: searchCtrl.search,
+                onClose: searchCtrl.close,
+              ),
+            if (searching)
+              Expanded(child: _buildSearchResults(context, ref, theme, search))
+            else ...[
+              _Breadcrumbs(
+                state: state,
+                controller: controller,
+                onMoveTo: (dragged, destPath) =>
+                    _move(context, ref, dragged, destPath),
+              ),
+              Divider(height: 1, color: theme.dividerColor),
+              Expanded(
+                child: _buildBody(context, ref, theme, state, controller),
+              ),
+              Divider(height: 1, color: theme.dividerColor),
+              _ImportArea(onTap: () => _importMenu(context, ref)),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -119,9 +200,7 @@ class NotesPage extends ConsumerWidget {
       );
     }
     return ListView.separated(
-      padding: EdgeInsets.only(
-        bottom: 96 + MediaQuery.paddingOf(context).bottom,
-      ),
+      padding: const EdgeInsets.only(bottom: 8),
       itemCount: search.results.length,
       separatorBuilder: (_, _) => Divider(height: 1, color: theme.dividerColor),
       itemBuilder: (context, index) {
@@ -156,7 +235,7 @@ class NotesPage extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              state.isRoot ? '还没有笔记，点击右下角新建' : '此文件夹为空',
+              state.isRoot ? '还没有笔记，点击上方 + 新建' : '此文件夹为空',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -166,7 +245,7 @@ class NotesPage extends ConsumerWidget {
       );
     }
     return ListView.separated(
-      padding: EdgeInsets.only(bottom: 96 + MediaQuery.paddingOf(context).bottom),
+      padding: const EdgeInsets.only(bottom: 8),
       itemCount: state.items.length,
       separatorBuilder: (_, _) => Divider(height: 1, color: theme.dividerColor),
       itemBuilder: (context, index) {
@@ -180,7 +259,6 @@ class NotesPage extends ConsumerWidget {
               _openEditor(context, ref, node);
             }
           },
-          onToggleStar: () => controller.toggleStar(node),
           onMenu: () => _showItemMenu(context, ref, node),
           onAcceptDrop: node.isDirectory
               ? (dragged) => _move(context, ref, dragged, node.relativePath)
@@ -200,44 +278,6 @@ class NotesPage extends ConsumerWidget {
     await ref.read(notesControllerProvider.notifier).refresh();
   }
 
-  void _showCreateMenu(BuildContext context, WidgetRef ref) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(LucideIcons.filePlus, color: _fileColor),
-              title: const Text('新建笔记'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _promptCreate(context, ref, isFolder: false);
-              },
-            ),
-            ListTile(
-              leading: const Icon(LucideIcons.folderPlus, color: _folderColor),
-              title: const Text('新建文件夹'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _promptCreate(context, ref, isFolder: true);
-              },
-            ),
-            ListTile(
-              leading: const Icon(LucideIcons.upload),
-              title: const Text('导入笔记'),
-              subtitle: const Text('从文件或文件夹导入'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _importMenu(context, ref);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _promptCreate(
     BuildContext context,
     WidgetRef ref, {
@@ -255,9 +295,7 @@ class NotesPage extends ConsumerWidget {
     } else {
       final relPath = await controller.createNote(name);
       if (!context.mounted) return;
-      await context.push(
-        AppRouter.noteEditorPath(relPath, _titleOf(name)),
-      );
+      await context.push(AppRouter.noteEditorPath(relPath, _titleOf(name)));
       await ref.read(notesControllerProvider.notifier).refresh();
     }
   }
@@ -309,8 +347,9 @@ class NotesPage extends ConsumerWidget {
     ];
     if (paths.isEmpty) return;
     try {
-      final count =
-          await ref.read(notesControllerProvider.notifier).importFiles(paths);
+      final count = await ref
+          .read(notesControllerProvider.notifier)
+          .importFiles(paths);
       if (context.mounted) {
         _toast(context, count > 0 ? '已导入 $count 个笔记' : '没有可导入的笔记');
       }
@@ -323,8 +362,9 @@ class NotesPage extends ConsumerWidget {
     final dir = await FilePicker.getDirectoryPath(dialogTitle: '选择要导入的文件夹');
     if (dir == null) return; // cancelled
     try {
-      final count =
-          await ref.read(notesControllerProvider.notifier).importFolder(dir);
+      final count = await ref
+          .read(notesControllerProvider.notifier)
+          .importFolder(dir);
       if (context.mounted) {
         _toast(context, count > 0 ? '已导入 $count 个笔记' : '该文件夹内没有 .md 文件');
       }
@@ -381,7 +421,10 @@ class NotesPage extends ConsumerWidget {
                 },
               ),
             ListTile(
-              leading: Icon(LucideIcons.trash2, color: Theme.of(context).colorScheme.error),
+              leading: Icon(
+                LucideIcons.trash2,
+                color: Theme.of(context).colorScheme.error,
+              ),
               title: Text(
                 '删除',
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
@@ -433,7 +476,9 @@ class NotesPage extends ConsumerWidget {
       final content = await ref
           .read(notesFileStoreProvider)
           .read(node.relativePath);
-      final title = await ref.read(notesAiServiceProvider).generateTitle(content);
+      final title = await ref
+          .read(notesAiServiceProvider)
+          .generateTitle(content);
       messenger.clearSnackBars();
       if (title == null || title.isEmpty) {
         if (context.mounted) {
@@ -501,8 +546,9 @@ class NotesPage extends ConsumerWidget {
     NoteNode node,
   ) async {
     try {
-      final content =
-          await ref.read(notesFileStoreProvider).read(node.relativePath);
+      final content = await ref
+          .read(notesFileStoreProvider)
+          .read(node.relativePath);
       final bytes = utf8.encode(content);
       final path = await FilePicker.saveFile(
         dialogTitle: '导出笔记',
@@ -528,8 +574,9 @@ class NotesPage extends ConsumerWidget {
     NoteNode node,
   ) async {
     try {
-      final content =
-          await ref.read(notesFileStoreProvider).read(node.relativePath);
+      final content = await ref
+          .read(notesFileStoreProvider)
+          .read(node.relativePath);
       if (content.trim().isEmpty) {
         if (context.mounted) _toast(context, '空白笔记，无内容可导出');
         return;
@@ -568,8 +615,9 @@ class NotesPage extends ConsumerWidget {
     NoteNode node,
   ) async {
     try {
-      final content =
-          await ref.read(notesFileStoreProvider).read(node.relativePath);
+      final content = await ref
+          .read(notesFileStoreProvider)
+          .read(node.relativePath);
       await ref.read(clipboardApiProvider).copyText(content);
       if (context.mounted) _toast(context, '已复制到剪贴板');
     } catch (e) {
@@ -584,7 +632,9 @@ class NotesPage extends ConsumerWidget {
     String destFolderRel,
   ) async {
     try {
-      await ref.read(notesControllerProvider.notifier).move(dragged, destFolderRel);
+      await ref
+          .read(notesControllerProvider.notifier)
+          .move(dragged, destFolderRel);
       if (context.mounted) _toast(context, '已移动「${dragged.title}」');
     } catch (e) {
       if (context.mounted) _toast(context, '移动失败：$e');
@@ -614,7 +664,9 @@ class NotesPage extends ConsumerWidget {
             onPressed: () => Navigator.pop(dialogContext, true),
             child: Text(
               '删除',
-              style: TextStyle(color: Theme.of(dialogContext).colorScheme.error),
+              style: TextStyle(
+                color: Theme.of(dialogContext).colorScheme.error,
+              ),
             ),
           ),
         ],
@@ -655,8 +707,7 @@ class NotesPage extends ConsumerWidget {
     );
   }
 
-  static String _titleOf(String name) =>
-      name.toLowerCase().endsWith('.md')
+  static String _titleOf(String name) => name.toLowerCase().endsWith('.md')
       ? name.substring(0, name.length - 3)
       : name;
 
@@ -698,7 +749,9 @@ class _Breadcrumbs extends StatelessWidget {
               builder: (context, candidate, rejected) => Container(
                 decoration: candidate.isNotEmpty
                     ? BoxDecoration(
-                        color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                        color: theme.colorScheme.primary.withValues(
+                          alpha: 0.12,
+                        ),
                         shape: BoxShape.circle,
                       )
                     : null,
@@ -719,6 +772,9 @@ class _Breadcrumbs extends StatelessWidget {
               itemBuilder: (context, index) {
                 final crumb = crumbs[index];
                 final isLast = index == crumbs.length - 1;
+                final labelColor = isLast
+                    ? theme.colorScheme.onSurface
+                    : theme.colorScheme.onSurfaceVariant;
                 final button = TextButton(
                   onPressed: isLast ? null : () => controller.goTo(crumb.path),
                   style: TextButton.styleFrom(
@@ -726,14 +782,23 @@ class _Breadcrumbs extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: Text(
-                    crumb.label,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: isLast ? FontWeight.w600 : FontWeight.w400,
-                      color: isLast
-                          ? theme.colorScheme.onSurface
-                          : theme.colorScheme.onSurfaceVariant,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (index == 0) ...[
+                        Icon(LucideIcons.house, size: 14, color: labelColor),
+                        const SizedBox(width: 4),
+                      ],
+                      Text(
+                        crumb.label,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: isLast
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                          color: labelColor,
+                        ),
+                      ),
+                    ],
                   ),
                 );
                 return Row(
@@ -742,8 +807,9 @@ class _Breadcrumbs extends StatelessWidget {
                       Icon(
                         LucideIcons.chevronRight,
                         size: 14,
-                        color: theme.colorScheme.onSurfaceVariant
-                            .withValues(alpha: 0.5),
+                        color: theme.colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.5,
+                        ),
                       ),
                     DragTarget<NoteNode>(
                       onWillAcceptWithDetails: (d) =>
@@ -752,8 +818,9 @@ class _Breadcrumbs extends StatelessWidget {
                       builder: (context, candidate, rejected) => Container(
                         decoration: candidate.isNotEmpty
                             ? BoxDecoration(
-                                color: theme.colorScheme.primary
-                                    .withValues(alpha: 0.12),
+                                color: theme.colorScheme.primary.withValues(
+                                  alpha: 0.12,
+                                ),
                                 borderRadius: BorderRadius.circular(6),
                               )
                             : null,
@@ -777,7 +844,9 @@ class _Breadcrumbs extends StatelessWidget {
 bool _canMoveInto(NoteNode dragged, String destFolderRel) {
   if (dragged.relativePath == destFolderRel) return false;
   final src = dragged.relativePath;
-  final parent = src.contains('/') ? src.substring(0, src.lastIndexOf('/')) : '';
+  final parent = src.contains('/')
+      ? src.substring(0, src.lastIndexOf('/'))
+      : '';
   if (parent == destFolderRel) return false; // already in this folder
   if (dragged.isDirectory &&
       (destFolderRel == src || destFolderRel.startsWith('$src/'))) {
@@ -790,14 +859,12 @@ class _NoteRow extends StatelessWidget {
   const _NoteRow({
     required this.node,
     required this.onTap,
-    required this.onToggleStar,
     required this.onMenu,
     this.onAcceptDrop,
   });
 
   final NoteNode node;
   final VoidCallback onTap;
-  final VoidCallback onToggleStar;
   final VoidCallback onMenu;
 
   /// Called with the dragged node when something is dropped onto this row.
@@ -847,17 +914,22 @@ class _NoteRow extends StatelessWidget {
                 ],
               ),
             ),
-            if (!node.isDirectory)
-              IconButton(
-                icon: Icon(
-                  node.isStarred ? LucideIcons.star : LucideIcons.star,
-                  size: 18,
-                  color: node.isStarred
-                      ? const Color(0xFFF59E0B)
-                      : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+            if (node.isStarred)
+              const Padding(
+                padding: EdgeInsets.only(right: 4),
+                child: Icon(
+                  LucideIcons.star,
+                  size: 16,
+                  color: Color(0xFFF59E0B),
                 ),
-                tooltip: node.isStarred ? '取消收藏' : '收藏',
-                onPressed: onToggleStar,
+              ),
+            if (node.isDirectory)
+              Icon(
+                LucideIcons.chevronRight,
+                size: 18,
+                color: theme.colorScheme.onSurfaceVariant.withValues(
+                  alpha: 0.6,
+                ),
               ),
             IconButton(
               icon: Icon(
@@ -1007,6 +1079,53 @@ class _SearchBar extends StatelessWidget {
   }
 }
 
+/// Dashed-border drop zone at the bottom of the file card. Mobile has no
+/// drag-and-drop, so tapping opens the import picker instead.
+class _ImportArea extends StatelessWidget {
+  const _ImportArea({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.03),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: theme.dividerColor),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                LucideIcons.uploadCloud,
+                size: 16,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  '点按导入 .md 文件或文件夹',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SearchResultRow extends StatelessWidget {
   const _SearchResultRow({required this.result, required this.onTap});
 
@@ -1065,8 +1184,9 @@ class _SearchResultRow extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant
-                            .withValues(alpha: 0.7),
+                        color: theme.colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.7,
+                        ),
                       ),
                     ),
                   ],
@@ -1127,8 +1247,9 @@ class _HighlightedSnippet extends StatelessWidget {
           TextSpan(
             text: text.substring(start, end),
             style: base?.copyWith(
-              backgroundColor:
-                  theme.colorScheme.primary.withValues(alpha: 0.18),
+              backgroundColor: theme.colorScheme.primary.withValues(
+                alpha: 0.18,
+              ),
               color: theme.colorScheme.onSurface,
               fontWeight: FontWeight.w600,
             ),
