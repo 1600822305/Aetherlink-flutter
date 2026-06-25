@@ -266,7 +266,6 @@ class _FunctionCard extends StatelessWidget {
             hue: primary,
             title: '气泡功能设置',
             tooltip: '设置信息气泡的功能和显示方式',
-            description: '自定义消息版本历史和功能气泡的显示方式',
           ),
           const SizedBox(height: 12),
           _Select<MessageActionMode>(
@@ -481,7 +480,6 @@ class _AvatarCard extends StatelessWidget {
             hue: Color(0xFFF59E0B), // amber
             title: '头像和名称显示',
             tooltip: '自定义聊天界面中用户和模型的头像及名称显示',
-            description: '控制消息气泡中用户和AI模型的头像及名称显示',
           ),
           const _CardDivider(),
           _PlainSwitchRow(
@@ -535,7 +533,6 @@ class _HideBubbleCard extends StatelessWidget {
             hue: Color(0xFFEF4444), // red
             title: '隐藏气泡',
             tooltip: '隐藏消息气泡的背景，只显示内容',
-            description: '可以选择隐藏用户或AI消息的气泡背景，只保留消息内容显示',
           ),
           const _CardDivider(),
           _DescribedSwitchRow(
@@ -590,7 +587,6 @@ class _ColorsCard extends StatelessWidget {
                   hue: Color(0xFFEC4899), // pink
                   title: '自定义气泡颜色',
                   tooltip: '自定义用户和AI消息气泡的背景色和字体颜色',
-                  description: '自定义消息气泡的背景色和字体颜色，留空则使用系统默认颜色',
                 ),
               ),
               const SizedBox(width: 12),
@@ -970,21 +966,19 @@ class _CardDivider extends StatelessWidget {
 }
 
 /// A card header: the tinted icon avatar plus the title (with optional Info
-/// tooltip) over an optional description.
+/// tooltip holding the full description).
 class _CardHeader extends StatelessWidget {
   const _CardHeader({
     required this.icon,
     required this.hue,
     required this.title,
     this.tooltip,
-    this.description,
   });
 
   final IconData icon;
   final Color hue;
   final String title;
   final String? tooltip;
-  final String? description;
 
   @override
   Widget build(BuildContext context) {
@@ -1002,38 +996,24 @@ class _CardHeader extends StatelessWidget {
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      title,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+              Flexible(
+                child: Text(
+                  title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
-                  if (tooltip != null) ...[
-                    const SizedBox(width: 4),
-                    Tooltip(
-                      message: tooltip!,
-                      triggerMode: TooltipTriggerMode.tap,
-                      child: Icon(
-                        LucideIcons.info,
-                        size: 16,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ],
+                ),
               ),
-              if (description != null) ...[
-                const SizedBox(height: 2),
-                Text(
-                  description!,
-                  style: theme.textTheme.bodyMedium?.copyWith(
+              if (tooltip != null) ...[
+                const SizedBox(width: 4),
+                Tooltip(
+                  message: tooltip!,
+                  triggerMode: TooltipTriggerMode.tap,
+                  child: Icon(
+                    LucideIcons.info,
+                    size: 16,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
