@@ -254,55 +254,73 @@ class _FontPickerPageState extends ConsumerState<FontPickerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(_title)),
+      appBar: AppBar(
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.onSurface,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        toolbarHeight: 56,
+        centerTitle: false,
+        titleSpacing: 0,
+        shape: Border(bottom: BorderSide(color: theme.dividerColor)),
+        leadingWidth: 44,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 4),
+          child: IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            icon: const Icon(LucideIcons.arrowLeft, size: 24),
+            color: theme.colorScheme.primary,
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+        ),
+        titleTextStyle: theme.textTheme.titleLarge?.copyWith(
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onSurface,
+        ),
+        title: Text(_title),
+      ),
       body: SafeArea(
         top: false,
         child: Column(
           children: [
-            const SizedBox(height: 8),
-            _SourceSelector(
-              source: _source,
-              onChanged: (s) => setState(() => _source = s),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: _SourceSelector(
+                source: _source,
+                onChanged: (s) => setState(() => _source = s),
+              ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: TextField(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: _SearchField(
                 onChanged: (v) => setState(() => _query = v.trim()),
-                decoration: InputDecoration(
-                  isDense: true,
-                  hintText: '搜索字体',
-                  prefixIcon: const Icon(LucideIcons.search, size: 18),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                ),
               ),
             ),
             if (_source == FontSource.google) ...[
+              const SizedBox(height: 10),
               _GfCategoryBar(
                 selected: _gfCategory,
                 onChanged: (c) => setState(() => _gfCategory = c),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: Row(
                   children: [
                     Icon(
                       LucideIcons.info,
                       size: 14,
-                      color: Theme.of(context).colorScheme.outline,
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         '多数 Google 字体仅含拉丁字形，中文请选「中文」分类',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.outline,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -312,26 +330,19 @@ class _FontPickerPageState extends ConsumerState<FontPickerPage> {
             ],
             if (_source == FontSource.local)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _importing ? null : _importLocal,
-                    icon: _importing
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(LucideIcons.plus, size: 18),
-                    label: const Text('添加本地字体'),
-                  ),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: _ImportFontButton(
+                  importing: _importing,
+                  onPressed: _importing ? null : _importLocal,
                 ),
               ),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
-                  : _buildList(),
+                  : Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      child: _buildList(),
+                    ),
             ),
           ],
         ),
@@ -404,33 +415,40 @@ class _FontPickerPageState extends ConsumerState<FontPickerPage> {
   Widget _buildList() {
     final rows = _rows();
     final defaultSelected = widget.current.family.isEmpty;
-    return ListView.builder(
-      itemCount: rows.length,
-      itemBuilder: (context, index) {
-        final row = rows[index];
-        if (row is _HeaderRow) return _SectionHeader(label: row.label);
-        final option = (row as _OptionRow).option;
-        if (option == null) {
+    return _PickerCard(
+      child: ListView.builder(
+        padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
+        itemCount: rows.length,
+        itemBuilder: (context, index) {
+          final row = rows[index];
+          if (row is _HeaderRow) return _SectionHeader(label: row.label);
+          final option = (row as _OptionRow).option;
+          final showDivider =
+              index < rows.length - 1 && rows[index + 1] is _OptionRow;
+          if (option == null) {
+            return _FontOptionTile(
+              title: _defaultLabel,
+              selected: defaultSelected,
+              previewFamily: null,
+              isCode: _isCode,
+              showDivider: showDivider,
+              onTap: () => _apply(const FontSelection()),
+            );
+          }
+          final selected =
+              !defaultSelected &&
+              widget.current.source == option.source &&
+              widget.current.family == option.family;
           return _FontOptionTile(
-            title: _defaultLabel,
-            selected: defaultSelected,
-            previewFamily: null,
+            title: option.family,
+            selected: selected,
+            previewFamily: _resolvePreview(option),
             isCode: _isCode,
-            onTap: () => _apply(const FontSelection()),
+            showDivider: showDivider,
+            onTap: () => _apply(option),
           );
-        }
-        final selected =
-            !defaultSelected &&
-            widget.current.source == option.source &&
-            widget.current.family == option.family;
-        return _FontOptionTile(
-          title: option.family,
-          selected: selected,
-          previewFamily: _resolvePreview(option),
-          isCode: _isCode,
-          onTap: () => _apply(option),
-        );
-      },
+        },
+      ),
     );
   }
 
@@ -466,6 +484,40 @@ class _OptionRow extends _PickerRow {
   final FontSelection? option;
 }
 
+/// A card surface matching the appearance page's `_AppearanceCard`: a rounded,
+/// divider-bordered container with a soft shadow, clipped so children honor the
+/// corners. Used to host the font list so it reads like the rest of settings.
+class _PickerCard extends StatelessWidget {
+  const _PickerCard({required this.child});
+
+  final Widget child;
+
+  static const double _radius = 16;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(_radius),
+        border: Border.all(color: theme.dividerColor),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(_radius),
+        child: Material(type: MaterialType.transparency, child: child),
+      ),
+    );
+  }
+}
+
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({required this.label});
 
@@ -474,19 +526,25 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
-      child: Text(
-        label,
-        style: theme.textTheme.labelMedium?.copyWith(
-          color: theme.colorScheme.primary,
-          fontWeight: FontWeight.w700,
+    return ColoredBox(
+      color: const Color(0x03000000),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+        child: Text(
+          label,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.primary,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
     );
   }
 }
 
+/// The Google Fonts style filter, styled like the page's source selector: a
+/// rounded bordered track of horizontally-scrollable tinted pills (matching
+/// the segmented tab look used across settings).
 class _GfCategoryBar extends StatelessWidget {
   const _GfCategoryBar({required this.selected, required this.onChanged});
 
@@ -498,28 +556,42 @@ class _GfCategoryBar extends StatelessWidget {
     final theme = Theme.of(context);
     return SizedBox(
       height: 40,
-      child: ListView(
+      child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        children: [
-          for (final (value, label) in _kGfCategories)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: ChoiceChip(
-                label: Text(label),
-                selected: value == selected,
-                onSelected: (_) => onChanged(value),
-                labelStyle: theme.textTheme.labelLarge?.copyWith(
+        itemCount: _kGfCategories.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final (value, label) = _kGfCategories[index];
+          final isSelected = value == selected;
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => onChanged(value),
+            child: Container(
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                color: isSelected
+                    ? theme.colorScheme.primary.withValues(alpha: 0.12)
+                    : Colors.transparent,
+                border: Border.all(
+                  color: isSelected ? Colors.transparent : theme.dividerColor,
+                ),
+              ),
+              child: Text(
+                label,
+                style: theme.textTheme.labelLarge?.copyWith(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: value == selected
+                  color: isSelected
                       ? theme.colorScheme.primary
                       : theme.colorScheme.onSurfaceVariant,
                 ),
-                visualDensity: VisualDensity.compact,
               ),
             ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -583,12 +655,119 @@ class _SourceSelector extends StatelessWidget {
   }
 }
 
+/// The page's search box, styled to match the settings forms: a filled,
+/// rounded field with a borderless focus state and a leading search glyph.
+class _SearchField extends StatelessWidget {
+  const _SearchField({required this.onChanged});
+
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return TextField(
+      onChanged: onChanged,
+      style: theme.textTheme.bodyMedium,
+      decoration: InputDecoration(
+        isDense: true,
+        filled: true,
+        fillColor: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.4,
+        ),
+        hintText: '搜索字体',
+        hintStyle: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        prefixIcon: Icon(
+          LucideIcons.search,
+          size: 18,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.5),
+        ),
+      ),
+    );
+  }
+}
+
+/// The "添加本地字体" action, styled as a full-width tinted iOS-style button
+/// instead of a Material outlined button.
+class _ImportFontButton extends StatelessWidget {
+  const _ImportFontButton({required this.importing, required this.onPressed});
+
+  final bool importing;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: theme.colorScheme.primary.withValues(alpha: 0.1),
+            border: Border.all(
+              color: theme.colorScheme.primary.withValues(alpha: 0.25),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (importing)
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: theme.colorScheme.primary,
+                  ),
+                )
+              else
+                Icon(
+                  LucideIcons.plus,
+                  size: 18,
+                  color: theme.colorScheme.primary,
+                ),
+              const SizedBox(width: 8),
+              Text(
+                '添加本地字体',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _FontOptionTile extends StatelessWidget {
   const _FontOptionTile({
     required this.title,
     required this.selected,
     required this.previewFamily,
     required this.isCode,
+    required this.showDivider,
     required this.onTap,
   });
 
@@ -596,34 +775,62 @@ class _FontOptionTile extends StatelessWidget {
   final bool selected;
   final String? previewFamily;
   final bool isCode;
+  final bool showDivider;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final preview = isCode ? 'const x = 42; // 代码 0Oo1Il' : 'Aa 字体预览 0123';
-    return ListTile(
+    return InkWell(
       onTap: onTap,
-      title: Text(
-        title,
-        style: theme.textTheme.bodyLarge?.copyWith(
-          fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-          color: selected ? theme.colorScheme.primary : null,
+      child: Container(
+        decoration: showDivider
+            ? BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: theme.dividerColor, width: 0.5),
+                ),
+              )
+            : null,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                      color: selected ? theme.colorScheme.primary : null,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    preview,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontFamily: previewFamily,
+                      fontFamilyFallback: isCode ? const ['monospace'] : null,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (selected) ...[
+              const SizedBox(width: 12),
+              Icon(
+                LucideIcons.check,
+                size: 20,
+                color: theme.colorScheme.primary,
+              ),
+            ],
+          ],
         ),
       ),
-      subtitle: Text(
-        preview,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodyMedium?.copyWith(
-          fontFamily: previewFamily,
-          fontFamilyFallback: isCode ? const ['monospace'] : null,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-      trailing: selected
-          ? Icon(LucideIcons.check, size: 20, color: theme.colorScheme.primary)
-          : null,
     );
   }
 }
