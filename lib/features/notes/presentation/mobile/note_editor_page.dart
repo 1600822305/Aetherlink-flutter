@@ -10,12 +10,20 @@ import 'package:aetherlink_flutter/features/notes/application/notes_controller.d
 import 'package:aetherlink_flutter/features/notes/domain/note_outline.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 
-/// Two editor view modes for a note.
-enum _NoteViewMode { source, preview }
+/// The three editor view modes, mirroring the original web editor's
+/// 源码 / 预览 / 只读 segmented switch.
+///
+/// Flutter has no WYSIWYG rich-markdown editor, so [preview] and [read] both
+/// render through [AppMarkdown]; [read] additionally hides every editing
+/// affordance for a distraction-free reading view.
+enum _NoteViewMode { source, preview, read }
 
-/// Markdown note editor: a source view (with a formatting toolbar) and a live
-/// preview rendered through the shared [AppMarkdown]. Auto-saves 2s after the
-/// last edit (and on leaving), mirroring the original's debounce.
+/// Markdown note editor mirroring the original web editor: a top sub-toolbar
+/// (character count, zoom controls and a 源码/预览/只读 switch), a source view
+/// with a formatting toolbar, and a live preview rendered through the shared
+/// [AppMarkdown]. Font size is driven by a zoom scale (buttons + pinch).
+/// Auto-saves 2s after the last edit (and on leaving), mirroring the
+/// original's debounce.
 class NoteEditorPage extends ConsumerStatefulWidget {
   const NoteEditorPage({
     required this.relativePath,
@@ -41,6 +49,25 @@ class _NoteEditorPageState extends ConsumerState<NoteEditorPage> {
   bool _saving = false;
   bool _dirty = false;
   String _original = '';
+
+  // Font zoom, mirroring the web editor's pinch-to-zoom (0.5×–3×, 0.1 steps).
+  static const double _minScale = 0.5;
+  static const double _maxScale = 3.0;
+  static const double _scaleStep = 0.1;
+  double _scale = 1.0;
+  double _gestureBaseScale = 1.0;
+
+  bool get _canZoomIn => _scale < _maxScale;
+  bool get _canZoomOut => _scale > _minScale;
+
+  void _setScale(double value) {
+    final clamped = value.clamp(_minScale, _maxScale);
+    if (clamped != _scale) setState(() => _scale = clamped);
+  }
+
+  void _zoomIn() => _setScale(_scale + _scaleStep);
+  void _zoomOut() => _setScale(_scale - _scaleStep);
+  void _resetZoom() => _setScale(1.0);
 
   @override
   void initState() {
@@ -119,22 +146,18 @@ class _NoteEditorPageState extends ConsumerState<NoteEditorPage> {
               tooltip: '目录大纲',
               onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
             ),
-          // Source / preview toggle.
-          IconButton(
-            icon: Icon(
-              _mode == _NoteViewMode.source
-                  ? LucideIcons.eye
-                  : LucideIcons.code,
-              size: 20,
+          if (_dirty && !_saving)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Center(
+                child: Text(
+                  '未保存',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.tertiary,
+                  ),
+                ),
+              ),
             ),
-            color: theme.colorScheme.onSurfaceVariant,
-            tooltip: _mode == _NoteViewMode.source ? '预览' : '源码',
-            onPressed: () => setState(() {
-              _mode = _mode == _NoteViewMode.source
-                  ? _NoteViewMode.preview
-                  : _NoteViewMode.source;
-            }),
-          ),
           IconButton(
             icon: _saving
                 ? const SizedBox(
@@ -142,10 +165,7 @@ class _NoteEditorPageState extends ConsumerState<NoteEditorPage> {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Icon(
-                    _dirty ? LucideIcons.save : LucideIcons.check,
-                    size: 20,
-                  ),
+                : Icon(_dirty ? LucideIcons.save : LucideIcons.check, size: 20),
             color: _dirty
                 ? theme.colorScheme.primary
                 : theme.colorScheme.onSurfaceVariant,
@@ -159,6 +179,17 @@ class _NoteEditorPageState extends ConsumerState<NoteEditorPage> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                _EditorSubToolbar(
+                  charCount: _controller,
+                  scale: _scale,
+                  canZoomIn: _canZoomIn,
+                  canZoomOut: _canZoomOut,
+                  onZoomIn: _zoomIn,
+                  onZoomOut: _zoomOut,
+                  onResetZoom: _resetZoom,
+                  mode: _mode,
+                  onModeChanged: (m) => setState(() => _mode = m),
+                ),
                 if (_mode == _NoteViewMode.source)
                   _MarkdownToolbar(onAction: _applyToolbar),
                 Expanded(
@@ -184,6 +215,7 @@ class _NoteEditorPageState extends ConsumerState<NoteEditorPage> {
       style: theme.textTheme.bodyMedium?.copyWith(
         fontFamily: 'monospace',
         fontFamilyFallback: const ['monospace'],
+        fontSize: 14 * _scale,
         height: 1.5,
       ),
       decoration: InputDecoration(
@@ -206,14 +238,21 @@ class _NoteEditorPageState extends ConsumerState<NoteEditorPage> {
         ),
       );
     }
-    return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        16 + MediaQuery.paddingOf(context).bottom,
+    final mq = MediaQuery.of(context);
+    return GestureDetector(
+      onScaleStart: (_) => _gestureBaseScale = _scale,
+      onScaleUpdate: (details) {
+        if (details.scale == 1.0) return; // pan, not a pinch
+        _setScale(_gestureBaseScale * details.scale);
+      },
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + mq.padding.bottom),
+        // Scale rendered text by reusing the platform text-scaler knob.
+        child: MediaQuery(
+          data: mq.copyWith(textScaler: TextScaler.linear(_scale)),
+          child: AppMarkdown(content: _controller.text),
+        ),
       ),
-      child: AppMarkdown(content: _controller.text),
     );
   }
 
@@ -353,8 +392,7 @@ class _NoteEditorPageState extends ConsumerState<NoteEditorPage> {
         newText = text.replaceRange(start, end, block);
         caret = start + 4 + selected.length;
       case _ToolbarAction.table:
-        const tpl =
-            '\n| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |\n';
+        const tpl = '\n| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |\n';
         newText = text.replaceRange(start, end, tpl);
         caret = start + tpl.length;
       case _ToolbarAction.math:
@@ -377,7 +415,9 @@ class _NoteEditorPageState extends ConsumerState<NoteEditorPage> {
     }
     _controller.value = TextEditingValue(
       text: newText,
-      selection: TextSelection.collapsed(offset: caret.clamp(0, newText.length)),
+      selection: TextSelection.collapsed(
+        offset: caret.clamp(0, newText.length),
+      ),
     );
     _onChanged(newText);
     _focusNode.requestFocus();
@@ -420,6 +460,208 @@ enum _ToolbarAction {
   divider,
 }
 
+/// The right-aligned sub-toolbar above the editor: live character count, zoom
+/// controls (− / percent / + / reset) and the 源码 / 预览 / 只读 view switch —
+/// mirroring the original web editor's top bar.
+class _EditorSubToolbar extends StatelessWidget {
+  const _EditorSubToolbar({
+    required this.charCount,
+    required this.scale,
+    required this.canZoomIn,
+    required this.canZoomOut,
+    required this.onZoomIn,
+    required this.onZoomOut,
+    required this.onResetZoom,
+    required this.mode,
+    required this.onModeChanged,
+  });
+
+  final TextEditingController charCount;
+  final double scale;
+  final bool canZoomIn;
+  final bool canZoomOut;
+  final VoidCallback onZoomIn;
+  final VoidCallback onZoomOut;
+  final VoidCallback onResetZoom;
+  final _NoteViewMode mode;
+  final ValueChanged<_NoteViewMode> onModeChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(bottom: BorderSide(color: theme.dividerColor)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        reverse: true,
+        child: Row(
+          children: [
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: charCount,
+              builder: (context, value, _) => Text(
+                '${value.text.runes.length} 字符',
+                style: theme.textTheme.labelSmall?.copyWith(color: muted),
+              ),
+            ),
+            const SizedBox(width: 12),
+            _IconBtn(
+              icon: LucideIcons.zoomOut,
+              tooltip: '缩小',
+              color: muted,
+              onPressed: canZoomOut ? onZoomOut : null,
+            ),
+            SizedBox(
+              width: 40,
+              child: Text(
+                '${(scale * 100).round()}%',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.labelSmall?.copyWith(color: muted),
+              ),
+            ),
+            _IconBtn(
+              icon: LucideIcons.zoomIn,
+              tooltip: '放大',
+              color: muted,
+              onPressed: canZoomIn ? onZoomIn : null,
+            ),
+            _IconBtn(
+              icon: LucideIcons.rotateCcw,
+              tooltip: '重置缩放',
+              color: muted,
+              onPressed: scale == 1.0 ? null : onResetZoom,
+            ),
+            const SizedBox(width: 12),
+            _ModeSwitch(mode: mode, onChanged: onModeChanged),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A compact icon button sized for the sub-toolbar.
+class _IconBtn extends StatelessWidget {
+  const _IconBtn({
+    required this.icon,
+    required this.tooltip,
+    required this.color,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final Color color;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      icon: Icon(icon, size: 16),
+      color: color,
+      tooltip: tooltip,
+      onPressed: onPressed,
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.all(4),
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+    );
+  }
+}
+
+/// The segmented 源码 / 预览 / 只读 switch (the original's MUI ButtonGroup).
+class _ModeSwitch extends StatelessWidget {
+  const _ModeSwitch({required this.mode, required this.onChanged});
+
+  final _NoteViewMode mode;
+  final ValueChanged<_NoteViewMode> onChanged;
+
+  static const _segments = [
+    (mode: _NoteViewMode.source, icon: LucideIcons.code2, label: '源码'),
+    (mode: _NoteViewMode.preview, icon: LucideIcons.eye, label: '预览'),
+    (mode: _NoteViewMode.read, icon: LucideIcons.fileText, label: '只读'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.colorScheme.primary),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final seg in _segments) ...[
+            if (seg.mode != _NoteViewMode.source)
+              SizedBox(
+                width: 1,
+                height: 28,
+                child: ColoredBox(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.4),
+                ),
+              ),
+            _Segment(
+              icon: seg.icon,
+              label: seg.label,
+              selected: mode == seg.mode,
+              onTap: () => onChanged(seg.mode),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _Segment extends StatelessWidget {
+  const _Segment({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final fg = selected
+        ? theme.colorScheme.onPrimary
+        : theme.colorScheme.primary;
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        color: selected ? theme.colorScheme.primary : Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: fg),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: fg,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _MarkdownToolbar extends StatelessWidget {
   const _MarkdownToolbar({required this.onAction});
 
@@ -443,9 +685,17 @@ class _MarkdownToolbar extends StatelessWidget {
       icon: LucideIcons.listOrdered,
       tip: '有序列表',
     ),
-    (action: _ToolbarAction.taskList, icon: LucideIcons.listChecks, tip: '任务清单'),
+    (
+      action: _ToolbarAction.taskList,
+      icon: LucideIcons.listChecks,
+      tip: '任务清单',
+    ),
     (action: _ToolbarAction.quote, icon: LucideIcons.quote, tip: '引用'),
-    (action: _ToolbarAction.codeBlock, icon: LucideIcons.squareCode, tip: '代码块'),
+    (
+      action: _ToolbarAction.codeBlock,
+      icon: LucideIcons.squareCode,
+      tip: '代码块',
+    ),
     (action: _ToolbarAction.table, icon: LucideIcons.table, tip: '表格'),
     (action: _ToolbarAction.math, icon: LucideIcons.sigma, tip: '数学公式'),
     (action: _ToolbarAction.link, icon: LucideIcons.link, tip: '链接'),
