@@ -167,8 +167,9 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
       ),
       SettingItemData(
         icon: LucideIcons.fileText,
-        title: '笔记设置',
-        description: '配置本地笔记存储路径和显示选项',
+        title: '笔记',
+        description: '本地 Markdown 笔记，支持文件夹、排序与收藏',
+        route: AppRouter.notesPath,
       ),
       SettingItemData(
         icon: LucideIcons.hardDrive,

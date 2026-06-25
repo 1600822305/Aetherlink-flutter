@@ -5,6 +5,9 @@ import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/translate_page.dart';
 import 'package:aetherlink_flutter/features/backup/presentation/backup_settings_page.dart';
+import 'package:aetherlink_flutter/features/notes/presentation/mobile/note_editor_page.dart';
+import 'package:aetherlink_flutter/features/notes/presentation/mobile/notes_page.dart';
+import 'package:aetherlink_flutter/features/notes/presentation/mobile/notes_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/agent_prompts_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/auxiliary_model_settings_page.dart';
@@ -86,6 +89,11 @@ abstract final class AppRouter {
   static const String settingsSearchPath = '/settings/search';
   static const String voiceSettingsPath = '/settings/voice';
   static const String backupSettingsPath = '/settings/backup';
+  static const String notesPath = '/settings/notes';
+  static const String notesSettingsPath = '/settings/notes/settings';
+  static String noteEditorPath(String relativePath, String name) =>
+      '/settings/notes/edit?path=${Uri.encodeQueryComponent(relativePath)}'
+      '&name=${Uri.encodeQueryComponent(name)}';
   static const String welcomePath = '/welcome';
   static const String translatePath = '/translate';
 
@@ -272,6 +280,28 @@ abstract final class AppRouter {
         name: 'backup-settings',
         pageBuilder: (context, state) =>
             _instant(state, const BackupSettingsPage()),
+      ),
+      GoRoute(
+        path: notesPath,
+        name: 'notes',
+        pageBuilder: (context, state) => _instant(state, const NotesPage()),
+      ),
+      GoRoute(
+        path: notesSettingsPath,
+        name: 'notes-settings',
+        pageBuilder: (context, state) =>
+            _instant(state, const NotesSettingsPage()),
+      ),
+      GoRoute(
+        path: '/settings/notes/edit',
+        name: 'note-editor',
+        pageBuilder: (context, state) => _instant(
+          state,
+          NoteEditorPage(
+            relativePath: state.uri.queryParameters['path'] ?? '',
+            title: state.uri.queryParameters['name'] ?? '笔记',
+          ),
+        ),
       ),
       GoRoute(
         path: settingsSearchPath,
