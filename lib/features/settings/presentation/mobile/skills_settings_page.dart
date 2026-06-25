@@ -449,9 +449,8 @@ class _SkillsSettingsPageState extends ConsumerState<SkillsSettingsPage>
   }
 }
 
-/// Compact pill-style segmented control matching the 语音功能 / MCP 服务器 /
-/// 模型供应商详情 settings pages: a rounded grey "track" container with a
-/// white "card" indicator (soft 1px shadow) sliding under the active tab.
+/// Bordered pill segmented control — shared B-style used across the entire
+/// app (辅助模型 / 外观 / 语音功能 / MCP 服务器 / 模型供应商详情 / 编辑助手…).
 class _TabBarHeader extends StatelessWidget {
   const _TabBarHeader({required this.controller});
 
@@ -460,46 +459,46 @@ class _TabBarHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: TabBar(
-        controller: controller,
-        indicator: BoxDecoration(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: theme.dividerColor),
           color: theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x14000000),
-              blurRadius: 4,
-              offset: Offset(0, 1),
-            ),
+        ),
+        padding: const EdgeInsets.all(3),
+        child: TabBar(
+          controller: controller,
+          indicator: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            color: theme.colorScheme.primary.withValues(alpha: 0.12),
+          ),
+          indicatorSize: TabBarIndicatorSize.tab,
+          dividerHeight: 0,
+          labelColor: theme.colorScheme.primary,
+          unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+          labelStyle: theme.textTheme.labelLarge?.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+          unselectedLabelStyle: theme.textTheme.labelLarge?.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+          labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+          tabs: const [
+            _IconTab(icon: LucideIcons.zap, label: '内置'),
+            _IconTab(icon: LucideIcons.users, label: '自定义'),
+            _IconTab(icon: LucideIcons.bookOpen, label: '说明'),
           ],
         ),
-        indicatorSize: TabBarIndicatorSize.tab,
-        dividerColor: Colors.transparent,
-        labelColor: theme.colorScheme.onSurface,
-        unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-        labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-        ),
-        tabs: const [
-          _IconTab(icon: LucideIcons.zap, label: '内置'),
-          _IconTab(icon: LucideIcons.users, label: '自定义'),
-          _IconTab(icon: LucideIcons.bookOpen, label: '说明'),
-        ],
       ),
     );
   }
 }
 
-/// A 32px pill tab: glyph + label, sized to match the 语音功能 settings page.
+/// A 34px pill tab matching the shared B-style.
 class _IconTab extends StatelessWidget {
   const _IconTab({required this.icon, required this.label});
 
@@ -509,7 +508,7 @@ class _IconTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Tab(
-      height: 32,
+      height: 34,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

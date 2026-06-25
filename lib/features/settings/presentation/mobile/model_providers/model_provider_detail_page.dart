@@ -189,45 +189,41 @@ class _ModelProviderDetailPageState
       ),
       body: Column(
         children: [
-          // Pill-style segmented control matching the 语音功能 / MCP 服务器
-          // settings pages: a rounded grey "track" with a white card indicator
-          // (soft 1px shadow) sliding under the active tab.
-          Container(
-            margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: TabBar(
-              controller: _tabController,
-              indicator: BoxDecoration(
+          // Bordered pill segmented control — shared B-style with the rest
+          // of the app's tab strips (辅助模型 / 外观 / 语音功能 / MCP 服务器…).
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: theme.dividerColor),
                 color: theme.colorScheme.surface,
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x14000000),
-                    blurRadius: 4,
-                    offset: Offset(0, 1),
-                  ),
+              ),
+              padding: const EdgeInsets.all(3),
+              child: TabBar(
+                controller: _tabController,
+                indicator: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                ),
+                indicatorSize: TabBarIndicatorSize.tab,
+                dividerHeight: 0,
+                labelColor: theme.colorScheme.primary,
+                unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+                labelStyle: theme.textTheme.labelLarge?.copyWith(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+                unselectedLabelStyle: theme.textTheme.labelLarge?.copyWith(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+                labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+                tabs: const [
+                  Tab(height: 34, text: '配置'),
+                  Tab(height: 34, text: '模型'),
                 ],
               ),
-              indicatorSize: TabBarIndicatorSize.tab,
-              dividerColor: Colors.transparent,
-              labelColor: theme.colorScheme.onSurface,
-              unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-              labelStyle: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-              unselectedLabelStyle: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-              tabs: const [
-                Tab(height: 32, text: '配置'),
-                Tab(height: 32, text: '模型'),
-              ],
             ),
           ),
           Expanded(

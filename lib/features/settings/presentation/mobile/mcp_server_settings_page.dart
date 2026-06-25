@@ -249,10 +249,9 @@ Future<void> _openImport(BuildContext context, WidgetRef ref) async {
   }
 }
 
-/// Compact pill-style segmented control matching the 语音功能 settings page
-/// (`features/voice/presentation/mobile/voice_settings_page.dart` `_TabHeader`).
-/// A rounded grey track with a white "card" indicator (soft shadow) sliding
-/// underneath the active tab.
+/// Bordered pill segmented control — shared with the 辅助模型 / 外观 / 消息
+/// 气泡 / 编辑助手 / 语音功能 etc. tab strips, so every tab in the app stays
+/// visually consistent.
 class _TabBarHeader extends StatelessWidget {
   const _TabBarHeader({required this.controller});
 
@@ -261,46 +260,46 @@ class _TabBarHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: TabBar(
-        controller: controller,
-        indicator: BoxDecoration(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: theme.dividerColor),
           color: theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x14000000),
-              blurRadius: 4,
-              offset: Offset(0, 1),
-            ),
+        ),
+        padding: const EdgeInsets.all(3),
+        child: TabBar(
+          controller: controller,
+          indicator: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            color: theme.colorScheme.primary.withValues(alpha: 0.12),
+          ),
+          indicatorSize: TabBarIndicatorSize.tab,
+          dividerHeight: 0,
+          labelColor: theme.colorScheme.primary,
+          unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+          labelStyle: theme.textTheme.labelLarge?.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+          unselectedLabelStyle: theme.textTheme.labelLarge?.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+          labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+          tabs: const [
+            _IconTab(icon: LucideIcons.server, label: '外部服务器'),
+            _IconTab(icon: LucideIcons.wrench, label: '内置工具'),
+            _IconTab(icon: LucideIcons.bot, label: '智能助手'),
           ],
         ),
-        indicatorSize: TabBarIndicatorSize.tab,
-        dividerColor: Colors.transparent,
-        labelColor: theme.colorScheme.onSurface,
-        unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-        labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-        ),
-        tabs: const [
-          _IconTab(icon: LucideIcons.server, label: '外部服务器'),
-          _IconTab(icon: LucideIcons.wrench, label: '内置工具'),
-          _IconTab(icon: LucideIcons.bot, label: '智能助手'),
-        ],
       ),
     );
   }
 }
 
-/// A 32px pill tab: glyph + label, sized to match 语音功能 settings.
+/// A 34px pill tab matching the shared B-style.
 class _IconTab extends StatelessWidget {
   const _IconTab({required this.icon, required this.label});
 
@@ -310,7 +309,7 @@ class _IconTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Tab(
-      height: 32,
+      height: 34,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

@@ -429,46 +429,45 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage>
   }
 
   Widget _buildSourceTabs(ThemeData theme, ColorScheme cs) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: cs.onSurface.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: TabBar(
-        controller: _tabController,
-        dividerColor: Colors.transparent,
-        labelColor: cs.onSurface,
-        unselectedLabelColor: cs.onSurface.withValues(alpha: 0.5),
-        labelStyle: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          height: 1.2,
-        ),
-        unselectedLabelStyle: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-          height: 1.2,
-        ),
-        indicatorSize: TabBarIndicatorSize.tab,
-        indicator: BoxDecoration(
+    // Bordered pill segmented control — shared B-style. Keeps the page's
+    // compact 12px font and zero label padding so the 3 source tabs fit
+    // comfortably above the search bar.
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
           color: cs.surface,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: [
-            BoxShadow(
-              color: cs.shadow.withValues(alpha: 0.08),
-              blurRadius: 2,
-              offset: const Offset(0, 1),
-            ),
-          ],
+          border: Border.all(color: theme.dividerColor),
+          borderRadius: BorderRadius.circular(12),
         ),
-        splashFactory: NoSplash.splashFactory,
-        overlayColor: WidgetStateProperty.all(Colors.transparent),
-        labelPadding: EdgeInsets.zero,
-        tabs: SkillStoreSource.values
-            .map((s) => _SourceTab(icon: s.icon, label: s.label))
-            .toList(),
+        child: TabBar(
+          controller: _tabController,
+          dividerHeight: 0,
+          labelColor: cs.primary,
+          unselectedLabelColor: cs.onSurfaceVariant,
+          labelStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            height: 1.2,
+          ),
+          unselectedLabelStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            height: 1.2,
+          ),
+          indicatorSize: TabBarIndicatorSize.tab,
+          indicator: BoxDecoration(
+            color: cs.primary.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          splashFactory: NoSplash.splashFactory,
+          overlayColor: WidgetStateProperty.all(Colors.transparent),
+          labelPadding: EdgeInsets.zero,
+          tabs: SkillStoreSource.values
+              .map((s) => _SourceTab(icon: s.icon, label: s.label))
+              .toList(),
+        ),
       ),
     );
   }

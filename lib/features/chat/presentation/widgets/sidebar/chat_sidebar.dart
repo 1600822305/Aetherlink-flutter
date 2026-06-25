@@ -170,53 +170,53 @@ class _SidebarTabBar extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: cs.onSurface.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: TabBar(
-        controller: controller,
-        dividerColor: Colors.transparent,
-        labelColor: cs.onSurface,
-        unselectedLabelColor: cs.onSurface.withValues(alpha: 0.5),
-        labelStyle: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          height: 1.2,
-        ),
-        unselectedLabelStyle: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-          height: 1.2,
-        ),
-        indicatorSize: TabBarIndicatorSize.tab,
-        indicator: BoxDecoration(
+    // Bordered pill segmented control — shared B-style used across the app.
+    // Keeps the sidebar-specific 12px font size and zero label padding so the
+    // 3-4 tabs still fit the narrow sidebar.
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
           color: cs.surface,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: [
-            BoxShadow(
-              color: cs.shadow.withValues(alpha: 0.08),
-              blurRadius: 2,
-              offset: const Offset(0, 1),
-            ),
+          border: Border.all(color: theme.dividerColor),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: TabBar(
+          controller: controller,
+          dividerHeight: 0,
+          labelColor: cs.primary,
+          unselectedLabelColor: cs.onSurfaceVariant,
+          labelStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            height: 1.2,
+          ),
+          unselectedLabelStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            height: 1.2,
+          ),
+          indicatorSize: TabBarIndicatorSize.tab,
+          indicator: BoxDecoration(
+            color: cs.primary.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          splashFactory: NoSplash.splashFactory,
+          overlayColor: WidgetStateProperty.all(Colors.transparent),
+          labelPadding: EdgeInsets.zero,
+          tabs: [
+            const _SidebarTab(
+                icon: LucideIcons.sparkles, label: _assistantTabLabel),
+            const _SidebarTab(
+                icon: LucideIcons.messagesSquare, label: _topicTabLabel),
+            if (showNotes)
+              const _SidebarTab(
+                  icon: LucideIcons.fileText, label: _notesTabLabel),
+            const _SidebarTab(
+                icon: LucideIcons.sliders, label: _settingsTabLabel),
           ],
         ),
-        splashFactory: NoSplash.splashFactory,
-        overlayColor: WidgetStateProperty.all(Colors.transparent),
-        labelPadding: EdgeInsets.zero,
-        tabs: [
-          const _SidebarTab(
-              icon: LucideIcons.sparkles, label: _assistantTabLabel),
-          const _SidebarTab(
-              icon: LucideIcons.messagesSquare, label: _topicTabLabel),
-          if (showNotes)
-            const _SidebarTab(
-                icon: LucideIcons.fileText, label: _notesTabLabel),
-          const _SidebarTab(icon: LucideIcons.sliders, label: _settingsTabLabel),
-        ],
       ),
     );
   }

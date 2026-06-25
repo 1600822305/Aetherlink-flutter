@@ -67,9 +67,6 @@ class _Tokens {
   Color get border => _cs.onSurface.withValues(alpha: 0.12);
   Color get primary => _cs.primary;
   Color get hover => _cs.primary.withValues(alpha: dark ? 0.16 : 0.08);
-  // Pill-style tab strip "track" — matches the 语音功能 settings page so the
-  // chat panel and the settings page share the same segmented-control look.
-  Color get tabTrack => _cs.onSurface.withValues(alpha: 0.06);
 
   // 运行中 chip / 管理服务器 button accent (web #10b981).
   static const Color success = Color(0xFF10B981);
@@ -270,34 +267,37 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
   }
 
   Widget _mainTabs(_Tokens t) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: t.tabTrack,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _TabButton(
-              tokens: t,
-              icon: LucideIcons.plug,
-              label: '工具',
-              active: _mainTab == 0,
-              onTap: () => setState(() => _mainTab = 0),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: t.bgPaper,
+          border: Border.all(color: t.border),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: _TabButton(
+                tokens: t,
+                icon: LucideIcons.plug,
+                label: '工具',
+                active: _mainTab == 0,
+                onTap: () => setState(() => _mainTab = 0),
+              ),
             ),
-          ),
-          Expanded(
-            child: _TabButton(
-              tokens: t,
-              icon: LucideIcons.zap,
-              label: '技能',
-              active: _mainTab == 1,
-              onTap: () => setState(() => _mainTab = 1),
+            Expanded(
+              child: _TabButton(
+                tokens: t,
+                icon: LucideIcons.zap,
+                label: '技能',
+                active: _mainTab == 1,
+                onTap: () => setState(() => _mainTab = 1),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -434,19 +434,22 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
         onTap: () => setState(() => _subTab = index),
       ),
     );
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: t.tabTrack,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          tab(LucideIcons.server, '外部服务器', 0),
-          tab(LucideIcons.cpu, '内置工具', 1),
-          tab(LucideIcons.zap, '智能助手', 2),
-        ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: t.bgPaper,
+          border: Border.all(color: t.border),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            tab(LucideIcons.server, '外部服务器', 0),
+            tab(LucideIcons.cpu, '内置工具', 1),
+            tab(LucideIcons.zap, '智能助手', 2),
+          ],
+        ),
       ),
     );
   }
@@ -1078,10 +1081,12 @@ class _McpSwitch extends StatelessWidget {
   }
 }
 
-/// Pill-style tab pill matching the 语音功能 settings page `_TabHeader` (and the
-/// MCP server settings page) — the white "card" that slides under the active
-/// tab, with onSurface text and a soft 1px shadow. Rendered inside a [Container]
-/// "track" (see [_mainTabs] / [_subTabs]).
+/// Pill tab matching the shared B-style used across the app's tab strips
+/// (辅助模型 / 外观 / 编辑助手 / 语音功能 / MCP 服务器…) — a tinted rounded
+/// indicator (primary @ 12%) sliding under the active tab inside a bordered
+/// surface "track" (see [_mainTabs] / [_subTabs]). State swaps instantly to
+/// avoid cross-fade flicker (the built-in TabBar slides a single shared
+/// indicator; we hand-roll the strip here so we just use a static Container).
 class _TabButton extends StatelessWidget {
   const _TabButton({
     required this.tokens,
@@ -1099,31 +1104,18 @@ class _TabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = active ? tokens.textPrimary : tokens.textSecondary;
-    // Pill segmented controls swap state instantly (iOS UISegmentedControl
-    // behaviour). An AnimatedContainer here would cross-fade the white
-    // "card" + shadow on both buttons for 200ms, producing a visible flicker
-    // — Flutter's built-in TabBar avoids that by sliding a single shared
-    // indicator between tabs, but we're hand-rolling the strip here, so the
-    // safest equivalent is just a static [Container].
+    final color = active ? tokens.primary : tokens.textSecondary;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Container(
-        height: 32,
+        height: 34,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: active ? tokens.bgPaper : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: active
-              ? const [
-                  BoxShadow(
-                    color: Color(0x14000000),
-                    blurRadius: 4,
-                    offset: Offset(0, 1),
-                  ),
-                ]
-              : null,
+          color: active
+              ? tokens.primary.withValues(alpha: 0.12)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1138,7 +1130,7 @@ class _TabButton extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                   color: color,
                 ),
               ),
