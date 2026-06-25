@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/app/di/behavior_settings_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
+import 'package:aetherlink_flutter/features/settings/application/font_settings_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/font_size_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/theme_mode_controller.dart';
 import 'package:aetherlink_flutter/features/settings/domain/app_theme_mode.dart';
@@ -69,8 +70,9 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
     // `TextStyle.apply` asserts a non-1.0 factor is only used on a set size, so
     // scaling through the theme would crash off the default size.
     final textScale = fontSize / FontSizeController.defaultSize;
-    final lightTheme = AppTheme.light(spec);
-    final darkTheme = AppTheme.dark(spec);
+    final appFontFamily = ref.watch(appFontFamilyProvider);
+    final lightTheme = AppTheme.light(spec, appFontFamily: appFontFamily);
+    final darkTheme = AppTheme.dark(spec, appFontFamily: appFontFamily);
     final themeMode = switch (mode) {
       AppThemeMode.system => ThemeMode.system,
       AppThemeMode.light => ThemeMode.light,

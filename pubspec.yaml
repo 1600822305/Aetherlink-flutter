@@ -84,6 +84,8 @@ dependencies:
   # Local notifications for backup reminders
   flutter_local_notifications: ^18.0.1
   timezone: ^0.10.0
+  google_fonts: ^6.3.2
+  system_fonts: ^1.0.1
 
 dev_dependencies:
   flutter_test:

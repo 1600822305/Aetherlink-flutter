@@ -15,17 +15,21 @@ import 'package:aetherlink_flutter/features/theming/domain/theme_spec.dart';
 /// Page transition animations are globally disabled via [_NoTransitionsBuilder]
 /// so route changes are instant.
 abstract final class AppTheme {
-  static ThemeData light(ThemeSpec spec) =>
-      _build(spec, spec.colors.light, Brightness.light);
+  /// [appFontFamily] overrides [ThemeSpec.typography] with the user's 全局应用字体
+  /// (system / Google / local). `null` keeps the spec / platform default.
+  static ThemeData light(ThemeSpec spec, {String? appFontFamily}) =>
+      _build(spec, spec.colors.light, Brightness.light, appFontFamily);
 
-  static ThemeData dark(ThemeSpec spec) =>
-      _build(spec, spec.colors.dark, Brightness.dark);
+  static ThemeData dark(ThemeSpec spec, {String? appFontFamily}) =>
+      _build(spec, spec.colors.dark, Brightness.dark, appFontFamily);
 
   static ThemeData _build(
     ThemeSpec spec,
     ColorRoleSet roles,
     Brightness brightness,
+    String? appFontFamily,
   ) {
+    final fontFamily = appFontFamily ?? spec.typography.fontFamily;
     final primary = Color(roles.primary);
     final secondary = Color(roles.secondary);
     final surface = Color(roles.surface);
@@ -54,7 +58,7 @@ abstract final class AppTheme {
         : Typography.material2018().black;
     final textTheme = baseTypography
         .apply(
-          fontFamily: spec.typography.fontFamily,
+          fontFamily: fontFamily,
           fontSizeFactor: spec.typography.textScale,
           displayColor: textPrimary,
           bodyColor: textPrimary,
@@ -70,7 +74,7 @@ abstract final class AppTheme {
       primaryColor: primary,
       scaffoldBackgroundColor: background,
       canvasColor: surface,
-      fontFamily: spec.typography.fontFamily,
+      fontFamily: fontFamily,
       textTheme: textTheme,
       visualDensity: _density(spec.density),
       pageTransitionsTheme: const PageTransitionsTheme(
