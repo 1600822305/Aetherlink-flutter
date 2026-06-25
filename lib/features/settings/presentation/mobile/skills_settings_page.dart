@@ -449,8 +449,9 @@ class _SkillsSettingsPageState extends ConsumerState<SkillsSettingsPage>
   }
 }
 
-/// The full-width tab strip below the search header (icon + label, 1px bottom
-/// divider), mirroring the original MUI `Tabs variant="fullWidth"`.
+/// Compact pill-style segmented control matching the 语音功能 / MCP 服务器 /
+/// 模型供应商详情 settings pages: a rounded grey "track" container with a
+/// white "card" indicator (soft 1px shadow) sliding under the active tab.
 class _TabBarHeader extends StatelessWidget {
   const _TabBarHeader({required this.controller});
 
@@ -459,20 +460,35 @@ class _TabBarHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return DecoratedBox(
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        border: Border(bottom: BorderSide(color: theme.dividerColor)),
+        color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: TabBar(
         controller: controller,
-        labelColor: theme.colorScheme.primary,
-        unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-        indicatorColor: theme.colorScheme.primary,
+        indicator: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x14000000),
+              blurRadius: 4,
+              offset: Offset(0, 1),
+            ),
+          ],
+        ),
         indicatorSize: TabBarIndicatorSize.tab,
         dividerColor: Colors.transparent,
-        labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: const TextStyle(fontSize: 14),
+        labelColor: theme.colorScheme.onSurface,
+        unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+        labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        unselectedLabelStyle: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+        ),
         tabs: const [
           _IconTab(icon: LucideIcons.zap, label: '内置'),
           _IconTab(icon: LucideIcons.users, label: '自定义'),
@@ -483,6 +499,7 @@ class _TabBarHeader extends StatelessWidget {
   }
 }
 
+/// A 32px pill tab: glyph + label, sized to match the 语音功能 settings page.
 class _IconTab extends StatelessWidget {
   const _IconTab({required this.icon, required this.label});
 
@@ -492,10 +509,14 @@ class _IconTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Tab(
-      height: 46,
+      height: 32,
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [Icon(icon, size: 16), const SizedBox(width: 6), Text(label)],
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15),
+          const SizedBox(width: 5),
+          Text(label, overflow: TextOverflow.ellipsis),
+        ],
       ),
     );
   }
