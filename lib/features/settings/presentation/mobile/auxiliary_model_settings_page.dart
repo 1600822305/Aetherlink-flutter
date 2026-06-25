@@ -140,7 +140,13 @@ class _AuxiliaryModelSettingsPageState
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _groups.length, vsync: this);
+    _tabController = TabController(
+      length: _groups.length,
+      vsync: this,
+      // Instant tab switching: taps jump without the horizontal slide, while
+      // the swipe gesture on TabBarView is preserved.
+      animationDuration: Duration.zero,
+    );
   }
 
   @override
