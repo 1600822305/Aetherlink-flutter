@@ -177,9 +177,9 @@ class _TabList extends StatelessWidget {
     return ListView(
       padding: EdgeInsets.fromLTRB(
         16,
+        4,
         16,
-        16,
-        16 + MediaQuery.paddingOf(context).bottom,
+        12 + MediaQuery.paddingOf(context).bottom,
       ),
       children: children,
     );
@@ -204,7 +204,7 @@ class _TabBarHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
@@ -314,27 +314,26 @@ class _CardHeader extends StatelessWidget {
     return ColoredBox(
       color: _headerTint,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               title,
-              // subtitle1: not overridden in the theme, so it keeps MUI's
-              // default scaled by the `typography.fontSize:16` coef (16/14) →
-              // 18.29px, line-height 1.75.
               style: theme.textTheme.titleMedium?.copyWith(
-                fontSize: 128 / 7,
-                height: 1.75,
+                fontSize: 16,
+                height: 1.3,
                 fontWeight: FontWeight.w600,
                 color: theme.colorScheme.onSurface,
               ),
             ),
+            const SizedBox(height: 2),
             Text(
               description,
               style: theme.textTheme.bodyMedium?.copyWith(
-                fontSize: 14,
+                fontSize: 13,
+                height: 1.3,
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
@@ -386,7 +385,7 @@ class _ThemeAndFontCard extends StatelessWidget {
           const _CardHeader(title: _title, description: _description),
           const Divider(height: 1, thickness: 1),
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -399,13 +398,13 @@ class _ThemeAndFontCard extends StatelessWidget {
                   options: _themeOptions,
                   onChanged: onModeChanged,
                 ),
-                const SizedBox(height: 24), // original `mb: 3`
+                const SizedBox(height: 16), // original `mb: 3`
                 // 语言选择 — static display (Flutter has no i18n yet).
                 const _LanguageSelect(
                   label: _languageLabel,
                   helper: _languageHelper,
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
                 // 全局字体大小 — wired: drives the app-wide text scale.
                 _FontSizeSection(
                   label: _fontSizeLabel,
@@ -413,10 +412,9 @@ class _ThemeAndFontCard extends StatelessWidget {
                   value: fontSize,
                   onChanged: onFontSizeChanged,
                 ),
-                const SizedBox(height: 16), // original `mb: 2`
+                const SizedBox(height: 14), // original `mb: 2`
                 // 应用字体 + 代码字体 — wired font pickers (系统 / Google / 本地).
                 const FontFamilySection(),
-                const SizedBox(height: 16),
               ],
             ),
           ),
@@ -545,7 +543,7 @@ InputDecoration _selectDecoration(
     labelStyle: theme.textTheme.bodyLarge?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
     ),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     border: border,
     enabledBorder: border,
     focusedBorder: OutlineInputBorder(
