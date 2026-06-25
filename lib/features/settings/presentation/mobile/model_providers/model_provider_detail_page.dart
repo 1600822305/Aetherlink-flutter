@@ -50,43 +50,25 @@ class _ModelProviderDetailPageState
   late final TabController _tabController;
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _baseUrlController = TextEditingController();
-  final TextEditingController _searchController = TextEditingController();
-
   bool _obscureKey = true;
   bool _initialized = false;
-  bool _fetching = false;
   bool _isEnabled = false;
   bool _useResponsesAPI = false;
   bool _useMultiKey = false;
-  bool _testMode = false;
-  bool _alwaysShowTestButton = false;
   bool _kvLoaded = false;
-  String _search = '';
-  String? _testingModelId;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(_onTabChanged);
   }
 
   @override
   void dispose() {
-    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _apiKeyController.dispose();
     _baseUrlController.dispose();
-    _searchController.dispose();
     super.dispose();
-  }
-
-  void _onTabChanged() {
-    if (_tabController.indexIsChanging) return;
-    if (_search.isNotEmpty) {
-      _searchController.clear();
-      setState(() => _search = '');
-    }
   }
 
   void _seedFrom(ModelProvider provider) {
@@ -103,19 +85,13 @@ class _ModelProviderDetailPageState
   Future<void> _loadKvSettings(String providerId) async {
     if (_kvLoaded) return;
     _kvLoaded = true;
-    final store = ref.read(appSettingsStoreProvider);
-    final results = await Future.wait([
-      store.getSetting('alwaysShowTestButton_$providerId'),
-      store.getSetting('useMultiKey_$providerId'),
-    ]);
+    final result = await ref
+        .read(appSettingsStoreProvider)
+        .getSetting('useMultiKey_$providerId');
     if (!mounted) return;
-    setState(() {
-      _alwaysShowTestButton = results[0] == 'true';
-      // KV store takes precedence over data-derived value
-      if (results[1] != null) {
-        _useMultiKey = results[1] == 'true';
-      }
-    });
+    if (result != null) {
+      setState(() => _useMultiKey = result == 'true');
+    }
   }
 
   Future<void> _save(ModelProvider provider) async {
@@ -239,7 +215,12 @@ class _ModelProviderDetailPageState
               controller: _tabController,
               children: [
                 _buildConfigTab(context, provider),
-                _buildModelsTab(context, provider),
+                _ModelsTab(
+                  provider: provider,
+                  apiKeyController: _apiKeyController,
+                  baseUrlController: _baseUrlController,
+                  tabController: _tabController,
+                ),
               ],
             ),
           ),
@@ -425,227 +406,6 @@ class _ModelProviderDetailPageState
   }
 
   // ---------------------------------------------------------------------------
-  // Tab 2 · 模型
-  // ---------------------------------------------------------------------------
-
-  Widget _buildModelsTab(BuildContext context, ModelProvider provider) {
-    final theme = Theme.of(context);
-    final currentAsync = ref.watch(appCurrentModelProvider);
-    final currentModelId = currentAsync.maybeWhen(
-      data: (current) => current != null && current.provider.id == provider.id
-          ? current.model.id
-          : null,
-      orElse: () => null,
-    );
-
-    final query = _search.trim().toLowerCase();
-    final filtered = query.isEmpty
-        ? provider.models
-        : [
-            for (final m in provider.models)
-              if (m.name.toLowerCase().contains(query) ||
-                  m.id.toLowerCase().contains(query))
-                m,
-          ];
-    final groups = groupModels<Model>(
-      filtered,
-      idOf: (m) => m.id,
-      groupOf: (m) => m.group,
-      providerId: provider.id,
-    );
-    final showTest = _testMode || _alwaysShowTestButton;
-
-    return ListView(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        12,
-        16,
-        16 + MediaQuery.paddingOf(context).bottom,
-      ),
-      children: [
-        // ─── Toolbar row: 自动获取 / 自定义端点 / 手动添加 ────────────
-        Row(
-          children: [
-            Expanded(
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  _CompactActionChip(
-                    label: '获取',
-                    icon: LucideIcons.download,
-                    onPressed:
-                        _fetching ? null : () => _fetchModels(provider),
-                  ),
-                  _CompactActionChip(
-                    label: '端点',
-                    icon: LucideIcons.link,
-                    accent: theme.colorScheme.secondary,
-                    onPressed:
-                        _fetching ? null : () => _customEndpoint(provider),
-                  ),
-                  _CompactActionChip(
-                    label: '添加',
-                    icon: LucideIcons.plus,
-                    onPressed: () =>
-                        context.push(AppRouter.editModelPath(provider.id)),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            // Test mode: compact icon toggle
-            _TestModeToggle(
-              active: _testMode,
-              alwaysShow: _alwaysShowTestButton,
-              onToggleTestMode: () =>
-                  setState(() => _testMode = !_testMode),
-              onToggleAlwaysShow: (v) {
-                setState(() => _alwaysShowTestButton = v);
-                ref
-                    .read(appSettingsStoreProvider)
-                    .saveSetting(
-                      'alwaysShowTestButton_${provider.id}',
-                      v.toString(),
-                    );
-              },
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        // ─── Search bar ─────────────────────────────────────────────
-        SizedBox(
-          height: 40,
-          child: TextField(
-            controller: _searchController,
-            onChanged: (v) => setState(() => _search = v),
-            style: theme.textTheme.bodyMedium?.copyWith(fontSize: 13),
-            decoration: InputDecoration(
-              isDense: true,
-              hintText: '搜索模型 (${provider.models.length})',
-              hintStyle: theme.textTheme.bodyMedium?.copyWith(
-                fontSize: 13,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              prefixIcon: const Icon(LucideIcons.search, size: 16),
-              prefixIconConstraints:
-                  const BoxConstraints(minWidth: 36, minHeight: 0),
-              suffixIcon: _search.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.close, size: 16),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() => _search = '');
-                      },
-                      constraints: const BoxConstraints(),
-                      padding: const EdgeInsets.all(8),
-                    )
-                  : null,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
-              border:
-                  OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: theme.dividerColor),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        // 分组模型列表
-        if (provider.models.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            child: Center(
-              child: Text(
-                '尚未添加任何模型',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontSize: 13,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          )
-        else if (groups.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            child: Center(
-              child: Text(
-                '没有匹配「$_search」的模型',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontSize: 13,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          )
-        else
-          for (final (groupName, models) in groups) ...[
-            ModelSettingsCard(
-              padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '$groupName (${models.length})',
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => _deleteGroup(
-                          provider,
-                          models,
-                          groupName,
-                        ),
-                        icon: const Icon(LucideIcons.trash2, size: 14),
-                        color: theme.colorScheme.error,
-                        tooltip: '删除整组',
-                        constraints: const BoxConstraints(),
-                        padding: const EdgeInsets.all(6),
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 4),
-                  for (final model in models)
-                    _ModelRow(
-                      model: model,
-                      isCurrent: model.id == currentModelId,
-                      showTest: showTest,
-                      testing: _testingModelId == model.id,
-                      testDisabled: _testingModelId != null,
-                      onTap: () => context.push(
-                        AppRouter.editModelPath(provider.id, modelId: model.id),
-                      ),
-                      onSelect: () => ref
-                          .read(modelStoreProvider.notifier)
-                          .selectCurrentModel(
-                            providerId: provider.id,
-                            modelId: model.id,
-                          ),
-                      onTest: () => _testModel(provider, model),
-                      onDelete: () => _deleteModel(provider, model.id),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-          ],
-      ],
-    );
-  }
-
-  // ---------------------------------------------------------------------------
   // Actions
   // ---------------------------------------------------------------------------
 
@@ -704,10 +464,337 @@ class _ModelProviderDetailPageState
       context.go(AppRouter.defaultModelPath);
     }
   }
+}
 
-  /// Fetches the provider's catalog (`自动获取模型`) using the form's current key /
-  /// base URL (so it works before 保存), lets the user pick models, then
-  /// persists them. [endpointOverride] supplies the 自定义端点 base URL.
+// =============================================================================
+// Models Tab — isolated StatefulWidget so search / test / fetch setState does
+// NOT rebuild the config tab or parent scaffold.
+// =============================================================================
+
+class _ModelsTab extends ConsumerStatefulWidget {
+  const _ModelsTab({
+    required this.provider,
+    required this.apiKeyController,
+    required this.baseUrlController,
+    required this.tabController,
+  });
+
+  final ModelProvider provider;
+  final TextEditingController apiKeyController;
+  final TextEditingController baseUrlController;
+  final TabController tabController;
+
+  @override
+  ConsumerState<_ModelsTab> createState() => _ModelsTabState();
+}
+
+class _ModelsTabState extends ConsumerState<_ModelsTab> {
+  final TextEditingController _searchController = TextEditingController();
+  String _search = '';
+  bool _testMode = false;
+  bool _alwaysShowTestButton = false;
+  bool _fetching = false;
+  String? _testingModelId;
+  bool _kvLoaded = false;
+
+  // groupModels cache — avoids O(n log n) recomputation every build.
+  List<Model>? _cachedModelsList;
+  String _cachedSearch = '';
+  List<(String, List<Model>)> _cachedGroups = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    widget.tabController.addListener(_onTabChanged);
+    _loadKvSettings();
+  }
+
+  @override
+  void dispose() {
+    widget.tabController.removeListener(_onTabChanged);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onTabChanged() {
+    if (widget.tabController.indexIsChanging) return;
+    if (_search.isNotEmpty) {
+      _searchController.clear();
+      setState(() => _search = '');
+    }
+  }
+
+  Future<void> _loadKvSettings() async {
+    if (_kvLoaded) return;
+    _kvLoaded = true;
+    final result = await ref
+        .read(appSettingsStoreProvider)
+        .getSetting('alwaysShowTestButton_${widget.provider.id}');
+    if (!mounted) return;
+    if (result == 'true') {
+      setState(() => _alwaysShowTestButton = true);
+    }
+  }
+
+  List<(String, List<Model>)> _computeGroups() {
+    final provider = widget.provider;
+    if (identical(provider.models, _cachedModelsList) &&
+        _search == _cachedSearch) {
+      return _cachedGroups;
+    }
+    final query = _search.trim().toLowerCase();
+    final filtered = query.isEmpty
+        ? provider.models
+        : [
+            for (final m in provider.models)
+              if (m.name.toLowerCase().contains(query) ||
+                  m.id.toLowerCase().contains(query))
+                m,
+          ];
+    _cachedModelsList = provider.models;
+    _cachedSearch = _search;
+    _cachedGroups = groupModels<Model>(
+      filtered,
+      idOf: (m) => m.id,
+      groupOf: (m) => m.group,
+      providerId: provider.id,
+    );
+    return _cachedGroups;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = widget.provider;
+    final theme = Theme.of(context);
+
+    // Scoped watch — only this widget rebuilds when the current model changes.
+    final currentAsync = ref.watch(appCurrentModelProvider);
+    final currentModelId = currentAsync.maybeWhen(
+      data: (current) => current != null && current.provider.id == provider.id
+          ? current.model.id
+          : null,
+      orElse: () => null,
+    );
+
+    final groups = _computeGroups();
+    final showTest = _testMode || _alwaysShowTestButton;
+
+    // 2 header items (toolbar, search) + body items (groups or 1 empty state).
+    const headerCount = 2;
+    final bodyCount = groups.isEmpty ? 1 : groups.length;
+
+    return ListView.builder(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        16 + MediaQuery.paddingOf(context).bottom,
+      ),
+      itemCount: headerCount + bodyCount,
+      itemBuilder: (context, index) {
+        // ─── Toolbar row ───────────────────────────────────────────
+        if (index == 0) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _CompactActionChip(
+                        label: '获取',
+                        icon: LucideIcons.download,
+                        onPressed:
+                            _fetching ? null : () => _fetchModels(provider),
+                      ),
+                      _CompactActionChip(
+                        label: '端点',
+                        icon: LucideIcons.link,
+                        accent: theme.colorScheme.secondary,
+                        onPressed: _fetching
+                            ? null
+                            : () => _customEndpoint(provider),
+                      ),
+                      _CompactActionChip(
+                        label: '添加',
+                        icon: LucideIcons.plus,
+                        onPressed: () => context
+                            .push(AppRouter.editModelPath(provider.id)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _TestModeToggle(
+                  active: _testMode,
+                  alwaysShow: _alwaysShowTestButton,
+                  onToggleTestMode: () =>
+                      setState(() => _testMode = !_testMode),
+                  onToggleAlwaysShow: (v) {
+                    setState(() => _alwaysShowTestButton = v);
+                    ref
+                        .read(appSettingsStoreProvider)
+                        .saveSetting(
+                          'alwaysShowTestButton_${provider.id}',
+                          v.toString(),
+                        );
+                  },
+                ),
+              ],
+            ),
+          );
+        }
+
+        // ─── Search bar ────────────────────────────────────────────
+        if (index == 1) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: SizedBox(
+              height: 40,
+              child: TextField(
+                controller: _searchController,
+                onChanged: (v) => setState(() => _search = v),
+                style: theme.textTheme.bodyMedium?.copyWith(fontSize: 13),
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: '搜索模型 (${provider.models.length})',
+                  hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                    fontSize: 13,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  prefixIcon: const Icon(LucideIcons.search, size: 16),
+                  prefixIconConstraints:
+                      const BoxConstraints(minWidth: 36, minHeight: 0),
+                  suffixIcon: _search.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close, size: 16),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _search = '');
+                          },
+                          constraints: const BoxConstraints(),
+                          padding: const EdgeInsets.all(8),
+                        )
+                      : null,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: theme.dividerColor),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
+        // ─── Empty states ──────────────────────────────────────────
+        if (provider.models.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Center(
+              child: Text(
+                '尚未添加任何模型',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontSize: 13,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          );
+        }
+        if (groups.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Center(
+              child: Text(
+                '没有匹配「$_search」的模型',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontSize: 13,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          );
+        }
+
+        // ─── Group card (lazy) ─────────────────────────────────────
+        final gi = index - headerCount;
+        final (groupName, models) = groups[gi];
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: gi < groups.length - 1 ? 10 : 0,
+          ),
+          child: ModelSettingsCard(
+            padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '$groupName (${models.length})',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => _deleteGroup(
+                        provider,
+                        models,
+                        groupName,
+                      ),
+                      icon: const Icon(LucideIcons.trash2, size: 14),
+                      color: theme.colorScheme.error,
+                      tooltip: '删除整组',
+                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(6),
+                    ),
+                  ],
+                ),
+                const Divider(height: 4),
+                for (final model in models)
+                  _ModelRow(
+                    model: model,
+                    isCurrent: model.id == currentModelId,
+                    showTest: showTest,
+                    testing: _testingModelId == model.id,
+                    testDisabled: _testingModelId != null,
+                    onTap: () => context.push(
+                      AppRouter.editModelPath(provider.id, modelId: model.id),
+                    ),
+                    onSelect: () => ref
+                        .read(modelStoreProvider.notifier)
+                        .selectCurrentModel(
+                          providerId: provider.id,
+                          modelId: model.id,
+                        ),
+                    onTest: () => _testModel(provider, model),
+                    onDelete: () => _deleteModel(provider, model.id),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Model Tab Actions
+  // ---------------------------------------------------------------------------
+
   Future<void> _fetchModels(
     ModelProvider provider, {
     String? endpointOverride,
@@ -718,16 +805,16 @@ class _ModelProviderDetailPageState
     try {
       final baseUrl = endpointOverride?.trim().isNotEmpty == true
           ? endpointOverride!.trim()
-          : (_baseUrlController.text.trim().isEmpty
+          : (widget.baseUrlController.text.trim().isEmpty
                 ? null
-                : _baseUrlController.text.trim());
+                : widget.baseUrlController.text.trim());
       final catalog = ref.read(appModelCatalogProvider);
       final fetched = await catalog.listModels(
         LlmModelQuery(
           providerType: provider.providerType ?? provider.name,
-          apiKey: _apiKeyController.text.trim().isEmpty
+          apiKey: widget.apiKeyController.text.trim().isEmpty
               ? null
-              : _apiKeyController.text.trim(),
+              : widget.apiKeyController.text.trim(),
           baseUrl: baseUrl,
           extraHeaders: provider.extraHeaders,
         ),
@@ -750,7 +837,6 @@ class _ModelProviderDetailPageState
       );
       if (result == null || !mounted) return;
       final notifier = ref.read(modelStoreProvider.notifier);
-      // Add newly selected models
       if (result.toAdd.isNotEmpty) {
         await notifier.addModels(
           providerId: provider.id,
@@ -767,10 +853,10 @@ class _ModelProviderDetailPageState
           ],
         );
       }
-      // Remove toggled-off existing models
       if (result.toRemove.isNotEmpty) {
         final removeIds = result.toRemove.toSet();
-        final current = await ref.read(appModelRepositoryProvider).getProvider(provider.id);
+        final current =
+            await ref.read(appModelRepositoryProvider).getProvider(provider.id);
         if (current != null) {
           await notifier.saveProvider(
             current.copyWith(
@@ -804,35 +890,31 @@ class _ModelProviderDetailPageState
   Future<void> _customEndpoint(ModelProvider provider) async {
     final endpoint = await showDialog<String>(
       context: context,
-      builder: (ctx) =>
-          _CustomEndpointDialog(initial: _baseUrlController.text.trim()),
+      builder: (ctx) => _CustomEndpointDialog(
+          initial: widget.baseUrlController.text.trim()),
     );
     if (endpoint == null || endpoint.isEmpty) return;
     await _fetchModels(provider, endpointOverride: endpoint);
   }
 
-  /// One-shot connectivity test: streams a tiny "Hi" through the gateway and
-  /// reports success on the first event / done, or surfaces the transport
-  /// error. Uses the form's current key / base URL so it works before 保存.
   Future<void> _testModel(ModelProvider provider, Model model) async {
     if (_testingModelId != null) return;
     setState(() => _testingModelId = model.id);
     final messenger = ScaffoldMessenger.of(context);
     try {
       final testModel = model.copyWith(
-        apiKey: _apiKeyController.text.trim().isEmpty
+        apiKey: widget.apiKeyController.text.trim().isEmpty
             ? provider.apiKey
-            : _apiKeyController.text.trim(),
-        baseUrl: _baseUrlController.text.trim().isEmpty
+            : widget.apiKeyController.text.trim(),
+        baseUrl: widget.baseUrlController.text.trim().isEmpty
             ? provider.baseUrl
-            : _baseUrlController.text.trim(),
+            : widget.baseUrlController.text.trim(),
         providerType: provider.providerType ?? model.providerType,
         extraHeaders: model.extraHeaders ?? provider.extraHeaders,
         extraBody: model.extraBody ?? provider.extraBody,
       );
-      final gateway = ref
-          .read(appLlmGatewayFactoryProvider)
-          .forModel(testModel);
+      final gateway =
+          ref.read(appLlmGatewayFactoryProvider).forModel(testModel);
       final request = LlmChatRequest(
         model: testModel,
         messages: const [LlmMessage(role: MessageRole.user, content: 'Hi')],
@@ -841,8 +923,9 @@ class _ModelProviderDetailPageState
         extraBody: provider.extraBody,
       );
       var ok = false;
-      await for (final chunk
-          in gateway.streamChat(request).timeout(const Duration(seconds: 30))) {
+      await for (final chunk in gateway
+          .streamChat(request)
+          .timeout(const Duration(seconds: 30))) {
         if (chunk is LlmTextDelta ||
             chunk is LlmReasoningDelta ||
             chunk is LlmDone) {
@@ -929,8 +1012,6 @@ class _ModelProviderDetailPageState
     );
   }
 
-  /// Delete an entire model group — shows a dialog, then offers undo via
-  /// SnackBar so the user can recover the deleted models.
   Future<void> _deleteGroup(
     ModelProvider provider,
     List<Model> models,
