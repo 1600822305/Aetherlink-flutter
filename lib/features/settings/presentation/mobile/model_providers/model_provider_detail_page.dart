@@ -440,127 +440,126 @@ class _ModelProviderDetailPageState
     return ListView(
       padding: EdgeInsets.fromLTRB(
         16,
-        16,
+        12,
         16,
         16 + MediaQuery.paddingOf(context).bottom,
       ),
       children: [
-        // 测试模式
-        ModelSettingsCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: ModelTonalButton(
-                      label: _testMode ? '退出测试模式' : '测试模式',
-                      icon: LucideIcons.flaskConical,
-                      accent: _testMode ? theme.colorScheme.error : null,
-                      onPressed: () => setState(() => _testMode = !_testMode),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '长期显示测试按钮',
-                      style: theme.textTheme.bodyMedium?.copyWith(fontSize: 14),
-                    ),
-                  ),
-                  CustomSwitch(
-                    value: _alwaysShowTestButton,
-                    onChanged: (v) {
-                      setState(() => _alwaysShowTestButton = v);
-                      ref
-                          .read(appSettingsStoreProvider)
-                          .saveSetting(
-                            'alwaysShowTestButton_${provider.id}',
-                            v.toString(),
-                          );
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        // 搜索框
-        TextField(
-          controller: _searchController,
-          onChanged: (v) => setState(() => _search = v),
-          style: theme.textTheme.bodyMedium?.copyWith(fontSize: 14),
-          decoration: InputDecoration(
-            isDense: true,
-            hintText: '搜索模型',
-            prefixIcon: const Icon(LucideIcons.search, size: 18),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 12,
-            ),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide(color: theme.dividerColor),
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        // 工具行
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+        // ─── Toolbar row: 自动获取 / 自定义端点 / 手动添加 ────────────
+        Row(
           children: [
-            ModelTonalButton(
-              label: '自动获取',
-              icon: LucideIcons.download,
-              onPressed: _fetching ? null : () => _fetchModels(provider),
+            Expanded(
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  _CompactActionChip(
+                    label: '获取',
+                    icon: LucideIcons.download,
+                    onPressed:
+                        _fetching ? null : () => _fetchModels(provider),
+                  ),
+                  _CompactActionChip(
+                    label: '端点',
+                    icon: LucideIcons.link,
+                    accent: theme.colorScheme.secondary,
+                    onPressed:
+                        _fetching ? null : () => _customEndpoint(provider),
+                  ),
+                  _CompactActionChip(
+                    label: '添加',
+                    icon: LucideIcons.plus,
+                    onPressed: () =>
+                        context.push(AppRouter.editModelPath(provider.id)),
+                  ),
+                ],
+              ),
             ),
-            ModelTonalButton(
-              label: '自定义端点',
-              icon: LucideIcons.link,
-              accent: theme.colorScheme.secondary,
-              onPressed: _fetching ? null : () => _customEndpoint(provider),
-            ),
-            ModelTonalButton(
-              label: '手动添加',
-              icon: LucideIcons.plus,
-              onPressed: () =>
-                  context.push(AppRouter.editModelPath(provider.id)),
+            const SizedBox(width: 8),
+            // Test mode: compact icon toggle
+            _TestModeToggle(
+              active: _testMode,
+              alwaysShow: _alwaysShowTestButton,
+              onToggleTestMode: () =>
+                  setState(() => _testMode = !_testMode),
+              onToggleAlwaysShow: (v) {
+                setState(() => _alwaysShowTestButton = v);
+                ref
+                    .read(appSettingsStoreProvider)
+                    .saveSetting(
+                      'alwaysShowTestButton_${provider.id}',
+                      v.toString(),
+                    );
+              },
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
+        // ─── Search bar ─────────────────────────────────────────────
+        SizedBox(
+          height: 40,
+          child: TextField(
+            controller: _searchController,
+            onChanged: (v) => setState(() => _search = v),
+            style: theme.textTheme.bodyMedium?.copyWith(fontSize: 13),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: '搜索模型 (${provider.models.length})',
+              hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                fontSize: 13,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              prefixIcon: const Icon(LucideIcons.search, size: 16),
+              prefixIconConstraints:
+                  const BoxConstraints(minWidth: 36, minHeight: 0),
+              suffixIcon: _search.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.close, size: 16),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _search = '');
+                      },
+                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(8),
+                    )
+                  : null,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: theme.dividerColor),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
         // 分组模型列表
         if (provider.models.isEmpty)
-          ModelSettingsCard(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Center(
-                child: Text(
-                  '尚未添加任何模型',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Center(
+              child: Text(
+                '尚未添加任何模型',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontSize: 13,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
           )
         else if (groups.isEmpty)
-          ModelSettingsCard(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Center(
-                child: Text(
-                  '没有匹配「$_search」的模型',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Center(
+              child: Text(
+                '没有匹配「$_search」的模型',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontSize: 13,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
@@ -568,7 +567,7 @@ class _ModelProviderDetailPageState
         else
           for (final (groupName, models) in groups) ...[
             ModelSettingsCard(
-              padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+              padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
@@ -580,11 +579,12 @@ class _ModelProviderDetailPageState
                           '$groupName (${models.length})',
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w600,
+                            fontSize: 13,
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ),
-                      TextButton.icon(
+                      IconButton(
                         onPressed: () => _deleteGroup(provider, models),
                         icon: Icon(
                           _groupPendingDelete == groupName
@@ -592,18 +592,16 @@ class _ModelProviderDetailPageState
                               : LucideIcons.trash2,
                           size: 14,
                         ),
-                        style: TextButton.styleFrom(
-                          foregroundColor: theme.colorScheme.error,
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                        ),
-                        label: Text(
-                          _groupPendingDelete == groupName ? '确认删除整组' : '删除整组',
-                          style: const TextStyle(fontSize: 12),
-                        ),
+                        color: theme.colorScheme.error,
+                        tooltip: _groupPendingDelete == groupName
+                            ? '确认删除整组'
+                            : '删除整组',
+                        constraints: const BoxConstraints(),
+                        padding: const EdgeInsets.all(6),
                       ),
                     ],
                   ),
-                  const Divider(height: 8),
+                  const Divider(height: 4),
                   for (final model in models)
                     _ModelRow(
                       model: model,
@@ -626,7 +624,7 @@ class _ModelProviderDetailPageState
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
           ],
       ],
     );
@@ -1134,64 +1132,54 @@ class _ModelRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(vertical: 3),
         child: Row(
           children: [
-            IconButton(
-              icon: Icon(
-                isCurrent ? LucideIcons.circleCheck : LucideIcons.circle,
-                size: 20,
-                color: isCurrent
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.onSurfaceVariant,
+            GestureDetector(
+              onTap: onSelect,
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  isCurrent ? LucideIcons.circleCheck : LucideIcons.circle,
+                  size: 18,
+                  color: isCurrent
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
               ),
-              tooltip: '设为当前模型',
-              onPressed: onSelect,
             ),
+            const SizedBox(width: 6),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    model.name,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      fontSize: 15,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                  ),
-                  Text(
-                    model.id,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
+              child: Text(
+                model.name,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontSize: 13,
+                  color: theme.colorScheme.onSurface,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
             if (showTest)
-              IconButton(
+              _MiniIconBtn(
                 icon: testing
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(LucideIcons.circleCheckBig, size: 18),
+                    ? null
+                    : LucideIcons.circleCheckBig,
+                loading: testing,
                 color: theme.brightness == Brightness.dark
                     ? const Color(0xFF66BB6A)
                     : const Color(0xFF2E7D32),
                 tooltip: '测试连接',
                 onPressed: testDisabled ? null : onTest,
               ),
-            IconButton(
-              icon: const Icon(LucideIcons.pencil, size: 16),
+            _MiniIconBtn(
+              icon: LucideIcons.pencil,
               color: theme.colorScheme.secondary,
               tooltip: '编辑',
               onPressed: onTap,
             ),
-            IconButton(
-              icon: const Icon(LucideIcons.trash2, size: 16),
+            _MiniIconBtn(
+              icon: LucideIcons.trash2,
               color: theme.colorScheme.error,
               tooltip: '删除',
               onPressed: onDelete,
@@ -1199,6 +1187,171 @@ class _ModelRow extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 28×28 icon button for model rows — no Material splash padding bloat.
+class _MiniIconBtn extends StatelessWidget {
+  const _MiniIconBtn({
+    this.icon,
+    this.loading = false,
+    required this.color,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData? icon;
+  final bool loading;
+  final Color color;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final child = loading
+        ? SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.5,
+              color: color,
+            ),
+          )
+        : Icon(icon, size: 14, color: onPressed != null ? color : color.withValues(alpha: 0.4));
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.all(5),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact toolbar chip for 获取 / 端点 / 添加 actions.
+class _CompactActionChip extends StatelessWidget {
+  const _CompactActionChip({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+    this.accent,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final Color? accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final enabled = onPressed != null;
+    final base = accent ?? theme.colorScheme.primary;
+    final color = enabled ? base : theme.disabledColor;
+
+    return Material(
+      color: enabled
+          ? base.withValues(alpha: 0.1)
+          : theme.colorScheme.onSurface.withValues(alpha: 0.05),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 13, color: color),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Test mode toggle — icon button with a popup for "长期显示" switch.
+class _TestModeToggle extends StatelessWidget {
+  const _TestModeToggle({
+    required this.active,
+    required this.alwaysShow,
+    required this.onToggleTestMode,
+    required this.onToggleAlwaysShow,
+  });
+
+  final bool active;
+  final bool alwaysShow;
+  final VoidCallback onToggleTestMode;
+  final ValueChanged<bool> onToggleAlwaysShow;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = active
+        ? theme.colorScheme.error
+        : (theme.brightness == Brightness.dark
+            ? const Color(0xFF66BB6A)
+            : const Color(0xFF2E7D32));
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Material(
+          color: color.withValues(alpha: active ? 0.15 : 0.1),
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            onTap: onToggleTestMode,
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(LucideIcons.flaskConical, size: 13, color: color),
+                  const SizedBox(width: 4),
+                  Text(
+                    active ? '退出' : '测试',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Tooltip(
+          message: alwaysShow ? '隐藏测试按钮' : '长期显示测试按钮',
+          child: GestureDetector(
+            onTap: () => onToggleAlwaysShow(!alwaysShow),
+            child: Icon(
+              alwaysShow ? LucideIcons.pin : LucideIcons.pinOff,
+              size: 14,
+              color: alwaysShow
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
