@@ -68,15 +68,25 @@ class _ModelProviderDetailPageState
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(_onTabChanged);
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _apiKeyController.dispose();
     _baseUrlController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onTabChanged() {
+    if (_tabController.indexIsChanging) return;
+    if (_search.isNotEmpty) {
+      _searchController.clear();
+      setState(() => _search = '');
+    }
   }
 
   void _seedFrom(ModelProvider provider) {
@@ -109,7 +119,16 @@ class _ModelProviderDetailPageState
   }
 
   Future<void> _save(ModelProvider provider) async {
-    final updated = provider.copyWith(
+    // Re-read the latest provider state to avoid overwriting concurrent changes
+    // (e.g. models added/removed by _fetchModels/_deleteModel while this page
+    // was open).
+    final freshAsync = ref.read(appModelProviderProvider(provider.id));
+    final fresh = freshAsync.maybeWhen(
+      data: (p) => p,
+      orElse: () => null,
+    );
+    final base = fresh ?? provider;
+    final updated = base.copyWith(
       apiKey: _apiKeyController.text.trim().isEmpty
           ? null
           : _apiKeyController.text.trim(),
@@ -847,6 +866,29 @@ class _ModelProviderDetailPageState
   }
 
   Future<void> _deleteModel(ModelProvider provider, String modelId) async {
+    final model = provider.models.where((m) => m.id == modelId).firstOrNull;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('删除模型'),
+        content: Text('确定要删除「${model?.name ?? modelId}」吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogCtx).colorScheme.error,
+            ),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
     await ref
         .read(modelStoreProvider.notifier)
         .saveProvider(
@@ -857,6 +899,34 @@ class _ModelProviderDetailPageState
             ],
           ),
         );
+    if (!mounted || model == null) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('已删除「${model.name}」'),
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+          label: '撤销',
+          onPressed: () async {
+            final current = ref.read(
+              appModelProviderProvider(provider.id),
+            );
+            final currentProvider = current.maybeWhen(
+              data: (p) => p,
+              orElse: () => null,
+            );
+            if (currentProvider == null) return;
+            await ref
+                .read(modelStoreProvider.notifier)
+                .saveProvider(
+                  currentProvider.copyWith(
+                    models: [...currentProvider.models, model],
+                  ),
+                );
+          },
+        ),
+      ),
+    );
   }
 
   /// Delete an entire model group — shows a dialog, then offers undo via
@@ -868,18 +938,18 @@ class _ModelProviderDetailPageState
   ) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         title: const Text('删除整组模型'),
         content: Text('确定要删除「$groupName」中的 ${models.length} 个模型吗？'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
             child: const Text('取消'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
             style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
+              backgroundColor: Theme.of(dialogCtx).colorScheme.error,
             ),
             child: const Text('删除'),
           ),
