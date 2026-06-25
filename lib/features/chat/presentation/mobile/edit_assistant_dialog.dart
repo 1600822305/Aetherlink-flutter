@@ -14,17 +14,21 @@
 /// acting (no fake buttons), matching the UI-only milestone.
 library;
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
+import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/parameter_settings.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/agent_prompt_selector.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/parameter_editor.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
-import 'package:aetherlink_flutter/shared/domain/custom_parameter.dart';
+import 'package:aetherlink_flutter/shared/domain/assistant_chat_background.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
 
 /// Opens the 编辑助手 dialog for [assistant]. Full-screen on mobile, an 80vh
@@ -67,13 +71,21 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
     text: widget.assistant.systemPrompt ?? '',
   );
   late bool _memoryEnabled = widget.assistant.memoryEnabled ?? false;
+  late AssistantChatBackground _chatBackground =
+      widget.assistant.chatBackground ??
+      const AssistantChatBackground(
+        enabled: false,
+        imageUrl: '',
+        opacity: 0.7,
+        showOverlay: true,
+      );
   late List<String> _skillIds = List<String>.from(
     widget.assistant.skillIds ?? const <String>[],
   );
   late ParameterSettings _paramSettings = _initParamSettings();
-  late final _AssistantParamDelegate _paramDelegate =
-      _AssistantParamDelegate((ps) => setState(() => _paramSettings = ps))
-        ..attach(_initParamSettings());
+  late final _AssistantParamDelegate _paramDelegate = _AssistantParamDelegate(
+    (ps) => setState(() => _paramSettings = ps),
+  )..attach(_initParamSettings());
 
   ParameterSettings _initParamSettings() {
     final a = widget.assistant;
@@ -100,12 +112,14 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
       flags['presencePenalty'] = true;
     }
     final customParams = (a.customParameters ?? const [])
-        .map((cp) => <String, dynamic>{
-              'name': cp.name,
-              'value': cp.value,
-              'type': cp.type.name,
-              'enabled': true,
-            })
+        .map(
+          (cp) => <String, dynamic>{
+            'name': cp.name,
+            'value': cp.value,
+            'type': cp.type.name,
+            'enabled': true,
+          },
+        )
         .toList();
     return ParameterSettings(
       values: values,
@@ -115,6 +129,30 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
   }
 
   bool _saving = false;
+
+  /// Picks a gallery image and stores it as a base64 data URL on the assistant
+  /// wallpaper draft (mirrors the global 聊天背景设置 picker), enabling the
+  /// override on first pick.
+  Future<void> _pickWallpaper() async {
+    final picked = await ref.read(imagePickerApiProvider).pickFromGallery();
+    if (picked == null) return;
+    final mime = _wallpaperMime(picked.name);
+    final dataUrl = 'data:$mime;base64,${base64Encode(picked.bytes)}';
+    setState(() {
+      _chatBackground = _chatBackground.copyWith(
+        imageUrl: dataUrl,
+        enabled: true,
+      );
+    });
+  }
+
+  static String _wallpaperMime(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
 
   void _onTabChanged() {
     if (_tabController.index != _index) {
@@ -167,6 +205,9 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
             memoryEnabled: _memoryEnabled,
             skillIds: _skillIds,
             paramSettings: _paramSettings,
+            chatBackground: _chatBackground.imageUrl.isEmpty
+                ? null
+                : _chatBackground,
           );
       if (mounted) Navigator.of(context).pop();
     } catch (_) {
@@ -202,6 +243,10 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
                 _BasicTab(
                   assistant: widget.assistant,
                   nameController: _nameController,
+                  chatBackground: _chatBackground,
+                  onChatBackgroundChanged: (bg) =>
+                      setState(() => _chatBackground = bg),
+                  onPickWallpaper: _pickWallpaper,
                 ),
                 _PromptTab(
                   controller: _promptController,
@@ -388,10 +433,19 @@ class _IconTab extends StatelessWidget {
 // ── 基础 ─────────────────────────────────────────────────────────────────────
 
 class _BasicTab extends StatelessWidget {
-  const _BasicTab({required this.assistant, required this.nameController});
+  const _BasicTab({
+    required this.assistant,
+    required this.nameController,
+    required this.chatBackground,
+    required this.onChatBackgroundChanged,
+    required this.onPickWallpaper,
+  });
 
   final Assistant assistant;
   final TextEditingController nameController;
+  final AssistantChatBackground chatBackground;
+  final ValueChanged<AssistantChatBackground> onChatBackgroundChanged;
+  final Future<void> Function() onPickWallpaper;
 
   String get _avatarText {
     final emoji = assistant.emoji;
@@ -455,52 +509,168 @@ class _BasicTab extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 24),
-        _label(theme, '聊天壁纸'),
-        const SizedBox(height: 4),
-        Text(
-          '助手壁纸优先级高于全局设置',
-          style: TextStyle(
-            fontSize: 12,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _label(theme, '聊天壁纸'),
+                  const SizedBox(height: 4),
+                  Text(
+                    '助手壁纸优先级高于全局设置',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            CustomSwitch(
+              value: chatBackground.enabled,
+              onChanged: (v) =>
+                  onChatBackgroundChanged(chatBackground.copyWith(enabled: v)),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
-        _ComingSoonTooltip(
-          message: '即将支持：上传聊天壁纸',
-          child: Container(
-            height: 100,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: theme.dividerColor,
-                style: BorderStyle.solid,
-                width: 2,
-              ),
-              color: theme.colorScheme.surfaceContainerHighest.withValues(
-                alpha: 0.3,
-              ),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  LucideIcons.image,
-                  size: 26,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '即将支持：上传壁纸',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
+        _WallpaperArea(
+          imageUrl: chatBackground.imageUrl,
+          onPick: onPickWallpaper,
+          onRemove: () => onChatBackgroundChanged(
+            chatBackground.copyWith(imageUrl: '', enabled: false),
           ),
         ),
+        if (chatBackground.enabled && chatBackground.imageUrl.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          _label(
+            theme,
+            '背景透明度  ${((chatBackground.opacity ?? 0.7) * 100).round()}%',
+          ),
+          Slider(
+            min: 0.1,
+            max: 1,
+            divisions: 9,
+            value: (chatBackground.opacity ?? 0.7).clamp(0.1, 1),
+            label: '${((chatBackground.opacity ?? 0.7) * 100).round()}%',
+            onChanged: (v) =>
+                onChatBackgroundChanged(chatBackground.copyWith(opacity: v)),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: Text('显示渐变遮罩', style: theme.textTheme.bodyMedium),
+              ),
+              const SizedBox(width: 12),
+              CustomSwitch(
+                value: chatBackground.showOverlay ?? true,
+                onChanged: (v) => onChatBackgroundChanged(
+                  chatBackground.copyWith(showOverlay: v),
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
+    );
+  }
+}
+
+/// The assistant wallpaper picker: a tap-to-upload dropzone, or a preview with
+/// a remove affordance once an image is set (mirrors the global 聊天背景设置
+/// `_ImageArea`).
+class _WallpaperArea extends StatelessWidget {
+  const _WallpaperArea({
+    required this.imageUrl,
+    required this.onPick,
+    required this.onRemove,
+  });
+
+  final String imageUrl;
+  final Future<void> Function() onPick;
+  final VoidCallback onRemove;
+
+  MemoryImage? _decode() {
+    final marker = imageUrl.indexOf('base64,');
+    if (marker < 0) return null;
+    try {
+      return MemoryImage(base64Decode(imageUrl.substring(marker + 7)));
+    } on FormatException {
+      return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final image = _decode();
+
+    if (image != null) {
+      return Stack(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image(
+              image: image,
+              height: 120,
+              width: double.infinity,
+              fit: BoxFit.cover,
+            ),
+          ),
+          Positioned(
+            top: 6,
+            right: 6,
+            child: Material(
+              color: Colors.black54,
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: onRemove,
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(LucideIcons.x, size: 14, color: Colors.white),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return InkWell(
+      onTap: onPick,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        height: 100,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: theme.dividerColor, width: 2),
+          color: theme.colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.3,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              LucideIcons.imagePlus,
+              size: 26,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '点击上传壁纸',
+              style: TextStyle(
+                fontSize: 12,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -853,12 +1023,7 @@ class _ParameterTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(16),
-      children: [
-        ParameterEditor(
-          settings: settings,
-          delegate: delegate,
-        ),
-      ],
+      children: [ParameterEditor(settings: settings, delegate: delegate)],
     );
   }
 }
@@ -893,7 +1058,8 @@ class _AssistantParamDelegate implements ParameterDelegate {
 
   @override
   void addCustomParameter(Map<String, dynamic> param) {
-    final next = List<Map<String, dynamic>>.of(_ps.customParameters)..add(param);
+    final next = List<Map<String, dynamic>>.of(_ps.customParameters)
+      ..add(param);
     _ps = _ps.copyWith(customParameters: next);
     _onChanged(_ps);
   }

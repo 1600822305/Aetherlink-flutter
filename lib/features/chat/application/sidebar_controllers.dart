@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/parameter_settings.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
+import 'package:aetherlink_flutter/shared/domain/assistant_chat_background.dart';
 import 'package:aetherlink_flutter/shared/domain/custom_parameter.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/quick_phrase.dart';
@@ -331,6 +332,7 @@ class Assistants extends _$Assistants {
     required bool memoryEnabled,
     required List<String> skillIds,
     ParameterSettings? paramSettings,
+    AssistantChatBackground? chatBackground,
   }) async {
     final assistant = await _repo.getAssistant(id);
     if (assistant == null) {
@@ -341,6 +343,7 @@ class Assistants extends _$Assistants {
       systemPrompt: systemPrompt,
       memoryEnabled: memoryEnabled,
       skillIds: skillIds,
+      chatBackground: chatBackground,
       updatedAt: DateTime.now(),
     );
     if (paramSettings != null) {
@@ -361,8 +364,7 @@ class Assistants extends _$Assistants {
       temperature: flags['temperature'] == true
           ? (vals['temperature'] as num?)?.toDouble()
           : null,
-      topP:
-          flags['topP'] == true ? (vals['topP'] as num?)?.toDouble() : null,
+      topP: flags['topP'] == true ? (vals['topP'] as num?)?.toDouble() : null,
       maxTokens: flags['maxTokens'] == true
           ? (vals['maxTokens'] as num?)?.toInt()
           : null,

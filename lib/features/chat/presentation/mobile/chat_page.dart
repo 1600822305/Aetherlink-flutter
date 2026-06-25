@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/app/di/chat_interface_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/message_selection_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/controllers/chat_auto_scroll_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
@@ -20,6 +21,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/ch
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_top_bar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/system_prompt_bubble.dart';
+import 'package:aetherlink_flutter/shared/domain/assistant_chat_background.dart';
 import 'package:aetherlink_flutter/shared/domain/chat_interface_settings.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 import 'package:aetherlink_flutter/features/voice/presentation/widgets/tts_floating_player.dart';
@@ -76,6 +78,15 @@ class ChatPage extends ConsumerWidget {
     final background = ref.watch(
       chatInterfaceSettingsProvider.select((s) => s.background),
     );
+    // Per-assistant wallpaper overrides the global background (web:
+    // 助手壁纸优先级高于全局设置).
+    final assistantBackground = ref.watch(
+      currentAssistantProvider.select((a) => a?.chatBackground),
+    );
+    final effectiveBackground = _resolveBackground(
+      assistantBackground,
+      background,
+    );
     final isSelecting = ref.watch(
       messageSelectionProvider.select((s) => s.isSelecting),
     );
@@ -107,7 +118,7 @@ class ChatPage extends ConsumerWidget {
               ? const MessageSelectionTopBar()
               : const ChatTopBar(),
           body: _ChatBackground(
-            background: background,
+            background: effectiveBackground,
             child: _ChatBody(
               showSystemPromptBubble: showSystemPromptBubble,
               stateAsync: stateAsync,
@@ -402,6 +413,29 @@ class _FadeToBottom extends StatelessWidget {
 /// When disabled (or no image) it collapses to the original solid themed
 /// surface. The image is a base64 data URL; it is decoded once and cached as a
 /// [MemoryImage] so rebuilds (typing, streaming) never re-decode it.
+
+/// Resolves the wallpaper to render: the current assistant's [chatBackground]
+/// wins when it is enabled with an image (web: 助手壁纸优先级高于全局设置),
+/// otherwise the [global] chat-interface background is used. The assistant's
+/// optional fields fall back to the same defaults as the global block.
+ChatBackgroundSettings _resolveBackground(
+  AssistantChatBackground? assistant,
+  ChatBackgroundSettings global,
+) {
+  if (assistant != null && assistant.enabled && assistant.imageUrl.isNotEmpty) {
+    return ChatBackgroundSettings(
+      enabled: true,
+      imageUrl: assistant.imageUrl,
+      opacity: assistant.opacity ?? 0.7,
+      size: ChatBackgroundSize.fromId(assistant.size),
+      position: ChatBackgroundPosition.fromId(assistant.position),
+      repeat: ChatBackgroundRepeat.fromId(assistant.repeat),
+      showOverlay: assistant.showOverlay ?? true,
+    );
+  }
+  return global;
+}
+
 class _ChatBackground extends StatefulWidget {
   const _ChatBackground({required this.background, required this.child});
 
