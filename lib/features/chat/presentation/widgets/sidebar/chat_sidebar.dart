@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/notes_sidebar_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
@@ -121,7 +122,11 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
                 children: [
                   AssistantTab(onGoToTopics: () => tabController.animateTo(1)),
                   const TopicTab(),
-                  if (showNotes) const _NotesTabPanel(),
+                  if (showNotes)
+                    ref.watch(notesSidebarPanelBuilderProvider)(
+                      onNavigate: () =>
+                          SidebarScope.maybeOf(context)?.closeSidebar(),
+                    ),
                   const SettingsTab(),
                 ],
               ),
@@ -239,65 +244,6 @@ class _SidebarTab extends StatelessWidget {
           const SizedBox(width: 4),
           Text(label),
         ],
-      ),
-    );
-  }
-}
-
-/// The sidebar 笔记 Tab content. The full notes browser lives in the `notes`
-/// feature; the import-boundary rule forbids chat from embedding it, so this
-/// panel navigates to the notes route (via [AppRouter]) and closes the drawer.
-class _NotesTabPanel extends StatelessWidget {
-  const _NotesTabPanel();
-
-  void _open(BuildContext context, String route) {
-    SidebarScope.maybeOf(context)?.closeSidebar();
-    context.push(route);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              LucideIcons.fileText,
-              size: 44,
-              color: theme.colorScheme.primary.withValues(alpha: 0.85),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _notesTabLabel,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: theme.colorScheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '本地 Markdown 笔记，支持文件夹、排序与收藏',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton.icon(
-              onPressed: () => _open(context, AppRouter.notesPath),
-              icon: const Icon(LucideIcons.arrowRight, size: 16),
-              label: const Text('打开笔记'),
-            ),
-            const SizedBox(height: 4),
-            TextButton(
-              onPressed: () => _open(context, AppRouter.notesSettingsPath),
-              child: const Text('笔记设置'),
-            ),
-          ],
-        ),
       ),
     );
   }

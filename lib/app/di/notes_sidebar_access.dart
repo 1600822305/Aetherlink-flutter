@@ -1,6 +1,8 @@
+import 'package:flutter/widgets.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
+import 'package:aetherlink_flutter/features/notes/presentation/mobile/notes_sidebar_panel.dart';
 
 part 'notes_sidebar_access.g.dart';
 
@@ -32,3 +34,15 @@ class NotesSidebarTabToggle {
 @Riverpod(keepAlive: true)
 NotesSidebarTabToggle notesSidebarTabToggle(Ref ref) =>
     NotesSidebarTabToggle(ref);
+
+/// Builds the embedded notes browser for the chat sidebar 笔记 Tab.
+///
+/// The browser widget lives in `notes/presentation`; composing it into the chat
+/// sidebar would otherwise break the feature-boundary rule, so it's injected
+/// here in `app/`. [onNavigate] lets the host close the drawer before the panel
+/// pushes a route.
+typedef NotesSidebarPanelBuilder = Widget Function({VoidCallback? onNavigate});
+
+@Riverpod(keepAlive: true)
+NotesSidebarPanelBuilder notesSidebarPanelBuilder(Ref ref) =>
+    ({VoidCallback? onNavigate}) => NotesSidebarPanel(onNavigate: onNavigate);
