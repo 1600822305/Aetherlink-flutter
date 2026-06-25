@@ -40,6 +40,7 @@ class NoteEditorPage extends ConsumerStatefulWidget {
 
 class _NoteEditorPageState extends ConsumerState<NoteEditorPage> {
   final TextEditingController _controller = TextEditingController();
+  final UndoHistoryController _undoController = UndoHistoryController();
   final FocusNode _focusNode = FocusNode();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   Timer? _debounce;
@@ -84,6 +85,7 @@ class _NoteEditorPageState extends ConsumerState<NoteEditorPage> {
       unawaited(store.write(widget.relativePath, _controller.text));
     }
     _controller.dispose();
+    _undoController.dispose();
     _focusNode.dispose();
     super.dispose();
   }
@@ -206,6 +208,7 @@ class _NoteEditorPageState extends ConsumerState<NoteEditorPage> {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     return TextField(
       controller: _controller,
+      undoController: _undoController,
       focusNode: _focusNode,
       onChanged: _onChanged,
       maxLines: null,
@@ -375,18 +378,30 @@ class _NoteEditorPageState extends ConsumerState<NoteEditorPage> {
       case _ToolbarAction.inlineCode:
         newText = text.replaceRange(start, end, '`$selected`');
         caret = start + 1 + selected.length + (hasSel ? 1 : 0);
+      case _ToolbarAction.underline:
+        // Markdown has no native underline; embed an HTML <u> tag.
+        newText = text.replaceRange(start, end, '<u>$selected</u>');
+        caret = start + 3 + selected.length + (hasSel ? 4 : 0);
+      case _ToolbarAction.undo:
+        return _undo();
+      case _ToolbarAction.redo:
+        return _redo();
       case _ToolbarAction.h1:
-        return _applyLinePrefix('# ');
+        return _applyBlockPrefix('# ');
       case _ToolbarAction.h2:
-        return _applyLinePrefix('## ');
+        return _applyBlockPrefix('## ');
+      case _ToolbarAction.h3:
+        return _applyBlockPrefix('### ');
+      case _ToolbarAction.paragraph:
+        return _applyBlockPrefix(null);
       case _ToolbarAction.bulletList:
-        return _applyLinePrefix('- ');
+        return _applyBlockPrefix('- ');
       case _ToolbarAction.orderedList:
-        return _applyLinePrefix('1. ');
+        return _applyBlockPrefix('1. ');
       case _ToolbarAction.taskList:
-        return _applyLinePrefix('- [ ] ');
+        return _applyBlockPrefix('- [ ] ');
       case _ToolbarAction.quote:
-        return _applyLinePrefix('> ');
+        return _applyBlockPrefix('> ');
       case _ToolbarAction.codeBlock:
         final block = '```\n$selected\n```';
         newText = text.replaceRange(start, end, block);
@@ -402,12 +417,7 @@ class _NoteEditorPageState extends ConsumerState<NoteEditorPage> {
         newText = text.replaceRange(start, end, insert);
         caret = start + 4 + body.length; // after "\n$$\n" + any selection
       case _ToolbarAction.link:
-        newText = text.replaceRange(
-          start,
-          end,
-          '[${selected.isEmpty ? '链接文字' : selected}](url)',
-        );
-        caret = newText.length;
+        return _applyLink(text, start, end, selected);
       case _ToolbarAction.divider:
         final insert = '\n---\n';
         newText = text.replaceRange(start, end, insert);
@@ -423,19 +433,92 @@ class _NoteEditorPageState extends ConsumerState<NoteEditorPage> {
     _focusNode.requestFocus();
   }
 
-  /// Inserts [prefix] at the start of the line containing the cursor.
-  void _applyLinePrefix(String prefix) {
+  /// Inserts a link, selecting the `url` placeholder so it can be typed over.
+  void _applyLink(String text, int start, int end, String selected) {
+    final label = selected.isEmpty ? '链接文字' : selected;
+    final inserted = '[$label](url)';
+    final newText = text.replaceRange(start, end, inserted);
+    final urlStart = start + 1 + label.length + 2; // after "[label]("
+    _controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection(
+        baseOffset: urlStart,
+        extentOffset: urlStart + 3, // selects "url"
+      ),
+    );
+    _onChanged(newText);
+    _focusNode.requestFocus();
+  }
+
+  void _undo() {
+    _undoController.undo();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _onChanged(_controller.text);
+    });
+  }
+
+  void _redo() {
+    _undoController.redo();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _onChanged(_controller.text);
+    });
+  }
+
+  /// Detects the leading block-level Markdown prefix of [line], if any
+  /// (heading, bullet/ordered/task list, or blockquote).
+  String _detectBlockPrefix(String line) {
+    final ordered = RegExp(r'^\d+\. ').firstMatch(line);
+    if (ordered != null) return ordered.group(0)!;
+    for (final p in const ['- [ ] ', '### ', '## ', '# ', '- ', '> ']) {
+      if (line.startsWith(p)) return p;
+    }
+    return '';
+  }
+
+  /// Whether [existing] is the same *kind* of block prefix as [target]
+  /// (so re-applying it toggles the prefix off rather than stacking).
+  bool _samePrefixKind(String existing, String target) {
+    if (existing.isEmpty) return false;
+    final ordered = RegExp(r'^\d+\. $');
+    if (ordered.hasMatch(target)) return ordered.hasMatch(existing);
+    return existing == target;
+  }
+
+  /// Applies a block-level [prefix] to every line in the selection, toggling it
+  /// off if already present and replacing any conflicting block prefix.
+  /// A null [prefix] strips the existing prefix (the "正文/paragraph" action).
+  void _applyBlockPrefix(String? prefix) {
     final sel = _controller.selection;
     final text = _controller.text;
-    final pos = sel.isValid ? sel.start : text.length;
-    var lineStart = pos;
+    final start = sel.isValid ? sel.start : text.length;
+    final end = sel.isValid ? sel.end : start;
+
+    var lineStart = start;
     while (lineStart > 0 && text[lineStart - 1] != '\n') {
       lineStart--;
     }
-    final newText = text.replaceRange(lineStart, lineStart, prefix);
+    var lineEnd = end;
+    while (lineEnd < text.length && text[lineEnd] != '\n') {
+      lineEnd++;
+    }
+
+    final lines = text.substring(lineStart, lineEnd).split('\n');
+    final newLines = lines.map((line) {
+      final existing = _detectBlockPrefix(line);
+      final body = line.substring(existing.length);
+      if (prefix == null) return body;
+      if (_samePrefixKind(existing, prefix)) return body;
+      return '$prefix$body';
+    }).toList();
+
+    final replaced = newLines.join('\n');
+    final newText = text.replaceRange(lineStart, lineEnd, replaced);
     _controller.value = TextEditingValue(
       text: newText,
-      selection: TextSelection.collapsed(offset: pos + prefix.length),
+      selection: TextSelection(
+        baseOffset: lineStart,
+        extentOffset: lineStart + replaced.length,
+      ),
     );
     _onChanged(newText);
     _focusNode.requestFocus();
@@ -445,8 +528,11 @@ class _NoteEditorPageState extends ConsumerState<NoteEditorPage> {
 enum _ToolbarAction {
   h1,
   h2,
+  h3,
+  paragraph,
   bold,
   italic,
+  underline,
   strike,
   inlineCode,
   bulletList,
@@ -458,6 +544,8 @@ enum _ToolbarAction {
   math,
   link,
   divider,
+  undo,
+  redo,
 }
 
 /// The right-aligned sub-toolbar above the editor: live character count, zoom
@@ -671,8 +759,11 @@ class _MarkdownToolbar extends StatelessWidget {
   _items = [
     (action: _ToolbarAction.h1, icon: LucideIcons.heading1, tip: '一级标题'),
     (action: _ToolbarAction.h2, icon: LucideIcons.heading2, tip: '二级标题'),
+    (action: _ToolbarAction.h3, icon: LucideIcons.heading3, tip: '三级标题'),
+    (action: _ToolbarAction.paragraph, icon: LucideIcons.pilcrow, tip: '正文'),
     (action: _ToolbarAction.bold, icon: LucideIcons.bold, tip: '加粗'),
     (action: _ToolbarAction.italic, icon: LucideIcons.italic, tip: '斜体'),
+    (action: _ToolbarAction.underline, icon: LucideIcons.underline, tip: '下划线'),
     (
       action: _ToolbarAction.strike,
       icon: LucideIcons.strikethrough,
@@ -700,6 +791,8 @@ class _MarkdownToolbar extends StatelessWidget {
     (action: _ToolbarAction.math, icon: LucideIcons.sigma, tip: '数学公式'),
     (action: _ToolbarAction.link, icon: LucideIcons.link, tip: '链接'),
     (action: _ToolbarAction.divider, icon: LucideIcons.minus, tip: '分割线'),
+    (action: _ToolbarAction.undo, icon: LucideIcons.undo2, tip: '撤销'),
+    (action: _ToolbarAction.redo, icon: LucideIcons.redo2, tip: '重做'),
   ];
 
   @override
