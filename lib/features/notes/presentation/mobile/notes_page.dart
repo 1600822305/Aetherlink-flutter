@@ -51,132 +51,88 @@ class NotesPage extends ConsumerWidget {
           const SizedBox(width: 4),
         ],
       ),
-      body: Padding(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          16,
-          16,
-          16 + MediaQuery.paddingOf(context).bottom,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(child: _buildFileCard(context, ref, theme)),
-            const SizedBox(height: 8),
-            Text(
-              '注意：笔记功能依赖于本地文件系统访问权限。请确保已授予应用相应的存储权限。',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      ),
+      body: SafeArea(top: false, child: _buildFileView(context, ref, theme)),
     );
   }
 
-  /// The web 「笔记文件」 management card: a header toolbar (new note /
-  /// new folder / sort / favorites / search), an inline breadcrumb, the file
-  /// list and a bottom import affordance — all inside one rounded card.
-  Widget _buildFileCard(BuildContext context, WidgetRef ref, ThemeData theme) {
+  /// The full-screen 「笔记文件」 view: a header toolbar (new note / new
+  /// folder / sort / favorites / search), an inline breadcrumb, the file list
+  /// and a bottom import affordance — laid out edge-to-edge (no inner card).
+  Widget _buildFileView(BuildContext context, WidgetRef ref, ThemeData theme) {
     final state = ref.watch(notesControllerProvider);
     final controller = ref.read(notesControllerProvider.notifier);
     final search = ref.watch(notesSearchControllerProvider);
     final searchCtrl = ref.read(notesSearchControllerProvider.notifier);
     final searching = search.active && search.hasQuery;
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.dividerColor),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0D000000),
-            blurRadius: 12,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
-              child: Row(
-                children: [
-                  Text(
-                    '笔记文件',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(LucideIcons.filePlus, size: 18),
-                    color: theme.colorScheme.onSurfaceVariant,
-                    tooltip: '新建笔记',
-                    onPressed: () =>
-                        _promptCreate(context, ref, isFolder: false),
-                  ),
-                  IconButton(
-                    icon: const Icon(LucideIcons.folderPlus, size: 18),
-                    color: theme.colorScheme.onSurfaceVariant,
-                    tooltip: '新建文件夹',
-                    onPressed: () =>
-                        _promptCreate(context, ref, isFolder: true),
-                  ),
-                  _SortMenu(
-                    current: state.sort,
-                    onSelected: controller.setSort,
-                  ),
-                  IconButton(
-                    icon: const Icon(LucideIcons.star, size: 18),
-                    color: theme.disabledColor,
-                    tooltip: '收藏（即将推出）',
-                    onPressed: null,
-                  ),
-                  IconButton(
-                    icon: const Icon(LucideIcons.search, size: 18),
-                    color: search.active
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.onSurfaceVariant,
-                    tooltip: '搜索',
-                    onPressed: () =>
-                        search.active ? searchCtrl.close() : searchCtrl.open(),
-                  ),
-                ],
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
+          child: Row(
+            children: [
+              Text(
+                '笔记文件',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurface,
+                ),
               ),
-            ),
-            Divider(height: 1, color: theme.dividerColor),
-            if (search.active)
-              _SearchBar(
-                loading: search.loading,
-                onChanged: searchCtrl.search,
-                onClose: searchCtrl.close,
+              const Spacer(),
+              IconButton(
+                icon: const Icon(LucideIcons.filePlus, size: 18),
+                color: theme.colorScheme.onSurfaceVariant,
+                tooltip: '新建笔记',
+                onPressed: () => _promptCreate(context, ref, isFolder: false),
               ),
-            if (searching)
-              Expanded(child: _buildSearchResults(context, ref, theme, search))
-            else ...[
-              _Breadcrumbs(
-                state: state,
-                controller: controller,
-                onMoveTo: (dragged, destPath) =>
-                    _move(context, ref, dragged, destPath),
+              IconButton(
+                icon: const Icon(LucideIcons.folderPlus, size: 18),
+                color: theme.colorScheme.onSurfaceVariant,
+                tooltip: '新建文件夹',
+                onPressed: () => _promptCreate(context, ref, isFolder: true),
               ),
-              Divider(height: 1, color: theme.dividerColor),
-              Expanded(
-                child: _buildBody(context, ref, theme, state, controller),
+              _SortMenu(current: state.sort, onSelected: controller.setSort),
+              IconButton(
+                icon: const Icon(LucideIcons.star, size: 18),
+                color: theme.disabledColor,
+                tooltip: '收藏（即将推出）',
+                onPressed: null,
               ),
-              Divider(height: 1, color: theme.dividerColor),
-              _ImportArea(onTap: () => _importMenu(context, ref)),
+              IconButton(
+                icon: const Icon(LucideIcons.search, size: 18),
+                color: search.active
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurfaceVariant,
+                tooltip: '搜索',
+                onPressed: () =>
+                    search.active ? searchCtrl.close() : searchCtrl.open(),
+              ),
             ],
-          ],
+          ),
         ),
-      ),
+        Divider(height: 1, color: theme.dividerColor),
+        if (search.active)
+          _SearchBar(
+            loading: search.loading,
+            onChanged: searchCtrl.search,
+            onClose: searchCtrl.close,
+          ),
+        if (searching)
+          Expanded(child: _buildSearchResults(context, ref, theme, search))
+        else ...[
+          _Breadcrumbs(
+            state: state,
+            controller: controller,
+            onMoveTo: (dragged, destPath) =>
+                _move(context, ref, dragged, destPath),
+          ),
+          Divider(height: 1, color: theme.dividerColor),
+          Expanded(child: _buildBody(context, ref, theme, state, controller)),
+          Divider(height: 1, color: theme.dividerColor),
+          _ImportArea(onTap: () => _importMenu(context, ref)),
+        ],
+      ],
     );
   }
 
