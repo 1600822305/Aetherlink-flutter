@@ -75,9 +75,8 @@ class _FontFieldRow extends ConsumerWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(16),
       onTap: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) =>
-              FontPickerPage(dimension: dimension, current: selection),
+        _fastPickerRoute(
+          FontPickerPage(dimension: dimension, current: selection),
         ),
       ),
       child: InputDecorator(
@@ -151,6 +150,33 @@ class _SourceTag extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A snappy push route for [FontPickerPage]: a brief fade + slide that avoids
+/// the default `MaterialPageRoute`'s long forward/return transition lag.
+PageRoute<void> _fastPickerRoute(Widget page) {
+  return PageRouteBuilder<void>(
+    transitionDuration: const Duration(milliseconds: 160),
+    reverseTransitionDuration: const Duration(milliseconds: 120),
+    pageBuilder: (_, __, ___) => page,
+    transitionsBuilder: (_, animation, __, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.02),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
 }
 
 /// A full-page picker for one [FontDimension]. Fonts can be chosen from one of
