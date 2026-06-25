@@ -199,27 +199,49 @@ class _FullScreenVoicePickerState extends State<FullScreenVoicePicker>
                     ),
                   ),
                 ),
-                // Tabs
-                TabBar(
-                  controller: _tabCtrl,
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.start,
-                  labelStyle: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                // Scrollable pill segmented control — same style as the
+                // 辅助模型 / 外观 / 编辑助手 tabs: rounded bordered track + a
+                // tinted rounded indicator, suited for many groups.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: theme.dividerColor),
+                      color: theme.colorScheme.surface,
+                    ),
+                    padding: const EdgeInsets.all(3),
+                    child: TabBar(
+                      controller: _tabCtrl,
+                      isScrollable: true,
+                      tabAlignment: TabAlignment.start,
+                      indicator: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        color: theme.colorScheme.primary.withValues(
+                          alpha: 0.12,
+                        ),
+                      ),
+                      indicatorSize: TabBarIndicatorSize.tab,
+                      dividerHeight: 0,
+                      labelColor: theme.colorScheme.primary,
+                      unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+                      labelStyle: theme.textTheme.labelLarge?.copyWith(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      unselectedLabelStyle: theme.textTheme.labelLarge?.copyWith(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      labelPadding: const EdgeInsets.symmetric(horizontal: 12),
+                      tabs: [
+                        const Tab(text: '全部', height: 34),
+                        ...widget.groups.map(
+                          (g) => Tab(text: g.name, height: 34),
+                        ),
+                      ],
+                    ),
                   ),
-                  unselectedLabelStyle: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w400,
-                  ),
-                  labelColor: theme.colorScheme.primary,
-                  unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-                  indicatorSize: TabBarIndicatorSize.label,
-                  dividerColor: Colors.transparent,
-                  tabs: [
-                    const Tab(text: '全部', height: 36),
-                    ...widget.groups.map((g) => Tab(text: g.name, height: 36)),
-                  ],
                 ),
               ],
             ),

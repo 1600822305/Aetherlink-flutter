@@ -288,29 +288,48 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
   // ---- Tab bar --------------------------------------------------------------
 
   Widget _tabBar(ThemeData theme) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: theme.dividerColor)),
-      ),
-      child: TabBar(
-        controller: _tabController,
-        isScrollable: true,
-        tabAlignment: TabAlignment.start,
-        labelColor: theme.colorScheme.primary,
-        unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-        indicatorColor: theme.colorScheme.primary,
-        indicatorSize: TabBarIndicatorSize.label,
-        dividerColor: Colors.transparent,
-        labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: const TextStyle(fontSize: 13),
-        tabs: const [
-          _IconTab(icon: LucideIcons.settings, label: '基础'),
-          _IconTab(icon: LucideIcons.fileText, label: '提示词'),
-          _IconTab(icon: LucideIcons.settings2, label: '参数'),
-          _IconTab(icon: LucideIcons.wand2, label: '正则'),
-          _IconTab(icon: LucideIcons.brain, label: '记忆'),
-          _IconTab(icon: LucideIcons.zap, label: '技能'),
-        ],
+    // Scrollable pill segmented control — same style as the 辅助模型 / 外观 /
+    // 消息气泡 / 智能体提示词 settings pages: rounded bordered track + tinted
+    // rounded indicator, suited for many tabs.
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: theme.dividerColor),
+          color: theme.colorScheme.surface,
+        ),
+        padding: const EdgeInsets.all(3),
+        child: TabBar(
+          controller: _tabController,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          indicator: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            color: theme.colorScheme.primary.withValues(alpha: 0.12),
+          ),
+          indicatorSize: TabBarIndicatorSize.tab,
+          dividerHeight: 0,
+          labelColor: theme.colorScheme.primary,
+          unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+          labelStyle: theme.textTheme.labelLarge?.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+          unselectedLabelStyle: theme.textTheme.labelLarge?.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+          labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+          tabs: const [
+            _IconTab(icon: LucideIcons.settings, label: '基础'),
+            _IconTab(icon: LucideIcons.fileText, label: '提示词'),
+            _IconTab(icon: LucideIcons.settings2, label: '参数'),
+            _IconTab(icon: LucideIcons.wand2, label: '正则'),
+            _IconTab(icon: LucideIcons.brain, label: '记忆'),
+            _IconTab(icon: LucideIcons.zap, label: '技能'),
+          ],
+        ),
       ),
     );
   }
@@ -357,7 +376,7 @@ class _IconTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Tab(
-      height: 44,
+      height: 34,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [Icon(icon, size: 15), const SizedBox(width: 5), Text(label)],

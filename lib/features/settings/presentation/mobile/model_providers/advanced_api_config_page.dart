@@ -114,22 +114,46 @@ class _AdvancedApiConfigPageState extends ConsumerState<AdvancedApiConfigPage>
       ),
       body: Column(
         children: [
-          Material(
-            color: theme.colorScheme.surface,
+          // Pill segmented control — same style as 语音功能 / MCP 服务器
+          // settings: rounded grey track + white card indicator (1px shadow).
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(10),
+            ),
             child: TabBar(
               controller: _tabController,
-              isScrollable: true,
-              tabAlignment: TabAlignment.start,
-              labelColor: theme.colorScheme.primary,
+              indicator: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x14000000),
+                    blurRadius: 4,
+                    offset: Offset(0, 1),
+                  ),
+                ],
+              ),
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              labelColor: theme.colorScheme.onSurface,
               unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-              indicatorColor: theme.colorScheme.primary,
+              labelStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+              unselectedLabelStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
               tabs: const [
-                Tab(text: AdvancedApiConfigPage._headersTab),
-                Tab(text: AdvancedApiConfigPage._bodyTab),
+                Tab(height: 32, text: AdvancedApiConfigPage._headersTab),
+                Tab(height: 32, text: AdvancedApiConfigPage._bodyTab),
               ],
             ),
           ),
-          const Divider(height: 1, thickness: 1),
           Expanded(
             child: AnimatedBuilder(
               animation: _tabController,
