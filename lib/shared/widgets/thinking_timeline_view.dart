@@ -16,10 +16,12 @@ typedef TimelineMarkdownBuilder =
 // Data types for the timeline steps
 // ---------------------------------------------------------------------------
 
+/// A single step in the chain-of-thought timeline.
 sealed class TimelineStep {
   const TimelineStep();
 }
 
+/// A reasoning/thinking segment.
 class ReasoningTimelineStep extends TimelineStep {
   const ReasoningTimelineStep({
     required this.content,
@@ -34,6 +36,7 @@ class ReasoningTimelineStep extends TimelineStep {
   final DateTime? createdAt;
 }
 
+/// A tool call step.
 class ToolTimelineStep extends TimelineStep {
   const ToolTimelineStep({required this.block});
 
@@ -41,107 +44,13 @@ class ToolTimelineStep extends TimelineStep {
 }
 
 // ---------------------------------------------------------------------------
-// RikkaHub-style ReasoningCardState (three states)
-// ---------------------------------------------------------------------------
-
-enum ReasoningCardState {
-  collapsed(expanded: false),
-  preview(expanded: true),
-  expanded(expanded: true);
-
-  const ReasoningCardState({required this.expanded});
-  final bool expanded;
-}
-
-// ---------------------------------------------------------------------------
-// Tool icon/title registry (ToolUIRegistry equivalent)
-// ---------------------------------------------------------------------------
-
-class _ToolUIInfo {
-  const _ToolUIInfo({required this.icon, required this.title});
-  final IconData icon;
-  final String title;
-}
-
-_ToolUIInfo _resolveToolUI(String toolName) {
-  final lower = toolName.toLowerCase();
-
-  // Search tools
-  if (lower.contains('search') || lower.contains('搜索')) {
-    return _ToolUIInfo(icon: LucideIcons.search, title: toolName);
-  }
-  if (lower.contains('scrape') || lower.contains('fetch') || lower.contains('browse') || lower.contains('crawl')) {
-    return _ToolUIInfo(icon: LucideIcons.globe, title: toolName);
-  }
-  // File tools
-  if (lower.contains('read_file') || lower.contains('readfile')) {
-    return _ToolUIInfo(icon: LucideIcons.fileText, title: toolName);
-  }
-  if (lower.contains('write_file') || lower.contains('writefile') || lower.contains('edit_file')) {
-    return _ToolUIInfo(icon: LucideIcons.filePen, title: toolName);
-  }
-  // Shell / command
-  if (lower.contains('shell') || lower.contains('exec') || lower.contains('command') || lower.contains('terminal')) {
-    return _ToolUIInfo(icon: LucideIcons.terminal, title: toolName);
-  }
-  // Memory
-  if (lower.contains('memory') || lower.contains('remember')) {
-    return _ToolUIInfo(icon: LucideIcons.brain, title: toolName);
-  }
-  // Clipboard
-  if (lower.contains('clipboard') || lower.contains('copy') || lower.contains('paste')) {
-    return _ToolUIInfo(icon: LucideIcons.clipboard, title: toolName);
-  }
-  // TTS / speech
-  if (lower.contains('speech') || lower.contains('tts') || lower.contains('voice')) {
-    return _ToolUIInfo(icon: LucideIcons.volume2, title: toolName);
-  }
-  // Code / programming
-  if (lower.contains('code') || lower.contains('python') || lower.contains('javascript')) {
-    return _ToolUIInfo(icon: LucideIcons.code, title: toolName);
-  }
-  // Image / vision
-  if (lower.contains('image') || lower.contains('vision') || lower.contains('画')) {
-    return _ToolUIInfo(icon: LucideIcons.image, title: toolName);
-  }
-  // Calculator / math
-  if (lower.contains('calc') || lower.contains('math')) {
-    return _ToolUIInfo(icon: LucideIcons.calculator, title: toolName);
-  }
-  // Database
-  if (lower.contains('database') || lower.contains('sql') || lower.contains('query')) {
-    return _ToolUIInfo(icon: LucideIcons.database, title: toolName);
-  }
-
-  // Default fallback
-  return _ToolUIInfo(icon: LucideIcons.wrench, title: toolName);
-}
-
-// ---------------------------------------------------------------------------
-// extractThinkingTitle — RikkaHub's extractThinkingTitle equivalent
-// ---------------------------------------------------------------------------
-
-final RegExp _boldLinePattern = RegExp(r'^\*\*(.+?)\*\*$');
-
-String? _extractThinkingTitle(String content) {
-  if (content.isEmpty) return null;
-  final lines = content.split('\n');
-  for (var i = lines.length - 1; i >= 0; i--) {
-    final line = lines[i].trim();
-    if (line.isEmpty) continue;
-    final match = _boldLinePattern.firstMatch(line);
-    if (match != null) {
-      final title = match.group(1)?.trim();
-      if (title != null && title.isNotEmpty) return title;
-    }
-  }
-  return null;
-}
-
-// ---------------------------------------------------------------------------
 // ThinkingTimelineView — the main timeline widget
 // ---------------------------------------------------------------------------
 
+/// Renders reasoning + tool steps as a vertical timeline with a connecting line,
+/// auto-collapsing when steps exceed [collapsedVisibleCount].
+///
+/// Inspired by RikkaHub's `ChainOfThought` component.
 class ThinkingTimelineView extends StatefulWidget {
   const ThinkingTimelineView({
     required this.thinkingContent,
@@ -150,7 +59,6 @@ class ThinkingTimelineView extends StatefulWidget {
     required this.markdownBuilder,
     this.inlineToolBlocks = const [],
     this.thoughtAutoCollapse = true,
-    this.showThinkingContent = true,
     super.key,
   });
 
@@ -160,7 +68,6 @@ class ThinkingTimelineView extends StatefulWidget {
   final TimelineMarkdownBuilder markdownBuilder;
   final List<ToolBlock> inlineToolBlocks;
   final bool thoughtAutoCollapse;
-  final bool showThinkingContent;
 
   @override
   State<ThinkingTimelineView> createState() => _ThinkingTimelineViewState();
@@ -170,10 +77,14 @@ class _ThinkingTimelineViewState extends State<ThinkingTimelineView> {
   bool _allStepsExpanded = false;
   static const int _collapsedVisibleCount = 2;
 
+  /// Build the list of timeline steps by interleaving reasoning segments and
+  /// tool calls. If there are tool calls, we split the thinking content around
+  /// them to create the illusion of "thought → tool → thought → tool" flow.
   List<TimelineStep> _buildSteps() {
     final tools = widget.inlineToolBlocks;
 
     if (tools.isEmpty) {
+      // Single reasoning node, no tools
       return [
         ReasoningTimelineStep(
           content: widget.thinkingContent,
@@ -183,12 +94,23 @@ class _ThinkingTimelineViewState extends State<ThinkingTimelineView> {
       ];
     }
 
+    // Interleave reasoning and tool steps.
+    // Strategy: split the thinking content into N+1 segments where N = number
+    // of tool calls. Each segment is the reasoning that happened before / between
+    // / after each tool call. Since we don't have exact split points in the text,
+    // we show the full thinking content as the first reasoning node, then
+    // alternate tool nodes after it.
+    //
+    // However, if there are multiple tool calls, we can try to be smarter:
+    // put reasoning before the first tool, then each tool, then remaining reasoning.
     final steps = <TimelineStep>[];
 
+    // First reasoning segment (the thinking content)
     if (widget.thinkingContent.isNotEmpty) {
+      // Calculate approximate per-segment time
       final reasoningTime = tools.isEmpty
           ? widget.thinkingSeconds
-          : widget.thinkingSeconds * 0.6;
+          : widget.thinkingSeconds * 0.6; // ~60% for reasoning
       steps.add(ReasoningTimelineStep(
         content: widget.thinkingContent,
         seconds: reasoningTime,
@@ -196,11 +118,16 @@ class _ThinkingTimelineViewState extends State<ThinkingTimelineView> {
       ));
     }
 
+    // Tool steps
     for (final tool in tools) {
       steps.add(ToolTimelineStep(block: tool));
     }
 
-    if (widget.isThinking && tools.isNotEmpty && tools.every(_isToolDone)) {
+    // If still thinking (streaming) and all tools are done, add a trailing
+    // "thinking..." node to show active reasoning after tools.
+    if (widget.isThinking &&
+        tools.isNotEmpty &&
+        tools.every(_isToolDone)) {
       steps.add(const ReasoningTimelineStep(
         content: '',
         seconds: 0,
@@ -225,7 +152,6 @@ class _ThinkingTimelineViewState extends State<ThinkingTimelineView> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final steps = _buildSteps();
-    final isReasoningOnly = steps.every((s) => s is ReasoningTimelineStep);
     final canCollapse = steps.length > _collapsedVisibleCount;
     final visibleSteps = (_allStepsExpanded || !canCollapse)
         ? steps
@@ -237,64 +163,54 @@ class _ThinkingTimelineViewState extends State<ThinkingTimelineView> {
     final border = isDark ? Colors.white12 : Colors.black12;
     final lineColor = theme.colorScheme.outlineVariant;
 
-    // collapsedAdaptiveWidth: when reasoning-only and collapsed, don't force full width
-    final useAdaptiveWidth = isReasoningOnly && !_allStepsExpanded;
-
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      alignment: Alignment.topLeft,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        constraints: useAdaptiveWidth ? null : const BoxConstraints(minWidth: double.infinity),
-        decoration: BoxDecoration(
-          color: cardBg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: border),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: useAdaptiveWidth ? MainAxisSize.min : MainAxisSize.max,
-            children: [
-              if (canCollapse)
-                _CollapseControl(
-                  expanded: _allStepsExpanded,
-                  hiddenCount: steps.length - _collapsedVisibleCount,
-                  onTap: () =>
-                      setState(() => _allStepsExpanded = !_allStepsExpanded),
-                ),
-              CustomPaint(
-                foregroundPainter: _TimelineLinePainter(
-                  color: lineColor,
-                  nodeX: 12,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (var i = 0; i < visibleSteps.length; i++)
-                      _buildStep(visibleSteps[i]),
-                  ],
-                ),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Collapse / expand control (top)
+            if (canCollapse)
+              _CollapseControl(
+                expanded: _allStepsExpanded,
+                hiddenCount: steps.length - _collapsedVisibleCount,
+                onTap: () =>
+                    setState(() => _allStepsExpanded = !_allStepsExpanded),
               ),
-            ],
-          ),
+
+            // Timeline with vertical line
+            CustomPaint(
+              foregroundPainter: _TimelineLinePainter(
+                color: lineColor,
+                nodeX: 12,
+              ),
+              child: Column(
+                children: [
+                  for (var i = 0; i < visibleSteps.length; i++)
+                    _buildStep(visibleSteps[i], theme, i == 0, i == visibleSteps.length - 1),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildStep(TimelineStep step) {
+  Widget _buildStep(TimelineStep step, ThemeData theme, bool isFirst, bool isLast) {
     switch (step) {
       case ReasoningTimelineStep():
         return _ReasoningNode(
           step: step,
           markdownBuilder: widget.markdownBuilder,
           autoCollapse: widget.thoughtAutoCollapse,
-          showThinkingContent: widget.showThinkingContent,
         );
       case ToolTimelineStep():
         return _ToolNode(step: step);
@@ -319,6 +235,7 @@ class _TimelineLinePainter extends CustomPainter {
       ..color = color
       ..strokeWidth = 1.0
       ..style = PaintingStyle.stroke;
+    // Draw vertical line from top offset to bottom offset (avoiding extremes)
     const topOffset = 18.0;
     final bottomOffset = size.height - 18.0;
     if (bottomOffset > topOffset) {
@@ -385,7 +302,7 @@ class _CollapseControl extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Reasoning node — with three-state ReasoningCardState + extractThinkingTitle
+// Reasoning node
 // ---------------------------------------------------------------------------
 
 class _ReasoningNode extends StatefulWidget {
@@ -393,20 +310,18 @@ class _ReasoningNode extends StatefulWidget {
     required this.step,
     required this.markdownBuilder,
     required this.autoCollapse,
-    required this.showThinkingContent,
   });
 
   final ReasoningTimelineStep step;
   final TimelineMarkdownBuilder markdownBuilder;
   final bool autoCollapse;
-  final bool showThinkingContent;
 
   @override
   State<_ReasoningNode> createState() => _ReasoningNodeState();
 }
 
 class _ReasoningNodeState extends State<_ReasoningNode> {
-  ReasoningCardState _state = ReasoningCardState.collapsed;
+  late bool _expanded;
   bool _copied = false;
   Timer? _timer;
   String _lastSecondsLabel = '';
@@ -414,45 +329,19 @@ class _ReasoningNodeState extends State<_ReasoningNode> {
   @override
   void initState() {
     super.initState();
-    if (widget.step.isThinking && widget.showThinkingContent) {
-      _state = ReasoningCardState.preview;
-    } else if (!widget.autoCollapse && widget.step.content.isNotEmpty) {
-      _state = ReasoningCardState.expanded;
-    }
+    // If auto-collapse is on, start collapsed unless actively thinking
+    _expanded = widget.step.isThinking || !widget.autoCollapse;
     _syncTimer();
   }
 
   @override
   void didUpdateWidget(_ReasoningNode oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.step.isThinking && !widget.step.isThinking) {
-      // Finished thinking
-      if (_state.expanded) {
-        _state = widget.autoCollapse
-            ? ReasoningCardState.collapsed
-            : ReasoningCardState.expanded;
-      }
-    } else if (!oldWidget.step.isThinking && widget.step.isThinking) {
-      // Started thinking
-      if (!_state.expanded && widget.showThinkingContent) {
-        _state = ReasoningCardState.preview;
-      }
+    // If stopped thinking and auto-collapse is on, collapse
+    if (oldWidget.step.isThinking && !widget.step.isThinking && widget.autoCollapse) {
+      _expanded = false;
     }
     _syncTimer();
-  }
-
-  void _onExpandedChange(bool nextExpanded) {
-    setState(() {
-      if (widget.step.isThinking) {
-        _state = nextExpanded
-            ? ReasoningCardState.expanded
-            : ReasoningCardState.preview;
-      } else {
-        _state = nextExpanded
-            ? ReasoningCardState.expanded
-            : ReasoningCardState.collapsed;
-      }
-    });
   }
 
   void _syncTimer() {
@@ -496,266 +385,140 @@ class _ReasoningNodeState extends State<_ReasoningNode> {
     final hasContent = step.content.isNotEmpty;
     final isEmptyThinking = step.isThinking && !hasContent;
 
-    // extractThinkingTitle
-    final thinkingTitle = step.isThinking ? _extractThinkingTitle(step.content) : null;
-    final showThinkingTitle = step.isThinking && thinkingTitle != null;
-
-    final isContentVisible = _state != ReasoningCardState.collapsed;
-    final isPreview = _state == ReasoningCardState.preview;
-
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      alignment: Alignment.topLeft,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header row
-          InkWell(
-            onTap: hasContent
-                ? () => _onExpandedChange(_state == ReasoningCardState.collapsed)
-                : null,
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                children: [
-                  // Icon node
-                  SizedBox(
-                    width: 24,
-                    child: Center(
-                      child: Container(
-                        width: 20,
-                        height: 20,
-                        decoration: BoxDecoration(
-                          color: theme.cardColor,
-                          shape: BoxShape.circle,
-                        ),
-                        alignment: Alignment.center,
-                        child: isEmptyThinking
-                            ? SizedBox(
-                                width: 12,
-                                height: 12,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 1.5,
-                                  color: amber,
-                                ),
-                              )
-                            : Icon(
-                                LucideIcons.lightbulb,
-                                size: 14,
-                                color: step.isThinking
-                                    ? amber
-                                    : theme.colorScheme.onSurfaceVariant,
-                              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header row: icon + label + time + expand/collapse
+        InkWell(
+          onTap: hasContent ? () => setState(() => _expanded = !_expanded) : null,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                // Icon node (24dp wide, covers the vertical line)
+                SizedBox(
+                  width: 24,
+                  child: Center(
+                    child: Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: theme.cardColor,
+                        shape: BoxShape.circle,
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Label — with AnimatedSwitcher for thinking title
-                  Expanded(
-                    child: showThinkingTitle
-                        ? AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 300),
-                            transitionBuilder: (child, animation) {
-                              return SlideTransition(
-                                position: Tween<Offset>(
-                                  begin: const Offset(0, 1),
-                                  end: Offset.zero,
-                                ).animate(animation),
-                                child: FadeTransition(
-                                  opacity: animation,
-                                  child: child,
-                                ),
-                              );
-                            },
-                            child: _ShimmerText(
-                              key: ValueKey(thinkingTitle),
-                              text: thinkingTitle,
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                color: theme.colorScheme.secondary,
+                      alignment: Alignment.center,
+                      child: isEmptyThinking
+                          ? SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.5,
+                                color: amber,
                               ),
-                              isLoading: true,
-                            ),
-                          )
-                        : _ShimmerText(
-                            text: isEmptyThinking
-                                ? '继续思考中...'
-                                : (step.isThinking
-                                    ? '思考中... ${secondsLabel}s'
-                                    : '深度思考 ${secondsLabel}s'),
-                            style: theme.textTheme.titleSmall?.copyWith(
+                            )
+                          : Icon(
+                              LucideIcons.lightbulb,
+                              size: 14,
                               color: step.isThinking
                                   ? amber
-                                  : theme.colorScheme.secondary,
+                                  : theme.colorScheme.onSurfaceVariant,
                             ),
-                            isLoading: step.isThinking,
-                          ),
+                    ),
                   ),
-                  // Extra: duration when showing title
-                  if (showThinkingTitle && step.seconds > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: _ShimmerText(
-                        text: '${secondsLabel}s',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.secondary,
-                        ),
-                        isLoading: true,
-                      ),
+                ),
+                const SizedBox(width: 8),
+                // Label
+                Expanded(
+                  child: Text(
+                    isEmptyThinking
+                        ? '继续思考中...'
+                        : (step.isThinking
+                            ? '思考中... ${secondsLabel}s'
+                            : '深度思考 ${secondsLabel}s'),
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: step.isThinking
+                          ? amber
+                          : theme.colorScheme.secondary,
                     ),
-                  // Copy button
-                  if (hasContent)
-                    InkWell(
-                      onTap: _copy,
-                      borderRadius: BorderRadius.circular(8),
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: Icon(
-                          _copied ? LucideIcons.check : LucideIcons.copy,
-                          size: 14,
-                          color: _copied
-                              ? Colors.green
-                              : theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  // Expand/collapse indicator
-                  if (hasContent)
-                    AnimatedRotation(
-                      turns: _state == ReasoningCardState.expanded ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 200),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                // Copy button
+                if (hasContent)
+                  InkWell(
+                    onTap: _copy,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
                       child: Icon(
-                        LucideIcons.chevronDown,
-                        size: 16,
-                        color: theme.colorScheme.onSurfaceVariant,
+                        _copied ? LucideIcons.check : LucideIcons.copy,
+                        size: 14,
+                        color: _copied
+                            ? Colors.green
+                            : theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                ],
-              ),
+                  ),
+                // Expand/collapse indicator
+                if (hasContent)
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(
+                      LucideIcons.chevronDown,
+                      size: 16,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
             ),
           ),
+        ),
 
-          // Content area
-          if (isContentVisible && hasContent)
-            Padding(
-              padding: const EdgeInsets.only(left: 32, top: 4, bottom: 8),
-              child: isPreview
-                  ? _FadedPreview(
-                      markdownBuilder: widget.markdownBuilder,
-                      content: step.content,
-                    )
-                  : widget.markdownBuilder(
-                      context,
-                      step.content,
-                      TextStyle(color: theme.colorScheme.onSurface),
-                    ),
+        // Expanded content or streaming preview
+        if (_expanded && hasContent)
+          Padding(
+            padding: const EdgeInsets.only(left: 32, top: 4, bottom: 8),
+            child: widget.markdownBuilder(
+              context,
+              widget.step.content,
+              TextStyle(color: theme.colorScheme.onSurface),
             ),
-        ],
-      ),
+          )
+        else if (!_expanded && step.isThinking && hasContent)
+          // Streaming preview: show last few lines with a fade
+          Padding(
+            padding: const EdgeInsets.only(left: 32, bottom: 8),
+            child: _FadedPreview(
+              markdownBuilder: widget.markdownBuilder,
+              content: _previewContent(step.content),
+            ),
+          ),
+      ],
     );
   }
-}
 
-// ---------------------------------------------------------------------------
-// Shimmer text widget
-// ---------------------------------------------------------------------------
-
-class _ShimmerText extends StatefulWidget {
-  const _ShimmerText({
-    required this.text,
-    required this.style,
-    required this.isLoading,
-    super.key,
-  });
-
-  final String text;
-  final TextStyle? style;
-  final bool isLoading;
-
-  @override
-  State<_ShimmerText> createState() => _ShimmerTextState();
-}
-
-class _ShimmerTextState extends State<_ShimmerText>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    );
-    if (widget.isLoading) _controller.repeat();
-  }
-
-  @override
-  void didUpdateWidget(_ShimmerText oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.isLoading && !_controller.isAnimating) {
-      _controller.repeat();
-    } else if (!widget.isLoading && _controller.isAnimating) {
-      _controller.stop();
+  /// Extract the trailing part of the content for the streaming preview.
+  static String _previewContent(String content) {
+    if (content.isEmpty) return '';
+    final lines = content.split('\n');
+    for (var i = lines.length - 1; i >= 0; i--) {
+      if (_headingOrBold.hasMatch(lines[i].trim())) {
+        return lines.sublist(i).join('\n');
+      }
     }
+    // Fallback: last ~6 lines
+    if (lines.length > 6) return lines.sublist(lines.length - 6).join('\n');
+    return content;
   }
 
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!widget.isLoading) {
-      return Text(
-        widget.text,
-        style: widget.style,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      );
-    }
-
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final value = _controller.value;
-        return ShaderMask(
-          shaderCallback: (bounds) {
-            final color = widget.style?.color ?? Colors.grey;
-            return LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: [
-                color,
-                color.withValues(alpha: 0.3),
-                color,
-              ],
-              stops: [
-                (value - 0.3).clamp(0.0, 1.0),
-                value,
-                (value + 0.3).clamp(0.0, 1.0),
-              ],
-            ).createShader(bounds);
-          },
-          blendMode: BlendMode.srcIn,
-          child: child!,
-        );
-      },
-      child: Text(
-        widget.text,
-        style: widget.style,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-    );
-  }
+  static final RegExp _headingOrBold = RegExp(r'^(#{1,6}\s|\*\*.+\*\*$)');
 }
 
 // ---------------------------------------------------------------------------
-// Faded preview — RikkaHub-style dual-direction gradient with BlendMode.dstIn
+// Faded preview (used during streaming when collapsed)
 // ---------------------------------------------------------------------------
 
 class _FadedPreview extends StatelessWidget {
@@ -770,27 +533,19 @@ class _FadedPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final fadeBg = isDark ? const Color(0xFF121212) : Colors.white;
 
     return Container(
       constraints: const BoxConstraints(maxHeight: 100),
       child: ShaderMask(
-        shaderCallback: (bounds) {
-          final fadeHeight = 64.0;
-          final fadeRatioTop = (fadeHeight / bounds.height).clamp(0.0, 0.5);
-          final fadeRatioBottom = (1.0 - fadeHeight / bounds.height).clamp(0.5, 1.0);
-          return LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: const [
-              Colors.transparent,
-              Colors.black,
-              Colors.black,
-              Colors.transparent,
-            ],
-            stops: [0.0, fadeRatioTop, fadeRatioBottom, 1.0],
-          ).createShader(bounds);
-        },
-        blendMode: BlendMode.dstIn,
+        shaderCallback: (bounds) => LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [fadeBg.withValues(alpha: 0), fadeBg],
+          stops: const [0.5, 1.0],
+        ).createShader(bounds),
+        blendMode: BlendMode.srcOver,
         child: SingleChildScrollView(
           reverse: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -809,7 +564,7 @@ class _FadedPreview extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Tool node — with BottomSheet detail + ToolUIRegistry icons
+// Tool node
 // ---------------------------------------------------------------------------
 
 class _ToolNode extends StatefulWidget {
@@ -822,8 +577,9 @@ class _ToolNode extends StatefulWidget {
 }
 
 class _ToolNodeState extends State<_ToolNode> {
-  bool _summaryExpanded = true;
+  bool _expanded = false;
 
+  // Cached formatted strings
   String? _cachedParams;
   String? _cachedResult;
   Object? _lastArgs;
@@ -848,7 +604,7 @@ class _ToolNodeState extends State<_ToolNode> {
 
   IconData get _statusIcon {
     if (_hasError) return LucideIcons.circleAlert;
-    if (_isProcessing) return LucideIcons.loader;
+    if (_isProcessing) return LucideIcons.loader; // placeholder, we use spinner
     return LucideIcons.circleCheck;
   }
 
@@ -881,106 +637,11 @@ class _ToolNodeState extends State<_ToolNode> {
     }
   }
 
-  String _buildSummary() {
-    final result = _cachedResult ?? '';
-    if (result.isEmpty) return '';
-    // Try to extract a short summary from the result
-    final lines = result.split('\n');
-    if (lines.length <= 3) return result.length > 120 ? '${result.substring(0, 120)}...' : result;
-    return '${lines.take(3).join('\n')}...';
-  }
-
-  void _showDetailSheet(BuildContext context, String params, String result) {
-    final theme = Theme.of(context);
-    final statusColor = _statusColor(theme);
-    final isDark = theme.brightness == Brightness.dark;
-    final toolUI = _resolveToolUI(_toolName);
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetCtx) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.7,
-          minChildSize: 0.3,
-          maxChildSize: 0.95,
-          expand: false,
-          builder: (_, scrollController) {
-            return Column(
-              children: [
-                // Drag handle
-                Padding(
-                  padding: const EdgeInsets.only(top: 8, bottom: 4),
-                  child: Container(
-                    width: 32,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                // Header
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Row(
-                    children: [
-                      Icon(toolUI.icon, size: 20, color: statusColor),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _toolName,
-                          style: theme.textTheme.titleMedium,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (!_isProcessing)
-                        Icon(_statusIcon, size: 16, color: statusColor),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-                // Content
-                Expanded(
-                  child: ListView(
-                    controller: scrollController,
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      if (params.isNotEmpty)
-                        _ToolDetailSection(
-                          label: '参数',
-                          content: params,
-                        ),
-                      if (params.isNotEmpty && result.isNotEmpty)
-                        const SizedBox(height: 12),
-                      if (result.isNotEmpty)
-                        _ToolDetailSection(
-                          label: '结果',
-                          content: result,
-                          isError: _hasError,
-                          maxHeight: double.infinity,
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final statusColor = _statusColor(theme);
-    final toolUI = _resolveToolUI(_toolName);
+    final isDark = theme.brightness == Brightness.dark;
 
     if (!identical(_block.arguments, _lastArgs)) {
       _lastArgs = _block.arguments;
@@ -993,98 +654,116 @@ class _ToolNodeState extends State<_ToolNode> {
     final params = _cachedParams ?? '';
     final result = _cachedResult ?? '';
     final hasDetails = params.isNotEmpty || result.isNotEmpty;
-    final summary = _buildSummary();
-    final hasSummary = summary.isNotEmpty && !_isProcessing;
 
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      alignment: Alignment.topLeft,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header row
-          InkWell(
-            onTap: hasDetails ? () => _showDetailSheet(context, params, result) : null,
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                children: [
-                  // Icon node — uses registered tool icon
-                  SizedBox(
-                    width: 24,
-                    child: Center(
-                      child: Container(
-                        width: 20,
-                        height: 20,
-                        decoration: BoxDecoration(
-                          color: theme.cardColor,
-                          shape: BoxShape.circle,
-                        ),
-                        alignment: Alignment.center,
-                        child: _isProcessing
-                            ? SizedBox(
-                                width: 12,
-                                height: 12,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 1.5,
-                                  color: statusColor,
-                                ),
-                              )
-                            : Icon(
-                                toolUI.icon,
-                                size: 13,
-                                color: theme.colorScheme.onSurfaceVariant
-                                    .withValues(alpha: 0.7),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header row
+        InkWell(
+          onTap: hasDetails ? () => setState(() => _expanded = !_expanded) : null,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                // Icon node
+                SizedBox(
+                  width: 24,
+                  child: Center(
+                    child: Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: theme.cardColor,
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: _isProcessing
+                          ? SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.5,
+                                color: statusColor,
                               ),
-                      ),
+                            )
+                          : Icon(
+                              LucideIcons.wrench,
+                              size: 13,
+                              color: theme.colorScheme.onSurfaceVariant
+                                  .withValues(alpha: 0.7),
+                            ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  // Tool name with shimmer when loading
-                  Expanded(
-                    child: _ShimmerText(
-                      text: _toolName,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: theme.colorScheme.secondary,
-                      ),
-                      isLoading: _isProcessing,
+                ),
+                const SizedBox(width: 8),
+                // Tool name
+                Expanded(
+                  child: Text(
+                    _toolName,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.secondary,
                     ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  // Status icon
-                  if (!_isProcessing)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: Icon(_statusIcon, size: 13, color: statusColor),
-                    ),
-                  // Arrow indicator: right arrow for onClick (BottomSheet)
-                  if (hasDetails)
-                    Icon(
-                      LucideIcons.arrowRight,
+                ),
+                // Status icon
+                if (!_isProcessing)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Icon(_statusIcon, size: 13, color: statusColor),
+                  ),
+                // Expand indicator
+                if (hasDetails)
+                  AnimatedRotation(
+                    turns: _expanded ? 0.25 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(
+                      LucideIcons.chevronRight,
                       size: 14,
                       color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+
+        // Expanded details
+        if (_expanded && hasDetails)
+          Padding(
+            padding: const EdgeInsets.only(left: 32, bottom: 8),
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: statusColor.withValues(alpha: 0.25),
+                ),
+                color: statusColor.withValues(alpha: isDark ? 0.08 : 0.05),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (params.isNotEmpty)
+                    _ToolDetailSection(
+                      label: '参数',
+                      content: params,
+                    ),
+                  if (params.isNotEmpty && result.isNotEmpty)
+                    Divider(height: 1, color: statusColor.withValues(alpha: 0.15)),
+                  if (result.isNotEmpty)
+                    _ToolDetailSection(
+                      label: '结果',
+                      content: result,
+                      isError: _hasError,
                     ),
                 ],
               ),
             ),
           ),
-
-          // Inline summary (like RikkaHub's Summary)
-          if (hasSummary)
-            Padding(
-              padding: const EdgeInsets.only(left: 32, bottom: 8),
-              child: Text(
-                summary,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -1098,84 +777,76 @@ class _ToolDetailSection extends StatelessWidget {
     required this.label,
     required this.content,
     this.isError = false,
-    this.maxHeight = 160,
   });
 
   final String label;
   final String content;
   final bool isError;
-  final double maxHeight;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: isError
-                    ? theme.colorScheme.error
-                    : theme.colorScheme.onSurfaceVariant,
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: isError
+                      ? theme.colorScheme.error
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
               ),
-            ),
-            const Spacer(),
-            InkWell(
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: content));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('已复制'),
-                    duration: Duration(seconds: 1),
+              const Spacer(),
+              InkWell(
+                onTap: () =>
+                    Clipboard.setData(ClipboardData(text: content)),
+                borderRadius: BorderRadius.circular(4),
+                child: Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: Icon(
+                    LucideIcons.copy,
+                    size: 11,
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
-                );
-              },
-              borderRadius: BorderRadius.circular(4),
-              child: Padding(
-                padding: const EdgeInsets.all(2),
-                child: Icon(
-                  LucideIcons.copy,
-                  size: 11,
-                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(6),
+            constraints: const BoxConstraints(maxHeight: 160),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+              color: isDark
+                  ? Colors.black.withValues(alpha: 0.3)
+                  : Colors.black.withValues(alpha: 0.04),
+            ),
+            child: SingleChildScrollView(
+              child: Text(
+                content,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontFamily: 'monospace',
+                  height: 1.4,
+                  color: isError
+                      ? theme.colorScheme.error
+                      : theme.colorScheme.onSurface,
                 ),
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(8),
-          constraints: maxHeight.isFinite
-              ? BoxConstraints(maxHeight: maxHeight)
-              : null,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.3)
-                : Colors.black.withValues(alpha: 0.04),
           ),
-          child: SingleChildScrollView(
-            child: Text(
-              content,
-              style: TextStyle(
-                fontSize: 11,
-                fontFamily: 'monospace',
-                height: 1.4,
-                color: isError
-                    ? theme.colorScheme.error
-                    : theme.colorScheme.onSurface,
-              ),
-            ),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
