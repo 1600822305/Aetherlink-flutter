@@ -34,7 +34,7 @@ class _TabDescriptor {
   final String? footnote;
 }
 
-const _tabs = <_TabDescriptor>[
+const _models = <_TabDescriptor>[
   _TabDescriptor(
     label: '聊天',
     icon: LucideIcons.messageCircle,
@@ -93,8 +93,37 @@ const _tabs = <_TabDescriptor>[
   ),
 ];
 
-/// 辅助模型设置 page — 7 scrollable tabs, each for one model type.
-/// Matches the AetherLink web original's tab-per-model structure.
+/// Descriptor for one tab, which groups one or more model sections.
+class _TabGroup {
+  const _TabGroup({
+    required this.label,
+    required this.icon,
+    required this.modelIndices,
+  });
+
+  final String label;
+  final IconData icon;
+
+  /// Indices into [_models] rendered (in order) inside this tab.
+  final List<int> modelIndices;
+}
+
+/// Tab layout: the three general-purpose chat models (聊天/快速/标题) share one
+/// "通用" tab; the remaining feature models keep a dedicated tab each.
+const _groups = <_TabGroup>[
+  _TabGroup(
+    label: '通用',
+    icon: LucideIcons.sparkles,
+    modelIndices: [0, 1, 2],
+  ),
+  _TabGroup(label: '建议', icon: LucideIcons.lightbulb, modelIndices: [3]),
+  _TabGroup(label: '翻译', icon: LucideIcons.languages, modelIndices: [4]),
+  _TabGroup(label: 'OCR', icon: LucideIcons.eye, modelIndices: [5]),
+  _TabGroup(label: '压缩', icon: LucideIcons.foldVertical, modelIndices: [6]),
+];
+
+/// 辅助模型设置 page — general chat models share one tab, feature models
+/// (建议/翻译/OCR/压缩) keep one tab each.
 class AuxiliaryModelSettingsPage extends ConsumerStatefulWidget {
   const AuxiliaryModelSettingsPage({super.key});
 
@@ -111,7 +140,7 @@ class _AuxiliaryModelSettingsPageState
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _tabs.length, vsync: this);
+    _tabController = TabController(length: _groups.length, vsync: this);
   }
 
   @override
@@ -163,8 +192,7 @@ class _AuxiliaryModelSettingsPageState
         child: TabBarView(
           controller: _tabController,
           children: [
-            for (var i = 0; i < _tabs.length; i++)
-              _ModelConfigTab(index: i, descriptor: _tabs[i]),
+            for (final group in _groups) _GroupTab(group: group),
           ],
         ),
       ),
@@ -216,7 +244,7 @@ class _SegmentedTabBar extends StatelessWidget {
           ),
           labelPadding: const EdgeInsets.symmetric(horizontal: 8),
           tabs: [
-            for (final t in _tabs)
+            for (final t in _groups)
               Tab(
                 height: 34,
                 child: Row(
@@ -236,28 +264,54 @@ class _SegmentedTabBar extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Per-model tab content
+// Tab content — one or more stacked model sections
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ModelConfigTab extends ConsumerStatefulWidget {
-  const _ModelConfigTab({required this.index, required this.descriptor});
+class _GroupTab extends StatefulWidget {
+  const _GroupTab({required this.group});
+
+  final _TabGroup group;
+
+  @override
+  State<_GroupTab> createState() => _GroupTabState();
+}
+
+class _GroupTabState extends State<_GroupTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final indices = widget.group.modelIndices;
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        for (var i = 0; i < indices.length; i++) ...[
+          if (i > 0) const SizedBox(height: 12),
+          _ModelSection(index: indices[i], descriptor: _models[indices[i]]),
+        ],
+      ],
+    );
+  }
+}
+
+class _ModelSection extends ConsumerStatefulWidget {
+  const _ModelSection({required this.index, required this.descriptor});
 
   final int index;
   final _TabDescriptor descriptor;
 
   @override
-  ConsumerState<_ModelConfigTab> createState() => _ModelConfigTabState();
+  ConsumerState<_ModelSection> createState() => _ModelSectionState();
 }
 
-class _ModelConfigTabState extends ConsumerState<_ModelConfigTab>
-    with AutomaticKeepAliveClientMixin {
+class _ModelSectionState extends ConsumerState<_ModelSection> {
   TextEditingController? _promptController;
 
   /// Track last synced prompt value to detect hydration updates.
   String? _lastSyncedPrompt;
-
-  @override
-  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -358,7 +412,6 @@ class _ModelConfigTabState extends ConsumerState<_ModelConfigTab>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     final theme = Theme.of(context);
     final providers =
         ref.watch(appModelProvidersProvider).asData?.value ?? const [];
@@ -404,8 +457,8 @@ class _ModelConfigTabState extends ConsumerState<_ModelConfigTab>
       }
     }
 
-    return ListView(
-      padding: const EdgeInsets.all(12),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // ── Header card ──
         _SectionCard(
