@@ -44,6 +44,7 @@ import 'package:aetherlink_flutter/features/chat/domain/translate/translate_lang
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/config/skill_prompt_builder.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
+import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
@@ -59,6 +60,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/settings/settings_tools.dart
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
 import 'package:aetherlink_flutter/shared/services/web_search_service.dart';
+import 'package:aetherlink_flutter/shared/utils/regex_replacement.dart';
 import 'package:aetherlink_flutter/shared/utils/system_prompt_variables.dart';
 
 part 'chat_controller.g.dart';
@@ -239,6 +241,7 @@ class ChatController extends _$ChatController {
     final ctx = _contextSettings();
     final params = _parameterFields();
     final contextViews = _trimViews(views, ctx.contextCount);
+    final regexRules = await _sendingRegexRules();
     final request = LlmChatRequest(
       model: effective,
       system: _systemFor(mcp, await _buildSystemPrompt()),
@@ -247,7 +250,7 @@ class ChatController extends _$ChatController {
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
             LlmMessage(
               role: view.role,
-              content: _requestContent(view),
+              content: _requestContent(view, regexRules: regexRules),
               images: _requestImages(view),
             ),
       ],
@@ -409,10 +412,14 @@ class ChatController extends _$ChatController {
     // 3. Build messages for the thinking model request.
     final ctx = _contextSettings();
     final contextViews = _trimViews(views, ctx.contextCount);
+    final regexRules = await _sendingRegexRules();
     final llmMessages = [
       for (final view in contextViews)
         if (view.role != MessageRole.assistant || view.text.isNotEmpty)
-          LlmMessage(role: view.role, content: _requestContent(view)),
+          LlmMessage(
+            role: view.role,
+            content: _requestContent(view, regexRules: regexRules),
+          ),
     ];
 
     final gatewayFactory = ref.read(llmGatewayFactoryProvider);
@@ -620,6 +627,7 @@ class ChatController extends _$ChatController {
     final ctx = _contextSettings();
     final params = _parameterFields();
     final contextViews = _trimViews(views.sublist(0, index), ctx.contextCount);
+    final regexRules = await _sendingRegexRules();
     final request = LlmChatRequest(
       model: effective,
       system: _systemFor(mcp, await _buildSystemPrompt()),
@@ -628,7 +636,7 @@ class ChatController extends _$ChatController {
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
             LlmMessage(
               role: view.role,
-              content: _requestContent(view),
+              content: _requestContent(view, regexRules: regexRules),
               images: _requestImages(view),
             ),
       ],
@@ -744,6 +752,7 @@ class ChatController extends _$ChatController {
     final ctx = _contextSettings();
     final params = _parameterFields();
     final contextViews = _trimViews(snapshot.messages, ctx.contextCount);
+    final regexRules = await _sendingRegexRules();
     final request = LlmChatRequest(
       model: effective,
       system: _systemFor(mcp, await _buildSystemPrompt()),
@@ -752,7 +761,7 @@ class ChatController extends _$ChatController {
           if (view.role != MessageRole.assistant || view.text.isNotEmpty)
             LlmMessage(
               role: view.role,
-              content: _requestContent(view),
+              content: _requestContent(view, regexRules: regexRules),
               images: _requestImages(view),
             ),
       ],
@@ -840,11 +849,12 @@ class ChatController extends _$ChatController {
     final ctx = _contextSettings();
     final params = _parameterFields();
     final history = _trimViews(views.sublist(0, msgIndex), ctx.contextCount);
+    final regexRules = await _sendingRegexRules();
     final messages = <LlmMessage>[
       for (final view in history)
         LlmMessage(
           role: view.role,
-          content: _requestContent(view),
+          content: _requestContent(view, regexRules: regexRules),
           images: _requestImages(view),
         ),
       // The partial response as an assistant turn so the model continues.
@@ -2476,7 +2486,14 @@ class ChatController extends _$ChatController {
   /// The request content for [view]: its main text with each FILE block's
   /// decoded text appended, so the model receives pasted-as-file content (and
   /// likewise for history, since [_viewOf] carries FILE blocks through).
-  String _requestContent(ChatMessageView view) {
+  ///
+  /// When [regexRules] are supplied, the assistant's non-`visualOnly` 正则规则
+  /// are applied (scoped by `view.role`) before sending — the port of the web
+  /// `applyRegexRulesForSending` step in `apiPreparation.ts`.
+  String _requestContent(
+    ChatMessageView view, {
+    List<AssistantRegex>? regexRules,
+  }) {
     final parts = <String>[
       if (view.text.isNotEmpty) view.text,
       for (final block in view.blocks)
@@ -2484,8 +2501,26 @@ class ChatController extends _$ChatController {
           if (_decodeFileText(block) case final text? when text.isNotEmpty)
             text,
     ];
-    return parts.join('\n\n');
+    final content = parts.join('\n\n');
+    final scope = _regexScopeFor(view.role);
+    if (scope == null || regexRules == null || regexRules.isEmpty) {
+      return content;
+    }
+    return applyRegexRulesForSending(content, regexRules, scope);
   }
+
+  /// Maps a [MessageRole] to its 正则 scope, or null for roles (e.g. system)
+  /// that 正则规则 never target.
+  static AssistantRegexScope? _regexScopeFor(MessageRole role) =>
+      switch (role) {
+        MessageRole.user => AssistantRegexScope.user,
+        MessageRole.assistant => AssistantRegexScope.assistant,
+        _ => null,
+      };
+
+  /// The current assistant's 正则规则, used to process outgoing message content.
+  Future<List<AssistantRegex>?> _sendingRegexRules() async =>
+      (await _repo.getAssistant(_assistantId))?.regexRules;
 
   /// Decodes a FILE block's inline text, or `null` when it carries no decodable
   /// `text/plain` base64 data URI.

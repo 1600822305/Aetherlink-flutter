@@ -98,8 +98,7 @@ class ChatMessageBubble extends ConsumerWidget {
 
     final align = isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start;
 
-    final isSummaryMessage =
-        view.blocks.any((b) => b is ContextSummaryBlock);
+    final isSummaryMessage = view.blocks.any((b) => b is ContextSummaryBlock);
     final showToolbar =
         settings.messageActionMode == MessageActionMode.toolbar &&
         !isStreaming &&
@@ -123,6 +122,7 @@ class ChatMessageBubble extends ConsumerWidget {
         : MessageBlockRenderer(
             blocks: view.blocks,
             messageStatus: view.status,
+            role: view.role,
             textColor: textColor,
           );
 

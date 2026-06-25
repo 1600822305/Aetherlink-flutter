@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aetherlink_flutter/app/di/thinking_settings_access.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/code_block/code_block_view.dart';
@@ -35,12 +36,14 @@ class MessageBlockRenderer extends ConsumerWidget {
   const MessageBlockRenderer({
     required this.blocks,
     required this.messageStatus,
+    this.role,
     this.textColor,
     super.key,
   });
 
   final List<MessageBlock> blocks;
   final MessageStatus messageStatus;
+  final MessageRole? role;
   final Color? textColor;
 
   bool get _isStreaming =>
@@ -116,7 +119,11 @@ class MessageBlockRenderer extends ConsumerWidget {
         );
       case MainTextBlock():
         if (cleanMainText(block.content).isEmpty) return null;
-        return MainTextBlockView(block: block, textColor: textColor);
+        return MainTextBlockView(
+          block: block,
+          role: role,
+          textColor: textColor,
+        );
       case ThinkingBlock():
         return ThinkingBlockView(
           block: block,
@@ -208,7 +215,7 @@ class CodeBlockViewBlock extends StatelessWidget {
 /// When [inlineEnabled] is false the grouping is skipped entirely, so no tool
 /// block is consumed and every tool renders as an independent top-level card.
 ({Set<String> consumedToolIds, Map<String, List<ToolBlock>> inlineToolMap})
-    _computeInlineToolGroups(
+_computeInlineToolGroups(
   List<MessageBlock> blocks, {
   required bool inlineEnabled,
 }) {

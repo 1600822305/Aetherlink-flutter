@@ -3,8 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/context_condense_service.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
+import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
+import 'package:aetherlink_flutter/shared/utils/regex_replacement.dart';
 
 /// Strips `<tool_use>...</tool_use>` spans the original removed before
 /// rendering `main_text`.
@@ -23,16 +27,42 @@ String cleanMainText(String content) =>
 /// `renderUserInputAsMarkdown` defaults to true in the original, so user and
 /// assistant text both render as Markdown. Returns nothing when the content is
 /// empty after trimming.
-class MainTextBlockView extends StatelessWidget {
-  const MainTextBlockView({required this.block, this.textColor, super.key});
+///
+/// Before rendering, the current assistant's 正则规则 are applied for display
+/// (all rules, including `visualOnly`), scoped by [role] — the port of the web
+/// `applyRegexRulesForDisplay` step in `MainTextBlock.tsx`.
+class MainTextBlockView extends ConsumerWidget {
+  const MainTextBlockView({
+    required this.block,
+    this.role,
+    this.textColor,
+    super.key,
+  });
 
   final MainTextBlock block;
+  final MessageRole? role;
   final Color? textColor;
 
   @override
-  Widget build(BuildContext context) {
-    final cleaned = cleanMainText(block.content);
+  Widget build(BuildContext context, WidgetRef ref) {
+    var cleaned = cleanMainText(block.content);
     if (cleaned.isEmpty) return const SizedBox.shrink();
+
+    final scope = switch (role) {
+      MessageRole.user => AssistantRegexScope.user,
+      MessageRole.assistant => AssistantRegexScope.assistant,
+      _ => null,
+    };
+    if (scope != null) {
+      final rules = ref.watch(
+        currentAssistantProvider.select((a) => a?.regexRules),
+      );
+      if (rules != null && rules.isNotEmpty) {
+        cleaned = applyRegexRulesForDisplay(cleaned, rules, scope);
+        if (cleaned.isEmpty) return const SizedBox.shrink();
+      }
+    }
+
     final theme = Theme.of(context);
     return AppMarkdown(
       content: cleaned,
@@ -494,8 +524,10 @@ class _ContextSummaryBlockViewState
                   }),
                   borderRadius: BorderRadius.circular(6),
                   child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -530,12 +562,17 @@ class _ContextSummaryBlockViewState
                         borderRadius: BorderRadius.circular(6),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(LucideIcons.undo2,
-                                  size: 14, color: cs.error),
+                              Icon(
+                                LucideIcons.undo2,
+                                size: 14,
+                                color: cs.error,
+                              ),
                               const SizedBox(width: 4),
                               Text(
                                 '恢复原文',

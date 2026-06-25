@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_reposi
 import 'package:aetherlink_flutter/features/chat/domain/entities/parameter_settings.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_chat_background.dart';
+import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
 import 'package:aetherlink_flutter/shared/domain/custom_parameter.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/quick_phrase.dart';
@@ -333,6 +334,7 @@ class Assistants extends _$Assistants {
     required List<String> skillIds,
     ParameterSettings? paramSettings,
     AssistantChatBackground? chatBackground,
+    List<AssistantRegex>? regexRules,
   }) async {
     final assistant = await _repo.getAssistant(id);
     if (assistant == null) {
@@ -344,6 +346,7 @@ class Assistants extends _$Assistants {
       memoryEnabled: memoryEnabled,
       skillIds: skillIds,
       chatBackground: chatBackground,
+      regexRules: regexRules,
       updatedAt: DateTime.now(),
     );
     if (paramSettings != null) {

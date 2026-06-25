@@ -33,15 +33,17 @@ class PlainStyleMessage extends ConsumerWidget {
     final isUser = view.role == MessageRole.user;
 
     final hasError = view.status == MessageStatus.error;
-    final isStreaming = view.status == MessageStatus.streaming ||
+    final isStreaming =
+        view.status == MessageStatus.streaming ||
         view.status == MessageStatus.processing;
 
     if (view.blocks.isEmpty && !isStreaming && !hasError) {
       return const SizedBox.shrink();
     }
 
-    final showAvatar =
-        isUser ? settings.showUserAvatar : settings.showModelAvatar;
+    final showAvatar = isUser
+        ? settings.showUserAvatar
+        : settings.showModelAvatar;
     final showName = isUser ? settings.showUserName : settings.showModelName;
 
     final content = (view.blocks.isEmpty && hasError && view.errorText != null)
@@ -54,11 +56,11 @@ class PlainStyleMessage extends ConsumerWidget {
         : MessageBlockRenderer(
             blocks: view.blocks,
             messageStatus: view.status,
+            role: view.role,
             textColor: theme.colorScheme.onSurface,
           );
 
-    final isSummaryMessage =
-        view.blocks.any((b) => b is ContextSummaryBlock);
+    final isSummaryMessage = view.blocks.any((b) => b is ContextSummaryBlock);
     final showToolbar =
         !isStreaming && view.blocks.isNotEmpty && !isSummaryMessage;
 
@@ -102,8 +104,9 @@ class PlainStyleMessage extends ConsumerWidget {
                           _formatTime(view.createdAt),
                           style: theme.textTheme.labelSmall?.copyWith(
                             fontSize: 11.2,
-                            color: theme.colorScheme.onSurface
-                                .withValues(alpha: 0.5),
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.5,
+                            ),
                           ),
                         ),
                       ],
