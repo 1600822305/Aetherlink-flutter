@@ -249,8 +249,10 @@ Future<void> _openImport(BuildContext context, WidgetRef ref) async {
   }
 }
 
-/// The full-width tab strip below the app bar (icon + label, 1px bottom
-/// divider), mirroring the original MUI `Tabs variant="fullWidth"`.
+/// Compact pill-style segmented control matching the 语音功能 settings page
+/// (`features/voice/presentation/mobile/voice_settings_page.dart` `_TabHeader`).
+/// A rounded grey track with a white "card" indicator (soft shadow) sliding
+/// underneath the active tab.
 class _TabBarHeader extends StatelessWidget {
   const _TabBarHeader({required this.controller});
 
@@ -259,20 +261,35 @@ class _TabBarHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return DecoratedBox(
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        border: Border(bottom: BorderSide(color: theme.dividerColor)),
+        color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: TabBar(
         controller: controller,
-        labelColor: theme.colorScheme.primary,
-        unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-        indicatorColor: theme.colorScheme.primary,
+        indicator: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x14000000),
+              blurRadius: 4,
+              offset: Offset(0, 1),
+            ),
+          ],
+        ),
         indicatorSize: TabBarIndicatorSize.tab,
         dividerColor: Colors.transparent,
-        labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: const TextStyle(fontSize: 14),
+        labelColor: theme.colorScheme.onSurface,
+        unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+        labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        unselectedLabelStyle: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+        ),
         tabs: const [
           _IconTab(icon: LucideIcons.server, label: '外部服务器'),
           _IconTab(icon: LucideIcons.wrench, label: '内置工具'),
@@ -283,7 +300,7 @@ class _TabBarHeader extends StatelessWidget {
   }
 }
 
-/// A 42px tab with the glyph to the left of the label (`iconPosition="start"`).
+/// A 32px pill tab: glyph + label, sized to match 语音功能 settings.
 class _IconTab extends StatelessWidget {
   const _IconTab({required this.icon, required this.label});
 
@@ -293,13 +310,13 @@ class _IconTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Tab(
-      height: 42,
+      height: 32,
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16),
-          const SizedBox(width: 6),
-          Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
+          Icon(icon, size: 15),
+          const SizedBox(width: 5),
+          Text(label, overflow: TextOverflow.ellipsis),
         ],
       ),
     );
