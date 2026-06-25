@@ -272,7 +272,6 @@ class _PreviewCardState extends State<_PreviewCard> {
                     thinkingSeconds: 3.5,
                     isThinking: false,
                     thoughtAutoCollapse: settings.thoughtAutoCollapse,
-                    showThinkingContent: true,
                     inlineToolBlocks: _sampleToolBlocks,
                     markdownBuilder: (context, content, style) => GptMarkdown(
                       content,
