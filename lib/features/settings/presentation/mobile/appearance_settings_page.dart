@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/settings/application/font_size_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/theme_mode_controller.dart';
 import 'package:aetherlink_flutter/features/settings/domain/app_theme_mode.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/font_picker.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 
 /// The "外观设置" second-level page (hub "外观" → this page), a 1:1 reproduction
@@ -367,10 +368,6 @@ class _ThemeAndFontCard extends StatelessWidget {
   static const String _languageHelper = '选择应用的显示语言，更改后界面将立即更新';
   static const String _fontSizeLabel = '全局字体大小';
   static const String _fontSizeHelper = '调整应用中所有文本的基础字体大小，影响聊天消息、界面文字等全局显示效果';
-  static const String _fontFamilyLabel = '全局字体';
-  static const String _fontFamilyValue = '系统默认';
-  static const String _fontFamilyHelper = '选择应用的全局字体，将影响所有界面文字的显示效果';
-  static const String _addLocalFont = '添加本地字体';
 
   // The original theme `MenuItem` labels (`settings.{light,dark,system}`).
   static const List<(AppThemeMode, String)> _themeOptions = [
@@ -417,14 +414,8 @@ class _ThemeAndFontCard extends StatelessWidget {
                   onChanged: onFontSizeChanged,
                 ),
                 const SizedBox(height: 16), // original `mb: 2`
-                // 全局字体 + 添加本地字体 — static (font selector sub-page /
-                // custom-font infra don't exist yet).
-                const _FontFamilySection(
-                  label: _fontFamilyLabel,
-                  value: _fontFamilyValue,
-                  helper: _fontFamilyHelper,
-                  addLabel: _addLocalFont,
-                ),
+                // 应用字体 + 代码字体 — wired font pickers (系统 / Google / 本地).
+                const FontFamilySection(),
                 const SizedBox(height: 16),
               ],
             ),
@@ -852,94 +843,6 @@ class _PresetSlider extends StatelessWidget {
       child: FractionalTranslation(
         translation: const Offset(-0.5, 0),
         child: text,
-      ),
-    );
-  }
-}
-
-/// The 全局字体 field + 添加本地字体 button. A readOnly outlined field showing the
-/// current font with a trailing chevron, over an outlined "添加本地字体" button.
-/// Both are static this milestone (the font selector sub-page / custom-font
-/// import don't exist yet), so the whole block ignores pointer input.
-class _FontFamilySection extends StatelessWidget {
-  const _FontFamilySection({
-    required this.label,
-    required this.value,
-    required this.helper,
-    required this.addLabel,
-  });
-
-  final String label;
-  final String value;
-  final String helper;
-  final String addLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final border = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(16),
-      borderSide: BorderSide(color: theme.dividerColor),
-    );
-
-    return IgnorePointer(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          InputDecorator(
-            decoration: InputDecoration(
-              labelText: label,
-              helperText: helper,
-              helperMaxLines: 3,
-              helperStyle: theme.textTheme.bodySmall?.copyWith(
-                fontSize: 12,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              labelStyle: theme.textTheme.bodyLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 16,
-              ),
-              border: border,
-              enabledBorder: border,
-              suffixIcon: Icon(
-                LucideIcons.chevronRight,
-                size: 18,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            child: Text(
-              value,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                fontSize: 16,
-                color: theme.colorScheme.onSurface,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8), // original button `mt: 1`
-          // MUI outlined small Button: a 1px primary outline, primary weight-500
-          // label, `borderRadius: 2` (16px).
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: theme.colorScheme.primary.withValues(alpha: 0.5),
-              ),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Text(
-              addLabel,
-              style: theme.textTheme.labelLarge?.copyWith(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

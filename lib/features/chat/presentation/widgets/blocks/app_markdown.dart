@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/code_block/code_block_view.dart';
+import 'package:aetherlink_flutter/features/settings/application/font_settings_controller.dart';
 
 /// Renders Markdown for message blocks, mirroring the original `Markdown.tsx`.
 ///
@@ -44,8 +45,9 @@ class AppMarkdown extends ConsumerWidget {
   static Widget _inlineCode(
     BuildContext context,
     String text,
-    TextStyle style,
-  ) {
+    TextStyle style, [
+    String? codeFontFamily,
+  ]) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -53,7 +55,13 @@ class AppMarkdown extends ConsumerWidget {
         color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Text(text, style: style.copyWith(fontFamily: 'monospace')),
+      child: Text(
+        text,
+        style: style.copyWith(
+          fontFamily: codeFontFamily ?? 'monospace',
+          fontFamilyFallback: const ['monospace'],
+        ),
+      ),
     );
   }
 
@@ -64,6 +72,7 @@ class AppMarkdown extends ConsumerWidget {
     );
     final theme = Theme.of(context);
     final baseStyle = style ?? theme.textTheme.bodyMedium;
+    final codeFont = ref.watch(codeFontFamilyProvider);
 
     final brightness = theme.brightness;
     final baseSize = baseStyle?.fontSize ?? 16;
@@ -109,11 +118,13 @@ class AppMarkdown extends ConsumerWidget {
         onLinkTap: _openLink,
         codeBuilder: (context, name, code, closed) =>
             CodeBlockView(language: name, code: code),
-        highlightBuilder: _inlineCode,
+        highlightBuilder: (context, text, st) =>
+            _inlineCode(context, text, st, codeFont),
         tableBuilder: (context, rows, textStyle, config) => MarkdownTable(
           rows: rows,
           baseStyle: textStyle,
           useDollarSignsForLatex: dollarLatex,
+          codeFontFamily: codeFont,
         ),
       ),
     );
@@ -135,12 +146,14 @@ class MarkdownTable extends StatefulWidget {
     required this.rows,
     required this.baseStyle,
     this.useDollarSignsForLatex = true,
+    this.codeFontFamily,
     super.key,
   });
 
   final List<CustomTableRow> rows;
   final TextStyle baseStyle;
   final bool useDollarSignsForLatex;
+  final String? codeFontFamily;
 
   @override
   State<MarkdownTable> createState() => _MarkdownTableState();
@@ -411,7 +424,8 @@ class _MarkdownTableState extends State<MarkdownTable> {
           textAlign: align,
           useDollarSignsForLatex: widget.useDollarSignsForLatex,
           onLinkTap: AppMarkdown._openLink,
-          highlightBuilder: AppMarkdown._inlineCode,
+          highlightBuilder: (c, t, s) =>
+              AppMarkdown._inlineCode(c, t, s, widget.codeFontFamily),
         ),
       ),
     );
