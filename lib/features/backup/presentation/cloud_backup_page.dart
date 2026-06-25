@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/backup/data/webdav_auto_sync_service
 import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_file_item.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
 /// Detail page for cloud backup (WebDAV + S3) with top tab navigation.
 class CloudBackupPage extends ConsumerStatefulWidget {
@@ -158,7 +159,7 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
                 ),
               ),
               Expanded(
-                child: TabBarView(
+                child: InstantSwitchTabView(
                   controller: _tabController,
                   children: [
                     _buildWebDavTab(controller, state, theme),

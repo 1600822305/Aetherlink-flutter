@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/voice/domain/voice_presets.dart';
+import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
 /// Full-screen selector overlay matching the Web's FullScreenSelector component.
 ///
@@ -248,7 +249,7 @@ class _FullScreenVoicePickerState extends State<FullScreenVoicePicker>
           ),
           // -- Body --
           Expanded(
-            child: TabBarView(
+            child: InstantSwitchTabView(
               controller: _tabCtrl,
               children: [
                 _buildGrid(_filtered(_allItems)),

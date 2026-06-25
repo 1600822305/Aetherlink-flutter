@@ -14,6 +14,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/ta
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/tabs/settings_tab.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/tabs/topic_tab.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
+import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
 const String _assistantTabLabel = '助手';
 const String _topicTabLabel = '话题';
@@ -113,12 +114,14 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
             const _CloseRow(),
             _SidebarTabBar(controller: tabController, showNotes: showNotes),
             Expanded(
-              // IndexedStack keeps all tabs alive permanently so switching tabs
-              // never triggers an async reload — the "共 N 个" footer and all
-              // list content render instantly. Swipe between tabs is already
-              // disabled, so TabBarView's page animation is unnecessary.
-              child: IndexedStack(
-                index: tabController.index,
+              // Uses the shared [InstantSwitchTabView] (IndexedStack under the
+              // hood) so every tab is built once and stays alive — switching
+              // never triggers a reload, and the "共 N 个" footer + list
+              // content render instantly. Swipe is disabled because the
+              // drawer-close gesture already owns horizontal drags here.
+              child: InstantSwitchTabView(
+                controller: tabController,
+                enableSwipe: false,
                 children: [
                   AssistantTab(onGoToTopics: () => tabController.animateTo(1)),
                   const TopicTab(),

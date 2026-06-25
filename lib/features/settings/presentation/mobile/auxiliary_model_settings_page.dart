@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/features/settings/application/auxiliary_model
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
+import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
 /// Descriptor for one auxiliary model tab.
 class _TabDescriptor {
@@ -136,13 +137,7 @@ class _AuxiliaryModelSettingsPageState
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(
-      length: _groups.length,
-      vsync: this,
-      // Instant tab switching: taps jump without the horizontal slide, while
-      // the swipe gesture on TabBarView is preserved.
-      animationDuration: Duration.zero,
-    );
+    _tabController = TabController(length: _groups.length, vsync: this);
   }
 
   @override
@@ -191,7 +186,7 @@ class _AuxiliaryModelSettingsPageState
       ),
       body: SafeArea(
         top: false,
-        child: TabBarView(
+        child: InstantSwitchTabView(
           controller: _tabController,
           children: [for (final group in _groups) _GroupTab(group: group)],
         ),

@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_ser
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/config/builtin_mcp_servers.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
+import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
 /// The "MCP 服务器" settings page (提示词与工具 → this page), a port of the
 /// original `src/pages/Settings/MCPServerSettings.tsx`.
@@ -37,27 +38,16 @@ class _McpServerSettingsPageState extends ConsumerState<McpServerSettingsPage>
   )..addListener(_onTabChanged);
 
   // The original swaps tab content instantly ({activeTab === N && ...}) with no
-  // sliding page transition, so the shown tab is driven straight off the
-  // controller via an [IndexedStack] — updated the moment a tab is tapped or
-  // swiped, while the tab strip's indicator still slides.
+  // sliding page transition; we use [InstantSwitchTabView] (shared widget that
+  // wraps the same IndexedStack + swipe-threshold idiom used across the app).
+  // We still mirror the controller index into local state so the AppBar's
+  // contextual 「添加」 action can switch based on the current tab.
   int _index = 0;
 
-  // Horizontal swipe accumulator. The original switches tab on a >60px
-  // horizontal drag (a jump, not finger-following paging).
-  double _swipeDx = 0;
-
   void _onTabChanged() {
-    // [TabController.index] jumps to the destination as soon as a tab is
-    // tapped, so the content swaps immediately (the indicator still animates).
     if (_tabController.index != _index) {
       setState(() => _index = _tabController.index);
     }
-  }
-
-  void _onSwipeEnd() {
-    if (_swipeDx.abs() <= 60) return;
-    final next = (_tabController.index + (_swipeDx < 0 ? 1 : -1)).clamp(0, 2);
-    if (next != _tabController.index) _tabController.animateTo(next);
   }
 
   @override
@@ -142,23 +132,13 @@ class _McpServerSettingsPageState extends ConsumerState<McpServerSettingsPage>
         children: [
           _TabBarHeader(controller: _tabController),
           Expanded(
-            // Match the original: tab content swaps instantly (no sliding page
-            // animation — that animation is what dropped frames on the first
-            // switch), with a horizontal swipe (>60px) jumping to the adjacent
-            // tab.
-            child: GestureDetector(
-              onHorizontalDragStart: (_) => _swipeDx = 0,
-              onHorizontalDragUpdate: (d) => _swipeDx += d.delta.dx,
-              onHorizontalDragEnd: (_) => _onSwipeEnd(),
-              child: IndexedStack(
-                index: _index,
-                sizing: StackFit.expand,
-                children: const [
-                  _ExternalTab(),
-                  _BuiltinTab(),
-                  _AssistantTab(),
-                ],
-              ),
+            child: InstantSwitchTabView(
+              controller: _tabController,
+              children: const [
+                _ExternalTab(),
+                _BuiltinTab(),
+                _AssistantTab(),
+              ],
             ),
           ),
         ],

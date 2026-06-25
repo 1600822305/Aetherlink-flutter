@@ -16,6 +16,7 @@ import 'package:aetherlink_flutter/features/voice/domain/tts_provider_setting.da
 import 'package:aetherlink_flutter/features/voice/domain/voice_presets.dart';
 import 'package:aetherlink_flutter/features/voice/domain/voice_settings.dart';
 import 'package:aetherlink_flutter/features/voice/presentation/widgets/full_screen_voice_picker.dart';
+import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
 // ---------------------------------------------------------------------------
 // Service metadata used by the 2nd-level card grid.
@@ -210,7 +211,7 @@ class _VoiceSettingsPageState extends ConsumerState<VoiceSettingsPage>
       ),
       body: SafeArea(
         top: false,
-        child: TabBarView(
+        child: InstantSwitchTabView(
           controller: _tabCtrl,
           children: [
             _TtsTab(settings: settings, ctrl: ctrl),

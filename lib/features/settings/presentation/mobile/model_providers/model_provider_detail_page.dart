@@ -19,6 +19,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/utils/provider_icons.dart';
+import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
 /// The 供应商详情 third-level page — a style-aligned (not pixel-1:1) port of
 /// `src/pages/Settings/ModelProviders/index.tsx`, reusing the PR #44 design
@@ -231,7 +232,7 @@ class _ModelProviderDetailPageState
             ),
           ),
           Expanded(
-            child: TabBarView(
+            child: InstantSwitchTabView(
               controller: _tabController,
               children: [
                 _buildConfigTab(context, provider),
