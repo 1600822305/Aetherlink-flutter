@@ -452,7 +452,7 @@ Cherry Studio 用**双层架构**：
 | 项 | 状态 | 实现 | 关键文件 |
 |----|------|------|----------|
 | 导出（Markdown） | ✅ 已完成 | 笔记菜单「导出」接线：经 `ShareApi`（ADR-0007 抽象）分享真实 `.md` 文件，或经 `ClipboardApi` 复制正文到剪贴板；仅对文件项显示 | `data/notes_file_store.dart`(`absolutePath`)、`presentation/mobile/notes_page.dart`(`_exportNote`/`_shareNoteFile`/`_copyNoteMarkdown`) |
-| 导入（文件/文件夹） | ⬜ 未开始 | — | — |
+| 导入（文件/文件夹） | ✅ 已完成 | 新建菜单「导入笔记」接线：`file_picker` 多选 `.md` 文件，或选文件夹递归导入（保留子目录层级、仅 `.md`、碰撞自动改名）导入到当前目录 | `data/notes_file_store.dart`(`importFiles`/`importFolder`)、`application/notes_controller.dart`、`presentation/mobile/notes_page.dart`(`_importMenu`/`_importFiles`/`_importFolder`) |
 | 拖拽移动 | ⬜ 未开始 | — | — |
 | 目录大纲 ToC | ⬜ 未开始 | — | — |
 | 表格/任务清单/数学公式 | ⬜ 未开始 | — | — |
@@ -463,11 +463,11 @@ Cherry Studio 用**双层架构**：
 
 ### 10.4 仍是占位（UI 在、功能未接）
 
-导入（新建菜单）、目录大纲 ToC、编辑器默认模式/字号/显示大纲等设置项 —— 「即将推出」禁用态。
+目录大纲 ToC、编辑器默认模式/字号/显示大纲等设置项 —— 「即将推出」禁用态。
 
 ### 10.5 后续阶段（未开始）
 
-- **第三期（剩余）**：导入（文件/文件夹、保留层级）、拖拽移动、目录大纲、表格/任务清单/数学公式、导出（图片）、Android SAF 自选目录。
+- **第三期（剩余）**：拖拽移动、目录大纲、表格/任务清单/数学公式、导出（图片）、Android SAF 自选目录。
 - **第四期（待知识库就绪）**：笔记↔知识库联动。
 
 ### 10.6 相关提交
@@ -486,6 +486,7 @@ Cherry Studio 用**双层架构**：
 
 第三期：
 - `feat(notes): export a note as a shared Markdown file or to the clipboard`
+- `feat(notes): import notes from .md files or a folder (hierarchy preserved)`
 
 ---
 

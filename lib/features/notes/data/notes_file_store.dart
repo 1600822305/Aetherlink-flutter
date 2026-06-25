@@ -168,6 +168,52 @@ class NotesFileStore {
     }
   }
 
+  /// Imports external `.md` files into [parentRel] with collision-safe names.
+  /// Non-existent sources are skipped. Returns the number of files imported.
+  Future<int> importFiles(String parentRel, List<String> sourcePaths) async {
+    final root = (await _root()).path;
+    final destDir = _abs(root, parentRel);
+    await Directory(destDir).create(recursive: true);
+    var count = 0;
+    for (final src in sourcePaths) {
+      final file = File(src);
+      if (!file.existsSync()) continue;
+      var base = p.basenameWithoutExtension(src);
+      if (base.trim().isEmpty) base = '未命名笔记';
+      final name = _uniqueName(destDir, base, '.md');
+      await file.copy(p.join(destDir, name));
+      count++;
+    }
+    return count;
+  }
+
+  /// Imports an external folder into [parentRel], preserving the subtree but
+  /// only copying `.md` files (hidden entries skipped). The imported top folder
+  /// gets a collision-safe name. Returns the number of files imported.
+  Future<int> importFolder(String parentRel, String sourceDirPath) async {
+    final root = (await _root()).path;
+    final source = Directory(sourceDirPath);
+    if (!source.existsSync()) return 0;
+    final destParent = _abs(root, parentRel);
+    await Directory(destParent).create(recursive: true);
+    final folderName = _uniqueName(destParent, p.basename(sourceDirPath), '');
+    final destRoot = p.join(destParent, folderName);
+    await Directory(destRoot).create(recursive: true);
+
+    var count = 0;
+    for (final entity in source.listSync(recursive: true, followLinks: false)) {
+      if (entity is! File) continue;
+      final name = p.basename(entity.path);
+      if (name.startsWith('.') || !name.toLowerCase().endsWith('.md')) continue;
+      final relInside = p.relative(entity.path, from: sourceDirPath);
+      final target = p.join(destRoot, relInside);
+      await Directory(p.dirname(target)).create(recursive: true);
+      await entity.copy(target);
+      count++;
+    }
+    return count;
+  }
+
   /// Recursively full-text-searches all notes under the root, matching both
   /// file names and content. Pure-Dart port of Cherry Studio's
   /// `NotesSearchService` (no native plugin): folder/file walk + regex match,

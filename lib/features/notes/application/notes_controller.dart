@@ -205,6 +205,21 @@ class NotesController extends _$NotesController {
     await refresh();
   }
 
+  /// Imports external `.md` files into the current folder; returns the count.
+  Future<int> importFiles(List<String> sourcePaths) async {
+    final count = await _files.importFiles(state.currentPath, sourcePaths);
+    await refresh();
+    return count;
+  }
+
+  /// Imports an external folder (preserving its subtree) into the current
+  /// folder; returns the number of `.md` files imported.
+  Future<int> importFolder(String sourceDirPath) async {
+    final count = await _files.importFolder(state.currentPath, sourceDirPath);
+    await refresh();
+    return count;
+  }
+
   Future<void> rename(NoteNode node, String newName) async {
     await _files.rename(node.relativePath, node.isDirectory, newName);
     await refresh();

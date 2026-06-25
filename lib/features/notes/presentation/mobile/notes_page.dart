@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -209,12 +210,14 @@ class NotesPage extends ConsumerWidget {
                 _promptCreate(context, ref, isFolder: true);
               },
             ),
-            const ListTile(
-              enabled: false,
-              leading: Icon(LucideIcons.upload),
-              title: Text('导入笔记'),
-              subtitle: Text('即将支持'),
-              onTap: null,
+            ListTile(
+              leading: const Icon(LucideIcons.upload),
+              title: const Text('导入笔记'),
+              subtitle: const Text('从文件或文件夹导入'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _importMenu(context, ref);
+              },
             ),
           ],
         ),
@@ -243,6 +246,77 @@ class NotesPage extends ConsumerWidget {
         AppRouter.noteEditorPath(relPath, _titleOf(name)),
       );
       await ref.read(notesControllerProvider.notifier).refresh();
+    }
+  }
+
+  /// Lets the user import notes into the current folder, either by picking one
+  /// or more `.md` files or a whole folder (subtree preserved, `.md` only).
+  Future<void> _importMenu(BuildContext context, WidgetRef ref) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(LucideIcons.fileText, color: _fileColor),
+              title: const Text('导入 Markdown 文件'),
+              subtitle: const Text('可多选 .md 文件'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _importFiles(context, ref);
+              },
+            ),
+            ListTile(
+              leading: const Icon(LucideIcons.folderOpen, color: _folderColor),
+              title: const Text('导入文件夹'),
+              subtitle: const Text('保留子目录层级（仅导入 .md）'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _importFolder(context, ref);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _importFiles(BuildContext context, WidgetRef ref) async {
+    final result = await FilePicker.pickFiles(
+      allowMultiple: true,
+      type: FileType.custom,
+      allowedExtensions: const ['md'],
+      dialogTitle: '选择要导入的 Markdown 文件',
+    );
+    if (result == null) return; // cancelled
+    final paths = [
+      for (final f in result.files)
+        if (f.path != null) f.path!,
+    ];
+    if (paths.isEmpty) return;
+    try {
+      final count =
+          await ref.read(notesControllerProvider.notifier).importFiles(paths);
+      if (context.mounted) {
+        _toast(context, count > 0 ? '已导入 $count 个笔记' : '没有可导入的笔记');
+      }
+    } catch (e) {
+      if (context.mounted) _toast(context, '导入失败：$e');
+    }
+  }
+
+  Future<void> _importFolder(BuildContext context, WidgetRef ref) async {
+    final dir = await FilePicker.getDirectoryPath(dialogTitle: '选择要导入的文件夹');
+    if (dir == null) return; // cancelled
+    try {
+      final count =
+          await ref.read(notesControllerProvider.notifier).importFolder(dir);
+      if (context.mounted) {
+        _toast(context, count > 0 ? '已导入 $count 个笔记' : '该文件夹内没有 .md 文件');
+      }
+    } catch (e) {
+      if (context.mounted) _toast(context, '导入失败：$e');
     }
   }
 

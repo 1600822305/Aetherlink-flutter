@@ -151,7 +151,7 @@ class NotesSettingsPage extends ConsumerWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            '更多功能（导入、目录大纲、表格/任务清单/数学公式、拖拽移动）将在后续版本陆续上线。',
+            '更多功能（目录大纲、表格/任务清单/数学公式、拖拽移动）将在后续版本陆续上线。',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
