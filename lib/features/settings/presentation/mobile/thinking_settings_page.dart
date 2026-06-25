@@ -8,11 +8,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/settings/application/thinking_settings_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
-import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
-import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/shared/domain/thinking_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/thinking_styled_view.dart';
-import 'package:aetherlink_flutter/shared/widgets/thinking_timeline_view.dart';
 
 /// The "思考过程设置" sub-page (外观设置 → this page), a port of the original
 /// `src/pages/Settings/ThinkingProcessSettings.tsx`.
@@ -92,7 +89,6 @@ class _DisplayCard extends StatelessWidget {
   final ThinkingSettingsController controller;
 
   static const Map<ThinkingDisplayStyle, String> _styleLabels = {
-    ThinkingDisplayStyle.timeline: '时间线模式（思考+工具步骤）',
     ThinkingDisplayStyle.compact: '紧凑模式（可折叠）',
     ThinkingDisplayStyle.full: '完整模式（始终展开）',
     ThinkingDisplayStyle.minimal: '极简模式（小图标）',
@@ -136,10 +132,13 @@ class _DisplayCard extends StatelessWidget {
             value: settings.thinkingToolInline,
             onChanged: controller.setThinkingToolInline,
           ),
+          const SizedBox(height: 12),
+          const _PendingNote(
+            text: '工具内联显示功能即将支持：Flutter 端暂未实现思考阶段工具调用分组，此开关当前仅保存设置。',
+          ),
           const _CardDivider(),
           Text(
             '设置AI助手思考过程的显示方式：\n'
-            '• 时间线模式：思考与工具调用交替排列，竖线连接因果链（推荐）\n'
             '• 紧凑模式：标准卡片样式，可折叠展开\n'
             '• 完整模式：始终展开显示全部内容\n'
             '• 极简模式：只显示小图标，点击查看内容\n'
@@ -156,30 +155,6 @@ class _DisplayCard extends StatelessWidget {
     );
   }
 }
-
-/// Sample tool blocks for the timeline preview.
-final List<ToolBlock> _sampleToolBlocks = [
-  ToolBlock(
-    id: 'preview-tool-1',
-    messageId: 'preview-msg',
-    status: MessageBlockStatus.success,
-    createdAt: DateTime.now(),
-    toolId: 'search_web',
-    toolName: 'search_web',
-    arguments: const {'query': '如何提高工作效率'},
-    content: '{"results": [{"title": "提高效率的10个方法", "url": "https://example.com"}]}',
-  ),
-  ToolBlock(
-    id: 'preview-tool-2',
-    messageId: 'preview-msg',
-    status: MessageBlockStatus.success,
-    createdAt: DateTime.now(),
-    toolId: 'read_url',
-    toolName: 'read_url',
-    arguments: const {'url': 'https://example.com/article'},
-    content: '文章内容：番茄工作法是一种有效的时间管理方法...',
-  ),
-];
 
 /// 实时预览 card: renders a sample [ThinkingStyledView] that reflects the chosen
 /// style + 自动折叠 live (mirrors the original `previewThinkingBlock`).
@@ -266,33 +241,20 @@ class _PreviewCardState extends State<_PreviewCard> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: theme.dividerColor),
             ),
-            child: settings.displayStyle == ThinkingDisplayStyle.timeline
-                ? ThinkingTimelineView(
-                    thinkingContent: _PreviewCard.sample,
-                    thinkingSeconds: 3.5,
-                    isThinking: false,
-                    thoughtAutoCollapse: settings.thoughtAutoCollapse,
-                    inlineToolBlocks: _sampleToolBlocks,
-                    markdownBuilder: (context, content, style) => GptMarkdown(
-                      content,
-                      style: style ?? theme.textTheme.bodyMedium,
-                    ),
-                  )
-                : ThinkingStyledView(
-                    style: settings.displayStyle,
-                    content: _PreviewCard.sample,
-                    isThinking: false,
-                    seconds: 3.5,
-                    expanded: _expanded,
-                    copied: _copied,
-                    onToggleExpanded: () =>
-                        setState(() => _expanded = !_expanded),
-                    onCopy: _copy,
-                    markdownBuilder: (context, content, style) => GptMarkdown(
-                      content,
-                      style: style ?? theme.textTheme.bodyMedium,
-                    ),
-                  ),
+            child: ThinkingStyledView(
+              style: settings.displayStyle,
+              content: _PreviewCard.sample,
+              isThinking: false,
+              seconds: 3.5,
+              expanded: _expanded,
+              copied: _copied,
+              onToggleExpanded: () => setState(() => _expanded = !_expanded),
+              onCopy: _copy,
+              markdownBuilder: (context, content, style) => GptMarkdown(
+                content,
+                style: style ?? theme.textTheme.bodyMedium,
+              ),
+            ),
           ),
         ],
       ),
