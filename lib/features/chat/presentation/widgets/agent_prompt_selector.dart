@@ -51,43 +51,51 @@ class _AgentPromptSelectorDialogState
         ? const <AgentPrompt>[]
         : searchAgentPrompts(query);
 
+    // Reserve room for the keyboard so the dialog shrinks instead of
+    // overflowing / hiding the action buttons when search is focused.
+    final keyboard = mq.viewInsets.bottom;
+    final maxHeight = (mq.size.height - keyboard - 48).clamp(280.0, 720.0);
+
     return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      insetPadding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 24,
+        bottom: 24 + keyboard,
+      ),
       backgroundColor: theme.colorScheme.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
-        child: SizedBox(
-          // Web: Paper height 80vh.
-          height: mq.size.height * 0.8,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _title(theme),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _searchField(theme),
-                      const SizedBox(height: 16),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          child: query.isNotEmpty
-                              ? _searchSection(theme, results)
-                              : _categorySection(theme),
-                        ),
+        constraints: BoxConstraints(maxWidth: 560, maxHeight: maxHeight),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _title(theme),
+            const Divider(height: 1),
+            Flexible(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _searchField(theme),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: query.isNotEmpty
+                            ? _searchSection(theme, results)
+                            : _categorySection(theme),
                       ),
-                      if (_selected != null) _preview(theme, _selected!),
-                    ],
-                  ),
+                    ),
+                    if (_selected != null) _preview(theme, _selected!),
+                  ],
                 ),
               ),
-              _actions(theme),
-            ],
-          ),
+            ),
+            const Divider(height: 1),
+            _actions(theme),
+          ],
         ),
       ),
     );
@@ -97,15 +105,16 @@ class _AgentPromptSelectorDialogState
 
   Widget _title(ThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 12, 16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
       child: Row(
         children: [
+          const SizedBox(width: 4),
           Expanded(
             child: Text(
               '选择智能体提示词',
               style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w500,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
                 color: theme.colorScheme.onSurface,
               ),
             ),
@@ -393,21 +402,24 @@ class _AgentPromptSelectorDialogState
   // ---- Actions --------------------------------------------------------------
 
   Widget _actions(ThemeData theme) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          const SizedBox(width: 8),
-          FilledButton(
-            onPressed: _selected == null ? null : _confirm,
-            child: const Text('使用此提示词'),
-          ),
-        ],
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+            const SizedBox(width: 8),
+            FilledButton(
+              onPressed: _selected == null ? null : _confirm,
+              child: const Text('使用此提示词'),
+            ),
+          ],
+        ),
       ),
     );
   }
