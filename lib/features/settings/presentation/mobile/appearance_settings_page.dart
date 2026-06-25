@@ -29,13 +29,53 @@ import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_
 /// the slider's `#9333EA → #754AB4` gradient are taken verbatim from the
 /// original CSS (the only literal colors on the page; everything else is a
 /// theme token).
-class AppearanceSettingsPage extends ConsumerWidget {
+class AppearanceSettingsPage extends ConsumerStatefulWidget {
   const AppearanceSettingsPage({super.key});
 
   static const String _title = '外观设置';
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AppearanceSettingsPage> createState() =>
+      _AppearanceSettingsPageState();
+}
+
+class _AppearanceSettingsPageState extends ConsumerState<AppearanceSettingsPage>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController = TabController(
+    length: 3,
+    vsync: this,
+  )..addListener(_onTabChanged);
+
+  // Drive the shown tab straight off the controller via an [IndexedStack] so
+  // content swaps the moment a tab is tapped or swiped (the indicator still
+  // slides), mirroring 信息气泡管理.
+  int _index = 0;
+
+  // Horizontal swipe accumulator: a >60px drag jumps to the adjacent tab.
+  double _swipeDx = 0;
+
+  void _onTabChanged() {
+    if (_tabController.index != _index) {
+      setState(() => _index = _tabController.index);
+    }
+  }
+
+  void _onSwipeEnd() {
+    if (_swipeDx.abs() <= 60) return;
+    final next = (_tabController.index + (_swipeDx < 0 ? 1 : -1)).clamp(0, 2);
+    if (next != _tabController.index) _tabController.animateTo(next);
+  }
+
+  @override
+  void dispose() {
+    _tabController
+      ..removeListener(_onTabChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final mode = ref.watch(themeModeControllerProvider);
     final fontSize = ref.watch(fontSizeControllerProvider);
@@ -73,7 +113,7 @@ class AppearanceSettingsPage extends ConsumerWidget {
           fontWeight: FontWeight.w600,
           color: theme.colorScheme.onSurface,
         ),
-        title: const Text(_title),
+        title: const Text(AppearanceSettingsPage._title),
         actions: [
           // 导入 / 分享: primary-colored 20px lucide glyphs. Rendered at full
           // fidelity but non-interactive — appearance-config import/export needs
@@ -86,29 +126,127 @@ class AppearanceSettingsPage extends ConsumerWidget {
           const SizedBox(width: 16), // toolbar right gutter (mobile breakpoint)
         ],
       ),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          16,
-          16,
-          // The original `paddingBottom: var(--content-bottom-padding)` plus the
-          // device safe-area inset, so the last card clears the home indicator.
-          16 + MediaQuery.paddingOf(context).bottom,
-        ),
+      body: Column(
         children: [
-          _ThemeAndFontCard(
-            mode: mode,
-            onModeChanged: (next) =>
-                ref.read(themeModeControllerProvider.notifier).use(next),
-            fontSize: fontSize,
-            onFontSizeChanged: (next) =>
-                ref.read(fontSizeControllerProvider.notifier).use(next),
+          _TabBarHeader(controller: _tabController),
+          Expanded(
+            child: GestureDetector(
+              onHorizontalDragStart: (_) => _swipeDx = 0,
+              onHorizontalDragUpdate: (d) => _swipeDx += d.delta.dx,
+              onHorizontalDragEnd: (_) => _onSwipeEnd(),
+              child: IndexedStack(
+                index: _index,
+                sizing: StackFit.expand,
+                children: [
+                  _TabList(
+                    children: [
+                      _ThemeAndFontCard(
+                        mode: mode,
+                        onModeChanged: (next) => ref
+                            .read(themeModeControllerProvider.notifier)
+                            .use(next),
+                        fontSize: fontSize,
+                        onFontSizeChanged: (next) => ref
+                            .read(fontSizeControllerProvider.notifier)
+                            .use(next),
+                      ),
+                    ],
+                  ),
+                  const _TabList(children: [_CustomizationCard()]),
+                  const _TabList(children: [_DeveloperToolsCard()]),
+                ],
+              ),
+            ),
           ),
-          const SizedBox(height: 16), // original card `mb: 2`
-          const _CustomizationCard(),
-          const SizedBox(height: 16),
-          const _DeveloperToolsCard(),
         ],
+      ),
+    );
+  }
+}
+
+/// The scrollable body of a single tab: the cards, with the page's standard
+/// 16px padding (plus the bottom safe-area inset).
+class _TabList extends StatelessWidget {
+  const _TabList({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        16 + MediaQuery.paddingOf(context).bottom,
+      ),
+      children: children,
+    );
+  }
+}
+
+/// The tab strip below the app bar, styled like 辅助模型设置页 (`auxiliary_model_
+/// settings_page`'s `_SegmentedTabBar`): a rounded bordered track holding
+/// scrollable pill tabs (icon + label) with a tinted rounded indicator.
+class _TabBarHeader extends StatelessWidget {
+  const _TabBarHeader({required this.controller});
+
+  final TabController controller;
+
+  static const List<(IconData, String)> _tabs = [
+    (LucideIcons.palette, '主题字体'),
+    (LucideIcons.layout, '界面定制'),
+    (LucideIcons.terminal, '开发者工具'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: theme.dividerColor),
+          color: theme.colorScheme.surface,
+        ),
+        padding: const EdgeInsets.all(3),
+        child: TabBar(
+          controller: controller,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          indicator: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            color: theme.colorScheme.primary.withValues(alpha: 0.12),
+          ),
+          indicatorSize: TabBarIndicatorSize.tab,
+          dividerHeight: 0,
+          labelColor: theme.colorScheme.primary,
+          unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+          labelStyle: theme.textTheme.labelLarge?.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+          unselectedLabelStyle: theme.textTheme.labelLarge?.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+          labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+          tabs: [
+            for (final (icon, label) in _tabs)
+              Tab(
+                height: 34,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 15),
+                    const SizedBox(width: 5),
+                    Text(label),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
