@@ -249,6 +249,21 @@ class NotesController extends _$NotesController {
     await refresh();
   }
 
+  /// Moves [node] into [destFolderRel] (root when empty), carrying over any
+  /// starred state to the new path.
+  Future<void> move(NoteNode node, String destFolderRel) async {
+    final newPath =
+        await _files.move(node.relativePath, node.isDirectory, destFolderRel);
+    if (state.starred.contains(node.relativePath)) {
+      final next = {...state.starred}
+        ..remove(node.relativePath)
+        ..add(newPath);
+      state = state.copyWith(starred: next);
+      await _store.saveSetting(kNotesStarredPathsKey, jsonEncode(next.toList()));
+    }
+    await refresh();
+  }
+
   Future<void> delete(NoteNode node) async {
     await _files.delete(node.relativePath, node.isDirectory);
     // Drop any starred entry for the deleted path.

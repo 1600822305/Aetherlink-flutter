@@ -150,6 +150,37 @@ class NotesFileStore {
     return _rel(root, renamed.path);
   }
 
+  /// Moves a file/folder into [destFolderRel] (root when empty), with a
+  /// collision-safe name. Throws when moving a folder into itself or one of its
+  /// descendants. Returns the new relative path.
+  Future<String> move(
+    String relPath,
+    bool isDirectory,
+    String destFolderRel,
+  ) async {
+    final root = (await _root()).path;
+    if (isDirectory &&
+        (destFolderRel == relPath || destFolderRel.startsWith('$relPath/'))) {
+      throw const FileSystemException('不能移动到自身或其子目录');
+    }
+    final src = _abs(root, relPath);
+    final name = p.basename(src);
+    final destDirAbs = _abs(root, destFolderRel);
+    await Directory(destDirAbs).create(recursive: true);
+
+    final base = isDirectory
+        ? name
+        : (name.toLowerCase().endsWith('.md')
+              ? name.substring(0, name.length - 3)
+              : name);
+    final targetName = _uniqueName(destDirAbs, base, isDirectory ? '' : '.md');
+    final target = p.join(destDirAbs, targetName);
+    final moved = isDirectory
+        ? await Directory(src).rename(target)
+        : await File(src).rename(target);
+    return _rel(root, moved.path);
+  }
+
   /// Deletes a file or folder (folders recursively).
   Future<void> delete(String relPath, bool isDirectory) async {
     final root = (await _root()).path;

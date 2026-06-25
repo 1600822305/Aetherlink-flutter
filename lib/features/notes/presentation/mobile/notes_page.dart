@@ -84,7 +84,12 @@ class NotesPage extends ConsumerWidget {
           if (search.active && search.hasQuery)
             Expanded(child: _buildSearchResults(context, ref, theme, search))
           else ...[
-            _Breadcrumbs(state: state, controller: controller),
+            _Breadcrumbs(
+              state: state,
+              controller: controller,
+              onMoveTo: (dragged, destPath) =>
+                  _move(context, ref, dragged, destPath),
+            ),
             Divider(height: 1, color: theme.dividerColor),
             Expanded(child: _buildBody(context, ref, theme, state, controller)),
           ],
@@ -176,6 +181,9 @@ class NotesPage extends ConsumerWidget {
           },
           onToggleStar: () => controller.toggleStar(node),
           onMenu: () => _showItemMenu(context, ref, node),
+          onAcceptDrop: node.isDirectory
+              ? (dragged) => _move(context, ref, dragged, node.relativePath)
+              : null,
         );
       },
     );
@@ -519,6 +527,20 @@ class NotesPage extends ConsumerWidget {
     }
   }
 
+  Future<void> _move(
+    BuildContext context,
+    WidgetRef ref,
+    NoteNode dragged,
+    String destFolderRel,
+  ) async {
+    try {
+      await ref.read(notesControllerProvider.notifier).move(dragged, destFolderRel);
+      if (context.mounted) _toast(context, '已移动「${dragged.title}」');
+    } catch (e) {
+      if (context.mounted) _toast(context, '移动失败：$e');
+    }
+  }
+
   Future<void> _confirmDelete(
     BuildContext context,
     WidgetRef ref,
@@ -598,25 +620,45 @@ class NotesPage extends ConsumerWidget {
 }
 
 class _Breadcrumbs extends StatelessWidget {
-  const _Breadcrumbs({required this.state, required this.controller});
+  const _Breadcrumbs({
+    required this.state,
+    required this.controller,
+    required this.onMoveTo,
+  });
 
   final NotesState state;
   final NotesController controller;
+
+  /// Drop a dragged node onto a crumb to move it into that folder.
+  final void Function(NoteNode dragged, String destPath) onMoveTo;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final crumbs = state.breadcrumbs;
+    final parentPath = crumbs.length >= 2 ? crumbs[crumbs.length - 2].path : '';
     return SizedBox(
       height: 44,
       child: Row(
         children: [
           if (!state.isRoot)
-            IconButton(
-              icon: const Icon(LucideIcons.arrowLeft, size: 18),
-              color: theme.colorScheme.onSurfaceVariant,
-              tooltip: '返回上级',
-              onPressed: controller.goUp,
+            DragTarget<NoteNode>(
+              onWillAcceptWithDetails: (d) => _canMoveInto(d.data, parentPath),
+              onAcceptWithDetails: (d) => onMoveTo(d.data, parentPath),
+              builder: (context, candidate, rejected) => Container(
+                decoration: candidate.isNotEmpty
+                    ? BoxDecoration(
+                        color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      )
+                    : null,
+                child: IconButton(
+                  icon: const Icon(LucideIcons.arrowLeft, size: 18),
+                  color: theme.colorScheme.onSurfaceVariant,
+                  tooltip: '返回上级',
+                  onPressed: controller.goUp,
+                ),
+              ),
             )
           else
             const SizedBox(width: 12),
@@ -627,6 +669,23 @@ class _Breadcrumbs extends StatelessWidget {
               itemBuilder: (context, index) {
                 final crumb = crumbs[index];
                 final isLast = index == crumbs.length - 1;
+                final button = TextButton(
+                  onPressed: isLast ? null : () => controller.goTo(crumb.path),
+                  style: TextButton.styleFrom(
+                    minimumSize: Size.zero,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(
+                    crumb.label,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: isLast ? FontWeight.w600 : FontWeight.w400,
+                      color: isLast
+                          ? theme.colorScheme.onSurface
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                );
                 return Row(
                   children: [
                     if (index > 0)
@@ -636,21 +695,19 @@ class _Breadcrumbs extends StatelessWidget {
                         color: theme.colorScheme.onSurfaceVariant
                             .withValues(alpha: 0.5),
                       ),
-                    TextButton(
-                      onPressed: isLast ? null : () => controller.goTo(crumb.path),
-                      style: TextButton.styleFrom(
-                        minimumSize: Size.zero,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(
-                        crumb.label,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          fontWeight: isLast ? FontWeight.w600 : FontWeight.w400,
-                          color: isLast
-                              ? theme.colorScheme.onSurface
-                              : theme.colorScheme.onSurfaceVariant,
-                        ),
+                    DragTarget<NoteNode>(
+                      onWillAcceptWithDetails: (d) =>
+                          _canMoveInto(d.data, crumb.path),
+                      onAcceptWithDetails: (d) => onMoveTo(d.data, crumb.path),
+                      builder: (context, candidate, rejected) => Container(
+                        decoration: candidate.isNotEmpty
+                            ? BoxDecoration(
+                                color: theme.colorScheme.primary
+                                    .withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              )
+                            : null,
+                        child: button,
                       ),
                     ),
                   ],
@@ -664,12 +721,28 @@ class _Breadcrumbs extends StatelessWidget {
   }
 }
 
+/// Whether [dragged] may be moved into the folder at [destFolderRel] (root when
+/// empty): not a no-op (already there / itself) and never a folder into its own
+/// subtree.
+bool _canMoveInto(NoteNode dragged, String destFolderRel) {
+  if (dragged.relativePath == destFolderRel) return false;
+  final src = dragged.relativePath;
+  final parent = src.contains('/') ? src.substring(0, src.lastIndexOf('/')) : '';
+  if (parent == destFolderRel) return false; // already in this folder
+  if (dragged.isDirectory &&
+      (destFolderRel == src || destFolderRel.startsWith('$src/'))) {
+    return false; // into itself / a descendant
+  }
+  return true;
+}
+
 class _NoteRow extends StatelessWidget {
   const _NoteRow({
     required this.node,
     required this.onTap,
     required this.onToggleStar,
     required this.onMenu,
+    this.onAcceptDrop,
   });
 
   final NoteNode node;
@@ -677,10 +750,14 @@ class _NoteRow extends StatelessWidget {
   final VoidCallback onToggleStar;
   final VoidCallback onMenu;
 
+  /// Called with the dragged node when something is dropped onto this row.
+  /// Non-null only for folder rows (drop = move into this folder).
+  final ValueChanged<NoteNode>? onAcceptDrop;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return InkWell(
+    final row = InkWell(
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -745,11 +822,76 @@ class _NoteRow extends StatelessWidget {
         ),
       ),
     );
+
+    final draggable = LongPressDraggable<NoteNode>(
+      data: node,
+      dragAnchorStrategy: pointerDragAnchorStrategy,
+      feedback: _DragChip(node: node),
+      childWhenDragging: Opacity(opacity: 0.4, child: row),
+      child: row,
+    );
+
+    final accept = onAcceptDrop;
+    if (accept == null) return draggable; // files aren't drop targets
+    return DragTarget<NoteNode>(
+      onWillAcceptWithDetails: (d) => _canMoveInto(d.data, node.relativePath),
+      onAcceptWithDetails: (d) => accept(d.data),
+      builder: (context, candidate, rejected) => Container(
+        color: candidate.isNotEmpty
+            ? theme.colorScheme.primary.withValues(alpha: 0.12)
+            : null,
+        child: draggable,
+      ),
+    );
   }
 
   static String _formatTime(DateTime t) {
     String two(int v) => v.toString().padLeft(2, '0');
     return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
+  }
+}
+
+/// The floating label shown under the finger while dragging a note/folder.
+class _DragChip extends StatelessWidget {
+  const _DragChip({required this.node});
+
+  final NoteNode node;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: theme.colorScheme.primary),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              node.isDirectory ? LucideIcons.folder : LucideIcons.fileText,
+              size: 18,
+              color: node.isDirectory
+                  ? NotesPage._folderColor
+                  : NotesPage._fileColor,
+            ),
+            const SizedBox(width: 8),
+            Text(node.title, style: theme.textTheme.bodyMedium),
+          ],
+        ),
+      ),
+    );
   }
 }
 

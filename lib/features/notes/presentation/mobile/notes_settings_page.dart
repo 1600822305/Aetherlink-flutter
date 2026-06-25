@@ -154,7 +154,7 @@ class NotesSettingsPage extends ConsumerWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            '更多功能（拖拽移动、导出图片、Android 自选目录）将在后续版本陆续上线。',
+            '更多功能（导出图片、Android 自选目录）将在后续版本陆续上线。',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
