@@ -637,25 +637,20 @@ class _ProviderAvatar extends StatelessWidget {
   }
 }
 
-/// The lower "推荐操作" card: a list subheader followed by three rows
-/// (辅助模型设置 / 模型选择器样式 / 添加模型服务商) split by full-width inset
-/// dividers, each with its own brand-tinted avatar.
+/// The lower "推荐操作" card: a list subheader followed by two rows
+/// (辅助模型设置 / 添加模型服务商) split by a full-width inset divider, each with
+/// its own brand-tinted avatar.
 class _RecommendedActionsCard extends StatelessWidget {
   const _RecommendedActionsCard();
 
   static const String _subheader = '推荐操作';
   static const String _assistantTitle = '辅助模型';
-  static const String _assistantDesc = '聊天、标题、翻译、OCR 等默认模型与提示词';
-  static const String _selectorTitle = '模型选择器样式';
-  // The original defaults `modelSelectorStyle` to 'dialog' (`defaults.ts`), so
-  // the static placeholder shows the dialog state's label + `List` icon.
-  static const String _selectorDesc = '当前：弹窗式选择器（点击切换为下拉式）';
+  static const String _assistantDesc = '各场景默认模型与提示词';
   static const String _addProviderTitle = '添加模型服务商';
   static const String _addProviderDesc = '设置新的模型服务商';
 
   // Verbatim per-action avatar accents from the original CSS.
   static const Color _assistantAccent = Color(0xFF4F46E5); // indigo
-  static const Color _selectorAccent = Color(0xFF06B6D4); // cyan
   static const Color _addProviderAccent = Color(0xFF9333EA); // purple
 
   // The subheader `bgcolor: 'rgba(0,0,0,0.01)'`.
@@ -697,14 +692,6 @@ class _RecommendedActionsCard extends StatelessWidget {
             title: _assistantTitle,
             description: _assistantDesc,
             onTap: () => context.push(AppRouter.auxiliaryModelPath),
-          ),
-          const Divider(height: 1, thickness: 1),
-          const _ActionRow(
-            icon: LucideIcons.list,
-            accent: _selectorAccent,
-            title: _selectorTitle,
-            description: _selectorDesc,
-            showChevron: false,
           ),
           const Divider(height: 1, thickness: 1),
           // The only wired entry this milestone: 添加供应商 → AddProviderPage
