@@ -268,7 +268,7 @@ class _FunctionCard extends StatelessWidget {
             tooltip: '设置信息气泡的功能和显示方式',
             description: '自定义消息版本历史和功能气泡的显示方式',
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _Select<MessageActionMode>(
             label: '消息操作显示模式',
             value: settings.messageActionMode,
@@ -345,7 +345,7 @@ class _WidthCard extends StatelessWidget {
             title: '消息气泡宽度设置',
             tooltip: '自定义聊天界面中消息气泡的宽度范围，适配不同设备屏幕',
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _WidthSlider(
             icon: LucideIcons.bot,
             label: 'AI消息最大宽度',
@@ -370,7 +370,7 @@ class _WidthCard extends StatelessWidget {
             max: 90,
             onChanged: controller.setMessageBubbleMinWidth,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
@@ -489,19 +489,19 @@ class _AvatarCard extends StatelessWidget {
             value: settings.showUserAvatar,
             onChanged: controller.setShowUserAvatar,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _PlainSwitchRow(
             title: '显示用户名称',
             value: settings.showUserName,
             onChanged: controller.setShowUserName,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _PlainSwitchRow(
             title: '显示模型头像',
             value: settings.showModelAvatar,
             onChanged: controller.setShowModelAvatar,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _PlainSwitchRow(
             title: '显示模型名称',
             value: settings.showModelName,
@@ -544,7 +544,7 @@ class _HideBubbleCard extends StatelessWidget {
             value: settings.hideUserBubble,
             onChanged: controller.setHideUserBubble,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _DescribedSwitchRow(
             title: '隐藏AI气泡',
             description: '隐藏AI回复的气泡背景，只显示消息内容',
@@ -601,7 +601,7 @@ class _ColorsCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
           // Header row: 空 / 背景色 / 字体色.
           Row(
             children: [
@@ -626,7 +626,7 @@ class _ColorsCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _ColorRow(
             icon: LucideIcons.user,
             label: '用户消息',
@@ -640,7 +640,7 @@ class _ColorsCard extends StatelessWidget {
             onBubbleChanged: (c) => update(colors.copyWith(userBubbleColor: c)),
             onTextChanged: (c) => update(colors.copyWith(userTextColor: c)),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _ColorRow(
             icon: LucideIcons.bot,
             label: 'AI回复',
@@ -653,14 +653,14 @@ class _ColorsCard extends StatelessWidget {
             onBubbleChanged: (c) => update(colors.copyWith(aiBubbleColor: c)),
             onTextChanged: (c) => update(colors.copyWith(aiTextColor: c)),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Text(
             '提示：字体颜色同时控制气泡内文字和工具栏按钮的颜色。',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
           _MessageBubblePreview(settings: settings),
         ],
       ),
@@ -932,8 +932,9 @@ class _PreviewMessage extends StatelessWidget {
 // Shared card scaffolding (mirrors `chat_interface_settings_page.dart`)
 // ---------------------------------------------------------------------------
 
-/// `MessageBubbleSettings.tsx` `cardStyle`: a 16px-gap, 20px-padded, 24px-radius
-/// card with a 1px divider border, the paper surface and no shadow.
+/// `MessageBubbleSettings.tsx` `cardStyle`, tightened for the tabbed layout: a
+/// 12px-gap, 14px-padded, 18px-radius card with a 1px divider border, the paper
+/// surface and no shadow.
 class _Card extends StatelessWidget {
   const _Card({required this.child});
 
@@ -943,11 +944,11 @@ class _Card extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: theme.dividerColor),
       ),
       child: child,
@@ -962,7 +963,7 @@ class _CardDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       child: Divider(height: 1, color: Theme.of(context).dividerColor),
     );
   }
@@ -992,14 +993,14 @@ class _CardHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(7),
           decoration: BoxDecoration(
             color: hue.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(icon, size: 20, color: hue),
+          child: Icon(icon, size: 18, color: hue),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1029,7 +1030,7 @@ class _CardHeader extends StatelessWidget {
                 ],
               ),
               if (description != null) ...[
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   description!,
                   style: theme.textTheme.bodyMedium?.copyWith(
@@ -1105,14 +1106,14 @@ class _SubSwitchRow extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(7),
           decoration: BoxDecoration(
             color: hue.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(icon, size: 20, color: hue),
+          child: Icon(icon, size: 18, color: hue),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1123,7 +1124,7 @@ class _SubSwitchRow extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 description,
                 style: theme.textTheme.bodyMedium?.copyWith(
@@ -1244,11 +1245,11 @@ class _Select<T> extends StatelessWidget {
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 12,
-          vertical: 12,
+          vertical: 9,
         ),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: theme.dividerColor),
         ),
       ),
