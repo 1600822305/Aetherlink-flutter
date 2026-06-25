@@ -63,7 +63,6 @@ class _ModelProviderDetailPageState
   bool _kvLoaded = false;
   String _search = '';
   String? _testingModelId;
-  String? _groupPendingDelete;
 
   @override
   void initState() {
@@ -585,17 +584,14 @@ class _ModelProviderDetailPageState
                         ),
                       ),
                       IconButton(
-                        onPressed: () => _deleteGroup(provider, models),
-                        icon: Icon(
-                          _groupPendingDelete == groupName
-                              ? LucideIcons.check
-                              : LucideIcons.trash2,
-                          size: 14,
+                        onPressed: () => _deleteGroup(
+                          provider,
+                          models,
+                          groupName,
                         ),
+                        icon: const Icon(LucideIcons.trash2, size: 14),
                         color: theme.colorScheme.error,
-                        tooltip: _groupPendingDelete == groupName
-                            ? '确认删除整组'
-                            : '删除整组',
+                        tooltip: '删除整组',
                         constraints: const BoxConstraints(),
                         padding: const EdgeInsets.all(6),
                       ),
@@ -863,20 +859,36 @@ class _ModelProviderDetailPageState
         );
   }
 
-  /// 2-step group delete: the first tap arms [_groupPendingDelete]; a second tap
-  /// (on the same group) removes every model in it.
-  Future<void> _deleteGroup(ModelProvider provider, List<Model> models) async {
-    final names = groupModels<Model>(
-      [models.first],
-      idOf: (m) => m.id,
-      groupOf: (m) => m.group,
-      providerId: provider.id,
+  /// Delete an entire model group — shows a dialog, then offers undo via
+  /// SnackBar so the user can recover the deleted models.
+  Future<void> _deleteGroup(
+    ModelProvider provider,
+    List<Model> models,
+    String groupName,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('删除整组模型'),
+        content: Text('确定要删除「$groupName」中的 ${models.length} 个模型吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
     );
-    final groupName = names.first.$1;
-    if (_groupPendingDelete != groupName) {
-      setState(() => _groupPendingDelete = groupName);
-      return;
-    }
+    if (confirmed != true || !mounted) return;
+
+    final deletedModels = List<Model>.of(models);
     final ids = {for (final m in models) m.id};
     await ref
         .read(modelStoreProvider.notifier)
@@ -888,7 +900,34 @@ class _ModelProviderDetailPageState
             ],
           ),
         );
-    if (mounted) setState(() => _groupPendingDelete = null);
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('已删除「$groupName」(${deletedModels.length} 个模型)'),
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+          label: '撤销',
+          onPressed: () async {
+            final current = ref.read(
+              appModelProviderProvider(provider.id),
+            );
+            final currentProvider = current.maybeWhen(
+              data: (p) => p,
+              orElse: () => null,
+            );
+            if (currentProvider == null) return;
+            await ref
+                .read(modelStoreProvider.notifier)
+                .saveProvider(
+                  currentProvider.copyWith(
+                    models: [...currentProvider.models, ...deletedModels],
+                  ),
+                );
+          },
+        ),
+      ),
+    );
   }
 }
 
@@ -1285,7 +1324,11 @@ class _CompactActionChip extends StatelessWidget {
   }
 }
 
-/// Test mode toggle — icon button with a popup for "长期显示" switch.
+/// Test mode toggle — two clearly tappable chips side-by-side.
+///
+///  ┌─────────┐ ┌──────┐
+///  │ 🧪 测试  │ │ 📌 固定│
+///  └─────────┘ └──────┘
 class _TestModeToggle extends StatelessWidget {
   const _TestModeToggle({
     required this.active,
@@ -1302,17 +1345,21 @@ class _TestModeToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = active
+    final testColor = active
         ? theme.colorScheme.error
         : (theme.brightness == Brightness.dark
             ? const Color(0xFF66BB6A)
             : const Color(0xFF2E7D32));
+    final pinColor = alwaysShow
+        ? theme.colorScheme.primary
+        : theme.colorScheme.onSurfaceVariant;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // Test mode chip
         Material(
-          color: color.withValues(alpha: active ? 0.15 : 0.1),
+          color: testColor.withValues(alpha: active ? 0.18 : 0.1),
           borderRadius: BorderRadius.circular(10),
           child: InkWell(
             onTap: onToggleTestMode,
@@ -1322,14 +1369,14 @@ class _TestModeToggle extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(LucideIcons.flaskConical, size: 13, color: color),
+                  Icon(LucideIcons.flaskConical, size: 14, color: testColor),
                   const SizedBox(width: 4),
                   Text(
                     active ? '退出' : '测试',
                     style: theme.textTheme.labelMedium?.copyWith(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: color,
+                      color: testColor,
                     ),
                   ),
                 ],
@@ -1337,17 +1384,39 @@ class _TestModeToggle extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: 6),
+        // Pin / always-show chip
         Tooltip(
-          message: alwaysShow ? '隐藏测试按钮' : '长期显示测试按钮',
-          child: GestureDetector(
-            onTap: () => onToggleAlwaysShow(!alwaysShow),
-            child: Icon(
-              alwaysShow ? LucideIcons.pin : LucideIcons.pinOff,
-              size: 14,
-              color: alwaysShow
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.onSurfaceVariant,
+          message: alwaysShow ? '取消固定测试按钮' : '固定测试按钮到模型列表',
+          child: Material(
+            color: pinColor.withValues(alpha: alwaysShow ? 0.15 : 0.08),
+            borderRadius: BorderRadius.circular(10),
+            child: InkWell(
+              onTap: () => onToggleAlwaysShow(!alwaysShow),
+              borderRadius: BorderRadius.circular(10),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      alwaysShow ? LucideIcons.pin : LucideIcons.pinOff,
+                      size: 14,
+                      color: pinColor,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      alwaysShow ? '已固定' : '固定',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: pinColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
