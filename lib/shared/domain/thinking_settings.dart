@@ -5,12 +5,12 @@ part 'thinking_settings.g.dart';
 
 /// 思考过程显示样式 (`settings.thinkingDisplayStyle`, `ThinkingBlock.tsx`).
 ///
-/// The original ships 17 styles; this port mirrors the practical subset
-/// (`compact` / `full` / `minimal` / `bubble` / `card` / `hidden`) and drops the
-/// novelty ones (timeline / inline + the 2025 "advanced" stream / dots / wave /
-/// sidebar / overlay / breadcrumb / floating / terminal). `compact` is the
-/// original default.
+/// Ported display styles for the thinking block. `timeline` is the new default
+/// (RikkaHub-inspired chain-of-thought with interleaved reasoning/tool nodes);
+/// the original web styles (`compact` / `full` / `minimal` / `bubble` / `card` /
+/// `hidden`) are preserved for users who prefer them.
 enum ThinkingDisplayStyle {
+  timeline('timeline'),
   compact('compact'),
   full('full'),
   minimal('minimal'),
@@ -28,7 +28,7 @@ enum ThinkingDisplayStyle {
       if (v.id == id) return v;
     }
     // Unknown / a not-yet-ported original style falls back to the default.
-    return ThinkingDisplayStyle.compact;
+    return ThinkingDisplayStyle.timeline;
   }
 }
 
@@ -41,7 +41,7 @@ enum ThinkingDisplayStyle {
 @freezed
 abstract class ThinkingSettings with _$ThinkingSettings {
   const factory ThinkingSettings({
-    @Default(ThinkingDisplayStyle.compact) ThinkingDisplayStyle displayStyle,
+    @Default(ThinkingDisplayStyle.timeline) ThinkingDisplayStyle displayStyle,
     // 思考完成后自动折叠，原版默认开。
     @Default(true) bool thoughtAutoCollapse,
     // 思考过程内显示工具调用，原版默认开（Flutter 暂未接入，仅持久化）。
