@@ -153,6 +153,7 @@ class _ThinkingBlockViewState extends ConsumerState<ThinkingBlockView> {
         isThinking: _isThinking,
         inlineToolBlocks: widget.inlineToolBlocks,
         thoughtAutoCollapse: settings.thoughtAutoCollapse,
+        showThinkingContent: true,
         markdownBuilder: (context, content, style) =>
             AppMarkdown(content: content, style: style),
       );
