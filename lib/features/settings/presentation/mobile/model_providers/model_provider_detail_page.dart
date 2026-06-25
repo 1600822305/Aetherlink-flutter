@@ -189,24 +189,44 @@ class _ModelProviderDetailPageState
       ),
       body: Column(
         children: [
-          DecoratedBox(
+          // Pill-style segmented control matching the 语音功能 / MCP 服务器
+          // settings pages: a rounded grey "track" with a white card indicator
+          // (soft 1px shadow) sliding under the active tab.
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            padding: const EdgeInsets.all(3),
             decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              border: Border(bottom: BorderSide(color: theme.dividerColor)),
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(10),
             ),
             child: TabBar(
               controller: _tabController,
-              labelColor: theme.colorScheme.primary,
+              indicator: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x14000000),
+                    blurRadius: 4,
+                    offset: Offset(0, 1),
+                  ),
+                ],
+              ),
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              labelColor: theme.colorScheme.onSurface,
               unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-              indicatorColor: theme.colorScheme.primary,
-              indicatorSize: TabBarIndicatorSize.label,
               labelStyle: const TextStyle(
-                fontSize: 15,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
+              unselectedLabelStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
               tabs: const [
-                Tab(text: '配置'),
-                Tab(text: '模型'),
+                Tab(height: 32, text: '配置'),
+                Tab(height: 32, text: '模型'),
               ],
             ),
           ),
