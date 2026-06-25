@@ -21,8 +21,8 @@ import 'package:aetherlink_flutter/shared/widgets/color_picker.dart';
 /// has no message-action toolbar yet — and carries an inline "即将支持" note
 /// instead of fake buttons.
 ///
-/// The five cards are organised into a top tab strip (mirroring the
-/// `mcp_server_settings_page` pattern): 功能 (气泡功能设置), 外观 (宽度 / 头像和名称 /
+/// The five cards are organised into a top tab strip (styled like 辅助模型设置页 —
+/// a segmented pill TabBar): 功能 (气泡功能设置), 外观 (宽度 / 头像和名称 /
 /// 隐藏气泡) and 颜色 (自定义气泡颜色 + 预览). Tab content swaps instantly via an
 /// [IndexedStack] and a >60px horizontal swipe jumps to the adjacent tab.
 class MessageBubbleSettingsPage extends ConsumerStatefulWidget {
@@ -172,58 +172,68 @@ class _TabList extends StatelessWidget {
   }
 }
 
-/// The full-width tab strip below the app bar (icon + label, 1px bottom
-/// divider), mirroring `mcp_server_settings_page`'s `_TabBarHeader`.
+/// The tab strip below the app bar, styled like 辅助模型设置页 (`auxiliary_model_
+/// settings_page`'s `_SegmentedTabBar`): a rounded bordered track holding
+/// scrollable pill tabs (icon + label) with a tinted rounded indicator.
 class _TabBarHeader extends StatelessWidget {
   const _TabBarHeader({required this.controller});
 
   final TabController controller;
 
+  static const List<(IconData, String)> _tabs = [
+    (LucideIcons.sliders, '功能'),
+    (LucideIcons.layout, '外观'),
+    (LucideIcons.palette, '颜色'),
+  ];
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        border: Border(bottom: BorderSide(color: theme.dividerColor)),
-      ),
-      child: TabBar(
-        controller: controller,
-        labelColor: theme.colorScheme.primary,
-        unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-        indicatorColor: theme.colorScheme.primary,
-        indicatorSize: TabBarIndicatorSize.tab,
-        dividerColor: Colors.transparent,
-        labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: const TextStyle(fontSize: 14),
-        tabs: const [
-          _IconTab(icon: LucideIcons.sliders, label: '功能'),
-          _IconTab(icon: LucideIcons.layout, label: '外观'),
-          _IconTab(icon: LucideIcons.palette, label: '颜色'),
-        ],
-      ),
-    );
-  }
-}
-
-/// A 42px tab with the glyph to the left of the label.
-class _IconTab extends StatelessWidget {
-  const _IconTab({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tab(
-      height: 42,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 16),
-          const SizedBox(width: 6),
-          Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
-        ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: theme.dividerColor),
+          color: theme.colorScheme.surface,
+        ),
+        padding: const EdgeInsets.all(3),
+        child: TabBar(
+          controller: controller,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          indicator: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            color: theme.colorScheme.primary.withValues(alpha: 0.12),
+          ),
+          indicatorSize: TabBarIndicatorSize.tab,
+          dividerHeight: 0,
+          labelColor: theme.colorScheme.primary,
+          unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+          labelStyle: theme.textTheme.labelLarge?.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+          unselectedLabelStyle: theme.textTheme.labelLarge?.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+          labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+          tabs: [
+            for (final (icon, label) in _tabs)
+              Tab(
+                height: 34,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 15),
+                    const SizedBox(width: 5),
+                    Text(label),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
