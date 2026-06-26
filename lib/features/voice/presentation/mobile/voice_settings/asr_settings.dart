@@ -35,6 +35,14 @@ Map<AsrProviderKind, _ServiceMeta> _asrServiceMeta() => {
     features: ['实时', '多语言', '热词'],
     status: '高级',
   ),
+  AsrProviderKind.mimo: const _ServiceMeta(
+    providerId: 'mimo',
+    color: Color(0xFFFF6A00),
+    name: 'MiMo ASR',
+    description: '小米 MiMo 大模型语音识别 (HTTP 分段上传)',
+    features: ['分段', '多语言'],
+    status: '高级',
+  ),
   AsrProviderKind.whisper: const _ServiceMeta(
     providerId: 'openai',
     color: Color(0xFF6366F1),
@@ -143,6 +151,7 @@ class _AsrProviderDetailPageState
   late bool _enableDdc;
   late int _endWindowSize;
   late String _outputZhVariant;
+  late int _segmentDurationSec;
 
   @override
   void initState() {
@@ -176,6 +185,7 @@ class _AsrProviderDetailPageState
     _enableDdc = p.enableDdc;
     _endWindowSize = p.endWindowSize;
     _outputZhVariant = p.outputZhVariant;
+    _segmentDurationSec = p.segmentDurationSec;
   }
 
   @override
@@ -221,6 +231,7 @@ class _AsrProviderDetailPageState
       enableDdc: _enableDdc,
       endWindowSize: _endWindowSize,
       outputZhVariant: _outputZhVariant,
+      segmentDurationSec: _segmentDurationSec,
     );
     final notifier = ref.read(voiceSettingsControllerProvider.notifier);
     notifier.updateAsrProvider(updated);
@@ -241,6 +252,7 @@ class _AsrProviderDetailPageState
     final isRealtime = widget.kind == AsrProviderKind.openaiRealtime;
     final isDashscope = widget.kind == AsrProviderKind.dashscope;
     final isVolcengine = widget.kind == AsrProviderKind.volcengine;
+    final isMimo = widget.kind == AsrProviderKind.mimo;
     final isWhisper = widget.kind == AsrProviderKind.whisper;
 
     return PopScope(
@@ -371,6 +383,12 @@ class _AsrProviderDetailPageState
                         ModelFormField(
                           label: '模型',
                           hint: 'bigmodel',
+                          controller: _modelCtrl,
+                        )
+                      else if (isMimo)
+                        ModelFormField(
+                          label: '模型',
+                          hint: 'mimo-v2.5-asr',
                           controller: _modelCtrl,
                         )
                       else
@@ -548,6 +566,29 @@ class _AsrProviderDetailPageState
                           label: '语义顺滑 (DDC)',
                           value: _enableDdc,
                           onChanged: (v) => setState(() => _enableDdc = v),
+                        ),
+                      ],
+                      if (isMimo) ...[
+                        Divider(height: 24, color: theme.dividerColor),
+                        _SliderRow(
+                          label: '自动分段间隔 (秒，0=不分段)',
+                          value: _segmentDurationSec.toDouble(),
+                          min: 0,
+                          max: 120,
+                          divisions: 24,
+                          onChanged: (v) =>
+                              setState(() => _segmentDurationSec = v.round()),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'MiMo 为 HTTP 一次性识别接口，录音期间按间隔分段上传。'
+                          '单次请求原始音频上限约 7.5MB（16kHz 约 234 秒），'
+                          '设为 0 时仅在停止时整体上传。语言可填 auto/zh/en。',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.5,
+                            ),
+                          ),
                         ),
                       ],
                       if (isWhisper) ...[
