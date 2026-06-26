@@ -43,7 +43,7 @@ class MethodChannelAetherlinkSaf extends AetherlinkSafPlatform {
   @override
   Future<PermissionResult> checkPermissions({String? uri}) async {
     final map = await _invokeMap('checkPermissions', {
-      if (uri != null) 'uri': uri,
+      'uri': ?uri,
     });
     return PermissionResult.fromMap(map);
   }
@@ -81,9 +81,9 @@ class MethodChannelAetherlinkSaf extends AetherlinkSafPlatform {
     final map = await _invokeMap('openSystemFilePicker', {
       'type': type.wireValue,
       'multiple': multiple,
-      if (accept != null) 'accept': accept,
-      if (startDirectory != null) 'startDirectory': startDirectory,
-      if (title != null) 'title': title,
+      'accept': ?accept,
+      'startDirectory': ?startDirectory,
+      'title': ?title,
     });
     return PickerResult.fromMap(map);
   }
