@@ -41,35 +41,36 @@ class _WorkspacePageState extends State<WorkspacePage> {
 
   @override
   Widget build(BuildContext context) {
+    // Edge-to-edge: 色块铺满整屏(延伸到状态栏/导航栏后面),不包 SafeArea。
+    // 只给顶部控制行单独保留安全区内边距,避免被状态栏遮挡。
     return Scaffold(
-      body: SafeArea(
-        child: Stack(
-          children: [
-            PageView.builder(
-              controller: _controller,
-              itemCount: _panes.length,
-              onPageChanged: (i) => setState(() => _page = i),
-              itemBuilder: (context, i) {
-                final pane = _panes[i];
-                return Container(
-                  color: pane.color,
-                  alignment: Alignment.center,
-                  child: Text(
-                    pane.label,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                    ),
+      body: Stack(
+        children: [
+          PageView.builder(
+            controller: _controller,
+            itemCount: _panes.length,
+            onPageChanged: (i) => setState(() => _page = i),
+            itemBuilder: (context, i) {
+              final pane = _panes[i];
+              return Container(
+                color: pane.color,
+                alignment: Alignment.center,
+                child: Text(
+                  pane.label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
                   ),
-                );
-              },
-            ),
-            // 顶部返回 + 页码指示，方便看清当前停在哪一页。
-            Positioned(
-              top: 8,
-              left: 8,
-              right: 8,
+                ),
+              );
+            },
+          ),
+          // 顶部返回 + 页码指示，方便看清当前停在哪一页。
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
               child: Row(
                 children: [
                   _CircleButton(
@@ -83,8 +84,8 @@ class _WorkspacePageState extends State<WorkspacePage> {
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
