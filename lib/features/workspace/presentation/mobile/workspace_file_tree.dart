@@ -17,6 +17,16 @@ import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_o
 /// file opens it in a middle-page tab ([openWorkspaceFilesProvider]); the shell
 /// then animates over to the editor. The 「打开文件夹」 button in the header opens
 /// or switches workspaces (the old start screen lived here before).
+///
+/// The tree follows the active tab like an IDE: whenever the active file changes
+/// (tab switch, session restore) its ancestor folders are expanded and the row
+/// is scrolled into view and highlighted. Since paths are opaque `content://`
+/// URIs (no derivable parent), the ancestor chain is found by a cached
+/// depth-first search down from the root.
+
+/// Fixed row height so scroll-to-index can target the active file precisely.
+const double _kRowHeight = 38;
+
 class WorkspaceFileTree extends ConsumerStatefulWidget {
   const WorkspaceFileTree({
     super.key,
@@ -51,10 +61,24 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   final Set<String> _loading = {};
   final Map<String, List<WorkspaceEntry>> _children = {};
 
+  final ScrollController _scroll = ScrollController();
+
+  // Guards against re-revealing the same active file repeatedly and lets the
+  // first build trigger an initial reveal (no change event fires for the
+  // already-set active tab on entry).
+  String? _revealedPath;
+  bool _initialRevealDone = false;
+
   @override
   void initState() {
     super.initState();
     _bindWorkspace(ref.read(currentWorkspaceProvider));
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
   }
 
   // Resets the tree to a new workspace root (or none) and loads the root.
@@ -63,11 +87,104 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     _expanded.clear();
     _children.clear();
     _loading.clear();
+    _revealedPath = null;
+    _initialRevealDone = false;
     final root = _root;
     if (root != null) {
       _expanded.add(root);
       _load(root);
     }
+  }
+
+  // ===== reveal active file (IDE follow mode) =====
+
+  // Lists [path] and caches it, awaiting the result (unlike [_load], which is
+  // fire-and-forget). Returns null on failure.
+  Future<List<WorkspaceEntry>?> _ensureChildren(String path) async {
+    final cached = _children[path];
+    if (cached != null) return cached;
+    final backend = _backend;
+    if (backend == null) return null;
+    try {
+      final entries = await backend.listDir(path);
+      if (!mounted) return null;
+      setState(() => _children[path] = entries);
+      return entries;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // The ancestor directory chain (root → … → parent) for an already-loaded
+  // [target], or null when any ancestor isn't cached yet.
+  List<String>? _knownChain(String target) {
+    final root = _root;
+    if (root == null) return null;
+    final chain = <String>[];
+    var cursor = _parentOf(target);
+    while (cursor != null) {
+      chain.add(cursor);
+      if (cursor == root) {
+        return chain.reversed.toList();
+      }
+      cursor = _parentOf(cursor);
+    }
+    return null;
+  }
+
+  // Depth-first search down from [dir] for [target], returning the directory
+  // chain to expand (root → … → parent), or null if not found.
+  Future<List<String>?> _searchChain(
+    String dir,
+    String target,
+    List<String> chain,
+  ) async {
+    final entries = await _ensureChildren(dir);
+    if (entries == null) return null;
+    if (entries.any((e) => e.path == target)) return chain;
+    for (final e in entries) {
+      if (!e.isDirectory) continue;
+      final found = await _searchChain(e.path, target, [...chain, e.path]);
+      if (found != null) return found;
+    }
+    return null;
+  }
+
+  // Expands [target]'s ancestors and scrolls its row to the middle, then marks
+  // it revealed so repeat builds don't re-run the search.
+  Future<void> _revealActive(String target) async {
+    if (_revealedPath == target) return;
+    final root = _root;
+    if (root == null) return;
+    _revealedPath = target;
+
+    var chain = _knownChain(target);
+    chain ??= await _searchChain(root, target, [root]);
+    if (chain == null || !mounted) return;
+
+    final toExpand = chain.where((d) => !_expanded.contains(d)).toList();
+    if (toExpand.isNotEmpty) {
+      setState(() => _expanded.addAll(toExpand));
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToPath(target));
+  }
+
+  // Animates the active row to the vertical centre of the viewport.
+  void _scrollToPath(String target) {
+    final root = _root;
+    if (root == null || !_scroll.hasClients) return;
+    final rows = <_TreeRow>[];
+    _appendRows(root, 0, rows);
+    final index = rows.indexWhere((r) => r.entry?.path == target);
+    if (index < 0) return;
+    final position = _scroll.position;
+    final target0 =
+        index * _kRowHeight - position.viewportDimension / 2 + _kRowHeight / 2;
+    _scroll.animateTo(
+      target0.clamp(0.0, position.maxScrollExtent),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Future<void> _load(String path) async {
@@ -185,10 +302,27 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     final topPad = MediaQuery.paddingOf(context).top + widget.topInset + 8;
     final selectedPath = ref.watch(openWorkspaceFilesProvider).activePath;
 
+    // Follow the active tab: reveal it whenever it changes.
+    ref.listen(openWorkspaceFilesProvider.select((s) => s.activePath), (
+      _,
+      next,
+    ) {
+      if (next != null) _revealActive(next);
+    });
+
     // Re-bind whenever the opened workspace changes (open / switch / close).
     final workspace = ref.watch(currentWorkspaceProvider);
     if (workspace?.root != _root) {
       _bindWorkspace(workspace);
+    }
+
+    // No change event fires for an already-set active tab on entry / restore;
+    // kick off the first reveal once the root is bound.
+    if (!_initialRevealDone && _root != null && selectedPath != null) {
+      _initialRevealDone = true;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _revealActive(selectedPath),
+      );
     }
 
     final root = _root;
@@ -301,7 +435,9 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                       ),
                     )
                   : ListView.builder(
+                      controller: _scroll,
                       padding: const EdgeInsets.symmetric(vertical: 4),
+                      itemExtent: _kRowHeight,
                       itemCount: rows.length,
                       itemBuilder: (context, i) {
                         final row = rows[i];
@@ -377,54 +513,64 @@ class _FileRow extends StatelessWidget {
     final theme = Theme.of(context);
     final isDir = entry.isDirectory;
 
+    final scheme = theme.colorScheme;
+    final accent = selected ? scheme.primary : Colors.transparent;
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
-      child: Container(
-        color: selected
-            ? theme.colorScheme.primary.withValues(alpha: 0.10)
-            : Colors.transparent,
-        padding: EdgeInsets.only(
-          left: 12.0 + depth * 16,
-          right: 12,
-          top: 8,
-          bottom: 8,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: selected
+              ? scheme.primary.withValues(alpha: 0.14)
+              : Colors.transparent,
+          border: Border(left: BorderSide(color: accent, width: 3)),
         ),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 18,
-              child: isDir
-                  ? Icon(
-                      expanded
-                          ? LucideIcons.chevronDown
-                          : LucideIcons.chevronRight,
-                      size: 16,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    )
-                  : null,
-            ),
-            Icon(
-              isDir
-                  ? (expanded ? LucideIcons.folderOpen : LucideIcons.folder)
-                  : _fileIcon(entry.name),
-              size: 18,
-              color: isDir
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                entry.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: isDir ? FontWeight.w600 : FontWeight.w400,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 9.0 + depth * 16,
+            right: 12,
+            top: 8,
+            bottom: 8,
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 18,
+                child: isDir
+                    ? Icon(
+                        expanded
+                            ? LucideIcons.chevronDown
+                            : LucideIcons.chevronRight,
+                        size: 16,
+                        color: scheme.onSurfaceVariant,
+                      )
+                    : null,
+              ),
+              Icon(
+                isDir
+                    ? (expanded ? LucideIcons.folderOpen : LucideIcons.folder)
+                    : _fileIcon(entry.name),
+                size: 18,
+                color: isDir || selected
+                    ? scheme.primary
+                    : scheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  entry.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: selected ? scheme.primary : null,
+                    fontWeight: isDir || selected
+                        ? FontWeight.w600
+                        : FontWeight.w400,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
