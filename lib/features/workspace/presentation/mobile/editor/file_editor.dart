@@ -16,17 +16,15 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_view
 import 'package:aetherlink_flutter/features/workspace/data/local_saf_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_body.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_limits.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_placeholders.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_registry.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_text_area.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_header.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/file_open_policy.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_replace_bar.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_session.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/readable_path.dart';
-
-/// Whole-file read cap (plugin spec §3.3). Larger files fall back to a
-/// read-only ranged preview of the first [_previewLines] lines.
-const int _wholeFileReadCap = 10 * 1024 * 1024;
-const int _previewLines = 5000;
 
 class FileEditor extends ConsumerStatefulWidget {
   const FileEditor({super.key, required this.entry});
@@ -47,6 +45,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
   bool _editing = false;
   bool _saving = false;
   String? _readOnlyReason;
+  FileOpenKind _openKind = FileOpenKind.editable;
 
   bool _showFind = false;
   bool _showReplace = false;
@@ -54,9 +53,15 @@ class _FileEditorState extends ConsumerState<FileEditor> {
 
   String get _path => widget.entry.path;
   bool get _dirty => _controller.text != _original;
+  // Editing is only ever offered for small text files on a writable backend.
   bool get _writable =>
-      ref.read(workspacePreviewBackendProvider) is LocalSafBackend &&
-      _readOnlyReason == null;
+      _openKind == FileOpenKind.editable &&
+      ref.read(workspacePreviewBackendProvider) is LocalSafBackend;
+  // Binary / too-large files render a placeholder instead of the editor, so the
+  // find bar, status bar and edit affordances are all suppressed.
+  bool get _hasTextBody =>
+      _openKind == FileOpenKind.editable ||
+      _openKind == FileOpenKind.rangedReadOnly;
 
   @override
   void initState() {
@@ -92,14 +97,48 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     _editing = false;
     _showFind = false;
     _find.update('', _find.options);
-    if (widget.entry.size > _wholeFileReadCap) {
+    _original = '';
+    _controller.text = '';
+
+    final size = widget.entry.size;
+
+    // 1. Hard size cap: refuse outright, without reading any bytes.
+    if (size > kMaxOpenBytes) {
+      _readOnlyReason = null;
+      _openKind = FileOpenKind.tooLarge;
+      return;
+    }
+
+    // 2. Content-based binary sniff over the file header (never decode the
+    //    whole thing as text first — that's what froze the UI).
+    final probeLen = size < kHeaderProbeBytes ? size : kHeaderProbeBytes;
+    List<int> head = const [];
+    if (probeLen > 0) {
+      try {
+        head = await backend.readFileBytes(widget.entry.path, length: probeLen);
+      } on UnsupportedError {
+        // Backend can't read raw bytes (e.g. the mock): fall back to treating
+        // it as text rather than failing the open.
+        head = const [];
+      }
+    }
+
+    _openKind = classifyOpen(size: size, head: head);
+    if (_openKind == FileOpenKind.binary) {
+      _readOnlyReason = null;
+      return;
+    }
+
+    // 3. Text: whole-file edit for small files, ranged read-only preview for
+    //    large-but-allowed ones.
+    if (_openKind == FileOpenKind.rangedReadOnly) {
       final range = await backend.readFileRange(
         widget.entry.path,
         1,
-        _previewLines,
+        kPreviewLines,
       );
       _readOnlyReason =
-          '文件过大(${_fmtBytes(widget.entry.size)}),'
+          '文件较大(${_fmtBytes(size)}),'
           '仅显示前 ${range.endLine}/${range.totalLines} 行,暂不可编辑';
       _original = range.content;
     } else {
@@ -108,6 +147,14 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     }
     _controller.text = _original;
   }
+
+  // The placeholder body for non-text files, or null when the editor's text
+  // area should be shown.
+  Widget? _placeholder() => switch (_openKind) {
+        FileOpenKind.binary => EditorPlaceholders.binary(widget.entry),
+        FileOpenKind.tooLarge => EditorPlaceholders.tooLarge(widget.entry),
+        _ => null,
+      };
 
   // Drops unsaved edits (used when closing a dirty tab via "放弃").
   void _discard() {
@@ -166,7 +213,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
             actions: _headerActions(),
           ),
           Divider(height: 1, color: theme.dividerColor),
-          if (_showFind)
+          if (_hasTextBody && _showFind)
             FindReplaceBar(
               matchCount: _find.matches.length,
               currentIndex: _find.index,
@@ -193,9 +240,10 @@ class _FileEditorState extends ConsumerState<FileEditor> {
               fontSize: _fontSize,
               onFontSize: (v) => setState(() => _fontSize = v),
               onRetry: () => setState(() => _ready = _load()),
+              placeholderBuilder: _placeholder,
             ),
           ),
-          EditorStatusBar(controller: _controller),
+          if (_hasTextBody) EditorStatusBar(controller: _controller),
         ],
       ),
     );
@@ -211,11 +259,12 @@ class _FileEditorState extends ConsumerState<FileEditor> {
         onPressed: () =>
             ref.read(workspacePageLockProvider.notifier).toggle(),
       ),
-      IconButton(
-        tooltip: '查找',
-        icon: const Icon(LucideIcons.search, size: 18),
-        onPressed: () => setState(() => _showFind = !_showFind),
-      ),
+      if (_hasTextBody)
+        IconButton(
+          tooltip: '查找',
+          icon: const Icon(LucideIcons.search, size: 18),
+          onPressed: () => setState(() => _showFind = !_showFind),
+        ),
       if (_writable && !_editing)
         IconButton(
           tooltip: '编辑',

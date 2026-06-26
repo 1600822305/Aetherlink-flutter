@@ -11,6 +11,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_limits.dart';
+
 const double kEditorMinFontSize = 8;
 const double kEditorMaxFontSize = 32;
 const double kEditorDefaultFontSize = 13;
@@ -153,6 +155,11 @@ class _EditorTextAreaState extends State<EditorTextArea> {
       color: theme.colorScheme.onSurfaceVariant,
     );
 
+    // Long-line guard: a single multi-megabyte line would make the
+    // non-wrapping layout below measure an enormous canvas and freeze the UI.
+    // Fall back to a soft-wrapping, gutterless view in that case.
+    final softWrap = _hasLongLine(text);
+
     return Listener(
       onPointerDown: _onPointerDown,
       onPointerMove: _onPointerMove,
@@ -160,69 +167,17 @@ class _EditorTextAreaState extends State<EditorTextArea> {
       onPointerCancel: _onPointerUp,
       child: Stack(
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _LineNumberGutter(
-                controller: _gutterScroll,
-                lineCount: lineCount,
-                lineHeight: lineHeight,
-                style: gutterStyle,
-                borderColor: theme.dividerColor,
-              ),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, c) {
-                    final width = _contentWidth(text, textStyle, c.maxWidth);
-                    return Stack(
-                      children: [
-                        if (widget.editing)
-                          _CurrentLineHighlight(
-                            scroll: _textScroll,
-                            caretLine: _caretLine(text),
-                            lineHeight: lineHeight,
-                            color: theme.colorScheme.primary.withValues(
-                              alpha: 0.07,
-                            ),
-                          ),
-                        SingleChildScrollView(
-                          controller: _hScroll,
-                          scrollDirection: Axis.horizontal,
-                          child: SizedBox(
-                            width: width,
-                            child: TextField(
-                              controller: widget.controller,
-                              focusNode: widget.focusNode,
-                              scrollController: _textScroll,
-                              readOnly: !widget.editing,
-                              expands: true,
-                              maxLines: null,
-                              minLines: null,
-                              textAlignVertical: TextAlignVertical.top,
-                              keyboardType: TextInputType.multiline,
-                              inputFormatters: const [_AutoIndentFormatter()],
-                              style: textStyle,
-                              cursorColor: theme.colorScheme.primary,
-                              decoration: const InputDecoration(
-                                isCollapsed: true,
-                                border: InputBorder.none,
-                                contentPadding: EdgeInsets.fromLTRB(
-                                  _textLeftPad,
-                                  _topPad,
-                                  _textRightPad,
-                                  _bottomPad,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
+          if (softWrap)
+            _wrapLayout(textStyle, theme)
+          else
+            _columnLayout(
+              text: text,
+              lineCount: lineCount,
+              lineHeight: lineHeight,
+              textStyle: textStyle,
+              gutterStyle: gutterStyle,
+              theme: theme,
+            ),
           Positioned(
             right: 12,
             bottom: 12,
@@ -234,6 +189,105 @@ class _EditorTextAreaState extends State<EditorTextArea> {
         ],
       ),
     );
+  }
+
+  // The standard view: a line-number gutter + a horizontally pannable,
+  // non-wrapping field, with each logical line mapped 1:1 to a gutter row.
+  Widget _columnLayout({
+    required String text,
+    required int lineCount,
+    required double lineHeight,
+    required TextStyle textStyle,
+    required TextStyle gutterStyle,
+    required ThemeData theme,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _LineNumberGutter(
+          controller: _gutterScroll,
+          lineCount: lineCount,
+          lineHeight: lineHeight,
+          style: gutterStyle,
+          borderColor: theme.dividerColor,
+        ),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, c) {
+              final width = _contentWidth(text, textStyle, c.maxWidth);
+              return Stack(
+                children: [
+                  if (widget.editing)
+                    _CurrentLineHighlight(
+                      scroll: _textScroll,
+                      caretLine: _caretLine(text),
+                      lineHeight: lineHeight,
+                      color: theme.colorScheme.primary.withValues(alpha: 0.07),
+                    ),
+                  SingleChildScrollView(
+                    controller: _hScroll,
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(
+                      width: width,
+                      child: _field(textStyle, theme),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Degraded fallback for pathologically long lines: full-width, soft-wrapping,
+  // no gutter (1 logical line no longer maps to 1 row) and no horizontal pan.
+  Widget _wrapLayout(TextStyle textStyle, ThemeData theme) {
+    return SizedBox.expand(child: _field(textStyle, theme));
+  }
+
+  // The shared editing field. In [_columnLayout] it sits in a fixed-width box
+  // (so it never wraps); in [_wrapLayout] it fills the viewport (so it does).
+  Widget _field(TextStyle textStyle, ThemeData theme) {
+    return TextField(
+      controller: widget.controller,
+      focusNode: widget.focusNode,
+      scrollController: _textScroll,
+      readOnly: !widget.editing,
+      expands: true,
+      maxLines: null,
+      minLines: null,
+      textAlignVertical: TextAlignVertical.top,
+      keyboardType: TextInputType.multiline,
+      inputFormatters: const [_AutoIndentFormatter()],
+      style: textStyle,
+      cursorColor: theme.colorScheme.primary,
+      decoration: const InputDecoration(
+        isCollapsed: true,
+        border: InputBorder.none,
+        contentPadding: EdgeInsets.fromLTRB(
+          _textLeftPad,
+          _topPad,
+          _textRightPad,
+          _bottomPad,
+        ),
+      ),
+    );
+  }
+
+  // True if any single line exceeds [kMaxLineLength] characters. Single pass,
+  // no per-line allocation (so it's cheap even on large preview buffers).
+  static bool _hasLongLine(String text) {
+    var col = 0;
+    for (var i = 0; i < text.length; i++) {
+      if (text.codeUnitAt(i) == 0x0A) {
+        col = 0;
+      } else if (++col > kMaxLineLength) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // 0-based line index of the caret, or -1 when there is no valid caret.
