@@ -27,6 +27,14 @@ Map<AsrProviderKind, _ServiceMeta> _asrServiceMeta() => {
     features: ['实时', '多语言', '热词'],
     status: '高级',
   ),
+  AsrProviderKind.volcengine: const _ServiceMeta(
+    providerId: 'doubao',
+    color: Color(0xFF0B5CFF),
+    name: '火山引擎 ASR',
+    description: '字节火山引擎大模型流式语音识别 (WebSocket)',
+    features: ['实时', '多语言', '热词'],
+    status: '高级',
+  ),
   AsrProviderKind.whisper: const _ServiceMeta(
     providerId: 'openai',
     color: Color(0xFF6366F1),
@@ -118,6 +126,9 @@ class _AsrProviderDetailPageState
   late final TextEditingController _languageCtrl;
   late final TextEditingController _promptCtrl;
   late final TextEditingController _corpusCtrl;
+  late final TextEditingController _appKeyCtrl;
+  late final TextEditingController _accessKeyCtrl;
+  late final TextEditingController _resourceIdCtrl;
   late bool _enabled;
   late double _vadThreshold;
   late int _silenceDurationMs;
@@ -127,6 +138,11 @@ class _AsrProviderDetailPageState
   late int _sampleRate;
   late String _inputAudioFormat;
   late bool _useVad;
+  late bool _enableItn;
+  late bool _enablePunc;
+  late bool _enableDdc;
+  late int _endWindowSize;
+  late String _outputZhVariant;
 
   @override
   void initState() {
@@ -152,6 +168,14 @@ class _AsrProviderDetailPageState
         ? p.inputAudioFormat
         : 'pcm';
     _useVad = p.useVad;
+    _appKeyCtrl = TextEditingController(text: p.appKey);
+    _accessKeyCtrl = TextEditingController(text: p.accessKey);
+    _resourceIdCtrl = TextEditingController(text: p.resourceId);
+    _enableItn = p.enableItn;
+    _enablePunc = p.enablePunc;
+    _enableDdc = p.enableDdc;
+    _endWindowSize = p.endWindowSize;
+    _outputZhVariant = p.outputZhVariant;
   }
 
   @override
@@ -163,6 +187,9 @@ class _AsrProviderDetailPageState
     _languageCtrl.dispose();
     _promptCtrl.dispose();
     _corpusCtrl.dispose();
+    _appKeyCtrl.dispose();
+    _accessKeyCtrl.dispose();
+    _resourceIdCtrl.dispose();
     super.dispose();
   }
 
@@ -186,6 +213,14 @@ class _AsrProviderDetailPageState
       sampleRate: _sampleRate,
       inputAudioFormat: _inputAudioFormat,
       useVad: _useVad,
+      appKey: _appKeyCtrl.text.trim(),
+      accessKey: _accessKeyCtrl.text.trim(),
+      resourceId: _resourceIdCtrl.text.trim(),
+      enableItn: _enableItn,
+      enablePunc: _enablePunc,
+      enableDdc: _enableDdc,
+      endWindowSize: _endWindowSize,
+      outputZhVariant: _outputZhVariant,
     );
     final notifier = ref.read(voiceSettingsControllerProvider.notifier);
     notifier.updateAsrProvider(updated);
@@ -205,6 +240,7 @@ class _AsrProviderDetailPageState
     final isSystem = widget.kind == AsrProviderKind.system;
     final isRealtime = widget.kind == AsrProviderKind.openaiRealtime;
     final isDashscope = widget.kind == AsrProviderKind.dashscope;
+    final isVolcengine = widget.kind == AsrProviderKind.volcengine;
     final isWhisper = widget.kind == AsrProviderKind.whisper;
 
     return PopScope(
@@ -260,7 +296,22 @@ class _AsrProviderDetailPageState
                         controller: _apiKeyCtrl,
                         obscureText: true,
                       ),
-                      if (!isRealtime && !isDashscope) ...[
+                      if (isVolcengine) ...[
+                        const SizedBox(height: 12),
+                        ModelFormField(
+                          label: 'App Key（X-Api-App-Key，可选）',
+                          hint: '旧版控制台 APP ID（新版控制台留空）',
+                          controller: _appKeyCtrl,
+                        ),
+                        const SizedBox(height: 12),
+                        ModelFormField(
+                          label: 'Access Key（X-Api-Access-Key，可选）',
+                          hint: '旧版控制台 Access Token（新版控制台留空）',
+                          controller: _accessKeyCtrl,
+                          obscureText: true,
+                        ),
+                      ],
+                      if (!isRealtime && !isDashscope && !isVolcengine) ...[
                         const SizedBox(height: 12),
                         ModelFormField(
                           label: 'Base URL',
@@ -268,7 +319,7 @@ class _AsrProviderDetailPageState
                           controller: _baseUrlCtrl,
                         ),
                       ],
-                      if (isRealtime || isDashscope) ...[
+                      if (isRealtime || isDashscope || isVolcengine) ...[
                         const SizedBox(height: 12),
                         ModelFormField(
                           label: 'WebSocket URL',
@@ -314,6 +365,12 @@ class _AsrProviderDetailPageState
                         ModelFormField(
                           label: '模型',
                           hint: 'qwen3-asr-flash-realtime',
+                          controller: _modelCtrl,
+                        )
+                      else if (isVolcengine)
+                        ModelFormField(
+                          label: '模型',
+                          hint: 'bigmodel',
                           controller: _modelCtrl,
                         )
                       else
@@ -436,6 +493,62 @@ class _AsrProviderDetailPageState
                                 setState(() => _silenceDurationMs = v.round()),
                           ),
                         ],
+                      ],
+                      if (isVolcengine) ...[
+                        Divider(height: 24, color: theme.dividerColor),
+                        ModelFormField(
+                          label: 'Resource ID',
+                          hint: 'volc.bigasr.sauc.duration',
+                          controller: _resourceIdCtrl,
+                        ),
+                        const SizedBox(height: 12),
+                        ModelFormField(
+                          label: '热词（逗号/换行分隔）',
+                          hint: '提供专业术语以提升识别准确度',
+                          controller: _corpusCtrl,
+                          maxLines: 2,
+                        ),
+                        const SizedBox(height: 12),
+                        _DropdownRow(
+                          label: '繁简转换',
+                          value: _outputZhVariant.isEmpty
+                              ? 'none'
+                              : _outputZhVariant,
+                          items: const [
+                            ('none', '关闭（简体）'),
+                            ('traditional', '繁体（大陆）'),
+                            ('tw', '台湾正体'),
+                            ('hk', '香港繁体'),
+                          ],
+                          onChanged: (v) => setState(
+                            () => _outputZhVariant = v == 'none' ? '' : v,
+                          ),
+                        ),
+                        _SliderRow(
+                          label: '强制判停 (ms)',
+                          value: _endWindowSize.toDouble(),
+                          min: 200,
+                          max: 3000,
+                          divisions: 28,
+                          onChanged: (v) =>
+                              setState(() => _endWindowSize = v.round()),
+                        ),
+                        Divider(height: 24, color: theme.dividerColor),
+                        _InlineToggle(
+                          label: '文本规范化 (ITN)',
+                          value: _enableItn,
+                          onChanged: (v) => setState(() => _enableItn = v),
+                        ),
+                        _InlineToggle(
+                          label: '标点',
+                          value: _enablePunc,
+                          onChanged: (v) => setState(() => _enablePunc = v),
+                        ),
+                        _InlineToggle(
+                          label: '语义顺滑 (DDC)',
+                          value: _enableDdc,
+                          onChanged: (v) => setState(() => _enableDdc = v),
+                        ),
                       ],
                       if (isWhisper) ...[
                         Divider(height: 24, color: theme.dividerColor),
