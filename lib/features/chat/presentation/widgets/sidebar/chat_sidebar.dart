@@ -130,7 +130,7 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
                 ],
               ),
             ),
-            if (showTranslate) const _TranslateButton(),
+            if (showTranslate) const _BottomActionRow(),
           ],
         ),
       ),
@@ -248,25 +248,52 @@ class _SidebarTab extends StatelessWidget {
   }
 }
 
-class _TranslateButton extends StatelessWidget {
-  const _TranslateButton();
+/// Bottom action row: 工作区 + 翻译 入口，并排居中。整行随 [showTranslate]
+/// 一起在设置 tab 时隐藏。
+class _BottomActionRow extends StatelessWidget {
+  const _BottomActionRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _BottomIconButton(
+            icon: LucideIcons.folderTree,
+            destination: AppRouter.workspacePath,
+          ),
+          SizedBox(width: 8),
+          _BottomIconButton(
+            icon: LucideIcons.languages,
+            destination: AppRouter.translatePath,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BottomIconButton extends StatelessWidget {
+  const _BottomIconButton({required this.icon, required this.destination});
+
+  final IconData icon;
+  final String destination;
 
   @override
   Widget build(BuildContext context) {
     final textPrimary = Theme.of(context).colorScheme.onSurface;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Material(
-        color: Colors.transparent,
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: () => context.push(destination),
         borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: () => context.push(AppRouter.translatePath),
-          borderRadius: BorderRadius.circular(12),
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(LucideIcons.languages, size: 22, color: textPrimary),
-          ),
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(icon, size: 22, color: textPrimary),
         ),
       ),
     );
