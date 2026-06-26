@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
+import 'package:aetherlink_flutter/features/workspace/data/local_saf_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/workspace_file_ops.dart';
 
 /// The left page: a lazily-loaded file tree over [WorkspaceBackend], rooted at
 /// the opened workspace ([currentWorkspaceProvider]). When nothing is open it
@@ -84,6 +86,44 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
     }
   }
 
+  // Re-lists a single directory (after a write op) and refreshes its rows,
+  // bypassing the load-once cache guard.
+  Future<void> _reload(String path) async {
+    final backend = _backend;
+    if (backend == null) return;
+    setState(() => _loading.add(path));
+    try {
+      final entries = await backend.listDir(path);
+      if (!mounted) return;
+      setState(() {
+        _loading.remove(path);
+        _children[path] = entries;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading.remove(path));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('列目录失败 · $e')),
+      );
+    }
+  }
+
+  // Ensures a directory is expanded so freshly-created/moved children show.
+  void _ensureExpanded(String path) {
+    if (_expanded.contains(path)) return;
+    setState(() => _expanded.add(path));
+    _load(path);
+  }
+
+  // The cached parent directory of an entry. Paths are opaque `content://`
+  // URIs, so the parent can only be recovered from the loaded tree structure.
+  String? _parentOf(String childPath) {
+    for (final entry in _children.entries) {
+      if (entry.value.any((e) => e.path == childPath)) return entry.key;
+    }
+    return null;
+  }
+
   // Drops every cached listing and reloads the root, so the tree reflects any
   // out-of-band changes. Expand state for still-present directories is kept.
   void _refresh() {
@@ -104,14 +144,6 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
       _expanded.clear();
       if (root != null) _expanded.add(root);
     });
-  }
-
-  // New file / new folder need a writable backend (DocumentFile for SAF), which
-  // is not built yet — surface that instead of silently doing nothing.
-  void _notImplemented(String action) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$action 需要 SAF 插件,开发中')),
-    );
   }
 
   // Walks the cached tree depth-first into flat rows the ListView renders.
@@ -150,6 +182,19 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
     }
     final rootLoading = root != null && _loading.contains(root) && rows.isEmpty;
 
+    final backend = _backend;
+    final ops = (root != null && backend is LocalSafBackend)
+        ? WorkspaceFileOps(
+            context: context,
+            backend: backend,
+            rootPath: root,
+            rootName: workspace?.name ?? '工作区',
+            reloadDir: _reload,
+            ensureExpanded: _ensureExpanded,
+            parentOf: _parentOf,
+          )
+        : null;
+
     return ColoredBox(
       color: theme.colorScheme.surface,
       child: SafeArea(
@@ -187,14 +232,14 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
                   _ToolbarButton(
                     icon: LucideIcons.filePlus,
                     tooltip: '新建文件',
-                    enabled: false,
-                    onTap: () => _notImplemented('新建文件'),
+                    enabled: ops != null,
+                    onTap: () => ops?.newFile(ops.rootPath),
                   ),
                   _ToolbarButton(
                     icon: LucideIcons.folderPlus,
                     tooltip: '新建文件夹',
-                    enabled: false,
-                    onTap: () => _notImplemented('新建文件夹'),
+                    enabled: ops != null,
+                    onTap: () => ops?.newFolder(ops.rootPath),
                   ),
                   const Spacer(),
                   _ToolbarButton(
@@ -247,6 +292,9 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
                                   .select(entry);
                             }
                           },
+                          onLongPress: ops == null
+                              ? null
+                              : () => ops.showEntryMenu(entry),
                         );
                       },
                     ),
@@ -283,6 +331,7 @@ class _FileRow extends StatelessWidget {
     required this.expanded,
     required this.selected,
     required this.onTap,
+    this.onLongPress,
   });
 
   final WorkspaceEntry entry;
@@ -290,6 +339,7 @@ class _FileRow extends StatelessWidget {
   final bool expanded;
   final bool selected;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -298,6 +348,7 @@ class _FileRow extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Container(
         color: selected
             ? theme.colorScheme.primary.withValues(alpha: 0.10)
@@ -413,7 +464,7 @@ class _ToolbarButton extends StatelessWidget {
         ? theme.colorScheme.onSurfaceVariant
         : theme.colorScheme.onSurface.withValues(alpha: 0.30);
     return IconButton(
-      onPressed: onTap,
+      onPressed: enabled ? onTap : null,
       tooltip: tooltip,
       visualDensity: VisualDensity.compact,
       iconSize: 18,
