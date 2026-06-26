@@ -7,6 +7,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:aetherlink_flutter/features/voice/application/voice_settings_controller.dart';
 import 'package:aetherlink_flutter/features/voice/data/asr/dashscope_asr_service.dart';
 import 'package:aetherlink_flutter/features/voice/data/asr/mimo_asr_service.dart';
+import 'package:aetherlink_flutter/features/voice/data/asr/step_asr_service.dart';
 import 'package:aetherlink_flutter/features/voice/data/asr/openai_realtime_asr_service.dart';
 import 'package:aetherlink_flutter/features/voice/data/asr/system_asr_service.dart';
 import 'package:aetherlink_flutter/features/voice/data/asr/volcengine_asr_service.dart';
@@ -29,6 +30,7 @@ class AsrController extends _$AsrController {
   DashScopeAsrService? _dashscopeAsr;
   VolcengineAsrService? _volcengineAsr;
   MimoAsrService? _mimoAsr;
+  StepAsrService? _stepAsr;
   SystemAsrService? _systemAsr;
   StreamSubscription<String>? _realtimeSub;
   StreamSubscription<String>? _realtimeErrorSub;
@@ -38,6 +40,8 @@ class AsrController extends _$AsrController {
   StreamSubscription<String>? _volcengineErrorSub;
   StreamSubscription<String>? _mimoSub;
   StreamSubscription<String>? _mimoErrorSub;
+  StreamSubscription<String>? _stepSub;
+  StreamSubscription<String>? _stepErrorSub;
   StreamSubscription<String>? _systemTextSub;
   StreamSubscription<String>? _systemErrorSub;
   StreamSubscription<bool>? _systemStatusSub;
@@ -92,6 +96,8 @@ class AsrController extends _$AsrController {
           await _startVolcengineRecording(provider);
         case AsrProviderKind.mimo:
           await _startMimoRecording(provider);
+        case AsrProviderKind.step:
+          await _startStepRecording(provider);
         case AsrProviderKind.whisper:
           await _startBatchRecording();
       }
@@ -117,6 +123,8 @@ class AsrController extends _$AsrController {
         await _stopVolcengineRecording();
       case AsrProviderKind.mimo:
         await _stopMimoRecording();
+      case AsrProviderKind.step:
+        await _stopStepRecording();
       case AsrProviderKind.whisper:
       case null:
         await _stopBatchRecording(provider);
@@ -147,6 +155,11 @@ class AsrController extends _$AsrController {
     await _mimoErrorSub?.cancel();
     _mimoErrorSub = null;
     await _mimoAsr?.stop();
+    await _stepSub?.cancel();
+    _stepSub = null;
+    await _stepErrorSub?.cancel();
+    _stepErrorSub = null;
+    await _stepAsr?.stop();
     await _systemTextSub?.cancel();
     _systemTextSub = null;
     await _systemErrorSub?.cancel();
@@ -452,6 +465,62 @@ class AsrController extends _$AsrController {
     state = (status: AsrStatus.idle, text: state.text, error: null);
   }
 
+  // -- Step (阶跃星辰) HTTP segmented + SSE streaming ASR -------------------
+
+  Future<void> _startStepRecording(AsrProviderSetting provider) async {
+    _stepAsr = StepAsrService();
+    _stepAsr!.start(provider);
+
+    // Step emits the full accumulated transcript each time, so replace text.
+    _stepSub = _stepAsr!.textStream.listen(
+      (text) {
+        state = (status: AsrStatus.recording, text: text, error: null);
+      },
+      onError: (Object error) {
+        state = (
+          status: AsrStatus.error,
+          text: state.text,
+          error: '识别错误: $error',
+        );
+      },
+    );
+
+    _stepErrorSub = _stepAsr!.errorStream.listen((err) {
+      state = (status: AsrStatus.error, text: state.text, error: '识别错误: $err');
+    });
+
+    final stream = await _recorder.startStream(
+      const RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: StepAsrService.sampleRate,
+        numChannels: 1,
+      ),
+    );
+    _audioStreamSub = stream.listen((bytes) {
+      _stepAsr?.sendAudio(bytes);
+    });
+  }
+
+  Future<void> _stopStepRecording() async {
+    await _audioStreamSub?.cancel();
+    _audioStreamSub = null;
+    await _recorder.stop();
+
+    state = (status: AsrStatus.processing, text: state.text, error: null);
+
+    // Upload the remaining buffered audio and wait for all segments.
+    await _stepAsr?.finish();
+
+    await _stepSub?.cancel();
+    _stepSub = null;
+    await _stepErrorSub?.cancel();
+    _stepErrorSub = null;
+    await _stepAsr?.stop();
+    _stepAsr = null;
+
+    state = (status: AsrStatus.idle, text: state.text, error: null);
+  }
+
   // -- Batch (Whisper) ASR ---------------------------------------------------
 
   Future<void> _startBatchRecording() async {
@@ -505,6 +574,8 @@ class AsrController extends _$AsrController {
     _volcengineErrorSub?.cancel();
     _mimoSub?.cancel();
     _mimoErrorSub?.cancel();
+    _stepSub?.cancel();
+    _stepErrorSub?.cancel();
     _recorderSub?.cancel();
     _systemTextSub?.cancel();
     _systemErrorSub?.cancel();
@@ -513,6 +584,7 @@ class AsrController extends _$AsrController {
     _dashscopeAsr?.dispose();
     _volcengineAsr?.dispose();
     _mimoAsr?.dispose();
+    _stepAsr?.dispose();
     _systemAsr?.dispose();
     _recorder.dispose();
   }

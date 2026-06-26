@@ -17,6 +17,8 @@ enum AsrProviderKind {
   volcengine,
   @JsonValue('mimo')
   mimo,
+  @JsonValue('step')
+  step,
   @JsonValue('whisper')
   whisper,
 }
@@ -62,6 +64,8 @@ abstract class AsrProviderSetting with _$AsrProviderSetting {
     @Default('') String outputZhVariant, // ''/traditional/tw/hk
     // MiMo (小米 mimo-v2.5-asr) specific. HTTP 分段上传 (OpenAI 兼容 chat)
     @Default(30) int segmentDurationSec, // 自动分段上传间隔 (秒)，0 表示禁用分段
+    // Step (阶跃星辰 stepaudio-2.5-asr) specific. HTTP 分段 + SSE 流式
+    @Default(false) bool enableTimestamp, // 是否返回词级时间戳
   }) = _AsrProviderSetting;
 
   factory AsrProviderSetting.fromJson(Map<String, dynamic> json) =>
@@ -113,6 +117,18 @@ AsrProviderSetting defaultAsrProvider(AsrProviderKind kind) => switch (kind) {
     language: 'auto',
     sampleRate: 16000,
     segmentDurationSec: 30,
+  ),
+  AsrProviderKind.step => const AsrProviderSetting(
+    id: 'step',
+    kind: AsrProviderKind.step,
+    name: 'Step ASR',
+    baseUrl: 'https://api.stepfun.com',
+    model: 'stepaudio-2.5-asr',
+    language: 'auto',
+    sampleRate: 16000,
+    segmentDurationSec: 30,
+    enableItn: true,
+    enableTimestamp: false,
   ),
   AsrProviderKind.whisper => const AsrProviderSetting(
     id: 'whisper',

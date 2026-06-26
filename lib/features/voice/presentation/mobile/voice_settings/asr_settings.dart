@@ -43,6 +43,14 @@ Map<AsrProviderKind, _ServiceMeta> _asrServiceMeta() => {
     features: ['分段', '多语言'],
     status: '高级',
   ),
+  AsrProviderKind.step: const _ServiceMeta(
+    providerId: 'step',
+    color: Color(0xFF0055FF),
+    name: 'Step ASR',
+    description: '阶跃星辰语音识别 (HTTP 分段 + SSE 流式)',
+    features: ['分段', '流式', '热词', 'ITN'],
+    status: '高级',
+  ),
   AsrProviderKind.whisper: const _ServiceMeta(
     providerId: 'openai',
     color: Color(0xFF6366F1),
@@ -152,6 +160,7 @@ class _AsrProviderDetailPageState
   late int _endWindowSize;
   late String _outputZhVariant;
   late int _segmentDurationSec;
+  late bool _enableTimestamp;
 
   @override
   void initState() {
@@ -186,6 +195,7 @@ class _AsrProviderDetailPageState
     _endWindowSize = p.endWindowSize;
     _outputZhVariant = p.outputZhVariant;
     _segmentDurationSec = p.segmentDurationSec;
+    _enableTimestamp = p.enableTimestamp;
   }
 
   @override
@@ -232,6 +242,7 @@ class _AsrProviderDetailPageState
       endWindowSize: _endWindowSize,
       outputZhVariant: _outputZhVariant,
       segmentDurationSec: _segmentDurationSec,
+      enableTimestamp: _enableTimestamp,
     );
     final notifier = ref.read(voiceSettingsControllerProvider.notifier);
     notifier.updateAsrProvider(updated);
@@ -253,6 +264,7 @@ class _AsrProviderDetailPageState
     final isDashscope = widget.kind == AsrProviderKind.dashscope;
     final isVolcengine = widget.kind == AsrProviderKind.volcengine;
     final isMimo = widget.kind == AsrProviderKind.mimo;
+    final isStep = widget.kind == AsrProviderKind.step;
     final isWhisper = widget.kind == AsrProviderKind.whisper;
 
     return PopScope(
@@ -390,6 +402,18 @@ class _AsrProviderDetailPageState
                           label: '模型',
                           hint: 'mimo-v2.5-asr',
                           controller: _modelCtrl,
+                        )
+                      else if (isStep)
+                        _DropdownRow(
+                          label: '模型',
+                          value: _modelCtrl.text.isEmpty
+                              ? 'stepaudio-2.5-asr'
+                              : _modelCtrl.text,
+                          items: const [
+                            ('stepaudio-2.5-asr', 'stepaudio-2.5-asr'),
+                            ('stepaudio-2-asr-pro', 'stepaudio-2-asr-pro'),
+                          ],
+                          onChanged: (v) => setState(() => _modelCtrl.text = v),
                         )
                       else
                         ModelFormField(
@@ -584,6 +608,48 @@ class _AsrProviderDetailPageState
                           'MiMo 为 HTTP 一次性识别接口，录音期间按间隔分段上传。'
                           '单次请求原始音频上限约 7.5MB（16kHz 约 234 秒），'
                           '设为 0 时仅在停止时整体上传。语言可填 auto/zh/en。',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (isStep) ...[
+                        Divider(height: 24, color: theme.dividerColor),
+                        ModelFormField(
+                          label: '热词（逗号或换行分隔，可选）',
+                          hint: '如：阶跃星辰，语音识别',
+                          controller: _corpusCtrl,
+                          maxLines: 2,
+                        ),
+                        const SizedBox(height: 4),
+                        _InlineToggle(
+                          label: '文本规范化 (ITN)',
+                          value: _enableItn,
+                          onChanged: (v) => setState(() => _enableItn = v),
+                        ),
+                        _InlineToggle(
+                          label: '返回时间戳',
+                          value: _enableTimestamp,
+                          onChanged: (v) =>
+                              setState(() => _enableTimestamp = v),
+                        ),
+                        _SliderRow(
+                          label: '自动分段间隔 (秒，0=不分段)',
+                          value: _segmentDurationSec.toDouble(),
+                          min: 0,
+                          max: 120,
+                          divisions: 24,
+                          onChanged: (v) =>
+                              setState(() => _segmentDurationSec = v.round()),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Step（阶跃星辰）为 HTTP 一次性识别 + SSE 流式返回接口，'
+                          '录音期间按间隔分段上传 PCM 音频，单段上限约 6MB。'
+                          '设为 0 时仅在停止时整体上传。语言可填 auto/zh/en，'
+                          '热词可提升专有名词识别准确率。',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurface.withValues(
                               alpha: 0.5,
