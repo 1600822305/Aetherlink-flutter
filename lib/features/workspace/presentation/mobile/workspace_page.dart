@@ -14,6 +14,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_file_tree.dart';
 
 class WorkspacePage extends StatefulWidget {
   const WorkspacePage({super.key});
@@ -35,8 +36,7 @@ class _WorkspacePageState extends State<WorkspacePage> {
 
   int _page = _initialPage;
 
-  // 左/右两页暂为纯色占位,等文件树 / 终端做了再替换。
-  static const Color _treeColor = Color(0xFF1E3A5F);
+  // 右页(第三页)暂为纯色占位,等终端做了再替换。
   static const Color _thirdColor = Color(0xFF4A2D5F);
 
   @override
@@ -59,10 +59,7 @@ class _WorkspacePageState extends State<WorkspacePage> {
             itemBuilder: (context, i) {
               switch (i) {
                 case 0:
-                  return const _ColorPlaceholder(
-                    label: '文件树',
-                    color: _treeColor,
-                  );
+                  return const WorkspaceFileTree(topInset: _topBarHeight);
                 case 1:
                   return const _WorkspaceStartPage(topInset: _topBarHeight);
                 default:

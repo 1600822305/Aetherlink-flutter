@@ -1,0 +1,313 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+
+import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+
+/// The left page: a lazily-loaded file tree over [WorkspaceBackend]. P0 reads
+/// the mock backend (fake in-memory tree) so expand/collapse, indentation and
+/// icons can be exercised before the real SAF/Termux/SSH backends exist.
+///
+/// Directories load their children on first expand and cache them. Tapping a
+/// file is a no-op stub for now (the middle-page file viewer lands later).
+class WorkspaceFileTree extends ConsumerStatefulWidget {
+  const WorkspaceFileTree({super.key, required this.topInset});
+
+  final double topInset;
+
+  @override
+  ConsumerState<WorkspaceFileTree> createState() => _WorkspaceFileTreeState();
+}
+
+class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
+  static const String _rootPath = '';
+
+  final Set<String> _expanded = {_rootPath};
+  final Set<String> _loading = {};
+  final Map<String, List<FileEntry>> _children = {};
+  String? _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _load(_rootPath);
+  }
+
+  Future<void> _load(String path) async {
+    if (_children.containsKey(path) || _loading.contains(path)) return;
+    setState(() => _loading.add(path));
+    final backend = ref.read(workspaceBackendProvider);
+    final entries = await backend.listDir(path);
+    if (!mounted) return;
+    setState(() {
+      _loading.remove(path);
+      _children[path] = entries;
+    });
+  }
+
+  void _toggleDir(FileEntry entry) {
+    final path = entry.path;
+    if (_expanded.contains(path)) {
+      setState(() => _expanded.remove(path));
+    } else {
+      setState(() => _expanded.add(path));
+      _load(path);
+    }
+  }
+
+  // Walks the cached tree depth-first into flat rows the ListView renders.
+  void _appendRows(String path, int depth, List<_TreeRow> out) {
+    final entries = _children[path];
+    if (entries == null) return;
+    for (final entry in entries) {
+      final expanded = _expanded.contains(entry.path);
+      out.add(_TreeRow(entry: entry, depth: depth, expanded: expanded));
+      if (entry.isDirectory && expanded) {
+        if (_loading.contains(entry.path)) {
+          out.add(_TreeRow.loading(depth + 1));
+        } else {
+          _appendRows(entry.path, depth + 1, out);
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final topPad = MediaQuery.paddingOf(context).top + widget.topInset + 8;
+
+    final rows = <_TreeRow>[];
+    _appendRows(_rootPath, 0, rows);
+    final rootLoading = _loading.contains(_rootPath) && rows.isEmpty;
+
+    return ColoredBox(
+      color: theme.colorScheme.surface,
+      child: SafeArea(
+        top: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(16, topPad, 16, 8),
+              child: Row(
+                children: [
+                  Icon(
+                    LucideIcons.folderTree,
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '示例工作区',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const _MockBadge(),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: theme.dividerColor),
+            Expanded(
+              child: rootLoading
+                  ? const Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      itemCount: rows.length,
+                      itemBuilder: (context, i) {
+                        final row = rows[i];
+                        if (row.isLoading) {
+                          return _LoadingRow(depth: row.depth);
+                        }
+                        final entry = row.entry!;
+                        return _FileRow(
+                          entry: entry,
+                          depth: row.depth,
+                          expanded: row.expanded,
+                          selected: _selected == entry.path,
+                          onTap: () {
+                            if (entry.isDirectory) {
+                              _toggleDir(entry);
+                            } else {
+                              setState(() => _selected = entry.path);
+                            }
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TreeRow {
+  const _TreeRow({
+    required this.entry,
+    required this.depth,
+    required this.expanded,
+  }) : isLoading = false;
+
+  const _TreeRow.loading(this.depth)
+      : entry = null,
+        expanded = false,
+        isLoading = true;
+
+  final FileEntry? entry;
+  final int depth;
+  final bool expanded;
+  final bool isLoading;
+}
+
+class _FileRow extends StatelessWidget {
+  const _FileRow({
+    required this.entry,
+    required this.depth,
+    required this.expanded,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final FileEntry entry;
+  final int depth;
+  final bool expanded;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDir = entry.isDirectory;
+
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        color: selected
+            ? theme.colorScheme.primary.withValues(alpha: 0.10)
+            : Colors.transparent,
+        padding: EdgeInsets.only(
+          left: 12.0 + depth * 16,
+          right: 12,
+          top: 8,
+          bottom: 8,
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              child: isDir
+                  ? Icon(
+                      expanded
+                          ? LucideIcons.chevronDown
+                          : LucideIcons.chevronRight,
+                      size: 16,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    )
+                  : null,
+            ),
+            Icon(
+              isDir
+                  ? (expanded ? LucideIcons.folderOpen : LucideIcons.folder)
+                  : _fileIcon(entry.name),
+              size: 18,
+              color: isDir
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                entry.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: isDir ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  IconData _fileIcon(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.dart')) return LucideIcons.code;
+    if (lower.endsWith('.md')) return LucideIcons.fileText;
+    if (lower.endsWith('.yaml') ||
+        lower.endsWith('.yml') ||
+        lower.endsWith('.json')) {
+      return LucideIcons.settings;
+    }
+    if (lower.endsWith('.png') ||
+        lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.svg') ||
+        lower.endsWith('.webp')) {
+      return LucideIcons.image;
+    }
+    return LucideIcons.file;
+  }
+}
+
+class _LoadingRow extends StatelessWidget {
+  const _LoadingRow({required this.depth});
+
+  final int depth;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 12.0 + depth * 16 + 18,
+        top: 8,
+        bottom: 8,
+      ),
+      child: const Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
+    );
+  }
+}
+
+class _MockBadge extends StatelessWidget {
+  const _MockBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        '示例数据',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
