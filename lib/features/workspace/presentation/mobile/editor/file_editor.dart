@@ -1,7 +1,12 @@
-// The middle-page file editor. Loads the selected file (whole-file read, or a
-// read-only line-range preview when it exceeds the plugin's 10 MB cap), and
-// lets the user edit + save it on writable (SAF) backends. Find/replace works
-// in both view and edit modes. Dirty edits are guarded on close / file switch.
+// One open file's editor, kept alive inside the middle-page tab IndexedStack.
+// Loads the file (whole-file read, or a read-only line-range preview when it
+// exceeds the plugin's 10 MB cap) and lets the user edit + save it on writable
+// (SAF) backends. Find/replace works in both view and edit modes.
+//
+// Each instance owns a single fixed [entry] (one editor per tab). It mirrors
+// its dirty state into [dirtyFilesProvider] (for the tab strip's dirty dot) and
+// registers a save/discard [EditorHandle] so the tab strip can close it even
+// when it isn't the visible tab.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +16,7 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_view
 import 'package:aetherlink_flutter/features/workspace/data/local_saf_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_body.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_registry.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_text_area.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_header.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_replace_bar.dart';
@@ -22,10 +28,9 @@ const int _wholeFileReadCap = 10 * 1024 * 1024;
 const int _previewLines = 5000;
 
 class FileEditor extends ConsumerStatefulWidget {
-  const FileEditor({super.key, required this.entry, required this.topInset});
+  const FileEditor({super.key, required this.entry});
 
   final WorkspaceEntry entry;
-  final double topInset;
 
   @override
   ConsumerState<FileEditor> createState() => _FileEditorState();
@@ -35,7 +40,6 @@ class _FileEditorState extends ConsumerState<FileEditor> {
   final _controller = TextEditingController();
   final _focus = FocusNode();
   late final FindSession _find = FindSession(_controller, _focus);
-  late WorkspaceEntry _guarded;
   late Future<void> _ready;
 
   String _original = '';
@@ -47,6 +51,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
   bool _showReplace = false;
   double _fontSize = kEditorDefaultFontSize;
 
+  String get _path => widget.entry.path;
   bool get _dirty => _controller.text != _original;
   bool get _writable =>
       ref.read(workspacePreviewBackendProvider) is LocalSafBackend &&
@@ -55,29 +60,20 @@ class _FileEditorState extends ConsumerState<FileEditor> {
   @override
   void initState() {
     super.initState();
-    _guarded = widget.entry;
     _ready = _load();
     _controller.addListener(_onTextChanged);
-  }
-
-  @override
-  void didUpdateWidget(FileEditor old) {
-    super.didUpdateWidget(old);
-    if (widget.entry.path == _guarded.path) return;
-    if (!_dirty) {
-      _guarded = widget.entry;
-      setState(() => _ready = _load());
-      return;
-    }
-    // Unsaved edits: bounce the selection back, then ask what to do.
-    final target = widget.entry;
-    ref.read(selectedWorkspaceFileProvider.notifier).select(_guarded);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _confirmSwitch(target));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref
+          .read(editorRegistryProvider)
+          .register(_path, EditorHandle(save: _save, discard: _discard));
+    });
   }
 
   @override
   void dispose() {
     _controller.removeListener(_onTextChanged);
+    ref.read(editorRegistryProvider).unregister(_path);
+    ref.read(dirtyFilesProvider.notifier).clear(_path);
     _controller.dispose();
     _focus.dispose();
     super.dispose();
@@ -85,6 +81,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
 
   void _onTextChanged() {
     if (_find.query.isNotEmpty) _find.recompute();
+    ref.read(dirtyFilesProvider.notifier).set(_path, dirty: _dirty);
     setState(() {});
   }
 
@@ -111,28 +108,10 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     _controller.text = _original;
   }
 
-  Future<void> _confirmSwitch(WorkspaceEntry target) async {
-    final action = await showUnsavedDialog(context, _guarded.name);
-    if (action == LeaveAction.cancel) return;
-    if (action == LeaveAction.save) {
-      if (!await _save()) return;
-    } else {
-      _original = _controller.text; // discard → clear dirty so no re-bounce
-    }
-    if (mounted) {
-      ref.read(selectedWorkspaceFileProvider.notifier).select(target);
-    }
-  }
-
-  Future<void> _close() async {
-    if (_dirty) {
-      final action = await showUnsavedDialog(context, _guarded.name);
-      if (action == LeaveAction.cancel) return;
-      if (action == LeaveAction.save && !await _save()) return;
-    }
-    if (mounted) {
-      ref.read(selectedWorkspaceFileProvider.notifier).clear();
-    }
+  // Drops unsaved edits (used when closing a dirty tab via "放弃").
+  void _discard() {
+    _original = _controller.text;
+    ref.read(dirtyFilesProvider.notifier).clear(_path);
   }
 
   Future<bool> _save() async {
@@ -142,6 +121,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     try {
       await backend.writeFile(widget.entry.path, _controller.text);
       _original = _controller.text;
+      ref.read(dirtyFilesProvider.notifier).clear(_path);
       _snack('已保存');
       return true;
     } catch (e) {
@@ -172,54 +152,49 @@ class _FileEditorState extends ConsumerState<FileEditor> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final topPad = MediaQuery.paddingOf(context).top + widget.topInset + 8;
     return ColoredBox(
       color: theme.colorScheme.surface,
-      child: SafeArea(
-        top: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            EditorHeader(
-              name: widget.entry.name,
-              path: widget.entry.path,
-              dirty: _dirty,
-              topPad: topPad,
-              actions: _headerActions(),
-              onClose: _close,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          EditorHeader(
+            name: widget.entry.name,
+            path: widget.entry.path,
+            dirty: _dirty,
+            topPad: 6,
+            actions: _headerActions(),
+          ),
+          Divider(height: 1, color: theme.dividerColor),
+          if (_showFind)
+            FindReplaceBar(
+              matchCount: _find.matches.length,
+              currentIndex: _find.index,
+              showReplace: _showReplace,
+              canReplace: _editing && _writable,
+              onQueryChanged: (q, o) => setState(() => _find.update(q, o)),
+              onNext: () => setState(_find.next),
+              onPrev: () => setState(_find.prev),
+              onReplaceOne: (r) => setState(() => _find.replaceOne(r)),
+              onReplaceAll: (r) => setState(() {
+                _snack('替换 ${_find.replaceEverything(r)} 处');
+              }),
+              onToggleReplace: () =>
+                  setState(() => _showReplace = !_showReplace),
+              onClose: () => setState(() => _showFind = false),
             ),
-            Divider(height: 1, color: theme.dividerColor),
-            if (_showFind)
-              FindReplaceBar(
-                matchCount: _find.matches.length,
-                currentIndex: _find.index,
-                showReplace: _showReplace,
-                canReplace: _editing && _writable,
-                onQueryChanged: (q, o) => setState(() => _find.update(q, o)),
-                onNext: () => setState(_find.next),
-                onPrev: () => setState(_find.prev),
-                onReplaceOne: (r) => setState(() => _find.replaceOne(r)),
-                onReplaceAll: (r) => setState(() {
-                  _snack('替换 ${_find.replaceEverything(r)} 处');
-                }),
-                onToggleReplace: () =>
-                    setState(() => _showReplace = !_showReplace),
-                onClose: () => setState(() => _showFind = false),
-              ),
-            if (_readOnlyReason != null) ReadOnlyBanner(text: _readOnlyReason!),
-            Expanded(
-              child: EditorContent(
-                ready: _ready,
-                controller: _controller,
-                focusNode: _focus,
-                editing: _editing,
-                fontSize: _fontSize,
-                onFontSize: (v) => setState(() => _fontSize = v),
-                onRetry: () => setState(() => _ready = _load()),
-              ),
+          if (_readOnlyReason != null) ReadOnlyBanner(text: _readOnlyReason!),
+          Expanded(
+            child: EditorContent(
+              ready: _ready,
+              controller: _controller,
+              focusNode: _focus,
+              editing: _editing,
+              fontSize: _fontSize,
+              onFontSize: (v) => setState(() => _fontSize = v),
+              onRetry: () => setState(() => _ready = _load()),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_view
 import 'package:aetherlink_flutter/features/workspace/data/local_saf_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/open_workspace_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/workspace_file_ops.dart';
 
 /// The left page: a lazily-loaded file tree over [WorkspaceBackend], rooted at
@@ -13,12 +14,20 @@ import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_o
 /// shows an empty state pointing back to the 起始屏.
 ///
 /// Directories load their children on first expand and cache them. Tapping a
-/// file writes it to [selectedWorkspaceFileProvider]; the middle page swaps to
-/// the file viewer and the shell animates over to it.
+/// file opens it in a middle-page tab ([openWorkspaceFilesProvider]); the shell
+/// then animates over to the editor. The 「打开文件夹」 button in the header opens
+/// or switches workspaces (the old start screen lived here before).
 class WorkspaceFileTree extends ConsumerStatefulWidget {
-  const WorkspaceFileTree({super.key, required this.topInset});
+  const WorkspaceFileTree({
+    super.key,
+    required this.topInset,
+    required this.onBack,
+  });
 
   final double topInset;
+
+  /// Pops back to the middle page (the lone back affordance for this page).
+  final VoidCallback onBack;
 
   @override
   ConsumerState<WorkspaceFileTree> createState() => _WorkspaceFileTreeState();
@@ -174,7 +183,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     super.build(context);
     final theme = Theme.of(context);
     final topPad = MediaQuery.paddingOf(context).top + widget.topInset + 8;
-    final selectedPath = ref.watch(selectedWorkspaceFileProvider)?.path;
+    final selectedPath = ref.watch(openWorkspaceFilesProvider).activePath;
 
     // Re-bind whenever the opened workspace changes (open / switch / close).
     final workspace = ref.watch(currentWorkspaceProvider);
@@ -210,9 +219,15 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: EdgeInsets.fromLTRB(16, topPad, 8, 4),
+              padding: EdgeInsets.fromLTRB(4, topPad, 4, 4),
               child: Row(
                 children: [
+                  IconButton(
+                    tooltip: '返回',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(LucideIcons.arrowLeft, size: 20),
+                    onPressed: widget.onBack,
+                  ),
                   Icon(
                     LucideIcons.folderTree,
                     size: 18,
@@ -228,6 +243,12 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                         fontWeight: FontWeight.w700,
                       ),
                     ),
+                  ),
+                  IconButton(
+                    tooltip: '打开文件夹',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(LucideIcons.folderOpen, size: 18),
+                    onPressed: () => showOpenWorkspaceSheet(context, ref),
                   ),
                 ],
               ),
@@ -267,7 +288,10 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
             Divider(height: 1, color: theme.dividerColor),
             Expanded(
               child: root == null
-                  ? _EmptyTree(theme: theme)
+                  ? _EmptyTree(
+                      theme: theme,
+                      onOpen: () => showOpenWorkspaceSheet(context, ref),
+                    )
                   : rootLoading
                   ? const Center(
                       child: SizedBox(
@@ -295,8 +319,8 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                               _toggleDir(entry);
                             } else {
                               ref
-                                  .read(selectedWorkspaceFileProvider.notifier)
-                                  .select(entry);
+                                  .read(openWorkspaceFilesProvider.notifier)
+                                  .open(entry);
                             }
                           },
                           onLongPress: ops == null
@@ -477,9 +501,10 @@ class _ToolbarButton extends StatelessWidget {
 }
 
 class _EmptyTree extends StatelessWidget {
-  const _EmptyTree({required this.theme});
+  const _EmptyTree({required this.theme, required this.onOpen});
 
   final ThemeData theme;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -503,11 +528,17 @@ class _EmptyTree extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '右滑到起始屏，点「打开本地文件夹」选择一个目录',
+              '点下方按钮，打开一个本地文件夹',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.tonalIcon(
+              onPressed: onOpen,
+              icon: const Icon(LucideIcons.folderOpen, size: 18),
+              label: const Text('打开文件夹'),
             ),
           ],
         ),
