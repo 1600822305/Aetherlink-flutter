@@ -193,6 +193,15 @@ class _WorkspaceStartPage extends ConsumerWidget {
               comingSoon: true,
             ),
             const SizedBox(height: 24),
+            const _SectionLabel(text: 'SAF 插件自检 (dev)'),
+            const SizedBox(height: 8),
+            _BackendCard(
+              icon: LucideIcons.folderSearch,
+              title: '选目录 → 列目录 → 读首文件',
+              subtitle: 'P0 闭环冒烟测试,结果走 SnackBar',
+              onTap: () => _runSafSmokeTest(context, ref),
+            ),
+            const SizedBox(height: 24),
             const _SectionLabel(text: '最近打开'),
             const SizedBox(height: 8),
             recent.when(
@@ -242,6 +251,40 @@ class _WorkspaceStartPage extends ConsumerWidget {
     messenger.showSnackBar(
       SnackBar(content: Text('本地 SAF 插件开发中 · $suffix')),
     );
+  }
+
+  // P0 闭环冒烟测试:选目录 → listDirectory → 读第一个文件,验证
+  // openSystemFilePicker / listDirectory / readFile 三个原生方法。全程只调
+  // LocalSafBackend 的公开方法,不直接 import 插件(spec §1)。SAF 真实路径
+  // 接入正式 UI 后,这个 dev 入口会被移除。
+  Future<void> _runSafSmokeTest(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final backend = ref.read(localSafBackendProvider);
+    String text;
+    try {
+      final root = await backend.pickDirectory();
+      if (root == null) {
+        text = '已取消选择目录';
+      } else {
+        final entries = await backend.listDir(root.path);
+        final files = entries.where((e) => !e.isDirectory).toList();
+        final dirCount = entries.length - files.length;
+        final buf = StringBuffer()
+          ..write('${root.name}: $dirCount 目录 / ${files.length} 文件');
+        if (files.isNotEmpty) {
+          final WorkspaceEntry firstFile = files.first;
+          final content = await backend.readFile(firstFile.path);
+          buf.write(' · 读 ${firstFile.name} (${content.length} 字符)');
+        }
+        text = buf.toString();
+      }
+    } on PlatformException catch (e) {
+      text = 'channel 异常 · ${e.code}: ${e.message ?? ''}';
+    } catch (e) {
+      text = '失败 · $e';
+    }
+    if (!context.mounted) return;
+    messenger.showSnackBar(SnackBar(content: Text('SAF 自检 · $text')));
   }
 }
 
