@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_view
 import 'package:aetherlink_flutter/features/workspace/data/local_saf_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_body.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_text_area.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_header.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_replace_bar.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_session.dart';
@@ -44,6 +45,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
 
   bool _showFind = false;
   bool _showReplace = false;
+  double _fontSize = kEditorDefaultFontSize;
 
   bool get _dirty => _controller.text != _original;
   bool get _writable =>
@@ -93,9 +95,13 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     _showFind = false;
     _find.update('', _find.options);
     if (widget.entry.size > _wholeFileReadCap) {
-      final range =
-          await backend.readFileRange(widget.entry.path, 1, _previewLines);
-      _readOnlyReason = '文件过大(${_fmtBytes(widget.entry.size)}),'
+      final range = await backend.readFileRange(
+        widget.entry.path,
+        1,
+        _previewLines,
+      );
+      _readOnlyReason =
+          '文件过大(${_fmtBytes(widget.entry.size)}),'
           '仅显示前 ${range.endLine}/${range.totalLines} 行,暂不可编辑';
       _original = range.content;
     } else {
@@ -207,6 +213,8 @@ class _FileEditorState extends ConsumerState<FileEditor> {
                 controller: _controller,
                 focusNode: _focus,
                 editing: _editing,
+                fontSize: _fontSize,
+                onFontSize: (v) => setState(() => _fontSize = v),
                 onRetry: () => setState(() => _ready = _load()),
               ),
             ),

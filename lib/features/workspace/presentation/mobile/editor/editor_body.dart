@@ -4,6 +4,8 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_text_area.dart';
+
 /// Outcome of the unsaved-changes prompt shown when leaving a dirty file.
 enum LeaveAction { save, discard, cancel }
 
@@ -39,6 +41,8 @@ class EditorContent extends StatelessWidget {
     required this.controller,
     required this.focusNode,
     required this.editing,
+    required this.fontSize,
+    required this.onFontSize,
     required this.onRetry,
   });
 
@@ -46,6 +50,8 @@ class EditorContent extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool editing;
+  final double fontSize;
+  final ValueChanged<double> onFontSize;
   final VoidCallback onRetry;
 
   @override
@@ -69,45 +75,10 @@ class EditorContent extends StatelessWidget {
           controller: controller,
           focusNode: focusNode,
           editing: editing,
+          fontSize: fontSize,
+          onFontSize: onFontSize,
         );
       },
-    );
-  }
-}
-
-class EditorTextArea extends StatelessWidget {
-  const EditorTextArea({
-    super.key,
-    required this.controller,
-    required this.focusNode,
-    required this.editing,
-  });
-
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final bool editing;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      focusNode: focusNode,
-      readOnly: !editing,
-      expands: true,
-      maxLines: null,
-      minLines: null,
-      textAlignVertical: TextAlignVertical.top,
-      keyboardType: TextInputType.multiline,
-      style: const TextStyle(
-        fontFamily: 'monospace',
-        fontSize: 13,
-        height: 1.5,
-      ),
-      decoration: const InputDecoration(
-        isCollapsed: true,
-        border: InputBorder.none,
-        contentPadding: EdgeInsets.fromLTRB(16, 12, 16, 24),
-      ),
     );
   }
 }
