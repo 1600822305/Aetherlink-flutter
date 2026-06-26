@@ -195,13 +195,22 @@ class _FileEditorState extends ConsumerState<FileEditor> {
               onRetry: () => setState(() => _ready = _load()),
             ),
           ),
+          EditorStatusBar(controller: _controller),
         ],
       ),
     );
   }
 
   List<Widget> _headerActions() {
+    final locked = ref.watch(workspacePageLockProvider);
     return [
+      IconButton(
+        tooltip: locked ? '解锁页面(可横向翻页)' : '锁定页面(防止缩放误触翻页)',
+        icon: Icon(locked ? LucideIcons.lock : LucideIcons.lockOpen, size: 18),
+        color: locked ? Theme.of(context).colorScheme.primary : null,
+        onPressed: () =>
+            ref.read(workspacePageLockProvider.notifier).toggle(),
+      ),
       IconButton(
         tooltip: '查找',
         icon: const Icon(LucideIcons.search, size: 18),

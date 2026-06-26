@@ -42,6 +42,19 @@ final workspacePreviewBackendProvider = Provider<WorkspaceBackend?>((ref) {
   return ref.watch(workspaceBackendProvider(workspace));
 });
 
+/// Whether the three-page horizontal pager is locked. When `true` the shell
+/// disables page swiping so pinch-zoom / drag inside the editor can't
+/// accidentally flip pages. Toggled from the editor header's lock button.
+final workspacePageLockProvider =
+    NotifierProvider<WorkspacePageLock, bool>(WorkspacePageLock.new);
+
+class WorkspacePageLock extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void toggle() => state = !state;
+}
+
 /// Immutable state of the middle-page tab strip: the open file tabs and which
 /// one is active.
 class WorkspaceTabsState {

@@ -155,6 +155,9 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
       }
     });
 
+    // 页面锁开启时禁用横向翻页,避免编辑器内捏合缩放/拖动误触翻页。
+    final locked = ref.watch(workspacePageLockProvider);
+
     // Edge-to-edge: 页面铺满整屏(延伸到状态栏/导航栏后面)。每页头部行各自留安全区。
     return PopScope(
       canPop: false,
@@ -165,6 +168,9 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
         body: PageView.builder(
           controller: _controller,
           itemCount: _pageCount,
+          physics: locked
+              ? const NeverScrollableScrollPhysics()
+              : null,
           onPageChanged: (i) => setState(() => _page = i),
           itemBuilder: (context, i) {
             switch (i) {
