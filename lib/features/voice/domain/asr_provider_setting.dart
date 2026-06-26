@@ -13,6 +13,8 @@ enum AsrProviderKind {
   openaiRealtime,
   @JsonValue('dashscope')
   dashscope,
+  @JsonValue('volcengine')
+  volcengine,
   @JsonValue('whisper')
   whisper,
 }
@@ -46,6 +48,16 @@ abstract class AsrProviderSetting with _$AsrProviderSetting {
     @Default('pcm') String inputAudioFormat, // pcm / opus
     @Default('') String corpusText, // contextual biasing text (<=10000 tokens)
     @Default(true) bool useVad, // VAD mode (true) vs manual mode (false)
+    // Volcengine (字节火山引擎大模型流式语音识别) specific
+    @Default('') String appKey, // X-Api-App-Key (旧版控制台 APP ID)
+    @Default('') String accessKey, // X-Api-Access-Key (旧版控制台 Access Token)
+    @Default('volc.bigasr.sauc.duration')
+    String resourceId, // X-Api-Resource-Id
+    @Default(true) bool enableItn, // 文本规范化 (ITN)
+    @Default(true) bool enablePunc, // 标点
+    @Default(false) bool enableDdc, // 语义顺滑
+    @Default(800) int endWindowSize, // 强制判停时间 (ms)，最小 200
+    @Default('') String outputZhVariant, // ''/traditional/tw/hk
   }) = _AsrProviderSetting;
 
   factory AsrProviderSetting.fromJson(Map<String, dynamic> json) =>
@@ -78,6 +90,15 @@ AsrProviderSetting defaultAsrProvider(AsrProviderKind kind) => switch (kind) {
     inputAudioFormat: 'pcm',
     vadThreshold: 0.2,
     silenceDurationMs: 800,
+  ),
+  AsrProviderKind.volcengine => const AsrProviderSetting(
+    id: 'volcengine',
+    kind: AsrProviderKind.volcengine,
+    name: '火山引擎 ASR',
+    websocketUrl: 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel',
+    model: 'bigmodel',
+    resourceId: 'volc.bigasr.sauc.duration',
+    sampleRate: 16000,
   ),
   AsrProviderKind.whisper => const AsrProviderSetting(
     id: 'whisper',

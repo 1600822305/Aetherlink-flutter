@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/voice/application/voice_settings_con
 import 'package:aetherlink_flutter/features/voice/data/asr/dashscope_asr_service.dart';
 import 'package:aetherlink_flutter/features/voice/data/asr/openai_realtime_asr_service.dart';
 import 'package:aetherlink_flutter/features/voice/data/asr/system_asr_service.dart';
+import 'package:aetherlink_flutter/features/voice/data/asr/volcengine_asr_service.dart';
 import 'package:aetherlink_flutter/features/voice/data/asr/whisper_asr_service.dart';
 import 'package:aetherlink_flutter/features/voice/domain/asr_provider_setting.dart';
 
@@ -25,11 +26,14 @@ class AsrController extends _$AsrController {
   final WhisperAsrService _whisper = WhisperAsrService();
   OpenaiRealtimeAsrService? _realtimeAsr;
   DashScopeAsrService? _dashscopeAsr;
+  VolcengineAsrService? _volcengineAsr;
   SystemAsrService? _systemAsr;
   StreamSubscription<String>? _realtimeSub;
   StreamSubscription<String>? _realtimeErrorSub;
   StreamSubscription<String>? _dashscopeSub;
   StreamSubscription<String>? _dashscopeErrorSub;
+  StreamSubscription<String>? _volcengineSub;
+  StreamSubscription<String>? _volcengineErrorSub;
   StreamSubscription<String>? _systemTextSub;
   StreamSubscription<String>? _systemErrorSub;
   StreamSubscription<bool>? _systemStatusSub;
@@ -80,6 +84,8 @@ class AsrController extends _$AsrController {
           await _startRealtimeRecording(provider);
         case AsrProviderKind.dashscope:
           await _startDashscopeRecording(provider);
+        case AsrProviderKind.volcengine:
+          await _startVolcengineRecording(provider);
         case AsrProviderKind.whisper:
           await _startBatchRecording();
       }
@@ -101,6 +107,8 @@ class AsrController extends _$AsrController {
         await _stopRealtimeRecording();
       case AsrProviderKind.dashscope:
         await _stopDashscopeRecording();
+      case AsrProviderKind.volcengine:
+        await _stopVolcengineRecording();
       case AsrProviderKind.whisper:
       case null:
         await _stopBatchRecording(provider);
@@ -121,6 +129,11 @@ class AsrController extends _$AsrController {
     await _dashscopeErrorSub?.cancel();
     _dashscopeErrorSub = null;
     await _dashscopeAsr?.stop();
+    await _volcengineSub?.cancel();
+    _volcengineSub = null;
+    await _volcengineErrorSub?.cancel();
+    _volcengineErrorSub = null;
+    await _volcengineAsr?.stop();
     await _systemTextSub?.cancel();
     _systemTextSub = null;
     await _systemErrorSub?.cancel();
@@ -311,6 +324,64 @@ class AsrController extends _$AsrController {
     state = (status: AsrStatus.idle, text: state.text, error: null);
   }
 
+  // -- Volcengine (字节火山引擎) streaming ASR ----------------------------------
+
+  Future<void> _startVolcengineRecording(AsrProviderSetting provider) async {
+    _volcengineAsr = VolcengineAsrService();
+    await _volcengineAsr!.start(provider);
+
+    // Volcengine emits the full transcript each time, so replace state text.
+    _volcengineSub = _volcengineAsr!.textStream.listen(
+      (text) {
+        state = (status: AsrStatus.recording, text: text, error: null);
+      },
+      onError: (Object error) {
+        state = (
+          status: AsrStatus.error,
+          text: state.text,
+          error: '识别错误: $error',
+        );
+      },
+    );
+
+    _volcengineErrorSub = _volcengineAsr!.errorStream.listen((err) {
+      state = (status: AsrStatus.error, text: state.text, error: '识别错误: $err');
+    });
+
+    // Volcengine only supports 16 kHz PCM16 mono input.
+    final stream = await _recorder.startStream(
+      const RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: VolcengineAsrService.sampleRate,
+        numChannels: 1,
+      ),
+    );
+    _audioStreamSub = stream.listen((bytes) {
+      _volcengineAsr?.sendAudio(bytes);
+    });
+  }
+
+  Future<void> _stopVolcengineRecording() async {
+    await _audioStreamSub?.cancel();
+    _audioStreamSub = null;
+    await _recorder.stop();
+
+    // Signal end-of-stream so the server returns the final result.
+    _volcengineAsr?.finish();
+
+    // Give a short delay for final transcription frames.
+    await Future<void>.delayed(const Duration(milliseconds: 800));
+
+    await _volcengineSub?.cancel();
+    _volcengineSub = null;
+    await _volcengineErrorSub?.cancel();
+    _volcengineErrorSub = null;
+    await _volcengineAsr?.stop();
+    _volcengineAsr = null;
+
+    state = (status: AsrStatus.idle, text: state.text, error: null);
+  }
+
   // -- Batch (Whisper) ASR ---------------------------------------------------
 
   Future<void> _startBatchRecording() async {
@@ -360,12 +431,15 @@ class AsrController extends _$AsrController {
     _realtimeErrorSub?.cancel();
     _dashscopeSub?.cancel();
     _dashscopeErrorSub?.cancel();
+    _volcengineSub?.cancel();
+    _volcengineErrorSub?.cancel();
     _recorderSub?.cancel();
     _systemTextSub?.cancel();
     _systemErrorSub?.cancel();
     _systemStatusSub?.cancel();
     _realtimeAsr?.dispose();
     _dashscopeAsr?.dispose();
+    _volcengineAsr?.dispose();
     _systemAsr?.dispose();
     _recorder.dispose();
   }
