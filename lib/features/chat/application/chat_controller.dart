@@ -53,6 +53,7 @@ import 'package:aetherlink_flutter/shared/domain/skill.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_bridge_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_prompt.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
@@ -2696,14 +2697,17 @@ class ChatController extends _$ChatController {
     for (final server in servers) {
       if (!server.isActive) continue;
 
-      // Settings assistant (@aether/settings): runs in-process with Ref.
+      // Ref-dependent built-ins (@aether/settings, @aether/file-editor): run
+      // in-process with Riverpod [Ref] access to app state.
       if (kRefDependentBuiltins.contains(server.name)) {
         final disabled = server.disabledTools?.toSet() ?? const <String>{};
         for (final tool in builtinToolsFor(server.name)) {
           if (disabled.contains(tool.name)) continue;
           if (routes.containsKey(tool.name)) continue;
           tools.add(tool);
-          routes[tool.name] = _SettingsToolRoute(tool.name);
+          routes[tool.name] = server.name == kFileEditorServerName
+              ? _FileEditorToolRoute(tool.name)
+              : _SettingsToolRoute(tool.name);
         }
         continue;
       }
@@ -2775,6 +2779,8 @@ class ChatController extends _$ChatController {
     switch (route) {
       case _SettingsToolRoute():
         return await runSettingsTool(ref, route.toolName, args);
+      case _FileEditorToolRoute():
+        return await runFileEditorTool(ref, route.toolName, args);
       case _BuiltinToolRoute(:final serverName, :final env):
         return await runBuiltinTool(
               serverName,
@@ -2945,7 +2951,9 @@ class ChatController extends _$ChatController {
       );
     }
     if (kRefDependentBuiltins.contains(server.name)) {
-      return await runSettingsTool(ref, toolName, toolArgs);
+      return server.name == kFileEditorServerName
+          ? await runFileEditorTool(ref, toolName, toolArgs)
+          : await runSettingsTool(ref, toolName, toolArgs);
     }
     if (kLocallyRunnableBuiltins.contains(server.name)) {
       return await runBuiltinTool(
@@ -3270,6 +3278,11 @@ sealed class _ToolRoute {
 /// A settings assistant tool, run in-process with [Ref] access.
 class _SettingsToolRoute extends _ToolRoute {
   const _SettingsToolRoute(super.toolName);
+}
+
+/// A `@aether/file-editor` workspace tool, run in-process with [Ref] access.
+class _FileEditorToolRoute extends _ToolRoute {
+  const _FileEditorToolRoute(super.toolName);
 }
 
 /// A tool run in-process by [runBuiltinTool] (calculator / time / searxng).

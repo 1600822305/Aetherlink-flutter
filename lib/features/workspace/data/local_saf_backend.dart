@@ -65,6 +65,12 @@ class LocalSafBackend implements WorkspaceBackend {
   Future<int> getLineCount(String path) => _plugin.getLineCount(path: path);
 
   @override
+  Future<WorkspaceEntry> getFileInfo(String path) async {
+    final f = await _plugin.getFileInfo(path: path);
+    return _toEntry(f);
+  }
+
+  @override
   Future<void> writeFile(String path, String content, {bool append = false}) =>
       _plugin.writeFile(path: path, content: content, append: append);
 

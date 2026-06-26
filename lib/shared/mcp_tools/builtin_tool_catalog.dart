@@ -627,6 +627,118 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
   ],
+  '@aether/file-editor': [
+    McpToolDefinition(
+      name: 'list_workspaces',
+      description:
+          '获取用户已打开的所有工作区列表。返回带编号的工作区，可用编号、ID 或名称调用其他工具。操作文件前应先调用此工具了解可用工作区。',
+      inputSchema: {'type': 'object', 'properties': {}},
+    ),
+    McpToolDefinition(
+      name: 'get_workspace_files',
+      description: '获取指定工作区中的文件和目录列表。支持浅层（只看当前目录）或递归（获取所有子目录内容）两种模式。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'workspace': {
+            'type': 'string',
+            'description': '工作区编号（如 "1"）或工作区 ID 或工作区名称',
+          },
+          'sub_path': {
+            'type': 'string',
+            'description': '子目录相对路径（可选，默认根目录）。例如 "src/components"',
+          },
+          'recursive': {
+            'type': 'boolean',
+            'description': '是否递归获取所有子目录。false=只看当前目录（默认），true=递归',
+          },
+          'max_depth': {
+            'type': 'number',
+            'description': '递归时的最大深度（可选，默认 3）。仅当 recursive=true 时有效',
+          },
+        },
+        'required': ['workspace'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'list_files',
+      description: '列出指定目录的内容。path 为 get_workspace_files / list_workspaces 返回的目录路径（不透明句柄）。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'path': {'type': 'string', 'description': '目录的完整路径（不透明句柄）'},
+          'recursive': {
+            'type': 'boolean',
+            'description': '是否递归列出子目录内容，默认 false',
+          },
+        },
+        'required': ['path'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'read_file',
+      description: '读取文件内容。支持单文件(path)或批量(files 数组)读取，可指定行范围。大文件建议指定行范围。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'path': {'type': 'string', 'description': '单个文件的完整路径（与 files 二选一）'},
+          'files': {
+            'type': 'array',
+            'items': {
+              'type': 'object',
+              'properties': {
+                'path': {'type': 'string', 'description': '文件路径'},
+                'start_line': {'type': 'number', 'description': '起始行号 (1-based)'},
+                'end_line': {'type': 'number', 'description': '结束行号 (1-based, 包含)'},
+              },
+            },
+            'description': '批量读取的文件列表（与 path 二选一）',
+          },
+          'start_line': {
+            'type': 'number',
+            'description': '起始行号 (1-based)，可选。不指定则从第一行开始',
+          },
+          'end_line': {
+            'type': 'number',
+            'description': '结束行号 (1-based, 包含)，可选。需与 start_line 同时提供才按范围读取',
+          },
+        },
+      },
+    ),
+    McpToolDefinition(
+      name: 'get_file_info',
+      description: '获取文件信息，包括大小、修改时间、类型、行数等。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'path': {'type': 'string', 'description': '文件的完整路径'},
+        },
+        'required': ['path'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'search_files',
+      description: '在目录中搜索文件。支持按文件名或内容搜索。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'directory': {'type': 'string', 'description': '搜索的目录路径'},
+          'query': {'type': 'string', 'description': '搜索关键词'},
+          'search_type': {
+            'type': 'string',
+            'enum': ['name', 'content', 'both'],
+            'description': '搜索类型：name(文件名), content(文件内容), both(两者)',
+          },
+          'file_types': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': '文件类型过滤，如 ["ts", "js", "md"]',
+          },
+        },
+        'required': ['directory', 'query'],
+      },
+    ),
+  ],
 };
 
 /// Whether [serverName] is a built-in server whose tools can be executed
@@ -640,8 +752,12 @@ const Set<String> kLocallyRunnableBuiltins = {
   '@aether/grok-search',
 };
 
-/// Servers that run in-process but need Riverpod [Ref] (settings assistant).
-const Set<String> kRefDependentBuiltins = {'@aether/settings'};
+/// Servers that run in-process but need Riverpod [Ref] (settings assistant,
+/// file editor — both reach app state/providers).
+const Set<String> kRefDependentBuiltins = {
+  '@aether/settings',
+  '@aether/file-editor',
+};
 
 /// The tools a built-in MCP server exposes, or an empty list for servers
 /// without a static catalog (e.g. external servers, discovered at connect time).

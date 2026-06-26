@@ -158,6 +158,11 @@ abstract class WorkspaceBackend {
   Future<int> getLineCount(String path) =>
       throw UnsupportedError('getLineCount is not supported by this backend');
 
+  /// Metadata (name / size / mtime / kind) for the entry at [path], without
+  /// having to list its parent. Throws when [path] doesn't exist.
+  Future<WorkspaceEntry> getFileInfo(String path) =>
+      throw UnsupportedError('getFileInfo is not supported by this backend');
+
   // ===== mutations =====
 
   /// Overwrites (or, when [append], appends to) [path] with [content].
