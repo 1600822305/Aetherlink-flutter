@@ -353,6 +353,7 @@ class MethodChannelAetherlinkSaf extends AetherlinkSafPlatform {
     List<String> fileTypes = const [],
     int maxResults = 200,
     bool recursive = true,
+    bool useRegex = false,
   }) async {
     final map = await _invokeMap('searchFiles', {
       'directory': directory,
@@ -361,6 +362,7 @@ class MethodChannelAetherlinkSaf extends AetherlinkSafPlatform {
       'fileTypes': fileTypes,
       'maxResults': maxResults,
       'recursive': recursive,
+      'useRegex': useRegex,
     });
     return SearchResult.fromMap(map);
   }

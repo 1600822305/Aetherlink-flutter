@@ -102,13 +102,32 @@ Future<McpToolResult> renameFile(Ref ref, Map<String, Object?> args) async {
   return fileEditorOk({'message': '重命名成功', 'path': newPath, 'newName': newName});
 }
 
-/// `move_file` — move a file/dir into the opaque [destination_path] directory.
+/// `move_file` — move a file/dir into the opaque [destination_path] directory,
+/// optionally renaming it to [new_name] in the same call.
+///
+/// SAF move + rename are two distinct operations, so this can't be atomic: on a
+/// rename failure the entry is left moved-but-not-renamed and the error reports
+/// its current location.
 Future<McpToolResult> moveFile(Ref ref, Map<String, Object?> args) async {
   final sourcePath = requireString(args, 'source_path');
   final destParent = requireString(args, 'destination_path');
+  final newName = optionalString(args, 'new_name');
   final backend = await backendForPath(ref, sourcePath);
-  final newPath = await backend.move(sourcePath, destParent);
-  return fileEditorOk({'message': '移动成功', 'path': newPath});
+  var newPath = await backend.move(sourcePath, destParent);
+  if (newName != null) {
+    try {
+      newPath = await backend.rename(newPath, newName);
+    } catch (e) {
+      throw FileEditorError(
+        '已移动到目标目录，但重命名为「$newName」失败：$e。文件当前位于：$newPath',
+      );
+    }
+  }
+  return fileEditorOk({
+    'message': '移动成功',
+    'path': newPath,
+    if (newName != null) 'renamedTo': newName,
+  });
 }
 
 /// `copy_file` — copy a file/dir into the opaque [destination_path] directory.
@@ -143,24 +162,49 @@ Future<McpToolResult> deleteFile(Ref ref, Map<String, Object?> args) async {
   return fileEditorOk({'message': '删除成功', 'path': path});
 }
 
-/// `insert_content` — insert [content] before the 1-based [line].
+/// `insert_content` — insert [content] relative to a 1-based [line].
+///
+/// `position` selects `before` (default) or `after` the line; `at_end=true`
+/// appends to the file and needs no [line] at all.
 Future<McpToolResult> insertContent(Ref ref, Map<String, Object?> args) async {
   final path = requireString(args, 'path');
-  final line = optionalInt(args, 'line');
-  if (line == null || line < 1) {
-    throw const FileEditorError('缺少或无效参数: line（必须是正整数）');
-  }
   final raw = args['content'];
   if (raw == null) throw const FileEditorError('缺少必需参数: content');
   final content = raw is String ? raw : raw.toString();
-
   final backend = await backendForPath(ref, path);
-  await backend.insertContent(path, line, content);
+  final linesInserted = '\n'.allMatches(content).length + 1;
+
+  // at_end — append without a line number.
+  if (optionalBool(args, 'at_end')) {
+    await backend.writeFile(path, content, append: true);
+    return fileEditorOk({
+      'message': '已在文件末尾追加内容',
+      'path': path,
+      'appended': true,
+      'linesInserted': linesInserted,
+    });
+  }
+
+  final line = optionalInt(args, 'line');
+  if (line == null || line < 1) {
+    throw const FileEditorError(
+      '缺少或无效参数: line（必须是正整数）；如需追加到文件末尾请传 at_end=true。',
+    );
+  }
+  final position = optionalString(args, 'position')?.toLowerCase() ?? 'before';
+  if (position != 'before' && position != 'after') {
+    throw FileEditorError('无效的 position: "$position"（应为 before 或 after）');
+  }
+  // "after line N" == insert before line N+1.
+  final target = position == 'after' ? line + 1 : line;
+
+  await backend.insertContent(path, target, content);
   return fileEditorOk({
-    'message': '已在第 $line 行插入内容',
+    'message': position == 'after' ? '已在第 $line 行之后插入内容' : '已在第 $line 行插入内容',
     'path': path,
-    'insertedAt': line,
-    'linesInserted': '\n'.allMatches(content).length + 1,
+    'insertedAt': target,
+    'position': position,
+    'linesInserted': linesInserted,
   });
 }
 

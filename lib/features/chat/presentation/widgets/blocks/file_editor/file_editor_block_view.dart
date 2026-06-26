@@ -110,7 +110,10 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
           else if (isProcessing)
             const FileEditorProcessingRow()
           else if (hasError)
-            FileEditorErrorRow(message: _resultError() ?? '执行失败'),
+            FileEditorErrorRow(
+              message: _resultError() ?? '执行失败',
+              suggestion: _errorSuggestion(_resultError()),
+            ),
         ],
       ),
     );
@@ -144,12 +147,17 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (_tool == 'insert_content')
-          FileEditorHint(
-            text: '在第 ${_args['line'] ?? '?'} 行插入 ${diff.added} 行',
-          ),
+          FileEditorHint(text: _insertHint(diff.added)),
         _diffView(diff, language),
       ],
     );
+  }
+
+  String _insertHint(int lines) {
+    if (_args['at_end'] == true) return '在文件末尾追加 $lines 行';
+    final line = _args['line'] ?? '?';
+    final after = _args['position']?.toString().toLowerCase() == 'after';
+    return after ? '在第 $line 行之后插入 $lines 行' : '在第 $line 行插入 $lines 行';
   }
 
   Widget _diffView(LineDiff diff, String? language) {
@@ -172,12 +180,14 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
       case 'create_file':
         return computeLineDiff('', _args['content']?.toString() ?? '');
       case 'insert_content':
+        final content = _args['content']?.toString() ?? '';
+        if (_args['at_end'] == true) {
+          // Position unknown until appended; suppress the gutter.
+          return computeLineDiff('', content, assignLineNumbers: false);
+        }
         final line = int.tryParse('${_args['line']}') ?? 1;
-        return computeLineDiff(
-          '',
-          _args['content']?.toString() ?? '',
-          newStart: line,
-        );
+        final after = _args['position']?.toString().toLowerCase() == 'after';
+        return computeLineDiff('', content, newStart: after ? line + 1 : line);
       case 'replace_in_file':
         // Position in the file is unknown, so suppress the line-number gutter.
         return computeLineDiff(
@@ -216,8 +226,9 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
     return switch (_tool) {
       'rename_file' =>
         '重命名 ${tail(_args['path'])} → ${_args['new_name'] ?? ''}',
-      'move_file' =>
-        '移动 ${tail(_args['source_path'])} → ${tail(_args['destination_path'])}/',
+      'move_file' => _args['new_name'] != null
+          ? '移动 ${tail(_args['source_path'])} → ${tail(_args['destination_path'])}/${_args['new_name']}'
+          : '移动 ${tail(_args['source_path'])} → ${tail(_args['destination_path'])}/',
       'copy_file' =>
         '复制 ${tail(_args['source_path'])} → ${tail(_args['destination_path'])}/',
       'delete_file' => '删除 ${tail(_args['path'])}',
@@ -226,6 +237,17 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
   }
 
   String? _resultError() => parseFileEditorResult(block).error;
+
+  /// Surfaces an actionable "use the other tool" hint for common failures, most
+  /// importantly write_to_file failing because the target doesn't exist yet.
+  String? _errorSuggestion(String? error) {
+    if (error == null) return null;
+    if (_tool == 'write_to_file' &&
+        (error.contains('不存在') || error.contains('create_file'))) {
+      return '该文件不存在。新建文件请改用 create_file（参数：parent_path + name）。';
+    }
+    return null;
+  }
 
   void _respond(ToolConfirmationRequest req, bool approved) {
     ref

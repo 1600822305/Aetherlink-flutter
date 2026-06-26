@@ -161,16 +161,19 @@ Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
   };
   final fileTypes = optionalStringList(args, 'file_types');
 
+  final useRegex = optionalBool(args, 'use_regex');
   final results = await backend.searchFiles(
     directory,
     query,
     searchType: searchType,
     fileTypes: fileTypes,
+    useRegex: useRegex,
   );
   return fileEditorOk({
     'directory': directory,
     'query': query,
     'searchType': searchType.name,
+    if (useRegex) 'useRegex': true,
     'count': results.length,
     'files': [for (final e in results) entryJson(e)],
   });

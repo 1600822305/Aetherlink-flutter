@@ -411,38 +411,75 @@ class FileEditorProcessingRow extends StatelessWidget {
   }
 }
 
-/// Red error row shown when a tool failed.
+/// Red error row shown when a tool failed, with an optional highlighted
+/// [suggestion] (e.g. "改用 create_file 新建") rendered as an amber call-out.
 class FileEditorErrorRow extends StatelessWidget {
-  const FileEditorErrorRow({required this.message, super.key});
+  const FileEditorErrorRow({required this.message, this.suggestion, super.key});
 
   final String message;
+  final String? suggestion;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.error.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(LucideIcons.circleAlert, size: 13, color: theme.colorScheme.error),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              message,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.error,
-                height: 1.35,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.error.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(LucideIcons.circleAlert, size: 13,
+                  color: theme.colorScheme.error),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  message,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.error,
+                    height: 1.35,
+                  ),
+                ),
               ),
+            ],
+          ),
+        ),
+        if (suggestion != null) ...[
+          const SizedBox(height: 6),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: _warningColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: _warningColor.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(LucideIcons.lightbulb, size: 13, color: _warningColor),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    suggestion!,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurface,
+                      height: 1.35,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
-      ),
+      ],
     );
   }
 }

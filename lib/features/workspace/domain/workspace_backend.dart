@@ -253,7 +253,8 @@ abstract class WorkspaceBackend {
   }) =>
       throw UnsupportedError('applyDiff is not supported by this backend');
 
-  /// Searches under [directory] for entries matching [query].
+  /// Searches under [directory] for entries matching [query]. When [useRegex]
+  /// is true, [query] is treated as a (case-insensitive) regular expression.
   Future<List<WorkspaceEntry>> searchFiles(
     String directory,
     String query, {
@@ -261,6 +262,7 @@ abstract class WorkspaceBackend {
     List<String> fileTypes = const [],
     int maxResults = 200,
     bool recursive = true,
+    bool useRegex = false,
   }) =>
       throw UnsupportedError('searchFiles is not supported by this backend');
 }

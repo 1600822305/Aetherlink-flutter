@@ -245,6 +245,7 @@ class AetherlinkSaf {
     List<String> fileTypes = const [],
     int maxResults = 200,
     bool recursive = true,
+    bool useRegex = false,
   }) =>
       _p.searchFiles(
         directory: directory,
@@ -253,6 +254,7 @@ class AetherlinkSaf {
         fileTypes: fileTypes,
         maxResults: maxResults,
         recursive: recursive,
+        useRegex: useRegex,
       );
 
   Future<void> openSystemFileManager({String? path}) =>

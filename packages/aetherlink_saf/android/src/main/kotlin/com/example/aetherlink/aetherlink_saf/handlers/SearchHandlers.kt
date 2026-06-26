@@ -34,8 +34,26 @@ class SearchHandlers(
             .map { it.removePrefix(".").lowercase() }
         val maxResults = call.opt<Number>("maxResults", 200).toInt()
         val recursive = call.opt("recursive", true)
+        val useRegex = call.opt("useRegex", false)
 
         val needle = query.lowercase()
+        // When useRegex is set, compile once (case-insensitive, mirroring the
+        // substring path's behaviour). Invalid patterns fail fast.
+        val regex: Regex? = if (useRegex) {
+            try {
+                Regex(query, RegexOption.IGNORE_CASE)
+            } catch (e: Exception) {
+                throw SafException(
+                    SafError.INVALID_ARG,
+                    "invalid regular expression: ${e.message}",
+                    mapOf("query" to query),
+                    e,
+                )
+            }
+        } else {
+            null
+        }
+
         val matches = ArrayList<Map<String, Any?>>()
         val stack = ArrayDeque<Uri>()
         stack.addLast(Uri.parse(directory))
@@ -58,7 +76,7 @@ class SearchHandlers(
                 ) {
                     continue
                 }
-                if (matchesEntry(child, name, needle, searchType)) matches.add(child)
+                if (matchesEntry(child, name, needle, regex, searchType)) matches.add(child)
             }
         }
         return mapOf("files" to matches, "totalFound" to matches.size)
@@ -68,23 +86,28 @@ class SearchHandlers(
         child: Map<String, Any?>,
         name: String,
         needle: String,
+        regex: Regex?,
         searchType: String,
     ): Boolean {
-        val byName = name.lowercase().contains(needle)
+        val byName = if (regex != null) {
+            regex.containsMatchIn(name)
+        } else {
+            name.lowercase().contains(needle)
+        }
         return when (searchType) {
             "name" -> byName
-            "content" -> contentContains(child, needle)
-            "both" -> byName || contentContains(child, needle)
+            "content" -> contentMatches(child, needle, regex)
+            "both" -> byName || contentMatches(child, needle, regex)
             else -> byName
         }
     }
 
-    private fun contentContains(child: Map<String, Any?>, needle: String): Boolean {
+    private fun contentMatches(child: Map<String, Any?>, needle: String, regex: Regex?): Boolean {
         val size = (child["size"] as? Number)?.toLong() ?: 0L
         if (size > CONTENT_SEARCH_MAX_BYTES) return false
         val uri = Uri.parse(child["uri"] as String)
         val text = runCatching { String(repo.readBytes(uri), Charsets.UTF_8) }.getOrNull() ?: return false
-        return text.lowercase().contains(needle)
+        return if (regex != null) regex.containsMatchIn(text) else text.lowercase().contains(needle)
     }
 
     fun openSystemFileManager(call: MethodCall): Any? {

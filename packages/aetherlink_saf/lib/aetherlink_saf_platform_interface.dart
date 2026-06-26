@@ -228,6 +228,7 @@ abstract class AetherlinkSafPlatform extends PlatformInterface {
     List<String> fileTypes = const [],
     int maxResults = 200,
     bool recursive = true,
+    bool useRegex = false,
   }) {
     throw UnimplementedError('searchFiles() has not been implemented.');
   }

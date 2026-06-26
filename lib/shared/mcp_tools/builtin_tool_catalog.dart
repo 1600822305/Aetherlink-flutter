@@ -718,12 +718,12 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'search_files',
-      description: '在目录中搜索文件。支持按文件名或内容搜索。',
+      description: '在目录中搜索文件。支持按文件名或内容搜索，可选正则。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'directory': {'type': 'string', 'description': '搜索的目录路径'},
-          'query': {'type': 'string', 'description': '搜索关键词'},
+          'query': {'type': 'string', 'description': '搜索关键词，或正则表达式（当 use_regex=true）'},
           'search_type': {
             'type': 'string',
             'enum': ['name', 'content', 'both'],
@@ -733,6 +733,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'type': 'array',
             'items': {'type': 'string'},
             'description': '文件类型过滤，如 ["ts", "js", "md"]',
+          },
+          'use_regex': {
+            'type': 'boolean',
+            'description': 'query 是否按正则解释（大小写不敏感），默认 false',
           },
         },
         'required': ['directory', 'query'],
@@ -790,7 +794,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'move_file',
-      description: '将文件或目录移动到目标父目录下（保持原名）。会触发用户确认。',
+      description: '将文件或目录移动到目标父目录下，可同时改名（传 new_name）。会触发用户确认。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -798,6 +802,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           'destination_path': {
             'type': 'string',
             'description': '目标父目录的完整路径（不透明句柄）',
+          },
+          'new_name': {
+            'type': 'string',
+            'description': '移动后的新名称（可选，默认沿用原名）',
           },
         },
         'required': ['source_path', 'destination_path'],
@@ -840,18 +848,27 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'insert_content',
-      description: '在文件指定行之前插入内容（不覆盖原有内容）。会触发用户确认。',
+      description: '在文件指定行的前/后插入内容，或追加到文件末尾（不覆盖原有内容）。会触发用户确认。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'path': {'type': 'string', 'description': '目标文件的完整路径'},
           'line': {
             'type': 'number',
-            'description': '插入位置的行号 (1-based)；在该行之前插入',
+            'description': '插入位置的行号 (1-based)。at_end=true 时可省略',
+          },
+          'position': {
+            'type': 'string',
+            'enum': ['before', 'after'],
+            'description': '相对 line 在其之前还是之后插入，默认 before',
+          },
+          'at_end': {
+            'type': 'boolean',
+            'description': '为 true 时追加到文件末尾，无需 line，默认 false',
           },
           'content': {'type': 'string', 'description': '要插入的内容'},
         },
-        'required': ['path', 'line', 'content'],
+        'required': ['path', 'content'],
       },
     ),
     McpToolDefinition(

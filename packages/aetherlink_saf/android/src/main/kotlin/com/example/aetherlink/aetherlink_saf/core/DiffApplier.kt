@@ -45,16 +45,21 @@ object DiffApplier {
         var added = 0
         var deleted = 0
         var changed = 0
-        for (block in blocks) {
+        for ((index, block) in blocks.withIndex()) {
             val at = current.indexOf(block.search)
-            if (at < 0) {
-                throw DiffException(
-                    DiffFailure.SEARCH_NOT_FOUND,
-                    "a SEARCH block was not found in the file",
-                )
+            if (at >= 0) {
+                current = current.substring(0, at) + block.replace +
+                    current.substring(at + block.search.length)
+            } else {
+                // Whitespace-tolerant fallback: match on line-trimmed equality
+                // before giving up, so a SEARCH block that only differs in
+                // leading/trailing whitespace still applies.
+                current = applyFuzzy(current, block.search, block.replace)
+                    ?: throw DiffException(
+                        DiffFailure.SEARCH_NOT_FOUND,
+                        searchNotFoundMessage(current, block.search, index),
+                    )
             }
-            current = current.substring(0, at) + block.replace +
-                current.substring(at + block.search.length)
             val searchLines = countLines(block.search)
             val replaceLines = countLines(block.replace)
             deleted += searchLines
@@ -195,6 +200,66 @@ object DiffApplier {
                 "diff context does not match the file at source line ${pos + 1}",
             )
         }
+    }
+
+    /**
+     * Line-level, whitespace-tolerant fallback for [applySearchReplace]. Finds
+     * the first window of document lines whose `trim()`med text equals the
+     * trimmed SEARCH lines, then swaps in [replace]. Returns the new document,
+     * or null when there's no confident match. Skips all-blank SEARCH blocks to
+     * avoid matching arbitrary empty regions.
+     */
+    private fun applyFuzzy(text: String, search: String, replace: String): String? {
+        val searchLines = search.split("\n")
+        if (searchLines.all { it.isBlank() }) return null
+        val docLines = text.split("\n")
+        val trimmedSearch = searchLines.map { it.trim() }
+        val n = trimmedSearch.size
+        if (n == 0 || n > docLines.size) return null
+
+        var matchStart = -1
+        for (start in 0..(docLines.size - n)) {
+            var ok = true
+            for (k in 0 until n) {
+                if (docLines[start + k].trim() != trimmedSearch[k]) {
+                    ok = false
+                    break
+                }
+            }
+            if (ok) {
+                matchStart = start
+                break
+            }
+        }
+        if (matchStart < 0) return null
+
+        val out = ArrayList<String>(docLines.size)
+        out.addAll(docLines.subList(0, matchStart))
+        out.addAll(replace.split("\n"))
+        out.addAll(docLines.subList(matchStart + n, docLines.size))
+        return out.joinToString("\n")
+    }
+
+    /** A precise, model-actionable error when a SEARCH block can't be located. */
+    private fun searchNotFoundMessage(text: String, search: String, blockIndex: Int): String {
+        val firstLine = search.split("\n").firstOrNull { it.isNotBlank() }?.trim() ?: ""
+        val preview = if (firstLine.length > 60) firstLine.substring(0, 60) + "…" else firstLine
+
+        val docLines = text.split("\n")
+        var nearLine = -1
+        if (preview.isNotEmpty()) {
+            for (i in docLines.indices) {
+                val t = docLines[i].trim()
+                if (t == firstLine || t.contains(preview)) {
+                    nearLine = i + 1
+                    break
+                }
+            }
+        }
+        val where = if (nearLine > 0) " (closest similar line is around line $nearLine)" else ""
+        return "SEARCH block #${blockIndex + 1} did not match the file$where. " +
+            "First line: \"$preview\". Re-read the file with read_file and make the " +
+            "SEARCH text match exactly (including indentation and blank lines)."
     }
 
     private fun countLines(s: String): Int = if (s.isEmpty()) 0 else s.split("\n").size

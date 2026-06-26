@@ -211,6 +211,7 @@ class LocalSafBackend implements WorkspaceBackend {
     List<String> fileTypes = const [],
     int maxResults = 200,
     bool recursive = true,
+    bool useRegex = false,
   }) async {
     final r = await _plugin.searchFiles(
       directory: directory,
@@ -219,6 +220,7 @@ class LocalSafBackend implements WorkspaceBackend {
       fileTypes: fileTypes,
       maxResults: maxResults,
       recursive: recursive,
+      useRegex: useRegex,
     );
     return [for (final f in r.files) _toEntry(f)];
   }
