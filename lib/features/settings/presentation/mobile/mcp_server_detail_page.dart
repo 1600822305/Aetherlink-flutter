@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 
 /// The human-readable label for an MCP server [type], ported from the web
 /// `getServerTypeLabel` / `serverTypes` i18n. Shared by the settings list rows
@@ -333,30 +334,25 @@ class _McpServerDetailPageState extends ConsumerState<McpServerDetailPage> {
             ),
           ),
           const SizedBox(height: 16),
-          DropdownButtonFormField<McpServerType>(
-            initialValue: _type,
-            isDense: true,
-            decoration: const InputDecoration(
-              labelText: '服务器类型',
-              isDense: true,
-            ),
-            items:
-                <McpServerType>[
-                  McpServerType.sse,
-                  McpServerType.streamableHttp,
-                  McpServerType.inMemory,
-                  McpServerType.stdio,
-                  // httpStream is deprecated (no longer offered for new servers),
-                  // but keep it selectable when an existing config already uses it.
-                  if (_type == McpServerType.httpStream)
-                    McpServerType.httpStream,
-                ].map((t) {
-                  return DropdownMenuItem<McpServerType>(
-                    value: t,
-                    child: Text(mcpServerTypeLabel(t)),
-                  );
-                }).toList(),
-            onChanged: (v) => setState(() => _type = v ?? _type),
+          AppSelectField<McpServerType>(
+            label: '服务器类型',
+            value: _type,
+            options: [
+              for (final t in <McpServerType>[
+                McpServerType.sse,
+                McpServerType.streamableHttp,
+                McpServerType.inMemory,
+                McpServerType.stdio,
+                // httpStream is deprecated (no longer offered for new servers),
+                // but keep it selectable when an existing config already uses it.
+                if (_type == McpServerType.httpStream) McpServerType.httpStream,
+              ])
+                AppSelectOption<McpServerType>(
+                  value: t,
+                  label: mcpServerTypeLabel(t),
+                ),
+            ],
+            onChanged: (v) => setState(() => _type = v),
           ),
           if (_isHttp) ...[
             const SizedBox(height: 16),

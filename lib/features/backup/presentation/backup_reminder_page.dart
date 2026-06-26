@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/backup/application/backup_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 
 /// Detail page for backup reminder settings.
 class BackupReminderPage extends ConsumerStatefulWidget {
@@ -142,24 +143,18 @@ class _BackupReminderPageState extends ConsumerState<BackupReminderPage> {
     BackupState state,
     ThemeData theme,
   ) {
-    return DropdownButtonFormField<int>(
+    return AppSelectField<int>(
+      label: '间隔',
       value: state.reminderIntervalDays,
-      decoration: const InputDecoration(
-        labelText: '间隔',
-        border: OutlineInputBorder(),
-        isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      ),
-      style: theme.textTheme.bodyMedium?.copyWith(fontSize: 14),
-      items: const [
-        DropdownMenuItem(value: 1, child: Text('每天')),
-        DropdownMenuItem(value: 3, child: Text('每 3 天')),
-        DropdownMenuItem(value: 7, child: Text('每周')),
-        DropdownMenuItem(value: 14, child: Text('每两周')),
-        DropdownMenuItem(value: 30, child: Text('每月')),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      options: const [
+        AppSelectOption(value: 1, label: '每天'),
+        AppSelectOption(value: 3, label: '每 3 天'),
+        AppSelectOption(value: 7, label: '每周'),
+        AppSelectOption(value: 14, label: '每两周'),
+        AppSelectOption(value: 30, label: '每月'),
       ],
       onChanged: (v) {
-        if (v == null) return;
         controller.saveReminderSchedule(
           enabled: true,
           intervalDays: v,

@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/settings/application/theme_mode_cont
 import 'package:aetherlink_flutter/features/settings/domain/app_theme_mode.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/font_picker.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 
 /// The "外观设置" second-level page (hub "外观" → this page), a 1:1 reproduction
 /// of the layout of the original `src/pages/Settings/AppearanceSettings.tsx`.
@@ -443,29 +444,15 @@ class _ThemeSelect extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return DropdownButtonFormField<AppThemeMode>(
-      initialValue: value,
-      isExpanded: true,
-      icon: Icon(
-        LucideIcons.chevronDown,
-        size: 20,
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
-      // The original `.MuiSelect-select` `fontSize: 0.9rem` on mobile (14.4px).
-      style: theme.textTheme.bodyLarge?.copyWith(
-        fontSize: 14.4,
-        color: theme.colorScheme.onSurface,
-      ),
-      decoration: _selectDecoration(theme, label: label, helper: helper),
-      items: [
+    return AppSelectField<AppThemeMode>(
+      label: label,
+      hint: helper,
+      value: value,
+      options: [
         for (final (mode, text) in options)
-          DropdownMenuItem<AppThemeMode>(value: mode, child: Text(text)),
+          AppSelectOption<AppThemeMode>(value: mode, label: text),
       ],
-      onChanged: (next) {
-        if (next != null) onChanged(next);
-      },
+      onChanged: onChanged,
     );
   }
 }

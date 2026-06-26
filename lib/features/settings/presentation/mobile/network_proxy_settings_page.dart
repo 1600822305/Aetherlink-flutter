@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/core/network/network_proxy_config.dart';
 import 'package:aetherlink_flutter/features/settings/application/network_proxy_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/network_proxy_settings.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 
 class NetworkProxySettingsPage extends ConsumerStatefulWidget {
   const NetworkProxySettingsPage({super.key});
@@ -242,35 +243,15 @@ class _ProxyTypeField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return DropdownButtonFormField<NetworkProxyType>(
-      initialValue: value,
-      isExpanded: true,
-      icon: Icon(
-        LucideIcons.chevronDown,
-        size: 18,
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
-      decoration: InputDecoration(
-        labelText: '代理类型',
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: theme.dividerColor),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 12,
-        ),
-      ),
-      items: const [
-        DropdownMenuItem(value: NetworkProxyType.http, child: Text('HTTP')),
-        DropdownMenuItem(value: NetworkProxyType.https, child: Text('HTTPS')),
-        DropdownMenuItem(value: NetworkProxyType.socks5, child: Text('SOCKS5')),
+    return AppSelectField<NetworkProxyType>(
+      label: '代理类型',
+      value: value,
+      options: const [
+        AppSelectOption(value: NetworkProxyType.http, label: 'HTTP'),
+        AppSelectOption(value: NetworkProxyType.https, label: 'HTTPS'),
+        AppSelectOption(value: NetworkProxyType.socks5, label: 'SOCKS5'),
       ],
-      onChanged: (next) {
-        if (next != null) onChanged(next);
-      },
+      onChanged: onChanged,
     );
   }
 }

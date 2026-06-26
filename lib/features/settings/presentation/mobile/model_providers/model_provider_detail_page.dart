@@ -19,6 +19,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/utils/provider_icons.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
 /// The 供应商详情 third-level page — a style-aligned (not pixel-1:1) port of
@@ -100,10 +101,7 @@ class _ModelProviderDetailPageState
     // (e.g. models added/removed by _fetchModels/_deleteModel while this page
     // was open).
     final freshAsync = ref.read(appModelProviderProvider(provider.id));
-    final fresh = freshAsync.maybeWhen(
-      data: (p) => p,
-      orElse: () => null,
-    );
+    final fresh = freshAsync.maybeWhen(data: (p) => p, orElse: () => null);
     final base = fresh ?? provider;
     final updated = base.copyWith(
       apiKey: _apiKeyController.text.trim().isEmpty
@@ -627,8 +625,9 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
                       _CompactActionChip(
                         label: '获取',
                         icon: LucideIcons.download,
-                        onPressed:
-                            _fetching ? null : () => _fetchModels(provider),
+                        onPressed: _fetching
+                            ? null
+                            : () => _fetchModels(provider),
                       ),
                       _CompactActionChip(
                         label: '端点',
@@ -641,8 +640,8 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
                       _CompactActionChip(
                         label: '添加',
                         icon: LucideIcons.plus,
-                        onPressed: () => context
-                            .push(AppRouter.editModelPath(provider.id)),
+                        onPressed: () =>
+                            context.push(AppRouter.editModelPath(provider.id)),
                       ),
                     ],
                   ),
@@ -686,8 +685,10 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                   prefixIcon: const Icon(LucideIcons.search, size: 16),
-                  prefixIconConstraints:
-                      const BoxConstraints(minWidth: 36, minHeight: 0),
+                  prefixIconConstraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 0,
+                  ),
                   suffixIcon: _search.isNotEmpty
                       ? IconButton(
                           icon: const Icon(Icons.close, size: 16),
@@ -704,7 +705,8 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
                     vertical: 8,
                   ),
                   border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(color: theme.dividerColor),
@@ -749,9 +751,7 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
         final gi = index - headerCount;
         final (groupName, models) = groups[gi];
         return Padding(
-          padding: EdgeInsets.only(
-            bottom: gi < groups.length - 1 ? 10 : 0,
-          ),
+          padding: EdgeInsets.only(bottom: gi < groups.length - 1 ? 10 : 0),
           child: ModelSettingsCard(
             padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
             child: Column(
@@ -771,11 +771,8 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
                       ),
                     ),
                     IconButton(
-                      onPressed: () => _deleteGroup(
-                        provider,
-                        models,
-                        groupName,
-                      ),
+                      onPressed: () =>
+                          _deleteGroup(provider, models, groupName),
                       icon: const Icon(LucideIcons.trash2, size: 14),
                       color: theme.colorScheme.error,
                       tooltip: '删除整组',
@@ -876,8 +873,9 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
       }
       if (result.toRemove.isNotEmpty) {
         final removeIds = result.toRemove.toSet();
-        final current =
-            await ref.read(appModelRepositoryProvider).getProvider(provider.id);
+        final current = await ref
+            .read(appModelRepositoryProvider)
+            .getProvider(provider.id);
         if (current != null) {
           await notifier.saveProvider(
             current.copyWith(
@@ -911,8 +909,8 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
   Future<void> _customEndpoint(ModelProvider provider) async {
     final endpoint = await showDialog<String>(
       context: context,
-      builder: (ctx) => _CustomEndpointDialog(
-          initial: widget.baseUrlController.text.trim()),
+      builder: (ctx) =>
+          _CustomEndpointDialog(initial: widget.baseUrlController.text.trim()),
     );
     if (endpoint == null || endpoint.isEmpty) return;
     await _fetchModels(provider, endpointOverride: endpoint);
@@ -934,8 +932,9 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
         extraHeaders: model.extraHeaders ?? provider.extraHeaders,
         extraBody: model.extraBody ?? provider.extraBody,
       );
-      final gateway =
-          ref.read(appLlmGatewayFactoryProvider).forModel(testModel);
+      final gateway = ref
+          .read(appLlmGatewayFactoryProvider)
+          .forModel(testModel);
       final request = LlmChatRequest(
         model: testModel,
         messages: const [LlmMessage(role: MessageRole.user, content: 'Hi')],
@@ -944,9 +943,8 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
         extraBody: provider.extraBody,
       );
       var ok = false;
-      await for (final chunk in gateway
-          .streamChat(request)
-          .timeout(const Duration(seconds: 30))) {
+      await for (final chunk
+          in gateway.streamChat(request).timeout(const Duration(seconds: 30))) {
         if (chunk is LlmTextDelta ||
             chunk is LlmReasoningDelta ||
             chunk is LlmDone) {
@@ -1012,9 +1010,7 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
         action: SnackBarAction(
           label: '撤销',
           onPressed: () async {
-            final current = ref.read(
-              appModelProviderProvider(provider.id),
-            );
+            final current = ref.read(appModelProviderProvider(provider.id));
             final currentProvider = current.maybeWhen(
               data: (p) => p,
               orElse: () => null,
@@ -1081,9 +1077,7 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
         action: SnackBarAction(
           label: '撤销',
           onPressed: () async {
-            final current = ref.read(
-              appModelProviderProvider(provider.id),
-            );
+            final current = ref.read(appModelProviderProvider(provider.id));
             final currentProvider = current.maybeWhen(
               data: (p) => p,
               orElse: () => null,
@@ -1373,9 +1367,7 @@ class _ModelRow extends StatelessWidget {
             ),
             if (showTest)
               _MiniIconBtn(
-                icon: testing
-                    ? null
-                    : LucideIcons.circleCheckBig,
+                icon: testing ? null : LucideIcons.circleCheckBig,
                 loading: testing,
                 color: theme.brightness == Brightness.dark
                     ? const Color(0xFF66BB6A)
@@ -1424,21 +1416,19 @@ class _MiniIconBtn extends StatelessWidget {
         ? SizedBox(
             width: 14,
             height: 14,
-            child: CircularProgressIndicator(
-              strokeWidth: 1.5,
-              color: color,
-            ),
+            child: CircularProgressIndicator(strokeWidth: 1.5, color: color),
           )
-        : Icon(icon, size: 14, color: onPressed != null ? color : color.withValues(alpha: 0.4));
+        : Icon(
+            icon,
+            size: 14,
+            color: onPressed != null ? color : color.withValues(alpha: 0.4),
+          );
     return Tooltip(
       message: tooltip,
       child: InkWell(
         onTap: onPressed,
         borderRadius: BorderRadius.circular(6),
-        child: Padding(
-          padding: const EdgeInsets.all(5),
-          child: child,
-        ),
+        child: Padding(padding: const EdgeInsets.all(5), child: child),
       ),
     );
   }
@@ -1520,8 +1510,8 @@ class _TestModeToggle extends StatelessWidget {
     final testColor = active
         ? theme.colorScheme.error
         : (theme.brightness == Brightness.dark
-            ? const Color(0xFF66BB6A)
-            : const Color(0xFF2E7D32));
+              ? const Color(0xFF66BB6A)
+              : const Color(0xFF2E7D32));
     final pinColor = alwaysShow
         ? theme.colorScheme.primary
         : theme.colorScheme.onSurfaceVariant;
@@ -1567,8 +1557,10 @@ class _TestModeToggle extends StatelessWidget {
               onTap: () => onToggleAlwaysShow(!alwaysShow),
               borderRadius: BorderRadius.circular(10),
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -1647,19 +1639,14 @@ class _EditProviderDialogState extends State<_EditProviderDialog> {
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              initialValue: _type,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: '供应商类型',
-                border: OutlineInputBorder(),
-              ),
-              items: [
+            AppSelectField<String?>(
+              value: _type,
+              label: '供应商类型',
+              sheetTitle: '供应商类型',
+              placeholder: '请选择',
+              options: [
                 for (final option in providerTypeOptions)
-                  DropdownMenuItem<String>(
-                    value: option.$1,
-                    child: Text(option.$2),
-                  ),
+                  AppSelectOption<String?>(value: option.$1, label: option.$2),
               ],
               onChanged: (value) => setState(() => _type = value),
             ),
@@ -1681,8 +1668,6 @@ class _EditProviderDialogState extends State<_EditProviderDialog> {
     );
   }
 }
-
-
 
 /// The 自定义获取端点 dialog. It owns the endpoint field's
 /// [TextEditingController] so the controller is disposed by the framework when
@@ -1798,25 +1783,19 @@ class _ParameterScopeRow extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        DropdownButtonFormField<String?>(
-          initialValue: _parameterScopeOptions.any((o) => o.$1 == value)
+        AppSelectField<String?>(
+          value: _parameterScopeOptions.any((o) => o.$1 == value)
               ? value
               : null,
-          isExpanded: true,
-          decoration: InputDecoration(
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 10,
-            ),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          sheetTitle: '参数能力范围',
+          borderRadius: 12,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 10,
           ),
-          items: [
+          options: [
             for (final option in _parameterScopeOptions)
-              DropdownMenuItem<String?>(
-                value: option.$1,
-                child: Text(option.$2),
-              ),
+              AppSelectOption<String?>(value: option.$1, label: option.$2),
           ],
           onChanged: onChanged,
         ),

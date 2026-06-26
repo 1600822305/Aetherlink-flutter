@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/settings/application/chat_interface_settings_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/chat_interface_settings.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 
 /// The "聊天界面设置" sub-page (外观设置 → this page), a compact port of the
 /// original `src/pages/Settings/ChatInterfaceSettings.tsx`.
@@ -630,31 +631,14 @@ class _Select<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return DropdownButtonFormField<T>(
-      initialValue: value,
-      isExpanded: true,
-      icon: const Icon(LucideIcons.chevronDown, size: 18),
-      decoration: InputDecoration(
-        labelText: label,
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 12,
-        ),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: theme.dividerColor),
-        ),
-      ),
-      items: [
+    return AppSelectField<T>(
+      label: label,
+      value: value,
+      options: [
         for (final entry in items.entries)
-          DropdownMenuItem<T>(value: entry.key, child: Text(entry.value)),
+          AppSelectOption<T>(value: entry.key, label: entry.value),
       ],
-      onChanged: (v) {
-        if (v != null) onChanged(v);
-      },
+      onChanged: onChanged,
     );
   }
 }

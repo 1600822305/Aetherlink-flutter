@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
@@ -214,43 +215,22 @@ class _MultiKeyManagementPageState
               children: [
                 const ModelSectionTitle('负载均衡策略'),
                 const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  initialValue: _strategy,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: theme.dividerColor),
-                    ),
-                  ),
-                  items: const [
-                    DropdownMenuItem(
+                AppSelectField<String>(
+                  value: _strategy,
+                  sheetTitle: '负载均衡策略',
+                  options: const [
+                    AppSelectOption(
                       value: 'round_robin',
-                      child: Text('轮询 (Round Robin)'),
+                      label: '轮询 (Round Robin)',
                     ),
-                    DropdownMenuItem(
-                      value: 'priority',
-                      child: Text('优先级 (Priority)'),
-                    ),
-                    DropdownMenuItem(
+                    AppSelectOption(value: 'priority', label: '优先级 (Priority)'),
+                    AppSelectOption(
                       value: 'least_used',
-                      child: Text('最少使用 (Least Used)'),
+                      label: '最少使用 (Least Used)',
                     ),
-                    DropdownMenuItem(
-                      value: 'random',
-                      child: Text('随机 (Random)'),
-                    ),
+                    AppSelectOption(value: 'random', label: '随机 (Random)'),
                   ],
-                  onChanged: (value) =>
-                      setState(() => _strategy = value ?? _strategy),
+                  onChanged: (value) => setState(() => _strategy = value),
                 ),
               ],
             ),

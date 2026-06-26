@@ -16,6 +16,7 @@ import 'package:aetherlink_flutter/features/voice/domain/tts_provider_setting.da
 import 'package:aetherlink_flutter/features/voice/domain/voice_presets.dart';
 import 'package:aetherlink_flutter/features/voice/domain/voice_settings.dart';
 import 'package:aetherlink_flutter/features/voice/presentation/widgets/full_screen_voice_picker.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
 // Per-provider TTS settings sections (extensions on _TtsProviderDetailPageState).
@@ -1430,67 +1431,6 @@ class _InlineToggle extends StatelessWidget {
           ),
         ),
         CustomSwitch(value: value, onChanged: onChanged),
-      ],
-    );
-  }
-}
-
-class _DropdownRow extends StatelessWidget {
-  const _DropdownRow({
-    required this.label,
-    required this.value,
-    required this.items,
-    required this.onChanged,
-  });
-
-  final String label;
-  final String value;
-  final List<(String, String)> items;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 6),
-        DropdownButtonFormField<String>(
-          initialValue: items.any((e) => e.$1 == value)
-              ? value
-              : items.first.$1,
-          decoration: InputDecoration(
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 10,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide(color: theme.dividerColor),
-            ),
-          ),
-          items: items
-              .map(
-                (e) => DropdownMenuItem<String>(
-                  value: e.$1,
-                  child: Text(e.$2, style: theme.textTheme.bodyMedium),
-                ),
-              )
-              .toList(),
-          onChanged: (v) {
-            if (v != null) onChanged(v);
-          },
-        ),
       ],
     );
   }

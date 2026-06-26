@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/parameter_setti
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/parameter_metadata.dart';
 import 'package:aetherlink_flutter/shared/domain/reasoning_model_detection.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -96,7 +97,8 @@ class _ParameterEditorState extends ConsumerState<ParameterEditor> {
     // Determine if there's a protocol mismatch (e.g. Anthropic params shown
     // but protocol is openaiCompatible because the user is using a third-party
     // API that proxies Claude via OpenAI-compatible endpoint).
-    final hasMismatch = resolvedProvider != effectiveProtocol &&
+    final hasMismatch =
+        resolvedProvider != effectiveProtocol &&
         resolvedProvider != ProviderType.openaiCompatible;
 
     final allParams = getParametersForProvider(resolvedProvider);
@@ -400,8 +402,7 @@ class _ParameterRowState extends State<_ParameterRow> {
   /// Web: `getReasoningEffortOptions(modelId)` in ParameterEditor.
   ParameterMeta get _resolvedMeta {
     if (meta.key == 'reasoningEffort') {
-      final dynamicOptions =
-          getReasoningEffortOptions(widget.currentModelId);
+      final dynamicOptions = getReasoningEffortOptions(widget.currentModelId);
       return meta.copyWith(options: dynamicOptions);
     }
     return meta;
@@ -562,25 +563,25 @@ class _ParameterRowState extends State<_ParameterRow> {
   Widget _buildInput() {
     return switch (meta.inputType) {
       ParameterInputType.slider => _SliderInput(
-          meta: meta,
-          value: _toDouble(_currentValue) ?? _toDouble(meta.defaultValue) ?? 0,
-          onChanged: (v) => ctrl.setParameterValue(meta.key, v),
-        ),
+        meta: meta,
+        value: _toDouble(_currentValue) ?? _toDouble(meta.defaultValue) ?? 0,
+        onChanged: (v) => ctrl.setParameterValue(meta.key, v),
+      ),
       ParameterInputType.number => _NumberInput(
-          meta: meta,
-          value: _toInt(_currentValue),
-          onChanged: (v) => ctrl.setParameterValue(meta.key, v),
-        ),
+        meta: meta,
+        value: _toInt(_currentValue),
+        onChanged: (v) => ctrl.setParameterValue(meta.key, v),
+      ),
       ParameterInputType.select => _SelectInput(
-          meta: _resolvedMeta,
-          value: _currentValue,
-          onChanged: (v) => ctrl.setParameterValue(meta.key, v),
-        ),
+        meta: _resolvedMeta,
+        value: _currentValue,
+        onChanged: (v) => ctrl.setParameterValue(meta.key, v),
+      ),
       ParameterInputType.text => _TextInput(
-          meta: meta,
-          value: _currentValue?.toString() ?? '',
-          onChanged: (v) => ctrl.setParameterValue(meta.key, v),
-        ),
+        meta: meta,
+        value: _currentValue?.toString() ?? '',
+        onChanged: (v) => ctrl.setParameterValue(meta.key, v),
+      ),
       ParameterInputType.switchToggle => const SizedBox.shrink(),
     };
   }
@@ -626,10 +627,9 @@ class _CodeIconButton extends StatelessWidget {
             size: 12,
             color: showKey
                 ? Theme.of(context).colorScheme.onSurface
-                : Theme.of(context)
-                    .colorScheme
-                    .onSurfaceVariant
-                    .withValues(alpha: 0.4),
+                : Theme.of(
+                    context,
+                  ).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
           ),
         ),
       ),
@@ -764,30 +764,20 @@ class _SelectInput extends StatelessWidget {
     // Web: fall back when current value is not in options.
     final resolved = _resolveValue(value, options);
 
-    return SizedBox(
-      height: 32,
-      child: DropdownButtonFormField<Object>(
-        initialValue: resolved,
-        isExpanded: true,
-        isDense: true,
-        style: TextStyle(
-          fontSize: 12,
-          color: Theme.of(context).colorScheme.onSurface,
-        ),
-        decoration: InputDecoration(
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 8,
-            vertical: 6,
-          ),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
-        ),
-        items: [
-          for (final o in options)
-            DropdownMenuItem(value: o.value, child: Text(o.label)),
-        ],
-        onChanged: (v) => onChanged(v),
+    return AppSelectField<Object?>(
+      value: resolved,
+      borderRadius: 4,
+      dense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      textStyle: TextStyle(
+        fontSize: 12,
+        color: Theme.of(context).colorScheme.onSurface,
       ),
+      options: [
+        for (final o in options)
+          AppSelectOption<Object?>(value: o.value, label: o.label),
+      ],
+      onChanged: onChanged,
     );
   }
 
@@ -951,7 +941,8 @@ class _CustomParametersSectionState extends State<_CustomParametersSection> {
                   if (i > 0) Divider(height: 1, color: theme.dividerColor),
                   _CustomParameterRow(
                     param: params[i],
-                    onUpdate: (p) => widget.delegate.updateCustomParameter(i, p),
+                    onUpdate: (p) =>
+                        widget.delegate.updateCustomParameter(i, p),
                     onRemove: () => widget.delegate.removeCustomParameter(i),
                   ),
                 ],
@@ -969,8 +960,7 @@ class _CustomParametersSectionState extends State<_CustomParametersSection> {
   /// Inline add-parameter area (web: key field row + value field + "添加" button).
   Widget _buildAddArea(ThemeData theme) {
     return Container(
-      color: theme.colorScheme.surfaceContainerLowest
-          .withValues(alpha: 0.5),
+      color: theme.colorScheme.surfaceContainerLowest.withValues(alpha: 0.5),
       padding: const EdgeInsets.all(6),
       child: Column(
         children: [
@@ -1118,7 +1108,9 @@ class _CustomParameterRowState extends State<_CustomParameterRow> {
   void _update({String? key, String? value, bool? enabled}) {
     final p = Map<String, dynamic>.of(widget.param);
     if (key != null) p['name'] = key;
-    if (value != null) p['value'] = _CustomParametersSectionState._inferValue(value);
+    if (value != null) {
+      p['value'] = _CustomParametersSectionState._inferValue(value);
+    }
     if (enabled != null) p['enabled'] = enabled;
     widget.onUpdate(p);
   }
