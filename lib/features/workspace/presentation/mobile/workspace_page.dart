@@ -46,6 +46,11 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
   int _page = _initialPage;
   bool _restoreAttempted = false;
 
+  // 中间页返回容易误触,改成「点两次才退出」:第一次只弹提示并在此窗口内武装,
+  // 窗口内再点一次才真正退出工作区。侧页返回(回到中间页)不受影响。
+  DateTime? _exitArmedAt;
+  static const Duration _exitConfirmWindow = Duration(seconds: 2);
+
   // 右页(第三页)暂为纯色占位,等终端做了再替换。
   static const Color _thirdColor = Color(0xFF4A2D5F);
 
@@ -107,13 +112,29 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
     );
   }
 
-  // 在侧页(文件树 / 第三页)按返回时,先回到中间页;已在中间页才真正退出工作区。
+  // 在侧页(文件树 / 第三页)按返回时,先回到中间页;已在中间页才真正退出工作区,
+  // 且需在 [_exitConfirmWindow] 内点两次(第一次仅提示),避免误触退出。
   void _onBack() {
     if (_page != _initialPage) {
       _goToMiddle();
-    } else {
-      context.pop();
+      return;
     }
+    final now = DateTime.now();
+    final armed = _exitArmedAt;
+    if (armed != null && now.difference(armed) < _exitConfirmWindow) {
+      _exitArmedAt = null;
+      context.pop();
+      return;
+    }
+    _exitArmedAt = now;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('再点一次返回退出工作区'),
+          duration: _exitConfirmWindow,
+        ),
+      );
   }
 
   @override
@@ -136,9 +157,9 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
 
     // Edge-to-edge: 页面铺满整屏(延伸到状态栏/导航栏后面)。每页头部行各自留安全区。
     return PopScope(
-      canPop: _page == _initialPage,
+      canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _goToMiddle();
+        if (!didPop) _onBack();
       },
       child: Scaffold(
         body: PageView.builder(
