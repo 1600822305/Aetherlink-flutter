@@ -83,6 +83,58 @@ class EditorContent extends StatelessWidget {
   }
 }
 
+/// IDE-style bottom status bar: total lines · characters · caret line:column
+/// (and selection length when a range is selected). Reads the live controller
+/// value so it updates on both edits and caret moves.
+class EditorStatusBar extends StatelessWidget {
+  const EditorStatusBar({super.key, required this.controller});
+
+  final TextEditingController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final value = controller.value;
+    final text = value.text;
+    final lineCount = '\n'.allMatches(text).length + 1;
+    final charCount = text.characters.length;
+
+    final sel = value.selection;
+    String caretLabel;
+    if (sel.isValid) {
+      final offset = sel.extentOffset.clamp(0, text.length);
+      final before = text.substring(0, offset);
+      final line = '\n'.allMatches(before).length + 1;
+      final col = offset - (before.lastIndexOf('\n') + 1) + 1;
+      final selected = (sel.end - sel.start).abs();
+      caretLabel = selected > 0
+          ? '行 $line, 列 $col  (已选 $selected)'
+          : '行 $line, 列 $col';
+    } else {
+      caretLabel = '—';
+    }
+
+    final style = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: theme.dividerColor)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Row(
+        children: [
+          Text('$lineCount 行 · $charCount 字符', style: style),
+          const Spacer(),
+          Text(caretLabel, style: style),
+        ],
+      ),
+    );
+  }
+}
+
 class ReadOnlyBanner extends StatelessWidget {
   const ReadOnlyBanner({super.key, required this.text});
 

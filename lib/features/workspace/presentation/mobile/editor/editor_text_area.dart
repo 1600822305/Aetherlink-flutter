@@ -8,11 +8,15 @@
 // arena, so single-finger scroll / select / tap on the field keep working).
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 const double kEditorMinFontSize = 8;
 const double kEditorMaxFontSize = 32;
 const double kEditorDefaultFontSize = 13;
+
+/// Spaces inserted for a Tab key press and continued on auto-indent.
+const String _indentUnit = '  ';
 
 const double _lineHeightFactor = 1.5;
 const double _topPad = 12;
@@ -53,15 +57,44 @@ class _EditorTextAreaState extends State<EditorTextArea> {
   void initState() {
     super.initState();
     _textScroll.addListener(_syncGutter);
+    widget.focusNode.onKeyEvent = _onKeyEvent;
   }
 
   @override
   void dispose() {
     _textScroll.removeListener(_syncGutter);
+    if (widget.focusNode.onKeyEvent == _onKeyEvent) {
+      widget.focusNode.onKeyEvent = null;
+    }
     _textScroll.dispose();
     _gutterScroll.dispose();
     _hScroll.dispose();
     super.dispose();
+  }
+
+  // Tab inserts spaces (instead of moving focus) while editing; auto-indent on
+  // newline is handled by [_AutoIndentFormatter]. Other keys fall through.
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (!widget.editing) return KeyEventResult.ignored;
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.tab) {
+      _insertIndent();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void _insertIndent() {
+    final value = widget.controller.value;
+    final sel = value.selection;
+    final start = sel.isValid ? sel.start : value.text.length;
+    final end = sel.isValid ? sel.end : value.text.length;
+    widget.controller.value = TextEditingValue(
+      text: value.text.replaceRange(start, end, _indentUnit),
+      selection: TextSelection.collapsed(offset: start + _indentUnit.length),
+    );
   }
 
   void _syncGutter() {
@@ -141,35 +174,49 @@ class _EditorTextAreaState extends State<EditorTextArea> {
                 child: LayoutBuilder(
                   builder: (context, c) {
                     final width = _contentWidth(text, textStyle, c.maxWidth);
-                    return SingleChildScrollView(
-                      controller: _hScroll,
-                      scrollDirection: Axis.horizontal,
-                      child: SizedBox(
-                        width: width,
-                        child: TextField(
-                          controller: widget.controller,
-                          focusNode: widget.focusNode,
-                          scrollController: _textScroll,
-                          readOnly: !widget.editing,
-                          expands: true,
-                          maxLines: null,
-                          minLines: null,
-                          textAlignVertical: TextAlignVertical.top,
-                          keyboardType: TextInputType.multiline,
-                          style: textStyle,
-                          cursorColor: theme.colorScheme.primary,
-                          decoration: const InputDecoration(
-                            isCollapsed: true,
-                            border: InputBorder.none,
-                            contentPadding: EdgeInsets.fromLTRB(
-                              _textLeftPad,
-                              _topPad,
-                              _textRightPad,
-                              _bottomPad,
+                    return Stack(
+                      children: [
+                        if (widget.editing)
+                          _CurrentLineHighlight(
+                            scroll: _textScroll,
+                            caretLine: _caretLine(text),
+                            lineHeight: lineHeight,
+                            color: theme.colorScheme.primary.withValues(
+                              alpha: 0.07,
+                            ),
+                          ),
+                        SingleChildScrollView(
+                          controller: _hScroll,
+                          scrollDirection: Axis.horizontal,
+                          child: SizedBox(
+                            width: width,
+                            child: TextField(
+                              controller: widget.controller,
+                              focusNode: widget.focusNode,
+                              scrollController: _textScroll,
+                              readOnly: !widget.editing,
+                              expands: true,
+                              maxLines: null,
+                              minLines: null,
+                              textAlignVertical: TextAlignVertical.top,
+                              keyboardType: TextInputType.multiline,
+                              inputFormatters: const [_AutoIndentFormatter()],
+                              style: textStyle,
+                              cursorColor: theme.colorScheme.primary,
+                              decoration: const InputDecoration(
+                                isCollapsed: true,
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.fromLTRB(
+                                  _textLeftPad,
+                                  _topPad,
+                                  _textRightPad,
+                                  _bottomPad,
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
+                      ],
                     );
                   },
                 ),
@@ -189,6 +236,14 @@ class _EditorTextAreaState extends State<EditorTextArea> {
     );
   }
 
+  // 0-based line index of the caret, or -1 when there is no valid caret.
+  int _caretLine(String text) {
+    final sel = widget.controller.selection;
+    if (!sel.isValid) return -1;
+    final offset = sel.extentOffset.clamp(0, text.length);
+    return '\n'.allMatches(text.substring(0, offset)).length;
+  }
+
   // Width of the longest line so the field never wraps and can pan horizontally.
   static double _contentWidth(String text, TextStyle style, double viewport) {
     var maxLen = 1;
@@ -202,6 +257,83 @@ class _EditorTextAreaState extends State<EditorTextArea> {
     )..layout();
     final width = tp.width + _textLeftPad + _textRightPad;
     return width < viewport ? viewport : width;
+  }
+}
+
+/// A full-width band behind the caret's line. Tracks the field's vertical
+/// scroll so it stays glued to the current line; spans the viewport width
+/// (fixed horizontally) so the highlight is visible regardless of pan.
+class _CurrentLineHighlight extends StatelessWidget {
+  const _CurrentLineHighlight({
+    required this.scroll,
+    required this.caretLine,
+    required this.lineHeight,
+    required this.color,
+  });
+
+  final ScrollController scroll;
+  final int caretLine;
+  final double lineHeight;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    if (caretLine < 0) return const SizedBox.shrink();
+    return AnimatedBuilder(
+      animation: scroll,
+      builder: (context, _) {
+        final offset = scroll.hasClients ? scroll.offset : 0.0;
+        final top = _topPad + caretLine * lineHeight - offset;
+        return Positioned(
+          left: 0,
+          right: 0,
+          top: top,
+          height: lineHeight,
+          child: IgnorePointer(child: ColoredBox(color: color)),
+        );
+      },
+    );
+  }
+}
+
+/// Continues the previous line's leading whitespace after a newline is typed,
+/// so pressing Enter keeps the current indent. Works for both soft and
+/// hardware keyboards (it reacts to the inserted text, not a key event).
+class _AutoIndentFormatter extends TextInputFormatter {
+  const _AutoIndentFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    // Only react to a single-char insertion that is a newline at the caret.
+    if (newValue.text.length != oldValue.text.length + 1) return newValue;
+    final caret = newValue.selection.baseOffset;
+    if (caret <= 0 || caret > newValue.text.length) return newValue;
+    if (newValue.text[caret - 1] != '\n') return newValue;
+
+    final before = newValue.text.substring(0, caret - 1);
+    final lineStart = before.lastIndexOf('\n') + 1;
+    final indent = _leadingWhitespace(before.substring(lineStart));
+    if (indent.isEmpty) return newValue;
+
+    final text =
+        newValue.text.substring(0, caret) +
+        indent +
+        newValue.text.substring(caret);
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: caret + indent.length),
+    );
+  }
+
+  static String _leadingWhitespace(String line) {
+    var i = 0;
+    while (i < line.length && (line[i] == ' ' || line[i] == '\t')) {
+      i++;
+    }
+    return line.substring(0, i);
   }
 }
 
