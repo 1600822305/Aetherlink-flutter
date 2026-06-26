@@ -11,6 +11,8 @@ enum AsrProviderKind {
   system,
   @JsonValue('openai_realtime')
   openaiRealtime,
+  @JsonValue('dashscope')
+  dashscope,
   @JsonValue('whisper')
   whisper,
 }
@@ -39,6 +41,11 @@ abstract class AsrProviderSetting with _$AsrProviderSetting {
     @Default(300) int prefixPaddingMs, // VAD prefix padding (ms)
     // Realtime delay (latency/accuracy tradeoff)
     @Default('') String realtimeDelay, // minimal/low/medium/high/xhigh
+    // DashScope (Qwen-ASR-Realtime) specific
+    @Default(16000) int sampleRate, // 16000 / 8000
+    @Default('pcm') String inputAudioFormat, // pcm / opus
+    @Default('') String corpusText, // contextual biasing text (<=10000 tokens)
+    @Default(true) bool useVad, // VAD mode (true) vs manual mode (false)
   }) = _AsrProviderSetting;
 
   factory AsrProviderSetting.fromJson(Map<String, dynamic> json) =>
@@ -60,6 +67,17 @@ AsrProviderSetting defaultAsrProvider(AsrProviderKind kind) => switch (kind) {
     websocketUrl: 'wss://api.openai.com/v1/realtime?intent=transcription',
     model: 'gpt-4o-transcribe',
     realtimeDelay: 'medium',
+  ),
+  AsrProviderKind.dashscope => const AsrProviderSetting(
+    id: 'dashscope',
+    kind: AsrProviderKind.dashscope,
+    name: 'DashScope ASR',
+    websocketUrl: 'wss://dashscope.aliyuncs.com/api-ws/v1/realtime',
+    model: 'qwen3-asr-flash-realtime',
+    sampleRate: 16000,
+    inputAudioFormat: 'pcm',
+    vadThreshold: 0.2,
+    silenceDurationMs: 800,
   ),
   AsrProviderKind.whisper => const AsrProviderSetting(
     id: 'whisper',

@@ -5,6 +5,7 @@ import 'package:record/record.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/features/voice/application/voice_settings_controller.dart';
+import 'package:aetherlink_flutter/features/voice/data/asr/dashscope_asr_service.dart';
 import 'package:aetherlink_flutter/features/voice/data/asr/openai_realtime_asr_service.dart';
 import 'package:aetherlink_flutter/features/voice/data/asr/system_asr_service.dart';
 import 'package:aetherlink_flutter/features/voice/data/asr/whisper_asr_service.dart';
@@ -23,9 +24,12 @@ class AsrController extends _$AsrController {
   final AudioRecorder _recorder = AudioRecorder();
   final WhisperAsrService _whisper = WhisperAsrService();
   OpenaiRealtimeAsrService? _realtimeAsr;
+  DashScopeAsrService? _dashscopeAsr;
   SystemAsrService? _systemAsr;
   StreamSubscription<String>? _realtimeSub;
   StreamSubscription<String>? _realtimeErrorSub;
+  StreamSubscription<String>? _dashscopeSub;
+  StreamSubscription<String>? _dashscopeErrorSub;
   StreamSubscription<String>? _systemTextSub;
   StreamSubscription<String>? _systemErrorSub;
   StreamSubscription<bool>? _systemStatusSub;
@@ -74,6 +78,8 @@ class AsrController extends _$AsrController {
           await _startSystemRecording(provider);
         case AsrProviderKind.openaiRealtime:
           await _startRealtimeRecording(provider);
+        case AsrProviderKind.dashscope:
+          await _startDashscopeRecording(provider);
         case AsrProviderKind.whisper:
           await _startBatchRecording();
       }
@@ -93,6 +99,8 @@ class AsrController extends _$AsrController {
         await _stopSystemRecording();
       case AsrProviderKind.openaiRealtime:
         await _stopRealtimeRecording();
+      case AsrProviderKind.dashscope:
+        await _stopDashscopeRecording();
       case AsrProviderKind.whisper:
       case null:
         await _stopBatchRecording(provider);
@@ -108,6 +116,11 @@ class AsrController extends _$AsrController {
     await _realtimeErrorSub?.cancel();
     _realtimeErrorSub = null;
     await _realtimeAsr?.stop();
+    await _dashscopeSub?.cancel();
+    _dashscopeSub = null;
+    await _dashscopeErrorSub?.cancel();
+    _dashscopeErrorSub = null;
+    await _dashscopeAsr?.stop();
     await _systemTextSub?.cancel();
     _systemTextSub = null;
     await _systemErrorSub?.cancel();
@@ -240,6 +253,64 @@ class AsrController extends _$AsrController {
     state = (status: AsrStatus.idle, text: state.text, error: null);
   }
 
+  // -- DashScope (Qwen-ASR-Realtime) streaming ASR ---------------------------
+
+  Future<void> _startDashscopeRecording(AsrProviderSetting provider) async {
+    _dashscopeAsr = DashScopeAsrService();
+    await _dashscopeAsr!.start(provider);
+
+    // DashScope emits the full transcript each time, so replace state text.
+    _dashscopeSub = _dashscopeAsr!.textStream.listen(
+      (text) {
+        state = (status: AsrStatus.recording, text: text, error: null);
+      },
+      onError: (Object error) {
+        state = (
+          status: AsrStatus.error,
+          text: state.text,
+          error: '识别错误: $error',
+        );
+      },
+    );
+
+    _dashscopeErrorSub = _dashscopeAsr!.errorStream.listen((err) {
+      state = (status: AsrStatus.error, text: state.text, error: '识别错误: $err');
+    });
+
+    final stream = await _recorder.startStream(
+      RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: provider.sampleRate,
+        numChannels: 1,
+      ),
+    );
+    _audioStreamSub = stream.listen((bytes) {
+      _dashscopeAsr?.sendAudio(bytes);
+    });
+  }
+
+  Future<void> _stopDashscopeRecording() async {
+    await _audioStreamSub?.cancel();
+    _audioStreamSub = null;
+    await _recorder.stop();
+
+    // In manual mode, commit the buffered audio to trigger final recognition.
+    _dashscopeAsr?.commitAudioBuffer();
+    _dashscopeAsr?.finish();
+
+    // Give a short delay for final transcription events.
+    await Future<void>.delayed(const Duration(milliseconds: 800));
+
+    await _dashscopeSub?.cancel();
+    _dashscopeSub = null;
+    await _dashscopeErrorSub?.cancel();
+    _dashscopeErrorSub = null;
+    await _dashscopeAsr?.stop();
+    _dashscopeAsr = null;
+
+    state = (status: AsrStatus.idle, text: state.text, error: null);
+  }
+
   // -- Batch (Whisper) ASR ---------------------------------------------------
 
   Future<void> _startBatchRecording() async {
@@ -287,11 +358,14 @@ class AsrController extends _$AsrController {
     _audioStreamSub?.cancel();
     _realtimeSub?.cancel();
     _realtimeErrorSub?.cancel();
+    _dashscopeSub?.cancel();
+    _dashscopeErrorSub?.cancel();
     _recorderSub?.cancel();
     _systemTextSub?.cancel();
     _systemErrorSub?.cancel();
     _systemStatusSub?.cancel();
     _realtimeAsr?.dispose();
+    _dashscopeAsr?.dispose();
     _systemAsr?.dispose();
     _recorder.dispose();
   }

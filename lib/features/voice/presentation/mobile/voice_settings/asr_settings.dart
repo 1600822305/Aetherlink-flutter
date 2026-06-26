@@ -19,6 +19,14 @@ Map<AsrProviderKind, _ServiceMeta> _asrServiceMeta() => {
     features: ['实时', '高精度'],
     status: '高级',
   ),
+  AsrProviderKind.dashscope: const _ServiceMeta(
+    providerId: 'qwen',
+    color: Color(0xFF615CED),
+    name: 'DashScope ASR',
+    description: '阿里通义 Qwen 实时语音识别 (WebSocket)',
+    features: ['实时', '多语言', '热词'],
+    status: '高级',
+  ),
   AsrProviderKind.whisper: const _ServiceMeta(
     providerId: 'openai',
     color: Color(0xFF6366F1),
@@ -109,12 +117,16 @@ class _AsrProviderDetailPageState
   late final TextEditingController _wsUrlCtrl;
   late final TextEditingController _languageCtrl;
   late final TextEditingController _promptCtrl;
+  late final TextEditingController _corpusCtrl;
   late bool _enabled;
   late double _vadThreshold;
   late int _silenceDurationMs;
   late int _prefixPaddingMs;
   late double _temperature;
   late String _realtimeDelay;
+  late int _sampleRate;
+  late String _inputAudioFormat;
+  late bool _useVad;
 
   @override
   void initState() {
@@ -126,6 +138,7 @@ class _AsrProviderDetailPageState
     _wsUrlCtrl = TextEditingController(text: p.websocketUrl);
     _languageCtrl = TextEditingController(text: p.language);
     _promptCtrl = TextEditingController(text: p.prompt);
+    _corpusCtrl = TextEditingController(text: p.corpusText);
     // "启用此服务" reflects whether this is the single active ASR provider.
     _enabled =
         ref.read(voiceSettingsControllerProvider).activeAsrProviderId == p.id;
@@ -134,6 +147,11 @@ class _AsrProviderDetailPageState
     _prefixPaddingMs = p.prefixPaddingMs;
     _temperature = p.temperature;
     _realtimeDelay = p.realtimeDelay;
+    _sampleRate = p.sampleRate;
+    _inputAudioFormat = p.inputAudioFormat.isNotEmpty
+        ? p.inputAudioFormat
+        : 'pcm';
+    _useVad = p.useVad;
   }
 
   @override
@@ -144,6 +162,7 @@ class _AsrProviderDetailPageState
     _wsUrlCtrl.dispose();
     _languageCtrl.dispose();
     _promptCtrl.dispose();
+    _corpusCtrl.dispose();
     super.dispose();
   }
 
@@ -158,11 +177,15 @@ class _AsrProviderDetailPageState
       websocketUrl: _wsUrlCtrl.text.trim(),
       language: _languageCtrl.text.trim(),
       prompt: _promptCtrl.text.trim(),
+      corpusText: _corpusCtrl.text.trim(),
       vadThreshold: _vadThreshold,
       silenceDurationMs: _silenceDurationMs,
       prefixPaddingMs: _prefixPaddingMs,
       temperature: _temperature,
       realtimeDelay: _realtimeDelay,
+      sampleRate: _sampleRate,
+      inputAudioFormat: _inputAudioFormat,
+      useVad: _useVad,
     );
     final notifier = ref.read(voiceSettingsControllerProvider.notifier);
     notifier.updateAsrProvider(updated);
@@ -181,6 +204,7 @@ class _AsrProviderDetailPageState
     final theme = Theme.of(context);
     final isSystem = widget.kind == AsrProviderKind.system;
     final isRealtime = widget.kind == AsrProviderKind.openaiRealtime;
+    final isDashscope = widget.kind == AsrProviderKind.dashscope;
     final isWhisper = widget.kind == AsrProviderKind.whisper;
 
     return PopScope(
@@ -236,7 +260,7 @@ class _AsrProviderDetailPageState
                         controller: _apiKeyCtrl,
                         obscureText: true,
                       ),
-                      if (!isRealtime) ...[
+                      if (!isRealtime && !isDashscope) ...[
                         const SizedBox(height: 12),
                         ModelFormField(
                           label: 'Base URL',
@@ -244,7 +268,7 @@ class _AsrProviderDetailPageState
                           controller: _baseUrlCtrl,
                         ),
                       ],
-                      if (isRealtime) ...[
+                      if (isRealtime || isDashscope) ...[
                         const SizedBox(height: 12),
                         ModelFormField(
                           label: 'WebSocket URL',
@@ -285,6 +309,12 @@ class _AsrProviderDetailPageState
                             ('gpt-realtime-whisper', 'gpt-realtime-whisper'),
                           ],
                           onChanged: (v) => setState(() => _modelCtrl.text = v),
+                        )
+                      else if (isDashscope)
+                        ModelFormField(
+                          label: '模型',
+                          hint: 'qwen3-asr-flash-realtime',
+                          controller: _modelCtrl,
                         )
                       else
                         ModelFormField(
@@ -352,6 +382,60 @@ class _AsrProviderDetailPageState
                           onChanged: (v) =>
                               setState(() => _prefixPaddingMs = v.round()),
                         ),
+                      ],
+                      if (isDashscope) ...[
+                        Divider(height: 24, color: theme.dividerColor),
+                        ModelFormField(
+                          label: '热词/上下文（corpus）',
+                          hint: '提供专业术语或上下文以提升识别准确度',
+                          controller: _corpusCtrl,
+                          maxLines: 2,
+                        ),
+                        const SizedBox(height: 12),
+                        _DropdownRow(
+                          label: '采样率',
+                          value: _sampleRate.toString(),
+                          items: const [
+                            ('16000', '16000 Hz'),
+                            ('8000', '8000 Hz'),
+                          ],
+                          onChanged: (v) =>
+                              setState(() => _sampleRate = int.parse(v)),
+                        ),
+                        const SizedBox(height: 12),
+                        _DropdownRow(
+                          label: '音频格式',
+                          value: _inputAudioFormat,
+                          items: const [('pcm', 'PCM'), ('opus', 'Opus')],
+                          onChanged: (v) =>
+                              setState(() => _inputAudioFormat = v),
+                        ),
+                        Divider(height: 24, color: theme.dividerColor),
+                        _InlineToggle(
+                          label: '自动断句 (VAD)',
+                          value: _useVad,
+                          onChanged: (v) => setState(() => _useVad = v),
+                        ),
+                        if (_useVad) ...[
+                          const SizedBox(height: 8),
+                          _SliderRow(
+                            label: 'VAD 阈值',
+                            value: _vadThreshold,
+                            min: -1.0,
+                            max: 1.0,
+                            divisions: 40,
+                            onChanged: (v) => setState(() => _vadThreshold = v),
+                          ),
+                          _SliderRow(
+                            label: '静默时间 (ms)',
+                            value: _silenceDurationMs.toDouble(),
+                            min: 200,
+                            max: 6000,
+                            divisions: 58,
+                            onChanged: (v) =>
+                                setState(() => _silenceDurationMs = v.round()),
+                          ),
+                        ],
                       ],
                       if (isWhisper) ...[
                         Divider(height: 24, color: theme.dividerColor),
