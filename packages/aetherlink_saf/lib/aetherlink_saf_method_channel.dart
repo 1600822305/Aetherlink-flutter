@@ -328,6 +328,8 @@ class MethodChannelAetherlinkSaf extends AetherlinkSafPlatform {
     DiffFormat format = DiffFormat.searchReplace,
     bool createBackup = false,
     String? expectedRangeHash,
+    int? rangeStartLine,
+    int? rangeEndLine,
   }) async {
     final map = await _invokeMap('applyDiff', {
       'path': path,
@@ -335,6 +337,8 @@ class MethodChannelAetherlinkSaf extends AetherlinkSafPlatform {
       'format': format.wireValue,
       'createBackup': createBackup,
       'expectedRangeHash': ?expectedRangeHash,
+      'rangeStartLine': ?rangeStartLine,
+      'rangeEndLine': ?rangeEndLine,
     });
     return ApplyDiffResult.fromMap(map);
   }

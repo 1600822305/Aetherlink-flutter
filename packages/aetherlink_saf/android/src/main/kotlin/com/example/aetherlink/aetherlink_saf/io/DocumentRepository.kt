@@ -176,7 +176,23 @@ class DocumentRepository(private val resolver: ContentResolver) {
     // ===== writes =====
 
     fun writeBytes(uri: Uri, bytes: ByteArray, append: Boolean) {
-        val mode = if (append) "wa" else "rwt"
+        if (append) {
+            // "wa" works on the local ExternalStorageProvider but many cloud /
+            // third-party DocumentsProviders reject append mode. Fall back to a
+            // read + concat + truncating rewrite so append stays portable.
+            try {
+                writeWhole(uri, bytes, mode = "wa")
+                return
+            } catch (_: UnsupportedOperationException) {
+                val existing = readBytes(uri)
+                writeWhole(uri, existing + bytes, mode = "rwt")
+                return
+            }
+        }
+        writeWhole(uri, bytes, mode = "rwt")
+    }
+
+    private fun writeWhole(uri: Uri, bytes: ByteArray, mode: String) {
         val stream = resolver.openOutputStream(uri, mode)
             ?: throw SafException(SafError.NOT_FOUND, "cannot open output stream", mapOf("uri" to uri.toString()))
         stream.use { it.write(bytes) }

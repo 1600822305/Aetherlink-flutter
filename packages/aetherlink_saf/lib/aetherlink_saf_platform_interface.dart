@@ -213,6 +213,8 @@ abstract class AetherlinkSafPlatform extends PlatformInterface {
     DiffFormat format = DiffFormat.searchReplace,
     bool createBackup = false,
     String? expectedRangeHash,
+    int? rangeStartLine,
+    int? rangeEndLine,
   }) {
     throw UnimplementedError('applyDiff() has not been implemented.');
   }

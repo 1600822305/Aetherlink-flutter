@@ -5,6 +5,7 @@ import com.example.aetherlink.aetherlink_saf.core.DiffApplier
 import com.example.aetherlink.aetherlink_saf.core.DiffException
 import com.example.aetherlink.aetherlink_saf.core.DiffFailure
 import com.example.aetherlink.aetherlink_saf.core.LineText
+import com.example.aetherlink.aetherlink_saf.core.RangeLock
 import com.example.aetherlink.aetherlink_saf.core.SafError
 import com.example.aetherlink.aetherlink_saf.core.SafException
 import com.example.aetherlink.aetherlink_saf.core.opt
@@ -57,18 +58,25 @@ class EditHandlers(private val repo: DocumentRepository) {
         val format = call.opt("format", "search-replace")
         val createBackup = call.opt("createBackup", false)
         val expectedRangeHash = call.argument<String>("expectedRangeHash")
+        val rangeStartLine = call.argument<Number>("rangeStartLine")?.toInt()
+        val rangeEndLine = call.argument<Number>("rangeEndLine")?.toInt()
         val uri = Uri.parse(path)
 
         val original = repo.readText(uri)
-        if (expectedRangeHash != null) {
-            val actual = LineText.sha256Hex(original.toByteArray(Charsets.UTF_8))
-            if (!actual.equals(expectedRangeHash, ignoreCase = true)) {
-                throw SafException(
-                    SafError.RANGE_CONFLICT,
-                    "file changed since it was read (expectedRangeHash mismatch)",
-                    mapOf("uri" to path, "expected" to expectedRangeHash, "actual" to actual),
-                )
-            }
+        if (expectedRangeHash != null &&
+            !RangeLock.matches(original, expectedRangeHash, rangeStartLine, rangeEndLine)
+        ) {
+            throw SafException(
+                SafError.RANGE_CONFLICT,
+                "file changed since it was read (expectedRangeHash mismatch)",
+                mapOf(
+                    "uri" to path,
+                    "expected" to expectedRangeHash,
+                    "actual" to (RangeLock.currentHash(original, rangeStartLine, rangeEndLine) ?: "<range-gone>"),
+                    "rangeStartLine" to rangeStartLine,
+                    "rangeEndLine" to rangeEndLine,
+                ),
+            )
         }
 
         val outcome = try {

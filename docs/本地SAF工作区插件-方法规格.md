@@ -88,6 +88,7 @@ SAF 没有 unix-style 路径,本插件统一约定:
 - **行号**:1-based,**闭区间**。`startLine=1, endLine=3` 表示 1、2、3 共 3 行。
 - **`readFile` size 上限**:**10 MB**;超过抛 `E_TOO_LARGE`,调用方必须改用 `readFileRange` 或 `readFileBytes`(见 P1)。
 - **`rangeHash` 算法**:`sha256`,输入 = 范围内行的原始字节(保留 LF / CRLF,不归一化),输出 = 小写 hex 字符串。
+- **`applyDiff` 乐观锁**:把 `readFileRange` 返回的 `rangeHash` 作为 `expectedRangeHash` 回传时,**必须**连同当时的 `rangeStartLine` / `rangeEndLine` 一起传,插件会对**当前文件的同一行范围**重算 hash 再比对;省略行范围则退化为整文件 hash(等价 `getFileHash`)。范围读一段、整文件 hash 比对会必然失配——这是历史 bug,务必传行范围。
 - **encoding**:`'utf8'` | `'base64'`。二进制建议走 `base64`,但**更推荐 P1 的 `readFileBytes`** 直接走 `ByteData` 通道,避免 33% 膨胀。
 - **入参不做转义**:URI 内部的 `%2F` 等转义由插件内部处理,调用方原样传整个 URI。
 
@@ -157,7 +158,7 @@ SAF 没有 unix-style 路径,本插件统一约定:
 |---|---|---|---|
 | `insertContent(opts)` | `{path, line, content}` | void | 指定行前插入(1-based) |
 | `replaceInFile(opts)` | `{path, search, replace, isRegex?, replaceAll?, caseSensitive?}` | `{replacements, modified}` | 查找替换 |
-| `applyDiff(opts)` | `{path, diff, format:'unified'\|'search-replace', createBackup?, expectedRangeHash?}` | `{success, linesChanged, linesAdded, linesDeleted, backupPath?}` | **打 diff** — agent 改文件主力。`format` 决定 diff 解析方式,**原版用 `search-replace`,首选实现这个**;`expectedRangeHash` 不匹配抛 `E_RANGE_CONFLICT` |
+| `applyDiff(opts)` | `{path, diff, format:'unified'\|'search-replace', createBackup?, expectedRangeHash?}` | `{success, linesChanged, linesAdded, linesDeleted, backupPath?}` | **打 diff** — agent 改文件主力。`format` 决定 diff 解析方式,**原版用 `search-replace`,首选实现这个**;`expectedRangeHash`(配合 `rangeStartLine`/`rangeEndLine`,见 §3.3)不匹配抛 `E_RANGE_CONFLICT` |
 | `searchFiles(opts)` | `{directory, query, searchType:'name'\|'content'\|'both', fileTypes[], maxResults, recursive}` | `{files[], totalFound}` | 全文/文件名检索 |
 | `openSystemFileManager(opts)` | `{path?}` | void | 跳系统文件管理器 |
 | `openFileWithSystemApp(opts)` | `{path, mimeType?}` | void | 用系统 App 打开 |

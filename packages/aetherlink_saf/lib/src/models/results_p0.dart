@@ -18,14 +18,25 @@ class EchoResult {
 /// Result of `requestPermissions` / `checkPermissions` (spec P0).
 @immutable
 class PermissionResult {
-  const PermissionResult({required this.granted, this.message});
+  const PermissionResult({
+    required this.granted,
+    this.canWrite = false,
+    this.message,
+  });
 
+  /// Whether a (read) persisted permission exists.
   final bool granted;
+
+  /// Whether the persisted permission also includes write access.
+  /// `requestPermissions` does not report this; it is meaningful for
+  /// `checkPermissions`.
+  final bool canWrite;
   final String? message;
 
   factory PermissionResult.fromMap(Map<Object?, Object?> map) =>
       PermissionResult(
         granted: (map['granted'] as bool?) ?? false,
+        canWrite: (map['canWrite'] as bool?) ?? false,
         message: map['message'] as String?,
       );
 }
