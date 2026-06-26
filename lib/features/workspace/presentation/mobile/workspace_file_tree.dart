@@ -56,6 +56,34 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
     }
   }
 
+  // Drops every cached listing and reloads the root, so the tree reflects any
+  // out-of-band changes. Expand state for still-present directories is kept.
+  void _refresh() {
+    setState(() {
+      _children.clear();
+      _loading.clear();
+    });
+    _load(_rootPath);
+  }
+
+  // Collapses everything back to the root. Cached children stay so re-expanding
+  // is instant.
+  void _collapseAll() {
+    setState(() {
+      _expanded
+        ..clear()
+        ..add(_rootPath);
+    });
+  }
+
+  // New file / new folder need a writable backend (DocumentFile for SAF), which
+  // is not built yet — surface that instead of silently doing nothing.
+  void _notImplemented(String action) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$action 需要 SAF 插件,开发中')),
+    );
+  }
+
   // Walks the cached tree depth-first into flat rows the ListView renders.
   void _appendRows(String path, int depth, List<_TreeRow> out) {
     final entries = _children[path];
@@ -90,7 +118,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: EdgeInsets.fromLTRB(16, topPad, 16, 8),
+              padding: EdgeInsets.fromLTRB(16, topPad, 8, 4),
               child: Row(
                 children: [
                   Icon(
@@ -110,6 +138,36 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
                     ),
                   ),
                   const _MockBadge(),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+              child: Row(
+                children: [
+                  _ToolbarButton(
+                    icon: LucideIcons.filePlus,
+                    tooltip: '新建文件',
+                    enabled: false,
+                    onTap: () => _notImplemented('新建文件'),
+                  ),
+                  _ToolbarButton(
+                    icon: LucideIcons.folderPlus,
+                    tooltip: '新建文件夹',
+                    enabled: false,
+                    onTap: () => _notImplemented('新建文件夹'),
+                  ),
+                  const Spacer(),
+                  _ToolbarButton(
+                    icon: LucideIcons.refreshCw,
+                    tooltip: '刷新',
+                    onTap: _refresh,
+                  ),
+                  _ToolbarButton(
+                    icon: LucideIcons.chevronsDownUp,
+                    tooltip: '全部折叠',
+                    onTap: _collapseAll,
+                  ),
                 ],
               ),
             ),
@@ -286,6 +344,35 @@ class _LoadingRow extends StatelessWidget {
           child: CircularProgressIndicator(strokeWidth: 2),
         ),
       ),
+    );
+  }
+}
+
+class _ToolbarButton extends StatelessWidget {
+  const _ToolbarButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = enabled
+        ? theme.colorScheme.onSurfaceVariant
+        : theme.colorScheme.onSurface.withValues(alpha: 0.30);
+    return IconButton(
+      onPressed: onTap,
+      tooltip: tooltip,
+      visualDensity: VisualDensity.compact,
+      iconSize: 18,
+      icon: Icon(icon, color: color),
     );
   }
 }
