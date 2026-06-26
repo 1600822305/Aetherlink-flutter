@@ -1,6 +1,6 @@
 // The middle page in "file open" state: shows the content of the file selected
-// in the left tree, read-only. P0 reads from the shared preview backend
-// (mock); swapping in the real SAF backend later only changes the provider.
+// in the left tree, read-only. Reads from the shared preview backend, which is
+// the opened workspace's real backend (e.g. LocalSafBackend over SAF).
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -42,8 +42,13 @@ class _WorkspaceFileViewerState extends ConsumerState<WorkspaceFileViewer> {
     }
   }
 
-  Future<String> _read() =>
-      ref.read(workspacePreviewBackendProvider).readFile(widget.entry.path);
+  Future<String> _read() {
+    final backend = ref.read(workspacePreviewBackendProvider);
+    if (backend == null) {
+      throw StateError('没有打开的工作区');
+    }
+    return backend.readFile(widget.entry.path);
+  }
 
   void _close() =>
       ref.read(selectedWorkspaceFileProvider.notifier).clear();

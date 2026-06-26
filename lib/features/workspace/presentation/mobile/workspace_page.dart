@@ -63,6 +63,17 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
       }
     });
 
+    // 打开/切换工作区后,把 PageView 滑到左页文件树,让用户立刻看到真实目录。
+    ref.listen<Workspace?>(currentWorkspaceProvider, (prev, next) {
+      if (next != null && next.id != prev?.id && _controller.hasClients) {
+        _controller.animateToPage(
+          0,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
+
     // Edge-to-edge: 页面铺满整屏(延伸到状态栏/导航栏后面),不包 SafeArea。
     // 只给顶部控制行单独保留安全区内边距,避免被状态栏遮挡。
     return Scaffold(
@@ -193,15 +204,6 @@ class _WorkspaceStartPage extends ConsumerWidget {
               comingSoon: true,
             ),
             const SizedBox(height: 24),
-            const _SectionLabel(text: 'SAF 插件自检 (dev)'),
-            const SizedBox(height: 8),
-            _BackendCard(
-              icon: LucideIcons.folderSearch,
-              title: '选目录 → 列目录 → 读首文件',
-              subtitle: 'P0 闭环冒烟测试,结果走 SnackBar',
-              onTap: () => _runSafSmokeTest(context, ref),
-            ),
-            const SizedBox(height: 24),
             const _SectionLabel(text: '最近打开'),
             const SizedBox(height: 8),
             recent.when(
@@ -214,6 +216,7 @@ class _WorkspaceStartPage extends ConsumerWidget {
                         for (final w in list)
                           _RecentTile(
                             workspace: w,
+                            onOpen: () => _openRecent(ref, w),
                             onRemove: () => ref
                                 .read(workspaceStoreProvider.notifier)
                                 .remove(w.id),
@@ -227,64 +230,43 @@ class _WorkspaceStartPage extends ConsumerWidget {
     );
   }
 
+  // 真调 SAF 目录选择器:拿到 content:// URI → 写「最近打开」→ 设为当前工作区。
+  // 设置当前工作区后,文件树/查看器(共享 workspacePreviewBackendProvider)自动
+  // 切到真实 SAF 后端;外层 WorkspacePage 监听 currentWorkspaceProvider 把页面
+  // 滑到文件树。只调 LocalSafBackend 的中性接口,不直接 import 插件(spec §1)。
   Future<void> _openLocalFolder(BuildContext context, WidgetRef ref) async {
-    // 真正选目录依赖自研 SAF 原生插件 (method channel),目前还在搭骨架阶段
-    // (见 docs/本地SAF工作区插件-方法规格.md)。插件全量接好后这里改为调
-    // openSystemFilePicker → takePersistableUriPermission → workspaceStore.open。
-    //
-    // P0 第一刀:点这张卡片会先调 echo 探活,验证 Dart ↔ Kotlin channel 是否
-    // 通畅,SnackBar 一并显示结果 —— 开发期看一眼就知道插件挂没挂。SAF 真实
-    // 路径接通后这块自检逻辑会被替换掉。
     final messenger = ScaffoldMessenger.of(context);
-    String suffix;
     try {
-      final reply = await ref
-          .read(localSafBackendProvider)
-          .echo('ping-${DateTime.now().millisecondsSinceEpoch}');
-      suffix = '插件已挂载 · echo=$reply';
+      final picked = await ref.read(localSafBackendProvider).pickDirectory();
+      if (picked == null) return; // 用户取消
+      final workspace = await ref.read(workspaceStoreProvider.notifier).open(
+            name: picked.name,
+            backendType: WorkspaceBackendType.localSaf,
+            root: picked.root,
+            displayPath: picked.displayPath,
+          );
+      ref.read(selectedWorkspaceFileProvider.notifier).clear();
+      ref.read(currentWorkspaceProvider.notifier).open(workspace);
     } on PlatformException catch (e) {
-      suffix = 'channel 异常 · ${e.code}: ${e.message ?? ''}';
+      messenger.showSnackBar(
+        SnackBar(content: Text('打开失败 · ${e.code}: ${e.message ?? ''}')),
+      );
     } catch (e) {
-      suffix = 'channel 未就绪 · $e';
+      messenger.showSnackBar(SnackBar(content: Text('打开失败 · $e')));
     }
-    if (!context.mounted) return;
-    messenger.showSnackBar(
-      SnackBar(content: Text('本地 SAF 插件开发中 · $suffix')),
-    );
   }
 
-  // P0 闭环冒烟测试:选目录 → listDirectory → 读第一个文件,验证
-  // openSystemFilePicker / listDirectory / readFile 三个原生方法。全程只调
-  // LocalSafBackend 的公开方法,不直接 import 插件(spec §1)。SAF 真实路径
-  // 接入正式 UI 后,这个 dev 入口会被移除。
-  Future<void> _runSafSmokeTest(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final backend = ref.read(localSafBackendProvider);
-    String text;
-    try {
-      final root = await backend.pickDirectory();
-      if (root == null) {
-        text = '已取消选择目录';
-      } else {
-        final entries = await backend.listDir(root.path);
-        final files = entries.where((e) => !e.isDirectory).toList();
-        final dirCount = entries.length - files.length;
-        final buf = StringBuffer()
-          ..write('${root.name}: $dirCount 目录 / ${files.length} 文件');
-        if (files.isNotEmpty) {
-          final WorkspaceEntry firstFile = files.first;
-          final content = await backend.readFile(firstFile.path);
-          buf.write(' · 读 ${firstFile.name} (${content.length} 字符)');
-        }
-        text = buf.toString();
-      }
-    } on PlatformException catch (e) {
-      text = 'channel 异常 · ${e.code}: ${e.message ?? ''}';
-    } catch (e) {
-      text = '失败 · $e';
-    }
-    if (!context.mounted) return;
-    messenger.showSnackBar(SnackBar(content: Text('SAF 自检 · $text')));
+  // 从「最近打开」继续:复用 store.open(backendType+root 命中则置顶并刷新时间),
+  // 再设为当前工作区。SAF 的持久化授权还在的话,文件树/查看器即可直接读取。
+  Future<void> _openRecent(WidgetRef ref, Workspace workspace) async {
+    final stored = await ref.read(workspaceStoreProvider.notifier).open(
+          name: workspace.name,
+          backendType: workspace.backendType,
+          root: workspace.root,
+          displayPath: workspace.displayPath,
+        );
+    ref.read(selectedWorkspaceFileProvider.notifier).clear();
+    ref.read(currentWorkspaceProvider.notifier).open(stored);
   }
 }
 
@@ -417,9 +399,14 @@ class _Chip extends StatelessWidget {
 }
 
 class _RecentTile extends StatelessWidget {
-  const _RecentTile({required this.workspace, required this.onRemove});
+  const _RecentTile({
+    required this.workspace,
+    required this.onOpen,
+    required this.onRemove,
+  });
 
   final Workspace workspace;
+  final VoidCallback onOpen;
   final VoidCallback onRemove;
 
   @override
@@ -432,7 +419,7 @@ class _RecentTile extends StatelessWidget {
         color: theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
-          onTap: () {},
+          onTap: onOpen,
           borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
