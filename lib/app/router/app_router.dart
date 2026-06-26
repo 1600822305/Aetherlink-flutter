@@ -42,6 +42,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_sea
 import 'package:aetherlink_flutter/features/theming/presentation/mobile/theme_style_settings_page.dart';
 import 'package:aetherlink_flutter/features/voice/presentation/mobile/voice_settings_page.dart';
 import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_page.dart';
 
 /// Declarative application route table (go_router).
 ///
@@ -96,6 +97,7 @@ abstract final class AppRouter {
       '&name=${Uri.encodeQueryComponent(name)}';
   static const String welcomePath = '/welcome';
   static const String translatePath = '/translate';
+  static const String workspacePath = '/workspace';
 
   /// The model-provider third-level pages (M4.3.1). The detail / edit / advanced
   /// routes are parameterized by `:providerId`; the helpers below build a
@@ -151,6 +153,12 @@ abstract final class AppRouter {
         path: translatePath,
         name: 'translate',
         pageBuilder: (context, state) => _instant(state, const TranslatePage()),
+      ),
+      GoRoute(
+        path: workspacePath,
+        name: 'workspace',
+        pageBuilder: (context, state) =>
+            _instant(state, const WorkspacePage()),
       ),
       GoRoute(
         path: settingsPath,
