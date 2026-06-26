@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
+import 'package:aetherlink_flutter/features/workspace/application/mock_workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 
 /// The left page: a lazily-loaded file tree over [WorkspaceBackend]. P0 reads
@@ -23,9 +23,14 @@ class WorkspaceFileTree extends ConsumerStatefulWidget {
 class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
   static const String _rootPath = '';
 
+  // P0 reads a fake backend so the tree can be reviewed before a real backend
+  // is wired to an opened workspace. Swapping in [LocalSafBackend] later is a
+  // one-line change — the tree only depends on [WorkspaceBackend].
+  final WorkspaceBackend _backend = MockWorkspaceBackend();
+
   final Set<String> _expanded = {_rootPath};
   final Set<String> _loading = {};
-  final Map<String, List<FileEntry>> _children = {};
+  final Map<String, List<WorkspaceEntry>> _children = {};
   String? _selected;
 
   @override
@@ -37,8 +42,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
   Future<void> _load(String path) async {
     if (_children.containsKey(path) || _loading.contains(path)) return;
     setState(() => _loading.add(path));
-    final backend = ref.read(workspaceBackendProvider);
-    final entries = await backend.listDir(path);
+    final entries = await _backend.listDir(path);
     if (!mounted) return;
     setState(() {
       _loading.remove(path);
@@ -46,7 +50,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
     });
   }
 
-  void _toggleDir(FileEntry entry) {
+  void _toggleDir(WorkspaceEntry entry) {
     final path = entry.path;
     if (_expanded.contains(path)) {
       setState(() => _expanded.remove(path));
@@ -225,7 +229,7 @@ class _TreeRow {
         expanded = false,
         isLoading = true;
 
-  final FileEntry? entry;
+  final WorkspaceEntry? entry;
   final int depth;
   final bool expanded;
   final bool isLoading;
@@ -240,7 +244,7 @@ class _FileRow extends StatelessWidget {
     required this.onTap,
   });
 
-  final FileEntry entry;
+  final WorkspaceEntry entry;
   final int depth;
   final bool expanded;
   final bool selected;

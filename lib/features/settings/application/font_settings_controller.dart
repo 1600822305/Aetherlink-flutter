@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -44,7 +44,7 @@ class GoogleFontInfo {
 /// Loads and registers fonts for the three supported sources, the Flutter-native
 /// port of kelivo's font mechanism:
 ///   * 系统字体 → `system_fonts`（扫描系统字体目录并注册）；
-///   * Google Fonts → `google_fonts`（运行时拉取 + 缓存）；
+///   * Google Fonts → Google Fonts CSS API（HTTP 拉取 ttf + 缓存 + `FontLoader`）；
 ///   * 本地字体 → `file_picker` 选取 → 复制进 app 目录 → `FontLoader` 注册。
 class FontLoaderService {
   /// The directory under the app's documents folder where imported local font
@@ -61,27 +61,38 @@ class FontLoaderService {
   List<String> systemFonts() => SystemFonts().getFontList()..sort();
 
   /// The full Google Fonts catalog family names (sorted), used to populate the
-  /// Google Fonts picker.
-  List<String> googleFonts() => GoogleFonts.asMap().keys.toList()..sort();
+  /// Google Fonts picker. Sourced from the bundled metadata once it is loaded.
+  List<String> googleFonts() {
+    final keys = _gfCategories?.keys.toList();
+    if (keys == null) return const [];
+    keys.sort();
+    return keys;
+  }
 
   Map<String, String>? _gfCategories;
   Set<String>? _gfCjk;
 
+  /// Loads the bundled Google Fonts catalog metadata once and caches it (family
+  /// → style category, plus the subset of families that ship CJK glyphs).
+  Future<void> _ensureGfMeta() async {
+    if (_gfCategories != null && _gfCjk != null) return;
+    final raw = await rootBundle.loadString(_kGoogleFontMetaAsset);
+    final meta = jsonDecode(raw) as Map<String, dynamic>;
+    _gfCategories = (meta['categories'] as Map).map(
+      (k, v) => MapEntry(k as String, v as String),
+    );
+    _gfCjk = ((meta['cjk'] as List).cast<String>()).toSet();
+  }
+
   /// The full Google Fonts catalog tagged with style category + CJK support,
-  /// sorted by family. Loads the bundled metadata once and caches it.
+  /// sorted by family. The family list comes from the bundled metadata (it is
+  /// the font catalog now that the `google_fonts` package is gone).
   Future<List<GoogleFontInfo>> googleFontsCategorized() async {
-    if (_gfCategories == null || _gfCjk == null) {
-      final raw = await rootBundle.loadString(_kGoogleFontMetaAsset);
-      final meta = jsonDecode(raw) as Map<String, dynamic>;
-      _gfCategories = (meta['categories'] as Map).map(
-        (k, v) => MapEntry(k as String, v as String),
-      );
-      _gfCjk = ((meta['cjk'] as List).cast<String>()).toSet();
-    }
+    await _ensureGfMeta();
     final categories = _gfCategories!;
     final cjk = _gfCjk!;
     final out = [
-      for (final family in GoogleFonts.asMap().keys)
+      for (final family in categories.keys)
         GoogleFontInfo(
           family: family,
           category: categories[family] ?? 'sans-serif',
@@ -127,16 +138,108 @@ class FontLoaderService {
           await _registerLocal(selection.family, selection.path);
         }
       case FontSource.google:
-        // Kick off the download + registration and await it so the family
+        // Download (or load from cache) + register the family and await it so it
         // resolves to real glyphs before the theme rebuilds (otherwise the
         // first apply silently falls back to the platform default).
         try {
-          GoogleFonts.getFont(selection.family);
-          await GoogleFonts.pendingFonts();
+          await _ensureGoogleRegistered(selection.family);
         } catch (_) {
-          // Unknown Google family — leave it to fall back to the default.
+          // Unknown Google family or network error — fall back to the default.
         }
     }
+  }
+
+  /// User-Agent of an old browser without woff/woff2 support, so the Google
+  /// Fonts CSS API serves plain TrueType (`.ttf`) URLs. [FontLoader] can only
+  /// register `.ttf`/`.otf`, not the woff2 modern browsers receive.
+  static const String _kTtfUserAgent =
+      'Mozilla/5.0 (Linux; U; Android 2.2; en-us; Nexus One Build/FRF91) '
+      'AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1';
+
+  /// Families already registered this session, to skip redundant work.
+  final Set<String> _registeredGoogle = {};
+
+  /// The directory caching downloaded Google Fonts `.ttf` files — one subfolder
+  /// per family holding its per-subset slices — so they survive restarts and
+  /// re-register without hitting the network again.
+  Future<Directory> _googleFontsCacheDir() async {
+    final base = await getApplicationDocumentsDirectory();
+    final dir = Directory(p.join(base.path, 'google_fonts_cache'));
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    return dir;
+  }
+
+  /// Downloads (if not cached) and registers a Google Fonts [family] under its
+  /// own name via [FontLoader] — the HTTP/CSS-API replacement for the dropped
+  /// `google_fonts` package. Caches every subset slice under the app documents
+  /// folder and feeds them all into a single [FontLoader].
+  Future<void> _ensureGoogleRegistered(String family) async {
+    if (family.isEmpty || _registeredGoogle.contains(family)) return;
+    final cacheDir = await _googleFontsCacheDir();
+    final safe = family.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_');
+    final familyDir = Directory(p.join(cacheDir.path, safe));
+
+    var files = familyDir.existsSync()
+        ? familyDir
+              .listSync()
+              .whereType<File>()
+              .where((f) => p.extension(f.path).toLowerCase() == '.ttf')
+              .toList()
+        : <File>[];
+    if (files.isEmpty) {
+      files = await _downloadGoogleFont(family, familyDir);
+    }
+    if (files.isEmpty) return;
+
+    final loader = FontLoader(family);
+    for (final file in files) {
+      final bytes = await file.readAsBytes();
+      loader.addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
+    }
+    await loader.load();
+    _registeredGoogle.add(family);
+  }
+
+  /// Fetches the CSS for [family] from the Google Fonts API, extracts every
+  /// `.ttf` URL, downloads each slice into [familyDir] and returns the written
+  /// files (empty if the family is unknown or the network is unavailable).
+  Future<List<File>> _downloadGoogleFont(
+    String family,
+    Directory familyDir,
+  ) async {
+    final dio = Dio();
+    final cssUrl =
+        'https://fonts.googleapis.com/css2'
+        '?family=${Uri.encodeQueryComponent(family)}&display=swap';
+    final cssResp = await dio.get<String>(
+      cssUrl,
+      options: Options(
+        responseType: ResponseType.plain,
+        headers: const {'User-Agent': _kTtfUserAgent},
+      ),
+    );
+    final css = cssResp.data ?? '';
+    final urls = RegExp(r'url\((https?://[^)]+\.ttf)\)')
+        .allMatches(css)
+        .map((m) => m.group(1)!)
+        .toSet()
+        .toList();
+    if (urls.isEmpty) return const [];
+
+    if (!familyDir.existsSync()) familyDir.createSync(recursive: true);
+    final files = <File>[];
+    for (var i = 0; i < urls.length; i++) {
+      final resp = await dio.get<List<int>>(
+        urls[i],
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final bytes = resp.data;
+      if (bytes == null || bytes.isEmpty) continue;
+      final file = File(p.join(familyDir.path, '$i.ttf'));
+      await file.writeAsBytes(bytes);
+      files.add(file);
+    }
+    return files;
   }
 
   Future<void> _registerLocal(String alias, String path) async {
@@ -228,17 +331,11 @@ class FontSettingsController extends _$FontSettingsController {
 }
 
 /// Resolves a [FontSelection] to the family name Flutter should render with, or
-/// `null` for the platform default. For Google fonts this also kicks off the
-/// background fetch and returns the registered family name.
+/// `null` for the platform default. Google fonts register under their own
+/// family name (via [FontLoaderService.ensureRegistered]), so the family name
+/// resolves directly — same as system / local fonts.
 String? resolveFontFamily(FontSelection selection) {
   if (selection.family.isEmpty) return null;
-  if (selection.source == FontSource.google) {
-    try {
-      return GoogleFonts.getFont(selection.family).fontFamily;
-    } catch (_) {
-      return null;
-    }
-  }
   return selection.family;
 }
 

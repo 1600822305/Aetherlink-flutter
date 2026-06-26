@@ -8,10 +8,12 @@
 // 仅复用底层能力层(WorkspaceBackend / MCP).
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_file_tree.dart';
@@ -143,7 +145,7 @@ class _WorkspaceStartPage extends ConsumerWidget {
               icon: LucideIcons.folderOpen,
               title: '本地文件夹',
               subtitle: '授权手机上的一个目录 (SAF)',
-              onTap: () => _openLocalFolder(context),
+              onTap: () => _openLocalFolder(context, ref),
             ),
             const SizedBox(height: 10),
             const _BackendCard(
@@ -185,12 +187,29 @@ class _WorkspaceStartPage extends ConsumerWidget {
     );
   }
 
-  void _openLocalFolder(BuildContext context) {
-    // 真正选目录依赖自研 SAF 原生插件 (method channel),目前为「待实现」
-    // (见 docs/本地SAF工作区插件-方法规格.md)。插件接好后这里改为调
+  Future<void> _openLocalFolder(BuildContext context, WidgetRef ref) async {
+    // 真正选目录依赖自研 SAF 原生插件 (method channel),目前还在搭骨架阶段
+    // (见 docs/本地SAF工作区插件-方法规格.md)。插件全量接好后这里改为调
     // openSystemFilePicker → takePersistableUriPermission → workspaceStore.open。
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('本地 SAF 插件开发中,稍后可用')),
+    //
+    // P0 第一刀:点这张卡片会先调 echo 探活,验证 Dart ↔ Kotlin channel 是否
+    // 通畅,SnackBar 一并显示结果 —— 开发期看一眼就知道插件挂没挂。SAF 真实
+    // 路径接通后这块自检逻辑会被替换掉。
+    final messenger = ScaffoldMessenger.of(context);
+    String suffix;
+    try {
+      final reply = await ref
+          .read(localSafBackendProvider)
+          .echo('ping-${DateTime.now().millisecondsSinceEpoch}');
+      suffix = '插件已挂载 · echo=$reply';
+    } on PlatformException catch (e) {
+      suffix = 'channel 异常 · ${e.code}: ${e.message ?? ''}';
+    } catch (e) {
+      suffix = 'channel 未就绪 · $e';
+    }
+    if (!context.mounted) return;
+    messenger.showSnackBar(
+      SnackBar(content: Text('本地 SAF 插件开发中 · $suffix')),
     );
   }
 }

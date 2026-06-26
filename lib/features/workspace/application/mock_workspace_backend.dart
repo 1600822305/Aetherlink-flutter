@@ -1,23 +1,29 @@
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 
 /// A fake [WorkspaceBackend] backed by a hard-coded in-memory tree. Used to
-/// build and review the file-tree UI before the real Android SAF plugin
-/// (`aetherlink_saf`) exists. It returns a plausible Flutter project layout so
-/// expand/collapse, icons and indentation can be exercised.
+/// build and review the file-tree UI before a real backend (SAF / Termux /
+/// SSH) is wired to an opened workspace. It returns a plausible Flutter
+/// project layout so expand/collapse, icons and indentation can be exercised.
 ///
-/// Replace with the real SAF / Termux / SSH backend later — the file-tree UI
-/// depends only on [WorkspaceBackend], so nothing in the UI changes.
+/// It implements the same [WorkspaceBackend] contract as the real backends, so
+/// the file-tree UI depends only on that interface — swapping in
+/// `LocalSafBackend` later changes nothing in the UI.
 class MockWorkspaceBackend implements WorkspaceBackend {
   @override
-  bool get supportsTerminal => false;
+  WorkspaceCapabilities get capabilities => const WorkspaceCapabilities(
+        canExec: false,
+        canWatch: false,
+        isRemote: false,
+      );
 
   @override
-  Future<List<FileEntry>> listDir(String path) async {
+  Future<String> echo(String value) async => value;
+
+  @override
+  Future<List<WorkspaceEntry>> listDir(String path) async {
     // Simulate IO latency so loading states are visible.
     await Future<void>.delayed(const Duration(milliseconds: 180));
-    final children = _tree[path];
-    if (children == null) return const [];
-    return children;
+    return _tree[path] ?? const [];
   }
 
   @override
@@ -26,97 +32,67 @@ class MockWorkspaceBackend implements WorkspaceBackend {
     return _files[path] ?? '// $path\n// (mock content)\n';
   }
 
+  // A fixed timestamp keeps the mock deterministic (2024-01-01T00:00:00Z).
+  static const int _mtime = 1704067200000;
+
+  static WorkspaceEntry _dir(String name, String path) => WorkspaceEntry(
+        name: name,
+        path: path,
+        isDirectory: true,
+        size: 0,
+        mtime: _mtime,
+      );
+
+  static WorkspaceEntry _file(String name, String path, int size) =>
+      WorkspaceEntry(
+        name: name,
+        path: path,
+        isDirectory: false,
+        size: size,
+        mtime: _mtime,
+      );
+
   // Directory path -> its immediate children. The root is keyed by ''.
-  static const Map<String, List<FileEntry>> _tree = {
+  static final Map<String, List<WorkspaceEntry>> _tree = {
     '': [
-      FileEntry(name: 'lib', path: 'lib', isDirectory: true),
-      FileEntry(name: 'test', path: 'test', isDirectory: true),
-      FileEntry(name: 'assets', path: 'assets', isDirectory: true),
-      FileEntry(
-        name: 'pubspec.yaml',
-        path: 'pubspec.yaml',
-        isDirectory: false,
-        size: 2480,
-      ),
-      FileEntry(
-        name: 'README.md',
-        path: 'README.md',
-        isDirectory: false,
-        size: 1536,
-      ),
-      FileEntry(
-        name: '.gitignore',
-        path: '.gitignore',
-        isDirectory: false,
-        size: 412,
-      ),
+      _dir('lib', 'lib'),
+      _dir('test', 'test'),
+      _dir('assets', 'assets'),
+      _file('pubspec.yaml', 'pubspec.yaml', 2480),
+      _file('README.md', 'README.md', 1536),
+      _file('.gitignore', '.gitignore', 412),
     ],
     'lib': [
-      FileEntry(name: 'features', path: 'lib/features', isDirectory: true),
-      FileEntry(name: 'core', path: 'lib/core', isDirectory: true),
-      FileEntry(
-        name: 'main.dart',
-        path: 'lib/main.dart',
-        isDirectory: false,
-        size: 824,
-      ),
+      _dir('features', 'lib/features'),
+      _dir('core', 'lib/core'),
+      _file('main.dart', 'lib/main.dart', 824),
     ],
     'lib/features': [
-      FileEntry(name: 'chat', path: 'lib/features/chat', isDirectory: true),
-      FileEntry(
-        name: 'workspace',
-        path: 'lib/features/workspace',
-        isDirectory: true,
-      ),
+      _dir('chat', 'lib/features/chat'),
+      _dir('workspace', 'lib/features/workspace'),
     ],
     'lib/features/chat': [
-      FileEntry(
-        name: 'chat_page.dart',
-        path: 'lib/features/chat/chat_page.dart',
-        isDirectory: false,
-        size: 6120,
-      ),
+      _file('chat_page.dart', 'lib/features/chat/chat_page.dart', 6120),
     ],
     'lib/features/workspace': [
-      FileEntry(
-        name: 'workspace_page.dart',
-        path: 'lib/features/workspace/workspace_page.dart',
-        isDirectory: false,
-        size: 9300,
+      _file(
+        'workspace_page.dart',
+        'lib/features/workspace/workspace_page.dart',
+        9300,
       ),
     ],
     'lib/core': [
-      FileEntry(
-        name: 'utils.dart',
-        path: 'lib/core/utils.dart',
-        isDirectory: false,
-        size: 512,
-      ),
+      _file('utils.dart', 'lib/core/utils.dart', 512),
     ],
     'test': [
-      FileEntry(
-        name: 'widget_test.dart',
-        path: 'test/widget_test.dart',
-        isDirectory: false,
-        size: 640,
-      ),
+      _file('widget_test.dart', 'test/widget_test.dart', 640),
     ],
     'assets': [
-      FileEntry(name: 'icons', path: 'assets/icons', isDirectory: true),
-      FileEntry(
-        name: 'logo.png',
-        path: 'assets/logo.png',
-        isDirectory: false,
-        size: 20480,
-      ),
+      _dir('icons', 'assets/icons'),
+      _file('logo.png', 'assets/logo.png', 20480),
     ],
     'assets/icons': [
-      FileEntry(
-        name: 'app_icon.svg',
-        path: 'assets/icons/app_icon.svg',
-        isDirectory: false,
-        size: 3072,
-      ),
+      _file('app_icon.svg', 'assets/icons/app_icon.svg', 3072),
     ],
   };
 
