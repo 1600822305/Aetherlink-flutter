@@ -163,6 +163,13 @@ abstract class WorkspaceBackend {
   Future<WorkspaceEntry> getFileInfo(String path) =>
       throw UnsupportedError('getFileInfo is not supported by this backend');
 
+  /// Reads up to [length] raw bytes of [path] starting at [offset] (defaults
+  /// to the whole file). Unlike [readFile] this does no text decoding, so it's
+  /// safe to use on binary content — e.g. sniffing a file's header to decide
+  /// whether it's text before handing it to a text editor.
+  Future<List<int>> readFileBytes(String path, {int offset = 0, int? length}) =>
+      throw UnsupportedError('readFileBytes is not supported by this backend');
+
   // ===== mutations =====
 
   /// Overwrites (or, when [append], appends to) [path] with [content].

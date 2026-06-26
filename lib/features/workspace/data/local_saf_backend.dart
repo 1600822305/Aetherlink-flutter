@@ -71,6 +71,14 @@ class LocalSafBackend implements WorkspaceBackend {
   }
 
   @override
+  Future<List<int>> readFileBytes(
+    String path, {
+    int offset = 0,
+    int? length,
+  }) =>
+      _plugin.readFileBytes(path: path, offset: offset, length: length);
+
+  @override
   Future<void> writeFile(String path, String content, {bool append = false}) =>
       _plugin.writeFile(path: path, content: content, append: append);
 

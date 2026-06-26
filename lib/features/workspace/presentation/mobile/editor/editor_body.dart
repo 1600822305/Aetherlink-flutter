@@ -44,6 +44,7 @@ class EditorContent extends StatelessWidget {
     required this.fontSize,
     required this.onFontSize,
     required this.onRetry,
+    this.placeholderBuilder,
   });
 
   final Future<void> ready;
@@ -53,6 +54,10 @@ class EditorContent extends StatelessWidget {
   final double fontSize;
   final ValueChanged<double> onFontSize;
   final VoidCallback onRetry;
+
+  /// Returns a non-null widget (binary / too-large placeholder) to show instead
+  /// of the text area once the load completes; null means "show the editor".
+  final Widget? Function()? placeholderBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -71,6 +76,8 @@ class EditorContent extends StatelessWidget {
         if (snap.hasError) {
           return EditorErrorBody(message: '${snap.error}', onRetry: onRetry);
         }
+        final placeholder = placeholderBuilder?.call();
+        if (placeholder != null) return placeholder;
         return EditorTextArea(
           controller: controller,
           focusNode: focusNode,
