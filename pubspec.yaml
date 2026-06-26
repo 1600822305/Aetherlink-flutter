@@ -62,6 +62,11 @@ dependencies:
   gpt_markdown: ^1.1.7
   flutter_highlighting: ^0.9.0+11.8.0
   highlighting: ^0.9.0+11.8.0
+  # Vendored (packages/diff_match_patch, Apache-2.0) — Myers line/char diff used
+  # to render Cursor/Windsurf-style diffs for @aether/file-editor tool calls.
+  # Kept local so we can tune the algorithm for our chat-block rendering.
+  diff_match_patch:
+    path: packages/diff_match_patch
   native_keyboard_height:
     path: packages/native_keyboard_height
   flutter_mermaid:

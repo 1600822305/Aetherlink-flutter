@@ -11,8 +11,9 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/cod
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/data_blocks.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/media_blocks.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/text_blocks.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/file_editor_changeset_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/thinking_block_view.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/web_search_block_view.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/tool_renderer_registry.dart';
 
 /// Dispatches an ordered list of [MessageBlock]s to per-type widgets, mirroring
 /// the original `MessageBlockRenderer.tsx`.
@@ -64,9 +65,28 @@ class MessageBlockRenderer extends ConsumerWidget {
 
     final grouped = _groupSimilarBlocks(blocks);
     final widgets = <Widget>[];
-    for (final item in grouped) {
+    var i = 0;
+    while (i < grouped.length) {
+      final item = grouped[i];
+      // Coalesce a run (≥2) of consecutive top-level file-editor write tools
+      // into one changeset card, mirroring Cursor/Windsurf "edited N files".
+      if (_isChangesetEligible(item, consumedToolIds)) {
+        final run = <ToolBlock>[];
+        var j = i;
+        while (j < grouped.length &&
+            _isChangesetEligible(grouped[j], consumedToolIds)) {
+          run.add((grouped[j] as _SingleBlock).block as ToolBlock);
+          j++;
+        }
+        if (run.length >= 2) {
+          widgets.add(FileEditorChangesetView(blocks: run));
+          i = j;
+          continue;
+        }
+      }
       final widget = _buildItem(item, consumedToolIds, inlineToolMap);
       if (widget != null) widgets.add(widget);
+      i++;
     }
 
     if (widgets.isEmpty) {
@@ -84,6 +104,16 @@ class MessageBlockRenderer extends ConsumerWidget {
         ],
       ],
     );
+  }
+
+  /// Whether [item] is a top-level (not thinking-inlined) file-editor write
+  /// tool block, eligible to be merged into a changeset card.
+  static bool _isChangesetEligible(_RenderItem item, Set<String> consumedToolIds) {
+    if (item is! _SingleBlock) return false;
+    final block = item.block;
+    return block is ToolBlock &&
+        !consumedToolIds.contains(block.id) &&
+        isFileEditorWriteTool(block.toolName);
   }
 
   Widget? _buildItem(
@@ -138,10 +168,7 @@ class MessageBlockRenderer extends ConsumerWidget {
       case ToolBlock():
         // Skip tool blocks that were consumed into a thinking block.
         if (consumedToolIds.contains(block.id)) return null;
-        if (block.toolName == 'builtin_web_search') {
-          return WebSearchBlockView(block: block);
-        }
-        return ToolBlockView(block: block);
+        return buildSpecialToolBlock(block) ?? ToolBlockView(block: block);
       case FileBlock():
         return FileBlockView(block: block);
       case ErrorBlock():

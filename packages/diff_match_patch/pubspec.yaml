@@ -1,0 +1,15 @@
+name: diff_match_patch
+version: 0.4.1
+description: The Diff Match and Patch libraries offer robust algorithms to perform the operations required for synchronizing plain text.
+homepage: http://github.com/jheyne/diff-match-patch
+
+# Vendored into this repo (Apache-2.0) so we can tune the diff algorithms for the
+# chat tool-call diff rendering. SDK constraint widened from the upstream
+# `>=2.12.0 <3.0.0` to support this app's Dart 3 toolchain.
+publish_to: 'none'
+
+environment:
+  sdk: '>=2.17.0 <4.0.0'
+
+dev_dependencies:
+  test: any
