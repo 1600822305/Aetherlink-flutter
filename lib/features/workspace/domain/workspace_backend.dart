@@ -77,8 +77,9 @@ class WorkspaceEntry {
 }
 
 /// A slice of a file read by line range (backend-neutral mirror of the
-/// plugin's `ReadFileRangeResult`). [rangeHash] can be passed back to
-/// [WorkspaceBackend.applyDiff] as the optimistic-lock token.
+/// plugin's `ReadFileRangeResult`). [rangeHash] is the sha256 of just this
+/// range's bytes; pass it back to [WorkspaceBackend.applyDiff] as the
+/// optimistic-lock token along with [startLine] / [endLine].
 class WorkspaceFileRange {
   const WorkspaceFileRange({
     required this.content,
@@ -224,14 +225,19 @@ abstract class WorkspaceBackend {
   }) =>
       throw UnsupportedError('replaceInFile is not supported by this backend');
 
-  /// Applies [diff] to [path]. When [expectedRangeHash] is given the write is
-  /// rejected if the target range changed since it was read (optimistic lock).
+  /// Applies [diff] to [path]. For optimistic locking pass the [rangeHash]
+  /// from a prior [readFileRange] as [expectedRangeHash] together with the
+  /// same [rangeStartLine] / [rangeEndLine]; the write is rejected if that
+  /// range changed since it was read. Omit the range to lock against the
+  /// whole file.
   Future<WorkspaceDiffResult> applyDiff(
     String path,
     String diff, {
     WorkspaceDiffFormat format = WorkspaceDiffFormat.searchReplace,
     bool createBackup = false,
     String? expectedRangeHash,
+    int? rangeStartLine,
+    int? rangeEndLine,
   }) =>
       throw UnsupportedError('applyDiff is not supported by this backend');
 

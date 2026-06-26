@@ -210,12 +210,21 @@ class AetherlinkSaf {
         caseSensitive: caseSensitive,
       );
 
+  /// Applies a [diff] to the file.
+  ///
+  /// Optimistic locking: pass the `rangeHash` returned by [readFileRange] as
+  /// [expectedRangeHash] together with the **same** [rangeStartLine] /
+  /// [rangeEndLine] you read. The plugin recomputes the hash over that range
+  /// of the current file and throws `E_RANGE_CONFLICT` if it changed. Omit the
+  /// range to lock against the whole-file hash instead.
   Future<ApplyDiffResult> applyDiff({
     required String path,
     required String diff,
     DiffFormat format = DiffFormat.searchReplace,
     bool createBackup = false,
     String? expectedRangeHash,
+    int? rangeStartLine,
+    int? rangeEndLine,
   }) =>
       _p.applyDiff(
         path: path,
@@ -223,6 +232,8 @@ class AetherlinkSaf {
         format: format,
         createBackup: createBackup,
         expectedRangeHash: expectedRangeHash,
+        rangeStartLine: rangeStartLine,
+        rangeEndLine: rangeEndLine,
       );
 
   // ===== P2: search & system apps =====

@@ -100,14 +100,18 @@ class PermissionPickerHandler(
     fun checkPermissions(call: MethodCall): Any {
         val uri = call.argument<String>("uri")
         val perms = resolver.persistedUriPermissions
-        val granted = if (uri == null) {
-            perms.any { it.isReadPermission }
+        val matching = if (uri == null) {
+            perms.filter { it.isReadPermission }
         } else {
             val target = Uri.parse(uri)
-            perms.any { it.isReadPermission && uriCoversTree(it.uri, target) }
+            perms.filter { it.isReadPermission && uriCoversTree(it.uri, target) }
         }
+        val granted = matching.isNotEmpty()
+        // We take read+write on grant, but reflect actual write state honestly.
+        val canWrite = matching.any { it.isWritePermission }
         return mapOf(
             "granted" to granted,
+            "canWrite" to canWrite,
             "message" to if (granted) "已授权" else "未找到持久化授权",
         )
     }

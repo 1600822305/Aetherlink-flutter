@@ -168,6 +168,8 @@ class LocalSafBackend implements WorkspaceBackend {
     WorkspaceDiffFormat format = WorkspaceDiffFormat.searchReplace,
     bool createBackup = false,
     String? expectedRangeHash,
+    int? rangeStartLine,
+    int? rangeEndLine,
   }) async {
     final r = await _plugin.applyDiff(
       path: path,
@@ -175,6 +177,8 @@ class LocalSafBackend implements WorkspaceBackend {
       format: _diffFormat(format),
       createBackup: createBackup,
       expectedRangeHash: expectedRangeHash,
+      rangeStartLine: rangeStartLine,
+      rangeEndLine: rangeEndLine,
     );
     return WorkspaceDiffResult(
       success: r.success,
