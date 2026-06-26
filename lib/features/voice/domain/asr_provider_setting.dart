@@ -15,6 +15,8 @@ enum AsrProviderKind {
   dashscope,
   @JsonValue('volcengine')
   volcengine,
+  @JsonValue('mimo')
+  mimo,
   @JsonValue('whisper')
   whisper,
 }
@@ -58,6 +60,8 @@ abstract class AsrProviderSetting with _$AsrProviderSetting {
     @Default(false) bool enableDdc, // 语义顺滑
     @Default(800) int endWindowSize, // 强制判停时间 (ms)，最小 200
     @Default('') String outputZhVariant, // ''/traditional/tw/hk
+    // MiMo (小米 mimo-v2.5-asr) specific. HTTP 分段上传 (OpenAI 兼容 chat)
+    @Default(30) int segmentDurationSec, // 自动分段上传间隔 (秒)，0 表示禁用分段
   }) = _AsrProviderSetting;
 
   factory AsrProviderSetting.fromJson(Map<String, dynamic> json) =>
@@ -99,6 +103,16 @@ AsrProviderSetting defaultAsrProvider(AsrProviderKind kind) => switch (kind) {
     model: 'bigmodel',
     resourceId: 'volc.bigasr.sauc.duration',
     sampleRate: 16000,
+  ),
+  AsrProviderKind.mimo => const AsrProviderSetting(
+    id: 'mimo',
+    kind: AsrProviderKind.mimo,
+    name: 'MiMo ASR',
+    baseUrl: 'https://api.xiaomimimo.com/v1',
+    model: 'mimo-v2.5-asr',
+    language: 'auto',
+    sampleRate: 16000,
+    segmentDurationSec: 30,
   ),
   AsrProviderKind.whisper => const AsrProviderSetting(
     id: 'whisper',
