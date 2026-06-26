@@ -1437,9 +1437,11 @@ class ChatController extends _$ChatController {
             final toolId = call.id.isEmpty ? call.name : call.id;
 
             final needsConfirm =
-                route is _SettingsToolRoute &&
-                inferSettingsPermission(call.name) ==
-                    SettingsToolPermission.confirm;
+                (route is _SettingsToolRoute &&
+                    inferSettingsPermission(call.name) ==
+                        SettingsToolPermission.confirm) ||
+                (route is _FileEditorToolRoute &&
+                    fileEditorNeedsConfirmation(call.name));
 
             // Show a processing block immediately so the user sees the tool
             // call in real-time (spinner + tool name).
@@ -3175,8 +3177,48 @@ class ChatController extends _$ChatController {
         return '向供应商添加模型「${args['name'] ?? '未命名'}」';
       case 'delete_model':
         return '从供应商删除模型「${args['modelId'] ?? ''}」';
+      // @aether/file-editor write tools.
+      case 'write_to_file':
+        return '覆盖写入文件「${_pathTail(args['path'])}」的全部内容';
+      case 'create_file':
+        return '在「${_pathTail(args['parent_path'])}」下新建文件「${args['name'] ?? ''}」';
+      case 'rename_file':
+        return '将「${_pathTail(args['path'])}」重命名为「${args['new_name'] ?? ''}」';
+      case 'move_file':
+        return '移动「${_pathTail(args['source_path'])}」到「${_pathTail(args['destination_path'])}」';
+      case 'copy_file':
+        return '复制「${_pathTail(args['source_path'])}」到「${_pathTail(args['destination_path'])}」';
+      case 'delete_file':
+        return '删除「${_pathTail(args['path'])}」';
+      case 'insert_content':
+        return '在「${_pathTail(args['path'])}」第 ${args['line'] ?? '?'} 行插入内容';
+      case 'apply_diff':
+        return '对「${_pathTail(args['path'])}」应用 diff 修改';
+      case 'replace_in_file':
+        return '在「${_pathTail(args['path'])}」中替换「${args['search'] ?? ''}」';
       default:
         return '执行操作: $toolName';
+    }
+  }
+
+  /// A short, human-readable tail for an opaque SAF `content://` path, used in
+  /// confirmation summaries. Falls back to the raw value when it can't decode.
+  static String _pathTail(Object? path) {
+    if (path == null) return '?';
+    final raw = path.toString();
+    if (raw.isEmpty) return '?';
+    try {
+      final decoded = Uri.decodeComponent(raw);
+      final normalized = decoded.replaceAll('\\', '/');
+      final segments =
+          normalized.split('/').where((s) => s.trim().isNotEmpty).toList();
+      if (segments.isEmpty) return raw;
+      var tail = segments.last;
+      final colon = tail.lastIndexOf(':');
+      if (colon >= 0 && colon < tail.length - 1) tail = tail.substring(colon + 1);
+      return tail;
+    } catch (_) {
+      return raw;
     }
   }
 }

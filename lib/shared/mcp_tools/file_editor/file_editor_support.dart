@@ -139,6 +139,42 @@ Future<WorkspaceBackend> resolveWorkspaceById(Ref ref, String id) async {
   throw FileEditorError('找不到工作区: $id');
 }
 
+/// Resolves the backend for an opaque [path] by matching it to the workspace
+/// whose `root` is a prefix of (or equal to) [path]. Falls back to the single
+/// available backend when there's exactly one workspace. Shared by the read
+/// and write handlers so path→backend routing stays in one place.
+Future<WorkspaceBackend> backendForPath(Ref ref, String path) async {
+  final workspaces = await loadWorkspaces(ref);
+  if (workspaces.isEmpty) {
+    throw const FileEditorError(
+      '当前没有任何工作区，请先在工作区页面「打开文件夹」后再试。',
+    );
+  }
+  Workspace? best;
+  for (final w in workspaces) {
+    if (path == w.root || path.startsWith(w.root)) {
+      if (best == null || w.root.length > best.root.length) best = w;
+    }
+  }
+  final chosen = best ?? workspaces.first;
+  return resolveWorkspaceById(ref, chosen.id);
+}
+
+/// Finds the immediate child named [name] inside the opaque directory [dir],
+/// or null when no such child exists. Used by write handlers to detect
+/// name clashes (opaque SAF URIs can't be probed by string).
+Future<WorkspaceEntry?> findChildByName(
+  WorkspaceBackend backend,
+  String dir,
+  String name,
+) async {
+  final entries = await backend.listDir(dir);
+  for (final e in entries) {
+    if (e.name == name) return e;
+  }
+  return null;
+}
+
 /// Walks [rootPath] down a slash-separated [subPath] by listing each level and
 /// matching children by name (since opaque SAF URIs can't be built by hand).
 /// Returns the opaque path of the target directory/file. An empty/blank

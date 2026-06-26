@@ -70,7 +70,7 @@ Future<McpToolResult> getWorkspaceFiles(
 /// `list_files` — list the directory at an opaque `path`, optionally recursive.
 Future<McpToolResult> listFiles(Ref ref, Map<String, Object?> args) async {
   final path = requireString(args, 'path');
-  final backend = await _backendFor(ref, path);
+  final backend = await backendForPath(ref, path);
   if (optionalBool(args, 'recursive')) {
     final maxDepth = (optionalInt(args, 'max_depth') ?? 5).clamp(1, 10);
     final listing = await listRecursive(backend, path, maxDepth);
@@ -135,7 +135,7 @@ Future<McpToolResult> readFile(Ref ref, Map<String, Object?> args) async {
 /// `get_file_info` — metadata (size / mtime / type) plus line count for files.
 Future<McpToolResult> getFileInfo(Ref ref, Map<String, Object?> args) async {
   final path = requireString(args, 'path');
-  final backend = await _backendFor(ref, path);
+  final backend = await backendForPath(ref, path);
   final info = await backend.getFileInfo(path);
   final json = entryJson(info);
   if (!info.isDirectory) {
@@ -152,7 +152,7 @@ Future<McpToolResult> getFileInfo(Ref ref, Map<String, Object?> args) async {
 Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
   final directory = requireString(args, 'directory');
   final query = requireString(args, 'query');
-  final backend = await _backendFor(ref, directory);
+  final backend = await backendForPath(ref, directory);
 
   final searchType = switch (optionalString(args, 'search_type')?.toLowerCase()) {
     'content' => WorkspaceSearchType.content,
@@ -183,33 +183,13 @@ int _dirsFirst(WorkspaceEntry a, WorkspaceEntry b) {
   return a.name.compareTo(b.name);
 }
 
-/// Resolves the backend for an opaque [path] by matching it to the workspace
-/// whose `root` is a prefix of (or equal to) [path]. Falls back to the single
-/// available backend when there's exactly one workspace.
-Future<WorkspaceBackend> _backendFor(Ref ref, String path) async {
-  final workspaces = await loadWorkspaces(ref);
-  if (workspaces.isEmpty) {
-    throw const FileEditorError(
-      '当前没有任何工作区，请先在工作区页面「打开文件夹」后再试。',
-    );
-  }
-  Workspace? best;
-  for (final w in workspaces) {
-    if (path == w.root || path.startsWith(w.root)) {
-      if (best == null || w.root.length > best.root.length) best = w;
-    }
-  }
-  final chosen = best ?? workspaces.first;
-  return await resolveWorkspaceById(ref, chosen.id);
-}
-
 Future<Map<String, Object?>> _readOne(
   Ref ref,
   String path,
   int? startLine,
   int? endLine,
 ) async {
-  final backend = await _backendFor(ref, path);
+  final backend = await backendForPath(ref, path);
   if (startLine != null && endLine != null) {
     final range = await backend.readFileRange(path, startLine, endLine);
     return {

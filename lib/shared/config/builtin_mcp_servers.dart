@@ -66,7 +66,7 @@ const List<McpServer> kBuiltinMcpServers = [
     name: '@aether/file-editor',
     type: McpServerType.inMemory,
     category: McpServerCategory.builtin,
-    description: 'AI 文件浏览工具，支持列出工作区、浏览目录、读取文件、查看文件信息与搜索（当前为只读；写入/编辑能力将在后续版本开放）。',
+    description: 'AI 文件工具，支持列出工作区、浏览目录、读取文件、查看信息与搜索，以及写入、新建、重命名、移动、复制、删除、插入、应用 diff 与替换等编辑操作（写入/编辑操作会先请用户确认）。',
     provider: 'AetherAI',
     tags: ['文件', '编辑', 'AI', '工作区', '笔记', '工具'],
   ),

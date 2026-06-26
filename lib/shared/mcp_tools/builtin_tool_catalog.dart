@@ -738,6 +738,186 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'required': ['directory', 'query'],
       },
     ),
+    McpToolDefinition(
+      name: 'write_to_file',
+      description:
+          '覆盖写入已有文件的全部内容（不能用于新建文件，新建请用 create_file）。会触发用户确认。'
+          '建议传 line_count 以校验内容是否被截断；大文件的增量修改请优先用 apply_diff。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'path': {'type': 'string', 'description': '目标文件的完整路径（不透明句柄）'},
+          'content': {'type': 'string', 'description': '要写入的完整文件内容'},
+          'line_count': {
+            'type': 'number',
+            'description': '内容的预期行数（可选），用于检测内容是否被意外截断',
+          },
+        },
+        'required': ['path', 'content'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'create_file',
+      description: '在指定父目录下新建文件。会触发用户确认。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'parent_path': {
+            'type': 'string',
+            'description': '父目录的完整路径（不透明句柄，来自 list_files / get_workspace_files）',
+          },
+          'name': {'type': 'string', 'description': '新文件名（含扩展名）'},
+          'content': {'type': 'string', 'description': '初始内容（可选，默认空）'},
+          'overwrite': {
+            'type': 'boolean',
+            'description': '同名文件已存在时是否覆盖，默认 false',
+          },
+        },
+        'required': ['parent_path', 'name'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'rename_file',
+      description: '重命名文件或目录（仅改名，不移动）。会触发用户确认。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'path': {'type': 'string', 'description': '要重命名的文件/目录完整路径'},
+          'new_name': {'type': 'string', 'description': '新名称（不含路径）'},
+        },
+        'required': ['path', 'new_name'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'move_file',
+      description: '将文件或目录移动到目标父目录下（保持原名）。会触发用户确认。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'source_path': {'type': 'string', 'description': '要移动的文件/目录完整路径'},
+          'destination_path': {
+            'type': 'string',
+            'description': '目标父目录的完整路径（不透明句柄）',
+          },
+        },
+        'required': ['source_path', 'destination_path'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'copy_file',
+      description: '将文件或目录复制到目标父目录下。会触发用户确认。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'source_path': {'type': 'string', 'description': '要复制的文件/目录完整路径'},
+          'destination_path': {
+            'type': 'string',
+            'description': '目标父目录的完整路径（不透明句柄）',
+          },
+          'new_name': {'type': 'string', 'description': '复制后的新名称（可选，默认沿用原名）'},
+          'overwrite': {
+            'type': 'boolean',
+            'description': '目标已存在同名时是否覆盖，默认 false',
+          },
+        },
+        'required': ['source_path', 'destination_path'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'delete_file',
+      description: '删除文件或目录。会触发用户确认。删除目录时 recursive 默认为 true。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'path': {'type': 'string', 'description': '要删除的文件/目录完整路径'},
+          'recursive': {
+            'type': 'boolean',
+            'description': '删除目录时是否递归删除其内容，默认 true',
+          },
+        },
+        'required': ['path'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'insert_content',
+      description: '在文件指定行之前插入内容（不覆盖原有内容）。会触发用户确认。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'path': {'type': 'string', 'description': '目标文件的完整路径'},
+          'line': {
+            'type': 'number',
+            'description': '插入位置的行号 (1-based)；在该行之前插入',
+          },
+          'content': {'type': 'string', 'description': '要插入的内容'},
+        },
+        'required': ['path', 'line', 'content'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apply_diff',
+      description:
+          '对文件应用 SEARCH/REPLACE（或 unified）diff，做增量精确修改。会触发用户确认。'
+          '传入由 read_file 行范围读取得到的 start_line/end_line 与 expected_range_hash 可启用乐观锁，'
+          '在应用前校验该范围未被并发改动。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'path': {'type': 'string', 'description': '目标文件的完整路径'},
+          'diff': {
+            'type': 'string',
+            'description': 'diff 内容。默认 SEARCH/REPLACE 格式（<<<<<<< SEARCH … ======= … >>>>>>> REPLACE）',
+          },
+          'strategy': {
+            'type': 'string',
+            'enum': ['auto', 'search-replace', 'unified'],
+            'description': 'diff 策略，默认 auto（按 search-replace 解析）',
+          },
+          'start_line': {
+            'type': 'number',
+            'description': '乐观锁：read_file 时读取范围的起始行 (1-based)',
+          },
+          'end_line': {
+            'type': 'number',
+            'description': '乐观锁：read_file 时读取范围的结束行 (1-based)',
+          },
+          'expected_range_hash': {
+            'type': 'string',
+            'description': '乐观锁：read_file 范围返回的 rangeHash，用于检测并发修改',
+          },
+          'create_backup': {
+            'type': 'boolean',
+            'description': '是否在修改前创建备份，默认 false',
+          },
+        },
+        'required': ['path', 'diff'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'replace_in_file',
+      description: '在文件中查找并替换文本，支持字面量或正则。会触发用户确认。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'path': {'type': 'string', 'description': '目标文件的完整路径'},
+          'search': {'type': 'string', 'description': '要查找的文本或正则表达式'},
+          'replace': {'type': 'string', 'description': '替换后的文本'},
+          'is_regex': {
+            'type': 'boolean',
+            'description': 'search 是否按正则解释，默认 false',
+          },
+          'replace_all': {
+            'type': 'boolean',
+            'description': '是否替换所有匹配，默认 true',
+          },
+          'case_sensitive': {
+            'type': 'boolean',
+            'description': '是否区分大小写，默认 true',
+          },
+        },
+        'required': ['path', 'search', 'replace'],
+      },
+    ),
   ],
 };
 
