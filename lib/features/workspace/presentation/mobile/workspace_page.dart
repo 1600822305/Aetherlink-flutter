@@ -15,17 +15,20 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_file_tree.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_file_viewer.dart';
 
-class WorkspacePage extends StatefulWidget {
+class WorkspacePage extends ConsumerStatefulWidget {
   const WorkspacePage({super.key});
 
   @override
-  State<WorkspacePage> createState() => _WorkspacePageState();
+  ConsumerState<WorkspacePage> createState() => _WorkspacePageState();
 }
 
-class _WorkspacePageState extends State<WorkspacePage> {
+class _WorkspacePageState extends ConsumerState<WorkspacePage> {
   // Land on the middle page (起始屏 / 文件查看).
   static const int _initialPage = 1;
   static const int _pageCount = 3;
@@ -38,8 +41,7 @@ class _WorkspacePageState extends State<WorkspacePage> {
 
   int _page = _initialPage;
 
-  // 左/右两页暂为纯色占位,等文件树 / 终端做了再替换。
-  static const Color _treeColor = Color(0xFF1E3A5F);
+  // 右页(第三页)暂为纯色占位,等终端做了再替换。
   static const Color _thirdColor = Color(0xFF4A2D5F);
 
   @override
@@ -50,6 +52,17 @@ class _WorkspacePageState extends State<WorkspacePage> {
 
   @override
   Widget build(BuildContext context) {
+    // 在左页点开文件后,把 PageView 滑到中间页让查看器可见。
+    ref.listen<WorkspaceEntry?>(selectedWorkspaceFileProvider, (prev, next) {
+      if (next != null && _controller.hasClients && _page != _initialPage) {
+        _controller.animateToPage(
+          _initialPage,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
+
     // Edge-to-edge: 页面铺满整屏(延伸到状态栏/导航栏后面),不包 SafeArea。
     // 只给顶部控制行单独保留安全区内边距,避免被状态栏遮挡。
     return Scaffold(
@@ -62,12 +75,9 @@ class _WorkspacePageState extends State<WorkspacePage> {
             itemBuilder: (context, i) {
               switch (i) {
                 case 0:
-                  return const _ColorPlaceholder(
-                    label: '文件树',
-                    color: _treeColor,
-                  );
+                  return const WorkspaceFileTree(topInset: _topBarHeight);
                 case 1:
-                  return const _WorkspaceStartPage(topInset: _topBarHeight);
+                  return const _WorkspaceMiddlePage(topInset: _topBarHeight);
                 default:
                   return const _ColorPlaceholder(
                     label: '第三页(待定)',
@@ -104,9 +114,26 @@ class _WorkspacePageState extends State<WorkspacePage> {
   }
 }
 
-/// The middle page: 起始屏. Lists the three workspace backends (only 本地文件夹
-/// is interactive in P0) and the "最近打开" history. Once a workspace is open
-/// this page becomes the file viewer — that swap lands with the SAF backend.
+/// The middle page. Default state is the 起始屏; once a file is tapped in the
+/// left tree it becomes the read-only file viewer. Clearing the selection (the
+/// viewer's close button) returns to the 起始屏.
+class _WorkspaceMiddlePage extends ConsumerWidget {
+  const _WorkspaceMiddlePage({required this.topInset});
+
+  final double topInset;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selected = ref.watch(selectedWorkspaceFileProvider);
+    if (selected != null) {
+      return WorkspaceFileViewer(entry: selected, topInset: topInset);
+    }
+    return _WorkspaceStartPage(topInset: topInset);
+  }
+}
+
+/// 起始屏. Lists the three workspace backends (only 本地文件夹 is interactive in
+/// P0) and the "最近打开" history.
 class _WorkspaceStartPage extends ConsumerWidget {
   const _WorkspaceStartPage({required this.topInset});
 
