@@ -32,17 +32,7 @@ class LocalSafBackend implements WorkspaceBackend {
   @override
   Future<List<WorkspaceEntry>> listDir(String path) async {
     final result = await _plugin.listDirectory(path: path);
-    return [
-      for (final f in result.files)
-        WorkspaceEntry(
-          name: f.name,
-          path: f.path,
-          isDirectory: f.type == saf.FileType.directory,
-          size: f.size,
-          mtime: f.mtime,
-          isHidden: f.isHidden,
-        ),
-    ];
+    return [for (final f in result.files) _toEntry(f)];
   }
 
   @override
@@ -50,6 +40,190 @@ class LocalSafBackend implements WorkspaceBackend {
     final result = await _plugin.readFile(path: path);
     return result.content;
   }
+
+  @override
+  Future<WorkspaceFileRange> readFileRange(
+    String path,
+    int startLine,
+    int endLine,
+  ) async {
+    final r = await _plugin.readFileRange(
+      path: path,
+      startLine: startLine,
+      endLine: endLine,
+    );
+    return WorkspaceFileRange(
+      content: r.content,
+      totalLines: r.totalLines,
+      startLine: r.startLine,
+      endLine: r.endLine,
+      rangeHash: r.rangeHash,
+    );
+  }
+
+  @override
+  Future<int> getLineCount(String path) => _plugin.getLineCount(path: path);
+
+  @override
+  Future<void> writeFile(String path, String content, {bool append = false}) =>
+      _plugin.writeFile(path: path, content: content, append: append);
+
+  @override
+  Future<String> createFile(
+    String parentPath,
+    String name, {
+    String? content,
+  }) async {
+    final r = await _plugin.createFile(
+      parentPath: parentPath,
+      name: name,
+      content: content,
+    );
+    return r.path;
+  }
+
+  @override
+  Future<String> createDirectory(
+    String parentPath,
+    String name, {
+    bool recursive = false,
+  }) async {
+    final r = await _plugin.createDirectory(
+      parentPath: parentPath,
+      name: name,
+      recursive: recursive,
+    );
+    return r.path;
+  }
+
+  @override
+  Future<void> delete(
+    String path, {
+    bool isDirectory = false,
+    bool recursive = false,
+  }) =>
+      isDirectory
+          ? _plugin.deleteDirectory(path: path, recursive: recursive)
+          : _plugin.deleteFile(path: path);
+
+  @override
+  Future<String> rename(String path, String newName) async {
+    final r = await _plugin.renameFile(path: path, newName: newName);
+    return r.path;
+  }
+
+  @override
+  Future<String> move(String sourcePath, String destinationParent) async {
+    final r = await _plugin.moveFile(
+      sourcePath: sourcePath,
+      destinationParent: destinationParent,
+    );
+    return r.path;
+  }
+
+  @override
+  Future<String> copy(
+    String sourcePath,
+    String destinationParent, {
+    String? newName,
+    bool overwrite = false,
+  }) async {
+    final r = await _plugin.copyFile(
+      sourcePath: sourcePath,
+      destinationParent: destinationParent,
+      newName: newName,
+      overwrite: overwrite,
+    );
+    return r.path;
+  }
+
+  @override
+  Future<void> insertContent(String path, int line, String content) =>
+      _plugin.insertContent(path: path, line: line, content: content);
+
+  @override
+  Future<int> replaceInFile(
+    String path,
+    String search,
+    String replace, {
+    bool isRegex = false,
+    bool replaceAll = true,
+    bool caseSensitive = true,
+  }) async {
+    final r = await _plugin.replaceInFile(
+      path: path,
+      search: search,
+      replace: replace,
+      isRegex: isRegex,
+      replaceAll: replaceAll,
+      caseSensitive: caseSensitive,
+    );
+    return r.replacements;
+  }
+
+  @override
+  Future<WorkspaceDiffResult> applyDiff(
+    String path,
+    String diff, {
+    WorkspaceDiffFormat format = WorkspaceDiffFormat.searchReplace,
+    bool createBackup = false,
+    String? expectedRangeHash,
+  }) async {
+    final r = await _plugin.applyDiff(
+      path: path,
+      diff: diff,
+      format: _diffFormat(format),
+      createBackup: createBackup,
+      expectedRangeHash: expectedRangeHash,
+    );
+    return WorkspaceDiffResult(
+      success: r.success,
+      linesChanged: r.linesChanged,
+      linesAdded: r.linesAdded,
+      linesDeleted: r.linesDeleted,
+      backupPath: r.backupPath,
+    );
+  }
+
+  @override
+  Future<List<WorkspaceEntry>> searchFiles(
+    String directory,
+    String query, {
+    WorkspaceSearchType searchType = WorkspaceSearchType.name,
+    List<String> fileTypes = const [],
+    int maxResults = 200,
+    bool recursive = true,
+  }) async {
+    final r = await _plugin.searchFiles(
+      directory: directory,
+      query: query,
+      searchType: _searchType(searchType),
+      fileTypes: fileTypes,
+      maxResults: maxResults,
+      recursive: recursive,
+    );
+    return [for (final f in r.files) _toEntry(f)];
+  }
+
+  static WorkspaceEntry _toEntry(saf.FileInfo f) => WorkspaceEntry(
+        name: f.name,
+        path: f.path,
+        isDirectory: f.type == saf.FileType.directory,
+        size: f.size,
+        mtime: f.mtime,
+        isHidden: f.isHidden,
+      );
+
+  static saf.DiffFormat _diffFormat(WorkspaceDiffFormat f) => switch (f) {
+        WorkspaceDiffFormat.searchReplace => saf.DiffFormat.searchReplace,
+        WorkspaceDiffFormat.unified => saf.DiffFormat.unified,
+      };
+
+  static saf.SearchType _searchType(WorkspaceSearchType t) => switch (t) {
+        WorkspaceSearchType.name => saf.SearchType.name,
+        WorkspaceSearchType.content => saf.SearchType.content,
+        WorkspaceSearchType.both => saf.SearchType.both,
+      };
 
   /// Launches the system directory picker, persists the grant, and returns
   /// the picked root as a backend-neutral [PickedDirectory] (or `null` when

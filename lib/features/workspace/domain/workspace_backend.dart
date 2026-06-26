@@ -58,12 +58,58 @@ class WorkspaceEntry {
   final bool isHidden;
 }
 
+/// A slice of a file read by line range (backend-neutral mirror of the
+/// plugin's `ReadFileRangeResult`). [rangeHash] can be passed back to
+/// [WorkspaceBackend.applyDiff] as the optimistic-lock token.
+class WorkspaceFileRange {
+  const WorkspaceFileRange({
+    required this.content,
+    required this.totalLines,
+    required this.startLine,
+    required this.endLine,
+    required this.rangeHash,
+  });
+
+  final String content;
+  final int totalLines;
+  final int startLine;
+  final int endLine;
+  final String rangeHash;
+}
+
+/// Outcome of [WorkspaceBackend.applyDiff] (backend-neutral mirror of the
+/// plugin's `ApplyDiffResult`). [backupPath] is non-null only when the call
+/// requested a backup.
+class WorkspaceDiffResult {
+  const WorkspaceDiffResult({
+    required this.success,
+    required this.linesChanged,
+    required this.linesAdded,
+    required this.linesDeleted,
+    this.backupPath,
+  });
+
+  final bool success;
+  final int linesChanged;
+  final int linesAdded;
+  final int linesDeleted;
+  final String? backupPath;
+}
+
+/// Diff payload format for [WorkspaceBackend.applyDiff].
+enum WorkspaceDiffFormat { searchReplace, unified }
+
+/// What [WorkspaceBackend.searchFiles] matches against.
+enum WorkspaceSearchType { name, content, both }
+
 /// Backend interface — every workspace capability the rest of the app talks
 /// to goes through this.
 ///
 /// Methods that aren't supported on the current backend (`exec` on SAF,
 /// `watch` everywhere for now, …) throw [UnsupportedError]; upstream code
-/// should gate on [capabilities] before calling them.
+/// should gate on [capabilities] before calling them. Write/edit/search
+/// methods carry a default `UnsupportedError` implementation so read-only
+/// backends (e.g. the mock) need not override them.
 abstract class WorkspaceBackend {
   WorkspaceCapabilities get capabilities;
 
@@ -79,4 +125,106 @@ abstract class WorkspaceBackend {
   /// whole-file read (see plugin spec §3.3, 10 MB on Android); callers
   /// must fall back to a range read in that case.
   Future<String> readFile(String path);
+
+  /// Reads lines `[startLine, endLine]` (1-based, inclusive) of [path].
+  /// Use this when [readFile] would exceed the whole-file size cap.
+  Future<WorkspaceFileRange> readFileRange(
+    String path,
+    int startLine,
+    int endLine,
+  ) =>
+      throw UnsupportedError('readFileRange is not supported by this backend');
+
+  /// Number of lines in [path].
+  Future<int> getLineCount(String path) =>
+      throw UnsupportedError('getLineCount is not supported by this backend');
+
+  // ===== mutations =====
+
+  /// Overwrites (or, when [append], appends to) [path] with [content].
+  Future<void> writeFile(String path, String content, {bool append = false}) =>
+      throw UnsupportedError('writeFile is not supported by this backend');
+
+  /// Creates a file named [name] under [parentPath], returning its opaque
+  /// path. When [content] is null an empty file is created.
+  Future<String> createFile(String parentPath, String name, {String? content}) =>
+      throw UnsupportedError('createFile is not supported by this backend');
+
+  /// Creates a directory named [name] under [parentPath], returning its
+  /// opaque path.
+  Future<String> createDirectory(
+    String parentPath,
+    String name, {
+    bool recursive = false,
+  }) =>
+      throw UnsupportedError(
+        'createDirectory is not supported by this backend',
+      );
+
+  /// Deletes the file or directory at [path]. For non-empty directories
+  /// pass [recursive].
+  Future<void> delete(
+    String path, {
+    bool isDirectory = false,
+    bool recursive = false,
+  }) =>
+      throw UnsupportedError('delete is not supported by this backend');
+
+  /// Renames the entry at [path] to [newName], returning its new opaque
+  /// path.
+  Future<String> rename(String path, String newName) =>
+      throw UnsupportedError('rename is not supported by this backend');
+
+  /// Moves the entry at [sourcePath] into [destinationParent], returning its
+  /// new opaque path.
+  Future<String> move(String sourcePath, String destinationParent) =>
+      throw UnsupportedError('move is not supported by this backend');
+
+  /// Copies the entry at [sourcePath] into [destinationParent], returning the
+  /// copy's opaque path.
+  Future<String> copy(
+    String sourcePath,
+    String destinationParent, {
+    String? newName,
+    bool overwrite = false,
+  }) =>
+      throw UnsupportedError('copy is not supported by this backend');
+
+  /// Inserts [content] before 1-based [line] in [path].
+  Future<void> insertContent(String path, int line, String content) =>
+      throw UnsupportedError('insertContent is not supported by this backend');
+
+  /// Replaces occurrences of [search] with [replace] in [path], returning the
+  /// number of replacements made.
+  Future<int> replaceInFile(
+    String path,
+    String search,
+    String replace, {
+    bool isRegex = false,
+    bool replaceAll = true,
+    bool caseSensitive = true,
+  }) =>
+      throw UnsupportedError('replaceInFile is not supported by this backend');
+
+  /// Applies [diff] to [path]. When [expectedRangeHash] is given the write is
+  /// rejected if the target range changed since it was read (optimistic lock).
+  Future<WorkspaceDiffResult> applyDiff(
+    String path,
+    String diff, {
+    WorkspaceDiffFormat format = WorkspaceDiffFormat.searchReplace,
+    bool createBackup = false,
+    String? expectedRangeHash,
+  }) =>
+      throw UnsupportedError('applyDiff is not supported by this backend');
+
+  /// Searches under [directory] for entries matching [query].
+  Future<List<WorkspaceEntry>> searchFiles(
+    String directory,
+    String query, {
+    WorkspaceSearchType searchType = WorkspaceSearchType.name,
+    List<String> fileTypes = const [],
+    int maxResults = 200,
+    bool recursive = true,
+  }) =>
+      throw UnsupportedError('searchFiles is not supported by this backend');
 }

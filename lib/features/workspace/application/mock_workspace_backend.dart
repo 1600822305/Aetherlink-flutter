@@ -8,7 +8,7 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.d
 /// It implements the same [WorkspaceBackend] contract as the real backends, so
 /// the file-tree UI depends only on that interface — swapping in
 /// `LocalSafBackend` later changes nothing in the UI.
-class MockWorkspaceBackend implements WorkspaceBackend {
+class MockWorkspaceBackend extends WorkspaceBackend {
   @override
   WorkspaceCapabilities get capabilities => const WorkspaceCapabilities(
         canExec: false,

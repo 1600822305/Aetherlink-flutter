@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'aetherlink_saf_method_channel.dart';
@@ -92,5 +94,151 @@ abstract class AetherlinkSafPlatform extends PlatformInterface {
 
   Future<bool> exists({required String path}) {
     throw UnimplementedError('exists() has not been implemented.');
+  }
+
+  // ===== P1: write & structure operations =====
+
+  Future<void> writeFile({
+    required String path,
+    required String content,
+    String encoding = 'utf8',
+    bool append = false,
+  }) {
+    throw UnimplementedError('writeFile() has not been implemented.');
+  }
+
+  Future<PathResult> createFile({
+    required String parentPath,
+    required String name,
+    String? content,
+    String encoding = 'utf8',
+    String? mimeType,
+  }) {
+    throw UnimplementedError('createFile() has not been implemented.');
+  }
+
+  Future<PathResult> createDirectory({
+    required String parentPath,
+    required String name,
+    bool recursive = false,
+  }) {
+    throw UnimplementedError('createDirectory() has not been implemented.');
+  }
+
+  Future<void> deleteFile({required String path}) {
+    throw UnimplementedError('deleteFile() has not been implemented.');
+  }
+
+  Future<void> deleteDirectory({required String path, bool recursive = false}) {
+    throw UnimplementedError('deleteDirectory() has not been implemented.');
+  }
+
+  Future<PathResult> renameFile({
+    required String path,
+    required String newName,
+  }) {
+    throw UnimplementedError('renameFile() has not been implemented.');
+  }
+
+  Future<PathResult> moveFile({
+    required String sourcePath,
+    required String destinationParent,
+  }) {
+    throw UnimplementedError('moveFile() has not been implemented.');
+  }
+
+  Future<PathResult> copyFile({
+    required String sourcePath,
+    required String destinationParent,
+    String? newName,
+    bool overwrite = false,
+  }) {
+    throw UnimplementedError('copyFile() has not been implemented.');
+  }
+
+  // ===== P1: advanced reads =====
+
+  Future<ReadFileRangeResult> readFileRange({
+    required String path,
+    required int startLine,
+    required int endLine,
+    String? encoding,
+  }) {
+    throw UnimplementedError('readFileRange() has not been implemented.');
+  }
+
+  Future<Uint8List> readFileBytes({
+    required String path,
+    int? offset,
+    int? length,
+  }) {
+    throw UnimplementedError('readFileBytes() has not been implemented.');
+  }
+
+  Future<int> getLineCount({required String path}) {
+    throw UnimplementedError('getLineCount() has not been implemented.');
+  }
+
+  Future<FileHashResult> getFileHash({
+    required String path,
+    HashAlgorithm algorithm = HashAlgorithm.sha256,
+  }) {
+    throw UnimplementedError('getFileHash() has not been implemented.');
+  }
+
+  // ===== P2: advanced editing =====
+
+  Future<void> insertContent({
+    required String path,
+    required int line,
+    required String content,
+  }) {
+    throw UnimplementedError('insertContent() has not been implemented.');
+  }
+
+  Future<ReplaceResult> replaceInFile({
+    required String path,
+    required String search,
+    required String replace,
+    bool isRegex = false,
+    bool replaceAll = true,
+    bool caseSensitive = true,
+  }) {
+    throw UnimplementedError('replaceInFile() has not been implemented.');
+  }
+
+  Future<ApplyDiffResult> applyDiff({
+    required String path,
+    required String diff,
+    DiffFormat format = DiffFormat.searchReplace,
+    bool createBackup = false,
+    String? expectedRangeHash,
+  }) {
+    throw UnimplementedError('applyDiff() has not been implemented.');
+  }
+
+  // ===== P2: search & system apps =====
+
+  Future<SearchResult> searchFiles({
+    required String directory,
+    required String query,
+    SearchType searchType = SearchType.name,
+    List<String> fileTypes = const [],
+    int maxResults = 200,
+    bool recursive = true,
+  }) {
+    throw UnimplementedError('searchFiles() has not been implemented.');
+  }
+
+  Future<void> openSystemFileManager({String? path}) {
+    throw UnimplementedError(
+      'openSystemFileManager() has not been implemented.',
+    );
+  }
+
+  Future<void> openFileWithSystemApp({required String path, String? mimeType}) {
+    throw UnimplementedError(
+      'openFileWithSystemApp() has not been implemented.',
+    );
   }
 }
