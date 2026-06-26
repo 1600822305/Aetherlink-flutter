@@ -158,6 +158,11 @@ abstract class WorkspaceBackend {
   Future<int> getLineCount(String path) =>
       throw UnsupportedError('getLineCount is not supported by this backend');
 
+  /// Metadata (name / size / mtime / kind) for the entry at [path], without
+  /// having to list its parent. Throws when [path] doesn't exist.
+  Future<WorkspaceEntry> getFileInfo(String path) =>
+      throw UnsupportedError('getFileInfo is not supported by this backend');
+
   /// Reads up to [length] raw bytes of [path] starting at [offset] (defaults
   /// to the whole file). Unlike [readFile] this does no text decoding, so it's
   /// safe to use on binary content — e.g. sniffing a file's header to decide
