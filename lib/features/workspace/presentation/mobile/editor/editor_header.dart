@@ -1,6 +1,7 @@
 // Header row for the middle-page file editor: file name + opaque path on the
-// left, caller-supplied action buttons (edit/save/find) plus a close button on
-// the right. Pure presentation — all behavior lives in the parent editor.
+// left, caller-supplied action buttons (edit/save/find) on the right. Closing a
+// file is handled by the tab strip above, so there is no close button here.
+// Pure presentation — all behavior lives in the parent editor.
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -13,7 +14,6 @@ class EditorHeader extends StatelessWidget {
     required this.dirty,
     required this.topPad,
     required this.actions,
-    required this.onClose,
   });
 
   final String name;
@@ -23,7 +23,6 @@ class EditorHeader extends StatelessWidget {
   final bool dirty;
   final double topPad;
   final List<Widget> actions;
-  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -62,12 +61,6 @@ class EditorHeader extends StatelessWidget {
             ),
           ),
           ...actions,
-          IconButton(
-            tooltip: '关闭',
-            icon: const Icon(LucideIcons.x, size: 18),
-            color: theme.colorScheme.onSurfaceVariant,
-            onPressed: onClose,
-          ),
         ],
       ),
     );

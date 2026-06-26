@@ -45,6 +45,15 @@ class WorkspaceEntry {
     this.isHidden = false,
   });
 
+  factory WorkspaceEntry.fromJson(Map<String, dynamic> json) => WorkspaceEntry(
+        name: json['name'] as String,
+        path: json['path'] as String,
+        isDirectory: json['isDirectory'] as bool? ?? false,
+        size: (json['size'] as num?)?.toInt() ?? 0,
+        mtime: (json['mtime'] as num?)?.toInt() ?? 0,
+        isHidden: json['isHidden'] as bool? ?? false,
+      );
+
   final String name;
 
   /// Opaque identifier used to address this entry. For [LocalSafBackend]
@@ -56,6 +65,15 @@ class WorkspaceEntry {
   final int size;
   final int mtime;
   final bool isHidden;
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'path': path,
+        'isDirectory': isDirectory,
+        'size': size,
+        'mtime': mtime,
+        'isHidden': isHidden,
+      };
 }
 
 /// A slice of a file read by line range (backend-neutral mirror of the
