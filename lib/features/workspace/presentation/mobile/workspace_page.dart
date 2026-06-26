@@ -1,10 +1,11 @@
 // Workspace P0 skeleton: three full-screen pages swiped horizontally like the
-// sidebar's "push" reveal — 文件树 / 文件查看(空时为设置工作区起始屏) / 智能体聊天.
+// sidebar's "push" reveal — 文件树 / 文件查看(空时为设置工作区起始屏) / 待定第三页.
 //
 // This is intentionally content-free: each page is a solid color block so the
 // full-screen push/swipe motion can be evaluated before any real UI lands. The
 // middle page is the default landing page; swipe left → 文件树, swipe right →
-// 智能体聊天.
+// 第三页(占位,内容待定). 工作区是纯文件域,不内嵌智能体;智能体是独立模块,
+// 仅复用底层能力层(WorkspaceBackend / MCP).
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -29,7 +30,7 @@ class _WorkspacePageState extends State<WorkspacePage> {
   static const List<_WorkspacePane> _panes = [
     _WorkspacePane(label: '文件树', color: Color(0xFF1E3A5F)),
     _WorkspacePane(label: '文件查看 / 设置工作区', color: Color(0xFF1F4D3A)),
-    _WorkspacePane(label: '智能体聊天', color: Color(0xFF4A2D5F)),
+    _WorkspacePane(label: '第三页(待定)', color: Color(0xFF4A2D5F)),
   ];
 
   @override
