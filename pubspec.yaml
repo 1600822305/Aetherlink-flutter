@@ -66,6 +66,10 @@ dependencies:
     path: packages/native_keyboard_height
   flutter_mermaid:
     path: packages/flutter_mermaid
+  # Local SAF workspace plugin — see docs/本地SAF工作区插件-方法规格.md.
+  # Only LocalSafBackend (under lib/features/workspace/) is allowed to import this.
+  aetherlink_saf:
+    path: packages/aetherlink_saf
   scrollview_observer: ^1.27.0
   # Voice feature: TTS + ASR
   flutter_tts:
