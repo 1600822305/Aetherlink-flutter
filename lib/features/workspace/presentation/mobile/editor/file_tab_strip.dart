@@ -70,22 +70,40 @@ class _Tab extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = theme.colorScheme;
     final fg = active ? scheme.onSurface : scheme.onSurfaceVariant;
+    final radius = BorderRadius.circular(8);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 5),
       child: Material(
         color: active
             ? scheme.surfaceContainerHighest
-            : scheme.surfaceContainerHigh.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(8),
+            : scheme.surfaceContainerLow,
+        borderRadius: radius,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: radius,
           child: Container(
             constraints: const BoxConstraints(maxWidth: 180),
             padding: const EdgeInsets.only(left: 10, right: 4),
+            decoration: BoxDecoration(
+              borderRadius: radius,
+              border: Border.all(
+                color: active ? scheme.primary : scheme.outlineVariant,
+                width: active ? 1.5 : 1,
+              ),
+            ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (active)
+                  Container(
+                    width: 3,
+                    height: 16,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      color: scheme.primary,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
                 Flexible(
                   child: Text(
                     name,
