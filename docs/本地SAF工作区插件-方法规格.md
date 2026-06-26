@@ -1,6 +1,6 @@
 # 本地 SAF 工作区插件 — 方法规格
 
-> 状态:规格 v2 / 待实现
+> 状态:规格 v2 / 安卓 P0 已实现，P1/P2 待实现
 > 目标读者:实现自研原生插件的开发者
 > 关联文档:《工作区与智能体模式-设计构想》(`docs/工作区与智能体模式-设计构想.md`),本文档是其中「后端① 纯手机工作区(本地 SAF)」的落地方法契约。
 > v2 变更:扩字段类型与可空说明、补「§3 通用约定」(path 编码 / 错误码 / 数值约定 / SAF 已知限制)、P0 加入 `listPersistedPermissions` 与 `releasePersistableUriPermission`、明确 iOS 差异点。
@@ -109,18 +109,20 @@ SAF 没有 unix-style 路径,本插件统一约定:
 
 ### P0 —— 第一步必须(选目录 + 只读浏览 + 工作区权限管理)
 
-| 方法 | 入参 | 返回 | 说明 |
-|---|---|---|---|
-| `echo(opts)` | `{value}` | `{value}` | 连通性自测(从 P2 提前到 P0,跑通 channel 用) |
-| `requestPermissions()` | — | `{granted, message}` | 触发 SAF 选目录授权 |
-| `checkPermissions(opts)` | `{uri?}` | `{granted, message}` | 检查指定 `uri` 是否有持久化权限;不传 `uri` 时检查是否至少有一个已持久化 tree |
-| `openSystemFilePicker(opts)` | `{type:'file'\|'directory', multiple, accept?, startDirectory?, title?}` | `{files[], directories[], cancelled}` | 调系统选择器;选目录拿 treeUri **并 `takePersistableUriPermission` 持久化**。**`type` 不接受 `'both'`**(见 §3.4) |
-| `listPersistedPermissions()` | — | `{uris: SelectedFileInfo[]}` | 列出所有已持久化的 treeUri,用于 UI 渲染"已授权工作区列表" |
-| `releasePersistableUriPermission(opts)` | `{uri}` | void | 释放一个 treeUri 的持久化权限;**切换工作区时务必主动释放旧的**(避免触顶 128) |
-| `listDirectory(opts)` | `{path, showHidden, sortBy:'name'\|'size'\|'mtime'\|'type', sortOrder:'asc'\|'desc'}` | `{files: FileInfo[], totalCount}` | 列目录;实现走 `ContentResolver.query(children URI)`,**禁用 `DocumentFile.listFiles()`** |
-| `readFile(opts)` | `{path, encoding:'utf8'\|'base64'}` | `{content, encoding, size}` | 读文件;超过 §3.3 的 10 MB 抛 `E_TOO_LARGE` |
-| `getFileInfo(opts)` | `{path}` | `FileInfo` | 单个文件/目录元信息 |
-| `exists(opts)` | `{path}` | `{exists}` | 路径是否存在 |
+> 实现状态:**P0 全部已实现(Android)**，下表 ✅ 列标注。
+
+| 方法 | 状态 | 入参 | 返回 | 说明 |
+|---|---|---|---|---|
+| `echo(opts)` | ✅ | `{value}` | `{value}` | 连通性自测(从 P2 提前到 P0,跑通 channel 用) |
+| `requestPermissions()` | ✅ | — | `{granted, message}` | 触发 SAF 选目录授权 |
+| `checkPermissions(opts)` | ✅ | `{uri?}` | `{granted, message}` | 检查指定 `uri` 是否有持久化权限;不传 `uri` 时检查是否至少有一个已持久化 tree |
+| `openSystemFilePicker(opts)` | ✅ | `{type:'file'\|'directory', multiple, accept?, startDirectory?, title?}` | `{files[], directories[], cancelled}` | 调系统选择器;选目录拿 treeUri **并 `takePersistableUriPermission` 持久化**。**`type` 不接受 `'both'`**(见 §3.4) |
+| `listPersistedPermissions()` | ✅ | — | `{uris: SelectedFileInfo[]}` | 列出所有已持久化的 treeUri,用于 UI 渲染"已授权工作区列表" |
+| `releasePersistableUriPermission(opts)` | ✅ | `{uri}` | void | 释放一个 treeUri 的持久化权限;**切换工作区时务必主动释放旧的**(避免触顶 128) |
+| `listDirectory(opts)` | ✅ | `{path, showHidden, sortBy:'name'\|'size'\|'mtime'\|'type', sortOrder:'asc'\|'desc'}` | `{files: FileInfo[], totalCount}` | 列目录;实现走 `ContentResolver.query(children URI)`,**禁用 `DocumentFile.listFiles()`** |
+| `readFile(opts)` | ✅ | `{path, encoding:'utf8'\|'base64'}` | `{content, encoding, size}` | 读文件;超过 §3.3 的 10 MB 抛 `E_TOO_LARGE` |
+| `getFileInfo(opts)` | ✅ | `{path}` | `FileInfo` | 单个文件/目录元信息 |
+| `exists(opts)` | ✅ | `{path}` | `{exists}` | 路径是否存在 |
 
 > P0 关键点:
 > 1. 选目录后**必须 `takePersistableUriPermission`**,否则重启 App 工作区失效。
@@ -129,6 +131,8 @@ SAF 没有 unix-style 路径,本插件统一约定:
 > 4. "当前活跃工作区"是 UI 层概念,**由 Dart 侧维护**(存 SharedPreferences),不进插件 API。
 
 ### P1 —— 工作区写操作 + agent 编辑能力(做 agent 前必须补齐)
+
+> 实现状态:**未实现**。当前 `onMethodCall` 对这些方法返回 `notImplemented()`,Dart 侧调用会抛 `MissingPluginException`。
 
 | 方法 | 入参 | 返回 | 说明 |
 |---|---|---|---|
@@ -147,6 +151,8 @@ SAF 没有 unix-style 路径,本插件统一约定:
 
 ### P2 —— agent 高级编辑 + 检索(可后置,建议最终对齐原版)
 
+> 实现状态:**未实现**。
+
 | 方法 | 入参 | 返回 | 说明 |
 |---|---|---|---|
 | `insertContent(opts)` | `{path, line, content}` | void | 指定行前插入(1-based) |
@@ -161,7 +167,7 @@ SAF 没有 unix-style 路径,本插件统一约定:
 ## 5. 来源与平台说明
 
 - **契约来源**:原版 Web 的 Capacitor 插件接口 `AdvancedFileManagerPlugin`(`AetherLink/src/shared/types/fileManager.ts`),共 23 个方法。原版的 agent 工具(`file-editor` MCP server 的 16 个工具:`read_file / write_to_file / insert_content / apply_diff / list_files / search_files / replace_in_file / ...`)底层调的就是这套——**实现了这套,agent 工具链将来零障碍接入**。
-- **平台**:以上为安卓 SAF 契约。**先做安卓**,iOS 后置。iOS 实现时的差异点:
+- **平台**:以上为安卓 SAF 契约。**安卓 P0 已实现**(见 §4 P0 实现状态标注),iOS 仍未实现。iOS 实现时的差异点:
   - iOS 用 `UIDocumentPicker` + security-scoped bookmark,每次访问 bookmark 路径前都要 `startAccessingSecurityScopedResource` / `stopAccessingSecurityScopedResource`(原生封装即可,不影响 channel API)。
   - iOS 没有 SAF 的 children URI 概念,需要在原生层重建目录树语义。
   - iOS 同样无 inotify,`canWatch` 也是 false。
