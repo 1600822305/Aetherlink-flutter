@@ -21,6 +21,7 @@ import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_header.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_replace_bar.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_session.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/readable_path.dart';
 
 /// Whole-file read cap (plugin spec §3.3). Larger files fall back to a
 /// read-only ranged preview of the first [_previewLines] lines.
@@ -159,7 +160,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
         children: [
           EditorHeader(
             name: widget.entry.name,
-            path: widget.entry.path,
+            path: readableWorkspacePath(widget.entry.path),
             dirty: _dirty,
             topPad: 6,
             actions: _headerActions(),
