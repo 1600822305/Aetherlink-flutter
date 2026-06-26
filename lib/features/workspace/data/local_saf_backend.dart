@@ -50,4 +50,24 @@ class LocalSafBackend implements WorkspaceBackend {
     final result = await _plugin.readFile(path: path);
     return result.content;
   }
+
+  /// Launches the system directory picker, persists the grant, and returns
+  /// the picked root as a backend-neutral [WorkspaceEntry] (or `null` when
+  /// the user cancels). SAF-specific, so it lives on the concrete backend
+  /// rather than [WorkspaceBackend] — callers get a neutral type back, no
+  /// `aetherlink_saf` types leak out (spec §1 isolation rule).
+  Future<WorkspaceEntry?> pickDirectory() async {
+    final result =
+        await _plugin.openSystemFilePicker(type: saf.PickerType.directory);
+    if (result.cancelled || result.directories.isEmpty) return null;
+    final d = result.directories.first;
+    return WorkspaceEntry(
+      name: d.name,
+      path: d.path,
+      isDirectory: true,
+      size: d.size,
+      mtime: d.mtime,
+      isHidden: d.isHidden,
+    );
+  }
 }
