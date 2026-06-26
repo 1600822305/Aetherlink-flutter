@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import 'package:aetherlink_flutter/features/workspace/application/mock_workspace_backend.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 
 /// The left page: a lazily-loaded file tree over [WorkspaceBackend]. P0 reads
@@ -10,7 +10,8 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.d
 /// icons can be exercised before the real SAF/Termux/SSH backends exist.
 ///
 /// Directories load their children on first expand and cache them. Tapping a
-/// file is a no-op stub for now (the middle-page file viewer lands later).
+/// file writes it to [selectedWorkspaceFileProvider]; the middle page swaps to
+/// the file viewer and the shell animates over to it.
 class WorkspaceFileTree extends ConsumerStatefulWidget {
   const WorkspaceFileTree({super.key, required this.topInset});
 
@@ -23,15 +24,14 @@ class WorkspaceFileTree extends ConsumerStatefulWidget {
 class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
   static const String _rootPath = '';
 
-  // P0 reads a fake backend so the tree can be reviewed before a real backend
-  // is wired to an opened workspace. Swapping in [LocalSafBackend] later is a
-  // one-line change — the tree only depends on [WorkspaceBackend].
-  final WorkspaceBackend _backend = MockWorkspaceBackend();
+  // P0 reads a shared fake backend (see [workspacePreviewBackendProvider]) so
+  // the tree and the middle-page viewer hit one instance/cache before a real
+  // backend is wired to an opened workspace.
+  WorkspaceBackend get _backend => ref.read(workspacePreviewBackendProvider);
 
   final Set<String> _expanded = {_rootPath};
   final Set<String> _loading = {};
   final Map<String, List<WorkspaceEntry>> _children = {};
-  String? _selected;
 
   @override
   void initState() {
@@ -109,6 +109,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final topPad = MediaQuery.paddingOf(context).top + widget.topInset + 8;
+    final selectedPath = ref.watch(selectedWorkspaceFileProvider)?.path;
 
     final rows = <_TreeRow>[];
     _appendRows(_rootPath, 0, rows);
@@ -198,12 +199,14 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
                           entry: entry,
                           depth: row.depth,
                           expanded: row.expanded,
-                          selected: _selected == entry.path,
+                          selected: selectedPath == entry.path,
                           onTap: () {
                             if (entry.isDirectory) {
                               _toggleDir(entry);
                             } else {
-                              setState(() => _selected = entry.path);
+                              ref
+                                  .read(selectedWorkspaceFileProvider.notifier)
+                                  .select(entry);
                             }
                           },
                         );
