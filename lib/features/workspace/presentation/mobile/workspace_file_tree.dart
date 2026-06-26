@@ -3,11 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 
-/// The left page: a lazily-loaded file tree over [WorkspaceBackend]. P0 reads
-/// the mock backend (fake in-memory tree) so expand/collapse, indentation and
-/// icons can be exercised before the real SAF/Termux/SSH backends exist.
+/// The left page: a lazily-loaded file tree over [WorkspaceBackend], rooted at
+/// the opened workspace ([currentWorkspaceProvider]). When nothing is open it
+/// shows an empty state pointing back to the 起始屏.
 ///
 /// Directories load their children on first expand and cache them. Tapping a
 /// file writes it to [selectedWorkspaceFileProvider]; the middle page swaps to
@@ -22,32 +23,55 @@ class WorkspaceFileTree extends ConsumerStatefulWidget {
 }
 
 class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
-  static const String _rootPath = '';
+  // The tree root — the opened workspace's `root` (a `content://` URI for
+  // SAF). `null` until a workspace is opened.
+  String? _root;
 
-  // P0 reads a shared fake backend (see [workspacePreviewBackendProvider]) so
-  // the tree and the middle-page viewer hit one instance/cache before a real
-  // backend is wired to an opened workspace.
-  WorkspaceBackend get _backend => ref.read(workspacePreviewBackendProvider);
+  // Resolved from [currentWorkspaceProvider]; `null` until a workspace opens.
+  WorkspaceBackend? get _backend => ref.read(workspacePreviewBackendProvider);
 
-  final Set<String> _expanded = {_rootPath};
+  final Set<String> _expanded = {};
   final Set<String> _loading = {};
   final Map<String, List<WorkspaceEntry>> _children = {};
 
   @override
   void initState() {
     super.initState();
-    _load(_rootPath);
+    _bindWorkspace(ref.read(currentWorkspaceProvider));
+  }
+
+  // Resets the tree to a new workspace root (or none) and loads the root.
+  void _bindWorkspace(Workspace? workspace) {
+    _root = workspace?.root;
+    _expanded.clear();
+    _children.clear();
+    _loading.clear();
+    final root = _root;
+    if (root != null) {
+      _expanded.add(root);
+      _load(root);
+    }
   }
 
   Future<void> _load(String path) async {
+    final backend = _backend;
+    if (backend == null) return;
     if (_children.containsKey(path) || _loading.contains(path)) return;
     setState(() => _loading.add(path));
-    final entries = await _backend.listDir(path);
-    if (!mounted) return;
-    setState(() {
-      _loading.remove(path);
-      _children[path] = entries;
-    });
+    try {
+      final entries = await backend.listDir(path);
+      if (!mounted) return;
+      setState(() {
+        _loading.remove(path);
+        _children[path] = entries;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading.remove(path));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('列目录失败 · $e')),
+      );
+    }
   }
 
   void _toggleDir(WorkspaceEntry entry) {
@@ -63,20 +87,22 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
   // Drops every cached listing and reloads the root, so the tree reflects any
   // out-of-band changes. Expand state for still-present directories is kept.
   void _refresh() {
+    final root = _root;
+    if (root == null) return;
     setState(() {
       _children.clear();
       _loading.clear();
     });
-    _load(_rootPath);
+    _load(root);
   }
 
   // Collapses everything back to the root. Cached children stay so re-expanding
   // is instant.
   void _collapseAll() {
+    final root = _root;
     setState(() {
-      _expanded
-        ..clear()
-        ..add(_rootPath);
+      _expanded.clear();
+      if (root != null) _expanded.add(root);
     });
   }
 
@@ -111,9 +137,18 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
     final topPad = MediaQuery.paddingOf(context).top + widget.topInset + 8;
     final selectedPath = ref.watch(selectedWorkspaceFileProvider)?.path;
 
+    // Re-bind whenever the opened workspace changes (open / switch / close).
+    final workspace = ref.watch(currentWorkspaceProvider);
+    if (workspace?.root != _root) {
+      _bindWorkspace(workspace);
+    }
+
+    final root = _root;
     final rows = <_TreeRow>[];
-    _appendRows(_rootPath, 0, rows);
-    final rootLoading = _loading.contains(_rootPath) && rows.isEmpty;
+    if (root != null) {
+      _appendRows(root, 0, rows);
+    }
+    final rootLoading = root != null && _loading.contains(root) && rows.isEmpty;
 
     return ColoredBox(
       color: theme.colorScheme.surface,
@@ -134,7 +169,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '示例工作区',
+                      workspace?.name ?? '工作区',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleSmall?.copyWith(
@@ -142,7 +177,6 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
                       ),
                     ),
                   ),
-                  const _MockBadge(),
                 ],
               ),
             ),
@@ -166,11 +200,13 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
                   _ToolbarButton(
                     icon: LucideIcons.refreshCw,
                     tooltip: '刷新',
+                    enabled: root != null,
                     onTap: _refresh,
                   ),
                   _ToolbarButton(
                     icon: LucideIcons.chevronsDownUp,
                     tooltip: '全部折叠',
+                    enabled: root != null,
                     onTap: _collapseAll,
                   ),
                 ],
@@ -178,7 +214,9 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree> {
             ),
             Divider(height: 1, color: theme.dividerColor),
             Expanded(
-              child: rootLoading
+              child: root == null
+                  ? _EmptyTree(theme: theme)
+                  : rootLoading
                   ? const Center(
                       child: SizedBox(
                         width: 22,
@@ -384,22 +422,40 @@ class _ToolbarButton extends StatelessWidget {
   }
 }
 
-class _MockBadge extends StatelessWidget {
-  const _MockBadge();
+class _EmptyTree extends StatelessWidget {
+  const _EmptyTree({required this.theme});
+
+  final ThemeData theme;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        '示例数据',
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              LucideIcons.folderOpen,
+              size: 40,
+              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '还没有打开工作区',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '右滑到起始屏，点「打开本地文件夹」选择一个目录',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
       ),
     );

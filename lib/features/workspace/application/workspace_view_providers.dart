@@ -2,24 +2,41 @@
 // file-tree page and the middle file-viewer page.
 //
 // Both are separate widgets inside the same horizontal PageView, so the
-// "which file is open" state and the backend that reads it have to live above
-// them. P0 uses a single [MockWorkspaceBackend] (fake in-memory tree) so the
-// tree → viewer interaction can be exercised before the real SAF backend
-// lands; swapping in [LocalSafBackend] later only touches this file.
+// "which workspace is open" and "which file is open" state — plus the backend
+// that reads it — have to live above them. [currentWorkspaceProvider] holds the
+// opened workspace; [workspacePreviewBackendProvider] resolves it to the right
+// [WorkspaceBackend] so the tree and the viewer share one instance.
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:aetherlink_flutter/features/workspace/application/mock_workspace_backend.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 
-/// The [WorkspaceBackend] the P0 mobile shell reads from. Kept as a provider
-/// (instead of `final _backend = MockWorkspaceBackend()` inside a widget) so
-/// the tree and the viewer share one instance and one cache. When real
-/// workspace selection lands this becomes a lookup of the opened workspace's
-/// backend; the widgets don't change.
-final workspacePreviewBackendProvider = Provider<WorkspaceBackend>(
-  (ref) => MockWorkspaceBackend(),
-);
+/// The workspace currently open in the shell, or `null` when nothing is open
+/// (the middle page shows the 起始屏 and the left tree shows its empty state).
+/// Set by tapping 「打开本地文件夹」 or a 「最近打开」 tile on the 起始屏.
+final currentWorkspaceProvider =
+    NotifierProvider<CurrentWorkspace, Workspace?>(CurrentWorkspace.new);
+
+class CurrentWorkspace extends Notifier<Workspace?> {
+  @override
+  Workspace? build() => null;
+
+  void open(Workspace workspace) => state = workspace;
+
+  void close() => state = null;
+}
+
+/// The [WorkspaceBackend] the left tree and middle viewer read from, resolved
+/// from [currentWorkspaceProvider]. `null` until a workspace is opened — both
+/// pages render their empty state in that case. Kept as a provider so the tree
+/// and the viewer share one backend instance / cache.
+final workspacePreviewBackendProvider = Provider<WorkspaceBackend?>((ref) {
+  final workspace = ref.watch(currentWorkspaceProvider);
+  if (workspace == null) return null;
+  return ref.watch(workspaceBackendProvider(workspace));
+});
 
 /// The file currently opened in the middle viewer page, or `null` when the
 /// middle page should show the 起始屏. Set by tapping a file in the left tree.

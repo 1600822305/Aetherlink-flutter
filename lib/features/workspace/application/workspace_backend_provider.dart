@@ -7,7 +7,7 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.d
 part 'workspace_backend_provider.g.dart';
 
 /// Single LocalSafBackend kept alive for the app's lifetime — used by the
-/// 起始屏 connectivity self-test and by [workspaceBackend] for SAF
+/// 起始屏 directory picker (pickDirectory) and by [workspaceBackend] for SAF
 /// workspaces. The plugin itself is stateless on the Dart side, so a
 /// single instance is plenty.
 @Riverpod(keepAlive: true)
