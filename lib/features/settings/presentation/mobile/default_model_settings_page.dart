@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/utils/provider_icons.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 
 /// The "模型设置" second-level page (hub "配置模型" → this page), a 1:1
 /// reproduction of the layout of the original
@@ -975,19 +976,13 @@ class _EditProviderDialogState extends State<_EditProviderDialog> {
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              initialValue: _type,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: '供应商类型',
-                border: OutlineInputBorder(),
-              ),
-              items: [
+            AppSelectField<String?>(
+              label: '供应商类型',
+              value: _type,
+              placeholder: '请选择',
+              options: [
                 for (final option in _EditProviderDialog.typeOptions)
-                  DropdownMenuItem<String>(
-                    value: option.$1,
-                    child: Text(option.$2),
-                  ),
+                  AppSelectOption<String?>(value: option.$1, label: option.$2),
               ],
               onChanged: (value) => setState(() => _type = value),
             ),

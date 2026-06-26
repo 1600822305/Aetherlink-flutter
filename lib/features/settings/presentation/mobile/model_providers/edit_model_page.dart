@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
@@ -305,10 +306,7 @@ class _ProviderField extends StatelessWidget {
 
 /// Model ID field with copy button — the key identifier field.
 class _ModelIdField extends StatelessWidget {
-  const _ModelIdField({
-    required this.controller,
-    required this.onChanged,
-  });
+  const _ModelIdField({required this.controller, required this.onChanged});
 
   final TextEditingController controller;
   final ValueChanged<String> onChanged;
@@ -428,28 +426,18 @@ class _ParameterScopeField extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        DropdownButtonFormField<String?>(
-          initialValue: _options.any((o) => o.$1 == value) ? value : null,
-          isExpanded: true,
-          style: theme.textTheme.bodyMedium?.copyWith(fontSize: 13),
-          decoration: InputDecoration(
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 10,
-              vertical: 8,
-            ),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: theme.dividerColor),
-            ),
+        AppSelectField<String?>(
+          value: _options.any((o) => o.$1 == value) ? value : null,
+          sheetTitle: '参数能力范围',
+          borderRadius: 12,
+          dense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 8,
           ),
-          items: [
+          options: [
             for (final option in _options)
-              DropdownMenuItem<String?>(
-                value: option.$1,
-                child: Text(option.$2),
-              ),
+              AppSelectOption<String?>(value: option.$1, label: option.$2),
           ],
           onChanged: onChanged,
         ),

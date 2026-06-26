@@ -8,6 +8,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/settings/application/input_box_settings_controller.dart';
 import 'package:aetherlink_flutter/shared/domain/input_box_settings.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_button_catalog.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_composer.dart';
 
@@ -404,10 +405,6 @@ class _StyleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final border = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(16),
-      borderSide: BorderSide(color: theme.dividerColor),
-    );
 
     return _BaseCard(
       padding: const EdgeInsets.all(12), // Paper `p: 1.5`
@@ -425,48 +422,14 @@ class _StyleCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<InputBoxStyle>(
-            initialValue: style,
-            isExpanded: true,
-            icon: Icon(
-              LucideIcons.chevronDown,
-              size: 20,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            style: theme.textTheme.bodyLarge?.copyWith(
-              fontSize: 14.4,
-              color: theme.colorScheme.onSurface,
-            ),
-            decoration: InputDecoration(
-              labelText: _label,
-              isDense: true,
-              labelStyle: theme.textTheme.bodyLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 12,
-              ),
-              border: border,
-              enabledBorder: border,
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(
-                  color: theme.colorScheme.primary,
-                  width: 2,
-                ),
-              ),
-            ),
-            items: [
+          AppSelectField<InputBoxStyle>(
+            label: _label,
+            value: style,
+            options: [
               for (final (value, text) in _options)
-                DropdownMenuItem<InputBoxStyle>(
-                  value: value,
-                  child: Text(text),
-                ),
+                AppSelectOption<InputBoxStyle>(value: value, label: text),
             ],
-            onChanged: (next) {
-              if (next != null) onChanged(next);
-            },
+            onChanged: onChanged,
           ),
           const SizedBox(height: 4), // description `mt: 0.5`
           // body2 (0.8rem = 12.8px) text.secondary, line-height 1.5.

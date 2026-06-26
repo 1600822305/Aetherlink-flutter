@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/settings/application/mcp_servers_con
 import 'package:aetherlink_flutter/features/settings/application/skills_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 
 /// The 技能编辑器 page (`/settings/skills/:skillId`), a port of the original
 /// `src/pages/Settings/SkillEditor.tsx`. Edits a single skill's 名称 / emoji /
@@ -201,7 +202,10 @@ class _SkillEditorPageState extends ConsumerState<SkillEditorPage> {
       ),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
-          16, 16, 16, 24 + MediaQuery.paddingOf(context).bottom,
+          16,
+          16,
+          16,
+          24 + MediaQuery.paddingOf(context).bottom,
         ),
         children: [
           _basicInfoCard(theme, isBuiltin),
@@ -382,36 +386,19 @@ class _SkillEditorPageState extends ConsumerState<SkillEditorPage> {
         children: [
           const _SectionHeader(icon: LucideIcons.plug, title: '关联 MCP 服务器'),
           const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue:
+          AppSelectField<String>(
+            value:
                 (_mcpServerId != null &&
                     servers.any((s) => s.id == _mcpServerId))
-                ? _mcpServerId
+                ? _mcpServerId!
                 : '',
-            isDense: true,
-            decoration: InputDecoration(
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 12,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: theme.dividerColor),
-              ),
-            ),
-            items: [
-              const DropdownMenuItem(value: '', child: Text('无')),
+            sheetTitle: '关联 MCP 服务器',
+            options: [
+              const AppSelectOption(value: '', label: '无'),
               for (final server in servers)
-                DropdownMenuItem(
+                AppSelectOption(
                   value: server.id,
-                  child: Text(
-                    server.name.isEmpty ? server.id : server.name,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  label: server.name.isEmpty ? server.id : server.name,
                 ),
             ],
             onChanged: (v) => setState(() => _mcpServerId = v),

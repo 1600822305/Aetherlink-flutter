@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_ser
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/config/builtin_mcp_servers.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
 /// The "MCP 服务器" settings page (提示词与工具 → this page), a port of the
@@ -134,11 +135,7 @@ class _McpServerSettingsPageState extends ConsumerState<McpServerSettingsPage>
           Expanded(
             child: InstantSwitchTabView(
               controller: _tabController,
-              children: const [
-                _ExternalTab(),
-                _BuiltinTab(),
-                _AssistantTab(),
-              ],
+              children: const [_ExternalTab(), _BuiltinTab(), _AssistantTab()],
             ),
           ),
         ],
@@ -1170,26 +1167,22 @@ class _AddServerDialogState extends State<_AddServerDialog> {
               ),
             ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<McpServerType>(
-              initialValue: _type,
-              isDense: true,
-              decoration: const InputDecoration(
-                labelText: '服务器类型',
-                isDense: true,
-              ),
-              items:
-                  const [
-                    McpServerType.sse,
-                    McpServerType.streamableHttp,
-                    McpServerType.inMemory,
-                    McpServerType.stdio,
-                  ].map((t) {
-                    return DropdownMenuItem<McpServerType>(
-                      value: t,
-                      child: Text(mcpServerTypeLabel(t)),
-                    );
-                  }).toList(),
-              onChanged: (v) => setState(() => _type = v ?? _type),
+            AppSelectField<McpServerType>(
+              label: '服务器类型',
+              value: _type,
+              options: [
+                for (final t in const [
+                  McpServerType.sse,
+                  McpServerType.streamableHttp,
+                  McpServerType.inMemory,
+                  McpServerType.stdio,
+                ])
+                  AppSelectOption<McpServerType>(
+                    value: t,
+                    label: mcpServerTypeLabel(t),
+                  ),
+              ],
+              onChanged: (v) => setState(() => _type = v),
             ),
             if (_isHttp) ...[
               const SizedBox(height: 16),

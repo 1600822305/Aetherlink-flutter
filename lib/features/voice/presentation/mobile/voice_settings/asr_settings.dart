@@ -354,34 +354,46 @@ class _AsrProviderDetailPageState
                       // Model selector
                       const SizedBox(height: 12),
                       if (isWhisper)
-                        _DropdownRow(
+                        AppSelectField<String>(
                           label: '模型',
                           value: _modelCtrl.text.isEmpty
                               ? 'whisper-1'
                               : _modelCtrl.text,
-                          items: const [
-                            ('whisper-1', 'whisper-1'),
-                            ('gpt-4o-transcribe', 'gpt-4o-transcribe'),
-                            (
-                              'gpt-4o-mini-transcribe',
-                              'gpt-4o-mini-transcribe',
+                          options: const [
+                            AppSelectOption(
+                              value: 'whisper-1',
+                              label: 'whisper-1',
+                            ),
+                            AppSelectOption(
+                              value: 'gpt-4o-transcribe',
+                              label: 'gpt-4o-transcribe',
+                            ),
+                            AppSelectOption(
+                              value: 'gpt-4o-mini-transcribe',
+                              label: 'gpt-4o-mini-transcribe',
                             ),
                           ],
                           onChanged: (v) => setState(() => _modelCtrl.text = v),
                         )
                       else if (isRealtime)
-                        _DropdownRow(
+                        AppSelectField<String>(
                           label: '模型',
                           value: _modelCtrl.text.isEmpty
                               ? 'gpt-4o-transcribe'
                               : _modelCtrl.text,
-                          items: const [
-                            ('gpt-4o-transcribe', 'gpt-4o-transcribe'),
-                            (
-                              'gpt-4o-mini-transcribe',
-                              'gpt-4o-mini-transcribe',
+                          options: const [
+                            AppSelectOption(
+                              value: 'gpt-4o-transcribe',
+                              label: 'gpt-4o-transcribe',
                             ),
-                            ('gpt-realtime-whisper', 'gpt-realtime-whisper'),
+                            AppSelectOption(
+                              value: 'gpt-4o-mini-transcribe',
+                              label: 'gpt-4o-mini-transcribe',
+                            ),
+                            AppSelectOption(
+                              value: 'gpt-realtime-whisper',
+                              label: 'gpt-realtime-whisper',
+                            ),
                           ],
                           onChanged: (v) => setState(() => _modelCtrl.text = v),
                         )
@@ -404,14 +416,20 @@ class _AsrProviderDetailPageState
                           controller: _modelCtrl,
                         )
                       else if (isStep)
-                        _DropdownRow(
+                        AppSelectField<String>(
                           label: '模型',
                           value: _modelCtrl.text.isEmpty
                               ? 'stepaudio-2.5-asr'
                               : _modelCtrl.text,
-                          items: const [
-                            ('stepaudio-2.5-asr', 'stepaudio-2.5-asr'),
-                            ('stepaudio-2-asr-pro', 'stepaudio-2-asr-pro'),
+                          options: const [
+                            AppSelectOption(
+                              value: 'stepaudio-2.5-asr',
+                              label: 'stepaudio-2.5-asr',
+                            ),
+                            AppSelectOption(
+                              value: 'stepaudio-2-asr-pro',
+                              label: 'stepaudio-2-asr-pro',
+                            ),
                           ],
                           onChanged: (v) => setState(() => _modelCtrl.text = v),
                         )
@@ -440,17 +458,26 @@ class _AsrProviderDetailPageState
                       if (isRealtime) ...[
                         Divider(height: 24, color: theme.dividerColor),
                         // Delay selector (for gpt-realtime-whisper)
-                        _DropdownRow(
+                        AppSelectField<String>(
                           label: '延迟/精度',
                           value: _realtimeDelay.isEmpty
                               ? 'medium'
                               : _realtimeDelay,
-                          items: const [
-                            ('minimal', 'minimal（最低延迟）'),
-                            ('low', 'low（低延迟）'),
-                            ('medium', 'medium（平衡）'),
-                            ('high', 'high（高精度）'),
-                            ('xhigh', 'xhigh（最高精度）'),
+                          options: const [
+                            AppSelectOption(
+                              value: 'minimal',
+                              label: 'minimal（最低延迟）',
+                            ),
+                            AppSelectOption(value: 'low', label: 'low（低延迟）'),
+                            AppSelectOption(
+                              value: 'medium',
+                              label: 'medium（平衡）',
+                            ),
+                            AppSelectOption(value: 'high', label: 'high（高精度）'),
+                            AppSelectOption(
+                              value: 'xhigh',
+                              label: 'xhigh（最高精度）',
+                            ),
                           ],
                           onChanged: (v) => setState(() => _realtimeDelay = v),
                         ),
@@ -491,21 +518,24 @@ class _AsrProviderDetailPageState
                           maxLines: 2,
                         ),
                         const SizedBox(height: 12),
-                        _DropdownRow(
+                        AppSelectField<String>(
                           label: '采样率',
                           value: _sampleRate.toString(),
-                          items: const [
-                            ('16000', '16000 Hz'),
-                            ('8000', '8000 Hz'),
+                          options: const [
+                            AppSelectOption(value: '16000', label: '16000 Hz'),
+                            AppSelectOption(value: '8000', label: '8000 Hz'),
                           ],
                           onChanged: (v) =>
                               setState(() => _sampleRate = int.parse(v)),
                         ),
                         const SizedBox(height: 12),
-                        _DropdownRow(
+                        AppSelectField<String>(
                           label: '音频格式',
                           value: _inputAudioFormat,
-                          items: const [('pcm', 'PCM'), ('opus', 'Opus')],
+                          options: const [
+                            AppSelectOption(value: 'pcm', label: 'PCM'),
+                            AppSelectOption(value: 'opus', label: 'Opus'),
+                          ],
                           onChanged: (v) =>
                               setState(() => _inputAudioFormat = v),
                         ),
@@ -551,16 +581,19 @@ class _AsrProviderDetailPageState
                           maxLines: 2,
                         ),
                         const SizedBox(height: 12),
-                        _DropdownRow(
+                        AppSelectField<String>(
                           label: '繁简转换',
                           value: _outputZhVariant.isEmpty
                               ? 'none'
                               : _outputZhVariant,
-                          items: const [
-                            ('none', '关闭（简体）'),
-                            ('traditional', '繁体（大陆）'),
-                            ('tw', '台湾正体'),
-                            ('hk', '香港繁体'),
+                          options: const [
+                            AppSelectOption(value: 'none', label: '关闭（简体）'),
+                            AppSelectOption(
+                              value: 'traditional',
+                              label: '繁体（大陆）',
+                            ),
+                            AppSelectOption(value: 'tw', label: '台湾正体'),
+                            AppSelectOption(value: 'hk', label: '香港繁体'),
                           ],
                           onChanged: (v) => setState(
                             () => _outputZhVariant = v == 'none' ? '' : v,

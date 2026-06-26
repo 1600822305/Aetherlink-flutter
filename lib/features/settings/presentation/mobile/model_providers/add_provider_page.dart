@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 
 /// The "添加提供商" third-level page (二级页 添加供应商 → this page), a 1:1
 /// reproduction of `src/pages/Settings/ModelProviders/AddProvider.tsx`.
@@ -209,38 +210,13 @@ class _ProviderTypeField extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 6),
-        DropdownButtonFormField<_ProviderType>(
-          initialValue: value,
-          isDense: true,
-          isExpanded: true,
-          hint: Text(
-            '请选择$label',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontSize: 14,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          decoration: InputDecoration(
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 12,
-            ),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide(color: theme.dividerColor),
-            ),
-          ),
-          items: [
+        AppSelectField<_ProviderType?>(
+          value: value,
+          sheetTitle: label,
+          placeholder: '请选择$label',
+          options: [
             for (final type in _providerTypes)
-              DropdownMenuItem<_ProviderType>(
-                value: type,
-                child: Text(
-                  type.label,
-                  style: theme.textTheme.bodyMedium?.copyWith(fontSize: 14),
-                ),
-              ),
+              AppSelectOption<_ProviderType?>(value: type, label: type.label),
           ],
           onChanged: onChanged,
         ),

@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/app/theme/app_theme_extension.dart';
 import 'package:aetherlink_flutter/features/settings/application/message_bubble_settings_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/message_bubble_settings.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 import 'package:aetherlink_flutter/shared/widgets/color_picker.dart';
 
 /// The "信息气泡管理" sub-page (外观设置 → this page), a port of the original
@@ -1208,31 +1209,16 @@ class _Select<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return DropdownButtonFormField<T>(
-      initialValue: value,
-      isExpanded: true,
-      icon: const Icon(LucideIcons.chevronDown, size: 18),
-      decoration: InputDecoration(
-        labelText: label,
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 9,
-        ),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: theme.dividerColor),
-        ),
-      ),
-      items: [
+    return AppSelectField<T>(
+      label: label,
+      value: value,
+      borderRadius: 12,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      options: [
         for (final entry in items.entries)
-          DropdownMenuItem<T>(value: entry.key, child: Text(entry.value)),
+          AppSelectOption<T>(value: entry.key, label: entry.value),
       ],
-      onChanged: (v) {
-        if (v != null) onChanged(v);
-      },
+      onChanged: onChanged,
     );
   }
 }
