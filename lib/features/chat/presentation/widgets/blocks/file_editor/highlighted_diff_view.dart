@@ -126,6 +126,21 @@ class _HighlightedDiffViewState extends ConsumerState<HighlightedDiffView> {
     final visibleCount =
         (_expanded || !showToggle) ? lines.length : widget.collapsedMaxLines;
 
+    // Two-column line-number gutter (old | new), shown only when at least one
+    // line carries a known position.
+    var maxNum = 0;
+    for (final l in lines) {
+      if ((l.oldLine ?? 0) > maxNum) maxNum = l.oldLine!;
+      if ((l.newLine ?? 0) > maxNum) maxNum = l.newLine!;
+    }
+    final showGutter = maxNum > 0;
+    final numWidth = maxNum.toString().length * 7.5 + 4;
+    final lineNumberStyle = codeStyle.copyWith(
+      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.55),
+      fontWeight: FontWeight.w400,
+    );
+    final gutterBorder = theme.dividerColor.withValues(alpha: 0.6);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -134,7 +149,15 @@ class _HighlightedDiffViewState extends ConsumerState<HighlightedDiffView> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               for (var i = 0; i < visibleCount; i++)
-                _row(lines[i], spans[i], codeStyle),
+                _row(
+                  lines[i],
+                  spans[i],
+                  codeStyle,
+                  showGutter: showGutter,
+                  numWidth: numWidth,
+                  numberStyle: lineNumberStyle,
+                  gutterBorder: gutterBorder,
+                ),
             ],
           ),
         ),
@@ -158,7 +181,15 @@ class _HighlightedDiffViewState extends ConsumerState<HighlightedDiffView> {
     );
   }
 
-  Widget _row(DiffLine line, List<TextSpan> spans, TextStyle codeStyle) {
+  Widget _row(
+    DiffLine line,
+    List<TextSpan> spans,
+    TextStyle codeStyle, {
+    required bool showGutter,
+    required double numWidth,
+    required TextStyle numberStyle,
+    required Color gutterBorder,
+  }) {
     final (bg, sign, signColor) = switch (line.type) {
       DiffLineType.added => (_addedBg, '+', _addedSign),
       DiffLineType.removed => (_removedBg, '-', _removedSign),
@@ -171,6 +202,22 @@ class _HighlightedDiffViewState extends ConsumerState<HighlightedDiffView> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (showGutter)
+            Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                border: Border(right: BorderSide(color: gutterBorder)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _numCell(line.oldLine, numWidth, numberStyle),
+                  const SizedBox(width: 2),
+                  _numCell(line.newLine, numWidth, numberStyle),
+                ],
+              ),
+            ),
           SizedBox(
             width: 14,
             child: Text(
@@ -193,4 +240,13 @@ class _HighlightedDiffViewState extends ConsumerState<HighlightedDiffView> {
       ),
     );
   }
+
+  Widget _numCell(int? n, double width, TextStyle style) => SizedBox(
+        width: width,
+        child: Text(
+          n?.toString() ?? '',
+          textAlign: TextAlign.right,
+          style: style,
+        ),
+      );
 }

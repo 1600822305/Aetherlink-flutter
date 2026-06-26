@@ -172,11 +172,18 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
       case 'create_file':
         return computeLineDiff('', _args['content']?.toString() ?? '');
       case 'insert_content':
-        return computeLineDiff('', _args['content']?.toString() ?? '');
+        final line = int.tryParse('${_args['line']}') ?? 1;
+        return computeLineDiff(
+          '',
+          _args['content']?.toString() ?? '',
+          newStart: line,
+        );
       case 'replace_in_file':
+        // Position in the file is unknown, so suppress the line-number gutter.
         return computeLineDiff(
           _args['search']?.toString() ?? '',
           _args['replace']?.toString() ?? '',
+          assignLineNumbers: false,
         );
     }
     return null;

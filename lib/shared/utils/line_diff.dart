@@ -14,11 +14,18 @@ enum DiffLineType { context, added, removed }
 
 /// A single line in a rendered diff. [text] never contains the trailing
 /// newline, and is free of any `+`/`-` prefix (the type drives the gutter).
+///
+/// [oldLine]/[newLine] are 1-based line numbers in the old/new file for the
+/// two-column gutter, or `null` when the position is unknown (e.g. a
+/// SEARCH/REPLACE block whose location in the file isn't known) or doesn't
+/// apply to that side (added rows have no old number, removed rows no new).
 class DiffLine {
-  const DiffLine(this.type, this.text);
+  const DiffLine(this.type, this.text, {this.oldLine, this.newLine});
 
   final DiffLineType type;
   final String text;
+  final int? oldLine;
+  final int? newLine;
 }
 
 /// A computed line diff plus its `+added / -removed` line counts.
@@ -40,7 +47,17 @@ class LineDiff {
 ///
 /// A changed line surfaces as a removed line immediately followed by an added
 /// line, matching the unified-diff convention used by IDEs.
-LineDiff computeLineDiff(String oldText, String newText) {
+///
+/// When [assignLineNumbers] is true, each line gets old/new gutter numbers
+/// seeded from [oldStart]/[newStart]; pass false when the file position is
+/// unknown (e.g. a search/replace fragment) so the gutter is suppressed.
+LineDiff computeLineDiff(
+  String oldText,
+  String newText, {
+  int oldStart = 1,
+  int newStart = 1,
+  bool assignLineNumbers = true,
+}) {
   final encoder = _LineEncoder();
   final chars1 = encoder.encode(oldText);
   final chars2 = encoder.encode(newText);
@@ -53,6 +70,8 @@ LineDiff computeLineDiff(String oldText, String newText) {
   final lines = <DiffLine>[];
   var added = 0;
   var removed = 0;
+  var oldNo = oldStart;
+  var newNo = newStart;
   for (final diff in diffs) {
     final type = switch (diff.operation) {
       DIFF_INSERT => DiffLineType.added,
@@ -60,8 +79,13 @@ LineDiff computeLineDiff(String oldText, String newText) {
       _ => DiffLineType.context,
     };
     for (final code in diff.text.codeUnits) {
-      final line = encoder.decode(code);
-      lines.add(DiffLine(type, _stripNewline(line)));
+      final line = _stripNewline(encoder.decode(code));
+      int? o, n;
+      if (assignLineNumbers) {
+        if (type != DiffLineType.added) o = oldNo++;
+        if (type != DiffLineType.removed) n = newNo++;
+      }
+      lines.add(DiffLine(type, line, oldLine: o, newLine: n));
       if (type == DiffLineType.added) added++;
       if (type == DiffLineType.removed) removed++;
     }

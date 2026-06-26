@@ -53,8 +53,13 @@ LineDiff parseSearchReplaceDiff(String diff) {
     if (blockCount > 0) out.add(const DiffLine(DiffLineType.context, '⋯'));
     blockCount++;
 
-    final blockDiff =
-        computeLineDiff(search.join('\n'), replace.join('\n'));
+    // No reliable file position for a search/replace block, so suppress the
+    // line-number gutter for these.
+    final blockDiff = computeLineDiff(
+      search.join('\n'),
+      replace.join('\n'),
+      assignLineNumbers: false,
+    );
     out.addAll(blockDiff.lines);
     added += blockDiff.added;
     removed += blockDiff.removed;
@@ -63,32 +68,44 @@ LineDiff parseSearchReplaceDiff(String diff) {
   return LineDiff(lines: out, added: added, removed: removed);
 }
 
-/// Parses a unified [diff] (with `@@ ... @@` hunk headers) into a [LineDiff].
+final _hunkHeader = RegExp(r'^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@');
+
+/// Parses a unified [diff] (with `@@ ... @@` hunk headers) into a [LineDiff],
+/// seeding old/new gutter line numbers from each hunk header.
 LineDiff parseUnifiedDiff(String diff) {
   final out = <DiffLine>[];
   var added = 0;
   var removed = 0;
   var first = true;
+  var oldNo = 1;
+  var newNo = 1;
 
   for (final raw in diff.split('\n')) {
     if (raw.startsWith('@@')) {
+      final m = _hunkHeader.firstMatch(raw);
+      if (m != null) {
+        oldNo = int.parse(m.group(1)!);
+        newNo = int.parse(m.group(2)!);
+      }
       if (!first) out.add(const DiffLine(DiffLineType.context, '⋯'));
       first = false;
       continue;
     }
     if (raw == '\\ No newline at end of file') continue;
     if (raw.startsWith('+')) {
-      out.add(DiffLine(DiffLineType.added, raw.substring(1)));
+      out.add(DiffLine(DiffLineType.added, raw.substring(1), newLine: newNo++));
       added++;
     } else if (raw.startsWith('-')) {
-      out.add(DiffLine(DiffLineType.removed, raw.substring(1)));
+      out.add(DiffLine(DiffLineType.removed, raw.substring(1), oldLine: oldNo++));
       removed++;
     } else if (raw.startsWith(' ')) {
-      out.add(DiffLine(DiffLineType.context, raw.substring(1)));
+      out.add(DiffLine(DiffLineType.context, raw.substring(1),
+          oldLine: oldNo++, newLine: newNo++));
     } else if (raw.isEmpty) {
       // tolerate blank padding lines
     } else {
-      out.add(DiffLine(DiffLineType.context, raw));
+      out.add(DiffLine(DiffLineType.context, raw,
+          oldLine: oldNo++, newLine: newNo++));
     }
   }
 
