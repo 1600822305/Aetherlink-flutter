@@ -1,6 +1,7 @@
 import 'package:aetherlink_flutter/core/database/app_database.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_version.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
@@ -169,7 +170,7 @@ class ChatRepositoryImpl implements ChatRepository {
   /// `deleteByMessageId` call.
   List<String> _versionAndSnapshotBlockIds(Message message) {
     final ids = <String>[];
-    for (final version in message.versions ?? const []) {
+    for (final version in message.versions ?? const <MessageVersion>[]) {
       ids.addAll(version.blocks);
     }
     final snapshot = message.metadata?['latestSnapshot'];

@@ -956,7 +956,7 @@ class _HistoryPanel extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     itemCount: histories.length,
                     separatorBuilder: (_, _) =>
-                        Divider(height: 1, indent: 16, endIndent: 16),
+                        const Divider(height: 1, indent: 16, endIndent: 16),
                     itemBuilder: (context, i) {
                       final h = histories[i];
                       return _HistoryTile(

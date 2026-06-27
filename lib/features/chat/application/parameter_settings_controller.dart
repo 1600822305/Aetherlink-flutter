@@ -37,6 +37,7 @@ class ParameterSettingsController extends _$ParameterSettingsController
   // ── Value setters ─────────────────────────────────────────────────────────
 
   /// Sets the value for a single parameter [key].
+  @override
   void setParameterValue(String key, Object? value) {
     final next = Map<String, dynamic>.of(state.values);
     next[key] = value;
@@ -44,6 +45,7 @@ class ParameterSettingsController extends _$ParameterSettingsController
   }
 
   /// Sets the enabled flag for a single parameter [key].
+  @override
   void setParameterEnabled(String key, bool enabled) {
     final next = Map<String, bool>.of(state.enabledFlags);
     next[key] = enabled;
@@ -51,6 +53,7 @@ class ParameterSettingsController extends _$ParameterSettingsController
   }
 
   /// Adds a custom parameter.
+  @override
   void addCustomParameter(Map<String, dynamic> param) {
     final next = List<Map<String, dynamic>>.of(state.customParameters)
       ..add(param);
@@ -58,6 +61,7 @@ class ParameterSettingsController extends _$ParameterSettingsController
   }
 
   /// Removes a custom parameter by index.
+  @override
   void removeCustomParameter(int index) {
     final next = List<Map<String, dynamic>>.of(state.customParameters);
     if (index >= 0 && index < next.length) {
@@ -67,6 +71,7 @@ class ParameterSettingsController extends _$ParameterSettingsController
   }
 
   /// Updates a custom parameter at [index].
+  @override
   void updateCustomParameter(int index, Map<String, dynamic> param) {
     final next = List<Map<String, dynamic>>.of(state.customParameters);
     if (index >= 0 && index < next.length) {

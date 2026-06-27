@@ -4,7 +4,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
 /// Slots laid out by [BubbleFooterLayout].
-enum _BubbleSlot { content, footer }
+enum BubbleSlot { content, footer }
 
 /// Stacks [footer] beneath [content], sizing the box to the content's width
 /// (clamped to the incoming min/max width and the footer's minimum width) and
@@ -17,7 +17,7 @@ enum _BubbleSlot { content, footer }
 /// would blow the bubble out to its max width, while `MainAxisSize.min` leaves
 /// the toolbar hugging its own content (token stuck next to the buttons).
 class BubbleFooterLayout
-    extends SlottedMultiChildRenderObjectWidget<_BubbleSlot, RenderBox> {
+    extends SlottedMultiChildRenderObjectWidget<BubbleSlot, RenderBox> {
   const BubbleFooterLayout({
     required this.content,
     required this.footer,
@@ -28,32 +28,32 @@ class BubbleFooterLayout
   final Widget footer;
 
   @override
-  Iterable<_BubbleSlot> get slots => _BubbleSlot.values;
+  Iterable<BubbleSlot> get slots => BubbleSlot.values;
 
   @override
-  Widget? childForSlot(_BubbleSlot slot) => switch (slot) {
-    _BubbleSlot.content => content,
-    _BubbleSlot.footer => footer,
+  Widget? childForSlot(BubbleSlot slot) => switch (slot) {
+    BubbleSlot.content => content,
+    BubbleSlot.footer => footer,
   };
 
   @override
-  _RenderBubbleFooter createRenderObject(BuildContext context) =>
-      _RenderBubbleFooter();
+  RenderBubbleFooter createRenderObject(BuildContext context) =>
+      RenderBubbleFooter();
 
   @override
   void updateRenderObject(
     BuildContext context,
-    _RenderBubbleFooter renderObject,
+    RenderBubbleFooter renderObject,
   ) {
     // No configuration to propagate; layout depends only on the slotted
     // children, which the framework updates separately.
   }
 }
 
-class _RenderBubbleFooter extends RenderBox
-    with SlottedContainerRenderObjectMixin<_BubbleSlot, RenderBox> {
-  RenderBox get _content => childForSlot(_BubbleSlot.content)!;
-  RenderBox get _footer => childForSlot(_BubbleSlot.footer)!;
+class RenderBubbleFooter extends RenderBox
+    with SlottedContainerRenderObjectMixin<BubbleSlot, RenderBox> {
+  RenderBox get _content => childForSlot(BubbleSlot.content)!;
+  RenderBox get _footer => childForSlot(BubbleSlot.footer)!;
 
   @override
   void setupParentData(RenderBox child) {
