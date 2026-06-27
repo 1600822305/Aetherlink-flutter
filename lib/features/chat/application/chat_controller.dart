@@ -22,6 +22,7 @@ import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/streaming_registry.dart';
 import 'package:aetherlink_flutter/features/chat/application/translate_controller.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/api_key_manager.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
@@ -61,7 +62,6 @@ import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/settings_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
-import 'package:aetherlink_flutter/shared/services/streaming_keepalive_service.dart';
 import 'package:aetherlink_flutter/shared/services/web_search_service.dart';
 import 'package:aetherlink_flutter/shared/utils/regex_replacement.dart';
 import 'package:aetherlink_flutter/shared/utils/system_prompt_variables.dart';
@@ -95,27 +95,47 @@ class ChatController extends _$ChatController {
   /// the next send / regenerate. The UI reads this to show a "继续生成" button.
   String? _truncatedMessageId;
 
-  /// Cancellation handle for the in-flight stream, set while [_streamInto] runs.
-  /// [stopStreaming] cancels it to abort the underlying HTTP request; the stream
-  /// loop then finalizes whatever was generated so far as a normal reply.
-  LlmCancelToken? _cancelToken;
-
   ChatRepository get _repo => ref.read(chatRepositoryProvider);
 
-  /// Aborts the current streaming reply, if any. The partial output already
-  /// generated is kept and persisted (mirrors Cherry Studio's stop behaviour).
-  /// No-op when nothing is streaming.
+  StreamingRegistry get _registry =>
+      ref.read(streamingRegistryProvider.notifier);
+
+  /// Aborts the streaming reply of the *current* topic, if any. The partial
+  /// output already generated is kept and persisted (mirrors Cherry Studio's
+  /// stop behaviour). No-op when the current topic isn't streaming.
   void stopStreaming() {
-    final token = _cancelToken;
-    if (token == null || token.isCancelled) return;
-    token.cancel();
+    final topicId = _topicId;
+    if (topicId == null) return;
+    _registry.cancel(topicId);
+  }
+
+  /// Emits a streaming update for [turnTopicId]'s reply. The live conversation
+  /// is always written to the per-topic [StreamingRegistry] (so the stream keeps
+  /// running and stays visible in the topic list even after the user switches
+  /// away); the on-screen [ChatState] is only touched when [turnTopicId] is the
+  /// topic currently being displayed. This is what makes switching topics
+  /// mid-stream instant while the old topic keeps generating in the background.
+  void _emitTurn(
+    String turnTopicId,
+    List<ChatMessageView> views, {
+    required bool streaming,
+  }) {
+    if (streaming) {
+      _registry.update(turnTopicId, views);
+    } else {
+      _registry.finish(turnTopicId);
+    }
+    if (turnTopicId == _topicId) {
+      _emit(views, isStreaming: streaming);
+    }
   }
 
   @override
   Future<ChatState> build() async {
-    // Never leave the streaming keep-alive notification stuck if this controller
-    // is disposed (e.g. navigating away) while a reply is still in flight.
-    ref.onDispose(() => unawaited(StreamingKeepAliveService.end()));
+    // The background keep-alive notification is owned by the StreamingRegistry
+    // (started on the first streaming topic, stopped on the last). It must NOT be
+    // ended here: build() re-runs on every topic switch, so ending it on dispose
+    // would kill the notification while a switched-away topic keeps generating.
     // In-place mutations of the current conversation (清空消息) bump this so the
     // view reloads without changing the selected topic id.
     ref.watch(chatRefreshProvider);
@@ -126,6 +146,18 @@ class ChatController extends _$ChatController {
     }
     _topicId = topic.id;
     _assistantId = topic.assistantId;
+
+    // If this topic is generating in the background, show its live in-flight
+    // conversation (read once, not watched: subsequent chunks for the now-current
+    // topic update the state directly via _emit). This is what lets the user
+    // switch back to a still-generating topic and pick up where it is.
+    final liveViews = ref.read(streamingRegistryProvider).viewsFor(topic.id);
+    if (liveViews != null) {
+      return ChatState(
+        messages: List<ChatMessageView>.of(liveViews),
+        isStreaming: true,
+      );
+    }
 
     final messages = await _repo.getMessagesByTopicId(topic.id)
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
@@ -253,7 +285,7 @@ class ChatController extends _$ChatController {
       providerName: current.provider.name,
     );
     final views = [...snapshot.messages, userView, assistantView];
-    _emit(views, isStreaming: true);
+    _emitTurn(topicId, views, streaming: true);
 
     // 3. Build the request from the current model + history (the user turn we
     // just added included; the empty assistant placeholder excluded).
@@ -307,6 +339,7 @@ class ChatController extends _$ChatController {
       request: request,
       effective: effective,
       provider: current.provider,
+      turnTopicId: topicId,
       assistantMessageId: assistantMessageId,
       assistantBlockId: assistantBlockId,
       assistantTime: assistantTime,
@@ -427,7 +460,7 @@ class ChatController extends _$ChatController {
       providerName: '模型组合',
     );
     var views = [...snapshot.messages, userView, assistantView];
-    _emit(views, isStreaming: true);
+    _emitTurn(topicId, views, streaming: true);
 
     // 3. Build messages for the thinking model request.
     final ctx = _contextSettings();
@@ -489,7 +522,7 @@ class ChatController extends _$ChatController {
               blocks: liveBlocks(),
             );
             views = [...views.take(views.length - 1), assistantView];
-            _emit(views, isStreaming: true);
+            _emitTurn(topicId, views, streaming: true);
           case ComboTextDelta(:final text):
             mainBuf.write(text);
             assistantView = assistantView.copyWith(
@@ -497,7 +530,7 @@ class ChatController extends _$ChatController {
               blocks: liveBlocks(),
             );
             views = [...views.take(views.length - 1), assistantView];
-            _emit(views, isStreaming: true);
+            _emitTurn(topicId, views, streaming: true);
           case ComboPhaseStart() || ComboPhaseDone() || ComboDone():
             break;
         }
@@ -525,7 +558,7 @@ class ChatController extends _$ChatController {
         blocks: finalBlocks,
       );
       views = [...views.take(views.length - 1), assistantView];
-      _emit(views, isStreaming: false);
+      _emitTurn(topicId, views, streaming: false);
 
       await _repo.saveMessageBlock(
         MessageBlock.thinking(
@@ -555,7 +588,7 @@ class ChatController extends _$ChatController {
         text: errorText,
       );
       views = [...views.take(views.length - 1), assistantView];
-      _emit(views, isStreaming: false);
+      _emitTurn(topicId, views, streaming: false);
 
       await _repo.saveMessageBlock(
         MessageBlock.mainText(
@@ -641,7 +674,7 @@ class ChatController extends _$ChatController {
       providerName: current.provider.name,
     );
     views[index] = assistantView;
-    _emit(views, isStreaming: true);
+    _emitTurn(target.topicId, views, streaming: true);
 
     final mcp = await _mcpSetup();
     final ctx = _contextSettings();
@@ -693,6 +726,7 @@ class ChatController extends _$ChatController {
       request: request,
       effective: effective,
       provider: current.provider,
+      turnTopicId: target.topicId,
       assistantMessageId: messageId,
       assistantBlockId: assistantBlockId,
       assistantTime: now,
@@ -766,7 +800,7 @@ class ChatController extends _$ChatController {
       providerName: current.provider.name,
     );
     final views = [...snapshot.messages, assistantView];
-    _emit(views, isStreaming: true);
+    _emitTurn(userMessage.topicId, views, streaming: true);
 
     final mcp = await _mcpSetup();
     final ctx = _contextSettings();
@@ -818,6 +852,7 @@ class ChatController extends _$ChatController {
       request: request,
       effective: effective,
       provider: current.provider,
+      turnTopicId: userMessage.topicId,
       assistantMessageId: assistantMessageId,
       assistantBlockId: assistantBlockId,
       assistantTime: now,
@@ -899,7 +934,7 @@ class ChatController extends _$ChatController {
       assistantView,
       ...views.sublist(msgIndex + 1),
     ];
-    _emit(updatedViews, isStreaming: true);
+    _emitTurn(message.topicId, updatedViews, streaming: true);
 
     await _streamInto(
       request: LlmChatRequest(
@@ -935,6 +970,7 @@ class ChatController extends _$ChatController {
       ),
       effective: effective,
       provider: current.provider,
+      turnTopicId: message.topicId,
       assistantMessageId: messageId,
       assistantBlockId: continuationBlockId,
       assistantTime: now,
@@ -1130,6 +1166,7 @@ class ChatController extends _$ChatController {
   /// the view reloaded; a stream error keeps any completed blocks and appends an
   /// `error` block. Shared by [send], [regenerate] and [resend].
   Future<void> _streamInto({
+    required String turnTopicId,
     required LlmChatRequest request,
     required Model effective,
     required ModelProvider provider,
@@ -1257,7 +1294,7 @@ class ChatController extends _$ChatController {
         blocks: liveBlocks,
       );
       _replace(views, view);
-      _emit(views, isStreaming: true);
+      _emitTurn(turnTopicId, views, streaming: true);
     }
 
     // Finalize an aborted turn: keep whatever streamed so far (flush the live
@@ -1302,11 +1339,12 @@ class ChatController extends _$ChatController {
       await persistKeyUpdates();
       view = await _reloadView(assistantMessageId, view);
       _replace(views, view);
-      _emit(views, isStreaming: false);
-      unawaited(_refreshTopicPreview());
+      _emitTurn(turnTopicId, views, streaming: false);
+      unawaited(_refreshTopicPreview(turnTopicId));
     }
 
-    _cancelToken = LlmCancelToken();
+    final cancelToken = LlmCancelToken();
+    _registry.bindToken(turnTopicId, cancelToken);
     Object? lastError;
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       // Pick the key for this attempt. With a pool: strategy-select a usable
@@ -1359,7 +1397,7 @@ class ChatController extends _$ChatController {
           final structuredCalls = <LlmToolCall>[];
           await for (final chunk in gateway.streamChat(
             request.copyWith(messages: messages, model: effectiveForAttempt),
-            cancelToken: _cancelToken,
+            cancelToken: cancelToken,
           )) {
             switch (chunk) {
               case LlmTextDelta(:final text):
@@ -1657,15 +1695,15 @@ class ChatController extends _$ChatController {
         await persistKeyUpdates();
         view = await _reloadView(assistantMessageId, view);
         _replace(views, view);
-        _emit(views, isStreaming: false);
-        unawaited(_refreshTopicPreview());
-        unawaited(_generateTitle());
+        _emitTurn(turnTopicId, views, streaming: false);
+        unawaited(_refreshTopicPreview(turnTopicId));
+        unawaited(_generateTitle(turnTopicId));
         return;
       } on Object catch (error) {
         // User pressed Stop: cancelling the token aborts the HTTP request, which
         // surfaces here as a stream error. Keep the partial output rather than
         // treating it as a failure.
-        if (_cancelToken?.isCancelled ?? false) {
+        if (cancelToken.isCancelled) {
           await persistStopped();
           return;
         }
@@ -1732,8 +1770,8 @@ class ChatController extends _$ChatController {
       view.copyWith(status: MessageStatus.error, errorText: messageText),
     );
     _replace(views, view);
-    _emit(views, isStreaming: false);
-    unawaited(_refreshTopicPreview());
+    _emitTurn(turnTopicId, views, streaming: false);
+    unawaited(_refreshTopicPreview(turnTopicId));
   }
 
   /// Exponential-ish backoff between multi-key failover attempts, mirroring the
@@ -1813,8 +1851,8 @@ class ChatController extends _$ChatController {
   /// `TopicPreviewService.refreshTopicPreview`. Failure is logged but never
   /// rethrown (preview is a display enhancement, must not disrupt the message
   /// flow).
-  Future<void> _refreshTopicPreview() async {
-    final topicId = _topicId;
+  Future<void> _refreshTopicPreview([String? forTopicId]) async {
+    final topicId = forTopicId ?? _topicId;
     if (topicId == null) return;
     try {
       final topic = await _repo.getTopic(topicId);
@@ -1868,8 +1906,8 @@ class ChatController extends _$ChatController {
   /// builds a summary, sends the title prompt to the title model (falling back
   /// to the current chat model), and saves the result as the topic name.
   /// Non-critical: failures are silently swallowed.
-  Future<void> _generateTitle() async {
-    final topicId = _topicId;
+  Future<void> _generateTitle([String? forTopicId]) async {
+    final topicId = forTopicId ?? _topicId;
     if (topicId == null) return;
     try {
       final topic = await _repo.getTopic(topicId);
@@ -3262,22 +3300,15 @@ class ChatController extends _$ChatController {
   }
 
   void _emit(List<ChatMessageView> views, {required bool isStreaming}) {
-    final wasStreaming = state.asData?.value.isStreaming ?? false;
     state = AsyncData(
       ChatState(
         messages: List<ChatMessageView>.of(views),
         isStreaming: isStreaming,
       ),
     );
-    // Keep the process alive across app backgrounding only while streaming, so
-    // switching apps mid-reply doesn't let the OS suspend it (see service doc).
-    if (isStreaming != wasStreaming) {
-      unawaited(
-        isStreaming
-            ? StreamingKeepAliveService.begin()
-            : StreamingKeepAliveService.end(),
-      );
-    }
+    // The background keep-alive service is driven per-topic by the
+    // StreamingRegistry (begin on the first streaming topic, end on the last),
+    // not here, so a finished current topic doesn't stop a background one.
   }
 
   void _replace(List<ChatMessageView> views, ChatMessageView view) {

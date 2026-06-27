@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
+import 'package:aetherlink_flutter/features/chat/application/streaming_registry.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/dialogs/sidebar_dialogs.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/sidebar_tokens.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/sidebar_buttons.dart';
@@ -276,6 +277,11 @@ class _TopicItem extends ConsumerWidget {
     final theme = Theme.of(context);
     final textPrimary = theme.colorScheme.onSurface;
     final textSecondary = theme.colorScheme.onSurfaceVariant;
+    // Green dot when this topic is generating a reply in the background
+    // (decoupled from which topic is on screen — mirrors the web original).
+    final isStreaming = ref.watch(
+      streamingRegistryProvider.select((s) => s.isStreaming(topic.id)),
+    );
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -297,6 +303,26 @@ class _TopicItem extends ConsumerWidget {
                     children: [
                       Row(
                         children: [
+                          if (isStreaming) ...[
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF4CAF50),
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(
+                                      0xFF4CAF50,
+                                    ).withValues(alpha: 0.35),
+                                    blurRadius: 0,
+                                    spreadRadius: 1,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
                           if (topic.pinned) ...[
                             const Icon(
                               LucideIcons.pin,
