@@ -91,20 +91,59 @@ class EditorContent extends StatelessWidget {
 }
 
 /// IDE-style bottom status bar: total lines · characters · caret line:column
-/// (and selection length when a range is selected). Reads the live controller
-/// value so it updates on both edits and caret moves.
-class EditorStatusBar extends StatelessWidget {
+/// (and selection length when a range is selected). Listens to the controller
+/// so it updates on both edits and caret moves, but rebuilds only itself (not
+/// the whole editor) and recomputes the O(text) line/char counts solely when
+/// the text actually changes — caret-only moves reuse the cached counts.
+class EditorStatusBar extends StatefulWidget {
   const EditorStatusBar({super.key, required this.controller});
 
   final TextEditingController controller;
 
   @override
+  State<EditorStatusBar> createState() => _EditorStatusBarState();
+}
+
+class _EditorStatusBarState extends State<EditorStatusBar> {
+  String _cachedText = '\u0000__uncomputed__';
+  int _lineCount = 1;
+  int _charCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant EditorStatusBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onChanged);
+      widget.controller.addListener(_onChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onChanged);
+    super.dispose();
+  }
+
+  void _onChanged() => setState(() {});
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final value = controller.value;
+    final value = widget.controller.value;
     final text = value.text;
-    final lineCount = '\n'.allMatches(text).length + 1;
-    final charCount = text.characters.length;
+    if (text != _cachedText) {
+      _cachedText = text;
+      _lineCount = '\n'.allMatches(text).length + 1;
+      _charCount = text.characters.length;
+    }
+    final lineCount = _lineCount;
+    final charCount = _charCount;
 
     final sel = value.selection;
     String caretLabel;

@@ -87,8 +87,14 @@ class _FileEditorState extends ConsumerState<FileEditor> {
 
   void _onTextChanged() {
     if (_find.query.isNotEmpty) _find.recompute();
+    // Dirty state flows through [dirtyFilesProvider] (deduped), so the header /
+    // save button rebuild only on a dirty *transition*, watched in [build] —
+    // not on every keystroke. The text area, caret highlight and status bar
+    // each listen to the controller directly, so no whole-page setState is
+    // needed here for typing. Only the find bar's live match count must be
+    // refreshed while it is open.
     ref.read(dirtyFilesProvider.notifier).set(_path, dirty: _dirty);
-    setState(() {});
+    if (_showFind) setState(() {});
   }
 
   Future<void> _load() async {
@@ -200,6 +206,10 @@ class _FileEditorState extends ConsumerState<FileEditor> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Rebuilds only on a dirty transition (set is deduped), not per keystroke.
+    final dirty = ref.watch(
+      dirtyFilesProvider.select((s) => s.contains(_path)),
+    );
     return ColoredBox(
       color: theme.colorScheme.surface,
       child: Column(
@@ -208,9 +218,9 @@ class _FileEditorState extends ConsumerState<FileEditor> {
           EditorHeader(
             name: widget.entry.name,
             path: readableWorkspacePath(widget.entry.path),
-            dirty: _dirty,
+            dirty: dirty,
             topPad: 6,
-            actions: _headerActions(),
+            actions: _headerActions(dirty),
           ),
           Divider(height: 1, color: theme.dividerColor),
           if (_hasTextBody && _showFind)
@@ -249,7 +259,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     );
   }
 
-  List<Widget> _headerActions() {
+  List<Widget> _headerActions(bool dirty) {
     final locked = ref.watch(workspacePageLockProvider);
     return [
       IconButton(
@@ -284,7 +294,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(LucideIcons.save, size: 18),
-          onPressed: (_dirty && !_saving) ? () => _save() : null,
+          onPressed: (dirty && !_saving) ? () => _save() : null,
         ),
     ];
   }
