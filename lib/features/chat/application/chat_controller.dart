@@ -3358,3 +3358,21 @@ class _RemoteToolRoute extends _ToolRoute {
 
   final McpServer server;
 }
+
+/// Single-message lookup over the chat controller's async state.
+///
+/// Lets a bubble subscribe to *its own* [ChatMessageView] with
+/// `chatControllerProvider.select((a) => a.messageById(id))`. Because
+/// [ChatMessageView] is a freezed value type, Riverpod's `select` dedup
+/// short-circuits when an unrelated message changes, so an in-place content
+/// update (streaming) rebuilds only the affected bubble — not the whole list.
+extension ChatMessageLookup on AsyncValue<ChatState> {
+  ChatMessageView? messageById(String id) {
+    final messages = value?.messages;
+    if (messages == null) return null;
+    for (final message in messages) {
+      if (message.id == id) return message;
+    }
+    return null;
+  }
+}

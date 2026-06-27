@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/message_bubble_access.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/user_avatar_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/user_avatar_widget.dart';
@@ -22,12 +23,19 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_to
 /// The widget reads [MessageBubbleSettings] for avatar / name visibility and
 /// toolbar preferences, keeping the same settings surface as [ChatMessageBubble].
 class PlainStyleMessage extends ConsumerWidget {
-  const PlainStyleMessage({required this.view, super.key});
+  const PlainStyleMessage({required this.messageId, super.key});
 
-  final ChatMessageView view;
+  final String messageId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Subscribe to *this* message only (see [ChatMessageBubble]): streaming
+    // content rebuilds just this row, not the whole list.
+    final view = ref.watch(
+      chatControllerProvider.select((a) => a.messageById(messageId)),
+    );
+    if (view == null) return const SizedBox.shrink();
+
     final theme = Theme.of(context);
     final settings = ref.watch(messageBubbleSettingsProvider);
     final isUser = view.role == MessageRole.user;
@@ -77,7 +85,7 @@ class PlainStyleMessage extends ConsumerWidget {
                 size: 24,
               )
             else
-              _PlainAvatar(isUser: isUser, name: _modelLabel()),
+              _PlainAvatar(isUser: isUser, name: _modelLabel(view)),
             const SizedBox(width: 8),
           ],
           // Content column.
@@ -92,7 +100,7 @@ class PlainStyleMessage extends ConsumerWidget {
                     child: Row(
                       children: [
                         Text(
-                          isUser ? '用户' : _modelLabel(),
+                          isUser ? '用户' : _modelLabel(view),
                           style: theme.textTheme.bodySmall?.copyWith(
                             fontWeight: FontWeight.w600,
                             fontSize: 12.8,
@@ -134,7 +142,7 @@ class PlainStyleMessage extends ConsumerWidget {
     );
   }
 
-  String _modelLabel() {
+  String _modelLabel(ChatMessageView view) {
     final name = view.modelName;
     final provider = view.providerName;
     if (name == null || name.isEmpty) return 'AI助手';
