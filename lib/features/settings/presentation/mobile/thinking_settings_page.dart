@@ -94,6 +94,7 @@ class _DisplayCard extends StatelessWidget {
     ThinkingDisplayStyle.minimal: '极简模式（小图标）',
     ThinkingDisplayStyle.bubble: '气泡模式（聊天气泡）',
     ThinkingDisplayStyle.card: '卡片模式（突出显示）',
+    ThinkingDisplayStyle.devin: 'Devin 风格（极简竖线）',
     ThinkingDisplayStyle.hidden: '隐藏（不显示思考过程）',
   };
 

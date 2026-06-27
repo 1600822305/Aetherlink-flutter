@@ -80,6 +80,8 @@ class ThinkingStyledView extends StatelessWidget {
         return _buildBubble(context);
       case ThinkingDisplayStyle.card:
         return _buildCard(context);
+      case ThinkingDisplayStyle.devin:
+        return _buildDevin(context);
       case ThinkingDisplayStyle.compact:
         return _ThinkingCompactView(
           content: content,
@@ -371,6 +373,91 @@ class ThinkingStyledView extends StatelessWidget {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  // ----------------------------------------------------------------- Devin 风格
+  // Minimal collapsible "Thought for Xs" header with a chevron; the expanded
+  // body is indented behind a thin vertical guide line, mirroring Devin's UI.
+
+  Widget _buildDevin(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final label = isThinking ? '正在思考…' : '已思考 ${_secondsLabel}s';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            onTap: onToggleExpanded,
+            borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedRotation(
+                    turns: expanded ? 0.25 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(
+                      LucideIcons.chevronRight,
+                      size: 16,
+                      color: muted,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    label,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: muted,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (isThinking) ...[
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 11,
+                      height: 11,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.5,
+                        color: muted,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          if (expanded)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(top: 2, left: 9),
+              padding: const EdgeInsets.only(left: 14),
+              decoration: BoxDecoration(
+                border: Border(
+                  left: BorderSide(color: theme.dividerColor, width: 1.5),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  markdownBuilder(
+                    context,
+                    content,
+                    TextStyle(color: muted, fontSize: 13, height: 1.5),
+                  ),
+                  if (inlineTools != null) ...[
+                    const SizedBox(height: 8),
+                    inlineTools!,
+                  ],
+                ],
+              ),
+            ),
         ],
       ),
     );

@@ -16,6 +16,7 @@ enum ThinkingDisplayStyle {
   minimal('minimal'),
   bubble('bubble'),
   card('card'),
+  devin('devin'),
   hidden('hidden');
 
   const ThinkingDisplayStyle(this.id);
