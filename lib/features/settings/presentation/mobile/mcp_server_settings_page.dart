@@ -710,7 +710,7 @@ class _AddedBuiltinRow extends ConsumerWidget {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                            _Chip(label: '内存服务器', color: color, filled: true),
+                            _Chip(label: '内置服务器', color: color, filled: true),
                             if (server.isActive)
                               const _Chip(
                                 label: '运行中',

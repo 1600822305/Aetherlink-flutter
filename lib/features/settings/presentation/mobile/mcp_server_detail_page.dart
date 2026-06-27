@@ -20,7 +20,7 @@ String mcpServerTypeLabel(McpServerType type) => switch (type) {
   McpServerType.streamableHttp => '可流式传输的 HTTP (streamableHttp)',
   McpServerType.httpStream => 'HTTP Stream (已废弃)',
   McpServerType.stdio => '标准输入/输出 (stdio)',
-  McpServerType.inMemory => '内存服务器',
+  McpServerType.inMemory => '内置服务器',
 };
 
 /// The "MCP 服务器详情" page (设置 → MCP 服务器 → a server), a port of

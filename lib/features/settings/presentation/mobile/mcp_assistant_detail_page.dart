@@ -93,7 +93,7 @@ class McpAssistantDetailPage extends ConsumerWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '内存服务器',
+                            '内置服务器',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
