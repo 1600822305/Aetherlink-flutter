@@ -1,3 +1,4 @@
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_cancel_token.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
 
@@ -10,5 +11,12 @@ import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chun
 abstract interface class LlmGateway {
   /// Streams a chat completion as normalised [LlmStreamChunk]s. The stream ends
   /// with an [LlmDone] event; transport failures surface as a stream error.
-  Stream<LlmStreamChunk> streamChat(LlmChatRequest request);
+  ///
+  /// Pass [cancelToken] to abort the in-flight request: cancelling it tears down
+  /// the underlying HTTP connection, which surfaces as a stream error the caller
+  /// can treat as a user-initiated stop.
+  Stream<LlmStreamChunk> streamChat(
+    LlmChatRequest request, {
+    LlmCancelToken? cancelToken,
+  });
 }

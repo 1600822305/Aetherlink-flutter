@@ -50,6 +50,7 @@ class InputBoxComposer extends StatelessWidget {
     this.canSend = false,
     this.isStreaming = false,
     this.onSend,
+    this.onStop,
     this.actions = const NoInputBoxActions(),
     this.sendWithEnter = false,
     this.enterAsNewline = false,
@@ -79,6 +80,10 @@ class InputBoxComposer extends StatelessWidget {
   final bool canSend;
   final bool isStreaming;
   final VoidCallback? onSend;
+
+  /// Invoked when the send button is tapped while [isStreaming] — aborts the
+  /// in-flight reply. When null the streaming button is inert.
+  final VoidCallback? onStop;
 
   /// The behavior port for every non-send toolbar button. Defaults to the inert
   /// [NoInputBoxActions] (the appearance preview and the not-yet-wired chat
@@ -241,6 +246,7 @@ class InputBoxComposer extends StatelessWidget {
                 canSend: canSend,
                 isStreaming: isStreaming,
                 onSend: onSend,
+                onStop: onStop,
                 actions: actions,
               ),
             ],
@@ -288,6 +294,7 @@ class _Toolbar extends StatelessWidget {
     required this.canSend,
     required this.isStreaming,
     required this.onSend,
+    required this.onStop,
     required this.actions,
   });
 
@@ -296,6 +303,7 @@ class _Toolbar extends StatelessWidget {
   final bool canSend;
   final bool isStreaming;
   final VoidCallback? onSend;
+  final VoidCallback? onStop;
   final InputBoxActions actions;
 
   /// The tap handler for [id]: maps it to its [InputBoxAction] and dispatches
@@ -351,9 +359,7 @@ class _Toolbar extends StatelessWidget {
           color: isStreaming ? _stopRed : sendColor,
         ),
         tooltip: isStreaming ? _stopTooltip : _sendTooltip,
-        // Stopping a stream is a later slice; during streaming the button
-        // shows the stop glyph but does not act.
-        onPressed: isStreaming ? null : onSend,
+        onPressed: isStreaming ? onStop : onSend,
       );
     }
 

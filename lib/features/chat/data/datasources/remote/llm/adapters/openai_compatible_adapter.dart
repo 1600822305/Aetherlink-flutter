@@ -4,6 +4,8 @@ import 'package:aetherlink_flutter/core/error/network_error_mapper.dart';
 import 'package:aetherlink_flutter/core/network/sse_decoder.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/usage.dart';
+import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/adapters/llm_cancel_bridge.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_cancel_token.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
@@ -30,9 +32,12 @@ class OpenAiCompatibleAdapter implements LlmGateway {
   final Dio _dio;
 
   @override
-  Stream<LlmStreamChunk> streamChat(LlmChatRequest request) async* {
+  Stream<LlmStreamChunk> streamChat(
+    LlmChatRequest request, {
+    LlmCancelToken? cancelToken,
+  }) async* {
     if (request.useResponsesAPI) {
-      yield* _streamResponses(request);
+      yield* _streamResponses(request, cancelToken: cancelToken);
       return;
     }
 
@@ -98,6 +103,7 @@ class OpenAiCompatibleAdapter implements LlmGateway {
       _chatCompletionsUrl(model.baseUrl),
       headers: headers,
       body: body,
+      cancelToken: cancelToken,
     );
 
     Usage? usage;
@@ -193,7 +199,10 @@ class OpenAiCompatibleAdapter implements LlmGateway {
   /// accumulated across `output_item.added` → `function_call_arguments.delta`
   /// → `output_item.done` and emitted once each, mirroring the
   /// Chat-Completions tool-call merge.
-  Stream<LlmStreamChunk> _streamResponses(LlmChatRequest request) async* {
+  Stream<LlmStreamChunk> _streamResponses(
+    LlmChatRequest request, {
+    LlmCancelToken? cancelToken,
+  }) async* {
     final model = request.model;
 
     final input = <Map<String, dynamic>>[
@@ -243,6 +252,7 @@ class OpenAiCompatibleAdapter implements LlmGateway {
       _responsesUrl(model.baseUrl),
       headers: headers,
       body: body,
+      cancelToken: cancelToken,
     );
 
     Usage? usage;
@@ -338,12 +348,15 @@ class OpenAiCompatibleAdapter implements LlmGateway {
     String url, {
     required Map<String, dynamic> headers,
     required Map<String, dynamic> body,
+    LlmCancelToken? cancelToken,
   }) async {
+    final dioToken = bindLlmCancelToken(cancelToken);
     try {
       final response = await _dio.post<ResponseBody>(
         url,
         data: body,
         options: Options(responseType: ResponseType.stream, headers: headers),
+        cancelToken: dioToken,
       );
       return response.data!.stream;
     } on DioException catch (e) {

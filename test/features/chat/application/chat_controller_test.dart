@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +13,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_cancel_token.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway_factory.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
@@ -29,7 +32,10 @@ class _FakeGateway implements LlmGateway {
   LlmChatRequest? lastRequest;
 
   @override
-  Stream<LlmStreamChunk> streamChat(LlmChatRequest request) async* {
+  Stream<LlmStreamChunk> streamChat(
+    LlmChatRequest request, {
+    LlmCancelToken? cancelToken,
+  }) async* {
     lastRequest = request;
     for (final chunk in script) {
       yield chunk;
@@ -45,11 +51,38 @@ class _ThrowingGateway implements LlmGateway {
   final List<LlmStreamChunk> before;
 
   @override
-  Stream<LlmStreamChunk> streamChat(LlmChatRequest request) async* {
+  Stream<LlmStreamChunk> streamChat(
+    LlmChatRequest request, {
+    LlmCancelToken? cancelToken,
+  }) async* {
     for (final chunk in before) {
       yield chunk;
     }
     throw StateError('boom');
+  }
+}
+
+/// A gateway that streams [before], signals [started], then blocks until its
+/// [LlmCancelToken] is cancelled and throws — simulating a real adapter whose
+/// HTTP request is aborted mid-stream (dio surfaces the cancel as a stream
+/// error). Lets a test drive [ChatController.stopStreaming] deterministically.
+class _CancellableGateway implements LlmGateway {
+  _CancellableGateway(this.before, this.started);
+
+  final List<LlmStreamChunk> before;
+  final Completer<void> started;
+
+  @override
+  Stream<LlmStreamChunk> streamChat(
+    LlmChatRequest request, {
+    LlmCancelToken? cancelToken,
+  }) async* {
+    for (final chunk in before) {
+      yield chunk;
+    }
+    if (!started.isCompleted) started.complete();
+    await cancelToken!.whenCancelled;
+    throw StateError('aborted');
   }
 }
 
@@ -177,6 +210,49 @@ void main() {
     },
   );
 
+  test('stopStreaming aborts the reply and keeps the partial output', () async {
+    final started = Completer<void>();
+    final gateway = _CancellableGateway(const [
+      LlmStreamChunk.reasoningDelta('thinking'),
+      LlmStreamChunk.textDelta('Partial'),
+    ], started);
+    final container = _container(
+      gateway: gateway,
+      repo: repo,
+      current: _currentModel(),
+    );
+
+    await container.read(chatControllerProvider.future);
+    final sending = container.read(chatControllerProvider.notifier).send('hi');
+
+    // Wait until the partial chunks have streamed, then stop mid-flight.
+    await started.future;
+    container.read(chatControllerProvider.notifier).stopStreaming();
+    await sending;
+
+    final state = container.read(chatControllerProvider).requireValue;
+    expect(state.isStreaming, isFalse);
+
+    // The aborted turn is kept as a normal (success) reply with what streamed.
+    final assistant = state.messages.last;
+    expect(assistant.role, MessageRole.assistant);
+    expect(assistant.status, MessageStatus.success);
+    expect(assistant.text, 'Partial');
+    expect(assistant.thinking, 'thinking');
+
+    final topics = await repo.getRecentTopics();
+    final messages = await repo.getMessagesByTopicId(topics.single.id);
+    final assistantMsg = messages.firstWhere(
+      (m) => m.role == MessageRole.assistant,
+    );
+    expect(assistantMsg.status, MessageStatus.success);
+    final blocks = await repo.getMessageBlocksByMessageId(assistantMsg.id);
+    expect(blocks.whereType<MainTextBlock>().single.content, 'Partial');
+    expect(blocks.whereType<ThinkingBlock>().single.content, 'thinking');
+    // No error block: a user-initiated stop is not a failure.
+    expect(blocks.whereType<ErrorBlock>(), isEmpty);
+  });
+
   test(
     'a pasted-as-file attachment becomes a FILE block and feeds the model',
     () async {
@@ -269,47 +345,50 @@ void main() {
     expect(request.messages.single.content, 'body');
   });
 
-  test('send with an image attachment stages an IMAGE block + image part', () async {
-    final gateway = _FakeGateway(const [
-      LlmStreamChunk.textDelta('a cat'),
-      LlmStreamChunk.done(),
-    ]);
-    final container = _container(
-      gateway: gateway,
-      repo: repo,
-      current: _currentModel(),
-    );
+  test(
+    'send with an image attachment stages an IMAGE block + image part',
+    () async {
+      final gateway = _FakeGateway(const [
+        LlmStreamChunk.textDelta('a cat'),
+        LlmStreamChunk.done(),
+      ]);
+      final container = _container(
+        gateway: gateway,
+        repo: repo,
+        current: _currentModel(),
+      );
 
-    await container.read(chatControllerProvider.future);
-    await container
-        .read(chatControllerProvider.notifier)
-        .send(
-          'what is this?',
-          attachments: const [
-            ComposerAttachment(
-              id: 'img_1',
-              name: 'cat.png',
-              mimeType: 'image/png',
-              size: 3,
-              kind: ComposerAttachmentKind.image,
-              base64Data: 'AAAA',
-            ),
-          ],
-        );
+      await container.read(chatControllerProvider.future);
+      await container
+          .read(chatControllerProvider.notifier)
+          .send(
+            'what is this?',
+            attachments: const [
+              ComposerAttachment(
+                id: 'img_1',
+                name: 'cat.png',
+                mimeType: 'image/png',
+                size: 3,
+                kind: ComposerAttachmentKind.image,
+                base64Data: 'AAAA',
+              ),
+            ],
+          );
 
-    final state = container.read(chatControllerProvider).requireValue;
-    final user = state.messages.first;
-    final imageBlock = user.blocks.whereType<ImageBlock>().single;
-    expect(imageBlock.mimeType, 'image/png');
-    expect(imageBlock.base64Data, 'AAAA');
+      final state = container.read(chatControllerProvider).requireValue;
+      final user = state.messages.first;
+      final imageBlock = user.blocks.whereType<ImageBlock>().single;
+      expect(imageBlock.mimeType, 'image/png');
+      expect(imageBlock.base64Data, 'AAAA');
 
-    final request = gateway.lastRequest!;
-    final message = request.messages.single;
-    expect(message.content, 'what is this?');
-    expect(message.images, hasLength(1));
-    expect(message.images!.single.mimeType, 'image/png');
-    expect(message.images!.single.base64Data, 'AAAA');
-  });
+      final request = gateway.lastRequest!;
+      final message = request.messages.single;
+      expect(message.content, 'what is this?');
+      expect(message.images, hasLength(1));
+      expect(message.images!.single.mimeType, 'image/png');
+      expect(message.images!.single.base64Data, 'AAAA');
+    },
+  );
 
   test('send with neither text nor attachments is a no-op', () async {
     final gateway = _FakeGateway(const [LlmStreamChunk.done()]);

@@ -269,6 +269,9 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
       // No model ⇒ a tap surfaces the hint; otherwise the field/streaming state
       // decides whether the send action fires.
       onSend: canSend ? _send : (modelReady ? null : _showNoModelHint),
+      onStop: isStreaming
+          ? () => ref.read(chatControllerProvider.notifier).stopStreaming()
+          : null,
     );
   }
 }
