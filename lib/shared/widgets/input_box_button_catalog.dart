@@ -265,7 +265,6 @@ Color inputBoxToolbarRestColor(InputBoxButtonId id, Color iconColor) =>
       InputBoxButtonId.camera => _purple,
       InputBoxButtonId.photoSelect => _indigo,
       InputBoxButtonId.fileUpload => _green,
-      InputBoxButtonId.reasoningEffort => _purple,
       _ => iconColor,
     };
 
@@ -281,7 +280,6 @@ Color inputBoxToolbarActiveColor(InputBoxButtonId id, Color fallback) =>
       InputBoxButtonId.voice => _red,
       InputBoxButtonId.mcpTools => _green,
       InputBoxButtonId.clear => _red,
-      InputBoxButtonId.reasoningEffort => _purple,
       _ => fallback,
     };
 
