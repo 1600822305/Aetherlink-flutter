@@ -34,6 +34,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_version.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/metrics.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/usage.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_cancel_token.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_content_image.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
@@ -93,7 +94,21 @@ class ChatController extends _$ChatController {
   /// the next send / regenerate. The UI reads this to show a "继续生成" button.
   String? _truncatedMessageId;
 
+  /// Cancellation handle for the in-flight stream, set while [_streamInto] runs.
+  /// [stopStreaming] cancels it to abort the underlying HTTP request; the stream
+  /// loop then finalizes whatever was generated so far as a normal reply.
+  LlmCancelToken? _cancelToken;
+
   ChatRepository get _repo => ref.read(chatRepositoryProvider);
+
+  /// Aborts the current streaming reply, if any. The partial output already
+  /// generated is kept and persisted (mirrors Cherry Studio's stop behaviour).
+  /// No-op when nothing is streaming.
+  void stopStreaming() {
+    final token = _cancelToken;
+    if (token == null || token.isCancelled) return;
+    token.cancel();
+  }
 
   @override
   Future<ChatState> build() async {
@@ -1241,6 +1256,53 @@ class ChatController extends _$ChatController {
       _emit(views, isStreaming: true);
     }
 
+    // Finalize an aborted turn: keep whatever streamed so far (flush the live
+    // thinking + prose into [completed]) and persist as a normal success, then
+    // drop the streaming state. Mirrors Cherry Studio — Stop preserves output.
+    Future<void> persistStopped() async {
+      stopwatch.stop();
+      if (thinking.isNotEmpty) {
+        completed.add(
+          _thinkingBlock(
+            messageId: assistantMessageId,
+            createdAt: assistantTime,
+            content: thinking.toString(),
+            startedAt: thinkingStartAt,
+            endedAt: thinkingEndAt ?? DateTime.now(),
+          ),
+        );
+        thinking.clear();
+      }
+      final partial = roundDisplay();
+      if (partial.isNotEmpty || completed.isEmpty) {
+        completed.add(
+          _mainTextBlock(
+            id: roundBlockId,
+            messageId: assistantMessageId,
+            createdAt: assistantTime,
+            content: partial,
+          ),
+        );
+      }
+      ref.read(toolConfirmationProvider.notifier).rejectAll();
+      await _persistMessageBlocks(
+        messageId: assistantMessageId,
+        status: MessageStatus.success,
+        usage: capturedUsage,
+        metrics: Metrics(
+          latency: stopwatch.elapsedMilliseconds,
+          firstTokenLatency: firstTokenMs,
+        ),
+        blocks: [...completed],
+      );
+      await persistKeyUpdates();
+      view = await _reloadView(assistantMessageId, view);
+      _replace(views, view);
+      _emit(views, isStreaming: false);
+      unawaited(_refreshTopicPreview());
+    }
+
+    _cancelToken = LlmCancelToken();
     Object? lastError;
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       // Pick the key for this attempt. With a pool: strategy-select a usable
@@ -1293,6 +1355,7 @@ class ChatController extends _$ChatController {
           final structuredCalls = <LlmToolCall>[];
           await for (final chunk in gateway.streamChat(
             request.copyWith(messages: messages, model: effectiveForAttempt),
+            cancelToken: _cancelToken,
           )) {
             switch (chunk) {
               case LlmTextDelta(:final text):
@@ -1595,6 +1658,13 @@ class ChatController extends _$ChatController {
         unawaited(_generateTitle());
         return;
       } on Object catch (error) {
+        // User pressed Stop: cancelling the token aborts the HTTP request, which
+        // surfaces here as a stream error. Keep the partial output rather than
+        // treating it as a failure.
+        if (_cancelToken?.isCancelled ?? false) {
+          await persistStopped();
+          return;
+        }
         lastError = error;
         if (selectedIndex != -1) {
           recordKeyOutcome(
@@ -3250,12 +3320,15 @@ class ChatController extends _$ChatController {
     try {
       final decoded = Uri.decodeComponent(raw);
       final normalized = decoded.replaceAll('\\', '/');
-      final segments =
-          normalized.split('/').where((s) => s.trim().isNotEmpty).toList();
+      final segments = normalized
+          .split('/')
+          .where((s) => s.trim().isNotEmpty)
+          .toList();
       if (segments.isEmpty) return raw;
       var tail = segments.last;
       final colon = tail.lastIndexOf(':');
-      if (colon >= 0 && colon < tail.length - 1) tail = tail.substring(colon + 1);
+      if (colon >= 0 && colon < tail.length - 1)
+        tail = tail.substring(colon + 1);
       return tail;
     } catch (_) {
       return raw;

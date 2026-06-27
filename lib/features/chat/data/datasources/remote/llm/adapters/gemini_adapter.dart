@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:aetherlink_flutter/core/error/network_error_mapper.dart';
 import 'package:aetherlink_flutter/core/network/sse_decoder.dart';
+import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/adapters/llm_cancel_bridge.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_cancel_token.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/usage.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
@@ -24,7 +26,10 @@ class GeminiAdapter implements LlmGateway {
   final Dio _dio;
 
   @override
-  Stream<LlmStreamChunk> streamChat(LlmChatRequest request) async* {
+  Stream<LlmStreamChunk> streamChat(
+    LlmChatRequest request, {
+    LlmCancelToken? cancelToken,
+  }) async* {
     final model = request.model;
 
     final contents = <Map<String, dynamic>>[
@@ -89,10 +94,7 @@ class GeminiAdapter implements LlmGateway {
             'HARM_CATEGORY_SEXUALLY_EXPLICIT',
             'HARM_CATEGORY_DANGEROUS_CONTENT',
           ])
-            {
-              'category': cat,
-              'threshold': request.safetyLevel,
-            },
+            {'category': cat, 'threshold': request.safetyLevel},
         ],
       ...?request.customParameters,
       ...?request.extraBody,
@@ -108,6 +110,7 @@ class GeminiAdapter implements LlmGateway {
       _streamUrl(model.baseUrl, model.id),
       headers: headers,
       body: body,
+      cancelToken: cancelToken,
     );
 
     Usage? usage;
@@ -173,12 +176,15 @@ class GeminiAdapter implements LlmGateway {
     String url, {
     required Map<String, dynamic> headers,
     required Map<String, dynamic> body,
+    LlmCancelToken? cancelToken,
   }) async {
+    final dioToken = bindLlmCancelToken(cancelToken);
     try {
       final response = await _dio.post<ResponseBody>(
         url,
         data: body,
         options: Options(responseType: ResponseType.stream, headers: headers),
+        cancelToken: dioToken,
       );
       return response.data!.stream;
     } on DioException catch (e) {
