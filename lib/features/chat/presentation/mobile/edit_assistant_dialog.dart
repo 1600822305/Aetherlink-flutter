@@ -65,6 +65,7 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
   )..addListener(_onTabChanged);
   int _index = 0;
   double _swipeDx = 0;
+  double _swipeDy = 0;
 
   late final TextEditingController _nameController = TextEditingController(
     text: widget.assistant.name,
@@ -166,8 +167,14 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
   }
 
   void _onSwipeEnd() {
-    if (_swipeDx.abs() <= 60) return;
-    final next = (_tabController.index + (_swipeDx < 0 ? 1 : -1)).clamp(0, 5);
+    final dx = _swipeDx;
+    final dy = _swipeDy;
+    _swipeDx = 0;
+    _swipeDy = 0;
+    // Only switch on a clearly horizontal swipe so vertical scrolling and the
+    // 正则 tab's drag-to-reorder don't accidentally flip the tab.
+    if (dx.abs() <= 60 || dx.abs() < dy.abs() * 1.5) return;
+    final next = (_tabController.index + (dx < 0 ? 1 : -1)).clamp(0, 5);
     if (next != _tabController.index) _tabController.animateTo(next);
   }
 
@@ -238,10 +245,25 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
         _header(theme, isMobile),
         _tabBar(theme),
         Expanded(
-          child: GestureDetector(
-            onHorizontalDragStart: (_) => _swipeDx = 0,
-            onHorizontalDragUpdate: (d) => _swipeDx += d.delta.dx,
-            onHorizontalDragEnd: (_) => _onSwipeEnd(),
+          // Raw [Listener] rather than a GestureDetector: pointer events bypass
+          // the gesture arena, so the swipe is detected reliably even over the
+          // 正则 tab's ReorderableListView (whose reorder/scroll recognizers
+          // otherwise win the arena and swallow horizontal drags) without
+          // disturbing scrolling or drag-to-reorder.
+          child: Listener(
+            onPointerDown: (_) {
+              _swipeDx = 0;
+              _swipeDy = 0;
+            },
+            onPointerMove: (e) {
+              _swipeDx += e.delta.dx;
+              _swipeDy += e.delta.dy;
+            },
+            onPointerUp: (_) => _onSwipeEnd(),
+            onPointerCancel: (_) {
+              _swipeDx = 0;
+              _swipeDy = 0;
+            },
             child: IndexedStack(
               index: _index,
               sizing: StackFit.expand,
