@@ -61,6 +61,15 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   final Set<String> _loading = {};
   final Map<String, List<WorkspaceEntry>> _children = {};
 
+  // child path → parent directory path, kept in sync with [_children] so
+  // [_parentOf] is O(1) instead of scanning every cached listing per call
+  // (which the ancestor-chain walk did once per level).
+  final Map<String, String> _parentIndex = {};
+
+  // The flattened rows produced by the last [build], reused by
+  // [_scrollToPath] so revealing a file doesn't re-walk the whole tree.
+  List<_TreeRow> _rows = const [];
+
   final ScrollController _scroll = ScrollController();
 
   // Guards against re-revealing the same active file repeatedly and lets the
@@ -86,6 +95,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     _root = workspace?.root;
     _expanded.clear();
     _children.clear();
+    _parentIndex.clear();
     _loading.clear();
     _revealedPath = null;
     _initialRevealDone = false;
@@ -108,10 +118,18 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     try {
       final entries = await backend.listDir(path);
       if (!mounted) return null;
-      setState(() => _children[path] = entries);
+      setState(() => _cacheChildren(path, entries));
       return entries;
     } catch (_) {
       return null;
+    }
+  }
+
+  // Caches [path]'s listing and indexes each child's parent for [_parentOf].
+  void _cacheChildren(String path, List<WorkspaceEntry> entries) {
+    _children[path] = entries;
+    for (final e in entries) {
+      _parentIndex[e.path] = path;
     }
   }
 
@@ -173,9 +191,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   void _scrollToPath(String target) {
     final root = _root;
     if (root == null || !_scroll.hasClients) return;
-    final rows = <_TreeRow>[];
-    _appendRows(root, 0, rows);
-    final index = rows.indexWhere((r) => r.entry?.path == target);
+    final index = _rows.indexWhere((r) => r.entry?.path == target);
     if (index < 0) return;
     final position = _scroll.position;
     final target0 =
@@ -197,7 +213,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
       if (!mounted) return;
       setState(() {
         _loading.remove(path);
-        _children[path] = entries;
+        _cacheChildren(path, entries);
       });
     } catch (e) {
       if (!mounted) return;
@@ -229,7 +245,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
       if (!mounted) return;
       setState(() {
         _loading.remove(path);
-        _children[path] = entries;
+        _cacheChildren(path, entries);
       });
     } catch (e) {
       if (!mounted) return;
@@ -249,12 +265,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
 
   // The cached parent directory of an entry. Paths are opaque `content://`
   // URIs, so the parent can only be recovered from the loaded tree structure.
-  String? _parentOf(String childPath) {
-    for (final entry in _children.entries) {
-      if (entry.value.any((e) => e.path == childPath)) return entry.key;
-    }
-    return null;
-  }
+  String? _parentOf(String childPath) => _parentIndex[childPath];
 
   // Drops every cached listing and reloads the root, so the tree reflects any
   // out-of-band changes. Expand state for still-present directories is kept.
@@ -263,6 +274,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     if (root == null) return;
     setState(() {
       _children.clear();
+      _parentIndex.clear();
       _loading.clear();
     });
     _load(root);
@@ -330,6 +342,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     if (root != null) {
       _appendRows(root, 0, rows);
     }
+    _rows = rows;
     final rootLoading = root != null && _loading.contains(root) && rows.isEmpty;
 
     final backend = _backend;

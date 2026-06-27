@@ -55,15 +55,51 @@ class _EditorTextAreaState extends State<EditorTextArea> {
   double? _pinchStartGap;
   double _pinchStartFont = kEditorDefaultFontSize;
 
+  // Text-derived metrics, cached so they are recomputed only when the text
+  // actually changes (a controller notification also fires on caret moves /
+  // selection changes, which must NOT trigger an O(text) rescan or a rebuild
+  // of the whole area). A sentinel forces the first compute.
+  String _lastText = '\u0000__uncomputed__';
+  int _lineCount = 1;
+  int _maxLineLen = 1;
+  bool _softWrap = false;
+
+  // Memoized non-wrapping content width (the longest line laid out). Depends
+  // only on [_maxLineLen] + the font size, so it survives caret moves and is
+  // recomputed only when one of those changes.
+  double? _cachedWidth;
+  int _cachedWidthLen = -1;
+  double _cachedWidthFont = -1;
+
   @override
   void initState() {
     super.initState();
+    _recomputeMetrics();
+    widget.controller.addListener(_onControllerChanged);
     _textScroll.addListener(_syncGutter);
     widget.focusNode.onKeyEvent = _onKeyEvent;
   }
 
   @override
+  void didUpdateWidget(covariant EditorTextArea oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onControllerChanged);
+      widget.controller.addListener(_onControllerChanged);
+      _lastText = '\u0000__uncomputed__';
+      _recomputeMetrics();
+    }
+    if (oldWidget.focusNode != widget.focusNode) {
+      if (oldWidget.focusNode.onKeyEvent == _onKeyEvent) {
+        oldWidget.focusNode.onKeyEvent = null;
+      }
+      widget.focusNode.onKeyEvent = _onKeyEvent;
+    }
+  }
+
+  @override
   void dispose() {
+    widget.controller.removeListener(_onControllerChanged);
     _textScroll.removeListener(_syncGutter);
     if (widget.focusNode.onKeyEvent == _onKeyEvent) {
       widget.focusNode.onKeyEvent = null;
@@ -72,6 +108,39 @@ class _EditorTextAreaState extends State<EditorTextArea> {
     _gutterScroll.dispose();
     _hScroll.dispose();
     super.dispose();
+  }
+
+  // Rebuilds the area only when the text changed (line count / longest line /
+  // long-line guard may differ). Caret-only notifications are ignored here —
+  // the caret highlight and status bar listen to the controller themselves.
+  void _onControllerChanged() {
+    if (widget.controller.text == _lastText) return;
+    setState(_recomputeMetrics);
+  }
+
+  // Single pass over the text computing line count, the longest line length
+  // (for the non-wrapping width) and the long-line guard at once.
+  void _recomputeMetrics() {
+    final text = widget.controller.text;
+    _lastText = text;
+    var lines = 1;
+    var maxLen = 1;
+    var col = 0;
+    var longLine = false;
+    for (var i = 0; i < text.length; i++) {
+      if (text.codeUnitAt(i) == 0x0A) {
+        lines++;
+        if (col > maxLen) maxLen = col;
+        col = 0;
+      } else {
+        col++;
+        if (col > kMaxLineLength) longLine = true;
+      }
+    }
+    if (col > maxLen) maxLen = col;
+    _lineCount = lines;
+    _maxLineLen = maxLen;
+    _softWrap = longLine;
   }
 
   // Tab inserts spaces (instead of moving focus) while editing; auto-indent on
@@ -141,8 +210,6 @@ class _EditorTextAreaState extends State<EditorTextArea> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final text = widget.controller.text;
-    final lineCount = '\n'.allMatches(text).length + 1;
     final lineHeight = widget.fontSize * _lineHeightFactor;
 
     final textStyle = TextStyle(
@@ -155,11 +222,6 @@ class _EditorTextAreaState extends State<EditorTextArea> {
       color: theme.colorScheme.onSurfaceVariant,
     );
 
-    // Long-line guard: a single multi-megabyte line would make the
-    // non-wrapping layout below measure an enormous canvas and freeze the UI.
-    // Fall back to a soft-wrapping, gutterless view in that case.
-    final softWrap = _hasLongLine(text);
-
     return Listener(
       onPointerDown: _onPointerDown,
       onPointerMove: _onPointerMove,
@@ -167,12 +229,14 @@ class _EditorTextAreaState extends State<EditorTextArea> {
       onPointerCancel: _onPointerUp,
       child: Stack(
         children: [
-          if (softWrap)
+          // Long-line guard: a single multi-megabyte line would make the
+          // non-wrapping layout below measure an enormous canvas and freeze the
+          // UI. Fall back to a soft-wrapping, gutterless view in that case.
+          if (_softWrap)
             _wrapLayout(textStyle, theme)
           else
             _columnLayout(
-              text: text,
-              lineCount: lineCount,
+              lineCount: _lineCount,
               lineHeight: lineHeight,
               textStyle: textStyle,
               gutterStyle: gutterStyle,
@@ -194,7 +258,6 @@ class _EditorTextAreaState extends State<EditorTextArea> {
   // The standard view: a line-number gutter + a horizontally pannable,
   // non-wrapping field, with each logical line mapped 1:1 to a gutter row.
   Widget _columnLayout({
-    required String text,
     required int lineCount,
     required double lineHeight,
     required TextStyle textStyle,
@@ -214,13 +277,13 @@ class _EditorTextAreaState extends State<EditorTextArea> {
         Expanded(
           child: LayoutBuilder(
             builder: (context, c) {
-              final width = _contentWidth(text, textStyle, c.maxWidth);
+              final width = _contentWidth(textStyle, c.maxWidth);
               return Stack(
                 children: [
                   if (widget.editing)
                     _CurrentLineHighlight(
                       scroll: _textScroll,
-                      caretLine: _caretLine(text),
+                      controller: widget.controller,
                       lineHeight: lineHeight,
                       color: theme.colorScheme.primary.withValues(alpha: 0.07),
                     ),
@@ -276,40 +339,24 @@ class _EditorTextAreaState extends State<EditorTextArea> {
     );
   }
 
-  // True if any single line exceeds [kMaxLineLength] characters. Single pass,
-  // no per-line allocation (so it's cheap even on large preview buffers).
-  static bool _hasLongLine(String text) {
-    var col = 0;
-    for (var i = 0; i < text.length; i++) {
-      if (text.codeUnitAt(i) == 0x0A) {
-        col = 0;
-      } else if (++col > kMaxLineLength) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  // 0-based line index of the caret, or -1 when there is no valid caret.
-  int _caretLine(String text) {
-    final sel = widget.controller.selection;
-    if (!sel.isValid) return -1;
-    final offset = sel.extentOffset.clamp(0, text.length);
-    return '\n'.allMatches(text.substring(0, offset)).length;
-  }
-
   // Width of the longest line so the field never wraps and can pan horizontally.
-  static double _contentWidth(String text, TextStyle style, double viewport) {
-    var maxLen = 1;
-    for (final line in text.split('\n')) {
-      if (line.length > maxLen) maxLen = line.length;
+  // The intrinsic measurement is memoized against [_maxLineLen] + font size, so
+  // it is recomputed only when the longest line or the zoom changes — not on
+  // every keystroke or caret move.
+  double _contentWidth(TextStyle style, double viewport) {
+    if (_cachedWidth == null ||
+        _cachedWidthLen != _maxLineLen ||
+        _cachedWidthFont != widget.fontSize) {
+      final tp = TextPainter(
+        text: TextSpan(text: 'M' * _maxLineLen, style: style),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+      )..layout();
+      _cachedWidth = tp.width + _textLeftPad + _textRightPad;
+      _cachedWidthLen = _maxLineLen;
+      _cachedWidthFont = widget.fontSize;
     }
-    final tp = TextPainter(
-      text: TextSpan(text: 'M' * maxLen, style: style),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-    )..layout();
-    final width = tp.width + _textLeftPad + _textRightPad;
+    final width = _cachedWidth!;
     return width < viewport ? viewport : width;
   }
 }
@@ -320,22 +367,39 @@ class _EditorTextAreaState extends State<EditorTextArea> {
 class _CurrentLineHighlight extends StatelessWidget {
   const _CurrentLineHighlight({
     required this.scroll,
-    required this.caretLine,
+    required this.controller,
     required this.lineHeight,
     required this.color,
   });
 
   final ScrollController scroll;
-  final int caretLine;
+  final TextEditingController controller;
   final double lineHeight;
   final Color color;
 
+  // 0-based line index of the caret (newlines before the offset), or -1 when
+  // there is no valid caret.
+  static int _caretLine(TextEditingController controller) {
+    final text = controller.text;
+    final sel = controller.selection;
+    if (!sel.isValid) return -1;
+    final offset = sel.extentOffset.clamp(0, text.length);
+    var lines = 0;
+    for (var i = 0; i < offset; i++) {
+      if (text.codeUnitAt(i) == 0x0A) lines++;
+    }
+    return lines;
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (caretLine < 0) return const SizedBox.shrink();
+    // Rebuilds itself on caret/selection moves (controller) and vertical scroll
+    // — isolated from the editor body so typing doesn't repaint the field.
     return AnimatedBuilder(
-      animation: scroll,
+      animation: Listenable.merge([scroll, controller]),
       builder: (context, _) {
+        final caretLine = _caretLine(controller);
+        if (caretLine < 0) return const SizedBox.shrink();
         final offset = scroll.hasClients ? scroll.offset : 0.0;
         final top = _topPad + caretLine * lineHeight - offset;
         return Positioned(
@@ -415,30 +479,28 @@ class _LineNumberGutter extends StatelessWidget {
     )..layout();
     final width = tp.width + 18;
 
+    // Virtualized: only the visible line numbers are built (a file can have
+    // tens of thousands of lines). Synced to the field's vertical scroll via
+    // [controller]; matching [itemExtent]/top padding keeps each number aligned
+    // 1:1 with its text line.
     return Container(
       width: width,
       decoration: BoxDecoration(
         border: Border(right: BorderSide(color: borderColor)),
       ),
-      child: SingleChildScrollView(
+      child: ListView.builder(
         controller: controller,
         physics: const NeverScrollableScrollPhysics(),
-        child: Padding(
-          padding: const EdgeInsets.only(
-            top: _topPad,
-            bottom: _bottomPad,
-            right: 8,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              for (var i = 1; i <= lineCount; i++)
-                SizedBox(
-                  height: lineHeight,
-                  child: Text('$i', style: style, maxLines: 1),
-                ),
-            ],
-          ),
+        padding: const EdgeInsets.only(
+          top: _topPad,
+          bottom: _bottomPad,
+          right: 8,
+        ),
+        itemExtent: lineHeight,
+        itemCount: lineCount,
+        itemBuilder: (context, i) => Align(
+          alignment: Alignment.centerRight,
+          child: Text('${i + 1}', style: style, maxLines: 1),
         ),
       ),
     );
