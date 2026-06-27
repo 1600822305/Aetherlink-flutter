@@ -46,11 +46,6 @@ final scrollToMessageIdProvider =
 /// effort and out of scope.
 const String _emptyConversationLabel = '对话开始了，请输入您的问题';
 
-/// Extra height above the reserved input gap over which the message list fades
-/// into the background, so messages dissolve under the floating composer rather
-/// than meeting it at a hard line (the kelivo-style fusion).
-const double _kBottomFadeBand = 96;
-
 /// The chat home page (mobile). After M4.2.0 stood up the real layout shell and
 /// proved the presentation → application → repository → Drift pipeline, M4.2.0b
 /// restores the visual chrome 1:1 to the original Aetherlink: a full top bar
@@ -271,6 +266,7 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
     // _keyboardHeight is set by the native plugin (single event before
     // animation, zero delay).  viewPadding is the home-indicator safe area;
     // it only changes on rotation, not during keyboard transitions.
+    final theme = Theme.of(context);
     final isTopRoute = ModalRoute.of(context)?.isCurrent ?? true;
     final viewPadding = MediaQuery.viewPaddingOf(context).bottom;
     // When the keyboard is showing, subtract the InputBoxComposer's internal
@@ -299,20 +295,15 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
             },
             child: Stack(
               children: [
-                // Fuse the list into the composer (kelivo style): the list fills
-                // the body and reserves room at the bottom so its tail clears
-                // the floating input + keyboard, while a bottom gradient fades
-                // the messages out into the background behind the transparent
-                // input — no hard seam between the scroll area and the composer.
-                //
-                // fadeHeight intentionally excludes the keyboard offset so the
-                // ShaderMask's shader rect stays constant during the keyboard
-                // transition — only the cheaper ListView padding changes.
+                // The list fills the body and reserves bottom room so its tail
+                // rests above the floating composer + keyboard. Messages that
+                // scroll past the bottom slide cleanly under the opaque footer
+                // below the composer (WeChat/QQ style) — no per-frame ShaderMask
+                // over the whole list, so scrolling stays a cheap texture blit.
+                // Isolated as one raster layer so the keyboard animation samples
+                // a cached texture instead of replaying every bubble's paint.
                 Positioned.fill(
-                  child: _FadeToBottom(
-                    fadeHeight: widget.isSelecting
-                        ? 0
-                        : _inputHeight + _kBottomFadeBand,
+                  child: RepaintBoundary(
                     child: _MessageList(
                       stateAsync: widget.stateAsync,
                       showSystemPromptBubble: widget.showSystemPromptBubble,
@@ -330,7 +321,20 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
                     bottom: 0,
                     child: MessageSelectionBottomBar(),
                   )
-                else
+                else ...[
+                  // Opaque backing spanning from the screen bottom up to the
+                  // composer's top, so any message scrolling past is covered
+                  // with a clean hard edge instead of being faded out by a
+                  // costly full-list mask. A plain rect fill — no saveLayer.
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: bottomOffset + _inputHeight,
+                    child: IgnorePointer(
+                      child: ColoredBox(color: theme.colorScheme.surface),
+                    ),
+                  ),
                   Positioned(
                     left: 0,
                     right: 0,
@@ -346,55 +350,12 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
                       ),
                     ),
                   ),
+                ],
               ],
             ),
           ),
         ),
       ],
-    );
-  }
-}
-
-/// Fades its child's bottom [fadeHeight] pixels to transparent so the message
-/// list dissolves into the background ([_ChatBackground], which fills the body
-/// behind this) under the floating transparent composer — the kelivo-style
-/// fusion. A [BlendMode.dstIn] mask keeps the child fully opaque above the band
-/// and ramps it out toward the bottom (the curve mirrors kelivo's overlay fade,
-/// expressed here as the complementary keep-alpha).
-class _FadeToBottom extends StatelessWidget {
-  const _FadeToBottom({required this.fadeHeight, required this.child});
-
-  final double fadeHeight;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    // Isolate the list as a single cached raster layer so the keyboard
-    // animation's per-frame mask recomposite samples that texture instead of
-    // replaying every bubble's paint — closing part of the gap with the web's
-    // GPU-composited CSS gradient mask.
-    final isolated = RepaintBoundary(child: child);
-    if (fadeHeight <= 0) return isolated;
-    return ShaderMask(
-      blendMode: BlendMode.dstIn,
-      shaderCallback: (rect) {
-        final height = rect.height;
-        final fraction = height <= 0
-            ? 0.0
-            : (fadeHeight / height).clamp(0.0, 1.0);
-        return LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          stops: [0.0, 1.0 - fraction, 1.0 - 0.52 * fraction, 1.0],
-          colors: const [
-            Color(0xFFFFFFFF), // keep fully
-            Color(0xFFFFFFFF), // …up to where the fade band begins
-            Color(0x2EFFFFFF), // ~0.18 keep (≈ kelivo's 0.82 cover at 48%)
-            Color(0x05FFFFFF), // ~0.02 keep (≈ kelivo's 0.98 cover at the foot)
-          ],
-        ).createShader(rect);
-      },
-      child: isolated,
     );
   }
 }
