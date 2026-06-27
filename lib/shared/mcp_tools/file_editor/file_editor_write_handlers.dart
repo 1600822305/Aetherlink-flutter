@@ -105,28 +105,47 @@ Future<McpToolResult> renameFile(Ref ref, Map<String, Object?> args) async {
 /// `move_file` — move a file/dir into the opaque [destination_path] directory,
 /// optionally renaming it to [new_name] in the same call.
 ///
-/// SAF move + rename are two distinct operations, so this can't be atomic: on a
-/// rename failure the entry is left moved-but-not-renamed and the error reports
-/// its current location.
+/// When [new_name] is given the move lands directly under the new name
+/// (copy-as-new-name then delete the source), so the destination is checked for
+/// a `new_name` collision — not the source's original name. A plain move keeps
+/// the source name and is checked accordingly.
 Future<McpToolResult> moveFile(Ref ref, Map<String, Object?> args) async {
   final sourcePath = requireString(args, 'source_path');
   final destParent = requireString(args, 'destination_path');
   final newName = optionalString(args, 'new_name');
+  final overwrite = optionalBool(args, 'overwrite');
   final backend = await backendForPath(ref, sourcePath);
-  var newPath = await backend.move(sourcePath, destParent);
-  if (newName != null) {
-    try {
-      newPath = await backend.rename(newPath, newName);
-    } catch (e) {
-      throw FileEditorError(
-        '已移动到目标目录，但重命名为「$newName」失败：$e。文件当前位于：$newPath',
-      );
-    }
+
+  if (newName == null) {
+    final newPath = await backend.move(sourcePath, destParent);
+    return fileEditorOk({'message': '移动成功', 'path': newPath});
+  }
+
+  // Copy straight to the target name (collision is detected against new_name),
+  // then remove the source. Not atomic: if the delete fails the copy is kept
+  // and the error reports both locations.
+  final newPath = await backend.copy(
+    sourcePath,
+    destParent,
+    newName: newName,
+    overwrite: overwrite,
+  );
+  try {
+    final info = await backend.getFileInfo(sourcePath);
+    await backend.delete(
+      sourcePath,
+      isDirectory: info.isDirectory,
+      recursive: info.isDirectory,
+    );
+  } catch (e) {
+    throw FileEditorError(
+      '已复制到「$newName」，但删除原文件失败：$e。新文件位于：$newPath，原文件仍在：$sourcePath',
+    );
   }
   return fileEditorOk({
     'message': '移动成功',
     'path': newPath,
-    if (newName != null) 'renamedTo': newName,
+    'renamedTo': newName,
   });
 }
 
