@@ -12,6 +12,7 @@ import 'package:aetherlink_flutter/shared/config/builtin_mcp_servers.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
+import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
 /// Port of the web `MCPServerQuickPanel`
 /// (`src/components/input/buttons/MCPServerQuickPanel.tsx`) — the full-screen
@@ -118,11 +119,29 @@ class _McpQuickPanelView extends ConsumerStatefulWidget {
   ConsumerState<_McpQuickPanelView> createState() => _McpQuickPanelViewState();
 }
 
-class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
-  // 0 = 工具, 1 = 技能 (web `activeTab`).
+class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView>
+    with SingleTickerProviderStateMixin {
+  // 0 = 工具, 1 = 技能 (web `activeTab`). Backed by [_mainTabController] so the
+  // top-level tab supports swipe-to-switch via [InstantSwitchTabView].
   int _mainTab = 0;
   // 0 = 外部服务器, 1 = 内置工具, 2 = 智能助手 (web `subTab`).
   int _subTab = 0;
+
+  late final TabController _mainTabController =
+      TabController(length: 2, vsync: this)..addListener(_onMainTabChanged);
+
+  void _onMainTabChanged() {
+    if (_mainTab != _mainTabController.index) {
+      setState(() => _mainTab = _mainTabController.index);
+    }
+  }
+
+  @override
+  void dispose() {
+    _mainTabController.removeListener(_onMainTabChanged);
+    _mainTabController.dispose();
+    super.dispose();
+  }
 
   void _close() => Navigator.of(context).pop();
 
@@ -193,9 +212,13 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
     final safeLeft = fullScreen ? mq.padding.left : 0.0;
     final safeRight = fullScreen ? mq.padding.right : 0.0;
 
-    final content = _mainTab == 0
-        ? _toolsTab(t, toolsState.bridgeMode, servers, loading)
-        : _skillsTab(t);
+    final content = InstantSwitchTabView(
+      controller: _mainTabController,
+      children: [
+        _toolsTab(t, toolsState.bridgeMode, servers, loading),
+        _skillsTab(t),
+      ],
+    );
 
     final column = Column(
       mainAxisSize: fullScreen ? MainAxisSize.max : MainAxisSize.min,
@@ -285,7 +308,7 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
               icon: LucideIcons.plug,
               label: '工具',
               active: _mainTab == 0,
-              onTap: () => setState(() => _mainTab = 0),
+              onTap: () => _mainTabController.animateTo(0),
             ),
           ),
           Expanded(
@@ -294,7 +317,7 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView> {
               icon: LucideIcons.zap,
               label: '技能',
               active: _mainTab == 1,
-              onTap: () => setState(() => _mainTab = 1),
+              onTap: () => _mainTabController.animateTo(1),
             ),
           ),
         ],
