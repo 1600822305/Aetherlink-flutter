@@ -286,12 +286,10 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
 
     return Column(
       children: [
-        if (widget.showSystemPromptBubble) ...const [
-          SizedBox(height: 8),
-          SystemPromptBubble(),
-        ],
-        // TTS floating player — sits below the system prompt, above the
-        // message list.  Collapses to zero height when idle.
+        // TTS floating player — sits above the message list. Collapses to zero
+        // height when idle. The system-prompt bubble is no longer pinned here;
+        // it scrolls as the first item of the message list (see _MessageList),
+        // matching the web original.
         const TtsFloatingPlayer(),
         Expanded(
           child: NotificationListener<SizeChangedLayoutNotification>(
@@ -317,6 +315,7 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
                         : _inputHeight + _kBottomFadeBand,
                     child: _MessageList(
                       stateAsync: widget.stateAsync,
+                      showSystemPromptBubble: widget.showSystemPromptBubble,
                       bottomReserve: widget.isSelecting
                           ? 120 + viewPadding
                           : _inputHeight + 16 + bottomOffset,
@@ -557,11 +556,16 @@ ImageRepeat _repeatFor(ChatBackgroundRepeat repeat) => switch (repeat) {
 class _MessageList extends StatelessWidget {
   const _MessageList({
     required this.stateAsync,
+    this.showSystemPromptBubble = false,
     this.bottomReserve = 0,
     this.isSelecting = false,
   });
 
   final AsyncValue<ChatState> stateAsync;
+
+  /// Whether the system-prompt bubble shows at the top of the list (it scrolls
+  /// with the messages, like the web original — never selectable).
+  final bool showSystemPromptBubble;
 
   /// Extra bottom padding so the list's tail clears the composer floating over
   /// it (the composer's measured height; see [_ChatBodyState]).
@@ -575,9 +579,12 @@ class _MessageList extends StatelessWidget {
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, _) => const _ErrorNotice(),
       data: (state) => state.messages.isEmpty
-          ? const _EmptyState()
+          ? _EmptyState(
+              showSystemPromptBubble: showSystemPromptBubble && !isSelecting,
+            )
           : _MessageListView(
               state.messages,
+              showSystemPromptBubble: showSystemPromptBubble && !isSelecting,
               bottomReserve: bottomReserve,
               isSelecting: isSelecting,
             ),
@@ -588,22 +595,35 @@ class _MessageList extends StatelessWidget {
 /// Empty-state placeholder shown when the current topic has no messages (the
 /// fresh-install case). Text color is a theme token.
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  const _EmptyState({this.showSystemPromptBubble = false});
+
+  /// When set, the system-prompt bubble sits at the very top (above the empty
+  /// placeholder), mirroring the web original where the bubble renders before
+  /// the "新的对话开始了" notice.
+  final bool showSystemPromptBubble;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          _emptyConversationLabel,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: theme.textTheme.bodySmall?.color,
-          ),
+    final placeholder = Padding(
+      padding: const EdgeInsets.all(24),
+      child: Text(
+        _emptyConversationLabel,
+        textAlign: TextAlign.center,
+        style: theme.textTheme.titleMedium?.copyWith(
+          color: theme.textTheme.bodySmall?.color,
         ),
       ),
+    );
+    if (!showSystemPromptBubble) return Center(child: placeholder);
+    return Column(
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: SystemPromptBubble(),
+        ),
+        Expanded(child: Center(child: placeholder)),
+      ],
     );
   }
 }
@@ -645,11 +665,16 @@ class _ErrorNotice extends StatelessWidget {
 class _MessageListView extends ConsumerStatefulWidget {
   const _MessageListView(
     this.messages, {
+    this.showSystemPromptBubble = false,
     this.bottomReserve = 0,
     this.isSelecting = false,
   });
 
   final List<ChatMessageView> messages;
+
+  /// Renders the system-prompt bubble as the first (scrolling) list item, like
+  /// the web original, instead of pinning it above the list.
+  final bool showSystemPromptBubble;
 
   /// Reserves room under the last bubble for the composer floating over the
   /// list (mirrors the original `messageContainer` `paddingBottom`).
@@ -715,6 +740,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   Widget build(BuildContext context) {
     final messages = widget.messages;
     final isSelecting = widget.isSelecting;
+    final headerCount = widget.showSystemPromptBubble ? 1 : 0;
     final selectedIds = isSelecting
         ? ref.watch(messageSelectionProvider.select((s) => s.selectedIds))
         : const <String>{};
@@ -727,7 +753,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       if (index < 0) return;
       _autoScroll.unstick();
       _observerController.animateTo(
-        index: index,
+        index: index + headerCount,
         alignment: 0.1,
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOutCubic,
@@ -748,9 +774,15 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       child: ListView.builder(
         controller: _scrollController,
         padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + widget.bottomReserve),
-        itemCount: messages.length,
+        itemCount: messages.length + headerCount,
         itemBuilder: (context, index) {
-          final view = messages[index];
+          // The system-prompt bubble is the first item when enabled; it scrolls
+          // with the list and is never part of multi-select.
+          if (headerCount == 1 && index == 0) {
+            return const SystemPromptBubble();
+          }
+          final messageIndex = index - headerCount;
+          final view = messages[messageIndex];
           final Widget bubble = isPlain
               ? PlainStyleMessage(view: view)
               : ChatMessageBubble(view: view);
@@ -767,7 +799,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           // Plain style uses its own bottom border; bubble style uses a Divider
           // when the setting is on.
           final needsDivider =
-              isPlain || (showDivider && index < messages.length - 1);
+              isPlain || (showDivider && messageIndex < messages.length - 1);
           if (!needsDivider) return item;
           final dividerColor = Theme.of(context).brightness == Brightness.dark
               ? const Color(0x1AFFFFFF)
