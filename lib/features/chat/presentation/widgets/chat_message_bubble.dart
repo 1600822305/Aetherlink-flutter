@@ -33,12 +33,20 @@ import 'package:aetherlink_flutter/shared/widgets/color_picker.dart';
 /// from [AppThemeExtension] (`bubbleUser` / `bubbleAi`) and the text from
 /// `colorScheme.onSurface`.
 class ChatMessageBubble extends ConsumerWidget {
-  const ChatMessageBubble({required this.view, super.key});
+  const ChatMessageBubble({required this.messageId, super.key});
 
-  final ChatMessageView view;
+  final String messageId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Subscribe to *this* message only: a freezed value type + `select` means an
+    // in-place content update (streaming) rebuilds just the affected bubble, and
+    // an unrelated message changing leaves this one untouched.
+    final view = ref.watch(
+      chatControllerProvider.select((a) => a.messageById(messageId)),
+    );
+    if (view == null) return const SizedBox.shrink();
+
     final theme = Theme.of(context);
     final ext = theme.extension<AppThemeExtension>();
     final settings = ref.watch(messageBubbleSettingsProvider);
@@ -82,15 +90,18 @@ class ChatMessageBubble extends ConsumerWidget {
         ? settings.showUserAvatar
         : settings.showModelAvatar;
     final showName = isUser ? settings.showUserName : settings.showModelName;
-    final userAvatar = ref.watch(userAvatarControllerProvider);
+    // Only user bubbles render the avatar from this provider, so AI bubbles must
+    // not subscribe to it (an avatar change would otherwise rebuild every AI
+    // bubble too).
+    final userAvatar = isUser ? ref.watch(userAvatarControllerProvider) : null;
     final header = (showAvatar || showName)
         ? _MessageHeader(
             isUser: isUser,
             showAvatar: showAvatar,
             showName: showName,
-            name: isUser ? '用户' : _modelLabel(),
+            name: isUser ? '用户' : _modelLabel(view),
             time: _formatTime(view.createdAt),
-            userAvatarWidget: isUser
+            userAvatarWidget: (isUser && userAvatar != null)
                 ? UserAvatarWidget(avatar: userAvatar, size: 24)
                 : null,
           )
@@ -213,7 +224,7 @@ class ChatMessageBubble extends ConsumerWidget {
   /// The assistant name line: `模型名 | 供应商`, mirroring the original
   /// `${model.name} | ${getProviderName(model.provider)}`. Falls back to a
   /// generic label when no model metadata is attached.
-  String _modelLabel() {
+  String _modelLabel(ChatMessageView view) {
     final name = view.modelName;
     final provider = view.providerName;
     if (name == null || name.isEmpty) return 'AI助手';

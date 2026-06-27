@@ -66,7 +66,6 @@ class ChatPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final stateAsync = ref.watch(chatControllerProvider);
     final showSystemPromptBubble = ref.watch(
       chatInterfaceSettingsProvider.select((s) => s.showSystemPromptBubble),
     );
@@ -116,7 +115,6 @@ class ChatPage extends ConsumerWidget {
             background: effectiveBackground,
             child: _ChatBody(
               showSystemPromptBubble: showSystemPromptBubble,
-              stateAsync: stateAsync,
               isSelecting: isSelecting,
             ),
           ),
@@ -135,12 +133,10 @@ class ChatPage extends ConsumerWidget {
 class _ChatBody extends StatefulWidget {
   const _ChatBody({
     required this.showSystemPromptBubble,
-    required this.stateAsync,
     this.isSelecting = false,
   });
 
   final bool showSystemPromptBubble;
-  final AsyncValue<ChatState> stateAsync;
   final bool isSelecting;
 
   @override
@@ -305,7 +301,6 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
                 Positioned.fill(
                   child: RepaintBoundary(
                     child: _MessageList(
-                      stateAsync: widget.stateAsync,
                       showSystemPromptBubble: widget.showSystemPromptBubble,
                       bottomReserve: widget.isSelecting
                           ? 120 + viewPadding
@@ -514,15 +509,12 @@ ImageRepeat _repeatFor(ChatBackgroundRepeat repeat) => switch (repeat) {
 /// The scrollable message region. Reflects the real read provider: loading →
 /// spinner, failure → error notice, empty → empty state, and a list of message
 /// bubbles otherwise.
-class _MessageList extends StatelessWidget {
+class _MessageList extends ConsumerWidget {
   const _MessageList({
-    required this.stateAsync,
     this.showSystemPromptBubble = false,
     this.bottomReserve = 0,
     this.isSelecting = false,
   });
-
-  final AsyncValue<ChatState> stateAsync;
 
   /// Whether the system-prompt bubble shows at the top of the list (it scrolls
   /// with the messages, like the web original — never selectable).
@@ -535,22 +527,55 @@ class _MessageList extends StatelessWidget {
   final bool isSelecting;
 
   @override
-  Widget build(BuildContext context) {
-    return stateAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => const _ErrorNotice(),
-      data: (state) => state.messages.isEmpty
-          ? _EmptyState(
-              showSystemPromptBubble: showSystemPromptBubble && !isSelecting,
-            )
-          : _MessageListView(
-              state.messages,
-              showSystemPromptBubble: showSystemPromptBubble && !isSelecting,
-              bottomReserve: bottomReserve,
-              isSelecting: isSelecting,
-            ),
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Initial load / failure depend only on the async phase, never on content,
+    // so the spinner/error states never rebuild while a reply streams in.
+    final hasValue = ref.watch(
+      chatControllerProvider.select((a) => a.hasValue),
+    );
+    if (!hasValue) {
+      final hasError = ref.watch(
+        chatControllerProvider.select((a) => a.hasError),
+      );
+      return hasError
+          ? const _ErrorNotice()
+          : const Center(child: CircularProgressIndicator());
+    }
+
+    // Subscribe to message *order* only (ids joined into one key string) so this
+    // list rebuilds when a message is added/removed/reordered — but NOT when an
+    // existing message's content streams in. Each bubble watches its own view by
+    // id, so a streaming token rebuilds only the affected bubble, not the list.
+    final orderKey = ref.watch(
+      chatControllerProvider.select(_messageOrderKey),
+    );
+    if (orderKey.isEmpty) {
+      return _EmptyState(
+        showSystemPromptBubble: showSystemPromptBubble && !isSelecting,
+      );
+    }
+    final ids = orderKey.split('\u0000');
+    return _MessageListView(
+      ids,
+      showSystemPromptBubble: showSystemPromptBubble && !isSelecting,
+      bottomReserve: bottomReserve,
+      isSelecting: isSelecting,
     );
   }
+}
+
+/// Joins the current conversation's message ids into a single string so
+/// Riverpod's `select` dedup short-circuits in-place content updates (streaming)
+/// — the key changes only when the set/order of messages changes.
+String _messageOrderKey(AsyncValue<ChatState> async) {
+  final messages = async.value?.messages;
+  if (messages == null || messages.isEmpty) return '';
+  final buffer = StringBuffer();
+  for (var i = 0; i < messages.length; i++) {
+    if (i > 0) buffer.write('\u0000');
+    buffer.write(messages[i].id);
+  }
+  return buffer.toString();
 }
 
 /// Empty-state placeholder shown when the current topic has no messages (the
@@ -625,13 +650,16 @@ class _ErrorNotice extends StatelessWidget {
 /// [ChatAutoFollowScrollController] follows it during layout when sticking.
 class _MessageListView extends ConsumerStatefulWidget {
   const _MessageListView(
-    this.messages, {
+    this.messageIds, {
     this.showSystemPromptBubble = false,
     this.bottomReserve = 0,
     this.isSelecting = false,
   });
 
-  final List<ChatMessageView> messages;
+  /// Ordered message ids of the current conversation. Each bubble watches its
+  /// own [ChatMessageView] by id, so streaming content rebuilds only that
+  /// bubble — never this whole list.
+  final List<String> messageIds;
 
   /// Renders the system-prompt bubble as the first (scrolling) list item, like
   /// the web original, instead of pinning it above the list.
@@ -668,8 +696,8 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       isEnabled: () =>
           ref.read(sidebarSettingsControllerProvider).autoScrollToBottom,
     );
-    _firstId = widget.messages.isEmpty ? null : widget.messages.first.id;
-    _count = widget.messages.length;
+    _firstId = widget.messageIds.isEmpty ? null : widget.messageIds.first;
+    _count = widget.messageIds.length;
     // Initial entry pins to the bottom (latest message), like the web's mount.
     _autoScroll.pinToBottom();
   }
@@ -677,9 +705,9 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   @override
   void didUpdateWidget(covariant _MessageListView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final messages = widget.messages;
-    final firstId = messages.isEmpty ? null : messages.first.id;
-    final count = messages.length;
+    final messageIds = widget.messageIds;
+    final firstId = messageIds.isEmpty ? null : messageIds.first;
+    final count = messageIds.length;
     final topicSwitched = firstId != _firstId;
     final appended = !topicSwitched && count > _count;
     _firstId = firstId;
@@ -699,7 +727,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
 
   @override
   Widget build(BuildContext context) {
-    final messages = widget.messages;
+    final messageIds = widget.messageIds;
     final isSelecting = widget.isSelecting;
     final headerCount = widget.showSystemPromptBubble ? 1 : 0;
     final selectedIds = isSelecting
@@ -710,7 +738,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     ref.listen<String?>(scrollToMessageIdProvider, (prev, messageId) {
       if (messageId == null) return;
       ref.read(scrollToMessageIdProvider.notifier).clear();
-      final index = messages.indexWhere((m) => m.id == messageId);
+      final index = messageIds.indexOf(messageId);
       if (index < 0) return;
       _autoScroll.unstick();
       _observerController.animateTo(
@@ -735,7 +763,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       child: ListView.builder(
         controller: _scrollController,
         padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + widget.bottomReserve),
-        itemCount: messages.length + headerCount,
+        itemCount: messageIds.length + headerCount,
         itemBuilder: (context, index) {
           // The system-prompt bubble is the first item when enabled; it scrolls
           // with the list and is never part of multi-select.
@@ -743,16 +771,18 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
             return const SystemPromptBubble();
           }
           final messageIndex = index - headerCount;
-          final view = messages[messageIndex];
+          final id = messageIds[messageIndex];
+          // Stable per-message key so Flutter's element diff reuses the existing
+          // bubble across appends/reorders instead of rebuilding list sections.
           final Widget bubble = isPlain
-              ? PlainStyleMessage(view: view)
-              : ChatMessageBubble(view: view);
+              ? PlainStyleMessage(key: ValueKey(id), messageId: id)
+              : ChatMessageBubble(key: ValueKey(id), messageId: id);
 
           // Wrap with selection checkbox when in multi-select mode.
           final Widget item = isSelecting
               ? _SelectableMessageRow(
-                  messageId: view.id,
-                  selected: selectedIds.contains(view.id),
+                  messageId: id,
+                  selected: selectedIds.contains(id),
                   child: bubble,
                 )
               : bubble;
@@ -760,7 +790,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           // Plain style uses its own bottom border; bubble style uses a Divider
           // when the setting is on.
           final needsDivider =
-              isPlain || (showDivider && messageIndex < messages.length - 1);
+              isPlain || (showDivider && messageIndex < messageIds.length - 1);
           if (!needsDivider) return item;
           final dividerColor = Theme.of(context).brightness == Brightness.dark
               ? const Color(0x1AFFFFFF)
