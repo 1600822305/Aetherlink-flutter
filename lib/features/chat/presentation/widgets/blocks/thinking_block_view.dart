@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aetherlink_flutter/app/di/thinking_settings_access.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/inline_tool_chip.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/tool_renderer_registry.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
 import 'package:aetherlink_flutter/shared/domain/thinking_settings.dart';
@@ -151,7 +152,12 @@ class _ThinkingBlockViewState extends ConsumerState<ThinkingBlockView> {
               for (var i = 0; i < widget.inlineToolBlocks.length; i++) ...
                 [
                   if (i > 0) const SizedBox(height: 6),
-                  InlineToolChip(block: widget.inlineToolBlocks[i]),
+                  // Reuse the tool's special renderer (file-editor diff card,
+                  // web-search card, …) so a tool called during the thinking
+                  // phase looks the same inline as it does top-level; only tools
+                  // without a special renderer fall back to the compact chip.
+                  buildSpecialToolBlock(widget.inlineToolBlocks[i]) ??
+                      InlineToolChip(block: widget.inlineToolBlocks[i]),
                 ],
             ],
           );
