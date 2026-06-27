@@ -193,12 +193,24 @@ Future<Map<String, Object?>> _readOne(
   int? endLine,
 ) async {
   final backend = await backendForPath(ref, path);
-  if (startLine != null && endLine != null) {
-    final range = await backend.readFileRange(path, startLine, endLine);
+  // A range read kicks in when *either* bound is given: a missing start means
+  // "from line 1", a missing end means "to the last line". (Previously both
+  // had to be present or the whole file was returned silently.)
+  if (startLine != null || endLine != null) {
+    final start = startLine ?? 1;
+    final end = endLine ?? await backend.getLineCount(path);
+    if (start < 1) {
+      throw FileEditorError('无效的 start_line: $start（必须 ≥ 1）');
+    }
+    if (end < start) {
+      throw FileEditorError('无效的行范围: start_line=$start 大于 end_line=$end');
+    }
+    final range = await backend.readFileRange(path, start, end);
     return {
       'path': path,
-      'startLine': startLine,
-      'endLine': endLine,
+      'startLine': start,
+      'endLine': end,
+      'totalLines': range.totalLines,
       'content': range.content,
       'rangeHash': range.rangeHash,
     };
