@@ -94,6 +94,7 @@ dependencies:
   flutter_local_notifications: ^18.0.1
   timezone: ^0.10.0
   system_fonts: ^1.0.1
+  flutter_foreground_task: ^9.2.2
 
 dev_dependencies:
   flutter_test:

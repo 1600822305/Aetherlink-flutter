@@ -61,6 +61,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/settings_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
+import 'package:aetherlink_flutter/shared/services/streaming_keepalive_service.dart';
 import 'package:aetherlink_flutter/shared/services/web_search_service.dart';
 import 'package:aetherlink_flutter/shared/utils/regex_replacement.dart';
 import 'package:aetherlink_flutter/shared/utils/system_prompt_variables.dart';
@@ -112,6 +113,9 @@ class ChatController extends _$ChatController {
 
   @override
   Future<ChatState> build() async {
+    // Never leave the streaming keep-alive notification stuck if this controller
+    // is disposed (e.g. navigating away) while a reply is still in flight.
+    ref.onDispose(() => unawaited(StreamingKeepAliveService.end()));
     // In-place mutations of the current conversation (清空消息) bump this so the
     // view reloads without changing the selected topic id.
     ref.watch(chatRefreshProvider);
@@ -3258,12 +3262,22 @@ class ChatController extends _$ChatController {
   }
 
   void _emit(List<ChatMessageView> views, {required bool isStreaming}) {
+    final wasStreaming = state.asData?.value.isStreaming ?? false;
     state = AsyncData(
       ChatState(
         messages: List<ChatMessageView>.of(views),
         isStreaming: isStreaming,
       ),
     );
+    // Keep the process alive across app backgrounding only while streaming, so
+    // switching apps mid-reply doesn't let the OS suspend it (see service doc).
+    if (isStreaming != wasStreaming) {
+      unawaited(
+        isStreaming
+            ? StreamingKeepAliveService.begin()
+            : StreamingKeepAliveService.end(),
+      );
+    }
   }
 
   void _replace(List<ChatMessageView> views, ChatMessageView view) {
