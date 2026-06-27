@@ -12,6 +12,15 @@ class SearchProviderConfig {
     this.isEnabled = true,
   });
 
+  factory SearchProviderConfig.fromJson(Map<String, dynamic> json) =>
+      SearchProviderConfig(
+        id: json['id'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        apiHost: json['apiHost'] as String? ?? '',
+        apiKey: json['apiKey'] as String? ?? '',
+        isEnabled: json['isEnabled'] as bool? ?? true,
+      );
+
   final String id;
   final String name;
   final String apiHost;
@@ -31,15 +40,6 @@ class SearchProviderConfig {
         apiHost: apiHost ?? this.apiHost,
         apiKey: apiKey ?? this.apiKey,
         isEnabled: isEnabled ?? this.isEnabled,
-      );
-
-  factory SearchProviderConfig.fromJson(Map<String, dynamic> json) =>
-      SearchProviderConfig(
-        id: json['id'] as String? ?? '',
-        name: json['name'] as String? ?? '',
-        apiHost: json['apiHost'] as String? ?? '',
-        apiKey: json['apiKey'] as String? ?? '',
-        isEnabled: json['isEnabled'] as bool? ?? true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -89,6 +89,20 @@ class WebSearchSettings {
     this.providers = const [kDefaultSearchProvider],
   });
 
+  factory WebSearchSettings.fromJson(Map<String, dynamic> json) =>
+      WebSearchSettings(
+        maxResults: json['maxResults'] as int? ?? 5,
+        timeout: json['timeout'] as int? ?? 10,
+        language: json['language'] as String? ?? 'zh-CN',
+        categories: json['categories'] as String? ?? 'general',
+        activeProviderId: json['activeProviderId'] as String? ?? 'searxng',
+        providers: (json['providers'] as List<dynamic>?)
+                ?.map((e) =>
+                    SearchProviderConfig.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
+      );
+
   /// Maximum number of results returned per search.
   final int maxResults;
 
@@ -122,20 +136,6 @@ class WebSearchSettings {
         categories: categories ?? this.categories,
         activeProviderId: activeProviderId ?? this.activeProviderId,
         providers: providers ?? this.providers,
-      );
-
-  factory WebSearchSettings.fromJson(Map<String, dynamic> json) =>
-      WebSearchSettings(
-        maxResults: json['maxResults'] as int? ?? 5,
-        timeout: json['timeout'] as int? ?? 10,
-        language: json['language'] as String? ?? 'zh-CN',
-        categories: json['categories'] as String? ?? 'general',
-        activeProviderId: json['activeProviderId'] as String? ?? 'searxng',
-        providers: (json['providers'] as List<dynamic>?)
-                ?.map((e) =>
-                    SearchProviderConfig.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            const [],
       );
 
   Map<String, dynamic> toJson() => {
