@@ -23,22 +23,30 @@ Future<McpToolResult> writeToFile(Ref ref, Map<String, Object?> args) async {
   final path = requireString(args, 'path');
   final raw = args['content'];
   if (raw == null) throw const FileEditorError('缺少必需参数: content');
-  final text = raw is String ? raw : raw.toString();
+  final processed = processIncomingContent(raw is String ? raw : raw.toString());
 
-  // Line-count guard — catch silently truncated content (e.g. a model that
-  // replaced the body with "// rest of code unchanged").
+  // Truncation guard — catch a silently shortened body. Fires when the content
+  // is well under the model's own declared `line_count`, OR when it carries a
+  // "// rest of code unchanged"-style omission marker (which is suspicious at
+  // any length). Either way the model is told to send full content or use
+  // apply_diff instead of overwriting with a partial file.
   final expected = optionalInt(args, 'line_count');
-  final actual = '\n'.allMatches(text).length + 1;
-  if (expected != null && expected > 0 && actual < expected * 0.8) {
-    if (_detectCodeOmission(text)) {
-      throw FileEditorError(
-        '内容可能被截断（实际 $actual 行，预期 $expected 行），并检测到代码省略标记'
-        '（如 "// rest of code unchanged"）。请提供完整内容，或改用 apply_diff 增量修改。',
-      );
-    }
+  final actual = countLines(processed);
+  final wayShort = expected != null && expected > 0 && actual < expected * 0.8;
+  // A strong "rest of code unchanged" marker blocks on its own; a bare `// ...`
+  // ellipsis only when the content is also far shorter than declared.
+  final omitted = detectStrongCodeOmission(processed) ||
+      (wayShort && detectCodeOmission(processed));
+  if (wayShort || omitted) {
+    final hint = expected != null && expected > 0
+        ? '（实际 $actual 行，预期 $expected 行）'
+        : '（实际 $actual 行）';
+    throw FileEditorError(
+      '内容可能被截断$hint：${omitted ? '检测到代码省略标记（如 "// rest of code unchanged"）；' : ''}'
+      '请提供完整文件内容，或改用 apply_diff / insert_content 做增量修改。',
+    );
   }
 
-  final processed = _removeCodeBlockMarkers(_unescapeHtmlEntities(text));
   final backend = await backendForPath(ref, path);
 
   WorkspaceEntry info;
@@ -57,7 +65,7 @@ Future<McpToolResult> writeToFile(Ref ref, Map<String, Object?> args) async {
   return fileEditorOk({
     'message': '文件更新成功',
     'path': path,
-    'totalLines': '\n'.allMatches(processed).length + 1,
+    'totalLines': countLines(processed),
   });
 }
 
@@ -65,7 +73,7 @@ Future<McpToolResult> writeToFile(Ref ref, Map<String, Object?> args) async {
 Future<McpToolResult> createFile(Ref ref, Map<String, Object?> args) async {
   final parentPath = requireString(args, 'parent_path');
   final name = requireString(args, 'name');
-  final content = optionalString(args, 'content') ?? '';
+  final content = processIncomingContent(optionalString(args, 'content') ?? '');
   final overwrite = optionalBool(args, 'overwrite');
 
   final backend = await backendForPath(ref, parentPath);
@@ -82,6 +90,7 @@ Future<McpToolResult> createFile(Ref ref, Map<String, Object?> args) async {
       'message': '文件已覆盖',
       'path': existing.path,
       'overwritten': true,
+      'totalLines': countLines(content),
     });
   }
 
@@ -90,6 +99,7 @@ Future<McpToolResult> createFile(Ref ref, Map<String, Object?> args) async {
     'message': '文件创建成功',
     'path': created,
     'overwritten': false,
+    'totalLines': countLines(content),
   });
 }
 
@@ -105,10 +115,11 @@ Future<McpToolResult> renameFile(Ref ref, Map<String, Object?> args) async {
 /// `move_file` — move a file/dir into the opaque [destination_path] directory,
 /// optionally renaming it to [new_name] in the same call.
 ///
-/// When [new_name] is given the move lands directly under the new name
-/// (copy-as-new-name then delete the source), so the destination is checked for
-/// a `new_name` collision — not the source's original name. A plain move keeps
-/// the source name and is checked accordingly.
+/// The destination is checked for a collision against the *final* name (the
+/// [new_name] when given, otherwise the source's own name); when one exists the
+/// move is refused unless `overwrite=true`. With a rename the move is done as
+/// copy-as-new-name then delete-source (not atomic — a failed delete keeps the
+/// copy and reports both locations); a plain move uses the backend's move.
 Future<McpToolResult> moveFile(Ref ref, Map<String, Object?> args) async {
   final sourcePath = requireString(args, 'source_path');
   final destParent = requireString(args, 'destination_path');
@@ -117,6 +128,22 @@ Future<McpToolResult> moveFile(Ref ref, Map<String, Object?> args) async {
   final backend = await backendForPath(ref, sourcePath);
 
   if (newName == null) {
+    // Resolve the source name so the collision check (and overwrite) targets
+    // the actual landing name, mirroring the rename branch below.
+    final source = await backend.getFileInfo(sourcePath);
+    final clash = await findChildByName(backend, destParent, source.name);
+    if (clash != null) {
+      if (!overwrite) {
+        throw FileEditorError(
+          '目标目录已存在「${source.name}」；如需覆盖请传 overwrite=true。',
+        );
+      }
+      await backend.delete(
+        clash.path,
+        isDirectory: clash.isDirectory,
+        recursive: clash.isDirectory,
+      );
+    }
     final newPath = await backend.move(sourcePath, destParent);
     return fileEditorOk({'message': '移动成功', 'path': newPath});
   }
@@ -166,9 +193,13 @@ Future<McpToolResult> copyFile(Ref ref, Map<String, Object?> args) async {
 }
 
 /// `delete_file` — delete a file or directory.
+///
+/// `recursive` defaults to false: deleting a *non-empty* directory needs an
+/// explicit `recursive=true` so a single mistaken call can't wipe a whole tree.
+/// Files and already-empty directories delete without it.
 Future<McpToolResult> deleteFile(Ref ref, Map<String, Object?> args) async {
   final path = requireString(args, 'path');
-  final recursive = optionalBool(args, 'recursive', fallback: true);
+  final recursive = optionalBool(args, 'recursive');
   final backend = await backendForPath(ref, path);
 
   bool isDirectory = false;
@@ -177,8 +208,22 @@ Future<McpToolResult> deleteFile(Ref ref, Map<String, Object?> args) async {
   } catch (_) {
     // Fall back to file deletion if metadata is unavailable.
   }
+
+  if (isDirectory && !recursive) {
+    final children = await backend.listDir(path);
+    if (children.isNotEmpty) {
+      throw FileEditorError(
+        '目录非空（含 ${children.length} 项）。如确认删除整个目录及其全部内容，请传 recursive=true。',
+      );
+    }
+  }
+
   await backend.delete(path, isDirectory: isDirectory, recursive: recursive);
-  return fileEditorOk({'message': '删除成功', 'path': path});
+  return fileEditorOk({
+    'message': '删除成功',
+    'path': path,
+    'type': isDirectory ? 'directory' : 'file',
+  });
 }
 
 /// `insert_content` — insert [content] relative to a 1-based [line].
@@ -189,9 +234,9 @@ Future<McpToolResult> insertContent(Ref ref, Map<String, Object?> args) async {
   final path = requireString(args, 'path');
   final raw = args['content'];
   if (raw == null) throw const FileEditorError('缺少必需参数: content');
-  final content = raw is String ? raw : raw.toString();
+  final content = processIncomingContent(raw is String ? raw : raw.toString());
   final backend = await backendForPath(ref, path);
-  final linesInserted = '\n'.allMatches(content).length + 1;
+  final linesInserted = countLines(content);
 
   // at_end — append without a line number.
   if (optionalBool(args, 'at_end')) {
@@ -239,20 +284,28 @@ Future<McpToolResult> applyDiff(Ref ref, Map<String, Object?> args) async {
     'unified' => WorkspaceDiffFormat.unified,
     _ => WorkspaceDiffFormat.searchReplace,
   };
+  final expectedRangeHash = optionalString(args, 'expected_range_hash');
   final backend = await backendForPath(ref, path);
   final result = await backend.applyDiff(
     path,
     diff,
     format: format,
     createBackup: optionalBool(args, 'create_backup'),
-    expectedRangeHash: optionalString(args, 'expected_range_hash'),
+    expectedRangeHash: expectedRangeHash,
     rangeStartLine: optionalInt(args, 'start_line'),
     rangeEndLine: optionalInt(args, 'end_line'),
   );
   if (!result.success) {
-    throw const FileEditorError(
-      'Diff 应用失败：未能在文件中定位到 SEARCH 内容（或范围哈希校验冲突）。'
-      '请用 read_file 读取最新内容后重试。',
+    // With a range hash the failure is most likely a concurrent-edit conflict;
+    // without one it's a SEARCH block that no longer matches the file. Tailor
+    // the guidance so the model knows exactly how to recover.
+    throw FileEditorError(
+      expectedRangeHash != null
+          ? 'Diff 应用失败：范围哈希校验冲突（该范围已被改动）或 SEARCH 内容不匹配。'
+            '请用 read_file 重新读取相同行范围，拿到最新 rangeHash 后再带上重试。'
+          : 'Diff 应用失败：未能在文件中定位到 SEARCH 内容。请用 read_file 读取最新内容，'
+            '确认 SEARCH 块与文件完全一致（含缩进/空白）后重试；大范围改动可携带 '
+            'start_line/end_line + expected_range_hash 启用乐观锁。',
     );
   }
   return fileEditorOk({
@@ -291,48 +344,3 @@ Future<McpToolResult> replaceInFile(Ref ref, Map<String, Object?> args) async {
     'replacements': count,
   });
 }
-
-// --- text processing (mirrors original AetherLink text-processing.ts) -------
-
-String _unescapeHtmlEntities(String text) {
-  if (text.isEmpty) return text;
-  return text
-      .replaceAll('&lt;', '<')
-      .replaceAll('&gt;', '>')
-      .replaceAll('&quot;', '"')
-      .replaceAll('&#39;', "'")
-      .replaceAll('&apos;', "'")
-      .replaceAll('&#91;', '[')
-      .replaceAll('&#93;', ']')
-      .replaceAll('&lsqb;', '[')
-      .replaceAll('&rsqb;', ']')
-      .replaceAll('&amp;', '&');
-}
-
-String _removeCodeBlockMarkers(String content) {
-  var result = content;
-  if (result.startsWith('```')) {
-    final lines = result.split('\n');
-    result = lines.sublist(1).join('\n');
-  }
-  if (result.endsWith('```')) {
-    final lines = result.split('\n');
-    result = lines.sublist(0, lines.length - 1).join('\n');
-  }
-  return result;
-}
-
-final List<RegExp> _omissionPatterns = [
-  RegExp(r'//\s*rest\s+of\s+code', caseSensitive: false),
-  RegExp(r'//\s*\.{3}'),
-  RegExp(r'/\*\s*previous\s+code', caseSensitive: false),
-  RegExp(r'/\*\s*rest\s+of', caseSensitive: false),
-  RegExp(r'//\s*unchanged', caseSensitive: false),
-  RegExp(r'//\s*same\s+as\s+before', caseSensitive: false),
-  RegExp(r'//\s*\.{3}\s*remaining', caseSensitive: false),
-  RegExp(r'#\s*rest\s+of\s+code', caseSensitive: false),
-  RegExp(r'#\s*\.{3}'),
-];
-
-bool _detectCodeOmission(String content) =>
-    _omissionPatterns.any((p) => p.hasMatch(content));

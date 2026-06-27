@@ -139,8 +139,16 @@ Future<WorkspaceBackend> resolveWorkspaceById(Ref ref, String id) async {
   throw FileEditorError('找不到工作区: $id');
 }
 
+/// Whether opaque [path] sits inside (or is) the workspace rooted at [root].
+///
+/// Uses a boundary-aware prefix test (`root` itself, or `root/…`) so a sibling
+/// like `…/Download` can't be mistaken for a child of `…/Down`. Works for SAF
+/// `content://` URIs (a child URI is `<root>/document/…`) and posix roots alike.
+bool pathUnderRoot(String path, String root) =>
+    path == root || path.startsWith('$root/');
+
 /// Resolves the backend for an opaque [path] by matching it to the workspace
-/// whose `root` is a prefix of (or equal to) [path]. Falls back to the single
+/// whose `root` contains [path] (longest match wins). Falls back to the single
 /// available backend when there's exactly one workspace. Shared by the read
 /// and write handlers so path→backend routing stays in one place.
 Future<WorkspaceBackend> backendForPath(Ref ref, String path) async {
@@ -152,7 +160,7 @@ Future<WorkspaceBackend> backendForPath(Ref ref, String path) async {
   }
   Workspace? best;
   for (final w in workspaces) {
-    if (path == w.root || path.startsWith(w.root)) {
+    if (pathUnderRoot(path, w.root)) {
       if (best == null || w.root.length > best.root.length) best = w;
     }
   }
@@ -263,3 +271,103 @@ Future<RecursiveListing> listRecursive(
   await walk(path, 1);
   return RecursiveListing(out, truncated: truncated);
 }
+
+// ===== content processing (shared by all write handlers) =====
+//
+// Models occasionally wrap whole-file content in a Markdown code fence, or send
+// HTML-escaped text instead of the literal characters. The helpers below undo
+// those two artefacts — but **only** when they're unambiguous, so legitimate
+// file content (a Markdown doc, an HTML/XML source containing real `&lt;`) is
+// never silently corrupted. The same processing runs for every write tool so a
+// given input always produces the same bytes regardless of which tool wrote it.
+
+/// Normalises model-supplied file [content] for any write tool: strips a single
+/// fence that wraps the *entire* payload, then un-escapes HTML entities only
+/// when the text looks fully-escaped (no raw angle brackets present).
+String processIncomingContent(String content) =>
+    _unescapeIfFullyEscaped(_stripWrappingCodeFence(content));
+
+final RegExp _fenceOpener = RegExp(r'^```[A-Za-z0-9_+\-.]*\s*$');
+
+/// Removes a Markdown code fence only when it wraps the whole content — i.e.
+/// the first line is a bare fence opener (optionally with a language tag) and
+/// the last non-blank line is a closing ```` ``` ````. A document that merely
+/// *contains* fenced blocks is left untouched (it won't have an opener on line
+/// 1 paired with a closer on the final line for the whole file).
+String _stripWrappingCodeFence(String content) {
+  final lines = content.split('\n');
+  if (lines.length < 2) return content;
+  if (!_fenceOpener.hasMatch(lines.first)) return content;
+
+  var last = lines.length - 1;
+  while (last > 0 && lines[last].trim().isEmpty) {
+    last--;
+  }
+  if (last == 0 || lines[last].trim() != '```') return content;
+
+  final trailingBlanks = lines.sublist(last + 1);
+  final body = lines.sublist(1, last);
+  return [...body, ...trailingBlanks].join('\n');
+}
+
+/// Un-escapes HTML entities only when the text appears to be *fully* escaped
+/// (contains entity-encoded angle brackets but no raw `<`/`>`), which is the
+/// signature of a model that escaped its whole output. Mixed content keeps its
+/// literal `&lt;` / `&amp;` so HTML/XML/Markdown source survives intact.
+String _unescapeIfFullyEscaped(String text) {
+  if (text.isEmpty) return text;
+  final hasRawAngles = text.contains('<') || text.contains('>');
+  final hasEntityAngles = text.contains('&lt;') || text.contains('&gt;');
+  if (hasRawAngles || !hasEntityAngles) return text;
+  return text
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&apos;', "'")
+      .replaceAll('&#91;', '[')
+      .replaceAll('&#93;', ']')
+      .replaceAll('&lsqb;', '[')
+      .replaceAll('&rsqb;', ']')
+      .replaceAll('&amp;', '&');
+}
+
+/// Counts the lines in [text] the way an editor would: empty string → 0, and a
+/// single trailing newline does **not** add a phantom extra line. Used for the
+/// `totalLines` / `linesInserted` fields and the truncation guard so reported
+/// counts match what the model sent.
+int countLines(String text) {
+  if (text.isEmpty) return 0;
+  final newlines = '\n'.allMatches(text).length;
+  return text.endsWith('\n') ? newlines : newlines + 1;
+}
+
+// Phrases that almost always mean the model elided real code ("// rest of code
+// unchanged"). These are specific enough to block a write on their own.
+final List<RegExp> _strongOmissionPatterns = [
+  RegExp(r'(//|#|/\*)\s*rest\s+of\s+(the\s+)?code', caseSensitive: false),
+  RegExp(r'(//|#|/\*)\s*rest\s+of\s+(the\s+)?(file|function|method|class)',
+      caseSensitive: false),
+  RegExp(r'(//|#|/\*)\s*previous\s+code', caseSensitive: false),
+  RegExp(r'(//|#|/\*)\s*(code\s+)?unchanged', caseSensitive: false),
+  RegExp(r'(//|#|/\*)\s*same\s+as\s+before', caseSensitive: false),
+  RegExp(r'(//|#|/\*)\s*\.{3}\s*remaining', caseSensitive: false),
+  RegExp(r'(//|#|/\*)\s*existing\s+code', caseSensitive: false),
+];
+
+// A bare "// ..." / "# ..." ellipsis. Common in real code/docs, so it only
+// counts as suspicious when the content is also far shorter than declared.
+final List<RegExp> _weakOmissionPatterns = [
+  RegExp(r'(//|#)\s*\.{3}'),
+];
+
+/// Whether [content] contains a strong "rest of code unchanged"-style omission
+/// marker — specific enough to reject a whole-file overwrite on its own.
+bool detectStrongCodeOmission(String content) =>
+    _strongOmissionPatterns.any((p) => p.hasMatch(content));
+
+/// Whether [content] contains any omission marker (strong phrases or a bare
+/// `// ...` ellipsis). Use together with a length check to avoid false alarms.
+bool detectCodeOmission(String content) =>
+    detectStrongCodeOmission(content) ||
+    _weakOmissionPatterns.any((p) => p.hasMatch(content));

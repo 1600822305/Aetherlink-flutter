@@ -677,7 +677,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'read_file',
-      description: '读取文件内容。支持单文件(path)或批量(files 数组)读取，可指定行范围。大文件建议指定行范围。',
+      description: '读取文件内容。支持单文件(path)或批量(files 数组)读取。大文件建议指定行范围（1-based，含端点）：'
+          'start_line/end_line 可单独使用——只给 start_line 表示读到文件末尾，只给 end_line 表示从第 1 行开始。'
+          '范围读取会返回 rangeHash，可配合 apply_diff 的乐观锁。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -696,11 +698,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'start_line': {
             'type': 'number',
-            'description': '起始行号 (1-based)，可选。不指定则从第一行开始',
+            'description': '起始行号 (1-based)，可选。省略则从第 1 行开始',
           },
           'end_line': {
             'type': 'number',
-            'description': '结束行号 (1-based, 包含)，可选。需与 start_line 同时提供才按范围读取',
+            'description': '结束行号 (1-based, 包含)，可选。省略则读到文件末尾。给出任一端点即按范围读取',
           },
         },
       },
@@ -746,7 +748,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       name: 'write_to_file',
       description:
           '覆盖写入已有文件的全部内容（不能用于新建文件，新建请用 create_file）。会触发用户确认。'
-          '建议传 line_count 以校验内容是否被截断；大文件的增量修改请优先用 apply_diff。',
+          '务必传入完整内容，不要用 "// rest unchanged" 之类的省略标记（会被拒绝）。'
+          '建议传 line_count 以校验内容是否被截断；大文件的增量修改请优先用 apply_diff / insert_content。'
+          '若整段内容被代码围栏(```)包裹会自动去除；整体 HTML 转义的内容会自动还原。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -807,6 +811,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'type': 'string',
             'description': '移动后的新名称（可选，默认沿用原名）',
           },
+          'overwrite': {
+            'type': 'boolean',
+            'description': '目标目录已存在同名时是否覆盖，默认 false',
+          },
         },
         'required': ['source_path', 'destination_path'],
       },
@@ -833,14 +841,14 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'delete_file',
-      description: '删除文件或目录。会触发用户确认。删除目录时 recursive 默认为 true。',
+      description: '删除文件或目录。会触发用户确认。删除非空目录需显式传 recursive=true（默认 false，防止误删整棵目录树）。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'path': {'type': 'string', 'description': '要删除的文件/目录完整路径'},
           'recursive': {
             'type': 'boolean',
-            'description': '删除目录时是否递归删除其内容，默认 true',
+            'description': '删除目录时是否递归删除其内容，默认 false。删除非空目录必须为 true',
           },
         },
         'required': ['path'],
