@@ -1165,6 +1165,13 @@ class ChatController extends _$ChatController {
     // next round gets a fresh block.
     final thinking = StringBuffer();
     var thinkingBlockId = '$assistantMessageId::thinking';
+    // Reasoning timing for the current round's thinking block: [thinkingStartAt]
+    // is the first reasoning token (excludes time-to-first-token), [thinkingEndAt]
+    // is the first answer/tool chunk (reasoning stopped growing). Their delta is
+    // the pure thinking duration, frozen so the timer doesn't run until the whole
+    // reply finishes. Both reset whenever a new thinking block starts.
+    DateTime? thinkingStartAt;
+    DateTime? thinkingEndAt;
     final completed = <MessageBlock>[];
     var messages = List<LlmMessage>.of(request.messages);
     var view = assistantView;
@@ -1206,8 +1213,15 @@ class ChatController extends _$ChatController {
           MessageBlock.thinking(
             id: thinkingBlockId,
             messageId: assistantMessageId,
-            status: MessageBlockStatus.streaming,
-            createdAt: assistantTime,
+            status: thinkingEndAt == null
+                ? MessageBlockStatus.streaming
+                : MessageBlockStatus.success,
+            // Count from the first reasoning token, not message creation.
+            createdAt: thinkingStartAt ?? assistantTime,
+            updatedAt: thinkingEndAt,
+            thinkingMillsec: thinkingStartAt != null && thinkingEndAt != null
+                ? thinkingEndAt.difference(thinkingStartAt).inMilliseconds
+                : null,
             content: thinking.toString(),
           ),
         MessageBlock.mainText(
@@ -1254,6 +1268,8 @@ class ChatController extends _$ChatController {
       // Reset the per-attempt accumulators so a failover retry starts clean.
       thinking.clear();
       thinkingBlockId = '$assistantMessageId::thinking';
+      thinkingStartAt = null;
+      thinkingEndAt = null;
       completed.clear();
       buffer.clear();
       messages = List<LlmMessage>.of(request.messages);
@@ -1282,15 +1298,18 @@ class ChatController extends _$ChatController {
               case LlmTextDelta(:final text):
                 committed = true;
                 firstTokenMs ??= stopwatch.elapsedMilliseconds;
+                if (thinking.isNotEmpty) thinkingEndAt ??= DateTime.now();
                 buffer.write(text);
                 update();
               case LlmReasoningDelta(:final text):
                 committed = true;
                 firstTokenMs ??= stopwatch.elapsedMilliseconds;
+                thinkingStartAt ??= DateTime.now();
                 thinking.write(text);
                 update();
               case LlmToolCallChunk(:final call):
                 committed = true;
+                if (thinking.isNotEmpty) thinkingEndAt ??= DateTime.now();
                 structuredCalls.add(call);
               case LlmDone(:final usage, :final finishReason):
                 if (usage != null) capturedUsage = usage;
@@ -1344,10 +1363,14 @@ class ChatController extends _$ChatController {
                     messageId: assistantMessageId,
                     createdAt: assistantTime,
                     content: thinking.toString(),
+                    startedAt: thinkingStartAt,
+                    endedAt: thinkingEndAt,
                   ),
                 );
                 thinking.clear();
                 thinkingBlockId = generateId('thinking');
+                thinkingStartAt = null;
+                thinkingEndAt = null;
               }
               // Feed partial output back so the model continues from where it
               // was cut off.
@@ -1368,9 +1391,13 @@ class ChatController extends _$ChatController {
                   messageId: assistantMessageId,
                   createdAt: assistantTime,
                   content: thinking.toString(),
+                  startedAt: thinkingStartAt,
+                  endedAt: thinkingEndAt,
                 ),
               );
               thinking.clear();
+              thinkingStartAt = null;
+              thinkingEndAt = null;
             }
             final display = roundDisplay();
             if (display.isNotEmpty || completed.isEmpty) {
@@ -1398,9 +1425,13 @@ class ChatController extends _$ChatController {
                 messageId: assistantMessageId,
                 createdAt: assistantTime,
                 content: thinking.toString(),
+                startedAt: thinkingStartAt,
+                endedAt: thinkingEndAt,
               ),
             );
             thinking.clear();
+            thinkingStartAt = null;
+            thinkingEndAt = null;
             thinkingBlockId = generateId('thinking');
           }
 
@@ -1600,6 +1631,8 @@ class ChatController extends _$ChatController {
             messageId: assistantMessageId,
             createdAt: assistantTime,
             content: thinking.toString(),
+            startedAt: thinkingStartAt,
+            endedAt: thinkingEndAt,
           ),
         ...completed,
         if (partial.isNotEmpty)
@@ -1652,12 +1685,19 @@ class ChatController extends _$ChatController {
     required String messageId,
     required DateTime createdAt,
     required String content,
+    DateTime? startedAt,
+    DateTime? endedAt,
   }) => MessageBlock.thinking(
     id: generateId('block'),
     messageId: messageId,
     status: MessageBlockStatus.success,
-    createdAt: createdAt,
-    updatedAt: DateTime.now(),
+    // Pure thinking duration: first reasoning token → reasoning stop (answer/tool
+    // phase start), not message creation → message finish.
+    createdAt: startedAt ?? createdAt,
+    updatedAt: endedAt ?? DateTime.now(),
+    thinkingMillsec: startedAt != null && endedAt != null
+        ? endedAt.difference(startedAt).inMilliseconds
+        : null,
     content: content,
   );
 
