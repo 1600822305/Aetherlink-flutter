@@ -116,6 +116,10 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
   /// Tracks the open/closed edge so [SidebarHost.onOpened] fires once per open.
   bool _wasOpen = false;
 
+  /// Last animation value, used to detect the leading edge of an open (closed →
+  /// opening) so the keyboard is dismissed exactly once as the sidebar starts.
+  double _lastValue = 0;
+
   @override
   void initState() {
     super.initState();
@@ -127,9 +131,27 @@ class _SidebarHostState extends ConsumerState<SidebarHost>
   }
 
   void _onProgress() {
-    final open = _ac.value > 0.5;
+    final v = _ac.value;
+    // Dismiss the keyboard the moment the sidebar starts opening, so an IME-
+    // raised input box doesn't overlap the sliding sidebar. Hooking the
+    // animation value covers every open path (edge drag, push-mode drag, and
+    // programmatic open) since they all drive [_ac]. Mirrors kelivo's
+    // onDrawerValueChanged → dismissKeyboard.
+    if (_lastValue <= 0.01 && v > 0.01) _dismissKeyboard();
+    _lastValue = v;
+
+    final open = v > 0.5;
     if (open && !_wasOpen) widget.onOpened?.call();
     _wasOpen = open;
+  }
+
+  /// Unfocuses any text field and asks the platform to hide the IME, matching
+  /// kelivo's `dismissKeyboard()`.
+  void _dismissKeyboard() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    try {
+      SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+    } catch (_) {}
   }
 
   @override
