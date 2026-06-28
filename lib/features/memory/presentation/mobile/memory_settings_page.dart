@@ -165,6 +165,41 @@ class MemorySettingsPage extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 14),
+          const _GroupLabel('自动整理'),
+          const SizedBox(height: 6),
+          _OutlinedCard(
+            child: Column(
+              children: [
+                _ToggleRow(
+                  icon: LucideIcons.moon,
+                  accent: const Color(0xFF6366F1),
+                  label: '自动整理记忆',
+                  description: '对话结束后，距上次整理超过下方间隔时，在后台自动把情景记忆提炼为长期记忆并清理过期记忆；关闭则仅手动「整理记忆」',
+                  value: config.autoConsolidate,
+                  onChanged: controller.setAutoConsolidate,
+                ),
+                Divider(height: 1, color: theme.dividerColor),
+                Opacity(
+                  opacity: config.autoConsolidate ? 1 : 0.5,
+                  child: IgnorePointer(
+                    ignoring: !config.autoConsolidate,
+                    child: _StepperRow(
+                      icon: LucideIcons.timer,
+                      accent: const Color(0xFF6366F1),
+                      label: '整理间隔（小时）',
+                      description: '两次自动整理之间至少间隔的小时数',
+                      value: config.autoConsolidateIntervalHours,
+                      min: 1,
+                      max: 168,
+                      step: 1,
+                      onChanged: controller.setAutoConsolidateIntervalHours,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
           Text(
             '注入方式选择「关闭」时，本轮不会注入任何记忆。向量检索（semantic / auto）会用上方所选嵌入模型把当前提问与记忆比对取 top-k；未配置嵌入模型时自动退回关键词检索。',
             style: theme.textTheme.bodySmall?.copyWith(

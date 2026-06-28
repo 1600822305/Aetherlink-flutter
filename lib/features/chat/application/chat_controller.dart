@@ -1767,7 +1767,13 @@ class ChatController extends _$ChatController {
         unawaited(_refreshTopicPreview(turnTopicId));
         unawaited(_generateTitle(turnTopicId));
         unawaited(_maybeGenerateSuggestions(turnTopicId, List.of(views)));
-        unawaited(_maybeExtractMemory(turnTopicId));
+        // Extract first, then let 整理记忆 (Dream) opportunistically distil the
+        // fresh episodic memories — both best-effort and off the turn's path.
+        unawaited(
+          _maybeExtractMemory(
+            turnTopicId,
+          ).then((_) => maybeAutoConsolidateChatMemories(ref)),
+        );
         return;
       } on Object catch (error) {
         // User pressed Stop: cancelling the token aborts the HTTP request, which

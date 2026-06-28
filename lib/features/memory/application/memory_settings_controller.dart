@@ -79,6 +79,15 @@ class MemorySettingsController extends _$MemorySettingsController
   void setLastConsolidated(int epochMillis) =>
       persist(state.copyWith(lastConsolidatedAt: epochMillis));
 
+  /// Toggles opportunistic auto-consolidation (off → manual 整理记忆 only).
+  void setAutoConsolidate(bool value) =>
+      persist(state.copyWith(autoConsolidate: value));
+
+  /// Sets the minimum hours between auto-consolidation runs (clamped ≥ 1).
+  void setAutoConsolidateIntervalHours(int value) => persist(
+    state.copyWith(autoConsolidateIntervalHours: value < 1 ? 1 : value),
+  );
+
   /// Toggles ACT-R activation-weighted ranking (off → pure cosine top-k).
   void setActivationRanking(bool value) =>
       persist(state.copyWith(activationRanking: value));

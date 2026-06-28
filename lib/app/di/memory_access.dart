@@ -445,6 +445,11 @@ Future<MemoryConsolidationResult> consolidateChatMemories(Ref ref) async {
   // No model to consolidate with, but a purge may still have happened above —
   // surface it (and refresh the lists) instead of discarding the count.
   if (resolved == null) {
+    // Stamp anyway so an auto-trigger respects the interval instead of
+    // re-purging every turn while no model is configured.
+    ref
+        .read(memorySettingsControllerProvider.notifier)
+        .setLastConsolidated(DateTime.now().millisecondsSinceEpoch);
     if (purged > 0) {
       ref.invalidate(memoryCountsProvider);
       ref.invalidate(globalMemoriesControllerProvider);
@@ -552,6 +557,34 @@ Future<MemoryConsolidationResult> consolidateChatMemories(Ref ref) async {
     scannedEpisodic: scanned,
     purged: purged,
   );
+}
+
+/// Guards against re-entrant auto-consolidation within a process (e.g. several
+/// chat turns finishing in quick succession).
+bool _autoConsolidationInFlight = false;
+
+/// Opportunistically runs [consolidateChatMemories] after a chat turn when
+/// [shouldAutoConsolidate] allows it (memory + 自动整理 on, interval elapsed) and
+/// no auto-run is already in flight. Best-effort and never throws, so the chat
+/// pipeline can fire-and-forget it; returns null when it does not run. Mobile
+/// has no background scheduler, so this turn-driven trigger stands in for a
+/// timer.
+Future<MemoryConsolidationResult?> maybeAutoConsolidateChatMemories(
+  Ref ref,
+) async {
+  if (_autoConsolidationInFlight) return null;
+  final settings = ref.read(memorySettingsControllerProvider);
+  if (!shouldAutoConsolidate(settings, DateTime.now().millisecondsSinceEpoch)) {
+    return null;
+  }
+  _autoConsolidationInFlight = true;
+  try {
+    return await consolidateChatMemories(ref);
+  } on Object {
+    return null;
+  } finally {
+    _autoConsolidationInFlight = false;
+  }
 }
 
 /// Runs one bucket's consolidation prompt through [gateway] and parses the

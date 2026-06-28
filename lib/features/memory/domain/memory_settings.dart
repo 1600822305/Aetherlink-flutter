@@ -68,8 +68,28 @@ abstract class MemorySettings with _$MemorySettings {
     /// Epoch milliseconds of the last 整理记忆 (consolidation/Dream) run, or null
     /// if it has never run. Surfaced as 「最近整理」 on the 记忆 home page.
     int? lastConsolidatedAt,
+
+    /// When true, 整理记忆 (Dream) runs opportunistically after a chat turn once
+    /// [autoConsolidateIntervalHours] have elapsed, instead of only via the
+    /// manual button. Mobile has no background scheduler, so this is turn-driven.
+    @Default(true) bool autoConsolidate,
+
+    /// Minimum hours between opportunistic auto-consolidation runs.
+    @Default(24) int autoConsolidateIntervalHours,
   }) = _MemorySettings;
 
   factory MemorySettings.fromJson(Map<String, dynamic> json) =>
       _$MemorySettingsFromJson(json);
+}
+
+/// Whether an opportunistic auto-consolidation should fire at [nowMillis]:
+/// memory + auto-consolidation are on and either it has never run or at least
+/// [MemorySettings.autoConsolidateIntervalHours] have elapsed since the last
+/// run. Pure so the turn-driven trigger stays trivially testable.
+bool shouldAutoConsolidate(MemorySettings settings, int nowMillis) {
+  if (!settings.enabled || !settings.autoConsolidate) return false;
+  final last = settings.lastConsolidatedAt ?? 0;
+  if (last <= 0) return true;
+  final intervalMs = settings.autoConsolidateIntervalHours * 3600000;
+  return nowMillis - last >= intervalMs;
 }
