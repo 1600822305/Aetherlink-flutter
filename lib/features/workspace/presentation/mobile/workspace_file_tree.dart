@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -72,6 +74,14 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
 
   final ScrollController _scroll = ScrollController();
 
+  // Live file-change subscription (in-app mutations: editor save / file-ops /
+  // agent tools). Affected directories are coalesced and re-listed on a short
+  // debounce so a burst of agent edits costs one reload per dir, and so it
+  // doesn't race the synchronous reload file-ops already does.
+  StreamSubscription<WorkspaceChangeEvent>? _watchSub;
+  Timer? _watchDebounce;
+  final Set<String> _pendingReload = {};
+
   // Guards against re-revealing the same active file repeatedly and lets the
   // first build trigger an initial reveal (no change event fires for the
   // already-set active tab on entry).
@@ -86,6 +96,8 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
 
   @override
   void dispose() {
+    _watchDebounce?.cancel();
+    _watchSub?.cancel();
     _scroll.dispose();
     super.dispose();
   }
@@ -99,10 +111,49 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     _loading.clear();
     _revealedPath = null;
     _initialRevealDone = false;
+    _rebindWatch();
     final root = _root;
     if (root != null) {
       _expanded.add(root);
       _load(root);
+    }
+  }
+
+  // (Re)subscribes to the backend's change stream for the current workspace.
+  void _rebindWatch() {
+    _watchDebounce?.cancel();
+    _watchSub?.cancel();
+    _watchSub = null;
+    _pendingReload.clear();
+    final backend = _backend;
+    if (_root == null || backend == null || !backend.capabilities.canWatch) {
+      return;
+    }
+    _watchSub = backend.watch().listen(_onWatchEvent);
+  }
+
+  // Queues the directories an event touched and schedules a debounced reload.
+  // Only directories already loaded into the tree are re-listed — there's no
+  // point fetching ones the user hasn't expanded.
+  void _onWatchEvent(WorkspaceChangeEvent event) {
+    for (final dir in {
+      event.parentPath,
+      _parentOf(event.path),
+      if (event.fromPath != null) _parentOf(event.fromPath!),
+    }) {
+      if (dir != null && _children.containsKey(dir)) _pendingReload.add(dir);
+    }
+    if (_pendingReload.isEmpty) return;
+    _watchDebounce?.cancel();
+    _watchDebounce = Timer(const Duration(milliseconds: 200), _flushReload);
+  }
+
+  void _flushReload() {
+    if (!mounted) return;
+    final dirs = _pendingReload.toList();
+    _pendingReload.clear();
+    for (final dir in dirs) {
+      if (_children.containsKey(dir)) _reload(dir);
     }
   }
 

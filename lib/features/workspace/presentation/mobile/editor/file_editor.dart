@@ -8,6 +8,8 @@
 // registers a save/discard [EditorHandle] so the tab strip can close it even
 // when it isn't the visible tab.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -51,6 +53,16 @@ class _FileEditorState extends ConsumerState<FileEditor> {
   bool _showReplace = false;
   double _fontSize = kEditorDefaultFontSize;
 
+  // Live external-change watch (in-app mutations from file-ops / agent tools).
+  StreamSubscription<WorkspaceChangeEvent>? _watchSub;
+  // Conflict/notice banner text shown when the open file changed on disk and
+  // can't be re-synced silently (unsaved edits, delete, move, non-editable).
+  String? _externalNotice;
+  // Whether the banner offers a 「重新加载」 action.
+  bool _externalReloadable = false;
+  // Guards against overlapping disk re-reads when events arrive in a burst.
+  bool _checkingExternal = false;
+
   String get _path => widget.entry.path;
   bool get _dirty => _controller.text != _original;
   // Editing is only ever offered for small text files on a writable backend.
@@ -68,6 +80,10 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     super.initState();
     _ready = _load();
     _controller.addListener(_onTextChanged);
+    final backend = ref.read(workspacePreviewBackendProvider);
+    if (backend != null && backend.capabilities.canWatch) {
+      _watchSub = backend.watch().listen(_onWatchEvent);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref
           .read(editorRegistryProvider)
@@ -77,12 +93,89 @@ class _FileEditorState extends ConsumerState<FileEditor> {
 
   @override
   void dispose() {
+    _watchSub?.cancel();
     _controller.removeListener(_onTextChanged);
     ref.read(editorRegistryProvider).unregister(_path);
     ref.read(dirtyFilesProvider.notifier).clear(_path);
     _controller.dispose();
     _focus.dispose();
     super.dispose();
+  }
+
+  // Reacts to in-app file changes for *this* file. Self-writes are filtered out
+  // by comparing disk content against [_original] (after a save they're equal),
+  // so the editor's own save never trips the conflict banner.
+  void _onWatchEvent(WorkspaceChangeEvent e) {
+    if (!mounted) return;
+    final isOurs = e.path == _path ||
+        (e.kind == WorkspaceChangeKind.moved && e.fromPath == _path);
+    if (!isOurs) return;
+    switch (e.kind) {
+      case WorkspaceChangeKind.deleted:
+        setState(() {
+          _externalNotice = '文件已被外部删除';
+          _externalReloadable = false;
+        });
+      case WorkspaceChangeKind.moved:
+        setState(() {
+          _externalNotice = '文件已被外部移动或重命名，当前标签可能已失效';
+          _externalReloadable = false;
+        });
+      case WorkspaceChangeKind.created:
+      case WorkspaceChangeKind.modified:
+        _handleExternalModify();
+    }
+  }
+
+  // Re-reads the file and either re-syncs silently (no local edits) or raises a
+  // conflict banner (unsaved edits). Non-editable kinds can't be diffed, so
+  // they just get a reload affordance.
+  Future<void> _handleExternalModify() async {
+    if (_openKind != FileOpenKind.editable) {
+      setState(() {
+        _externalNotice = '文件已被外部修改';
+        _externalReloadable = true;
+      });
+      return;
+    }
+    if (_checkingExternal) return;
+    _checkingExternal = true;
+    try {
+      final backend = ref.read(workspacePreviewBackendProvider);
+      if (backend == null) return;
+      final disk = await backend.readFile(_path);
+      if (!mounted) return;
+      if (disk == _original) {
+        // Our own write (or a no-op change): clear any stale notice.
+        if (_externalNotice != null) setState(() => _externalNotice = null);
+        return;
+      }
+      if (_dirty) {
+        setState(() {
+          _externalNotice = '文件已被外部修改，你有未保存的修改';
+          _externalReloadable = true;
+        });
+      } else {
+        setState(() {
+          _original = disk;
+          _controller.text = disk;
+          _externalNotice = null;
+        });
+      }
+    } catch (_) {
+      // Transient read failures are ignored; the manual refresh still works.
+    } finally {
+      _checkingExternal = false;
+    }
+  }
+
+  // Banner 「重新加载」: discard the buffer and re-read from disk.
+  void _reloadFromDisk() {
+    setState(() {
+      _externalNotice = null;
+      _externalReloadable = false;
+      _ready = _load();
+    });
   }
 
   void _onTextChanged() {
@@ -241,6 +334,12 @@ class _FileEditorState extends ConsumerState<FileEditor> {
               onClose: () => setState(() => _showFind = false),
             ),
           if (_readOnlyReason != null) ReadOnlyBanner(text: _readOnlyReason!),
+          if (_externalNotice != null)
+            ExternalChangeBanner(
+              text: _externalNotice!,
+              onReload: _externalReloadable ? _reloadFromDisk : null,
+              onDismiss: () => setState(() => _externalNotice = null),
+            ),
           Expanded(
             child: EditorContent(
               ready: _ready,

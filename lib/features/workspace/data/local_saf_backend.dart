@@ -4,6 +4,8 @@
 // Translates `WorkspaceBackend` calls into plugin calls and turns
 // plugin-side `FileInfo` into the backend-neutral `WorkspaceEntry`.
 
+import 'dart:async';
+
 import 'package:aetherlink_saf/aetherlink_saf.dart' as saf;
 
 import '../domain/workspace_backend.dart';
@@ -14,14 +16,43 @@ class LocalSafBackend implements WorkspaceBackend {
 
   final saf.AetherlinkSaf _plugin;
 
+  // Broadcast bus for in-app mutations. SAF has no inotify, so it can't see
+  // external edits — but every write that goes through this backend (editor
+  // save, file-ops, `@aether/file-editor` agent tools) is emitted here so the
+  // browse / edit views can refresh live. Never closed: the backend is an
+  // app-lifetime singleton (see workspaceBackendProvider).
+  final StreamController<WorkspaceChangeEvent> _changes =
+      StreamController<WorkspaceChangeEvent>.broadcast();
+
+  void _emit(
+    WorkspaceChangeKind kind,
+    String path, {
+    String? fromPath,
+    String? parentPath,
+  }) {
+    if (!_changes.hasListener) return;
+    _changes.add(
+      WorkspaceChangeEvent(
+        kind: kind,
+        path: path,
+        fromPath: fromPath,
+        parentPath: parentPath,
+      ),
+    );
+  }
+
   @override
   WorkspaceCapabilities get capabilities => const WorkspaceCapabilities(
         // SAF can't run shell commands.
         canExec: false,
-        // SAF has no inotify equivalent (spec §3.4).
-        canWatch: false,
+        // No inotify, but in-app mutations are reported through [watch]
+        // (see WorkspaceCapabilities.canWatch).
+        canWatch: true,
         isRemote: false,
       );
+
+  @override
+  Stream<WorkspaceChangeEvent> watch() => _changes.stream;
 
   @override
   Future<String> echo(String value) async {
@@ -85,8 +116,10 @@ class LocalSafBackend implements WorkspaceBackend {
       _plugin.readFileBytes(path: path, offset: offset, length: length);
 
   @override
-  Future<void> writeFile(String path, String content, {bool append = false}) =>
-      _plugin.writeFile(path: path, content: content, append: append);
+  Future<void> writeFile(String path, String content, {bool append = false}) async {
+    await _plugin.writeFile(path: path, content: content, append: append);
+    _emit(WorkspaceChangeKind.modified, path);
+  }
 
   @override
   Future<String> createFile(
@@ -99,6 +132,7 @@ class LocalSafBackend implements WorkspaceBackend {
       name: name,
       content: content,
     );
+    _emit(WorkspaceChangeKind.created, r.path, parentPath: parentPath);
     return r.path;
   }
 
@@ -113,6 +147,7 @@ class LocalSafBackend implements WorkspaceBackend {
       name: name,
       recursive: recursive,
     );
+    _emit(WorkspaceChangeKind.created, r.path, parentPath: parentPath);
     return r.path;
   }
 
@@ -121,14 +156,19 @@ class LocalSafBackend implements WorkspaceBackend {
     String path, {
     bool isDirectory = false,
     bool recursive = false,
-  }) =>
-      isDirectory
-          ? _plugin.deleteDirectory(path: path, recursive: recursive)
-          : _plugin.deleteFile(path: path);
+  }) async {
+    if (isDirectory) {
+      await _plugin.deleteDirectory(path: path, recursive: recursive);
+    } else {
+      await _plugin.deleteFile(path: path);
+    }
+    _emit(WorkspaceChangeKind.deleted, path);
+  }
 
   @override
   Future<String> rename(String path, String newName) async {
     final r = await _plugin.renameFile(path: path, newName: newName);
+    _emit(WorkspaceChangeKind.moved, r.path, fromPath: path);
     return r.path;
   }
 
@@ -137,6 +177,12 @@ class LocalSafBackend implements WorkspaceBackend {
     final r = await _plugin.moveFile(
       sourcePath: sourcePath,
       destinationParent: destinationParent,
+    );
+    _emit(
+      WorkspaceChangeKind.moved,
+      r.path,
+      fromPath: sourcePath,
+      parentPath: destinationParent,
     );
     return r.path;
   }
@@ -154,12 +200,15 @@ class LocalSafBackend implements WorkspaceBackend {
       newName: newName,
       overwrite: overwrite,
     );
+    _emit(WorkspaceChangeKind.created, r.path, parentPath: destinationParent);
     return r.path;
   }
 
   @override
-  Future<void> insertContent(String path, int line, String content) =>
-      _plugin.insertContent(path: path, line: line, content: content);
+  Future<void> insertContent(String path, int line, String content) async {
+    await _plugin.insertContent(path: path, line: line, content: content);
+    _emit(WorkspaceChangeKind.modified, path);
+  }
 
   @override
   Future<int> replaceInFile(
@@ -178,6 +227,7 @@ class LocalSafBackend implements WorkspaceBackend {
       replaceAll: replaceAll,
       caseSensitive: caseSensitive,
     );
+    if (r.replacements > 0) _emit(WorkspaceChangeKind.modified, path);
     return r.replacements;
   }
 
@@ -200,6 +250,7 @@ class LocalSafBackend implements WorkspaceBackend {
       rangeStartLine: rangeStartLine,
       rangeEndLine: rangeEndLine,
     );
+    if (r.success) _emit(WorkspaceChangeKind.modified, path);
     return WorkspaceDiffResult(
       success: r.success,
       linesChanged: r.linesChanged,

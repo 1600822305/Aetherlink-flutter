@@ -23,8 +23,15 @@ class WorkspaceCapabilities {
   /// Whether the backend can run shell commands (Termux / SSH yes, SAF no).
   final bool canExec;
 
-  /// Whether the backend can stream file-change events. SAF has no
-  /// inotify equivalent — always `false` on Android local.
+  /// Whether the backend can stream file-change events through
+  /// [WorkspaceBackend.watch]. SAF has no inotify equivalent, so it can't see
+  /// *external* edits (another app touching the same tree) — but it can and
+  /// does report every mutation made **through this backend** (the editor's
+  /// save, file-ops, the `@aether/file-editor` agent tools), which is the
+  /// source the in-app browse / edit views care about. `canWatch = true`
+  /// therefore means "emits change events for in-app mutations", not "full
+  /// filesystem watch". A future Termux / SSH backend with a real inotify /
+  /// fanotify feed can report external changes too under the same contract.
   final bool canWatch;
 
   /// Whether the backend talks to another device. `true` opens up extra
@@ -121,6 +128,42 @@ enum WorkspaceDiffFormat { searchReplace, unified }
 /// What [WorkspaceBackend.searchFiles] matches against.
 enum WorkspaceSearchType { name, content, both }
 
+/// Kind of change reported by [WorkspaceBackend.watch].
+///
+/// [moved] covers both rename-in-place and move-to-another-dir: [WorkspaceChangeEvent.fromPath]
+/// holds the entry's previous path and [WorkspaceChangeEvent.path] its new one.
+enum WorkspaceChangeKind { created, modified, deleted, moved }
+
+/// A single file-change notification emitted on [WorkspaceBackend.watch].
+///
+/// Paths are the backend's opaque entry identifiers (a `content://` URI on
+/// SAF), so consumers must treat them as opaque and never parse them. Because
+/// SAF can't derive a parent from a child URI, [parentPath] is populated only
+/// when the backend knew the destination directory for the op (create / move /
+/// copy); for the rest it is null and consumers recover the parent from their
+/// own loaded tree.
+class WorkspaceChangeEvent {
+  const WorkspaceChangeEvent({
+    required this.kind,
+    required this.path,
+    this.fromPath,
+    this.parentPath,
+  });
+
+  final WorkspaceChangeKind kind;
+
+  /// The affected entry. For [WorkspaceChangeKind.moved] this is the *new*
+  /// path; for [WorkspaceChangeKind.deleted] the path that no longer exists.
+  final String path;
+
+  /// The previous path, set only for [WorkspaceChangeKind.moved] (rename/move).
+  final String? fromPath;
+
+  /// The destination directory of the op when the backend knew it (create /
+  /// move / copy); null otherwise.
+  final String? parentPath;
+}
+
 /// Backend interface — every workspace capability the rest of the app talks
 /// to goes through this.
 ///
@@ -142,6 +185,14 @@ abstract class WorkspaceBackend {
   /// opaque path string is unchanged but no longer accessible — so management
   /// UI can surface a 「重新授权」 affordance without doing a full directory read.
   Future<bool> verifyAccess(String path) async => true;
+
+  /// A broadcast stream of file-change events for this backend. Only valid when
+  /// [WorkspaceCapabilities.canWatch] is true; backends that can't watch throw
+  /// [UnsupportedError]. The stream is workspace-wide (SAF can't scope by
+  /// subtree because paths are opaque), so consumers filter the events they
+  /// care about by path themselves.
+  Stream<WorkspaceChangeEvent> watch() =>
+      throw UnsupportedError('watch is not supported by this backend');
 
   /// Lists the entries in [path]. Throws if [path] is a file or doesn't
   /// exist.

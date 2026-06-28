@@ -215,6 +215,70 @@ class ReadOnlyBanner extends StatelessWidget {
   }
 }
 
+/// Banner shown when the open file changed on disk (an in-app mutation from a
+/// file-op or the `@aether/file-editor` agent). When the buffer has no unsaved
+/// edits the editor re-syncs silently and this never appears; it only surfaces
+/// when there's a conflict to resolve, or the file was deleted / moved.
+///
+/// [onReload] is null when there's nothing safe to reload to (deleted / moved /
+/// non-editable kinds); [onDismiss] hides the banner without touching content.
+class ExternalChangeBanner extends StatelessWidget {
+  const ExternalChangeBanner({
+    super.key,
+    required this.text,
+    this.onReload,
+    required this.onDismiss,
+  });
+
+  final String text;
+  final VoidCallback? onReload;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      color: theme.colorScheme.errorContainer,
+      padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+      child: Row(
+        children: [
+          Icon(
+            LucideIcons.fileWarning,
+            size: 16,
+            color: theme.colorScheme.onErrorContainer,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onErrorContainer,
+              ),
+            ),
+          ),
+          if (onReload != null)
+            TextButton(
+              onPressed: onReload,
+              style: TextButton.styleFrom(
+                foregroundColor: theme.colorScheme.onErrorContainer,
+                visualDensity: VisualDensity.compact,
+              ),
+              child: const Text('重新加载'),
+            ),
+          IconButton(
+            tooltip: '忽略',
+            visualDensity: VisualDensity.compact,
+            color: theme.colorScheme.onErrorContainer,
+            icon: const Icon(LucideIcons.x, size: 16),
+            onPressed: onDismiss,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class EditorErrorBody extends StatelessWidget {
   const EditorErrorBody({
     super.key,
