@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/memory_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/memory/application/memory_providers.dart';
 import 'package:aetherlink_flutter/features/memory/application/memory_settings_controller.dart';
@@ -63,6 +64,13 @@ class MemoryHomePage extends ConsumerWidget {
           color: theme.colorScheme.onSurface,
         ),
         title: const Text('记忆'),
+        actions: [
+          if (config.enabled)
+            const Padding(
+              padding: EdgeInsets.only(right: 4),
+              child: _ConsolidateAction(),
+            ),
+        ],
       ),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
@@ -75,7 +83,7 @@ class MemoryHomePage extends ConsumerWidget {
           _masterCard(theme, config.enabled, controller),
           if (config.enabled) ...[
             const SizedBox(height: 10),
-            _overviewCard(theme, counts),
+            _overviewCard(theme, counts, config.lastConsolidatedAt),
             const SizedBox(height: 14),
             const _GroupLabel('管理'),
             const SizedBox(height: 6),
@@ -111,12 +119,19 @@ class MemoryHomePage extends ConsumerWidget {
     );
   }
 
-  Widget _overviewCard(ThemeData theme, AsyncValue<MemoryCounts> counts) {
+  Widget _overviewCard(
+    ThemeData theme,
+    AsyncValue<MemoryCounts> counts,
+    int? lastConsolidatedAt,
+  ) {
     return _OutlinedCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _CardHeader(title: '记忆概览', description: '记忆总数、全局与涉及助手分布'),
+          _CardHeader(
+            title: '记忆概览',
+            description: '最近整理：${_formatRelativeTime(lastConsolidatedAt)}',
+          ),
           Divider(height: 1, color: theme.dividerColor),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
@@ -238,6 +253,80 @@ class MemoryHomePage extends ConsumerWidget {
         description: '注入方式 · 嵌入模型 · 高级参数',
         onTap: () => context.push(AppRouter.memorySettingsPath),
       ),
+    );
+  }
+}
+
+/// Formats [epochMillis] as a coarse relative time (刚刚 / N分钟前 / N小时前 /
+/// N天前), or 「尚未整理」 when null. Used for 最近整理 on the overview card.
+String _formatRelativeTime(int? epochMillis) {
+  if (epochMillis == null) return '尚未整理';
+  final diff = DateTime.now().millisecondsSinceEpoch - epochMillis;
+  if (diff < 60 * 1000) return '刚刚';
+  if (diff < 60 * 60 * 1000) return '${diff ~/ (60 * 1000)} 分钟前';
+  if (diff < 24 * 60 * 60 * 1000) return '${diff ~/ (60 * 60 * 1000)} 小时前';
+  return '${diff ~/ (24 * 60 * 60 * 1000)} 天前';
+}
+
+/// The 整理记忆 (consolidation/Dream) app-bar action. Tapping it runs
+/// [consolidateChatMemories] — distilling episodic memories into semantic
+/// facts via the auxiliary model — and reports the tally in a SnackBar. Shows a
+/// spinner while running and ignores re-taps so a slow model call can't stack
+/// passes. Mobile has no reliable background scheduler, so this manual trigger
+/// is the only consolidation entry point.
+class _ConsolidateAction extends ConsumerStatefulWidget {
+  const _ConsolidateAction();
+
+  @override
+  ConsumerState<_ConsolidateAction> createState() => _ConsolidateActionState();
+}
+
+class _ConsolidateActionState extends ConsumerState<_ConsolidateAction> {
+  bool _busy = false;
+
+  Future<void> _run() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final result = await ref.read(memoryConsolidatorProvider.notifier).run();
+      messenger.showSnackBar(
+        SnackBar(content: Text(_message(result)), behavior: SnackBarBehavior.floating),
+      );
+    } on Object {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('整理失败，请稍后再试'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _message(MemoryConsolidationResult result) {
+    if (result.scannedEpisodic == 0) return '暂无可整理的情景记忆';
+    if (result.changed == 0) return '已整理，无需新增或更新';
+    return '整理完成：新增 ${result.created} · 更新 ${result.updated}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return IconButton(
+      tooltip: '整理记忆',
+      onPressed: _busy ? null : _run,
+      icon: _busy
+          ? SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: theme.colorScheme.primary,
+              ),
+            )
+          : Icon(LucideIcons.sparkles, size: 22, color: theme.colorScheme.primary),
     );
   }
 }

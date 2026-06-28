@@ -4,11 +4,17 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/network_proxy_access.dart';
 import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
 import 'package:aetherlink_flutter/features/memory/application/memory_providers.dart';
 import 'package:aetherlink_flutter/features/memory/application/memory_settings_controller.dart';
 import 'package:aetherlink_flutter/features/memory/data/chat_memory_store.dart';
 import 'package:aetherlink_flutter/features/memory/data/embedding_service.dart';
 import 'package:aetherlink_flutter/features/memory/domain/embedding_model_key.dart';
+import 'package:aetherlink_flutter/features/memory/domain/memory_consolidation.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_extraction.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_injection.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
@@ -16,6 +22,7 @@ import 'package:aetherlink_flutter/features/memory/domain/memory_scope.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_settings.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_vector.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
+import 'package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 
@@ -359,4 +366,193 @@ Future<int> storeExtractedChatMemories(
     }
   }
   return written;
+}
+
+/// Tally of an opportunistic 巩固 (Dream) run: how many semantic facts were
+/// newly [created], how many existing ones were [updated] (再巩固), and how many
+/// episodic rows were [scannedEpisodic] across all buckets.
+class MemoryConsolidationResult {
+  const MemoryConsolidationResult({
+    required this.created,
+    required this.updated,
+    required this.scannedEpisodic,
+  });
+
+  final int created;
+  final int updated;
+  final int scannedEpisodic;
+
+  int get changed => created + updated;
+}
+
+/// A bucket needs at least this many episodic memories before consolidating —
+/// distilling a single event into a "stable" fact is rarely worthwhile.
+const int _minEpisodicToConsolidate = 3;
+
+/// Exposes [consolidateChatMemories] to the UI (which only has a `WidgetRef`):
+/// the notifier owns a `Ref`, so the 记忆 home page's 整理记忆 button calls
+/// `ref.read(memoryConsolidatorProvider.notifier).run()`. Kept alive because it
+/// is only `read` to fire a one-shot pass (no widget watches it).
+@Riverpod(keepAlive: true)
+class MemoryConsolidator extends _$MemoryConsolidator {
+  @override
+  void build() {}
+
+  Future<MemoryConsolidationResult> run() => consolidateChatMemories(ref);
+}
+
+/// Runs an opportunistic 巩固 (Dream) pass over the 普通聊天 memories: for each
+/// scope bucket (global + every assistant that owns memories) it asks the
+/// auxiliary model to distil that bucket's episodic events into stable semantic
+/// facts, then either adds a new fact (deduped, case-insensitive) or
+/// re-consolidates (UPDATEs) an existing semantic fact in place. Episodic rows
+/// are left intact — they fade through activation/decay (a later phase), not by
+/// being deleted here.
+///
+/// Mobile has no reliable background scheduler, so this is triggered manually
+/// via the 整理记忆 button rather than on a timer. Best-effort per bucket: a
+/// bucket whose model call or parse fails is skipped without aborting the rest.
+/// A no-op when memory is disabled or no auxiliary/chat model is configured.
+/// Stamps [MemorySettingsController.setLastConsolidated] and invalidates the
+/// 记忆 list/count providers when anything changed.
+///
+/// Composed in `app/` because it must read settings, the memory store and the
+/// auxiliary model + LLM gateway across feature boundaries.
+Future<MemoryConsolidationResult> consolidateChatMemories(Ref ref) async {
+  const empty =
+      MemoryConsolidationResult(created: 0, updated: 0, scannedEpisodic: 0);
+  final settings = ref.read(memorySettingsControllerProvider);
+  if (!settings.enabled) return empty;
+
+  // Resolve the consolidation model: 快速 → 标题 → current chat model.
+  final auxState = ref.read(auxiliaryModelControllerProvider);
+  final providers = await ref.read(appModelProvidersProvider.future);
+  var resolved = resolveAuxiliaryModel(auxState.fastModelKey, providers);
+  resolved ??= resolveAuxiliaryModel(auxState.titleModelKey, providers);
+  resolved ??= findCurrentModel(providers);
+  if (resolved == null) return empty;
+  final effective = effectiveModelFor(resolved);
+  final gateway = ref.read(appLlmGatewayFactoryProvider).forModel(effective);
+  final store = ref.read(chatMemoryStoreProvider);
+
+  // The buckets to consolidate: global + each assistant that owns memories.
+  final scopes = <MemoryScope>[const MemoryScope.chatGlobal()];
+  for (final ownerId in (await store.ownerCounts()).keys) {
+    scopes.add(MemoryScope.chatAssistant(ownerId));
+  }
+
+  var created = 0;
+  var updated = 0;
+  var scanned = 0;
+  var touchedGlobal = false;
+  var touchedAssistant = false;
+
+  for (final scope in scopes) {
+    final all = await store.list(scope);
+    final episodic = [
+      for (final m in all)
+        if (m.type == MemoryType.episodic) m,
+    ];
+    if (episodic.length < _minEpisodicToConsolidate) continue;
+    final semantic = [
+      for (final m in all)
+        if (m.type == MemoryType.semantic) m,
+    ];
+    scanned += episodic.length;
+
+    final ops = await _runConsolidationBucket(
+      gateway: gateway,
+      model: effective,
+      episodic: episodic,
+      semantic: semantic,
+    );
+    if (ops.isEmpty) continue;
+
+    final isGlobal = scope.level == MemoryLevel.global;
+    final seen = {for (final m in semantic) m.content.trim().toLowerCase()};
+
+    for (final op in ops) {
+      final idx = op.updatesIndex;
+      if (idx != null && idx < semantic.length) {
+        // 再巩固: refine an existing semantic fact in place (skip a no-op).
+        final target = semantic[idx];
+        if (target.content.trim() == op.content.trim()) continue;
+        await store.update(
+          target.copyWith(
+            content: op.content,
+            importance: op.importance,
+            source: MemorySource.auto,
+          ),
+        );
+        seen.add(op.content.trim().toLowerCase());
+        updated++;
+        isGlobal ? touchedGlobal = true : touchedAssistant = true;
+        continue;
+      }
+      final key = op.content.trim().toLowerCase();
+      if (seen.contains(key)) continue;
+      seen.add(key);
+      await store.create(
+        MemoryItem(
+          id: '',
+          content: op.content,
+          level: isGlobal ? MemoryLevel.global : MemoryLevel.owner,
+          ownerId: isGlobal ? null : scope.ownerId,
+          type: MemoryType.semantic,
+          importance: op.importance,
+          source: MemorySource.auto,
+        ),
+      );
+      created++;
+      isGlobal ? touchedGlobal = true : touchedAssistant = true;
+    }
+  }
+
+  ref
+      .read(memorySettingsControllerProvider.notifier)
+      .setLastConsolidated(DateTime.now().millisecondsSinceEpoch);
+
+  if (created + updated > 0) {
+    ref.invalidate(memoryCountsProvider);
+    if (touchedGlobal) ref.invalidate(globalMemoriesControllerProvider);
+    if (touchedAssistant) ref.invalidate(assistantMemoryOwnerCountsProvider);
+  }
+  return MemoryConsolidationResult(
+    created: created,
+    updated: updated,
+    scannedEpisodic: scanned,
+  );
+}
+
+/// Runs one bucket's consolidation prompt through [gateway] and parses the
+/// reply. Best-effort: any failure yields an empty op list so the caller can
+/// move on to the next bucket.
+Future<List<MemoryConsolidationOp>> _runConsolidationBucket({
+  required LlmGateway gateway,
+  required Model model,
+  required List<MemoryItem> episodic,
+  required List<MemoryItem> semantic,
+}) async {
+  try {
+    final prompt = buildMemoryConsolidationPrompt(
+      episodics: [for (final m in episodic) m.content],
+      existingSemantic: [for (final m in semantic) m.content],
+    );
+    final request = LlmChatRequest(
+      model: model,
+      messages: [LlmMessage(role: MessageRole.user, content: prompt)],
+      extraHeaders: model.providerExtraHeaders,
+      extraBody: model.providerExtraBody,
+    );
+    final buffer = StringBuffer();
+    await for (final chunk in gateway.streamChat(request)) {
+      if (chunk is LlmTextDelta) buffer.write(chunk.text);
+    }
+    return parseMemoryConsolidationResponse(
+      buffer.toString(),
+      semanticCount: semantic.length,
+    );
+  } on Object {
+    return const [];
+  }
 }
