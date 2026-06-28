@@ -253,6 +253,37 @@ WorkspaceShellSession startShell({String? cwd, int cols, int rows});
 
 ---
 
+## 10.5 Termux 一键接入（已决策：两条路并存，用户自选）
+
+Termux 工作区 = SSH 后端连 Termux 里的 `sshd`（§1 白嫖）。问题只剩"怎么把 Termux 的 sshd 配好"。**100% 零操作做不到**（Termux 安全模型所限），但可做到"装好 Termux + 一步"。**决策：两种自动化方式都提供，让用户按自己情况选。**
+
+打开菜单的「Termux」入口点开后，先检测是否已装 Termux（package 查询），再让用户在两种方式间选：
+
+### 方式 A：粘一行命令（推荐小白，无需任何权限）
+- app 生成 SSH 密钥对（私钥留本地，按 §5.2 存），把**公钥**嵌进一段一次性 setup 脚本；
+- 引导用户复制一行命令在 Termux 里执行（脚本可内置/分享到共享存储，离线可用）：
+  ```bash
+  bash <(下载或读取 aetherlink-termux-setup.sh)
+  ```
+- 脚本自动完成：`pkg install -y openssh` → 写 `~/.ssh/authorized_keys`（**免密码**）→ 配置并启动 `sshd`（默认 `127.0.0.1:8022`）→ `termux-services` + Termux:Boot 设自启/保活 → `termux-wake-lock`；必要时 `termux-change-repo` 换镜像。
+- **不需要 `allow-external-apps`**（是用户自己跑脚本，不是外部 app 遥控）。
+
+### 方式 B：全自动 RUN_COMMAND（高级，省去粘命令）
+- 需用户先开一次 `allow-external-apps=true`（app 给引导 + 复制命令）；app manifest 声明 `com.termux.permission.RUN_COMMAND`。
+- 之后 app 用 `RUN_COMMAND` intent 依次代跑上面那串步骤（装包/写公钥/起 sshd/设自启），全程无需用户敲命令。
+
+### 两方式共同收尾
+- 配好后 app **自动新建** `host=127.0.0.1 / port=8022 / 密钥认证` 的 `SshConnection` + 指向它的 Termux 工作区，立即可用；`backendType` 记 `termux`（与纯 SSH 区分展示），但底层复用 `RemoteSshBackend`。
+
+### 坑（影响成功率，UI 要提示）
+- **Termux 必须 F-Droid/GitHub 版**（Play 版已废弃，RUN_COMMAND/包管理跑不通）。
+- **保活**：Android 杀后台会断 sshd → 依赖 Termux:Boot + wake-lock + 让用户关 Termux 电池优化。
+- **首次联网装包**：`pkg install` 需网络，国内可能要换镜像源。
+
+> 实现优先级：方式 A 先做（限制最少、对小白最稳）；方式 B 作为「高级」选项随后补。原生零配置 `TermuxBackend`（intent 直接做文件/exec、完全不用 sshd）仍是另一条重活，按需再议。
+
+---
+
 ## 11. 隔离纪律与架构守护
 
 - 仅 `data/remote_ssh_backend.dart` 可 import `dartssh2`；新增一条断言（参照 SAF：可在 `import_boundaries_test.dart` 同级加一个「插件 import 白名单」测试，或扩展现有架构测试）。
@@ -281,7 +312,8 @@ WorkspaceShellSession startShell({String? cwd, int cols, int rows});
 - **SSH-3 AI 命令执行（重点）**：抽象新增 `exec()` + `WorkspaceExecResult`；SSH 非 PTY `runWithResult`（cwd / timeout）；新内置 MCP 工具 `run_command` 路由到 backend.exec，走 HITL 确认（high risk）。**无终端 UI 依赖。**
 - **SSH-3b 人类交互式终端（可后置）**：抽象新增 `startShell`/`WorkspaceShellSession`；SSH PTY；第三页终端 UI（`xterm` + ANSI 渲染）。
 - **SSH-4（可选）外部监听**：`inotifywait` / 轮询补 `watch` 外部变更。
-- **Termux 复用**：文档化「Termux 跑 sshd → 新建 127.0.0.1:8022 SSH 工作区」；UI 上 Termux 入口可直接走 SSH 配置（预填 localhost:8022）或保留占位。
+- **Termux-A 一键接入（粘命令）**：app 生成密钥 + setup 脚本；Termux 入口引导一行命令自动装 openssh/写公钥/起 sshd/保活 → 自动建 127.0.0.1:8022 密钥认证工作区（底层复用 `RemoteSshBackend`）。见 §10.5 方式 A。
+- **Termux-B 全自动（RUN_COMMAND，可后置）**：引导开 `allow-external-apps` + manifest 权限，app 用 intent 代跑全部步骤。见 §10.5 方式 B。
 
 ---
 
@@ -289,7 +321,7 @@ WorkspaceShellSession startShell({String? cwd, int cols, int rows});
 
 1. ~~**凭据存储**：引入 `flutter_secure_storage` 还是沿用现明文 KV？~~ → **已决策：首期明文 KV（独立键 + 排除备份），secure storage 列为后续硬化项。**
 2. ~~**连接参数落点**：内嵌子对象还是 URI？~~ → **已决策：方案 C — 独立 `SshConnection` 实体 + `Workspace.connectionId` 引用（可复用、好扩展），见 §5.1。**
-3. **Termux 入口**：占位提示「请在 Termux 开 sshd」并跳 SSH 配置，还是单独做 intent 版 `TermuxBackend`？
+3. ~~**Termux 入口**~~ → **已决策：Termux = SSH 连 Termux sshd；自动化提供两种方式让用户自选（A 粘一行命令、无需权限，先做；B RUN_COMMAND 全自动、需 allow-external-apps，随后补），app 自动生成密钥免密码登录。见 §10.5。** 原生 intent 版 `TermuxBackend` 列为按需后续。
 4. ~~**终端组件**~~ → **已澄清：终端主要给 AI（一次性 exec，无 UI），人类交互式 PTY 次要、可后置；终端组件（`xterm`）仅在 SSH-3b 人类终端阶段才需要。** 见 §8。
 5. **首期范围**：先到 SSH-1（只读）/ SSH-2（可写）/ SSH-3（AI exec）/ 还是含人类终端的 SSH-3b？
 
