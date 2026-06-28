@@ -88,6 +88,49 @@ class WorkspaceStore extends _$WorkspaceStore {
     return entry;
   }
 
+  /// Renames the workspace [id] to [name] (a local display name only — the
+  /// backend's real directory is untouched). Blank names are ignored.
+  Future<void> rename(String id, String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    final current = state.value ?? const [];
+    await _persist([
+      for (final w in current)
+        if (w.id == id) w.copyWith(name: trimmed) else w,
+    ]);
+  }
+
+  /// Rebinds workspace [id] to a freshly-authorized [root] (the user re-picked
+  /// a directory during 重新授权). Keeps the entry's id / name / position so
+  /// re-authorization can never orphan the old record into a duplicate;
+  /// replaces [displayPath] and refreshes the timestamp. Returns the updated
+  /// [Workspace], or null when [id] is unknown.
+  Future<Workspace?> rebind(
+    String id, {
+    required String root,
+    String? displayPath,
+  }) async {
+    final current = state.value ?? const [];
+    Workspace? updated;
+    final next = <Workspace>[
+      for (final w in current)
+        if (w.id == id)
+          updated = Workspace(
+            id: w.id,
+            name: w.name,
+            backendType: w.backendType,
+            root: root,
+            displayPath: displayPath,
+            lastOpenedAt: DateTime.now(),
+          )
+        else
+          w,
+    ];
+    if (updated == null) return null;
+    await _persist(next);
+    return updated;
+  }
+
   /// Removes a workspace from the "最近打开" list.
   Future<void> remove(String id) async {
     final current = state.value ?? const [];
@@ -96,4 +139,7 @@ class WorkspaceStore extends _$WorkspaceStore {
         if (w.id != id) w,
     ]);
   }
+
+  /// Clears the entire "最近打开" list.
+  Future<void> clear() => _persist(const []);
 }

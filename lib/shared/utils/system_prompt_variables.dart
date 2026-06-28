@@ -27,9 +27,8 @@ String getCurrentTimeString() {
       '${_pad2(now.hour)}:${_pad2(now.minute)} $weekday';
 }
 
-/// The operating-system label. The web reads `navigator.userAgent`; on Flutter
-/// we resolve it natively from [Platform].
-String getOperatingSystemString() {
+/// The friendly operating-system name (without version).
+String _operatingSystemName() {
   if (Platform.isIOS) return 'iOS';
   if (Platform.isAndroid) return 'Android';
   if (Platform.isWindows) return 'Windows';
@@ -37,6 +36,30 @@ String getOperatingSystemString() {
   if (Platform.isLinux) return 'Linux';
   if (Platform.isFuchsia) return 'Fuchsia';
   return '未知操作系统';
+}
+
+/// The operating-system label. The web reads `navigator.userAgent`; on Flutter
+/// we resolve it natively from [Platform], appending the version reported by
+/// [Platform.operatingSystemVersion] when available (e.g. `iOS Version 16.0`).
+/// The version string already embeds the OS name on some platforms (Windows /
+/// Android), so it is returned as-is in that case to avoid `Windows Windows …`.
+String getOperatingSystemString() {
+  final name = _operatingSystemName();
+  final version = Platform.operatingSystemVersion.trim();
+  if (version.isEmpty) return name;
+  if (version.toLowerCase().contains(name.toLowerCase())) return version;
+  return '$name $version';
+}
+
+/// The current language tag derived from the device locale
+/// ([Platform.localeName], e.g. `zh_CN.UTF-8`), normalised to a BCP-47-ish form
+/// like `zh-CN`. Falls back to `未知语言` when unavailable.
+String getLocaleString() {
+  var name = Platform.localeName.trim();
+  final dot = name.indexOf('.');
+  if (dot != -1) name = name.substring(0, dot);
+  name = name.replaceAll('_', '-');
+  return name.isEmpty ? '未知语言' : name;
 }
 
 /// The location string: [customLocation] when set, otherwise the device time
@@ -68,5 +91,48 @@ String injectSystemPromptVariables(
   if (config.enableOSVariable) {
     processed += '\n\n操作系统：${getOperatingSystemString()}';
   }
+  if (config.enableLocaleVariable) {
+    processed += '\n\n当前语言：${getLocaleString()}';
+  }
   return processed;
+}
+
+/// ISO-style `yyyy-MM-dd` for [now].
+String _isoDate(DateTime now) =>
+    '${now.year.toString().padLeft(4, '0')}-${_pad2(now.month)}-${_pad2(now.day)}';
+
+/// `HH:mm` for [now].
+String _isoTime(DateTime now) => '${_pad2(now.hour)}:${_pad2(now.minute)}';
+
+/// Replaces inline placeholder variables anywhere inside [text] (template-style,
+/// unlike the append-only [injectSystemPromptVariables]). Mirrors the web /
+/// kelivo `{xxx}` placeholders so a prompt like `你是{assistant_name}` resolves
+/// at send time. Unknown placeholders are left untouched; an empty [text] is
+/// returned unchanged.
+///
+/// Supported: `{cur_date}`, `{cur_time}`, `{cur_datetime}`, `{model_name}`,
+/// `{model_id}`, `{assistant_name}`, `{provider_name}`.
+String replaceSystemPromptPlaceholders(
+  String text, {
+  required String modelName,
+  required String modelId,
+  required String assistantName,
+  required String providerName,
+}) {
+  if (text.isEmpty || !text.contains('{')) return text;
+  final now = DateTime.now();
+  final date = _isoDate(now);
+  final time = _isoTime(now);
+  final vars = <String, String>{
+    '{cur_date}': date,
+    '{cur_time}': time,
+    '{cur_datetime}': '$date $time',
+    '{model_name}': modelName,
+    '{model_id}': modelId,
+    '{assistant_name}': assistantName,
+    '{provider_name}': providerName,
+  };
+  var out = text;
+  vars.forEach((key, value) => out = out.replaceAll(key, value));
+  return out;
 }

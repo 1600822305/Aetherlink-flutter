@@ -154,6 +154,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.folder,
         title: '工作区管理',
         description: '创建和管理文件工作区',
+        route: AppRouter.workspaceManagementPath,
       ),
       SettingItemData(
         icon: LucideIcons.bookOpen,

@@ -136,6 +136,13 @@ abstract class WorkspaceBackend {
   /// the underlying channel / connection is wired before doing real work.
   Future<String> echo(String value);
 
+  /// Whether the persisted authorization for [path] is still valid. Backends
+  /// with no permission model (mock / posix) return `true`. The SAF backend
+  /// returns `false` when its `content://` grant was revoked or expired — the
+  /// opaque path string is unchanged but no longer accessible — so management
+  /// UI can surface a 「重新授权」 affordance without doing a full directory read.
+  Future<bool> verifyAccess(String path) async => true;
+
   /// Lists the entries in [path]. Throws if [path] is a file or doesn't
   /// exist.
   Future<List<WorkspaceEntry>> listDir(String path);

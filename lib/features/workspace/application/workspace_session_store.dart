@@ -13,6 +13,10 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.d
 /// Setting key for the persisted editing session.
 const String kWorkspaceSessionKey = 'workspace_session';
 
+/// Setting key for the "进入工作区时自动恢复上次会话" preference (`'true'` /
+/// `'false'`). Absent means enabled (the default, IDE-like behaviour).
+const String kWorkspaceAutoRestoreKey = 'workspace_auto_restore';
+
 /// The persisted middle-page session: the open file tabs of [workspaceId] and
 /// which one was active.
 class WorkspaceSession {

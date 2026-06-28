@@ -30,6 +30,12 @@ class LocalSafBackend implements WorkspaceBackend {
   }
 
   @override
+  Future<bool> verifyAccess(String path) async {
+    final result = await _plugin.checkPermissions(uri: path);
+    return result.granted;
+  }
+
+  @override
   Future<List<WorkspaceEntry>> listDir(String path) async {
     final result = await _plugin.listDirectory(path: path);
     return [for (final f in result.files) _toEntry(f)];

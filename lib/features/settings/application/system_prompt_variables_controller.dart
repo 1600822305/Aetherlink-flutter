@@ -53,4 +53,8 @@ class SystemPromptVariablesController extends _$SystemPromptVariablesController
   /// Toggles 操作系统变量 injection.
   void setEnableOSVariable(bool value) =>
       persist(state.copyWith(enableOSVariable: value));
+
+  /// Toggles 语言变量 injection.
+  void setEnableLocaleVariable(bool value) =>
+      persist(state.copyWith(enableLocaleVariable: value));
 }

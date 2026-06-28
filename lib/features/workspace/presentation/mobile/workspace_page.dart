@@ -67,9 +67,11 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
     if (_restoreAttempted) return;
     _restoreAttempted = true;
 
-    final raw = await ref
-        .read(appSettingsStoreProvider)
-        .getSetting(kWorkspaceSessionKey);
+    final settings = ref.read(appSettingsStoreProvider);
+    // 用户可在「工作区管理」里关掉自动恢复;关掉后停在空文件树,由用户手动打开。
+    if (await settings.getSetting(kWorkspaceAutoRestoreKey) == 'false') return;
+
+    final raw = await settings.getSetting(kWorkspaceSessionKey);
     final session = WorkspaceSession.decode(raw);
     if (session == null) return;
 

@@ -58,10 +58,10 @@ class Workspace {
   final String? displayPath;
   final DateTime lastOpenedAt;
 
-  Workspace copyWith({DateTime? lastOpenedAt}) {
+  Workspace copyWith({String? name, DateTime? lastOpenedAt}) {
     return Workspace(
       id: id,
-      name: name,
+      name: name ?? this.name,
       backendType: backendType,
       root: root,
       displayPath: displayPath,

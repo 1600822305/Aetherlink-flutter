@@ -17,6 +17,7 @@ abstract class SystemPromptVariables with _$SystemPromptVariables {
     @Default(false) bool enableLocationVariable,
     @Default('') String customLocation,
     @Default(false) bool enableOSVariable,
+    @Default(false) bool enableLocaleVariable,
   }) = _SystemPromptVariables;
 
   factory SystemPromptVariables.fromJson(Map<String, dynamic> json) =>
