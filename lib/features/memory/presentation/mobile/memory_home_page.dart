@@ -271,7 +271,7 @@ String _formatRelativeTime(int? epochMillis) {
 
 /// The 整理记忆 (consolidation/Dream) app-bar action. Tapping it runs
 /// [consolidateChatMemories] — distilling episodic memories into semantic
-/// facts via the auxiliary model — and reports the tally in a SnackBar. Shows a
+/// facts via the auxiliary model — and reports the tally in a toast. Shows a
 /// spinner while running and ignores re-taps so a slow model call can't stack
 /// passes. Mobile has no reliable background scheduler, so this manual trigger
 /// is the only consolidation entry point.

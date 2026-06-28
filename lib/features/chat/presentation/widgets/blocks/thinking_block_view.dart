@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/thinking_settings_access.dart';
@@ -12,6 +11,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_s
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
 import 'package:aetherlink_flutter/shared/domain/thinking_settings.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/thinking_styled_view.dart';
 
 /// Renders a `THINKING` block, mirroring `ThinkingBlock.tsx`.
@@ -105,7 +105,7 @@ class _ThinkingBlockViewState extends ConsumerState<ThinkingBlockView> {
   }
 
   Future<void> _copy() async {
-    await Clipboard.setData(ClipboardData(text: widget.block.content));
+    await AppToast.copy(context, widget.block.content);
     if (!mounted) return;
     setState(() => _copied = true);
     Future.delayed(const Duration(seconds: 2), () {

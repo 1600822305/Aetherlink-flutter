@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_mermaid/flutter_mermaid.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
+import 'package:aetherlink_flutter/shared/widgets/copy_icon_button.dart';
 
 /// Renders a Mermaid diagram with a header bar (label + copy + collapse/expand +
 /// fullscreen) that visually matches [CodeBlockView].
@@ -26,7 +28,7 @@ class _MermaidBlockViewState extends State<MermaidBlockView> {
   bool _hasError = false;
 
   Future<void> _copy() async {
-    await Clipboard.setData(ClipboardData(text: widget.code));
+    await AppToast.copy(context, widget.code);
     if (!mounted) return;
     setState(() => _copied = true);
     Future.delayed(const Duration(seconds: 2), () {
@@ -266,7 +268,14 @@ class _MermaidFullScreen extends StatelessWidget {
           ),
         ),
         actions: [
-          _CopyButton(code: code, labelColor: labelColor),
+          CopyIconButton(
+            text: code,
+            size: 18,
+            color: labelColor,
+            copiedColor: Colors.green,
+            copyTooltip: '复制代码',
+            padding: const EdgeInsets.all(12),
+          ),
         ],
       ),
       body: SafeArea(
@@ -277,42 +286,6 @@ class _MermaidFullScreen extends StatelessWidget {
           minScale: 0.2,
           maxScale: 5.0,
         ),
-      ),
-    );
-  }
-}
-
-class _CopyButton extends StatefulWidget {
-  const _CopyButton({required this.code, required this.labelColor});
-
-  final String code;
-  final Color labelColor;
-
-  @override
-  State<_CopyButton> createState() => _CopyButtonState();
-}
-
-class _CopyButtonState extends State<_CopyButton> {
-  bool _copied = false;
-
-  Future<void> _copy() async {
-    await Clipboard.setData(ClipboardData(text: widget.code));
-    if (!mounted) return;
-    setState(() => _copied = true);
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) setState(() => _copied = false);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: _copied ? '已复制' : '复制代码',
-      onPressed: _copy,
-      icon: Icon(
-        _copied ? LucideIcons.check : LucideIcons.copy,
-        size: 18,
-        color: _copied ? Colors.green : widget.labelColor,
       ),
     );
   }

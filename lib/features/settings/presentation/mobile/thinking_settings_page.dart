@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:gpt_markdown/gpt_markdown.dart';
@@ -10,6 +9,7 @@ import 'package:aetherlink_flutter/features/settings/application/thinking_settin
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/thinking_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/thinking_styled_view.dart';
 
 /// The "思考过程设置" sub-page (外观设置 → this page), a port of the original
@@ -183,7 +183,7 @@ class _PreviewCardState extends State<_PreviewCard> {
   }
 
   Future<void> _copy() async {
-    await Clipboard.setData(const ClipboardData(text: _PreviewCard.sample));
+    await AppToast.copy(context, _PreviewCard.sample);
     if (!mounted) return;
     setState(() => _copied = true);
     Future.delayed(const Duration(seconds: 2), () {

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/font_settings_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'code_block_body.dart';
 import 'code_block_fullscreen.dart';
 import 'code_block_search.dart';
@@ -100,7 +100,7 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
   }
 
   Future<void> _copy() async {
-    await Clipboard.setData(ClipboardData(text: widget.code));
+    await AppToast.copy(context, widget.code);
     if (!mounted) return;
     setState(() => _copied = true);
     Future.delayed(const Duration(seconds: 2), () {

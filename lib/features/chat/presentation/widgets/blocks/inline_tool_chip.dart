@@ -1,11 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
+import 'package:aetherlink_flutter/shared/widgets/copy_icon_button.dart';
 
 /// Lightweight chip that renders a tool call inside a thinking block.
 ///
@@ -237,17 +237,11 @@ class _DetailSection extends StatelessWidget {
               ),
             ),
             const Spacer(),
-            InkWell(
-              onTap: () => Clipboard.setData(ClipboardData(text: content)),
-              borderRadius: BorderRadius.circular(4),
-              child: Padding(
-                padding: const EdgeInsets.all(2),
-                child: Icon(
-                  LucideIcons.copy,
-                  size: 11,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
+            CopyIconButton(
+              text: content,
+              size: 11,
+              padding: const EdgeInsets.all(2),
+              borderRadius: 4,
             ),
           ],
         ),

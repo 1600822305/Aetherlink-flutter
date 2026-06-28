@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -10,6 +9,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
+import 'package:aetherlink_flutter/shared/widgets/copy_icon_button.dart';
 
 Widget _card(BuildContext context, {required Widget child}) {
   final theme = Theme.of(context);
@@ -415,7 +415,7 @@ class _ToolStatusIcon extends StatelessWidget {
 }
 
 /// A labelled, copyable monospace section (请求参数 / 执行结果) inside a tool block.
-class _ToolSection extends StatefulWidget {
+class _ToolSection extends StatelessWidget {
   const _ToolSection({
     required this.label,
     required this.text,
@@ -427,25 +427,9 @@ class _ToolSection extends StatefulWidget {
   final bool isError;
 
   @override
-  State<_ToolSection> createState() => _ToolSectionState();
-}
-
-class _ToolSectionState extends State<_ToolSection> {
-  bool _copied = false;
-
-  Future<void> _copy() async {
-    await Clipboard.setData(ClipboardData(text: widget.text));
-    if (!mounted) return;
-    setState(() => _copied = true);
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) setState(() => _copied = false);
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final labelColor = widget.isError
+    final labelColor = isError
         ? theme.colorScheme.error
         : theme.colorScheme.onSurface;
     return Column(
@@ -455,30 +439,22 @@ class _ToolSectionState extends State<_ToolSection> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              widget.label,
+              label,
               style: theme.textTheme.labelSmall?.copyWith(
                 fontWeight: FontWeight.w500,
                 color: labelColor,
               ),
             ),
-            InkWell(
-              onTap: _copy,
-              borderRadius: BorderRadius.circular(6),
-              child: Padding(
-                padding: const EdgeInsets.all(2),
-                child: Icon(
-                  _copied ? LucideIcons.check : LucideIcons.copy,
-                  size: 12,
-                  color: _copied
-                      ? _toolSuccessColor
-                      : theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
+            CopyIconButton(
+              text: text,
+              size: 12,
+              padding: const EdgeInsets.all(2),
+              copiedColor: _toolSuccessColor,
             ),
           ],
         ),
         const SizedBox(height: 4),
-        _ToolPre(text: widget.text, isError: widget.isError),
+        _ToolPre(text: text, isError: isError),
       ],
     );
   }

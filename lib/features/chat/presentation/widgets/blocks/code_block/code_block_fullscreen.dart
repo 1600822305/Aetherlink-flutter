@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'code_block_body.dart';
 import 'code_block_search.dart';
 import 'code_diff_view.dart';
@@ -43,7 +43,7 @@ class _CodeBlockFullScreenState extends State<CodeBlockFullScreen> {
   int _currentMatchIndex = 0;
 
   Future<void> _copy() async {
-    await Clipboard.setData(ClipboardData(text: widget.code));
+    await AppToast.copy(context, widget.code);
     if (!mounted) return;
     setState(() => _copied = true);
     Future.delayed(const Duration(seconds: 2), () {

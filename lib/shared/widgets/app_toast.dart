@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// Semantic flavor of an [AppToast] message — drives the leading icon + accent.
@@ -116,6 +117,20 @@ abstract final class AppToast {
     );
     _entry = entry;
     overlay.insert(entry);
+  }
+
+  /// Copies [text] to the clipboard and shows a success toast.
+  ///
+  /// Centralizes the very common 「写剪贴板 + 提示已复制」 pattern so call sites
+  /// don't each re-implement it.
+  static Future<void> copy(
+    BuildContext context,
+    String text, {
+    String message = '已复制',
+  }) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!context.mounted) return;
+    success(context, message);
   }
 
   /// Dismisses the currently visible toast (if any) with its exit animation.

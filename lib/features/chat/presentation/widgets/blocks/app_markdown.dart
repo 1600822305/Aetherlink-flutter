@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gpt_markdown/gpt_markdown.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -340,11 +340,8 @@ class _MarkdownTableState extends State<MarkdownTable> {
                           _ToolbarIconButton(
                             icon: LucideIcons.copy,
                             tooltip: '复制表格',
-                            onTap: () {
-                              Clipboard.setData(
-                                ClipboardData(text: _buildMarkdownSource()),
-                              );
-                            },
+                            onTap: () =>
+                                AppToast.copy(context, _buildMarkdownSource()),
                           ),
                           const SizedBox(width: 16),
                           _ToolbarIconButton(

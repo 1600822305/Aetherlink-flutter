@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -12,6 +11,7 @@ import 'package:aetherlink_flutter/features/settings/application/system_prompt_v
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/system_prompt_variables.dart';
 import 'package:aetherlink_flutter/shared/utils/system_prompt_variables.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// The 智能体提示词集合 page (提示词与工具 → this page), a port of the original
 /// `src/pages/Settings/AgentPrompts/index.tsx`.
@@ -88,7 +88,7 @@ class _AgentPromptsSettingsPageState extends State<AgentPromptsSettingsPage>
   }
 
   Future<void> _copyPrompt(AgentPrompt prompt) async {
-    await Clipboard.setData(ClipboardData(text: prompt.content));
+    await AppToast.copy(context, prompt.content);
     if (!mounted) return;
     setState(() => _copiedPromptId = prompt.id);
     _copiedResetTimer?.cancel();
@@ -914,7 +914,7 @@ class _PlaceholderVariablesCardState extends State<_PlaceholderVariablesCard> {
   }
 
   Future<void> _copy(String token) async {
-    await Clipboard.setData(ClipboardData(text: token));
+    await AppToast.copy(context, token);
     if (!mounted) return;
     setState(() => _copiedToken = token);
     _copiedResetTimer?.cancel();
