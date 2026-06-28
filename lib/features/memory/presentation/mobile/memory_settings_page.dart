@@ -85,9 +85,55 @@ class MemorySettingsPage extends ConsumerWidget {
           const _GroupLabel('嵌入模型'),
           const SizedBox(height: 6),
           _OutlinedCard(
-            child: _EmbeddingModelRow(
-              modelKey: config.embeddingModelKey,
-              onSelect: controller.setEmbeddingModelKey,
+            child: Column(
+              children: [
+                _EmbeddingModelRow(
+                  modelKey: config.embeddingModelKey,
+                  onSelect: controller.setEmbeddingModelKey,
+                ),
+                Divider(height: 1, color: theme.dividerColor),
+                InkWell(
+                  onTap: () async {
+                    final messenger = ScaffoldMessenger.of(context);
+                    messenger
+                      ..hideCurrentSnackBar()
+                      ..showSnackBar(
+                        const SnackBar(content: Text('正在测试嵌入模型…')),
+                      );
+                    final r = await testEmbeddingModel(ref);
+                    final msg = r.ok
+                        ? '嵌入模型可用 · 维度 ${r.dim} · 耗时 ${r.elapsedMs}ms'
+                        : '嵌入模型不可用：${r.error}';
+                    messenger
+                      ..hideCurrentSnackBar()
+                      ..showSnackBar(SnackBar(content: Text(msg)));
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 14,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          LucideIcons.plug,
+                          size: 18,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          '测试嵌入模型',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 14),
