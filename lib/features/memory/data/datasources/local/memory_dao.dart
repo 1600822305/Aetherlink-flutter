@@ -40,6 +40,26 @@ class MemoryDao extends DatabaseAccessor<AppDatabase> with _$MemoryDaoMixin {
     return rows.map((row) => row.data).toList();
   }
 
+  /// Every non-deleted memory of [kind] across all levels (global + each
+  /// assistant's private rows), newest first, optionally filtered by a
+  /// case-insensitive [query] substring against the content column. Backs the
+  /// 搜索全部记忆 page; an empty [query] returns the whole [kind] bucket.
+  Future<List<MemoryItem>> searchAll(MemoryKind kind, {String? query}) async {
+    final statement = select(memoryRows)
+      ..where(
+        (t) => t.kind.equals(kind.wire) & t.isDeleted.equals(false),
+      );
+    final trimmed = query?.trim() ?? '';
+    if (trimmed.isNotEmpty) {
+      statement.where((t) => t.data.like('%$trimmed%'));
+    }
+    statement.orderBy([
+      (t) => OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc),
+    ]);
+    final rows = await statement.get();
+    return rows.map((row) => row.data).toList();
+  }
+
   Future<MemoryItem?> getById(String id) async {
     final row = await (select(
       memoryRows,

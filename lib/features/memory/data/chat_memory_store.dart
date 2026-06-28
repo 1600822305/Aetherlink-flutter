@@ -28,6 +28,11 @@ class ChatMemoryStore {
   Future<List<MemoryItem>> list(MemoryScope scope, {String? query}) =>
       _dao.list(scope, query: query);
 
+  /// All chat memories (global + every assistant's private rows), newest first,
+  /// optionally filtered by [query]. Backs the 搜索全部记忆 page.
+  Future<List<MemoryItem>> searchAll({String? query}) =>
+      _dao.searchAll(MemoryKind.chat, query: query);
+
   /// Creates a new memory, minting an id and create/update timestamps. The
   /// passed [item]'s scope fields (kind/level/ownerId) are preserved.
   Future<MemoryItem> create(MemoryItem item) async {

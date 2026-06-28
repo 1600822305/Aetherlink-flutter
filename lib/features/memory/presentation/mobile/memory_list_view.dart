@@ -141,7 +141,7 @@ class _MemoryListViewState extends State<MemoryListView> {
                   ),
                   itemCount: items.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (context, i) => _MemoryCard(
+                  itemBuilder: (context, i) => MemoryCard(
                     item: items[i],
                     onTap: () => _openEditor(context, existing: items[i]),
                     onDelete: () => _confirmDelete(context, items[i]),
@@ -156,12 +156,7 @@ class _MemoryListViewState extends State<MemoryListView> {
   }
 
   Future<void> _openEditor(BuildContext context, {MemoryItem? existing}) async {
-    final result = await showModalBottomSheet<_EditorResult>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _MemoryEditorSheet(existing: existing),
-    );
+    final result = await showMemoryEditor(context, existing: existing);
     if (result == null) return;
     if (existing == null) {
       await widget.onCreate(
@@ -264,16 +259,23 @@ class _SearchField extends StatelessWidget {
 // Memory card
 // =============================================================================
 
-class _MemoryCard extends StatelessWidget {
-  const _MemoryCard({
+/// A memory card: content preview, type/category/time chips and an edit/delete
+/// menu. Shared by the 全局记忆 / 助手私有记忆 list pages and the 搜索全部记忆 page.
+/// The latter passes [scopeChip] to label which bucket a row belongs to (the
+/// per-scope pages omit it since the whole page is one scope).
+class MemoryCard extends StatelessWidget {
+  const MemoryCard({
+    super.key,
     required this.item,
     required this.onTap,
     required this.onDelete,
+    this.scopeChip,
   });
 
   final MemoryItem item;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final Widget? scopeChip;
 
   @override
   Widget build(BuildContext context) {
@@ -313,6 +315,7 @@ class _MemoryCard extends StatelessWidget {
                       runSpacing: 6,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
+                        if (scopeChip != null) scopeChip!,
                         _TypeChip(type: item.type),
                         if (item.category != null && item.category!.isNotEmpty)
                           _MetaChip(label: item.category!),
@@ -478,8 +481,10 @@ class _EmptyState extends StatelessWidget {
 // Add / edit bottom sheet
 // =============================================================================
 
-class _EditorResult {
-  const _EditorResult({
+/// The fields collected by [showMemoryEditor]'s bottom sheet, applied by the
+/// caller to either create a new memory or copy onto an existing one.
+class MemoryEditorResult {
+  const MemoryEditorResult({
     required this.content,
     required this.type,
     required this.category,
@@ -492,21 +497,35 @@ class _EditorResult {
   final double importance;
 }
 
+/// Opens the add/edit memory bottom sheet, returning the collected fields or
+/// null when dismissed. Pass [existing] to pre-fill for editing.
+Future<MemoryEditorResult?> showMemoryEditor(
+  BuildContext context, {
+  MemoryItem? existing,
+}) {
+  return showModalBottomSheet<MemoryEditorResult>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => MemoryEditorSheet(existing: existing),
+  );
+}
+
 String? _normalizeCategory(String raw) {
   final trimmed = raw.trim();
   return trimmed.isEmpty ? null : trimmed;
 }
 
-class _MemoryEditorSheet extends StatefulWidget {
-  const _MemoryEditorSheet({this.existing});
+class MemoryEditorSheet extends StatefulWidget {
+  const MemoryEditorSheet({super.key, this.existing});
 
   final MemoryItem? existing;
 
   @override
-  State<_MemoryEditorSheet> createState() => _MemoryEditorSheetState();
+  State<MemoryEditorSheet> createState() => _MemoryEditorSheetState();
 }
 
-class _MemoryEditorSheetState extends State<_MemoryEditorSheet> {
+class _MemoryEditorSheetState extends State<MemoryEditorSheet> {
   late final TextEditingController _content;
   late final TextEditingController _category;
   late MemoryType _type;
@@ -672,7 +691,7 @@ class _MemoryEditorSheetState extends State<_MemoryEditorSheet> {
                     onPressed: () {
                       if (_content.text.trim().isEmpty) return;
                       Navigator.of(context).pop(
-                        _EditorResult(
+                        MemoryEditorResult(
                           content: _content.text,
                           type: _type,
                           category: _normalizeCategory(_category.text),

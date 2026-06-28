@@ -187,12 +187,12 @@ class MemoryHomePage extends ConsumerWidget {
             onTap: () => context.push(AppRouter.assistantMemoryIndexPath),
           ),
           Divider(height: 1, color: theme.dividerColor),
-          const _NavRow(
+          _NavRow(
             icon: LucideIcons.search,
-            accent: Color(0xFFF59E0B),
+            accent: const Color(0xFFF59E0B),
             label: '搜索全部记忆',
             description: '跨全局与助手检索记忆条目',
-            comingSoon: true,
+            onTap: () => context.push(AppRouter.searchMemoryPath),
           ),
         ],
       ),

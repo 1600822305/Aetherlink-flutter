@@ -68,6 +68,53 @@ class GlobalMemoriesController extends _$GlobalMemoriesController {
   }
 }
 
+/// Loads, edits and deletes the cross-scope 搜索全部记忆 result (chat-global plus
+/// every assistant's private memories), honouring the live search [query]. New
+/// memories aren't created here — the page has no scope to assign them to — so
+/// it only exposes [save]/[delete], which fan out invalidations to every memory
+/// list/count provider since an edited row may belong to any bucket.
+@riverpod
+class AllMemoriesSearchController extends _$AllMemoriesSearchController {
+  String _query = '';
+
+  String get query => _query;
+
+  @override
+  Future<List<MemoryItem>> build() {
+    return ref.watch(chatMemoryStoreProvider).searchAll(query: _query);
+  }
+
+  Future<void> setQuery(String value) async {
+    _query = value;
+    ref.invalidateSelf();
+    await future;
+  }
+
+  Future<void> save(MemoryItem item) async {
+    await ref.read(chatMemoryStoreProvider).update(item);
+    _refresh(item);
+  }
+
+  Future<void> delete(MemoryItem item) async {
+    await ref.read(chatMemoryStoreProvider).delete(item.id);
+    _refresh(item);
+  }
+
+  void _refresh(MemoryItem item) {
+    ref.invalidateSelf();
+    ref.invalidate(memoryCountsProvider);
+    if (item.level == MemoryLevel.global) {
+      ref.invalidate(globalMemoriesControllerProvider);
+    } else {
+      ref.invalidate(assistantMemoryOwnerCountsProvider);
+      final ownerId = item.ownerId;
+      if (ownerId != null && ownerId.isNotEmpty) {
+        ref.invalidate(assistantMemoriesControllerProvider(ownerId));
+      }
+    }
+  }
+}
+
 /// Map of assistant id → private memory count, backing the 按助手查看 index.
 @riverpod
 Future<Map<String, int>> assistantMemoryOwnerCounts(Ref ref) =>
