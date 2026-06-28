@@ -165,6 +165,7 @@ class MemoryHomePage extends ConsumerWidget {
     AsyncValue<MemoryCounts> counts,
   ) {
     final globalCount = counts.asData?.value.global;
+    final assistantCount = counts.asData?.value.assistants;
     return _OutlinedCard(
       child: Column(
         children: [
@@ -177,12 +178,13 @@ class MemoryHomePage extends ConsumerWidget {
             onTap: () => context.push(AppRouter.globalMemoryPath),
           ),
           Divider(height: 1, color: theme.dividerColor),
-          const _NavRow(
+          _NavRow(
             icon: LucideIcons.users,
-            accent: Color(0xFF10B981),
+            accent: const Color(0xFF10B981),
             label: '按助手查看',
             description: '查看并管理各助手的私有记忆',
-            comingSoon: true,
+            trailingText: assistantCount?.toString(),
+            onTap: () => context.push(AppRouter.assistantMemoryIndexPath),
           ),
           Divider(height: 1, color: theme.dividerColor),
           const _NavRow(

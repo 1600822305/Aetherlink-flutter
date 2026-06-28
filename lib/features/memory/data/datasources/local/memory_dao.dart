@@ -110,4 +110,26 @@ class MemoryDao extends DatabaseAccessor<AppDatabase> with _$MemoryDaoMixin {
         .toSet()
         .length;
   }
+
+  /// Per-owner counts of non-deleted private memories of [kind]: a map from
+  /// `ownerId` (assistant id) to the number of memories it owns. Drives the
+  /// 按助手查看 index without one query per assistant.
+  Future<Map<String, int>> ownerCounts(MemoryKind kind) async {
+    final countExp = memoryRows.id.count();
+    final rows = await (selectOnly(memoryRows)
+          ..addColumns([memoryRows.ownerId, countExp])
+          ..where(
+            memoryRows.kind.equals(kind.wire) &
+                memoryRows.level.equals(MemoryLevel.owner.wire) &
+                memoryRows.isDeleted.equals(false),
+          )
+          ..groupBy([memoryRows.ownerId]))
+        .get();
+    final result = <String, int>{};
+    for (final row in rows) {
+      final owner = row.read(memoryRows.ownerId);
+      if (owner != null) result[owner] = row.read(countExp) ?? 0;
+    }
+    return result;
+  }
 }
