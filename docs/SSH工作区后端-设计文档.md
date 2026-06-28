@@ -191,21 +191,46 @@ secure storage 作为可选的后续硬化项，有需求时再统一上（API k
 
 ---
 
-## 8. 终端 exec（PTY）
+## 8. 命令执行：AI 一次性 exec（主）+ 人类交互式 PTY（次）
 
-> **接口缺口**：当前 `WorkspaceBackend` 抽象**没有 `exec`/terminal 方法**，只有 `capabilities.canExec`。要做 SSH 终端必须给抽象补 exec 能力。
+> **定位**：移动端"终端"**主要给 AI 用，用户也能用**——这是两种执行模型，优先级不同。
+>
+> **接口缺口**：当前 `WorkspaceBackend` 抽象**没有任何执行方法**，只有 `capabilities.canExec`。需补两个能力。
 
-建议新增（设计构想 §2.2 早有此意）：
+### 8.1 AI 一次性 exec（重点、先做）
+
+AI agent 的需求是「跑一条命令 → 拿干净可解析的输出」，**不要 PTY**（PTY 会混入 ANSI 转义/交互提示，难解析）。
 
 ```dart
-/// 在工作区里起一个交互式 shell（PTY）。canExec=false 的后端抛 UnsupportedError。
+/// 一次性执行一条命令并收集结果。canExec=false 的后端抛 UnsupportedError。
+Future<WorkspaceExecResult> exec(
+  String command, {
+  String? cwd,        // 默认工作区 root
+  Duration? timeout,  // 防止挂死
+});
+// WorkspaceExecResult: { stdout, stderr, exitCode }
+```
+
+- SSH 实现：`client.runWithResult()` / `execute()`（**非 PTY**），分离 stdout/stderr + exitCode；`cwd` 用 `cd <cwd> && <command>` 或 session 起始目录；超时到则 `kill`。
+- **接入方式 = 新内置 MCP 工具**（如 `@aether/terminal` 的 `run_command`），路由到 `WorkspaceBackend.exec()`，输出回灌给模型。
+- **HITL**：exec 比写文件更高危，**必须走确认网关**（复用现有 `fileEditorNeedsConfirmation` 那套 HITL 机制），标 high risk。
+- 不需要任何终端 UI 组件 —— 这条路径最简单、价值最高。
+
+### 8.2 人类交互式 PTY（次、可后置）
+
+```dart
+/// 起一个交互式 shell（PTY），给人类终端 UI 用。
 WorkspaceShellSession startShell({String? cwd, int cols, int rows});
 // session: stdout/stderr 流 + write(stdin) + resize(cols,rows) + kill + done/exitCode
 ```
 
-- SSH：`client.shell(pty: SSHPtyConfig(...))` 直接映射，`resize` → `session.resizeTerminal`。
-- UI：工作区**第三页（现「终端占位」）**接一个终端 widget（输入框 + 等宽输出 + ANSI 解析）。可调研 `xterm`（Dart 终端组件，与 dartssh2 同生态常配套）。
-- HITL/安全：exec = 远程执行命令，UI 要明确这是真实副作用（尤其 isRemote）。
+- SSH：`client.shell(pty: SSHPtyConfig(...))`，`resize` → `session.resizeTerminal`。
+- UI：工作区**第三页（现「终端占位」）**接终端 widget（输入框 + 等宽输出 + ANSI 解析），调研 `xterm`（Dart 终端组件，dartssh2 同生态常配套）。
+- 这部分依赖 xterm + ANSI 渲染，工程量大于 8.1，**排在 AI exec 之后**。
+
+### 8.3 复用同一连接
+
+8.1 与 8.2 都在同一条 `SSHClient` 上开通道（§4.1 池化），不额外握手。
 
 ---
 
@@ -253,7 +278,8 @@ WorkspaceShellSession startShell({String? cwd, int cols, int rows});
 - **SSH-0 依赖与接缝**：加 `dartssh2`；`SshConnection` 实体 + `SshConnectionStore` + `Workspace.connectionId` 字段（含 fromJson/toJson 迁移）；`workspace_text_ops.dart` 纯函数 + 单测；`workspaceBackendProvider` ssh 分支不再抛错（返回未连接的 `RemoteSshBackend`）。
 - **SSH-1 只读浏览**：连接配置表单（建/选 `SshConnection`）+ 凭据明文 KV（独立键 + 排除备份）+ host key TOFU；按 `connectionId` 池化连接；SFTP `listDir/readFile/readFileBytes/getFileInfo/stat`；文件树/查看器走真连接。`verifyAccess`。
 - **SSH-2 写与编辑**：SFTP 写族 + `workspace_text_ops` 接 `applyDiff/replace/insert/readFileRange`；编辑器 `_writable` 解耦为能力判断；事件总线 `_emit`（实时刷新）；`searchFiles`（远端 grep/find）。
-- **SSH-3 终端**：抽象新增 `startShell`/`WorkspaceShellSession`；SSH PTY 接入；第三页终端 UI（`xterm` 调研）。
+- **SSH-3 AI 命令执行（重点）**：抽象新增 `exec()` + `WorkspaceExecResult`；SSH 非 PTY `runWithResult`（cwd / timeout）；新内置 MCP 工具 `run_command` 路由到 backend.exec，走 HITL 确认（high risk）。**无终端 UI 依赖。**
+- **SSH-3b 人类交互式终端（可后置）**：抽象新增 `startShell`/`WorkspaceShellSession`；SSH PTY；第三页终端 UI（`xterm` + ANSI 渲染）。
 - **SSH-4（可选）外部监听**：`inotifywait` / 轮询补 `watch` 外部变更。
 - **Termux 复用**：文档化「Termux 跑 sshd → 新建 127.0.0.1:8022 SSH 工作区」；UI 上 Termux 入口可直接走 SSH 配置（预填 localhost:8022）或保留占位。
 
@@ -264,11 +290,11 @@ WorkspaceShellSession startShell({String? cwd, int cols, int rows});
 1. ~~**凭据存储**：引入 `flutter_secure_storage` 还是沿用现明文 KV？~~ → **已决策：首期明文 KV（独立键 + 排除备份），secure storage 列为后续硬化项。**
 2. ~~**连接参数落点**：内嵌子对象还是 URI？~~ → **已决策：方案 C — 独立 `SshConnection` 实体 + `Workspace.connectionId` 引用（可复用、好扩展），见 §5.1。**
 3. **Termux 入口**：占位提示「请在 Termux 开 sshd」并跳 SSH 配置，还是单独做 intent 版 `TermuxBackend`？
-4. **终端组件**：用 `xterm` 还是自绘最小终端？
-5. **首期范围**：先到 SSH-1（只读）/ SSH-2（可写）/ 还是直奔含终端的 SSH-3？
+4. ~~**终端组件**~~ → **已澄清：终端主要给 AI（一次性 exec，无 UI），人类交互式 PTY 次要、可后置；终端组件（`xterm`）仅在 SSH-3b 人类终端阶段才需要。** 见 §8。
+5. **首期范围**：先到 SSH-1（只读）/ SSH-2（可写）/ SSH-3（AI exec）/ 还是含人类终端的 SSH-3b？
 
 ---
 
 ## 15. 一句话总结
 
-> 用 `dartssh2` 的 **SFTP + PTY** 实现 `RemoteSshBackend`，SFTP 近 1:1 映射现有 `WorkspaceBackend`，把 SAF 原生独有的 applyDiff/replace/range 智能抽成**共享纯 Dart 文本工具**；凭据首期明文 KV（独立键 + 排除备份，后期可换 secure storage）+ host key TOFU；终端给抽象补 `startShell`。做完 SSH，Termux 跑个 sshd 即白嫖。
+> 用 `dartssh2` 的 **SFTP + PTY** 实现 `RemoteSshBackend`，SFTP 近 1:1 映射现有 `WorkspaceBackend`，把 SAF 原生独有的 applyDiff/replace/range 智能抽成**共享纯 Dart 文本工具**；凭据首期明文 KV（独立键 + 排除备份，后期可换 secure storage）+ host key TOFU；终端以 **AI 一次性 `exec`（新 MCP 工具 + HITL）为主**、人类交互式 PTY 为次（可后置）。做完 SSH，Termux 跑个 sshd 即白嫖。
