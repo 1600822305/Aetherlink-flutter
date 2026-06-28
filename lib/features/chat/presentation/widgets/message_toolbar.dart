@@ -627,7 +627,9 @@ class _VersionHistorySheet extends ConsumerWidget {
     final notifier = ref.read(chatControllerProvider.notifier);
     final latestNumber = versions.length + 1;
 
-    return ConstrainedBox(
+    return SafeArea(
+      top: false,
+      child: ConstrainedBox(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.7,
       ),
@@ -715,6 +717,7 @@ class _VersionHistorySheet extends ConsumerWidget {
             ),
           ),
         ],
+      ),
       ),
     );
   }
