@@ -87,7 +87,7 @@ class MemoryHomePage extends ConsumerWidget {
             const SizedBox(height: 14),
             const _GroupLabel('配置'),
             const SizedBox(height: 6),
-            _settingsCard(theme),
+            _settingsCard(context),
           ],
         ],
       ),
@@ -229,14 +229,14 @@ class MemoryHomePage extends ConsumerWidget {
     );
   }
 
-  Widget _settingsCard(ThemeData theme) {
-    return const _OutlinedCard(
+  Widget _settingsCard(BuildContext context) {
+    return _OutlinedCard(
       child: _NavRow(
         icon: LucideIcons.settings2,
-        accent: Color(0xFF8B5CF6),
+        accent: const Color(0xFF8B5CF6),
         label: '记忆设置',
-        description: '注入方式 · 嵌入模型 · 高级参数',
-        comingSoon: true,
+        description: '注入方式 · 高级参数',
+        onTap: () => context.push(AppRouter.memorySettingsPath),
       ),
     );
   }
