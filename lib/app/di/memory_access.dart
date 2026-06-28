@@ -68,6 +68,10 @@ class ChatMemoryInjection {
 /// Retrieval modes fall back to a full dump when [query] is empty (e.g. a
 /// regenerate with no fresh user turn) so they never silently inject nothing.
 ///
+/// Retrieval selections (`keyword`/`semantic`/narrowed `auto`) are logged as
+/// hits (`accessCount`/`lastAccessedAt`) for the 命中日志 / eval surface; full
+/// dumps are not, since injecting everything indiscriminately isn't a recall.
+///
 /// Lives here (the composition root) because the chat feature must not import
 /// `memory/application` or `memory/data` directly: it reads settings
 /// ([MemorySettingsController]), the stored memories ([ChatMemoryStore]) and the
@@ -100,6 +104,7 @@ Future<ChatMemoryInjection> collectChatMemoryInjection(
   switch (mode) {
     case MemoryInjectionMode.keyword:
       final selected = _keywordTopK([...global, ...assistant], q, settings.topK);
+      await store.recordHits(selected);
       return _dump(_globalOf(selected), _assistantOf(selected));
     case MemoryInjectionMode.semantic:
       final selected = await _semanticTopK(
@@ -108,6 +113,7 @@ Future<ChatMemoryInjection> collectChatMemoryInjection(
         q,
         settings,
       );
+      await store.recordHits(selected);
       return _dump(_globalOf(selected), _assistantOf(selected));
     case MemoryInjectionMode.auto:
       // Global is always full-dumped (small by nature); the assistant pool is
@@ -116,6 +122,7 @@ Future<ChatMemoryInjection> collectChatMemoryInjection(
         return _dump(global, assistant);
       }
       final selectedAssistant = await _semanticTopK(ref, assistant, q, settings);
+      await store.recordHits(selectedAssistant);
       return _dump(global, selectedAssistant);
     case MemoryInjectionMode.full:
     case MemoryInjectionMode.off:

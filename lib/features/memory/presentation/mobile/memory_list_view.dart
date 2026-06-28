@@ -320,6 +320,7 @@ class MemoryCard extends StatelessWidget {
                         if (item.category != null && item.category!.isNotEmpty)
                           _MetaChip(label: item.category!),
                         _MetaChip(label: _relativeTime(item.createdAt)),
+                        if (item.accessCount > 0) _HitChip(item: item),
                       ],
                     ),
                   ],
@@ -417,6 +418,46 @@ class _MetaChip extends StatelessWidget {
 // =============================================================================
 // Empty state
 // =============================================================================
+
+/// Eval chip: how many times this memory was injected via retrieval and when it
+/// was last recalled. Only shown once `accessCount > 0`.
+class _HitChip extends StatelessWidget {
+  const _HitChip({required this.item});
+
+  final MemoryItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    const color = Color(0xFF16A34A);
+    final last = item.lastAccessedAt;
+    final label = last != null && last > 0
+        ? '命中 ${item.accessCount} 次 · ${MemoryCard._relativeTime(last)}'
+        : '命中 ${item.accessCount} 次';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(LucideIcons.target, size: 11, color: color),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState({

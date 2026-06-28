@@ -62,6 +62,21 @@ class ChatMemoryStore {
   /// newest-first lists). Used by semantic retrieval's lazy embedding backfill.
   Future<void> persistEmbedding(MemoryItem item) => _dao.upsert(item);
 
+  /// Records a retrieval hit on each of [items]: bumps `accessCount` and stamps
+  /// `lastAccessedAt` with now, leaving `updatedAt` untouched so logging a hit
+  /// never reorders the newest-first lists. Backs the 命中日志 / eval surface.
+  Future<void> recordHits(Iterable<MemoryItem> items) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final item in items) {
+      await _dao.upsert(
+        item.copyWith(
+          accessCount: item.accessCount + 1,
+          lastAccessedAt: now,
+        ),
+      );
+    }
+  }
+
   Future<MemoryCounts> counts() async {
     final total = await _dao.countByKind(MemoryKind.chat);
     final global = await _dao.count(const MemoryScope.chatGlobal());
