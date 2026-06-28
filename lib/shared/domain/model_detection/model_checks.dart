@@ -96,3 +96,13 @@ bool isGenerateVideoModel(Model model) {
   if (model.capabilities?.videoGeneration == true) return true;
   return model.videoGeneration == true;
 }
+
+/// Non-conversational model — should not appear in a chat-model selector.
+/// Mirrors Cherry Studio's `isNonChatModel` (`src/shared/utils/model.ts`):
+/// embedding / rerank / 图像生成 / 视频生成 models are picked elsewhere
+/// (memory embedding selector, painting page), not as the chat model.
+bool isNonChatModel(Model model) =>
+    isEmbeddingModel(model) ||
+    isRerankModel(model) ||
+    isGenerateImageModel(model) ||
+    isGenerateVideoModel(model);

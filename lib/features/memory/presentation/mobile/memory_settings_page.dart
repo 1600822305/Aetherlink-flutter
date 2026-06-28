@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/features/memory/application/memory_settings_c
 import 'package:aetherlink_flutter/features/memory/domain/embedding_model_key.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_settings.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
@@ -393,6 +394,7 @@ class _EmbeddingModelRow extends ConsumerWidget {
           onSelect: (p, m) => onSelect(encodeEmbeddingModelKey(p.id, m.id)),
           selectedProviderId: selectedProviderId,
           selectedModelId: selectedModelId,
+          filter: isEmbeddingModel,
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),

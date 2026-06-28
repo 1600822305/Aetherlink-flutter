@@ -13,6 +13,7 @@ import 'package:aetherlink_flutter/features/chat/domain/translate/translate_hist
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/utils/provider_icons.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
@@ -143,6 +144,7 @@ class _TranslatePageState extends ConsumerState<TranslatePage> {
       context,
       selectedProviderId: current?.provider.id,
       selectedModelId: current?.model.id,
+      filter: (m) => !isNonChatModel(m),
       onSelect: (provider, model) {
         ref
             .read(translateModelSelectionProvider.notifier)

@@ -18,11 +18,17 @@ import 'package:aetherlink_flutter/shared/utils/provider_icons.dart';
 /// that pick a model for a different purpose (e.g. the 翻译 page's model button)
 /// pass [onSelect] to receive the chosen `(provider, model)` instead, with
 /// [selectedProviderId] / [selectedModelId] highlighting the current choice.
+///
+/// [filter] restricts which models are listed (mirrors Cherry Studio's
+/// `ModelSelector` `filter` prop): chat callers pass `(m) => !isNonChatModel(m)`
+/// to hide embedding/rerank/生成类模型, the memory embedding picker passes
+/// [isEmbeddingModel] to show only embedding models.
 Future<void> showModelSelectorDialog(
   BuildContext context, {
   void Function(ModelProvider provider, Model model)? onSelect,
   String? selectedProviderId,
   String? selectedModelId,
+  bool Function(Model model)? filter,
 }) {
   // Drop the chat input's focus first so the modal route has no node to restore
   // on pop — otherwise closing this full-screen dialog re-focuses the input box
@@ -38,6 +44,7 @@ Future<void> showModelSelectorDialog(
       onSelect: onSelect,
       selectedProviderId: selectedProviderId,
       selectedModelId: selectedModelId,
+      filter: filter,
     ),
     transitionBuilder: (context, animation, _, child) => child,
     transitionDuration: Duration.zero,
@@ -110,11 +117,13 @@ class _ModelSelectorView extends ConsumerStatefulWidget {
     this.onSelect,
     this.selectedProviderId,
     this.selectedModelId,
+    this.filter,
   });
 
   final void Function(ModelProvider provider, Model model)? onSelect;
   final String? selectedProviderId;
   final String? selectedModelId;
+  final bool Function(Model model)? filter;
 
   @override
   ConsumerState<_ModelSelectorView> createState() => _ModelSelectorViewState();
@@ -160,10 +169,15 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
     final current = currentAsync.value;
 
     // availableModels: every model, in provider-defined order, tagged with its
-    // vendor. (Parent passes enabled models flattened; mirror that here.)
+    // vendor. (Parent passes enabled models flattened; mirror that here.) When
+    // a [filter] is supplied, models failing it are dropped — this is how the
+    // chat selector hides embedding/rerank/生成类模型 (see Cherry Studio's
+    // `ModelSelector` `filter` prop).
+    final filter = widget.filter;
     final available = <_Entry>[
       for (final p in providers)
-        for (final m in p.models) _Entry(p, m),
+        for (final m in p.models)
+          if (filter == null || filter(m)) _Entry(p, m),
     ];
 
     // groupedModels(): models grouped by vendor + the ordered vendor list of

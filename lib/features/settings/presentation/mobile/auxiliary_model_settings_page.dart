@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_sele
 import 'package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
@@ -465,12 +466,13 @@ class _ModelSectionState extends ConsumerState<_ModelSection> {
     }
 
     void openSelector() => widget.index == 0
-        ? showModelSelectorDialog(context)
+        ? showModelSelectorDialog(context, filter: (m) => !isNonChatModel(m))
         : showModelSelectorDialog(
             context,
             onSelect: (p, m) => _onModelSelect(ctrl, p, m),
             selectedProviderId: selectedProviderId,
             selectedModelId: selectedModelId,
+            filter: (m) => !isNonChatModel(m),
           );
     final canClear = desc.clearable && modelKey != null && modelKey.isNotEmpty;
 
@@ -558,12 +560,16 @@ class _ModelSectionState extends ConsumerState<_ModelSection> {
                           // Chat tab: let the dialog use its default path which
                           // properly awaits selectCurrentModel; the controller's
                           // listener syncs chatModelKey automatically.
-                          ? showModelSelectorDialog(context)
+                          ? showModelSelectorDialog(
+                              context,
+                              filter: (m) => !isNonChatModel(m),
+                            )
                           : showModelSelectorDialog(
                               context,
                               onSelect: (p, m) => _onModelSelect(ctrl, p, m),
                               selectedProviderId: selectedProviderId,
                               selectedModelId: selectedModelId,
+                              filter: (m) => !isNonChatModel(m),
                             ),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(

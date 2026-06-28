@@ -21,6 +21,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/mini_map_s
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/domain/top_toolbar_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/top_toolbar_component_catalog.dart';
@@ -297,7 +298,10 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
           current: current,
           comboName: comboName,
           onPressed: () => hasModels
-              ? showModelSelectorDialog(context)
+              ? showModelSelectorDialog(
+                  context,
+                  filter: (m) => !isNonChatModel(m),
+                )
               : context.push(AppRouter.defaultModelPath),
         );
       case TopToolbarComponent.settingsButton:
