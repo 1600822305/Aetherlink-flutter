@@ -164,6 +164,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.database,
         title: '记忆功能',
         description: '管理AI长期记忆，自动记住用户偏好',
+        route: AppRouter.memoryPath,
       ),
       SettingItemData(
         icon: LucideIcons.fileText,

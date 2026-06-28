@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/backup/presentation/backup_settings_
 import 'package:aetherlink_flutter/features/notes/presentation/mobile/note_editor_page.dart';
 import 'package:aetherlink_flutter/features/notes/presentation/mobile/notes_page.dart';
 import 'package:aetherlink_flutter/features/notes/presentation/mobile/notes_settings_page.dart';
+import 'package:aetherlink_flutter/features/memory/presentation/mobile/memory_home_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/agent_prompts_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/auxiliary_model_settings_page.dart';
@@ -90,6 +91,7 @@ abstract final class AppRouter {
   static const String settingsSearchPath = '/settings/search';
   static const String voiceSettingsPath = '/settings/voice';
   static const String backupSettingsPath = '/settings/backup';
+  static const String memoryPath = '/settings/memory';
   static const String notesPath = '/settings/notes';
   static const String notesSettingsPath = '/settings/notes/settings';
   static String noteEditorPath(String relativePath, String name) =>
@@ -157,8 +159,7 @@ abstract final class AppRouter {
       GoRoute(
         path: workspacePath,
         name: 'workspace',
-        pageBuilder: (context, state) =>
-            _instant(state, const WorkspacePage()),
+        pageBuilder: (context, state) => _instant(state, const WorkspacePage()),
       ),
       GoRoute(
         path: settingsPath,
@@ -276,6 +277,12 @@ abstract final class AppRouter {
         name: 'behavior',
         pageBuilder: (context, state) =>
             _instant(state, const BehaviorSettingsPage()),
+      ),
+      GoRoute(
+        path: memoryPath,
+        name: 'memory',
+        pageBuilder: (context, state) =>
+            _instant(state, const MemoryHomePage()),
       ),
       GoRoute(
         path: voiceSettingsPath,
