@@ -829,36 +829,33 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
     String? endpointOverride,
   }) async {
     if (_fetching) return;
+    final baseUrl = endpointOverride?.trim().isNotEmpty == true
+        ? endpointOverride!.trim()
+        : (widget.baseUrlController.text.trim().isEmpty
+              ? null
+              : widget.baseUrlController.text.trim());
+    final catalog = ref.read(appModelCatalogProvider);
+    // Fire the request but DON'T await it here — the sheet opens immediately and
+    // shows a loading state while this resolves, so there's no perceived lag.
+    final modelsFuture = catalog.listModels(
+      LlmModelQuery(
+        providerType: provider.providerType ?? provider.name,
+        apiKey: widget.apiKeyController.text.trim().isEmpty
+            ? null
+            : widget.apiKeyController.text.trim(),
+        baseUrl: baseUrl,
+        extraHeaders: provider.extraHeaders,
+      ),
+    );
+    final existingIds = {for (final m in provider.models) m.id};
     setState(() => _fetching = true);
     try {
-      final baseUrl = endpointOverride?.trim().isNotEmpty == true
-          ? endpointOverride!.trim()
-          : (widget.baseUrlController.text.trim().isEmpty
-                ? null
-                : widget.baseUrlController.text.trim());
-      final catalog = ref.read(appModelCatalogProvider);
-      final fetched = await catalog.listModels(
-        LlmModelQuery(
-          providerType: provider.providerType ?? provider.name,
-          apiKey: widget.apiKeyController.text.trim().isEmpty
-              ? null
-              : widget.apiKeyController.text.trim(),
-          baseUrl: baseUrl,
-          extraHeaders: provider.extraHeaders,
-        ),
-      );
-      if (!mounted) return;
-      if (fetched.isEmpty) {
-        AppToast.warning(context, '未获取到模型');
-        return;
-      }
-      final existingIds = {for (final m in provider.models) m.id};
       final result = await showModalBottomSheet<FetchedModelsResult>(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
         builder: (_) => FetchedModelsSheet(
-          models: fetched,
+          modelsFuture: modelsFuture,
           existingIds: existingIds,
           providerId: provider.id,
         ),
@@ -906,7 +903,7 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
       }
     } catch (_) {
       if (!mounted) return;
-      AppToast.error(context, '获取模型失败，请检查密钥与基础URL');
+      AppToast.error(context, '保存模型变更失败');
     } finally {
       if (mounted) setState(() => _fetching = false);
     }

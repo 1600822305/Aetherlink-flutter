@@ -26,12 +26,14 @@ class FetchedModelsResult {
 class FetchedModelsSheet extends StatefulWidget {
   const FetchedModelsSheet({
     super.key,
-    required this.models,
+    required this.modelsFuture,
     required this.existingIds,
     required this.providerId,
   });
 
-  final List<LlmModelInfo> models;
+  /// The in-flight model fetch. The sheet opens immediately and shows a loading
+  /// state while this resolves, so tapping 获取 has no perceived lag.
+  final Future<List<LlmModelInfo>> modelsFuture;
   final Set<String> existingIds;
   final String providerId;
 
@@ -42,19 +44,40 @@ class FetchedModelsSheet extends StatefulWidget {
 class _FetchedModelsSheetState extends State<FetchedModelsSheet> {
   final TextEditingController _searchController = TextEditingController();
   String _searchTerm = '';
-  late final Set<String> _selected;
-  late final Set<String> _removed;
+  Set<String> _selected = {};
+  final Set<String> _removed = {};
   final Set<String> _expandedGroups = {};
+
+  List<LlmModelInfo> _models = const [];
+  bool _loading = true;
+  Object? _error;
 
   @override
   void initState() {
     super.initState();
-    // Default: select all models that are NOT already added
-    _selected = {
-      for (final m in widget.models)
-        if (!widget.existingIds.contains(m.id)) m.id,
-    };
-    _removed = {};
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final models = await widget.modelsFuture;
+      if (!mounted) return;
+      setState(() {
+        _models = models;
+        // Default: select all models that are NOT already added.
+        _selected = {
+          for (final m in models)
+            if (!widget.existingIds.contains(m.id)) m.id,
+        };
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e;
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -68,7 +91,7 @@ class _FetchedModelsSheetState extends State<FetchedModelsSheet> {
     final searchLower = _searchTerm.toLowerCase();
     final groups = <String, List<LlmModelInfo>>{};
 
-    for (final model in widget.models) {
+    for (final model in _models) {
       final name = model.name ?? model.id;
       if (searchLower.isNotEmpty &&
           !name.toLowerCase().contains(searchLower) &&
@@ -152,7 +175,7 @@ class _FetchedModelsSheetState extends State<FetchedModelsSheet> {
 
   void _selectAll() {
     setState(() {
-      for (final m in widget.models) {
+      for (final m in _models) {
         if (!widget.existingIds.contains(m.id)) {
           _selected.add(m.id);
         }
@@ -172,7 +195,7 @@ class _FetchedModelsSheetState extends State<FetchedModelsSheet> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final grouped = _groupedModels;
-    final totalCount = widget.models.length;
+    final totalCount = _models.length;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.85,
@@ -200,6 +223,13 @@ class _FetchedModelsSheetState extends State<FetchedModelsSheet> {
                 ),
               ),
 
+              if (_loading)
+                const Expanded(
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_error != null)
+                Expanded(child: _buildErrorState(theme, colorScheme))
+              else ...[
               // ─── Header ───────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -319,7 +349,7 @@ class _FetchedModelsSheetState extends State<FetchedModelsSheet> {
                           ? null
                           : () {
                               final toAdd = [
-                                for (final m in widget.models)
+                                for (final m in _models)
                                   if (_selected.contains(m.id) &&
                                       !widget.existingIds.contains(m.id))
                                     m,
@@ -348,10 +378,36 @@ class _FetchedModelsSheetState extends State<FetchedModelsSheet> {
                   ),
                 ),
               ),
+              ],
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildErrorState(ThemeData theme, ColorScheme colorScheme) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, size: 40, color: colorScheme.error),
+          const SizedBox(height: 12),
+          Text(
+            '获取模型失败，请检查密钥与基础 URL',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
     );
   }
 
