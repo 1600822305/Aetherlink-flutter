@@ -251,7 +251,7 @@ WorkspaceShellSession startShell({String? cwd, int cols, int rows});
 
 1. **打开入口**（`open_workspace_sheet.dart`）：现 Termux/SSH 是「敬请期待」占位（已加回）。SSH 改为可点 → 弹**连接配置表单**（host / port / username / 认证方式：密码或私钥 / 远端起始路径）→ 测试连接 → 存 `Workspace`(+connection,+keyId) → 设为当前。
 2. **编辑器可写判断解耦**：`file_editor.dart` 现用 `ref.read(workspacePreviewBackendProvider) is LocalSafBackend` 判 `_writable`。SSH 也可写 → 改为**能力判断**（如新增 `capabilities.canWrite`，或判断非只读后端）。这是接入 SSH 的硬改点。
-3. **工作区管理页**（`workspace_management_page.dart`）：`_backendLabel` 已有 `Termux/SSH` 标签；健康检查（`verifyAccess`）对 SSH = SFTP `stat(root)`；「重新授权」对 SSH = 重新填连接/换密钥（语义对齐 rebind）。
+3. **工作区管理页**（`workspace_management_page.dart`）：`_backendLabel` 已有 `Termux/SSH` 标签；健康检查（`verifyAccess`）对 SSH/Termux = SFTP `stat(root)`；「重新授权」对 SSH/Termux = 编辑所引用的 `SshConnection`（语义对齐 rebind）。**新建入口**（右上 `+` 与空状态按钮）复用工作区内同一套 `showOpenWorkspaceSheet`（本地 / SSH / Termux 三入口），与快速切换面板共用，新增后端自动同步（早期只做了本地 `openLocalFolder`，已补齐）。
 4. **路径展示**（`readable_path.dart`）：非 SAF 返回原样 posix path（已支持）。
 
 ---
