@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_back
 import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/ssh_connection_form_sheet.dart';
 
 /// Opens the workspace picker sheet (recent list + 「打开本地文件夹」).
 Future<void> showOpenWorkspaceSheet(BuildContext context, WidgetRef ref) {
@@ -72,19 +73,33 @@ class _OpenWorkspaceSheet extends ConsumerWidget {
                 },
               ),
             ),
-            // Termux / SSH backends are designed (WorkspaceBackendType) but not
-            // implemented yet — kept here as 「敬请期待」 placeholders so the
-            // intended scope is visible. Tapping just explains they're pending.
+            // SSH is live (read-only browse, SSH-1). Termux stays a placeholder
+            // until its one-tap setup lands (设计文档 §10.5 / Termux-A).
             const SizedBox(height: 4),
+            Material(
+              color: theme.colorScheme.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+              child: ListTile(
+                leading: Icon(
+                  LucideIcons.server,
+                  color: theme.colorScheme.primary,
+                ),
+                title: const Text('SSH / 远程'),
+                subtitle: const Text('连接远程机器，浏览其文件 (Remote-SSH)'),
+                onTap: () async {
+                  // Capture the navigator before popping this sheet — its own
+                  // context is defunct afterwards but navigator.context stays
+                  // valid for showing the form sheet.
+                  final navigator = Navigator.of(context);
+                  navigator.pop();
+                  await showSshConnectionFormSheet(navigator.context, parentRef);
+                },
+              ),
+            ),
             const _ComingSoonTile(
               icon: LucideIcons.terminal,
               title: 'Termux',
               subtitle: '同机 Termux 路径，文件 + 终端',
-            ),
-            const _ComingSoonTile(
-              icon: LucideIcons.server,
-              title: 'SSH / 远程',
-              subtitle: '远程机器，文件 + 终端 (Remote-SSH)',
             ),
             if (recent.asData?.value.isNotEmpty ?? false) ...[
               const SizedBox(height: 16),

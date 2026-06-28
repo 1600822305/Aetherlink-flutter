@@ -27,6 +27,16 @@ class BackupService {
   /// Maximum number of auto-backups to retain.
   static const int _maxAutoBackups = 5;
 
+  /// KV setting keys excluded from backup export. SSH credentials are stored
+  /// plaintext (设计文档 §5.2), so they must never leave the device through a
+  /// backup/export (the one real leak surface of the plaintext approach). The
+  /// literal mirrors `kSshCredentialsKey` in the workspace feature — duplicated
+  /// here on purpose because the cross-feature import-boundary rule forbids
+  /// backup from importing workspace's `application`.
+  static const Set<String> _excludedSettingKeys = {
+    'workspace_ssh_credentials',
+  };
+
   BackupService({required this.db});
 
   // ---------------------------------------------------------------------------
@@ -930,9 +940,11 @@ class BackupService {
 
       List<Map<String, dynamic>> settingsJson = [];
       if (includeSettings) {
-        // Read all settings from the key-value store.
+        // Read all settings from the key-value store, minus secret-bearing
+        // keys that must not be exported (see [_excludedSettingKeys]).
         final rows = await db.select(db.appSettingRows).get();
         settingsJson = rows
+            .where((r) => !_excludedSettingKeys.contains(r.key))
             .map((r) => {'key': r.key, 'value': r.value})
             .toList();
       }

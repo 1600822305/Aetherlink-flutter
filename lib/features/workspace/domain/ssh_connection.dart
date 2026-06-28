@@ -111,3 +111,77 @@ class SshConnection {
           'hostKeyFingerprint': hostKeyFingerprint,
       };
 }
+
+/// The actual SSH secret for one [SshConnection], looked up by
+/// `credentialKeyId`. **This is the secret** — it lives only in the dedicated
+/// credential KV (kept out of the connections list and excluded from backup
+/// export, 设计文档 §5.2), never in [SshConnection] itself, so a later move to
+/// secure storage swaps just the store.
+///
+/// [password] is set for [SshAuthType.password]; [privateKeyPem] (+ optional
+/// [passphrase]) for [SshAuthType.privateKey].
+class SshCredential {
+  const SshCredential({
+    this.password,
+    this.privateKeyPem,
+    this.passphrase,
+  });
+
+  factory SshCredential.fromJson(Map<String, dynamic> json) => SshCredential(
+        password: (json['password'] as Object?)?.toString(),
+        privateKeyPem: (json['privateKeyPem'] as Object?)?.toString(),
+        passphrase: (json['passphrase'] as Object?)?.toString(),
+      );
+
+  final String? password;
+  final String? privateKeyPem;
+  final String? passphrase;
+
+  Map<String, dynamic> toJson() => {
+        if (password != null) 'password': password,
+        if (privateKeyPem != null) 'privateKeyPem': privateKeyPem,
+        if (passphrase != null) 'passphrase': passphrase,
+      };
+}
+
+/// The non-interactive inputs needed to dial a host. A neutral, dartssh2-free
+/// payload (so it can live in `domain`): the data backend resolves a profile +
+/// credential into one of these at connect time.
+class SshConnectParams {
+  const SshConnectParams({
+    required this.host,
+    required this.port,
+    required this.username,
+    required this.authType,
+    this.password,
+    this.privateKeyPem,
+    this.passphrase,
+    this.expectedFingerprint,
+  });
+
+  final String host;
+  final int port;
+  final String username;
+  final SshAuthType authType;
+  final String? password;
+  final String? privateKeyPem;
+  final String? passphrase;
+
+  /// The TOFU-remembered fingerprint to enforce, or null on first contact
+  /// (accept and learn it).
+  final String? expectedFingerprint;
+}
+
+/// Result of a one-shot connection test (the connection form's "测试连接").
+class SshProbeResult {
+  const SshProbeResult({required this.ok, this.fingerprint, this.error});
+
+  final bool ok;
+
+  /// The host key fingerprint observed (`SHA256:<base64>`), for TOFU display /
+  /// storage. Set whenever the handshake reached host-key verification.
+  final String? fingerprint;
+
+  /// Human-readable failure reason when [ok] is false.
+  final String? error;
+}

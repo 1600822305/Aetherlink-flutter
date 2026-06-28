@@ -1,7 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/features/workspace/application/ssh_connection_pool.dart';
 import 'package:aetherlink_flutter/features/workspace/data/local_saf_backend.dart';
-import 'package:aetherlink_flutter/features/workspace/data/remote_ssh_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 
@@ -17,10 +17,9 @@ LocalSafBackend localSafBackend(Ref ref) => LocalSafBackend();
 /// Returns the [WorkspaceBackend] for an opened [workspace].
 ///
 /// SAF returns the app-lifetime singleton. SSH (and Termux, which is just SSH
-/// to a Termux `sshd` — 设计文档 §10.5) return a [RemoteSshBackend] keyed by
-/// the workspace's `connectionId`. **SSH-0:** that backend is an unconnected
-/// skeleton — lookup no longer throws, but its IO calls fail with a clear
-/// "not connected" error until the connection lifecycle lands in SSH-1.
+/// to a Termux `sshd` — 设计文档 §10.5) return the pooled [RemoteSshBackend] for
+/// the workspace's `connectionId`, so workspaces on the same server share one
+/// transport (the pool owns connect/close — 设计文档 §4.1).
 @riverpod
 WorkspaceBackend workspaceBackend(Ref ref, Workspace workspace) {
   switch (workspace.backendType) {
@@ -35,8 +34,6 @@ WorkspaceBackend workspaceBackend(Ref ref, Workspace workspace) {
           'it must reference an SshConnection (设计文档 §5.1).',
         );
       }
-      final backend = RemoteSshBackend(connectionId);
-      ref.onDispose(backend.dispose);
-      return backend;
+      return ref.watch(sshBackendPoolProvider).backendFor(connectionId);
   }
 }
