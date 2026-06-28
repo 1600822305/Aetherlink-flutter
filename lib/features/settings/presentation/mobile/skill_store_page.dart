@@ -18,6 +18,7 @@ import 'package:aetherlink_flutter/features/settings/application/skill_store_sou
 import 'package:aetherlink_flutter/features/settings/application/skills_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/skillsmp_service.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// The unified skill marketplace — search and import from SkillsMP, ClawHub,
 /// and AI Skill Store.
@@ -245,14 +246,7 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage>
 
     await ref.read(skillsProvider.notifier).save(skill);
     if (mounted) {
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            content: Text('已导入「${item.name}」'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+      AppToast.success(context, '已导入「${item.name}」');
     }
   }
 
@@ -336,16 +330,10 @@ class _SkillStorePageState extends ConsumerState<SkillStorePage>
               controller.dispose();
               if (ctx.mounted) Navigator.of(ctx).pop();
               if (mounted) {
-                ScaffoldMessenger.of(context)
-                  ..clearSnackBars()
-                  ..showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        key.isEmpty ? 'API Key 已清除' : 'API Key 已保存',
-                      ),
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
+                AppToast.success(
+                  context,
+                  key.isEmpty ? 'API Key 已清除' : 'API Key 已保存',
+                );
               }
             },
             child: const Text('保存'),
@@ -760,9 +748,7 @@ class _SkillDetailSheetState extends ConsumerState<_SkillDetailSheet> {
     final current = await ref.read(translateModelProvider.future);
     if (!mounted) return;
     if (current == null) {
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(const SnackBar(content: Text('请先在「模型」中配置翻译模型')));
+      AppToast.warning(context, '请先在「模型」中配置翻译模型');
       return;
     }
 
@@ -991,14 +977,7 @@ class _SkillDetailSheetState extends ConsumerState<_SkillDetailSheet> {
                               Clipboard.setData(
                                 ClipboardData(text: _translatedDescription!),
                               );
-                              ScaffoldMessenger.of(context)
-                                ..clearSnackBars()
-                                ..showSnackBar(
-                                  const SnackBar(
-                                    content: Text('已复制翻译'),
-                                    duration: Duration(seconds: 1),
-                                  ),
-                                );
+                              AppToast.success(context, '已复制翻译');
                             },
                             child: Icon(
                               LucideIcons.copy,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// A modal bottom sheet that lets the user pick a destination directory for a
 /// move/copy. It lazily lists directories over [backend] starting at [rootPath],
@@ -74,9 +75,7 @@ class _DirectoryPickerState extends State<_DirectoryPicker> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading.remove(path));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('列目录失败 · $e')),
-      );
+      AppToast.error(context, '列目录失败 · $e');
     }
   }
 

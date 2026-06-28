@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/settings/application/skills_controll
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// The 技能编辑器 page (`/settings/skills/:skillId`), a port of the original
 /// `src/pages/Settings/SkillEditor.tsx`. Edits a single skill's 名称 / emoji /
@@ -83,11 +84,7 @@ class _SkillEditorPageState extends ConsumerState<SkillEditorPage> {
     );
     await ref.read(skillsProvider.notifier).save(updated);
     if (!mounted) return;
-    ScaffoldMessenger.maybeOf(context)
-      ?..clearSnackBars()
-      ..showSnackBar(
-        const SnackBar(content: Text('已保存'), duration: Duration(seconds: 2)),
-      );
+    AppToast.success(context, '已保存');
     _back();
   }
 

@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/backup/data/webdav_auto_sync_service
 import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_file_item.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
 /// Detail page for cloud backup (WebDAV + S3) with top tab navigation.
@@ -80,14 +81,11 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
     ref.listen(backupControllerProvider, (prev, next) {
       if (next.status == BackupStatus.success ||
           next.status == BackupStatus.error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(next.message),
-            backgroundColor: next.status == BackupStatus.error
-                ? theme.colorScheme.error
-                : null,
-          ),
-        );
+        if (next.status == BackupStatus.error) {
+          AppToast.error(context, next.message);
+        } else {
+          AppToast.success(context, next.message);
+        }
         Future.delayed(const Duration(seconds: 2), controller.clearStatus);
       }
     });
@@ -775,9 +773,7 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
 
     final state = ref.read(backupControllerProvider);
     if (state.remoteBackups.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('远程没有备份文件')));
+      AppToast.warning(context, '远程没有备份文件');
       return;
     }
 
@@ -799,9 +795,7 @@ class _CloudBackupPageState extends ConsumerState<CloudBackupPage>
 
     final state = ref.read(backupControllerProvider);
     if (state.s3Backups.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('S3 没有备份文件')));
+      AppToast.warning(context, 'S3 没有备份文件');
       return;
     }
 

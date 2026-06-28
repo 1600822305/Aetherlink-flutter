@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/open_workspace_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/workspace_file_ops.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// The left page: a lazily-loaded file tree over [WorkspaceBackend], rooted at
 /// the opened workspace ([currentWorkspaceProvider]). When nothing is open it
@@ -268,9 +269,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading.remove(path));
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('列目录失败 · $e')));
+      AppToast.error(context, '列目录失败 · $e');
     }
   }
 
@@ -300,9 +299,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading.remove(path));
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('列目录失败 · $e')));
+      AppToast.error(context, '列目录失败 · $e');
     }
   }
 

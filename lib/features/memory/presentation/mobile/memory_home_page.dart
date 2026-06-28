@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/features/memory/application/memory_settings_c
 import 'package:aetherlink_flutter/features/memory/data/chat_memory_store.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_settings.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// The 记忆 home page (数据与知识 → 记忆功能) — the top-level landing page for
 /// chat memory.
@@ -287,19 +288,11 @@ class _ConsolidateActionState extends ConsumerState<_ConsolidateAction> {
   Future<void> _run() async {
     if (_busy) return;
     setState(() => _busy = true);
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final result = await ref.read(memoryConsolidatorProvider.notifier).run();
-      messenger.showSnackBar(
-        SnackBar(content: Text(_message(result)), behavior: SnackBarBehavior.floating),
-      );
+      if (mounted) AppToast.success(context, _message(result));
     } on Object {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('整理失败，请稍后再试'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      if (mounted) AppToast.error(context, '整理失败，请稍后再试');
     } finally {
       if (mounted) setState(() => _busy = false);
     }

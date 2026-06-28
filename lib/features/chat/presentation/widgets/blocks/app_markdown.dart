@@ -13,6 +13,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:aetherlink_flutter/app/di/font_settings_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/code_block/code_block_view.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// Renders Markdown for message blocks, mirroring the original `Markdown.tsx`.
 ///
@@ -217,11 +218,7 @@ class _MarkdownTableState extends State<MarkdownTable> {
       await File(path).writeAsString(csv);
     }
     if (!mounted) return;
-    ScaffoldMessenger.maybeOf(context)
-      ?..clearSnackBars()
-      ..showSnackBar(
-        const SnackBar(content: Text('已导出'), duration: Duration(seconds: 2)),
-      );
+    AppToast.success(context, '已导出');
   }
 
   static String _two(int v) => v.toString().padLeft(2, '0');

@@ -17,6 +17,7 @@ import 'package:aetherlink_flutter/features/chat/domain/translate/translate_lang
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/token_display.dart';
 import 'package:aetherlink_flutter/features/voice/application/tts_controller.dart';
 import 'package:aetherlink_flutter/features/voice/domain/tts_playback_state.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// The message bubble bottom toolbar (`MessageActions` `renderMode === 'toolbar'`).
 ///
@@ -76,12 +77,7 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
 
   void _toast(String message) {
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    messenger
-      ?..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
-      );
+    AppToast.info(context, message);
   }
 
   void _toggleTts() {

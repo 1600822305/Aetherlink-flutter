@@ -17,6 +17,7 @@ import 'package:aetherlink_flutter/features/notes/domain/note_node.dart';
 import 'package:aetherlink_flutter/features/notes/domain/note_search_result.dart';
 import 'package:aetherlink_flutter/features/notes/presentation/mobile/note_image_export.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// The notes hub — a file-tree browser over the on-device notes directory.
 ///
@@ -430,14 +431,11 @@ class NotesPage extends ConsumerWidget {
     WidgetRef ref,
     NoteNode node,
   ) async {
-    final messenger = ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text('正在生成标题…'),
-          duration: Duration(seconds: 30),
-        ),
-      );
+    AppToast.info(
+      context,
+      '正在生成标题…',
+      duration: const Duration(seconds: 30),
+    );
     try {
       final content = await ref
           .read(notesFileStoreProvider)
@@ -445,7 +443,7 @@ class NotesPage extends ConsumerWidget {
       final title = await ref
           .read(notesAiServiceProvider)
           .generateTitle(content);
-      messenger.clearSnackBars();
+      AppToast.dismiss();
       if (title == null || title.isEmpty) {
         if (context.mounted) {
           _toast(context, '未能生成标题（请检查辅助模型/标题模型配置）');
@@ -455,7 +453,7 @@ class NotesPage extends ConsumerWidget {
       await ref.read(notesControllerProvider.notifier).rename(node, title);
       if (context.mounted) _toast(context, '已重命名为「$title」');
     } catch (e) {
-      messenger.clearSnackBars();
+      AppToast.dismiss();
       if (context.mounted) _toast(context, 'AI 命名失败：$e');
     }
   }
@@ -678,11 +676,7 @@ class NotesPage extends ConsumerWidget {
       : name;
 
   void _toast(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
-      );
+    AppToast.info(context, message);
   }
 }
 

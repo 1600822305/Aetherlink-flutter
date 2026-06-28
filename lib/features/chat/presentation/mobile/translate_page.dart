@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/features/chat/domain/translate/translate_lang
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/utils/provider_icons.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 class TranslatePage extends ConsumerStatefulWidget {
   const TranslatePage({super.key});
@@ -184,9 +185,7 @@ class _TranslatePageState extends ConsumerState<TranslatePage> {
   }
 
   void _snack(String message) {
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppToast.info(context, message);
   }
 
   @override

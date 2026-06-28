@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/web_search_settings.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search/search_provider_catalog.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 搜索提供商详情三级页面 — 配置一个搜索提供商的参数（API Key、Base URL、启用开关）。
 /// 类似模型服务商的 `ModelProviderDetailPage`，但更简洁。
@@ -249,13 +250,7 @@ class _SearchProviderDetailPageState
     ref
         .read(webSearchSettingsControllerProvider.notifier)
         .updateProvider(updated);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('已保存'),
-        duration: Duration(seconds: 1),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    AppToast.success(context, '已保存');
   }
 
   Future<void> _confirmDelete(BuildContext context, String name) async {

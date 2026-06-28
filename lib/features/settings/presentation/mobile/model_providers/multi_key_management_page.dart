@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
@@ -53,9 +54,7 @@ class _MultiKeyManagementPageState
     );
     await ref.read(modelStoreProvider.notifier).saveProvider(updated);
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('已保存')));
+    AppToast.success(context, '已保存');
   }
 
   Future<void> _addOrEditKey(

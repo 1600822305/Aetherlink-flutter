@@ -21,6 +21,7 @@ import 'package:aetherlink_flutter/features/workspace/application/ssh_connection
 import 'package:aetherlink_flutter/features/workspace/application/ssh_credential_store.dart';
 import 'package:aetherlink_flutter/features/workspace/application/ssh_workspace_setup.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/ssh_connection.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// Opens the SSH connection form sheet. [parentRef] is the page's ref so the
 /// provider writes (open workspace / switch) outlive the dismissed sheet.
@@ -123,9 +124,7 @@ class _SshConnectionFormSheetState
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppToast.info(context, message);
   }
 
   String? _validate() {

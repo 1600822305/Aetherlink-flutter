@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/app/di/notes_sidebar_access.dart';
 import 'package:aetherlink_flutter/features/notes/application/notes_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// Notes settings — storage location and editor/display options.
 ///
@@ -172,17 +173,13 @@ Future<void> _changeDir(BuildContext context, WidgetRef ref) async {
   if (path == null) return; // cancelled
   await ref.read(notesStoragePathProvider.notifier).setPath(path);
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context)
-    ..clearSnackBars()
-    ..showSnackBar(const SnackBar(content: Text('已更新存储目录')));
+  AppToast.success(context, '已更新存储目录');
 }
 
 Future<void> _resetDir(BuildContext context, WidgetRef ref) async {
   await ref.read(notesStoragePathProvider.notifier).setPath(null);
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context)
-    ..clearSnackBars()
-    ..showSnackBar(const SnackBar(content: Text('已恢复默认目录')));
+  AppToast.success(context, '已恢复默认目录');
 }
 
 class _Card extends StatelessWidget {

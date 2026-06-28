@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.da
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
 import 'package:aetherlink_flutter/shared/utils/regex_replacement.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// Strips `<tool_use>...</tool_use>` spans the original removed before
 /// rendering `main_text`.
@@ -390,12 +391,7 @@ class _ContextSummaryBlockViewState
 
     if (!result.success) {
       setState(() => _isRestoring = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.error ?? '恢复失败'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      AppToast.error(context, result.error ?? '恢复失败');
     }
   }
 

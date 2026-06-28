@@ -34,6 +34,7 @@ import 'package:aetherlink_flutter/features/workspace/domain/ssh_connection.dart
 import 'package:aetherlink_flutter/features/workspace/domain/ssh_keygen.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/termux_setup.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// F-Droid page for the supported Termux build (Play build is deprecated).
 const String _kTermuxFdroidUrl = 'https://f-droid.org/packages/com.termux/';
@@ -88,9 +89,7 @@ class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppToast.info(context, message);
   }
 
   Future<void> _copyCommand() async {
