@@ -13,6 +13,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.da
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/model_enricher.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 
@@ -451,6 +452,10 @@ class CherryImporter {
         modelCount++;
       }
 
+      // Populate capabilities once at import time (preset registry → regex
+      // inference) so runtime checks can read the field.
+      final enrichedModels = await enrichModels(models);
+
       final provider = ModelProvider(
         id: id,
         name: name,
@@ -460,7 +465,7 @@ class CherryImporter {
         apiKey: apiKey.isNotEmpty ? apiKey : null,
         baseUrl: baseUrl,
         providerType: providerType,
-        models: models,
+        models: enrichedModels,
       );
 
       try {

@@ -8,7 +8,11 @@ import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/model_enricher.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/model_registry.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
+import 'package:aetherlink_flutter/shared/domain/model_type.dart';
 import 'package:aetherlink_flutter/shared/domain/parameter_metadata.dart';
 
 /// The "编辑模型" third-level page, a 1:1 reproduction of
@@ -18,7 +22,9 @@ import 'package:aetherlink_flutter/shared/domain/parameter_metadata.dart';
 /// Reads the provider by [providerId]; when [modelId] is given the form is
 /// seeded from that model (edit), otherwise it starts blank (add). 保存 upserts
 /// the model into the provider's `models` and persists through the model store.
-/// The model-type chips stay advisory (auto-detect) this milestone.
+/// The model-type chips show auto-detected capabilities (preset registry →
+/// regex inference); turning off 自动检测 lets the user override them, which is
+/// persisted as `modelTypes`.
 class EditModelPage extends ConsumerStatefulWidget {
   const EditModelPage({super.key, required this.providerId, this.modelId});
 
@@ -37,6 +43,7 @@ class EditModelPage extends ConsumerStatefulWidget {
   static const String _typeLabel = '模型类型';
   static const String _autoDetectLabel = '自动检测';
   static const String _typeHelperAuto = '根据模型ID和提供商自动检测模型类型';
+  static const String _typeHelperManual = '手动选择模型支持的能力（覆盖自动检测）';
 
   @override
   ConsumerState<EditModelPage> createState() => _EditModelPageState();
@@ -47,6 +54,12 @@ class _EditModelPageState extends ConsumerState<EditModelPage> {
   final TextEditingController _modelIdController = TextEditingController();
   bool _initialized = false;
   String? _parameterScope;
+
+  /// When true the model types follow [_detectedTypes] (registry/inference);
+  /// when false the user controls [_selectedTypes] manually.
+  bool _autoDetect = true;
+  Set<ModelType> _detectedTypes = {};
+  Set<ModelType> _selectedTypes = {};
 
   @override
   void dispose() {
@@ -59,15 +72,62 @@ class _EditModelPageState extends ConsumerState<EditModelPage> {
     if (_initialized) return;
     _initialized = true;
     final id = widget.modelId;
-    if (id == null) return;
-    for (final model in provider.models) {
-      if (model.id == id) {
-        _nameController.text = model.name;
-        _modelIdController.text = model.id;
-        _parameterScope = model.parameterScope;
-        return;
+    if (id != null) {
+      for (final model in provider.models) {
+        if (model.id == id) {
+          _nameController.text = model.name;
+          _modelIdController.text = model.id;
+          _parameterScope = model.parameterScope;
+          final types = model.modelTypes;
+          if (types != null && types.isNotEmpty) {
+            _autoDetect = false;
+            _selectedTypes = types.toSet();
+          }
+          break;
+        }
       }
     }
+    _recomputeDetected();
+  }
+
+  /// Re-detects capabilities for the current model id (preset registry → regex
+  /// inference) and refreshes the advisory chips.
+  Future<void> _recomputeDetected() async {
+    final id = _modelIdController.text.trim();
+    if (id.isEmpty) {
+      if (mounted) setState(() => _detectedTypes = {});
+      return;
+    }
+    await ModelRegistry.instance.ensureLoaded();
+    final caps = detectCapabilities(id);
+    if (!mounted) return;
+    setState(() => _detectedTypes = capabilitiesToModelTypes(caps));
+  }
+
+  void _onModelIdChanged() {
+    setState(() {});
+    _recomputeDetected();
+  }
+
+  void _toggleType(ModelType type) {
+    setState(() {
+      if (_selectedTypes.contains(type)) {
+        _selectedTypes.remove(type);
+      } else {
+        _selectedTypes.add(type);
+      }
+    });
+  }
+
+  void _toggleAutoDetect(bool value) {
+    setState(() {
+      _autoDetect = value;
+      // Switching to manual seeds the selection from the current detection so
+      // the user edits from a sensible starting point.
+      if (!value && _selectedTypes.isEmpty) {
+        _selectedTypes = {..._detectedTypes};
+      }
+    });
   }
 
   bool get _canSave =>
@@ -94,14 +154,23 @@ class _EditModelPageState extends ConsumerState<EditModelPage> {
     }
     final base =
         preserved ?? Model(id: newId, name: name, provider: provider.name);
+    // Auto-detect → clear types/capabilities so enrichment re-detects from the
+    // (possibly changed) id. Manual → persist the user's chosen types as the
+    // override layer (runtime checks read modelTypes first).
+    final manualTypes = _autoDetect ? null : _selectedTypes.toList();
     final model = base.copyWith(
       id: newId,
       name: name,
       provider: provider.name,
       providerType: provider.providerType,
       parameterScope: _parameterScope,
+      modelTypes: manualTypes,
+      capabilities: null,
     );
-    final updated = provider.copyWith(models: [...existing, model]);
+    // Fill capabilities once (preset registry → regex inference). Models that
+    // carry an explicit type selection are preserved as-is by the enricher.
+    final enriched = await enrichModel(model);
+    final updated = provider.copyWith(models: [...existing, enriched]);
     await ref.read(modelStoreProvider.notifier).saveProvider(updated);
     if (!mounted) return;
     if (context.canPop()) context.pop();
@@ -175,7 +244,7 @@ class _EditModelPageState extends ConsumerState<EditModelPage> {
           const SizedBox(height: 14),
           _ModelIdField(
             controller: _modelIdController,
-            onChanged: (_) => setState(() {}),
+            onChanged: (_) => _onModelIdChanged(),
           ),
           const SizedBox(height: 14),
           _ParameterScopeField(
@@ -184,7 +253,14 @@ class _EditModelPageState extends ConsumerState<EditModelPage> {
             onChanged: (v) => setState(() => _parameterScope = v),
           ),
           const SizedBox(height: 14),
-          _ModelTypeSection(theme: theme),
+          _ModelTypeSection(
+            theme: theme,
+            autoDetect: _autoDetect,
+            detectedTypes: _detectedTypes,
+            selectedTypes: _selectedTypes,
+            onToggleAuto: _toggleAutoDetect,
+            onToggleType: _toggleType,
+          ),
         ],
       ),
     );
@@ -454,23 +530,71 @@ class _ParameterScopeField extends StatelessWidget {
   }
 }
 
-/// Model type section — compact grouped chips with auto-detect header.
+/// Display labels for each [ModelType] chip.
+const Map<ModelType, String> _modelTypeLabels = {
+  ModelType.chat: '聊天',
+  ModelType.vision: '视觉',
+  ModelType.audio: '语音',
+  ModelType.imageGen: '图像生成',
+  ModelType.videoGen: '视频生成',
+  ModelType.transcription: '转录',
+  ModelType.translation: '翻译',
+  ModelType.reasoning: '推理',
+  ModelType.functionCalling: '函数调用',
+  ModelType.webSearch: '网络搜索',
+  ModelType.tool: '工具使用',
+  ModelType.codeGen: '代码生成',
+  ModelType.embedding: '嵌入向量',
+  ModelType.rerank: '重排序',
+};
+
+/// Grouped chip layout (label → ordered types).
+const List<({String label, List<ModelType> types})> _modelTypeGroups = [
+  (label: '基础功能', types: [ModelType.chat]),
+  (label: '输入能力', types: [ModelType.vision, ModelType.audio]),
+  (
+    label: '输出能力',
+    types: [ModelType.imageGen, ModelType.videoGen, ModelType.transcription, ModelType.translation],
+  ),
+  (
+    label: '高级功能',
+    types: [
+      ModelType.reasoning,
+      ModelType.functionCalling,
+      ModelType.webSearch,
+      ModelType.tool,
+      ModelType.codeGen,
+    ],
+  ),
+  (label: '数据处理', types: [ModelType.embedding, ModelType.rerank]),
+];
+
+/// Model type section — grouped chips with a working auto-detect toggle.
+///
+/// In auto mode the active chips mirror [detectedTypes] (registry/inference,
+/// read-only). Turning auto off lets the user toggle [selectedTypes] manually,
+/// which become the persisted override.
 class _ModelTypeSection extends StatelessWidget {
-  const _ModelTypeSection({required this.theme});
+  const _ModelTypeSection({
+    required this.theme,
+    required this.autoDetect,
+    required this.detectedTypes,
+    required this.selectedTypes,
+    required this.onToggleAuto,
+    required this.onToggleType,
+  });
 
   final ThemeData theme;
-
-  static const List<({String label, List<String> types})> _groups = [
-    (label: '基础功能', types: ['聊天']),
-    (label: '输入能力', types: ['视觉', '语音']),
-    (label: '输出能力', types: ['图像生成', '视频生成', '转录', '翻译']),
-    (label: '高级功能', types: ['推理', '函数调用', '网络搜索', '工具使用', '代码生成']),
-    (label: '数据处理', types: ['嵌入向量', '重排序']),
-  ];
+  final bool autoDetect;
+  final Set<ModelType> detectedTypes;
+  final Set<ModelType> selectedTypes;
+  final ValueChanged<bool> onToggleAuto;
+  final ValueChanged<ModelType> onToggleType;
 
   @override
   Widget build(BuildContext context) {
     final scheme = theme.colorScheme;
+    final active = autoDetect ? detectedTypes : selectedTypes;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -497,11 +621,11 @@ class _ModelTypeSection extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 6),
-            const CustomSwitch(value: true, onChanged: null),
+            CustomSwitch(value: autoDetect, onChanged: onToggleAuto),
           ],
         ),
         const SizedBox(height: 8),
-        for (final group in _groups) ...[
+        for (final group in _modelTypeGroups) ...[
           Text(
             group.label,
             style: theme.textTheme.bodySmall?.copyWith(
@@ -516,36 +640,76 @@ class _ModelTypeSection extends StatelessWidget {
             runSpacing: 6,
             children: [
               for (final type in group.types)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: scheme.onSurface.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: theme.dividerColor),
-                  ),
-                  child: Text(
-                    type,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontSize: 12,
-                      color: theme.disabledColor,
-                    ),
-                  ),
+                _TypeChip(
+                  theme: theme,
+                  label: _modelTypeLabels[type] ?? type.name,
+                  selected: active.contains(type),
+                  enabled: !autoDetect,
+                  onTap: autoDetect ? null : () => onToggleType(type),
                 ),
             ],
           ),
           const SizedBox(height: 10),
         ],
         Text(
-          EditModelPage._typeHelperAuto,
+          autoDetect ? EditModelPage._typeHelperAuto : EditModelPage._typeHelperManual,
           style: theme.textTheme.bodySmall?.copyWith(
             fontSize: 11,
             color: scheme.onSurfaceVariant,
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A single capability chip. Highlighted when [selected]; tappable only when
+/// [enabled] (manual mode).
+class _TypeChip extends StatelessWidget {
+  const _TypeChip({
+    required this.theme,
+    required this.label,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final ThemeData theme;
+  final String label;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = theme.colorScheme;
+    final Color bg;
+    final Color fg;
+    final Color border;
+    if (selected) {
+      bg = scheme.primary.withValues(alpha: enabled ? 0.14 : 0.10);
+      fg = scheme.primary;
+      border = scheme.primary.withValues(alpha: 0.5);
+    } else {
+      bg = scheme.onSurface.withValues(alpha: 0.05);
+      fg = enabled ? scheme.onSurfaceVariant : theme.disabledColor;
+      border = theme.dividerColor;
+    }
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: border),
+        ),
+        child: Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(fontSize: 12, color: fg),
+        ),
+      ),
     );
   }
 }

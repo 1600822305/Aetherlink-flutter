@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/features/models/domain/repositories/model_repository.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/model_enricher.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 
 part 'model_access.g.dart';
@@ -163,8 +164,12 @@ class ModelStore extends _$ModelStore {
         if (existingIds.add(m.id)) m,
     ];
     if (additions.isEmpty) return;
+    // Populate capabilities once, at creation time (v2 detection): preset
+    // registry first, regex inference as fallback. Runtime checks then just
+    // read the field.
+    final enriched = await enrichModels(additions);
     await _repo.saveProvider(
-      provider.copyWith(models: [...provider.models, ...additions]),
+      provider.copyWith(models: [...provider.models, ...enriched]),
     );
     ref.invalidate(appModelProvidersProvider);
   }

@@ -55,8 +55,8 @@ import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
-import 'package:aetherlink_flutter/shared/domain/model_type.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
@@ -2873,16 +2873,16 @@ class ChatController extends _$ChatController {
 
   /// Resolves the OCR fallback for [chatModel]: returns the configured OCR
   /// (vision) model + prompt only when [chatModel] itself lacks vision support
-  /// (`ModelType.vision`) and a usable 辅助模型 → OCR model is configured.
+  /// and a usable 辅助模型 → OCR model is configured. Vision support is read
+  /// from the model's detected capabilities (registry/inference) or an explicit
+  /// `ModelType.vision` selection (see `isVisionModel`).
   /// Returns `null` otherwise, so vision-capable models keep receiving images
   /// directly and image turns are left untouched when no OCR model is set
   /// (footnote: "未设置时使用聊天模型识别图片").
   Future<({Model model, String prompt})?> _resolveOcrFallback(
     Model chatModel,
   ) async {
-    final supportsVision =
-        chatModel.modelTypes?.contains(ModelType.vision) ?? false;
-    if (supportsVision) return null;
+    if (isVisionModel(chatModel)) return null;
     final auxState = ref.read(auxiliaryModelControllerProvider);
     final providers = await ref.read(appModelProvidersProvider.future);
     final resolved = resolveAuxiliaryModel(auxState.ocrModelKey, providers);
