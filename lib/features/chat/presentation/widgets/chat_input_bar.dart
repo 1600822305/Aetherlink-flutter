@@ -202,6 +202,17 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
       ..showSnackBar(const SnackBar(content: Text(_noModelHint)));
   }
 
+  /// Sends a tapped 建议 (follow-up suggestion) as a new user message. A no-op
+  /// while streaming; sending clears the suggestions via the controller's state
+  /// rebuild.
+  void _sendSuggestion(String text) {
+    if (text.trim().isEmpty) return;
+    final isStreaming =
+        ref.read(chatControllerProvider).value?.isStreaming ?? false;
+    if (isStreaming) return;
+    ref.read(chatControllerProvider.notifier).send(text);
+  }
+
   /// Inserts a 快捷短语's content at the caret and leaves the caret just after it
   /// (port of `handleInsertPhrase`). Falls back to appending when the field has
   /// never held a selection.
@@ -244,12 +255,21 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
     final isStreaming =
         ref.watch(chatControllerProvider).value?.isStreaming ?? false;
     final attachments = ref.watch(composerAttachmentsProvider);
+    // 建议模型 follow-up suggestions for the latest reply; tap sends, long-press
+    // fills the field. Hidden while streaming (also cleared in state then).
+    final suggestions = isStreaming
+        ? const <String>[]
+        : ref.watch(
+            chatControllerProvider.select(
+              (a) => a.value?.suggestions ?? const <String>[],
+            ),
+          );
     // A lone pasted-as-file attachment (no typed text) can still be sent.
     final canSend =
         modelReady && (_hasText || attachments.isNotEmpty) && !isStreaming;
     _canSend = canSend;
 
-    return InputBoxComposer(
+    final composer = InputBoxComposer(
       settings: settings,
       controller: _controller,
       focusNode: _focusNode,
@@ -272,6 +292,95 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
       onStop: isStreaming
           ? () => ref.read(chatControllerProvider.notifier).stopStreaming()
           : null,
+    );
+
+    if (suggestions.isEmpty) return composer;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _SuggestionBubbles(
+          suggestions: suggestions,
+          onTap: _sendSuggestion,
+          onLongPress: _insertPhrase,
+        ),
+        composer,
+      ],
+    );
+  }
+}
+
+/// The 建议模型 follow-up suggestion bubbles shown above the composer. Tap a
+/// bubble to send it as a new message; long-press to fill it into the field for
+/// editing first (the "两者都要" behavior). Hidden when there are no suggestions.
+class _SuggestionBubbles extends StatelessWidget {
+  const _SuggestionBubbles({
+    required this.suggestions,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  final List<String> suggestions;
+  final ValueChanged<String> onTap;
+  final ValueChanged<String> onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = <String>[
+      for (final s in suggestions)
+        if (s.trim().isNotEmpty) s.trim(),
+    ];
+    if (visible.isEmpty) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final baseColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : cs.primaryContainer.withValues(alpha: 0.42);
+    final textColor = cs.onSurface.withValues(alpha: isDark ? 0.92 : 0.88);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final suggestion in visible)
+              Semantics(
+                button: true,
+                label: suggestion,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => onTap(suggestion),
+                  onLongPress: () => onLongPress(suggestion),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: baseColor,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      suggestion,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 13,
+                        height: 1.2,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

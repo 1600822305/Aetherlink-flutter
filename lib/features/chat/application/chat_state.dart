@@ -48,6 +48,11 @@ abstract class ChatState with _$ChatState {
   const factory ChatState({
     @Default(<ChatMessageView>[]) List<ChatMessageView> messages,
     @Default(false) bool isStreaming,
+
+    /// In-memory follow-up question suggestions for the latest assistant reply
+    /// (建议模型). Generated after a reply finishes and cleared when the next
+    /// message is sent; never persisted.
+    @Default(<String>[]) List<String> suggestions,
   }) = _ChatState;
 
   const ChatState._();

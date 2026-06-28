@@ -26,6 +26,7 @@ import 'package:aetherlink_flutter/features/chat/data/datasources/local/topics_t
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/memory/data/datasources/local/memories_table.dart';
+import 'package:aetherlink_flutter/features/memory/data/datasources/local/memory_converters.dart';
 import 'package:aetherlink_flutter/features/memory/data/datasources/local/memory_dao.dart';
 // Persisted as a JSON blob in [MemoryRows]; the generated part references the
 // converter's row data type.

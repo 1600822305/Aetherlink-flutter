@@ -24,6 +24,7 @@ import 'package:aetherlink_flutter/features/chat/application/ocr_service.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/streaming_registry.dart';
+import 'package:aetherlink_flutter/features/chat/application/suggestion_service.dart';
 import 'package:aetherlink_flutter/features/chat/application/translate_controller.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/api_key_manager.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
@@ -1691,6 +1692,7 @@ class ChatController extends _$ChatController {
         _emitTurn(turnTopicId, views, streaming: false);
         unawaited(_refreshTopicPreview(turnTopicId));
         unawaited(_generateTitle(turnTopicId));
+        unawaited(_maybeGenerateSuggestions(turnTopicId, List.of(views)));
         return;
       } on Object catch (error) {
         // User pressed Stop: cancelling the token aborts the HTTP request, which
@@ -2005,6 +2007,70 @@ class ChatController extends _$ChatController {
     } on Object catch (_) {
       // Title generation is non-critical; swallow errors.
     }
+  }
+
+  /// Generates follow-up suggestions (建议模型) for the just-finished reply on
+  /// [turnTopicId], then pushes them into state if that topic is still the one
+  /// being viewed. A no-op unless the 建议 feature is enabled and a suggestion
+  /// model is configured (footnote: "未设置时不生成后续问题建议"). Best-effort:
+  /// any failure is swallowed, like title generation.
+  Future<void> _maybeGenerateSuggestions(
+    String turnTopicId,
+    List<ChatMessageView> views,
+  ) async {
+    try {
+      final auxState = ref.read(auxiliaryModelControllerProvider);
+      if (!auxState.enableSuggestion) return;
+      final providers = await ref.read(appModelProvidersProvider.future);
+      final resolved = resolveAuxiliaryModel(
+        auxState.suggestionModelKey,
+        providers,
+      );
+      if (resolved == null) return;
+
+      final content = SuggestionService.buildContent(views);
+      if (content.isEmpty) return;
+
+      final effective = effectiveModelFor(resolved);
+      const locale = 'Chinese';
+      var prompt = auxState.suggestionPrompt
+          .replaceAll('{{messages}}', content)
+          .replaceAll('{content}', content)
+          .replaceAll('{locale}', locale);
+      // If the template carried no placeholder, append the content.
+      if (prompt == auxState.suggestionPrompt) {
+        prompt = '${auxState.suggestionPrompt}\n\n$content';
+      }
+
+      final request = LlmChatRequest(
+        model: effective,
+        messages: [LlmMessage(role: MessageRole.user, content: prompt)],
+        extraHeaders: effective.providerExtraHeaders,
+        extraBody: effective.providerExtraBody,
+      );
+
+      final gateway = ref.read(llmGatewayFactoryProvider).forModel(effective);
+      final buffer = StringBuffer();
+      await for (final chunk in gateway.streamChat(request)) {
+        if (chunk is LlmTextDelta) buffer.write(chunk.text);
+      }
+
+      final suggestions = SuggestionService.parseSuggestions(buffer.toString());
+      if (suggestions.isEmpty) return;
+      _emitSuggestions(turnTopicId, suggestions);
+    } on Object catch (_) {
+      // Suggestion generation is non-critical; swallow errors.
+    }
+  }
+
+  /// Pushes [suggestions] into the live state, but only when [turnTopicId] is
+  /// still the topic on screen and a new reply hasn't started streaming (which
+  /// would have cleared them). Leaves [messages] untouched.
+  void _emitSuggestions(String turnTopicId, List<String> suggestions) {
+    if (turnTopicId != _topicId) return;
+    final current = state.value;
+    if (current == null || current.isStreaming) return;
+    state = AsyncData(current.copyWith(suggestions: suggestions));
   }
 
   /// Deletes [messageId] together with its blocks and drops it from the view.
