@@ -113,10 +113,15 @@ class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
     }
   }
 
-  // Probe the freshly configured sshd, then persist a Termux workspace and
-  // switch into it. Reuses the shared SSH persist/open helpers.
-  Future<void> _finish() async {
+  // Probe the freshly configured sshd, then persist a Termux workspace rooted
+  // at [root] and switch into it. Reuses the shared SSH persist/open helpers.
+  // [root] is '.' (Termux home) for the default entry, or the shared-storage
+  // path when the user picks 「浏览手机存储」 — that path is only reachable after
+  // `termux-setup-storage` granted the permission, so a failed stat there hints
+  // at a denied/missing grant.
+  Future<void> _finish({String root = '.'}) async {
     setState(() => _busy = true);
+    final isSharedStorage = root == TermuxSetup.sharedStorageRoot;
     final params = SshConnectParams(
       host: '127.0.0.1',
       port: TermuxSetup.defaultPort,
@@ -127,24 +132,29 @@ class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
     try {
       final result = await ref
           .read(sshBackendPoolProvider)
-          .probe(params, rootToStat: '.');
+          .probe(params, rootToStat: root);
       if (!mounted) return;
       if (!result.ok) {
-        _snack('连接失败 · ${result.error ?? '未知错误'}\n'
-            '请确认已在 Termux 里跑完命令并看到「完成」提示。');
+        if (isSharedStorage) {
+          _snack('打不开手机存储 · ${result.error ?? '未知错误'}\n'
+              '请在 Termux 里执行 termux-setup-storage 并同意授权后重试。');
+        } else {
+          _snack('连接失败 · ${result.error ?? '未知错误'}\n'
+              '请确认已在 Termux 里跑完命令并看到「完成」提示。');
+        }
         return;
       }
       final connection = await persistSshConnection(
         connections: ref.read(sshConnectionStoreProvider.notifier),
         credentials: ref.read(sshCredentialStoreProvider.notifier),
-        label: 'Termux',
+        label: isSharedStorage ? 'Termux · 手机存储' : 'Termux',
         params: params,
         fingerprint: result.fingerprint, // localhost: auto-trust on first use.
       );
       await openAndSwitchSshWorkspace(
         widget.parentRef,
         connection,
-        root: '.',
+        root: root,
         backendType: WorkspaceBackendType.termux,
       );
       if (mounted) Navigator.of(context).pop();
@@ -215,7 +225,7 @@ class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
               _buildTips(theme),
               const SizedBox(height: 20),
               FilledButton(
-                onPressed: _busy ? null : _finish,
+                onPressed: _busy ? null : () => _finish(),
                 child: _busy
                     ? const SizedBox(
                         height: 18,
@@ -223,6 +233,14 @@ class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Text('完成 / 测试连接'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () => _finish(root: TermuxSetup.sharedStorageRoot),
+                icon: const Icon(Icons.sd_storage_outlined, size: 18),
+                label: const Text('浏览手机存储 (/sdcard)'),
               ),
             ],
           ),
@@ -368,6 +386,8 @@ class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
         Text('· 请关闭 Termux 的电池优化，并装 Termux:Boot 以便开机自启保活。', style: muted),
         Text('· 首次 pkg install 需联网；国内慢可先执行 termux-change-repo 换源。', style: muted),
         Text('· 命令里已内置一次性公钥，私钥仅留在本机（不会导出/备份）。', style: muted),
+        Text('· 脚本会执行 termux-setup-storage 申请存储权限，同意后才能用'
+            '「浏览手机存储」查看相册/下载等；拒绝只影响 /sdcard，不影响连接。', style: muted),
       ],
     );
   }
