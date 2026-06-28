@@ -26,6 +26,12 @@ enum WorkspaceBackendType {
 /// [root] is backend-specific: a `content://` tree URI for [WorkspaceBackendType.localSaf],
 /// or a filesystem path for Termux / SSH. [displayPath] is the human-friendly
 /// form shown in the UI (the raw `content://` URI is unreadable).
+///
+/// [connectionId] is set only for [WorkspaceBackendType.ssh] / `termux`
+/// workspaces, pointing at a reusable `SshConnection` profile (设计文档 §5.1
+/// 方案 C); SAF workspaces leave it null. It is the discriminator for dedup
+/// (see `WorkspaceStore.open`) so two workspaces on the same `root` but
+/// different servers stay distinct.
 class Workspace {
   const Workspace({
     required this.id,
@@ -34,6 +40,7 @@ class Workspace {
     required this.root,
     required this.lastOpenedAt,
     this.displayPath,
+    this.connectionId,
   });
 
   factory Workspace.fromJson(Map<String, dynamic> json) {
@@ -45,6 +52,8 @@ class Workspace {
       ),
       root: (json['root'] ?? '').toString(),
       displayPath: (json['displayPath'] as Object?)?.toString(),
+      // Absent in pre-SSH records → null (back-compat).
+      connectionId: (json['connectionId'] as Object?)?.toString(),
       lastOpenedAt:
           DateTime.tryParse((json['lastOpenedAt'] ?? '').toString()) ??
           DateTime.now(),
@@ -56,6 +65,7 @@ class Workspace {
   final WorkspaceBackendType backendType;
   final String root;
   final String? displayPath;
+  final String? connectionId;
   final DateTime lastOpenedAt;
 
   Workspace copyWith({String? name, DateTime? lastOpenedAt}) {
@@ -65,6 +75,7 @@ class Workspace {
       backendType: backendType,
       root: root,
       displayPath: displayPath,
+      connectionId: connectionId,
       lastOpenedAt: lastOpenedAt ?? this.lastOpenedAt,
     );
   }
@@ -75,6 +86,7 @@ class Workspace {
     'backendType': backendType.name,
     'root': root,
     if (displayPath != null) 'displayPath': displayPath,
+    if (connectionId != null) 'connectionId': connectionId,
     'lastOpenedAt': lastOpenedAt.toIso8601String(),
   };
 }

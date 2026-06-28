@@ -51,18 +51,23 @@ class WorkspaceStore extends _$WorkspaceStore {
   }
 
   /// Records an opened workspace: moves an existing entry (matched by
-  /// [backendType] + [root]) to the front with a fresh timestamp, or prepends a
-  /// new one. Returns the stored [Workspace].
+  /// [backendType] + [connectionId] + [root]) to the front with a fresh
+  /// timestamp, or prepends a new one. [connectionId] is set for SSH / Termux
+  /// workspaces (设计文档 §5.1) so the same [root] on two different servers
+  /// stays distinct; SAF leaves it null. Returns the stored [Workspace].
   Future<Workspace> open({
     required String name,
     required WorkspaceBackendType backendType,
     required String root,
     String? displayPath,
+    String? connectionId,
   }) async {
     final current = state.value ?? const [];
     Workspace? existing;
     for (final w in current) {
-      if (w.backendType == backendType && w.root == root) {
+      if (w.backendType == backendType &&
+          w.connectionId == connectionId &&
+          w.root == root) {
         existing = w;
         break;
       }
@@ -74,6 +79,7 @@ class WorkspaceStore extends _$WorkspaceStore {
           backendType: backendType,
           root: root,
           displayPath: displayPath,
+          connectionId: connectionId,
           lastOpenedAt: DateTime.now(),
         );
     final next = [

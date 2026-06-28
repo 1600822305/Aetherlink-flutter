@@ -95,6 +95,7 @@ dependencies:
   timezone: ^0.10.0
   system_fonts: ^1.0.1
   flutter_foreground_task: ^9.2.2
+  dartssh2: 2.18.0
 
 dev_dependencies:
   flutter_test:

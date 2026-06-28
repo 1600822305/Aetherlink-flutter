@@ -1,6 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/features/workspace/data/local_saf_backend.dart';
+import 'package:aetherlink_flutter/features/workspace/data/remote_ssh_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 
@@ -13,9 +14,13 @@ part 'workspace_backend_provider.g.dart';
 @Riverpod(keepAlive: true)
 LocalSafBackend localSafBackend(Ref ref) => LocalSafBackend();
 
-/// Returns the [WorkspaceBackend] for an opened [workspace]. P0 only the
-/// local SAF backend is real; Termux / SSH throw until those backends land
-/// (设计构想 §2.3).
+/// Returns the [WorkspaceBackend] for an opened [workspace].
+///
+/// SAF returns the app-lifetime singleton. SSH (and Termux, which is just SSH
+/// to a Termux `sshd` — 设计文档 §10.5) return a [RemoteSshBackend] keyed by
+/// the workspace's `connectionId`. **SSH-0:** that backend is an unconnected
+/// skeleton — lookup no longer throws, but its IO calls fail with a clear
+/// "not connected" error until the connection lifecycle lands in SSH-1.
 @riverpod
 WorkspaceBackend workspaceBackend(Ref ref, Workspace workspace) {
   switch (workspace.backendType) {
@@ -23,9 +28,15 @@ WorkspaceBackend workspaceBackend(Ref ref, Workspace workspace) {
       return ref.watch(localSafBackendProvider);
     case WorkspaceBackendType.termux:
     case WorkspaceBackendType.ssh:
-      throw UnsupportedError(
-        'WorkspaceBackend for ${workspace.backendType.name} '
-        'is not yet implemented.',
-      );
+      final connectionId = workspace.connectionId;
+      if (connectionId == null || connectionId.isEmpty) {
+        throw StateError(
+          'SSH/Termux workspace "${workspace.id}" has no connectionId; '
+          'it must reference an SshConnection (设计文档 §5.1).',
+        );
+      }
+      final backend = RemoteSshBackend(connectionId);
+      ref.onDispose(backend.dispose);
+      return backend;
   }
 }
