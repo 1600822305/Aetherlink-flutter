@@ -1,7 +1,14 @@
-// 「新建 SSH 工作区」 form. Collects connection details, runs a one-shot probe
-// (测试连接) that captures the host key for TOFU, then on confirmation persists
-// the SshConnection profile + its secret (separate plaintext KV, excluded from
-// backup — 设计文档 §5.2), creates a workspace pointing at it and switches in.
+// 「新建 SSH 工作区」 / 「编辑 SSH 连接」 form. Collects connection details, runs a
+// one-shot probe (测试连接) that captures the host key for TOFU, then on
+// confirmation persists the SshConnection profile + its secret (separate
+// plaintext KV, excluded from backup — 设计文档 §5.2).
+//
+// Three flows share this sheet:
+//   · 新建 (editConnection == null): create a fresh connection + workspace.
+//   · 复用已有连接: tap an existing profile, pick a root → open a workspace that
+//     references it (no new connection/credential — 设计文档 §5.1 方案 C 的复用).
+//   · 编辑 (editConnection != null): 管理页「重新授权」rebinds an existing profile's
+//     host/credential; saves through and invalidates the pooled transport.
 //
 // dartssh2 is never imported here: the probe goes through the application-layer
 // pool, which returns the neutral domain [SshProbeResult].
@@ -17,21 +24,38 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_view
 import 'package:aetherlink_flutter/features/workspace/domain/ssh_connection.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 
-/// Opens the 「新建 SSH 工作区」 form sheet. [parentRef] is the page's ref so the
+/// Opens the SSH connection form sheet. [parentRef] is the page's ref so the
 /// provider writes (open workspace / switch) outlive the dismissed sheet.
-Future<void> showSshConnectionFormSheet(BuildContext context, WidgetRef ref) {
-  return showModalBottomSheet<void>(
+///
+/// Pass [editConnection] to edit an existing profile (管理页「重新授权」); leave it
+/// null to create a new connection / reuse an existing one. Resolves to `true`
+/// when an edit was saved (so the caller can refresh its health badges).
+Future<bool?> showSshConnectionFormSheet(
+  BuildContext context,
+  WidgetRef ref, {
+  SshConnection? editConnection,
+}) {
+  return showModalBottomSheet<bool>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
-    builder: (sheetContext) => _SshConnectionFormSheet(parentRef: ref),
+    builder: (sheetContext) => _SshConnectionFormSheet(
+      parentRef: ref,
+      editConnection: editConnection,
+    ),
   );
 }
 
 class _SshConnectionFormSheet extends ConsumerStatefulWidget {
-  const _SshConnectionFormSheet({required this.parentRef});
+  const _SshConnectionFormSheet({
+    required this.parentRef,
+    this.editConnection,
+  });
 
   final WidgetRef parentRef;
+
+  /// Non-null = edit an existing profile instead of creating a new one.
+  final SshConnection? editConnection;
 
   @override
   ConsumerState<_SshConnectionFormSheet> createState() =>
@@ -51,6 +75,36 @@ class _SshConnectionFormSheetState
 
   SshAuthType _authType = SshAuthType.password;
   bool _busy = false;
+
+  bool get _isEdit => widget.editConnection != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final conn = widget.editConnection;
+    if (conn != null) {
+      _label.text = conn.label;
+      _host.text = conn.host;
+      _port.text = conn.port.toString();
+      _username.text = conn.username;
+      _authType = conn.authType;
+      _loadCredential(conn.credentialKeyId);
+    }
+  }
+
+  // Prefill the secret fields from the credential KV so an edit can keep the
+  // existing password / key without re-typing it.
+  Future<void> _loadCredential(String credentialKeyId) async {
+    final cred = await ref
+        .read(sshCredentialStoreProvider.notifier)
+        .read(credentialKeyId);
+    if (!mounted || cred == null) return;
+    setState(() {
+      if (cred.password != null) _password.text = cred.password!;
+      if (cred.privateKeyPem != null) _privateKey.text = cred.privateKeyPem!;
+      if (cred.passphrase != null) _passphrase.text = cred.passphrase!;
+    });
+  }
 
   @override
   void dispose() {
@@ -79,7 +133,7 @@ class _SshConnectionFormSheetState
   String? _validate() {
     if (_host.text.trim().isEmpty) return '请填写主机';
     if (_username.text.trim().isEmpty) return '请填写用户名';
-    if (_root.text.trim().isEmpty) return '请填写远端起始路径';
+    if (!_isEdit && _root.text.trim().isEmpty) return '请填写远端起始路径';
     if (_authType == SshAuthType.password && _password.text.isEmpty) {
       return '请填写密码';
     }
@@ -198,8 +252,121 @@ class _SshConnectionFormSheetState
           ),
         );
 
+    await _openWorkspaceFor(connection, root: root);
+  }
+
+  // ── 编辑已有连接（管理页「重新授权」）─────────────────────────────────────
+  Future<void> _testAndSave() async {
+    final error = _validate();
+    if (error != null) {
+      _snack(error);
+      return;
+    }
+    final conn = widget.editConnection!;
+    setState(() => _busy = true);
+    try {
+      final result =
+          await ref.read(sshBackendPoolProvider).probe(_params());
+      if (!mounted) return;
+      if (!result.ok) {
+        _snack('连接失败 · ${result.error ?? '未知错误'}');
+        return;
+      }
+      // Re-confirm via TOFU only when the host key is new or has changed
+      // (changed key on an edited host could be a MITM — make the user look).
+      final fingerprint = result.fingerprint;
+      if (fingerprint != null && fingerprint != conn.hostKeyFingerprint) {
+        final trusted = await _confirmHostKey(fingerprint);
+        if (!trusted || !mounted) return;
+      }
+      await _saveEdit(conn, fingerprint: fingerprint ?? conn.hostKeyFingerprint);
+    } catch (e) {
+      _snack('连接失败 · $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _saveEdit(
+    SshConnection conn, {
+    required String? fingerprint,
+  }) async {
+    final ref = widget.parentRef;
+    final label = _label.text.trim().isEmpty
+        ? '${_username.text.trim()}@${_host.text.trim()}'
+        : _label.text.trim();
+    await ref.read(sshConnectionStoreProvider.notifier).save(
+          conn.copyWith(
+            label: label,
+            host: _host.text.trim(),
+            port: int.tryParse(_port.text.trim()) ?? 22,
+            username: _username.text.trim(),
+            authType: _authType,
+            hostKeyFingerprint: fingerprint,
+          ),
+        );
+    await ref.read(sshCredentialStoreProvider.notifier).save(
+          conn.credentialKeyId,
+          SshCredential(
+            password: _authType == SshAuthType.password ? _password.text : null,
+            privateKeyPem:
+                _authType == SshAuthType.privateKey ? _privateKey.text : null,
+            passphrase: _authType == SshAuthType.privateKey &&
+                    _passphrase.text.isNotEmpty
+                ? _passphrase.text
+                : null,
+          ),
+        );
+    // Drop the pooled transport so the next access reconnects with the new
+    // host/credential (设计文档 §4.1 connection 复用).
+    await ref.read(sshBackendPoolProvider).invalidate(conn.id);
+    if (mounted) Navigator.of(context).pop(true);
+  }
+
+  // ── 复用已有连接 ─────────────────────────────────────────────────────────
+  Future<void> _openWithExisting(SshConnection conn) async {
+    final root = await _promptRoot();
+    if (root == null || root.trim().isEmpty || !mounted) return;
+    await _openWorkspaceFor(conn, root: root.trim());
+  }
+
+  Future<String?> _promptRoot() {
+    final controller = TextEditingController(text: '.');
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('远端起始路径'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '如 /home/alice/project 或 .',
+          ),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            child: const Text('打开'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Opens (or refreshes) a workspace pointing at [connection] rooted at [root]
+  // and switches into it — shared by the create and reuse flows.
+  Future<void> _openWorkspaceFor(
+    SshConnection connection, {
+    required String root,
+  }) async {
+    final ref = widget.parentRef;
     final workspace = await ref.read(workspaceStoreProvider.notifier).open(
-          name: label,
+          name: connection.label,
           backendType: WorkspaceBackendType.ssh,
           root: root,
           displayPath: '${connection.username}@${connection.host}:$root',
@@ -214,6 +381,11 @@ class _SshConnectionFormSheetState
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isPassword = _authType == SshAuthType.password;
+    // 复用已有连接 (设计文档 §5.1 方案 C): only offered in the create flow.
+    final existing = _isEdit
+        ? const <SshConnection>[]
+        : (ref.watch(sshConnectionStoreProvider).asData?.value ??
+            const <SshConnection>[]);
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.only(
@@ -230,11 +402,56 @@ class _SshConnectionFormSheetState
               Padding(
                 padding: const EdgeInsets.only(bottom: 12, left: 4),
                 child: Text(
-                  '新建 SSH 工作区',
+                  _isEdit ? '编辑 SSH 连接' : '新建 SSH 工作区',
                   style: theme.textTheme.titleMedium
                       ?.copyWith(fontWeight: FontWeight.w700),
                 ),
               ),
+              if (existing.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4, left: 4),
+                  child: Text(
+                    '复用已有连接',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                for (final conn in existing)
+                  Card(
+                    margin: const EdgeInsets.symmetric(vertical: 2),
+                    child: ListTile(
+                      leading: Icon(
+                        Icons.dns_outlined,
+                        color: theme.colorScheme.primary,
+                      ),
+                      title: Text(
+                        conn.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        '${conn.username}@${conn.host}:${conn.port}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: _busy ? null : () => _openWithExisting(conn),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4, left: 4),
+                  child: Text(
+                    '或新建连接',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
               TextField(
                 controller: _label,
                 decoration: const InputDecoration(
@@ -270,14 +487,16 @@ class _SshConnectionFormSheetState
                 controller: _username,
                 decoration: const InputDecoration(labelText: '用户名'),
               ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _root,
-                decoration: const InputDecoration(
-                  labelText: '远端起始路径',
-                  hintText: '如 /home/alice/project 或 .',
+              if (!_isEdit) ...[
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _root,
+                  decoration: const InputDecoration(
+                    labelText: '远端起始路径',
+                    hintText: '如 /home/alice/project 或 .',
+                  ),
                 ),
-              ),
+              ],
               const SizedBox(height: 12),
               SegmentedButton<SshAuthType>(
                 segments: const [
@@ -323,14 +542,15 @@ class _SshConnectionFormSheetState
               ],
               const SizedBox(height: 20),
               FilledButton(
-                onPressed: _busy ? null : _testAndConnect,
+                onPressed:
+                    _busy ? null : (_isEdit ? _testAndSave : _testAndConnect),
                 child: _busy
                     ? const SizedBox(
                         height: 18,
                         width: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('测试并连接'),
+                    : Text(_isEdit ? '测试并保存' : '测试并连接'),
               ),
             ],
           ),

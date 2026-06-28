@@ -186,6 +186,9 @@ Future<void> openRecent(WidgetRef ref, Workspace workspace) async {
         backendType: workspace.backendType,
         root: workspace.root,
         displayPath: workspace.displayPath,
+        // SSH / Termux workspaces must keep their SshConnection reference, else
+        // workspaceBackend can't resolve the pooled connection (设计文档 §5.1).
+        connectionId: workspace.connectionId,
       );
   _switchTo(ref, stored);
 }

@@ -21,13 +21,17 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/workspace/application/ssh_connection_pool.dart';
+import 'package:aetherlink_flutter/features/workspace/application/ssh_connection_store.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_store.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/data/local_saf_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/open_workspace_sheet.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/ssh_connection_form_sheet.dart';
 
 class WorkspaceManagementPage extends ConsumerStatefulWidget {
   const WorkspaceManagementPage({super.key});
@@ -53,24 +57,47 @@ class _WorkspaceManagementPageState
     _refreshHealth();
   }
 
-  // Proactively probes every localSaf workspace's persisted grant in parallel
-  // (one cheap permission lookup each, no directory I/O) so revoked entries get
-  // a 「授权已失效」 badge instead of failing only when opened.
+  // Proactively probes every workspace's backend access in parallel so revoked
+  // (SAF) / unreachable (SSH) entries get a 「授权已失效」 badge instead of failing
+  // only when opened. SAF = a cheap permission lookup; SSH/Termux = an SFTP
+  // stat(root) over the pooled transport (设计文档 §4.2).
   Future<void> _refreshHealth() async {
     final workspaces = await ref.read(workspaceStoreProvider.future);
-    final backend = ref.read(localSafBackendProvider);
+    final saf = ref.read(localSafBackendProvider);
+    // Profiles must be hydrated before the pool can resolve connectionIds.
+    await ref.read(sshConnectionStoreProvider.future);
+    final pool = ref.read(sshBackendPoolProvider);
     final invalid = <String>{};
     await Future.wait([
-      for (final w in workspaces)
-        if (w.backendType == WorkspaceBackendType.localSaf)
-          backend.verifyAccess(w.root).then(
-            (ok) {
-              if (!ok) invalid.add(w.id);
-            },
-            onError: (_) => invalid.add(w.id),
-          ),
+      for (final w in workspaces) _checkHealth(w, saf, pool, invalid),
     ]);
     if (mounted) setState(() => _invalidIds = invalid);
+  }
+
+  Future<void> _checkHealth(
+    Workspace w,
+    LocalSafBackend saf,
+    SshBackendPool pool,
+    Set<String> invalid,
+  ) async {
+    try {
+      final WorkspaceBackend backend;
+      switch (w.backendType) {
+        case WorkspaceBackendType.localSaf:
+          backend = saf;
+        case WorkspaceBackendType.ssh:
+        case WorkspaceBackendType.termux:
+          final cid = w.connectionId;
+          if (cid == null || cid.isEmpty) {
+            invalid.add(w.id);
+            return;
+          }
+          backend = pool.backendFor(cid);
+      }
+      if (!await backend.verifyAccess(w.root)) invalid.add(w.id);
+    } catch (_) {
+      invalid.add(w.id);
+    }
   }
 
   Future<void> _loadAutoRestore() async {
@@ -143,10 +170,16 @@ class _WorkspaceManagementPageState
   //   · 不同目录 → 二次确认后,把新 root 绑回原条目的 id(保留 id/名称/历史),
   //     绝不产生重复条目,也不依赖脆弱的"按名字匹配"。
   Future<void> _reauthorize(Workspace w) async {
-    if (w.backendType != WorkspaceBackendType.localSaf) {
-      _snack('该工作区类型暂不支持重新授权');
-      return;
+    switch (w.backendType) {
+      case WorkspaceBackendType.localSaf:
+        await _reauthorizeSaf(w);
+      case WorkspaceBackendType.ssh:
+      case WorkspaceBackendType.termux:
+        await _editConnection(w);
     }
+  }
+
+  Future<void> _reauthorizeSaf(Workspace w) async {
     final PickedDirectory? picked;
     try {
       picked = await ref.read(localSafBackendProvider).pickDirectory();
@@ -171,6 +204,30 @@ class _WorkspaceManagementPageState
     if (updated == null) return;
     await _refreshHealth();
     if (mounted) _snack('已重新授权');
+  }
+
+  // 「重新授权」 for SSH / Termux = edit the referenced SshConnection (host /
+  // credential / key). The form saves through and invalidates the pooled
+  // transport; we then re-probe to refresh the badge.
+  Future<void> _editConnection(Workspace w) async {
+    final cid = w.connectionId;
+    if (cid == null || cid.isEmpty) {
+      _snack('该工作区未关联连接配置');
+      return;
+    }
+    await ref.read(sshConnectionStoreProvider.future);
+    final conn = ref.read(sshConnectionStoreProvider.notifier).byId(cid);
+    if (conn == null) {
+      _snack('连接配置不存在或已删除');
+      return;
+    }
+    if (!mounted) return;
+    final changed =
+        await showSshConnectionFormSheet(context, ref, editConnection: conn);
+    if (changed == true) {
+      await _refreshHealth();
+      if (mounted) _snack('已更新连接');
+    }
   }
 
   void _snack(String message) {

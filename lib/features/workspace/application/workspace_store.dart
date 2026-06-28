@@ -127,6 +127,8 @@ class WorkspaceStore extends _$WorkspaceStore {
             backendType: w.backendType,
             root: root,
             displayPath: displayPath,
+            // Keep the SshConnection reference across a rebind (设计文档 §5.1).
+            connectionId: w.connectionId,
             lastOpenedAt: DateTime.now(),
           )
         else
