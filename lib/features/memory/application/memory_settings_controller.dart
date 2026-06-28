@@ -64,6 +64,11 @@ class MemorySettingsController extends _$MemorySettingsController
   void setFullDumpThreshold(int value) =>
       persist(state.copyWith(fullDumpThreshold: value < 0 ? 0 : value));
 
+  /// Sets how many days a soft-deleted memory is kept before 整理记忆 purges it
+  /// (clamped ≥ 0).
+  void setRetentionDays(int value) =>
+      persist(state.copyWith(retentionDays: value < 0 ? 0 : value));
+
   /// Sets the embedding model (`providerId:modelId`) for semantic retrieval;
   /// null clears it (semantic/auto then fall back to keyword matching).
   void setEmbeddingModelKey(String? key) => persist(

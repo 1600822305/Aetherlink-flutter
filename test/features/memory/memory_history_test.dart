@@ -87,4 +87,51 @@ void main() {
     expect(recent.first.memoryId, b.id);
     expect(recent.map((e) => e.memoryId), contains(a.id));
   });
+
+  group('purge', () {
+    test('keeps live memories and those deleted within the window', () async {
+      final live = await store.create(const MemoryItem(id: '', content: 'live'));
+      final recent = await store.create(
+        const MemoryItem(id: '', content: 'recent'),
+      );
+      await store.delete(recent.id);
+
+      final purged = await store.purge(retentionDays: 30);
+
+      expect(purged, 0);
+      expect((await db.memoryDao.getById(live.id))?.content, 'live');
+      expect((await db.memoryDao.getById(recent.id))?.content, 'recent');
+    });
+
+    test('removes memories deleted past retention, with their history',
+        () async {
+      final old = await store.create(const MemoryItem(id: '', content: 'old'));
+      await store.delete(old.id);
+      // Backdate the DELETE audit time to 40 days ago.
+      final fortyDaysAgo =
+          DateTime.now().millisecondsSinceEpoch - 40 * 86400000;
+      await db.customStatement(
+        'UPDATE memory_history_rows SET created_at = ? '
+        'WHERE memory_id = ? AND action = ?',
+        [fortyDaysAgo, old.id, 'DELETE'],
+      );
+
+      final purged = await store.purge(retentionDays: 30);
+
+      expect(purged, 1);
+      expect(await db.memoryDao.getById(old.id), isNull);
+      expect(await store.history(old.id), isEmpty);
+    });
+
+    test('retentionDays 0 purges any soft-deleted memory immediately',
+        () async {
+      final gone = await store.create(const MemoryItem(id: '', content: 'x'));
+      await store.delete(gone.id);
+
+      final purged = await store.purge(retentionDays: 0);
+
+      expect(purged, 1);
+      expect(await db.memoryDao.getById(gone.id), isNull);
+    });
+  });
 }

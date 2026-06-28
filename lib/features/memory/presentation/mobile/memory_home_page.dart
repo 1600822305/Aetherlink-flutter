@@ -306,9 +306,14 @@ class _ConsolidateActionState extends ConsumerState<_ConsolidateAction> {
   }
 
   String _message(MemoryConsolidationResult result) {
-    if (result.scannedEpisodic == 0) return '暂无可整理的情景记忆';
-    if (result.changed == 0) return '已整理，无需新增或更新';
-    return '整理完成：新增 ${result.created} · 更新 ${result.updated}';
+    final purgedSuffix = result.purged > 0 ? ' · 清理 ${result.purged}' : '';
+    if (result.scannedEpisodic == 0 && result.changed == 0) {
+      return result.purged > 0
+          ? '已清理 ${result.purged} 条过期记忆'
+          : '暂无可整理的情景记忆';
+    }
+    if (result.changed == 0) return '已整理，无需新增或更新$purgedSuffix';
+    return '整理完成：新增 ${result.created} · 更新 ${result.updated}$purgedSuffix';
   }
 
   @override

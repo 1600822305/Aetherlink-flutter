@@ -95,6 +95,15 @@ class ChatMemoryStore {
   /// The audit trail for a single memory [id], newest first.
   Future<List<MemoryHistoryEntry>> history(String id) => _dao.historyFor(id);
 
+  /// Permanently removes memories soft-deleted more than [retentionDays] ago
+  /// (clamped ≥ 0), reclaiming space. Returns how many were purged. Backs the
+  /// purge step of 整理记忆.
+  Future<int> purge({required int retentionDays}) {
+    final days = retentionDays < 0 ? 0 : retentionDays;
+    final cutoff = DateTime.now().millisecondsSinceEpoch - days * 86400000;
+    return _dao.purgeSoftDeleted(cutoff);
+  }
+
   /// Persists a recomputed [item.embedding] / [item.embeddingModelId] in place
   /// without touching `updatedAt` (so caching a vector never reorders the
   /// newest-first lists). Used by semantic retrieval's lazy embedding backfill.
