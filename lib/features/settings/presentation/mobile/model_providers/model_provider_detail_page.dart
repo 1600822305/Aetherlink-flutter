@@ -37,7 +37,8 @@ import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 ///    and the advanced-API entry point.
 ///  * Tab 模型: a single (persisted) 测试 toggle that shows/hides a per-row
 ///    test button, search, the 自动获取 / 自定义端点 / 手动添加 tool row and the
-///    grouped model list (edit / delete / test per row, 2-step group delete).
+///    grouped model list (row tap edits; per-row capability icons + test +
+///    instant delete; 2-step group delete).
 ///
 /// CORS-plugin features are intentionally dropped (no CORS concern on Flutter).
 class ModelProviderDetailPage extends ConsumerStatefulWidget {
@@ -517,6 +518,11 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
   String? _testingModelId;
   bool _kvLoaded = false;
 
+  /// 2-step group delete: holds the group name armed by a first tap. A second
+  /// tap on the same group performs the delete. Auto-disarms via [_disarmTimer].
+  String? _groupPendingDelete;
+  Timer? _disarmTimer;
+
   // groupModels cache — avoids O(n log n) recomputation every build.
   List<Model>? _cachedModelsList;
   String _cachedSearch = '';
@@ -540,6 +546,7 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
   @override
   void dispose() {
     widget.tabController.removeListener(_onTabChanged);
+    _disarmTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -771,9 +778,22 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
                     IconButton(
                       onPressed: () =>
                           _deleteGroup(provider, models, groupName),
-                      icon: const Icon(LucideIcons.trash2, size: 14),
+                      icon: Icon(
+                        _groupPendingDelete == groupName
+                            ? LucideIcons.check
+                            : LucideIcons.trash2,
+                        size: 14,
+                      ),
                       color: theme.colorScheme.error,
-                      tooltip: '删除整组',
+                      style: _groupPendingDelete == groupName
+                          ? IconButton.styleFrom(
+                              backgroundColor: theme.colorScheme.error
+                                  .withValues(alpha: 0.15),
+                            )
+                          : null,
+                      tooltip: _groupPendingDelete == groupName
+                          ? '再次点击确认删除整组'
+                          : '删除整组',
                       constraints: const BoxConstraints(),
                       padding: const EdgeInsets.all(6),
                     ),
@@ -954,30 +974,10 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
     }
   }
 
+  /// Single-model delete is immediate (no confirmation) — the undo toast is the
+  /// safety net.
   Future<void> _deleteModel(ModelProvider provider, String modelId) async {
     final model = provider.models.where((m) => m.id == modelId).firstOrNull;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('删除模型'),
-        content: Text('确定要删除「${model?.name ?? modelId}」吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(dialogCtx).colorScheme.error,
-            ),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
     await ref
         .read(modelStoreProvider.notifier)
         .saveProvider(
@@ -1016,32 +1016,24 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
     );
   }
 
+  /// 2-step group delete: the first tap arms [_groupPendingDelete] (the trash
+  /// icon turns into a highlighted check); a second tap on the same group
+  /// removes every model in it. Auto-disarms after a few seconds.
   Future<void> _deleteGroup(
     ModelProvider provider,
     List<Model> models,
     String groupName,
   ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('删除整组模型'),
-        content: Text('确定要删除「$groupName」中的 ${models.length} 个模型吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(dialogCtx).colorScheme.error,
-            ),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
+    if (_groupPendingDelete != groupName) {
+      setState(() => _groupPendingDelete = groupName);
+      _disarmTimer?.cancel();
+      _disarmTimer = Timer(const Duration(seconds: 4), () {
+        if (mounted) setState(() => _groupPendingDelete = null);
+      });
+      return;
+    }
+    _disarmTimer?.cancel();
+    if (mounted) setState(() => _groupPendingDelete = null);
 
     final deletedModels = List<Model>.of(models);
     final ids = {for (final m in models) m.id};
