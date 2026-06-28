@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
@@ -298,6 +300,79 @@ List<MemoryItem>? _sqliteVecTopK(
     for (final id in ids)
       if (byId[id] != null) byId[id]!,
   ];
+}
+
+/// Result of the 嵌入模型自检 ([testEmbeddingModel]): on success the returned
+/// vector [dim] and round-trip [elapsedMs]; on failure a human-readable [error]
+/// (no model selected / auth / 404 / timeout). [ok] is the single source of truth.
+typedef EmbeddingProbe = ({bool ok, int? dim, int? elapsedMs, String? error});
+
+/// Short sample text embedded by [testEmbeddingModel] to check connectivity.
+const String _embeddingProbeSample = '测试嵌入模型连通性';
+
+/// 嵌入模型自检: embeds a short sample with the currently-selected embedding model
+/// through the exact same [EmbeddingService] path used for retrieval, so the
+/// outcome reflects real connectivity (baseUrl / key / model name / endpoint
+/// support). Never throws — every failure is mapped to a readable [error] so the
+/// UI can surface *why* semantic retrieval would silently fall back to keyword.
+/// Takes a [WidgetRef] since it is only ever triggered from the 记忆设置 page.
+Future<EmbeddingProbe> testEmbeddingModel(WidgetRef ref) async {
+  final modelKey = ref.read(memorySettingsControllerProvider).embeddingModelKey;
+  if (modelKey == null) {
+    return (ok: false, dim: null, elapsedMs: null, error: '未选择嵌入模型');
+  }
+  final providers = await ref.read(appModelProvidersProvider.future);
+  final model = _resolveEmbeddingModel(providers, modelKey);
+  if (model == null) {
+    return (ok: false, dim: null, elapsedMs: null, error: '嵌入模型已失效，请重新选择');
+  }
+  final sw = Stopwatch()..start();
+  try {
+    final service = EmbeddingService(
+      buildLlmDio(proxy: ref.read(appNetworkProxyConfigProvider)),
+    );
+    final vector = await service.embed(model, _embeddingProbeSample);
+    sw.stop();
+    if (vector.isEmpty) {
+      return (
+        ok: false,
+        dim: null,
+        elapsedMs: null,
+        error: '响应未包含向量（确认所选为 embedding 模型）',
+      );
+    }
+    return (
+      ok: true,
+      dim: vector.length,
+      elapsedMs: sw.elapsedMilliseconds,
+      error: null,
+    );
+  } on DioException catch (e) {
+    return (ok: false, dim: null, elapsedMs: null, error: _describeDioError(e));
+  } on Object catch (e) {
+    return (ok: false, dim: null, elapsedMs: null, error: e.toString());
+  }
+}
+
+/// Maps a [DioException] from the 嵌入模型自检 to a concise Chinese reason.
+String _describeDioError(DioException e) {
+  final status = e.response?.statusCode;
+  if (status != null) {
+    final reason = switch (status) {
+      401 || 403 => '鉴权失败（API key 无效或无权限）',
+      404 => '接口或模型不存在（检查接口地址 / 模型名）',
+      429 => '请求过于频繁（限流）',
+      _ => '服务返回错误',
+    };
+    return '$reason（HTTP $status）';
+  }
+  return switch (e.type) {
+    DioExceptionType.connectionTimeout ||
+    DioExceptionType.sendTimeout ||
+    DioExceptionType.receiveTimeout => '连接超时（检查网络 / 代理 / 接口地址）',
+    DioExceptionType.connectionError => '无法连接（检查接口地址 / 网络）',
+    _ => e.message ?? '网络错误',
+  };
 }
 
 /// Resolves the persisted [key] to a send-ready embedding [Model] (provider
