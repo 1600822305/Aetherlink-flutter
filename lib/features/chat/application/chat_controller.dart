@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
+import 'package:aetherlink_flutter/app/di/memory_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/app/di/system_prompt_variables_access.dart';
@@ -2838,7 +2839,15 @@ class ChatController extends _$ChatController {
       base,
       ref.read(systemPromptVariablesProvider),
     );
-    return injected.isEmpty ? null : injected;
+
+    final memorySection = await buildChatMemoryInjection(
+      ref,
+      assistantId: _assistantId,
+    );
+    final withMemory = (memorySection == null || memorySection.isEmpty)
+        ? injected
+        : (injected.isEmpty ? memorySection : '$injected\n\n$memorySection');
+    return withMemory.isEmpty ? null : withMemory;
   }
 
   /// The skills bound to the assistant ([skillIds]) that are currently enabled,
