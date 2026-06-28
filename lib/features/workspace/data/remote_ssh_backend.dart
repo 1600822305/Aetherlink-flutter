@@ -235,7 +235,19 @@ class RemoteSshBackend extends WorkspaceBackend {
     final out = <WorkspaceEntry>[];
     for (final n in names) {
       if (n.filename == '.' || n.filename == '..') continue;
-      out.add(_toEntry(_join(path, n.filename), n.filename, n.attr));
+      final childPath = _join(path, n.filename);
+      var attr = n.attr;
+      // listdir reports a symlink by its own (lstat) type, so a link pointing at
+      // a directory looks like a plain file — it can't be expanded and opening
+      // it reads a dir (SftpStatusError code 4). Follow it with stat() to
+      // classify by the *target* (termux-setup-storage makes ~/storage/* such
+      // links). Dangling/inaccessible links keep their lstat attrs.
+      if (attr.isSymbolicLink) {
+        try {
+          attr = await sftp.stat(childPath);
+        } catch (_) {}
+      }
+      out.add(_toEntry(childPath, n.filename, attr));
     }
     return out;
   }
