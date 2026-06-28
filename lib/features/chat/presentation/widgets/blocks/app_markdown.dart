@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/app/di/font_settings_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/code_block/code_block_view.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
+import 'package:aetherlink_flutter/shared/widgets/copy_icon_button.dart';
 
 /// Renders Markdown for message blocks, mirroring the original `Markdown.tsx`.
 ///
@@ -341,11 +342,12 @@ class _MarkdownTableState extends State<MarkdownTable> {
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          _ToolbarIconButton(
-                            icon: LucideIcons.copy,
-                            tooltip: '复制表格',
-                            onTap: () =>
-                                AppToast.copy(context, _buildMarkdownSource()),
+                          CopyIconButton(
+                            text: _buildMarkdownSource(),
+                            size: 16,
+                            color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+                            copyTooltip: '复制表格',
+                            borderRadius: 4,
                           ),
                           const SizedBox(width: 16),
                           _ToolbarIconButton(
