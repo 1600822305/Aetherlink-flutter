@@ -58,4 +58,8 @@ class ChatMemoryStore {
     final assistants = await _dao.distinctOwnerCount(MemoryKind.chat);
     return MemoryCounts(total: total, global: global, assistants: assistants);
   }
+
+  /// Map of assistant id → number of private chat memories it owns (used by the
+  /// 按助手查看 index).
+  Future<Map<String, int>> ownerCounts() => _dao.ownerCounts(MemoryKind.chat);
 }

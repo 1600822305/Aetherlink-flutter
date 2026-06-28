@@ -8,6 +8,8 @@ import 'package:aetherlink_flutter/features/backup/presentation/backup_settings_
 import 'package:aetherlink_flutter/features/notes/presentation/mobile/note_editor_page.dart';
 import 'package:aetherlink_flutter/features/notes/presentation/mobile/notes_page.dart';
 import 'package:aetherlink_flutter/features/notes/presentation/mobile/notes_settings_page.dart';
+import 'package:aetherlink_flutter/features/memory/presentation/mobile/assistant_memory_index_page.dart';
+import 'package:aetherlink_flutter/features/memory/presentation/mobile/assistant_memory_list_page.dart';
 import 'package:aetherlink_flutter/features/memory/presentation/mobile/global_memory_list_page.dart';
 import 'package:aetherlink_flutter/features/memory/presentation/mobile/memory_home_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_page.dart';
@@ -94,6 +96,7 @@ abstract final class AppRouter {
   static const String backupSettingsPath = '/settings/backup';
   static const String memoryPath = '/settings/memory';
   static const String globalMemoryPath = '/settings/memory/global';
+  static const String assistantMemoryIndexPath = '/settings/memory/assistants';
   static const String notesPath = '/settings/notes';
   static const String notesSettingsPath = '/settings/notes/settings';
   static String noteEditorPath(String relativePath, String name) =>
@@ -291,6 +294,23 @@ abstract final class AppRouter {
         name: 'memoryGlobal',
         pageBuilder: (context, state) =>
             _instant(state, const GlobalMemoryListPage()),
+      ),
+      GoRoute(
+        path: assistantMemoryIndexPath,
+        name: 'memoryAssistants',
+        pageBuilder: (context, state) =>
+            _instant(state, const AssistantMemoryIndexPage()),
+      ),
+      GoRoute(
+        path: AssistantMemoryRoute.pattern,
+        name: 'memoryAssistant',
+        pageBuilder: (context, state) => _instant(
+          state,
+          AssistantMemoryListPage(
+            assistantId: state.pathParameters['assistantId'] ?? '',
+            assistantName: state.extra is String ? state.extra! as String : '',
+          ),
+        ),
       ),
       GoRoute(
         path: voiceSettingsPath,
