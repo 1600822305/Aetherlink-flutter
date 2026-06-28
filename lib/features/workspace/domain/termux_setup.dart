@@ -22,6 +22,11 @@ abstract final class TermuxSetup {
   /// Suggested filename when sharing the script as a file.
   static const String scriptFileName = 'aetherlink-termux-setup.sh';
 
+  /// Android shared storage root (相册/下载/文档 etc.). Termux can only reach it
+  /// after `termux-setup-storage` has granted the storage permission; the app
+  /// offers this as an alternate workspace root so users can browse `/sdcard`.
+  static const String sharedStorageRoot = '/storage/emulated/0';
+
   /// The full setup script. [authorizedKey] is the single-line public key
   /// (`ssh-ed25519 AAAA… comment`) to authorize; it must not contain a single
   /// quote (generated keys never do) so it can be embedded in a `'…'` literal.
@@ -81,8 +86,14 @@ termux-wake-lock 2>/dev/null || true
 pkill sshd 2>/dev/null || true
 sshd
 
+# 6) 授权访问手机共享存储（相册/下载/文档）。会弹一次系统授权框，同意后才能在
+#    App 里浏览 /sdcard；拒绝/取消不影响 SSH 连接，仅家目录可用。
+echo '==> 申请共享存储权限（termux-setup-storage）...'
+termux-setup-storage 2>/dev/null || true
+
 echo ''
 echo "==> 完成！sshd 已在 127.0.0.1:\$PORT 启动。"
+echo '==> 若刚才弹了授权框并同意，App 即可浏览 /sdcard（相册/下载/文档）。'
 echo '==> 回到 Aetherlink 点「完成 / 测试连接」即可使用。'
 echo '==> 提示：请关闭 Termux 的电池优化，并安装 Termux:Boot 以便开机自启保活。'
 ''';

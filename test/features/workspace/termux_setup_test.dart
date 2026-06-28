@@ -24,6 +24,11 @@ void main() {
       expect(script, contains('PORT=8022'));
     });
 
+    test('requests shared-storage access via termux-setup-storage', () {
+      final script = TermuxSetup.buildScript(authorizedKey: key);
+      expect(script, contains('termux-setup-storage'));
+    });
+
     test('honours a custom port', () {
       final script = TermuxSetup.buildScript(authorizedKey: key, port: 9000);
       expect(script, contains('PORT=9000'));
