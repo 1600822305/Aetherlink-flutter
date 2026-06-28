@@ -62,6 +62,25 @@ double frequencyScore(int accessCount) {
   return math.min(1.0, math.log(1 + accessCount) / math.log(11));
 }
 
+/// Fraction of the remaining gap to [_importanceCap] that a single retrieval
+/// hit adds to a memory's importance (命中强化 / the testing effect).
+const double _hitImportanceGain = 0.04;
+
+/// Ceiling for hit-reinforced importance: recalls strengthen a memory toward
+/// this, but never to a perfect 1.0 (reserved for explicit user intent).
+const double _importanceCap = 0.95;
+
+/// Importance after one retrieval hit: nudges [importance] a [_hitImportanceGain]
+/// fraction of the way toward [_importanceCap], so frequently-recalled memories
+/// strengthen with diminishing returns and asymptotically approach the cap.
+/// Input is clamped to `[0, 1]`; an importance already at/above the cap (e.g. a
+/// user-pinned 1.0) is left untouched so a hit never weakens it.
+double reinforcedImportance(double importance) {
+  final imp = importance < 0 ? 0.0 : (importance > 1 ? 1.0 : importance);
+  if (imp >= _importanceCap) return imp;
+  return imp + _hitImportanceGain * (_importanceCap - imp);
+}
+
 /// Combines cosine [similarity] with recency, hit frequency and importance into
 /// a single activation score (higher = more activated). Similarity dominates by
 /// [weights]; the rest are gentle tie-breakers. Cosine is clamped to `[0, 1]`.

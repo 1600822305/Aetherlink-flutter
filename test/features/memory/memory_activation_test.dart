@@ -123,4 +123,38 @@ void main() {
       expect(ranked, isEmpty);
     });
   });
+
+  group('reinforcedImportance', () {
+    test('a hit raises importance with diminishing returns toward the cap', () {
+      const start = 0.5;
+      final once = reinforcedImportance(start);
+      final twice = reinforcedImportance(once);
+      // Each hit increases importance...
+      expect(once, greaterThan(start));
+      expect(twice, greaterThan(once));
+      // ...but by a shrinking amount as it approaches the cap.
+      expect(twice - once, lessThan(once - start));
+      // ...and never exceeds the cap (0.95).
+      expect(twice, lessThan(0.95));
+    });
+
+    test('never lowers an already-capped / pinned importance', () {
+      expect(reinforcedImportance(0.95), 0.95);
+      expect(reinforcedImportance(1.0), 1.0);
+    });
+
+    test('clamps out-of-range input before reinforcing', () {
+      expect(reinforcedImportance(-1), greaterThanOrEqualTo(0.0));
+      expect(reinforcedImportance(2), 1.0);
+    });
+
+    test('repeated hits converge to but stay under the cap', () {
+      var imp = 0.0;
+      for (var i = 0; i < 200; i++) {
+        imp = reinforcedImportance(imp);
+      }
+      expect(imp, lessThan(0.95));
+      expect(imp, greaterThan(0.94));
+    });
+  });
 }

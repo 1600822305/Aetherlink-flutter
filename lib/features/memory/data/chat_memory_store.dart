@@ -3,6 +3,7 @@ import 'package:aetherlink_flutter/features/memory/data/datasources/local/memory
 import 'package:aetherlink_flutter/features/memory/domain/memory_history.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_scope.dart';
+import 'package:aetherlink_flutter/features/memory/domain/memory_vector.dart';
 
 /// Counts surfaced on the 记忆 overview card.
 class MemoryCounts {
@@ -109,9 +110,12 @@ class ChatMemoryStore {
   /// newest-first lists). Used by semantic retrieval's lazy embedding backfill.
   Future<void> persistEmbedding(MemoryItem item) => _dao.upsert(item);
 
-  /// Records a retrieval hit on each of [items]: bumps `accessCount` and stamps
-  /// `lastAccessedAt` with now, leaving `updatedAt` untouched so logging a hit
-  /// never reorders the newest-first lists. Backs the 命中日志 / eval surface.
+  /// Records a retrieval hit on each of [items]: bumps `accessCount`, stamps
+  /// `lastAccessedAt` with now, and reinforces `importance` toward its cap (命中
+  /// 强化 / the testing effect — frequently-recalled memories grow more
+  /// important, with diminishing returns). `updatedAt` is left untouched so
+  /// logging a hit never reorders the newest-first lists. Backs the 命中日志 /
+  /// eval surface and feeds the activation ranking.
   Future<void> recordHits(Iterable<MemoryItem> items) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     for (final item in items) {
@@ -119,6 +123,7 @@ class ChatMemoryStore {
         item.copyWith(
           accessCount: item.accessCount + 1,
           lastAccessedAt: now,
+          importance: reinforcedImportance(item.importance),
         ),
       );
     }
