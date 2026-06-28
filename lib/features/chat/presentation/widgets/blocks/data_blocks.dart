@@ -273,8 +273,9 @@ class _ConfirmationSection extends StatelessWidget {
 
   final ToolConfirmationRequest request;
 
-  /// Approve the operation. [ConfirmationGrace.none] runs it once; the other
-  /// values additionally open a 免确认 window for the rest of this conversation.
+  /// Approve the operation. [ConfirmationGrace.none] runs it once;
+  /// [ConfirmationGrace.fiveMinutes] additionally opens a 5-minute 免确认
+  /// window for this same tool.
   final void Function(ConfirmationGrace grace) onApprove;
   final VoidCallback onReject;
 
@@ -331,12 +332,6 @@ class _ConfirmationSection extends StatelessWidget {
               color: theme.colorScheme.primary,
               filled: false,
               onTap: () => onApprove(ConfirmationGrace.fiveMinutes),
-            ),
-            _ConfirmButton(
-              label: '本对话免确认',
-              color: theme.colorScheme.primary,
-              filled: false,
-              onTap: () => onApprove(ConfirmationGrace.forever),
             ),
             _ConfirmButton(
               label: '确认执行',

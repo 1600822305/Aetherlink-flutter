@@ -1595,9 +1595,9 @@ class ChatController extends _$ChatController {
             McpToolResult result;
             if (needsConfirm) {
               final confirm = ref.read(toolConfirmationProvider.notifier);
-              // A 免确认 window opened earlier in this conversation lets the
-              // tool run without prompting again.
-              final approved = confirm.isGraceActive(turnTopicId)
+              // A 免确认 window opened earlier for this same tool lets it run
+              // without prompting again (per-tool, per-conversation).
+              final approved = confirm.isGraceActive(turnTopicId, call.name)
                   ? true
                   : await confirm.request(
                       ToolConfirmationRequest(

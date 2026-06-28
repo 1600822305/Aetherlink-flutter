@@ -287,8 +287,8 @@ class FileEditorConfirmBar extends StatelessWidget {
   final String summary;
 
   /// Approve the operation. [ConfirmationGrace.none] runs it once;
-  /// [ConfirmationGrace.fiveMinutes] / [ConfirmationGrace.forever] additionally
-  /// open a 免确认 window for the rest of this conversation.
+  /// [ConfirmationGrace.fiveMinutes] additionally opens a 5-minute 免确认
+  /// window for this same tool.
   final void Function(ConfirmationGrace grace) onApprove;
   final VoidCallback onReject;
 
@@ -336,12 +336,6 @@ class FileEditorConfirmBar extends StatelessWidget {
                 color: theme.colorScheme.primary,
                 filled: false,
                 onTap: () => onApprove(ConfirmationGrace.fiveMinutes),
-              ),
-              _ConfirmButton(
-                label: '本对话免确认',
-                color: theme.colorScheme.primary,
-                filled: false,
-                onTap: () => onApprove(ConfirmationGrace.forever),
               ),
               _ConfirmButton(
                 label: '确认执行',

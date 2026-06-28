@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// How long a "免确认" (skip-confirmation) window granted from the confirm
-/// bar lasts, scoped to the current conversation.
+/// bar lasts. Scoped to a single tool within the current conversation.
 ///
 ///  * [none] — approve only this single operation (the default).
-///  * [fiveMinutes] — auto-approve confirm-level tools for the next 5 minutes.
-///  * [forever] — auto-approve for the rest of this conversation (no expiry).
-enum ConfirmationGrace { none, fiveMinutes, forever }
+///  * [fiveMinutes] — auto-approve further calls of *this same tool* for the
+///    next 5 minutes (other tools still prompt).
+enum ConfirmationGrace { none, fiveMinutes }
 
 /// A pending confirmation request shown in the chat UI.
 class ToolConfirmationRequest {
@@ -24,7 +24,8 @@ class ToolConfirmationRequest {
   final String id;
 
   /// The conversation (topic) this request belongs to. A granted 免确认
-  /// window is keyed by this so it never leaks into other conversations.
+  /// window is keyed by this + [toolName] so it never leaks into other
+  /// conversations or other tools.
   final String conversationId;
   final String toolName;
   final String summary;
@@ -45,23 +46,25 @@ class ToolConfirmationNotifier
   final _completers = <String, Completer<bool>>{};
   final _timers = <String, Timer>{};
 
-  /// Per-conversation 免确认 windows. A present key means a window is active
-  /// for that conversation; a `null` value never expires ([ConfirmationGrace.
-  /// forever]), a non-null value is the expiry instant ([ConfirmationGrace.
-  /// fiveMinutes]). Scoped per conversation so it never leaks across topics.
-  final _grace = <String, DateTime?>{};
+  /// Active 免确认 windows, keyed by `conversationId::toolName` → expiry instant.
+  /// Scoped per (conversation, tool) so granting it for one tool never
+  /// auto-approves a different tool or another conversation.
+  final _grace = <String, DateTime>{};
 
   @override
   Map<String, ToolConfirmationRequest> build() => const {};
 
-  /// Whether [conversationId] currently has an active 免确认 window, letting a
-  /// confirm-level tool run without prompting. Prunes expired windows lazily.
-  bool isGraceActive(String conversationId) {
-    if (!_grace.containsKey(conversationId)) return false;
-    final until = _grace[conversationId];
-    if (until == null) return true; // 永久（本对话内）
+  static String _graceKey(String conversationId, String toolName) =>
+      '$conversationId::$toolName';
+
+  /// Whether [toolName] in [conversationId] currently has an active 免确认
+  /// window, letting that tool run without prompting. Prunes expired windows.
+  bool isGraceActive(String conversationId, String toolName) {
+    final key = _graceKey(conversationId, toolName);
+    final until = _grace[key];
+    if (until == null) return false;
     if (DateTime.now().isBefore(until)) return true;
-    _grace.remove(conversationId); // 已过期
+    _grace.remove(key); // 已过期
     return false;
   }
 
@@ -85,20 +88,16 @@ class ToolConfirmationNotifier
 
   /// Called by the UI when the user taps confirm or reject. When [approved] is
   /// true and [grace] isn't [ConfirmationGrace.none], opens a 免确认 window for
-  /// this request's conversation so subsequent confirm-level tools auto-run.
+  /// *this request's tool* so subsequent calls of that same tool auto-run.
   void respond(
     String requestId, {
     required bool approved,
     ConfirmationGrace grace = ConfirmationGrace.none,
   }) {
     final req = state[requestId];
-    if (approved && grace != ConfirmationGrace.none && req != null) {
-      _grace[req.conversationId] = switch (grace) {
-        ConfirmationGrace.fiveMinutes =>
-          DateTime.now().add(const Duration(minutes: 5)),
-        ConfirmationGrace.forever => null,
-        ConfirmationGrace.none => DateTime.now(),
-      };
+    if (approved && grace == ConfirmationGrace.fiveMinutes && req != null) {
+      _grace[_graceKey(req.conversationId, req.toolName)] =
+          DateTime.now().add(const Duration(minutes: 5));
     }
     final completer = _completers[requestId];
     if (completer != null && !completer.isCompleted) {
