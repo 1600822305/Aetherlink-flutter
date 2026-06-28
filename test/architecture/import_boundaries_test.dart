@@ -81,8 +81,6 @@ void main() {
 /// DO NOT ADD ENTRIES — new cross-feature composition must go through `app/di`.
 const _knownAcceptedViolations = <String>{
   'lib/features/backup/application/backup_controller.dart -> package:aetherlink_flutter/features/chat/application/chat_providers.dart',
-  'lib/features/chat/presentation/widgets/blocks/app_markdown.dart -> package:aetherlink_flutter/features/settings/application/font_settings_controller.dart',
-  'lib/features/chat/presentation/widgets/blocks/code_block/code_block_view.dart -> package:aetherlink_flutter/features/settings/application/font_settings_controller.dart',
   'lib/features/chat/presentation/widgets/message_toolbar.dart -> package:aetherlink_flutter/features/voice/application/tts_controller.dart',
   'lib/features/chat/application/chat_controller.dart -> package:aetherlink_flutter/features/settings/application/auxiliary_model_controller.dart',
   'lib/features/chat/application/chat_controller.dart -> package:aetherlink_flutter/features/settings/application/model_combo_controller.dart',

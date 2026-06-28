@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aetherlink_flutter/app/di/font_settings_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
-import 'package:aetherlink_flutter/features/settings/application/font_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/code_block/code_highlight_utils.dart';
 import 'package:aetherlink_flutter/shared/utils/line_diff.dart';
 

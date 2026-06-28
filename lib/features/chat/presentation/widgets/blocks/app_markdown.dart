@@ -10,9 +10,9 @@ import 'package:gpt_markdown/gpt_markdown.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:aetherlink_flutter/app/di/font_settings_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/code_block/code_block_view.dart';
-import 'package:aetherlink_flutter/features/settings/application/font_settings_controller.dart';
 
 /// Renders Markdown for message blocks, mirroring the original `Markdown.tsx`.
 ///

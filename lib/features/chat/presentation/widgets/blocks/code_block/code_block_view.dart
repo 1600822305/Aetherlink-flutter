@@ -3,9 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/font_settings_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
-import 'package:aetherlink_flutter/features/settings/application/font_settings_controller.dart';
 import 'code_block_body.dart';
 import 'code_block_fullscreen.dart';
 import 'code_block_search.dart';
