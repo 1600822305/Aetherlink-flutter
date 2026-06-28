@@ -50,4 +50,16 @@ class MemorySettingsController extends _$MemorySettingsController
   /// Sets the memory injection mode (记忆设置 sub-page).
   void setInjectionMode(MemoryInjectionMode mode) =>
       persist(state.copyWith(injectionMode: mode));
+
+  /// Sets the per-turn token budget for injected memories (clamped ≥ 0).
+  void setTokenBudget(int value) =>
+      persist(state.copyWith(tokenBudget: value < 0 ? 0 : value));
+
+  /// Sets how many memories vector retrieval injects (clamped ≥ 1).
+  void setTopK(int value) => persist(state.copyWith(topK: value < 1 ? 1 : value));
+
+  /// Sets the collection size below which `auto` falls back to a full dump
+  /// (clamped ≥ 0).
+  void setFullDumpThreshold(int value) =>
+      persist(state.copyWith(fullDumpThreshold: value < 0 ? 0 : value));
 }
