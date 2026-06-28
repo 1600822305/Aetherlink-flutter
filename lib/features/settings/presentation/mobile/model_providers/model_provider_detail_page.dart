@@ -20,6 +20,7 @@ import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/utils/provider_icons.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
 /// The 供应商详情 third-level page — a style-aligned (not pixel-1:1) port of
@@ -919,7 +920,6 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
   Future<void> _testModel(ModelProvider provider, Model model) async {
     if (_testingModelId != null) return;
     setState(() => _testingModelId = model.id);
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final testModel = model.copyWith(
         apiKey: widget.apiKeyController.text.trim().isEmpty
@@ -953,15 +953,17 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
         }
       }
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(ok ? '测试成功：${model.name}' : '测试无响应')),
-      );
+      if (ok) {
+        AppToast.success(context, '测试成功：${model.name}');
+      } else {
+        AppToast.warning(context, '测试无响应');
+      }
     } on TimeoutException {
       if (!mounted) return;
-      messenger.showSnackBar(const SnackBar(content: Text('测试超时')));
+      AppToast.error(context, '测试超时');
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('测试失败：$e')));
+      AppToast.error(context, '测试失败：$e');
     } finally {
       if (mounted) setState(() => _testingModelId = null);
     }
