@@ -52,6 +52,11 @@ abstract class MemorySettings with _$MemorySettings {
     @Default(5) int topK,
     @Default(30) int fullDumpThreshold,
 
+    /// When true, semantic top-k is ranked by the ACT-R activation score
+    /// (cosine similarity dominant + recency/frequency/importance tie-breakers,
+    /// with 保守遗忘衰减). When false, retrieval falls back to pure cosine.
+    @Default(true) bool activationRanking,
+
     /// The `providerId:modelId` key of the embedding model used for semantic
     /// retrieval (null → not configured, semantic/auto fall back to keyword).
     String? embeddingModelKey,
