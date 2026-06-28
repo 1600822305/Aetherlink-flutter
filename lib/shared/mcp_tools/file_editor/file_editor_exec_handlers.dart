@@ -18,7 +18,11 @@ const int _kDefaultTimeoutMs = 60000;
 /// stdout / stderr / exit code. The target is the `workspace` arg (index / id /
 /// name) when given, otherwise the currently-open workspace, otherwise the most
 /// recently opened one.
-Future<McpToolResult> runCommand(Ref ref, Map<String, Object?> args) async {
+Future<McpToolResult> runCommand(
+  Ref ref,
+  Map<String, Object?> args, {
+  Future<void>? cancelSignal,
+}) async {
   final command = requireString(args, 'command');
   final resolved = await _resolveTarget(ref, args);
   final backend = resolved.backend;
@@ -33,8 +37,12 @@ Future<McpToolResult> runCommand(Ref ref, Map<String, Object?> args) async {
   final timeoutMs = optionalInt(args, 'timeout_ms') ?? _kDefaultTimeoutMs;
   final timeout = timeoutMs > 0 ? Duration(milliseconds: timeoutMs) : null;
 
-  final result =
-      await backend.exec(command, workingDirectory: cwd, timeout: timeout);
+  final result = await backend.exec(
+    command,
+    workingDirectory: cwd,
+    timeout: timeout,
+    cancelSignal: cancelSignal,
+  );
 
   return fileEditorOk({
     'command': command,
@@ -42,6 +50,7 @@ Future<McpToolResult> runCommand(Ref ref, Map<String, Object?> args) async {
     'cwd': cwd,
     'exitCode': result.exitCode,
     'timedOut': result.timedOut,
+    'canceled': result.canceled,
     'stdout': result.stdout,
     'stderr': result.stderr,
   });

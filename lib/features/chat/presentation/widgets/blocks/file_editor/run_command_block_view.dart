@@ -1,28 +1,33 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/file_editor_ui.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/running_commands_service.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 
 /// Terminal-style card for the `@aether/file-editor` `run_command` tool.
 ///
 /// The header shows the executed command in monospace plus a status badge
 /// (退出码 / 超时); expanding reveals the working directory and the captured
-/// stdout / stderr in dark mono boxes. Mirrors [FileEditorReadBlockView]'s card
-/// chrome so it sits naturally beside the other file-editor tool renderers.
-class RunCommandBlockView extends StatefulWidget {
+/// stdout / stderr in dark mono boxes. `run_command` is a high-risk tool, so a
+/// pending HITL request renders the inline 确认/拒绝 bar (mirrors the write-tool
+/// cards). Sits naturally beside the other file-editor tool renderers.
+class RunCommandBlockView extends ConsumerStatefulWidget {
   const RunCommandBlockView({required this.block, super.key});
 
   final ToolBlock block;
 
   @override
-  State<RunCommandBlockView> createState() => _RunCommandBlockViewState();
+  ConsumerState<RunCommandBlockView> createState() =>
+      _RunCommandBlockViewState();
 }
 
-class _RunCommandBlockViewState extends State<RunCommandBlockView> {
+class _RunCommandBlockViewState extends ConsumerState<RunCommandBlockView> {
   bool _expanded = false;
 
   ToolBlock get block => widget.block;
@@ -38,11 +43,29 @@ class _RunCommandBlockViewState extends State<RunCommandBlockView> {
     final hasError = status == MessageBlockStatus.error;
     final data = _data();
 
+    // High-risk HITL gate: while awaiting approval the block carries the
+    // `needsConfirmation` flag and a pending request keyed by its id.
+    final needsConfirmation =
+        block.metadata?['needsConfirmation'] == true && isProcessing;
+    final pending = needsConfirmation
+        ? ref.watch(toolConfirmationProvider)[block.id]
+        : null;
+
+    // The command is mid-flight (post-approval) and can be interrupted.
+    final isRunning = isProcessing &&
+        pending == null &&
+        ref.watch(runningCommandsProvider).contains(block.id);
+
     final command = (data?['command'] ?? _args['command'])?.toString() ?? '';
     final body = (!isProcessing && !hasError && data != null)
         ? _body(context, data)
         : null;
     final canExpand = body != null;
+
+    final warning = pending != null;
+    final borderColor = warning
+        ? const Color(0xFFF59E0B).withValues(alpha: 0.5)
+        : theme.dividerColor;
 
     return Container(
       width: double.infinity,
@@ -50,7 +73,7 @@ class _RunCommandBlockViewState extends State<RunCommandBlockView> {
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: theme.dividerColor),
+        border: Border.all(color: borderColor),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -62,7 +85,7 @@ class _RunCommandBlockViewState extends State<RunCommandBlockView> {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               child: Row(
                 children: [
-                  if (isProcessing)
+                  if (isProcessing && !warning)
                     SizedBox(
                       width: 14,
                       height: 14,
@@ -73,15 +96,21 @@ class _RunCommandBlockViewState extends State<RunCommandBlockView> {
                     )
                   else
                     Icon(
-                      hasError ? LucideIcons.circleAlert : LucideIcons.squareTerminal,
+                      warning
+                          ? LucideIcons.shieldAlert
+                          : hasError
+                              ? LucideIcons.circleAlert
+                              : LucideIcons.squareTerminal,
                       size: 15,
-                      color: hasError
-                          ? theme.colorScheme.error
-                          : theme.colorScheme.primary,
+                      color: warning
+                          ? const Color(0xFFF59E0B)
+                          : hasError
+                              ? theme.colorScheme.error
+                              : theme.colorScheme.primary,
                     ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: isProcessing
+                    child: (isProcessing && !warning)
                         ? Text(
                             command.isEmpty ? '执行命令中...' : '执行中：$command',
                             maxLines: 1,
@@ -93,6 +122,14 @@ class _RunCommandBlockViewState extends State<RunCommandBlockView> {
                   if (!isProcessing && !hasError && data != null) ...[
                     const SizedBox(width: 8),
                     _StatusBadge(data: data),
+                  ],
+                  if (isRunning) ...[
+                    const SizedBox(width: 8),
+                    _InterruptButton(
+                      onTap: () => ref
+                          .read(runningCommandsProvider.notifier)
+                          .cancel(block.id),
+                    ),
                   ],
                   if (canExpand)
                     Padding(
@@ -111,7 +148,16 @@ class _RunCommandBlockViewState extends State<RunCommandBlockView> {
               ),
             ),
           ),
-          if (hasError)
+          if (pending != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              child: FileEditorConfirmBar(
+                summary: pending.summary,
+                onApprove: (grace) => _respond(pending, true, grace: grace),
+                onReject: () => _respond(pending, false),
+              ),
+            )
+          else if (hasError)
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
               child: FileEditorErrorRow(message: _error() ?? '命令执行失败'),
@@ -133,6 +179,16 @@ class _RunCommandBlockViewState extends State<RunCommandBlockView> {
         ],
       ),
     );
+  }
+
+  void _respond(
+    ToolConfirmationRequest req,
+    bool approved, {
+    ConfirmationGrace grace = ConfirmationGrace.none,
+  }) {
+    ref
+        .read(toolConfirmationProvider.notifier)
+        .respond(req.id, approved: approved, grace: grace);
   }
 
   /// The `$ command` header line in monospace.
@@ -229,6 +285,45 @@ class _RunCommandBlockViewState extends State<RunCommandBlockView> {
   }
 }
 
+/// A compact 中断 pill shown in the header while the command is running.
+class _InterruptButton extends StatelessWidget {
+  const _InterruptButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.error;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(LucideIcons.square, size: 11, color: color),
+            const SizedBox(width: 4),
+            Text(
+              '中断',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Exit-code / timeout pill shown in the header.
 class _StatusBadge extends StatelessWidget {
   const _StatusBadge({required this.data});
@@ -238,15 +333,18 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final canceled = data['canceled'] == true;
     final timedOut = data['timedOut'] == true;
     final exitCode = data['exitCode'];
     final code = exitCode is num ? exitCode.toInt() : null;
 
-    final (Color color, IconData icon, String label) = timedOut
-        ? (const Color(0xFFE8841A), LucideIcons.clock, '超时')
-        : code == 0
-            ? (const Color(0xFF2E9E5B), LucideIcons.check, '0')
-            : (theme.colorScheme.error, LucideIcons.x, '退出码 ${code ?? '?'}');
+    final (Color color, IconData icon, String label) = canceled
+        ? (const Color(0xFFE8841A), LucideIcons.circleSlash, '已中断')
+        : timedOut
+            ? (const Color(0xFFE8841A), LucideIcons.clock, '超时')
+            : code == 0
+                ? (const Color(0xFF2E9E5B), LucideIcons.check, '0')
+                : (theme.colorScheme.error, LucideIcons.x, '退出码 ${code ?? '?'}');
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

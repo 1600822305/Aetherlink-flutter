@@ -54,8 +54,9 @@ bool fileEditorNeedsConfirmation(String toolName) =>
 Future<McpToolResult> runFileEditorTool(
   Ref ref,
   String toolName,
-  Map<String, Object?> args,
-) async {
+  Map<String, Object?> args, {
+  Future<void>? cancelSignal,
+}) async {
   try {
     switch (toolName) {
       case 'list_workspaces':
@@ -89,7 +90,7 @@ Future<McpToolResult> runFileEditorTool(
       case 'replace_in_file':
         return await replaceInFile(ref, args);
       case 'run_command':
-        return await runCommand(ref, args);
+        return await runCommand(ref, args, cancelSignal: cancelSignal);
     }
     return fileEditorError('未知的工具: $toolName');
   } on FileEditorError catch (e) {

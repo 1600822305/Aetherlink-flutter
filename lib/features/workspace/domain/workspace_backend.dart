@@ -139,6 +139,7 @@ class WorkspaceExecResult {
     required this.stderr,
     required this.exitCode,
     this.timedOut = false,
+    this.canceled = false,
   });
 
   final String stdout;
@@ -150,6 +151,11 @@ class WorkspaceExecResult {
 
   /// True when the command was killed because it exceeded its timeout.
   final bool timedOut;
+
+  /// True when the command was killed because the caller signalled
+  /// cancellation (the user tapped 中断). The partial stdout / stderr captured
+  /// before the kill are still returned.
+  final bool canceled;
 }
 
 /// An interactive PTY shell session (设计文档 §8.2), backend-neutral so the
@@ -371,12 +377,15 @@ abstract class WorkspaceBackend {
   /// output. Only valid when [WorkspaceCapabilities.canExec] is true; backends
   /// that can't exec throw [UnsupportedError]. [workingDirectory] defaults to
   /// the workspace root; [timeout] kills the command if it overruns (the result
-  /// then has `timedOut = true`). Intended for the AI `run_command` tool — see
-  /// 设计文档 §8.1.
+  /// then has `timedOut = true`). [cancelSignal], when supplied, kills the
+  /// command as soon as it completes (the result then has `canceled = true`) —
+  /// this is how the run_command UI's 中断 button aborts a long-running command.
+  /// Intended for the AI `run_command` tool — see 设计文档 §8.1.
   Future<WorkspaceExecResult> exec(
     String command, {
     String? workingDirectory,
     Duration? timeout,
+    Future<void>? cancelSignal,
   }) =>
       throw UnsupportedError('exec is not supported by this backend');
 

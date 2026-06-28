@@ -715,7 +715,7 @@ class RemoteSshBackend extends WorkspaceBackend {
   @override
   Future<WorkspaceExecResult> exec(
     String command,
-    {String? workingDirectory, Duration? timeout}) async {
+    {String? workingDirectory, Duration? timeout, Future<void>? cancelSignal}) async {
     final client = await _sshClient();
     // Run under the requested cwd via `cd` (dartssh2 has no per-exec cwd); the
     // path is single-quoted so spaces / specials don't break out. The command
@@ -737,6 +737,21 @@ class RemoteSshBackend extends WorkspaceBackend {
     final errSub = session.stderr.listen(err.add);
 
     var timedOut = false;
+    var canceled = false;
+    var finished = false;
+    // Kill the session the moment the caller signals cancellation (中断). The
+    // SIGKILL ends the session, so the `await session.done` below unblocks and
+    // we read whatever stdout/stderr was captured before the kill. Guarded by
+    // [finished] so a signal that races a normal completion is a no-op.
+    if (cancelSignal != null) {
+      unawaited(cancelSignal.then((_) {
+        if (finished) return;
+        canceled = true;
+        try {
+          session.kill(SSHSignal.KILL);
+        } catch (_) {}
+      }));
+    }
     try {
       if (timeout != null) {
         await session.done.timeout(timeout, onTimeout: () {
@@ -747,6 +762,7 @@ class RemoteSshBackend extends WorkspaceBackend {
         await session.done;
       }
     } finally {
+      finished = true;
       await outSub.cancel();
       await errSub.cancel();
     }
@@ -756,6 +772,7 @@ class RemoteSshBackend extends WorkspaceBackend {
       stderr: utf8.decode(err.takeBytes(), allowMalformed: true),
       exitCode: session.exitCode ?? -1,
       timedOut: timedOut,
+      canceled: canceled,
     );
   }
 

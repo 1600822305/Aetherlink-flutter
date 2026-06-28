@@ -66,6 +66,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/mcp_bridge_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_prompt.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/settings_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/running_commands_service.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
 import 'package:aetherlink_flutter/shared/services/web_search_service.dart';
@@ -1387,6 +1388,7 @@ class ChatController extends _$ChatController {
         );
       }
       ref.read(toolConfirmationProvider.notifier).rejectAll();
+      ref.read(runningCommandsProvider.notifier).cancelAll();
       await _persistMessageBlocks(
         messageId: assistantMessageId,
         status: MessageStatus.success,
@@ -1643,6 +1645,29 @@ class ChatController extends _$ChatController {
                 (route is _FileEditorToolRoute &&
                     fileEditorNeedsConfirmation(call.name));
 
+            // `run_command` can be aborted mid-flight: register a cancel signal
+            // (keyed by this block) before running so the block's 中断 button
+            // can kill the remote session, then deregister once it settles.
+            final isCancelableCommand =
+                route is _FileEditorToolRoute && call.name == 'run_command';
+            Future<McpToolResult> runRoute() async {
+              if (!isCancelableCommand) {
+                return _runTool(route, call.name, args);
+              }
+              final running = ref.read(runningCommandsProvider.notifier);
+              final cancelSignal = running.start(blockId);
+              try {
+                return await _runTool(
+                  route,
+                  call.name,
+                  args,
+                  cancelSignal: cancelSignal,
+                );
+              } finally {
+                running.finish(blockId);
+              }
+            }
+
             // Show a processing block immediately so the user sees the tool
             // call in real-time (spinner + tool name).
             completed.add(
@@ -1679,12 +1704,12 @@ class ChatController extends _$ChatController {
                     );
 
               if (approved) {
-                result = await _runTool(route, call.name, args);
+                result = await runRoute();
               } else {
                 result = const McpToolResult('用户拒绝了此操作', isError: true);
               }
             } else {
-              result = await _runTool(route, call.name, args);
+              result = await runRoute();
             }
 
             // Replace the processing block with the final result.
@@ -1799,6 +1824,7 @@ class ChatController extends _$ChatController {
     // Terminal failure: reject any pending confirmations, persist any key stat
     // changes, then mark the message errored.
     ref.read(toolConfirmationProvider.notifier).rejectAll();
+    ref.read(runningCommandsProvider.notifier).cancelAll();
     await persistKeyUpdates();
     final messageText = _errorMessage(
       lastError ?? const _NoUsableApiKeyException(),
@@ -3298,13 +3324,19 @@ class ChatController extends _$ChatController {
   Future<McpToolResult> _runTool(
     _ToolRoute route,
     String exposedName,
-    Map<String, Object?> args,
-  ) async {
+    Map<String, Object?> args, {
+    Future<void>? cancelSignal,
+  }) async {
     switch (route) {
       case _SettingsToolRoute():
         return await runSettingsTool(ref, route.toolName, args);
       case _FileEditorToolRoute():
-        return await runFileEditorTool(ref, route.toolName, args);
+        return await runFileEditorTool(
+          ref,
+          route.toolName,
+          args,
+          cancelSignal: cancelSignal,
+        );
       case _BuiltinToolRoute(:final serverName, :final env):
         return await runBuiltinTool(
               serverName,
