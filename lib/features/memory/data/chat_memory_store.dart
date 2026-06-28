@@ -1,5 +1,6 @@
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/memory/data/datasources/local/memory_dao.dart';
+import 'package:aetherlink_flutter/features/memory/domain/memory_history.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_scope.dart';
 
@@ -34,7 +35,8 @@ class ChatMemoryStore {
       _dao.searchAll(MemoryKind.chat, query: query);
 
   /// Creates a new memory, minting an id and create/update timestamps. The
-  /// passed [item]'s scope fields (kind/level/ownerId) are preserved.
+  /// passed [item]'s scope fields (kind/level/ownerId) are preserved. Records an
+  /// `ADD` audit entry.
   Future<MemoryItem> create(MemoryItem item) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final created = item.copyWith(
@@ -43,19 +45,55 @@ class ChatMemoryStore {
       updatedAt: now,
     );
     await _dao.upsert(created);
+    await _dao.insertHistory(
+      MemoryHistoryEntry(
+        memoryId: created.id,
+        action: MemoryAction.add,
+        newValue: created.content,
+        createdAt: now,
+      ),
+    );
     return created;
   }
 
-  /// Persists edits to an existing memory, bumping `updatedAt`.
+  /// Persists edits to an existing memory, bumping `updatedAt` and recording an
+  /// `UPDATE` audit entry (capturing the content before/after, for 再巩固 and
+  /// manual edits / 全局↔私有 moves).
   Future<MemoryItem> update(MemoryItem item) async {
-    final updated = item.copyWith(
-      updatedAt: DateTime.now().millisecondsSinceEpoch,
-    );
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final previous = await _dao.getById(item.id);
+    final updated = item.copyWith(updatedAt: now);
     await _dao.upsert(updated);
+    await _dao.insertHistory(
+      MemoryHistoryEntry(
+        memoryId: updated.id,
+        action: MemoryAction.update,
+        previousValue: previous?.content,
+        newValue: updated.content,
+        createdAt: now,
+      ),
+    );
     return updated;
   }
 
-  Future<void> delete(String id) => _dao.softDelete(id);
+  /// Soft-deletes a memory and records a `DELETE` audit entry (capturing its
+  /// content before removal).
+  Future<void> delete(String id) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final previous = await _dao.getById(id);
+    await _dao.softDelete(id);
+    await _dao.insertHistory(
+      MemoryHistoryEntry(
+        memoryId: id,
+        action: MemoryAction.delete,
+        previousValue: previous?.content,
+        createdAt: now,
+      ),
+    );
+  }
+
+  /// The audit trail for a single memory [id], newest first.
+  Future<List<MemoryHistoryEntry>> history(String id) => _dao.historyFor(id);
 
   /// Persists a recomputed [item.embedding] / [item.embeddingModelId] in place
   /// without touching `updatedAt` (so caching a vector never reorders the

@@ -2,6 +2,8 @@ import 'package:drift/drift.dart';
 
 import 'package:aetherlink_flutter/core/database/app_database.dart';
 import 'package:aetherlink_flutter/features/memory/data/datasources/local/memories_table.dart';
+import 'package:aetherlink_flutter/features/memory/data/datasources/local/memory_history_table.dart';
+import 'package:aetherlink_flutter/features/memory/domain/memory_history.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_scope.dart';
 
@@ -11,7 +13,7 @@ part 'memory_dao.g.dart';
 /// [MemoryItem] entities (stored as a JSON blob) and always filters by scope so
 /// chat and agent buckets never mix. Deletes are soft (the row stays for audit
 /// / future undo and is excluded from every read).
-@DriftAccessor(tables: [MemoryRows])
+@DriftAccessor(tables: [MemoryRows, MemoryHistoryRows])
 class MemoryDao extends DatabaseAccessor<AppDatabase> with _$MemoryDaoMixin {
   MemoryDao(super.db);
 
@@ -130,6 +132,52 @@ class MemoryDao extends DatabaseAccessor<AppDatabase> with _$MemoryDaoMixin {
         .toSet()
         .length;
   }
+
+  /// Appends one audit [entry] (ADD/UPDATE/DELETE) to the memory history log.
+  Future<void> insertHistory(MemoryHistoryEntry entry) {
+    return into(memoryHistoryRows).insert(
+      MemoryHistoryRowsCompanion.insert(
+        memoryId: entry.memoryId,
+        action: entry.action.wire,
+        previousValue: Value(entry.previousValue),
+        newValue: Value(entry.newValue),
+        createdAt: entry.createdAt,
+      ),
+    );
+  }
+
+  /// The audit trail for a single memory [memoryId], newest first.
+  Future<List<MemoryHistoryEntry>> historyFor(String memoryId) async {
+    final rows = await (select(memoryHistoryRows)
+          ..where((t) => t.memoryId.equals(memoryId))
+          ..orderBy([
+            (t) => OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc),
+            (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
+          ]))
+        .get();
+    return rows.map(_toEntry).toList();
+  }
+
+  /// The most recent [limit] audit entries across every memory, newest first.
+  Future<List<MemoryHistoryEntry>> recentHistory({int limit = 100}) async {
+    final rows = await (select(memoryHistoryRows)
+          ..orderBy([
+            (t) => OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc),
+            (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
+          ])
+          ..limit(limit < 1 ? 1 : limit))
+        .get();
+    return rows.map(_toEntry).toList();
+  }
+
+  MemoryHistoryEntry _toEntry(MemoryHistoryRow row) => MemoryHistoryEntry(
+    id: row.id,
+    memoryId: row.memoryId,
+    action: MemoryActionWire.parse(row.action),
+    previousValue: row.previousValue,
+    newValue: row.newValue,
+    createdAt: row.createdAt,
+  );
 
   /// Per-owner counts of non-deleted private memories of [kind]: a map from
   /// `ownerId` (assistant id) to the number of memories it owns. Drives the
