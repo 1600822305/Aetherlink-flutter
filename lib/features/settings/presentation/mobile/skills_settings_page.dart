@@ -12,6 +12,7 @@ import 'package:aetherlink_flutter/features/settings/application/skills_controll
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// The "技能管理 Skills" settings page (提示词与工具 → this page), a port of the
 /// original `src/pages/Settings/SkillsSettings.tsx`.
@@ -92,11 +93,7 @@ class _SkillsSettingsPageState extends ConsumerState<SkillsSettingsPage>
   }
 
   void _toast(String message) {
-    ScaffoldMessenger.maybeOf(context)
-      ?..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
-      );
+    AppToast.info(context, message);
   }
 
   void _comingSoon() => _toast('即将支持');

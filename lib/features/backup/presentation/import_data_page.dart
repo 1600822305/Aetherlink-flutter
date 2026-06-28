@@ -8,6 +8,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/backup/application/backup_controller.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// Detail page for importing data from third-party apps.
 class ImportDataPage extends ConsumerStatefulWidget {
@@ -27,14 +28,11 @@ class _ImportDataPageState extends ConsumerState<ImportDataPage> {
     ref.listen(backupControllerProvider, (prev, next) {
       if (next.status == BackupStatus.success ||
           next.status == BackupStatus.error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(next.message),
-            backgroundColor: next.status == BackupStatus.error
-                ? theme.colorScheme.error
-                : null,
-          ),
-        );
+        if (next.status == BackupStatus.error) {
+          AppToast.error(context, next.message);
+        } else {
+          AppToast.success(context, next.message);
+        }
         Future.delayed(const Duration(seconds: 2), controller.clearStatus);
       }
     });

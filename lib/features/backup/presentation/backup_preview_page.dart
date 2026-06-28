@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_file_item.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_manifest.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// Preview page for a local backup file.
 /// Shows manifest details (stats, time, device, options) and offers restore.
@@ -51,14 +52,11 @@ class _BackupPreviewPageState extends ConsumerState<BackupPreviewPage> {
     ref.listen(backupControllerProvider, (prev, next) {
       if (next.status == BackupStatus.success ||
           next.status == BackupStatus.error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(next.message),
-            backgroundColor: next.status == BackupStatus.error
-                ? theme.colorScheme.error
-                : null,
-          ),
-        );
+        if (next.status == BackupStatus.error) {
+          AppToast.error(context, next.message);
+        } else {
+          AppToast.success(context, next.message);
+        }
         final controller = ref.read(backupControllerProvider.notifier);
         Future.delayed(const Duration(seconds: 2), controller.clearStatus);
       }

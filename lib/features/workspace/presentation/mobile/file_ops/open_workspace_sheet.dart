@@ -17,6 +17,7 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_view
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/ssh_connection_form_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/termux_setup_sheet.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// Opens the workspace picker sheet (recent list + 「打开本地文件夹」).
 Future<void> showOpenWorkspaceSheet(BuildContext context, WidgetRef ref) {
@@ -170,7 +171,6 @@ class _OpenWorkspaceSheet extends ConsumerWidget {
 
 /// Picks a folder via SAF, records it and opens it as the current workspace.
 Future<void> openLocalFolder(BuildContext context, WidgetRef ref) async {
-  final messenger = ScaffoldMessenger.of(context);
   try {
     final picked = await ref.read(localSafBackendProvider).pickDirectory();
     if (picked == null) return; // 用户取消
@@ -184,11 +184,11 @@ Future<void> openLocalFolder(BuildContext context, WidgetRef ref) async {
         );
     _switchTo(ref, workspace);
   } on PlatformException catch (e) {
-    messenger.showSnackBar(
-      SnackBar(content: Text('打开失败 · ${e.code}: ${e.message ?? ''}')),
-    );
+    if (!context.mounted) return;
+    AppToast.error(context, '打开失败 · ${e.code}: ${e.message ?? ''}');
   } catch (e) {
-    messenger.showSnackBar(SnackBar(content: Text('打开失败 · $e')));
+    if (!context.mounted) return;
+    AppToast.error(context, '打开失败 · $e');
   }
 }
 

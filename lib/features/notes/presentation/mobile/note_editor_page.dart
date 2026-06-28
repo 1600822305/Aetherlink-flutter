@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app
 import 'package:aetherlink_flutter/features/notes/application/notes_controller.dart';
 import 'package:aetherlink_flutter/features/notes/domain/note_outline.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// The three editor view modes, mirroring the original web editor's
 /// 源码 / 预览 / 只读 segmented switch.
@@ -125,9 +126,7 @@ class _NoteEditorPageState extends ConsumerState<NoteEditorPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(SnackBar(content: Text('保存失败：$e')));
+      AppToast.error(context, '保存失败：$e');
     }
   }
 

@@ -14,6 +14,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/mcp_quick_
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/quick_phrase_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/reasoning_effort_picker.dart';
 import 'package:aetherlink_flutter/shared/domain/input_box_settings.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_actions.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_menu_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/search_settings_sheet.dart';
@@ -211,9 +212,7 @@ class ChatInputActions implements InputBoxActions {
   }
 
   void _snack(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppToast.info(context, message);
   }
 
   /// Opens [menu] as a bottom sheet. The 清空内容 row runs its own 二次确认 inside the
@@ -246,8 +245,6 @@ class ChatInputActions implements InputBoxActions {
   }
 
   void _comingSoon(BuildContext context) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('即将支持')));
+    AppToast.info(context, '即将支持');
   }
 }

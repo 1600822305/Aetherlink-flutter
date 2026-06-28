@@ -22,6 +22,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_sele
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/domain/top_toolbar_settings.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/top_toolbar_component_catalog.dart';
 
 /// Static UI strings, ported verbatim from the original (i18n is a later
@@ -201,15 +202,7 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
         ref.read(chatControllerProvider).value?.messages ??
         const <ChatMessageView>[];
     if (messages.isEmpty) {
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text('当前话题暂无消息'),
-            duration: Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+      AppToast.warning(context, '当前话题暂无消息');
       return;
     }
     final isSelecting = ref.read(messageSelectionProvider).isSelecting;
@@ -227,18 +220,12 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
   Future<void> _openCondenseDialog(BuildContext context) async {
     final result = await showContextCondenseDialog(context);
     if (result != null && result.success && context.mounted) {
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              '已压缩 ${result.originalMessageCount} 条消息，'
-              '节省约 ${result.tokensSaved} tokens',
-            ),
-            duration: const Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+      AppToast.success(
+        context,
+        '已压缩 ${result.originalMessageCount} 条消息，'
+        '节省约 ${result.tokensSaved} tokens',
+        duration: const Duration(seconds: 3),
+      );
     }
   }
 

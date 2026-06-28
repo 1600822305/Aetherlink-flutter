@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/memory/domain/embedding_model_key.da
 import 'package:aetherlink_flutter/features/memory/domain/memory_settings.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 记忆设置 (记忆 → 记忆设置) — the configuration sub-page governing how stored
 /// memories are provided to the model: the injection mode, the embedding model
@@ -94,19 +95,17 @@ class MemorySettingsPage extends ConsumerWidget {
                 Divider(height: 1, color: theme.dividerColor),
                 InkWell(
                   onTap: () async {
-                    final messenger = ScaffoldMessenger.of(context);
-                    messenger
-                      ..hideCurrentSnackBar()
-                      ..showSnackBar(
-                        const SnackBar(content: Text('正在测试嵌入模型…')),
-                      );
+                    AppToast.info(context, '正在测试嵌入模型…');
                     final r = await testEmbeddingModel(ref);
-                    final msg = r.ok
-                        ? '嵌入模型可用 · 维度 ${r.dim} · 耗时 ${r.elapsedMs}ms'
-                        : '嵌入模型不可用：${r.error}';
-                    messenger
-                      ..hideCurrentSnackBar()
-                      ..showSnackBar(SnackBar(content: Text(msg)));
+                    if (!context.mounted) return;
+                    if (r.ok) {
+                      AppToast.success(
+                        context,
+                        '嵌入模型可用 · 维度 ${r.dim} · 耗时 ${r.elapsedMs}ms',
+                      );
+                    } else {
+                      AppToast.error(context, '嵌入模型不可用：${r.error}');
+                    }
                   },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
@@ -216,12 +215,17 @@ class MemorySettingsPage extends ConsumerWidget {
                 InkWell(
                   onTap: () {
                     final result = ref.read(sqliteVecServiceProvider).probe();
-                    final msg = result.available
-                        ? 'sqlite-vec 可用（${result.version ?? '未知版本'}）'
-                        : 'sqlite-vec 不可用：当前平台无法加载扩展，已自动退回 Dart 余弦';
-                    ScaffoldMessenger.of(context)
-                      ..hideCurrentSnackBar()
-                      ..showSnackBar(SnackBar(content: Text(msg)));
+                    if (result.available) {
+                      AppToast.success(
+                        context,
+                        'sqlite-vec 可用（${result.version ?? '未知版本'}）',
+                      );
+                    } else {
+                      AppToast.warning(
+                        context,
+                        'sqlite-vec 不可用：当前平台无法加载扩展，已自动退回 Dart 余弦',
+                      );
+                    }
                   },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(

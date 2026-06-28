@@ -19,6 +19,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attach
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_actions.dart';
 import 'package:aetherlink_flutter/features/chat/application/parameter_settings_controller.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_composer.dart';
 
 const String _noModelHint = '请先配置模型';
@@ -197,9 +198,7 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
   }
 
   void _showNoModelHint() {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text(_noModelHint)));
+    AppToast.warning(context, _noModelHint);
   }
 
   /// Sends a tapped 建议 (follow-up suggestion) as a new user message. A no-op

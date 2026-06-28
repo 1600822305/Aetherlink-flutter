@@ -116,9 +116,7 @@ class _ModelProviderDetailPageState
     );
     await ref.read(modelStoreProvider.notifier).saveProvider(updated);
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('已保存')));
+    AppToast.success(context, '已保存');
   }
 
   /// Auto-save a single toggle field immediately.
@@ -820,7 +818,6 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
   }) async {
     if (_fetching) return;
     setState(() => _fetching = true);
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final baseUrl = endpointOverride?.trim().isNotEmpty == true
           ? endpointOverride!.trim()
@@ -840,7 +837,7 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
       );
       if (!mounted) return;
       if (fetched.isEmpty) {
-        messenger.showSnackBar(const SnackBar(content: Text('未获取到模型')));
+        AppToast.warning(context, '未获取到模型');
         return;
       }
       final existingIds = {for (final m in provider.models) m.id};
@@ -893,15 +890,11 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
       if (result.toAdd.isNotEmpty) msgs.add('添加 ${result.toAdd.length}');
       if (result.toRemove.isNotEmpty) msgs.add('移除 ${result.toRemove.length}');
       if (msgs.isNotEmpty) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('已${msgs.join("、")} 个模型')),
-        );
+        AppToast.success(context, '已${msgs.join("、")} 个模型');
       }
     } catch (_) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        const SnackBar(content: Text('获取模型失败，请检查密钥与基础URL')),
-      );
+      AppToast.error(context, '获取模型失败，请检查密钥与基础URL');
     } finally {
       if (mounted) setState(() => _fetching = false);
     }
@@ -1005,28 +998,28 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
         );
     if (!mounted || model == null) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('已删除「${model.name}」'),
-        duration: const Duration(seconds: 5),
-        action: SnackBarAction(
-          label: '撤销',
-          onPressed: () async {
-            final current = ref.read(appModelProviderProvider(provider.id));
-            final currentProvider = current.maybeWhen(
-              data: (p) => p,
-              orElse: () => null,
-            );
-            if (currentProvider == null) return;
-            await ref
-                .read(modelStoreProvider.notifier)
-                .saveProvider(
-                  currentProvider.copyWith(
-                    models: [...currentProvider.models, model],
-                  ),
-                );
-          },
-        ),
+    AppToast.show(
+      context,
+      '已删除「${model.name}」',
+      type: AppToastType.success,
+      duration: const Duration(seconds: 5),
+      action: AppToastAction(
+        label: '撤销',
+        onPressed: () async {
+          final current = ref.read(appModelProviderProvider(provider.id));
+          final currentProvider = current.maybeWhen(
+            data: (p) => p,
+            orElse: () => null,
+          );
+          if (currentProvider == null) return;
+          await ref
+              .read(modelStoreProvider.notifier)
+              .saveProvider(
+                currentProvider.copyWith(
+                  models: [...currentProvider.models, model],
+                ),
+              );
+        },
       ),
     );
   }
@@ -1072,28 +1065,28 @@ class _ModelsTabState extends ConsumerState<_ModelsTab> {
         );
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('已删除「$groupName」(${deletedModels.length} 个模型)'),
-        duration: const Duration(seconds: 5),
-        action: SnackBarAction(
-          label: '撤销',
-          onPressed: () async {
-            final current = ref.read(appModelProviderProvider(provider.id));
-            final currentProvider = current.maybeWhen(
-              data: (p) => p,
-              orElse: () => null,
-            );
-            if (currentProvider == null) return;
-            await ref
-                .read(modelStoreProvider.notifier)
-                .saveProvider(
-                  currentProvider.copyWith(
-                    models: [...currentProvider.models, ...deletedModels],
-                  ),
-                );
-          },
-        ),
+    AppToast.show(
+      context,
+      '已删除「$groupName」(${deletedModels.length} 个模型)',
+      type: AppToastType.success,
+      duration: const Duration(seconds: 5),
+      action: AppToastAction(
+        label: '撤销',
+        onPressed: () async {
+          final current = ref.read(appModelProviderProvider(provider.id));
+          final currentProvider = current.maybeWhen(
+            data: (p) => p,
+            orElse: () => null,
+          );
+          if (currentProvider == null) return;
+          await ref
+              .read(modelStoreProvider.notifier)
+              .saveProvider(
+                currentProvider.copyWith(
+                  models: [...currentProvider.models, ...deletedModels],
+                ),
+              );
+        },
       ),
     );
   }

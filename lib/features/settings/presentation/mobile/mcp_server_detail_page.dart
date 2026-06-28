@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// The human-readable label for an MCP server [type], ported from the web
 /// `getServerTypeLabel` / `serverTypes` i18n. Shared by the settings list rows
@@ -233,11 +234,7 @@ class _McpServerDetailPageState extends ConsumerState<McpServerDetailPage> {
   }
 
   void _toast(String message) {
-    ScaffoldMessenger.maybeOf(context)
-      ?..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
-      );
+    AppToast.info(context, message);
   }
 
   @override

@@ -32,6 +32,7 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/open_workspace_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/ssh_connection_form_sheet.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 class WorkspaceManagementPage extends ConsumerStatefulWidget {
   const WorkspaceManagementPage({super.key});
@@ -236,9 +237,7 @@ class _WorkspaceManagementPageState
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppToast.info(context, message);
   }
 
   Future<void> _remove(Workspace w) async {

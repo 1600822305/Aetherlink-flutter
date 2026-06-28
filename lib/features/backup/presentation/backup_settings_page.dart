@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_file_item.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_manifest.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 import 'backup_preview_page.dart';
 import 'cloud_backup_page.dart';
@@ -35,14 +36,11 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
     ref.listen(backupControllerProvider, (prev, next) {
       if (next.status == BackupStatus.success ||
           next.status == BackupStatus.error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(next.message),
-            backgroundColor: next.status == BackupStatus.error
-                ? theme.colorScheme.error
-                : null,
-          ),
-        );
+        if (next.status == BackupStatus.error) {
+          AppToast.error(context, next.message);
+        } else {
+          AppToast.success(context, next.message);
+        }
         Future.delayed(const Duration(seconds: 2), controller.clearStatus);
       }
     });

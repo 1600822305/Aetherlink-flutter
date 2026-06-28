@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// Shows the export/share bottom sheet for one or more messages.
 ///
@@ -382,12 +383,7 @@ class _ExportSheetState extends State<_ExportSheet> {
 
   void _toast(String message) {
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    messenger
-      ?..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
-      );
+    AppToast.info(context, message);
   }
 
   static String _formatTimeFull(DateTime? time) {

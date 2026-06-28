@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/backup/application/backup_controller.dart';
 import 'package:aetherlink_flutter/features/backup/data/database_diagnostic_service.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// Detail page for database diagnostics.
 class DiagnosticPage extends ConsumerStatefulWidget {
@@ -83,9 +84,7 @@ class _DiagnosticPageState extends ConsumerState<DiagnosticPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _isRunning = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('诊断失败: $e')));
+        AppToast.error(context, '诊断失败: $e');
       }
     }
   }
@@ -96,21 +95,16 @@ class _DiagnosticPageState extends ConsumerState<DiagnosticPage> {
       final result = await controller.repairDatabase();
       if (!mounted) return;
       setState(() => _isRunning = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '修复完成: 清理了 ${result.orphanedMessagesRemoved} 条孤立消息, '
-            '${result.orphanedBlocksRemoved} 个孤立消息块',
-          ),
-        ),
+      AppToast.success(
+        context,
+        '修复完成: 清理了 ${result.orphanedMessagesRemoved} 条孤立消息, '
+        '${result.orphanedBlocksRemoved} 个孤立消息块',
       );
       _runDiagnostic(controller);
     } catch (e) {
       if (mounted) {
         setState(() => _isRunning = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('修复失败: $e')));
+        AppToast.error(context, '修复失败: $e');
       }
     }
   }

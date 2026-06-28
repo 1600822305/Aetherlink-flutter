@@ -6,6 +6,14 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 /// Semantic flavor of an [AppToast] message — drives the leading icon + accent.
 enum AppToastType { success, error, warning, info }
 
+/// An optional trailing action button shown inside a toast (e.g. 撤销).
+class AppToastAction {
+  const AppToastAction({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback onPressed;
+}
+
 /// A lightweight, fully custom toast — a small top-center pill rendered through
 /// the root [Overlay] (so it never depends on a `Scaffold`/`ScaffoldMessenger`,
 /// never pushes page content up, and never spans the full width like the stock
@@ -22,17 +30,57 @@ abstract final class AppToast {
   static OverlayEntry? _entry;
   static _AppToastWidgetState? _current;
 
-  static void success(BuildContext context, String message) =>
-      show(context, message, type: AppToastType.success);
+  static void success(
+    BuildContext context,
+    String message, {
+    Duration duration = const Duration(milliseconds: 2200),
+    AppToastAction? action,
+  }) => show(
+    context,
+    message,
+    type: AppToastType.success,
+    duration: duration,
+    action: action,
+  );
 
-  static void error(BuildContext context, String message) =>
-      show(context, message, type: AppToastType.error);
+  static void error(
+    BuildContext context,
+    String message, {
+    Duration duration = const Duration(milliseconds: 2200),
+    AppToastAction? action,
+  }) => show(
+    context,
+    message,
+    type: AppToastType.error,
+    duration: duration,
+    action: action,
+  );
 
-  static void warning(BuildContext context, String message) =>
-      show(context, message, type: AppToastType.warning);
+  static void warning(
+    BuildContext context,
+    String message, {
+    Duration duration = const Duration(milliseconds: 2200),
+    AppToastAction? action,
+  }) => show(
+    context,
+    message,
+    type: AppToastType.warning,
+    duration: duration,
+    action: action,
+  );
 
-  static void info(BuildContext context, String message) =>
-      show(context, message, type: AppToastType.info);
+  static void info(
+    BuildContext context,
+    String message, {
+    Duration duration = const Duration(milliseconds: 2200),
+    AppToastAction? action,
+  }) => show(
+    context,
+    message,
+    type: AppToastType.info,
+    duration: duration,
+    action: action,
+  );
 
   /// Shows a toast. [duration] is how long it stays fully visible before the
   /// dismiss animation runs.
@@ -41,6 +89,7 @@ abstract final class AppToast {
     String message, {
     AppToastType type = AppToastType.info,
     Duration duration = const Duration(milliseconds: 2200),
+    AppToastAction? action,
   }) {
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
@@ -54,6 +103,7 @@ abstract final class AppToast {
         message: message,
         type: type,
         duration: duration,
+        action: action,
         onRegister: (state) => _current = state,
         onDismissed: () {
           if (_entry == entry) {
@@ -68,6 +118,9 @@ abstract final class AppToast {
     overlay.insert(entry);
   }
 
+  /// Dismisses the currently visible toast (if any) with its exit animation.
+  static void dismiss() => _current?._dismiss();
+
   static void _dismissImmediately() {
     _current?._forceRemove();
     _entry?.remove();
@@ -81,6 +134,7 @@ class _AppToastWidget extends StatefulWidget {
     required this.message,
     required this.type,
     required this.duration,
+    required this.action,
     required this.onRegister,
     required this.onDismissed,
   });
@@ -88,6 +142,7 @@ class _AppToastWidget extends StatefulWidget {
   final String message;
   final AppToastType type;
   final Duration duration;
+  final AppToastAction? action;
   final ValueChanged<_AppToastWidgetState> onRegister;
   final VoidCallback onDismissed;
 
@@ -236,6 +291,28 @@ class _AppToastWidgetState extends State<_AppToastWidget>
                             ),
                           ),
                         ),
+                        if (widget.action != null) ...[
+                          const SizedBox(width: 4),
+                          GestureDetector(
+                            onTap: () {
+                              widget.action!.onPressed();
+                              _dismiss();
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              child: Text(
+                                widget.action!.label,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: style.accent,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

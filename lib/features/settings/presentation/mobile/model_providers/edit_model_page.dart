@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
@@ -437,12 +438,7 @@ class _ModelIdField extends StatelessWidget {
                       Clipboard.setData(
                         ClipboardData(text: controller.text.trim()),
                       );
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('已复制模型 ID'),
-                          duration: Duration(seconds: 1),
-                        ),
-                      );
+                      AppToast.success(context, '已复制模型 ID');
                     },
                   )
                 : null,

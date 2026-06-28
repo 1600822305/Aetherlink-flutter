@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_
 import 'package:aetherlink_flutter/shared/config/builtin_mcp_servers.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
 /// The "MCP 服务器" settings page (提示词与工具 → this page), a port of the
@@ -145,11 +146,7 @@ class _McpServerSettingsPageState extends ConsumerState<McpServerSettingsPage>
 }
 
 void _toast(BuildContext context, String message) {
-  ScaffoldMessenger.maybeOf(context)
-    ?..clearSnackBars()
-    ..showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
-    );
+  AppToast.info(context, message);
 }
 
 /// Opens the 添加内置工具 / 智能助手 bottom-sheet picker, showing only the

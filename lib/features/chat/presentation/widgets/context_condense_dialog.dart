@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/context_condense_service.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// Shows the context compression dialog. Returns the [CondenseResult] or null
 /// if cancelled.
@@ -83,12 +84,7 @@ class _ContextCondenseDialogState
         _statusText = '';
         _cancelToken = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.error ?? '压缩失败'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      AppToast.error(context, result.error ?? '压缩失败');
     }
   }
 

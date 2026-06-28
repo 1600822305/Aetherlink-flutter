@@ -17,6 +17,7 @@ import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
 import 'package:aetherlink_flutter/shared/utils/regex_replacement.dart';
 import 'package:aetherlink_flutter/shared/utils/silly_tavern_regex_import.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 const Map<AssistantRegexScope, String> _scopeLabels = {
   AssistantRegexScope.user: '用户消息',
@@ -64,10 +65,10 @@ class RegexRulesTab extends StatelessWidget {
   }
 
   Future<void> _import(BuildContext context) async {
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    void notify(String message) => messenger
-      ?..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    void notify(String message, {AppToastType type = AppToastType.info}) {
+      if (!context.mounted) return;
+      AppToast.show(context, message, type: type);
+    }
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
@@ -78,20 +79,20 @@ class RegexRulesTab extends StatelessWidget {
       if (file == null) return;
       final bytes = file.bytes;
       if (bytes == null) {
-        notify('无法读取文件');
+        notify('无法读取文件', type: AppToastType.warning);
         return;
       }
       final imported = importSillyTavernRegexScripts(utf8.decode(bytes));
       if (imported.isEmpty) {
-        notify('没有找到有效的正则规则');
+        notify('没有找到有效的正则规则', type: AppToastType.warning);
         return;
       }
       onChange([...rules, ...imported]);
-      notify('成功导入 ${imported.length} 条正则规则');
+      notify('成功导入 ${imported.length} 条正则规则', type: AppToastType.success);
     } on SillyTavernImportException catch (e) {
-      notify('导入失败: ${e.message}');
+      notify('导入失败: ${e.message}', type: AppToastType.error);
     } catch (e) {
-      notify('导入失败: $e');
+      notify('导入失败: $e', type: AppToastType.error);
     }
   }
 

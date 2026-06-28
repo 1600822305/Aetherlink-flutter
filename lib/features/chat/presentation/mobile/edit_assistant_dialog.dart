@@ -34,6 +34,7 @@ import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_chat_background.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// Opens the 编辑助手 dialog for [assistant]. Full-screen on mobile, an 80vh
 /// modal on wider layouts (web `BackButtonDialog` fullScreen={isMobile}).
@@ -228,9 +229,7 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
     } catch (_) {
       if (mounted) {
         setState(() => _saving = false);
-        ScaffoldMessenger.maybeOf(context)
-          ?..clearSnackBars()
-          ..showSnackBar(const SnackBar(content: Text('保存失败')));
+        AppToast.error(context, '保存失败');
       }
     }
   }
@@ -1192,14 +1191,7 @@ class _ComingSoonTooltip extends StatelessWidget {
     return Tooltip(
       message: message,
       child: GestureDetector(
-        onTap: () => ScaffoldMessenger.maybeOf(context)
-          ?..clearSnackBars()
-          ..showSnackBar(
-            SnackBar(
-              content: Text(message),
-              duration: const Duration(seconds: 2),
-            ),
-          ),
+        onTap: () => AppToast.info(context, message),
         child: child,
       ),
     );

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 import 'directory_picker_sheet.dart';
 import 'file_op_dialogs.dart';
@@ -43,7 +44,7 @@ class WorkspaceFileOps {
 
   void _snack(String message) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    AppToast.info(context, message);
   }
 
   // Resolves the parent of [entry] for refresh; falls back to the root.

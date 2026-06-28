@@ -26,6 +26,7 @@ import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_replace_bar.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_session.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/readable_path.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 class FileEditor extends ConsumerStatefulWidget {
   const FileEditor({super.key, required this.entry});
@@ -281,13 +282,11 @@ class _FileEditorState extends ConsumerState<FileEditor> {
 
   void _snack(String message, {bool error = false}) {
     if (!mounted) return;
-    final scheme = Theme.of(context).colorScheme;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: error ? scheme.errorContainer : null,
-      ),
-    );
+    if (error) {
+      AppToast.error(context, message);
+    } else {
+      AppToast.info(context, message);
+    }
   }
 
   static String _fmtBytes(int n) {

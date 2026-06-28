@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// The "高级 API 配置" third-level page, a 1:1 reproduction of
 /// `src/pages/Settings/ModelProviders/AdvancedAPIConfig.tsx`.
@@ -63,9 +64,7 @@ class _AdvancedApiConfigPageState extends ConsumerState<AdvancedApiConfigPage>
     );
     await ref.read(modelStoreProvider.notifier).saveProvider(updated);
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('已保存')));
+    AppToast.success(context, '已保存');
   }
 
   @override

@@ -24,6 +24,7 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_file_tree.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_file_viewer.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_terminal_page.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 class WorkspacePage extends ConsumerStatefulWidget {
   const WorkspacePage({super.key});
@@ -88,9 +89,7 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
       await backend.listDir(workspace.root);
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('上次授权已失效,请重新打开文件夹')));
+        AppToast.error(context, '上次授权已失效,请重新打开文件夹');
       }
       return;
     }
@@ -127,14 +126,11 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
       return;
     }
     _exitArmedAt = now;
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text('再点一次返回退出工作区'),
-          duration: _exitConfirmWindow,
-        ),
-      );
+    AppToast.info(
+      context,
+      '再点一次返回退出工作区',
+      duration: _exitConfirmWindow,
+    );
   }
 
   @override
