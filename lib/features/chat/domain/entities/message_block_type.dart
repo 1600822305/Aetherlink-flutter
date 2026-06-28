@@ -34,4 +34,6 @@ enum MessageBlockType {
   knowledgeReference,
   @JsonValue('context_summary')
   contextSummary,
+  @JsonValue('memory_injection')
+  memoryInjection,
 }

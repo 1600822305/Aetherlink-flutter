@@ -305,9 +305,13 @@ class ChatController extends _$ChatController {
       chatModel: effective,
       regexRules: regexRules,
     );
+    final memInjection = await collectChatMemoryInjection(
+      ref,
+      assistantId: _assistantId,
+    );
     final request = LlmChatRequest(
       model: effective,
-      system: _systemFor(mcp, await _buildSystemPrompt()),
+      system: _systemFor(mcp, await _buildSystemPromptWith(memInjection.section)),
       messages: messages,
       maxTokens: ctx.maxTokens,
       temperature: params.temperature,
@@ -349,7 +353,33 @@ class ChatController extends _$ChatController {
       views: views,
       assistantView: assistantView,
       mcp: mcp,
+      leadingBlocks: _memoryInjectionBlocks(
+        messageId: assistantMessageId,
+        createdAt: assistantTime,
+        injection: memInjection,
+      ),
     );
+  }
+
+  /// The leading [MemoryInjectionBlock] for a turn (empty when nothing was
+  /// injected), seeded into the assistant message ahead of its content so the
+  /// chat shows the 对话内「本轮注入 N 条记忆」可展开块.
+  List<MessageBlock> _memoryInjectionBlocks({
+    required String messageId,
+    required DateTime createdAt,
+    required ChatMemoryInjection injection,
+  }) {
+    if (injection.isEmpty || injection.count == 0) return const <MessageBlock>[];
+    return <MessageBlock>[
+      MessageBlock.memoryInjection(
+        id: generateId('block'),
+        messageId: messageId,
+        status: MessageBlockStatus.success,
+        createdAt: createdAt,
+        count: injection.count,
+        memories: injection.memories,
+      ),
+    ];
   }
 
   /// Sends a user message and streams the combo (sequential) response.
@@ -1173,6 +1203,7 @@ class ChatController extends _$ChatController {
     required List<ChatMessageView> views,
     required ChatMessageView assistantView,
     required _McpSetup mcp,
+    List<MessageBlock> leadingBlocks = const <MessageBlock>[],
   }) async {
     // Multi-key load balancing + failover. When the provider carries a multi-key
     // pool, each attempt strategy-selects a usable key ([ApiKeyManager]); a
@@ -1225,7 +1256,10 @@ class ChatController extends _$ChatController {
     // reply finishes. Both reset whenever a new thinking block starts.
     DateTime? thinkingStartAt;
     DateTime? thinkingEndAt;
-    final completed = <MessageBlock>[];
+    // Seed with the leading memory-injection block (if any) so it stays first
+    // in every live/persisted block list — aggregateText/aggregateThinking
+    // ignore it (it is neither MainText nor Thinking).
+    final completed = <MessageBlock>[...leadingBlocks];
     var messages = List<LlmMessage>.of(request.messages);
     var view = assistantView;
 
@@ -1366,12 +1400,15 @@ class ChatController extends _$ChatController {
           .read(llmGatewayFactoryProvider)
           .forModel(effectiveForAttempt);
 
-      // Reset the per-attempt accumulators so a failover retry starts clean.
+      // Reset the per-attempt accumulators so a failover retry starts clean,
+      // re-seeding the leading memory-injection block so it survives retries.
       thinking.clear();
       thinkingBlockId = '$assistantMessageId::thinking';
       thinkingStartAt = null;
       thinkingEndAt = null;
-      completed.clear();
+      completed
+        ..clear()
+        ..addAll(leadingBlocks);
       buffer.clear();
       messages = List<LlmMessage>.of(request.messages);
       view = assistantView;
@@ -2991,19 +3028,53 @@ class ChatController extends _$ChatController {
                     : topicPrompt)
               : assistantPrompt);
 
-    final injected = injectSystemPromptVariables(
-      base,
-      ref.read(systemPromptVariablesProvider),
-    );
-
     final memorySection = await buildChatMemoryInjection(
       ref,
       assistantId: _assistantId,
+    );
+    return _composeSystemPrompt(base, memorySection);
+  }
+
+  /// Injects prompt variables into [base] and appends the resolved
+  /// [memorySection] (the `<user_memories>` block, or null/empty for none),
+  /// returning null when the result is empty. Split out so [send] can reuse the
+  /// already-resolved memory section instead of querying the store twice.
+  String? _composeSystemPrompt(String base, String? memorySection) {
+    final injected = injectSystemPromptVariables(
+      base,
+      ref.read(systemPromptVariablesProvider),
     );
     final withMemory = (memorySection == null || memorySection.isEmpty)
         ? injected
         : (injected.isEmpty ? memorySection : '$injected\n\n$memorySection');
     return withMemory.isEmpty ? null : withMemory;
+  }
+
+  /// Like [_buildSystemPrompt] but reuses a pre-resolved [memorySection] (from
+  /// [collectChatMemoryInjection]) so the memory store is read once per turn.
+  Future<String?> _buildSystemPromptWith(String? memorySection) async {
+    final assistant = await _repo.getAssistant(_assistantId);
+    final assistantPrompt = assistant?.systemPrompt ?? '';
+    final topicId = _topicId;
+    final topic = topicId == null ? null : await _repo.getTopic(topicId);
+    final topicPrompt = (topic?.prompt?.trim().isNotEmpty ?? false)
+        ? topic!.prompt!
+        : '';
+
+    final enabledSkills = await _enabledSkillsFor(assistant?.skillIds);
+    final base = enabledSkills.isNotEmpty
+        ? assembleSkillSystemPrompt(
+            assistantPrompt: assistantPrompt,
+            enabledSkills: enabledSkills,
+            topicPrompt: topicPrompt,
+          )
+        : (topicPrompt.isNotEmpty
+              ? (assistantPrompt.isNotEmpty
+                    ? '$assistantPrompt\n\n$topicPrompt'
+                    : topicPrompt)
+              : assistantPrompt);
+
+    return _composeSystemPrompt(base, memorySection);
   }
 
   /// The skills bound to the assistant ([skillIds]) that are currently enabled,

@@ -294,6 +294,25 @@ sealed class MessageBlock with _$MessageBlock {
     String? modelId,
   }) = ContextSummaryBlock;
 
+  /// Memory injected into the system prompt this turn (`MEMORY_INJECTION`).
+  /// A non-model, app-generated info block prepended to the assistant message
+  /// so the user can see how many long-term memories were fed in and which —
+  /// the 对话内「本轮注入 N 条记忆」可展开块. [memories] holds the injected
+  /// contents in injection order; [count] is their number.
+  @FreezedUnionValue('memory_injection')
+  const factory MessageBlock.memoryInjection({
+    required String id,
+    required String messageId,
+    required MessageBlockStatus status,
+    @IsoDateTimeConverter() required DateTime createdAt,
+    @IsoDateTimeConverter() DateTime? updatedAt,
+    Model? model,
+    Map<String, dynamic>? metadata,
+    Map<String, dynamic>? error,
+    required int count,
+    @Default(<String>[]) List<String> memories,
+  }) = MemoryInjectionBlock;
+
   factory MessageBlock.fromJson(Map<String, dynamic> json) =>
       _$MessageBlockFromJson(json);
 }

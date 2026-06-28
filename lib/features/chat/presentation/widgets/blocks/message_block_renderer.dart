@@ -185,6 +185,8 @@ class MessageBlockRenderer extends ConsumerWidget {
         return KnowledgeReferenceBlockView(block: block);
       case ContextSummaryBlock():
         return ContextSummaryBlockView(block: block);
+      case MemoryInjectionBlock():
+        return MemoryInjectionBlockView(block: block);
     }
   }
 

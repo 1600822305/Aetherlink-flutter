@@ -26,27 +26,56 @@ part 'memory_access.g.dart';
 ChatMemoryStore chatMemoryStore(Ref ref) =>
     ChatMemoryStore(ref.watch(appDatabaseProvider).memoryDao);
 
-/// Builds the `<user_memories>` block the chat pipeline appends to the system
-/// prompt for the assistant identified by [assistantId] (null/empty → global
-/// only). Returns null when memory is disabled, the injection mode is
-/// [MemoryInjectionMode.off], or there is nothing to inject.
+/// The result of resolving what to inject for a turn: the `<user_memories>`
+/// [section] string (null when nothing is injected) plus the exact memory
+/// contents that went in ([memories], injection order: global then assistant).
+/// The chat pipeline uses [section] for the system prompt and [memories] to
+/// render the 对话内「本轮注入 N 条记忆」可展开块.
+class ChatMemoryInjection {
+  const ChatMemoryInjection({this.section, this.memories = const <String>[]});
+
+  final String? section;
+  final List<String> memories;
+
+  bool get isEmpty => section == null || section!.isEmpty;
+  int get count => memories.length;
+}
+
+/// Resolves the memories to inject for the assistant identified by [assistantId]
+/// (null/empty → global only). Returns an empty result when memory is disabled
+/// or the injection mode is [MemoryInjectionMode.off].
 ///
 /// Lives here (the composition root) because the chat feature must not import
 /// `memory/application` or `memory/data` directly: it reads the master switch +
 /// injection mode ([MemorySettingsController]) and the stored memories
 /// ([ChatMemoryStore]), then formats them with the pure `memory/domain` helper.
-Future<String?> buildChatMemoryInjection(Ref ref, {String? assistantId}) async {
+Future<ChatMemoryInjection> collectChatMemoryInjection(
+  Ref ref, {
+  String? assistantId,
+}) async {
   final settings = ref.read(memorySettingsControllerProvider);
   if (!settings.enabled || settings.injectionMode == MemoryInjectionMode.off) {
-    return null;
+    return const ChatMemoryInjection();
   }
   final store = ref.read(chatMemoryStoreProvider);
   final global = await store.list(const MemoryScope.chatGlobal());
   final assistant = (assistantId == null || assistantId.isEmpty)
       ? const <MemoryItem>[]
       : await store.list(MemoryScope.chatAssistant(assistantId));
-  return buildMemoryPromptSection(global: global, assistant: assistant);
+  final section = buildMemoryPromptSection(global: global, assistant: assistant);
+  final memories = <String>[
+    for (final m in global)
+      if (m.content.trim().isNotEmpty) m.content.trim(),
+    for (final m in assistant)
+      if (m.content.trim().isNotEmpty) m.content.trim(),
+  ];
+  return ChatMemoryInjection(section: section, memories: memories);
 }
+
+/// Builds just the `<user_memories>` system-prompt block — a thin wrapper over
+/// [collectChatMemoryInjection] for callers that only need the prompt text.
+Future<String?> buildChatMemoryInjection(Ref ref, {String? assistantId}) async =>
+    (await collectChatMemoryInjection(ref, assistantId: assistantId)).section;
 
 /// The 自动写入 gate for autoAnalyze, read from [MemorySettingsController].
 /// Lives here because the chat feature (which drives extraction after a turn)

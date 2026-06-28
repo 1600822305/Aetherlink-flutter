@@ -592,3 +592,101 @@ class _ContextSummaryBlockViewState
     );
   }
 }
+
+/// Renders a `MEMORY_INJECTION` block: a compact chip showing how many
+/// long-term memories were injected into this turn's system prompt. Defaults to
+/// collapsed; tapping expands to list the injected memory contents so the user
+/// can see exactly what the model was given — the 对话内「本轮注入 N 条记忆」块.
+class MemoryInjectionBlockView extends StatefulWidget {
+  const MemoryInjectionBlockView({required this.block, super.key});
+
+  final MemoryInjectionBlock block;
+
+  @override
+  State<MemoryInjectionBlockView> createState() =>
+      _MemoryInjectionBlockViewState();
+}
+
+class _MemoryInjectionBlockViewState extends State<MemoryInjectionBlockView> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final memories = widget.block.memories;
+    final hasDetail = memories.isNotEmpty;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: cs.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: cs.primary.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: hasDetail
+                ? () => setState(() => _expanded = !_expanded)
+                : null,
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              children: [
+                Icon(LucideIcons.brain, size: 15, color: cs.primary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '本轮注入 ${widget.block.count} 条记忆',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: cs.onSurface.withValues(alpha: 0.75),
+                    ),
+                  ),
+                ),
+                if (hasDetail)
+                  Icon(
+                    _expanded
+                        ? LucideIcons.chevronUp
+                        : LucideIcons.chevronDown,
+                    size: 15,
+                    color: cs.onSurface.withValues(alpha: 0.4),
+                  ),
+              ],
+            ),
+          ),
+          if (_expanded && hasDetail) ...[
+            Divider(height: 14, color: cs.primary.withValues(alpha: 0.15)),
+            for (var i = 0; i < memories.length; i++) ...[
+              if (i > 0) const SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      LucideIcons.dot,
+                      size: 14,
+                      color: cs.primary.withValues(alpha: 0.7),
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  Expanded(
+                    child: Text(
+                      memories[i],
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: cs.onSurface.withValues(alpha: 0.8),
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
