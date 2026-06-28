@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/too
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
 import 'package:aetherlink_flutter/shared/domain/thinking_settings.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 import 'package:aetherlink_flutter/shared/widgets/thinking_styled_view.dart';
 
 /// Renders a `THINKING` block, mirroring `ThinkingBlock.tsx`.
@@ -144,6 +145,21 @@ class _ThinkingBlockViewState extends ConsumerState<ThinkingBlockView> {
     final style = ref.watch(
       thinkingSettingsProvider.select((s) => s.displayStyle),
     );
+
+    // Auto-expand when an inline tool is awaiting confirmation, so its confirm
+    // buttons aren't trapped behind a collapsed thinking body (devin / 极简 /
+    // 紧凑 / 气泡 / 卡片 styles render inline tools only when expanded). Without
+    // this the user has to expand first, then confirm — an extra step. Mirrors
+    // ToolBlockView's auto-expand.
+    final pending = ref.watch(toolConfirmationProvider);
+    final hasPendingConfirmation =
+        widget.inlineToolBlocks.any((b) => pending.containsKey(b.id));
+    if (hasPendingConfirmation && !_expanded) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_expanded) setState(() => _expanded = true);
+      });
+    }
+
     final inlineTools = widget.inlineToolBlocks.isEmpty
         ? null
         : Column(
