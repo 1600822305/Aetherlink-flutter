@@ -28,6 +28,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 import 'package:aetherlink_flutter/features/memory/data/datasources/local/memories_table.dart';
 import 'package:aetherlink_flutter/features/memory/data/datasources/local/memory_converters.dart';
 import 'package:aetherlink_flutter/features/memory/data/datasources/local/memory_dao.dart';
+import 'package:aetherlink_flutter/features/memory/data/datasources/local/memory_history_table.dart';
 // Persisted as a JSON blob in [MemoryRows]; the generated part references the
 // converter's row data type.
 import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
@@ -60,6 +61,7 @@ part 'app_database.g.dart';
     GroupRows,
     AppSettingRows,
     MemoryRows,
+    MemoryHistoryRows,
   ],
   daos: [
     TopicDao,
@@ -80,14 +82,15 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.open() : super(_openConnection());
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   // v1 → v2 adds the model-provider store ([ProviderRows]); v2 → v3 adds the
   // sidebar group store ([GroupRows]); v3 → v4 adds the key/value preferences
   // store ([AppSettingRows], the port of the web `dexieStorage` settings). The
   // one-time IndexedDB (`aetherlink-db-new` v9) → SQLite data import remains a
   // separate cross-cutting task (see docs/ROADMAP.md). v4 → v5 adds the
-  // long-term memory store ([MemoryRows]).
+  // long-term memory store ([MemoryRows]); v5 → v6 adds the memory audit log
+  // ([MemoryHistoryRows]).
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),
@@ -103,6 +106,9 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 5) {
         await m.createTable(memoryRows);
+      }
+      if (from < 6) {
+        await m.createTable(memoryHistoryRows);
       }
     },
   );
