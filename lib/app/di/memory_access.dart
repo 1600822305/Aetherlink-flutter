@@ -1,8 +1,10 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/memory/application/memory_providers.dart';
 import 'package:aetherlink_flutter/features/memory/application/memory_settings_controller.dart';
 import 'package:aetherlink_flutter/features/memory/data/chat_memory_store.dart';
+import 'package:aetherlink_flutter/features/memory/domain/memory_extraction.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_injection.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_scope.dart';
@@ -44,4 +46,82 @@ Future<String?> buildChatMemoryInjection(Ref ref, {String? assistantId}) async {
       ? const <MemoryItem>[]
       : await store.list(MemoryScope.chatAssistant(assistantId));
   return buildMemoryPromptSection(global: global, assistant: assistant);
+}
+
+/// The 自动写入 gate for autoAnalyze, read from [MemorySettingsController].
+/// Lives here because the chat feature (which drives extraction after a turn)
+/// must not import `memory/application` directly.
+({bool enabled, bool autoWritePrivate, bool autoWriteGlobal})
+    readMemoryAutoWriteFlags(Ref ref) {
+  final settings = ref.read(memorySettingsControllerProvider);
+  return (
+    enabled: settings.enabled,
+    autoWritePrivate: settings.autoWritePrivate,
+    autoWriteGlobal: settings.autoWriteGlobal,
+  );
+}
+
+/// Persists auto-extracted memory [candidates] for the turn that just finished
+/// on [assistantId]. Candidates are dropped when their level isn't permitted by
+/// the 自动写入 toggles, or when an equal (case-insensitive) memory already
+/// exists in the target bucket (dedupe). Each surviving candidate is written
+/// with [MemorySource.auto]. Returns how many were stored, and invalidates the
+/// 记忆 list/count providers when anything changed.
+///
+/// Composed in `app/` so the chat feature never reaches into `memory/data`.
+Future<int> storeExtractedChatMemories(
+  Ref ref, {
+  required String assistantId,
+  required List<MemoryExtractionCandidate> candidates,
+}) async {
+  if (candidates.isEmpty) return 0;
+  final store = ref.read(chatMemoryStoreProvider);
+
+  final existingGlobal = {
+    for (final m in await store.list(const MemoryScope.chatGlobal()))
+      m.content.trim().toLowerCase(),
+  };
+  final hasAssistant = assistantId.isNotEmpty;
+  final existingAssistant = hasAssistant
+      ? {
+          for (final m in await store.list(
+            MemoryScope.chatAssistant(assistantId),
+          ))
+            m.content.trim().toLowerCase(),
+        }
+      : <String>{};
+
+  var written = 0;
+  for (final candidate in candidates) {
+    final isGlobal = candidate.level == MemoryLevel.global;
+    // Owner candidates require a target assistant; skip them otherwise.
+    if (!isGlobal && !hasAssistant) continue;
+    final key = candidate.content.trim().toLowerCase();
+    final seen = isGlobal ? existingGlobal : existingAssistant;
+    if (seen.contains(key)) continue;
+    seen.add(key);
+
+    await store.create(
+      MemoryItem(
+        id: '',
+        content: candidate.content.trim(),
+        level: isGlobal ? MemoryLevel.global : MemoryLevel.owner,
+        ownerId: isGlobal ? null : assistantId,
+        type: candidate.type,
+        importance: candidate.importance,
+        source: MemorySource.auto,
+      ),
+    );
+    written++;
+  }
+
+  if (written > 0) {
+    ref.invalidate(memoryCountsProvider);
+    ref.invalidate(globalMemoriesControllerProvider);
+    if (hasAssistant) {
+      ref.invalidate(assistantMemoryOwnerCountsProvider);
+      ref.invalidate(assistantMemoriesControllerProvider(assistantId));
+    }
+  }
+  return written;
 }
