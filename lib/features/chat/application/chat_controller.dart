@@ -40,6 +40,8 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/metrics.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/usage.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_cancel_token.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
+import 'package:aetherlink_flutter/features/memory/domain/memory_extraction.dart';
+import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_content_image.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
@@ -1698,6 +1700,7 @@ class ChatController extends _$ChatController {
         unawaited(_refreshTopicPreview(turnTopicId));
         unawaited(_generateTitle(turnTopicId));
         unawaited(_maybeGenerateSuggestions(turnTopicId, List.of(views)));
+        unawaited(_maybeExtractMemory(turnTopicId));
         return;
       } on Object catch (error) {
         // User pressed Stop: cancelling the token aborts the HTTP request, which
@@ -2065,6 +2068,89 @@ class ChatController extends _$ChatController {
       _emitSuggestions(turnTopicId, suggestions);
     } on Object catch (_) {
       // Suggestion generation is non-critical; swallow errors.
+    }
+  }
+
+  /// Auto-extracts long-term memories (autoAnalyze) from the just-finished turn
+  /// on [turnTopicId] and writes them to the 普通聊天 memory store. A no-op
+  /// unless 记忆 is enabled and at least one 自动写入 toggle is on. The extraction
+  /// itself runs on the 快速/标题 auxiliary model (falling back to the current
+  /// chat model). Best-effort: any failure is swallowed, like title generation.
+  Future<void> _maybeExtractMemory(String turnTopicId) async {
+    try {
+      final flags = readMemoryAutoWriteFlags(ref);
+      if (!flags.enabled) return;
+      if (!flags.autoWritePrivate && !flags.autoWriteGlobal) return;
+
+      final assistantId = _assistantId;
+
+      // Gather the last 6 messages' text as the extraction context.
+      final messages = await _repo.getMessagesByTopicId(turnTopicId)
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      if (messages.isEmpty) return;
+      final recent = messages.length > 6
+          ? messages.sublist(messages.length - 6)
+          : messages;
+      final lines = <String>[];
+      for (final msg in recent) {
+        final blocks = await _repo.getMessageBlocksByMessageId(msg.id);
+        final text = blocks
+            .whereType<MainTextBlock>()
+            .map((b) => b.content)
+            .join('\n')
+            .trim();
+        if (text.isEmpty) continue;
+        final truncated = text.length > 800 ? '${text.substring(0, 800)}…' : text;
+        final role = msg.role == MessageRole.user ? '用户' : 'AI';
+        lines.add('$role: $truncated');
+      }
+      if (lines.isEmpty) return;
+      final conversation = lines.join('\n\n');
+
+      // Resolve the extraction model: 快速模型 → 标题模型 → current chat model.
+      final auxState = ref.read(auxiliaryModelControllerProvider);
+      final providers = await ref.read(appModelProvidersProvider.future);
+      var resolved = resolveAuxiliaryModel(auxState.fastModelKey, providers);
+      resolved ??= resolveAuxiliaryModel(auxState.titleModelKey, providers);
+      resolved ??= findCurrentModel(providers);
+      if (resolved == null) return;
+      final effective = effectiveModelFor(resolved);
+
+      final prompt = buildMemoryExtractionPrompt(
+        conversation: conversation,
+        allowGlobal: flags.autoWriteGlobal,
+        allowPrivate: flags.autoWritePrivate,
+      );
+
+      final request = LlmChatRequest(
+        model: effective,
+        messages: [LlmMessage(role: MessageRole.user, content: prompt)],
+        extraHeaders: effective.providerExtraHeaders,
+        extraBody: effective.providerExtraBody,
+      );
+
+      final gateway = ref.read(llmGatewayFactoryProvider).forModel(effective);
+      final buffer = StringBuffer();
+      await for (final chunk in gateway.streamChat(request)) {
+        if (chunk is LlmTextDelta) buffer.write(chunk.text);
+      }
+
+      final candidates = parseMemoryExtractionResponse(buffer.toString())
+          .where(
+            (c) => c.level == MemoryLevel.global
+                ? flags.autoWriteGlobal
+                : flags.autoWritePrivate,
+          )
+          .toList();
+      if (candidates.isEmpty) return;
+
+      await storeExtractedChatMemories(
+        ref,
+        assistantId: assistantId,
+        candidates: candidates,
+      );
+    } on Object catch (_) {
+      // Memory extraction is non-critical; swallow errors.
     }
   }
 
