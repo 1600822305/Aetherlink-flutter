@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/memory/application/memory_providers.dart';
 import 'package:aetherlink_flutter/features/memory/application/memory_settings_controller.dart';
+import 'package:aetherlink_flutter/features/memory/data/chat_memory_store.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_settings.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 
@@ -13,10 +15,11 @@ import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_
 ///
 /// It is an overview-plus-entry hub: the master 启用记忆 switch and the two
 /// 自动写入 toggles persist to the Drift KV store via [MemorySettingsController]
-/// and take effect immediately; the data-backed sections (记忆概览 statistics,
-/// 全局记忆 / 按助手 / 搜索 management, and the 记忆设置 sub-page) carry an
-/// 「即将支持」 tag until the memory store lands, following the project's
-/// honest-placeholder convention (no fabricated counts, no fake sub-pages).
+/// and take effect immediately. The 记忆概览 statistics and the 全局记忆 entry
+/// are backed by the memory store (real counts + a working list page); the
+/// remaining sections (按助手 / 搜索 management and the 记忆设置 sub-page) carry
+/// an 「即将支持」 tag until they land, following the project's honest-placeholder
+/// convention (no fabricated counts, no fake sub-pages).
 ///
 /// Recomposed into the project's compact settings style (the
 /// `_OutlinedCard` / `_CardHeader` / `_PrimaryRow` vocabulary shared with the
@@ -29,6 +32,7 @@ class MemoryHomePage extends ConsumerWidget {
     final theme = Theme.of(context);
     final config = ref.watch(memorySettingsControllerProvider);
     final controller = ref.read(memorySettingsControllerProvider.notifier);
+    final counts = ref.watch(memoryCountsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -71,11 +75,11 @@ class MemoryHomePage extends ConsumerWidget {
           _masterCard(theme, config.enabled, controller),
           if (config.enabled) ...[
             const SizedBox(height: 10),
-            _overviewCard(theme),
+            _overviewCard(theme, counts),
             const SizedBox(height: 14),
             const _GroupLabel('管理'),
             const SizedBox(height: 6),
-            _manageCard(theme),
+            _manageCard(context, theme, counts),
             const SizedBox(height: 14),
             const _GroupLabel('自动写入'),
             const SizedBox(height: 6),
@@ -107,29 +111,70 @@ class MemoryHomePage extends ConsumerWidget {
     );
   }
 
-  Widget _overviewCard(ThemeData theme) {
+  Widget _overviewCard(ThemeData theme, AsyncValue<MemoryCounts> counts) {
     return _OutlinedCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _CardHeader(title: '记忆概览', description: '记忆总数、全局/助手分布与最近整理时间'),
+          const _CardHeader(title: '记忆概览', description: '记忆总数、全局与涉及助手分布'),
           Divider(height: 1, color: theme.dividerColor),
-          const _ComingSoonBlock(text: '即将支持：记忆统计将在记忆存储接入后显示'),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+            child: counts.when(
+              loading: () => const SizedBox(
+                height: 44,
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+              error: (e, _) => SizedBox(
+                height: 44,
+                child: Center(
+                  child: Text(
+                    '统计加载失败',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 13,
+                      color: theme.colorScheme.error,
+                    ),
+                  ),
+                ),
+              ),
+              data: (c) => Row(
+                children: [
+                  _StatCell(value: c.total, label: '总记忆'),
+                  _StatDivider(theme: theme),
+                  _StatCell(value: c.global, label: '全局'),
+                  _StatDivider(theme: theme),
+                  _StatCell(value: c.assistants, label: '涉及助手'),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _manageCard(ThemeData theme) {
+  Widget _manageCard(
+    BuildContext context,
+    ThemeData theme,
+    AsyncValue<MemoryCounts> counts,
+  ) {
+    final globalCount = counts.asData?.value.global;
     return _OutlinedCard(
       child: Column(
         children: [
-          const _NavRow(
+          _NavRow(
             icon: LucideIcons.globe,
-            accent: Color(0xFF06B6D4),
+            accent: const Color(0xFF06B6D4),
             label: '全局记忆',
             description: '所有助手通用的偏好与事实',
-            comingSoon: true,
+            trailingText: globalCount?.toString(),
+            onTap: () => context.push(AppRouter.globalMemoryPath),
           ),
           Divider(height: 1, color: theme.dividerColor),
           const _NavRow(
@@ -365,6 +410,8 @@ class _NavRow extends StatelessWidget {
     required this.label,
     required this.description,
     this.comingSoon = false,
+    this.onTap,
+    this.trailingText,
   });
 
   final IconData icon;
@@ -372,6 +419,8 @@ class _NavRow extends StatelessWidget {
   final String label;
   final String description;
   final bool comingSoon;
+  final VoidCallback? onTap;
+  final String? trailingText;
 
   @override
   Widget build(BuildContext context) {
@@ -425,6 +474,17 @@ class _NavRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
+          if (trailingText != null) ...[
+            Text(
+              trailingText!,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 4),
+          ],
           Icon(
             LucideIcons.chevronRight,
             size: 20,
@@ -435,34 +495,60 @@ class _NavRow extends StatelessWidget {
     );
 
     if (comingSoon) return Opacity(opacity: 0.5, child: row);
+    if (onTap != null) {
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(onTap: onTap, child: row),
+      );
+    }
     return row;
   }
 }
 
-/// A centered 「即将支持」 note filling a card body (data-backed sections not yet
-/// wired to a memory store).
-class _ComingSoonBlock extends StatelessWidget {
-  const _ComingSoonBlock({required this.text});
+/// One number-over-label cell in the 记忆概览 statistics row.
+class _StatCell extends StatelessWidget {
+  const _StatCell({required this.value, required this.label});
 
-  final String text;
+  final int value;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 14),
-      child: Center(
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontSize: 13,
-            fontStyle: FontStyle.italic,
-            color: theme.colorScheme.onSurfaceVariant,
+    return Expanded(
+      child: Column(
+        children: [
+          Text(
+            '$value',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: theme.colorScheme.onSurface,
+            ),
           ),
-        ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontSize: 12,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
+  }
+}
+
+/// A thin vertical separator between two [_StatCell]s.
+class _StatDivider extends StatelessWidget {
+  const _StatDivider({required this.theme});
+
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(width: 1, height: 30, color: theme.dividerColor);
   }
 }
 

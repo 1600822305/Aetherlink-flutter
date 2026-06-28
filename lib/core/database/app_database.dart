@@ -25,6 +25,11 @@ import 'package:aetherlink_flutter/features/chat/data/datasources/local/topics_t
 // `test/architecture/import_boundaries_test.dart`.
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/memory/data/datasources/local/memories_table.dart';
+import 'package:aetherlink_flutter/features/memory/data/datasources/local/memory_dao.dart';
+// Persisted as a JSON blob in [MemoryRows]; the generated part references the
+// converter's row data type.
+import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
 import 'package:aetherlink_flutter/features/models/data/datasources/local/model_provider_converters.dart';
 import 'package:aetherlink_flutter/features/models/data/datasources/local/provider_dao.dart';
 import 'package:aetherlink_flutter/features/models/data/datasources/local/providers_table.dart';
@@ -53,6 +58,7 @@ part 'app_database.g.dart';
     ProviderRows,
     GroupRows,
     AppSettingRows,
+    MemoryRows,
   ],
   daos: [
     TopicDao,
@@ -62,6 +68,7 @@ part 'app_database.g.dart';
     ProviderDao,
     GroupDao,
     AppSettingDao,
+    MemoryDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -72,13 +79,14 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.open() : super(_openConnection());
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   // v1 → v2 adds the model-provider store ([ProviderRows]); v2 → v3 adds the
   // sidebar group store ([GroupRows]); v3 → v4 adds the key/value preferences
   // store ([AppSettingRows], the port of the web `dexieStorage` settings). The
   // one-time IndexedDB (`aetherlink-db-new` v9) → SQLite data import remains a
-  // separate cross-cutting task (see docs/ROADMAP.md).
+  // separate cross-cutting task (see docs/ROADMAP.md). v4 → v5 adds the
+  // long-term memory store ([MemoryRows]).
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),
@@ -91,6 +99,9 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 4) {
         await m.createTable(appSettingRows);
+      }
+      if (from < 5) {
+        await m.createTable(memoryRows);
       }
     },
   );
