@@ -152,6 +152,30 @@ class WorkspaceExecResult {
   final bool timedOut;
 }
 
+/// An interactive PTY shell session (设计文档 §8.2), backend-neutral so the
+/// terminal UI never imports dartssh2. [output] streams combined stdout+stderr
+/// bytes; [write] feeds stdin; [resize] tells the remote a new window size.
+abstract class WorkspaceShellSession {
+  /// Combined stdout + stderr bytes from the remote shell. Broadcast, so the
+  /// terminal view can (re)subscribe freely.
+  Stream<List<int>> get output;
+
+  /// Sends [data] to the shell's stdin.
+  void write(List<int> data);
+
+  /// Informs the remote of a new terminal window size, in character cells.
+  void resize(int columns, int rows);
+
+  /// Completes when the shell exits or the transport drops.
+  Future<void> get done;
+
+  /// The shell's exit status once [done] completes, or null when unknown.
+  int? get exitCode;
+
+  /// Tears down the channel (sends EOF and stops piping output).
+  Future<void> close();
+}
+
 /// Diff payload format for [WorkspaceBackend.applyDiff].
 enum WorkspaceDiffFormat { searchReplace, unified }
 
@@ -355,6 +379,17 @@ abstract class WorkspaceBackend {
     Duration? timeout,
   }) =>
       throw UnsupportedError('exec is not supported by this backend');
+
+  /// Opens an interactive PTY shell (设计文档 §8.2) for a human terminal UI.
+  /// Only valid when [WorkspaceCapabilities.canExec] is true. [columns] / [rows]
+  /// seed the initial window size; [workingDirectory] (when given) `cd`s there
+  /// first. Backends that can't exec throw [UnsupportedError].
+  Future<WorkspaceShellSession> startShell({
+    int columns = 80,
+    int rows = 24,
+    String? workingDirectory,
+  }) =>
+      throw UnsupportedError('startShell is not supported by this backend');
 
   /// Searches under [directory] for entries matching [query]. When [useRegex]
   /// is true, [query] is treated as a (case-insensitive) regular expression.

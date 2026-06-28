@@ -96,6 +96,9 @@ dependencies:
   system_fonts: ^1.0.1
   flutter_foreground_task: ^9.2.2
   dartssh2: 2.18.0
+  # Terminal emulator widget for the SSH workspace PTY page (设计文档 §8.2),
+  # same publisher (terminal.studio) as dartssh2.
+  xterm: 4.0.0
 
 dev_dependencies:
   flutter_test:

@@ -43,4 +43,15 @@ void main() {
       throwsA(isA<UnsupportedError>()),
     );
   });
+
+  test('startShell is unsupported on non-exec backends (SSH-3b default)', () {
+    expect(
+      () => MockWorkspaceBackend().startShell(),
+      throwsA(isA<UnsupportedError>()),
+    );
+    expect(
+      () => LocalSafBackend().startShell(),
+      throwsA(isA<UnsupportedError>()),
+    );
+  });
 }

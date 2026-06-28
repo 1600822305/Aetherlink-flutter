@@ -1,5 +1,5 @@
 // Workspace mobile shell: three full-screen pages swiped horizontally like the
-// sidebar's "push" reveal — 文件树 / 多文件编辑器 / 待定第三页.
+// sidebar's "push" reveal — 文件树 / 多文件编辑器 / 终端 (SSH/Termux PTY).
 //
 // Entering the workspace auto-restores the last session (workspace + open file
 // tabs + active tab) like an IDE, landing on the middle editor page. Opening or
@@ -23,6 +23,7 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_view
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_file_tree.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_file_viewer.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_terminal_page.dart';
 
 class WorkspacePage extends ConsumerStatefulWidget {
   const WorkspacePage({super.key});
@@ -50,9 +51,6 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
   // 窗口内再点一次才真正退出工作区。侧页返回(回到中间页)不受影响。
   DateTime? _exitArmedAt;
   static const Duration _exitConfirmWindow = Duration(seconds: 2);
-
-  // 右页(第三页)暂为纯色占位,等终端做了再替换。
-  static const Color _thirdColor = Color(0xFF4A2D5F);
 
   @override
   void initState() {
@@ -187,9 +185,8 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
                   onBack: _onBack,
                 );
               default:
-                return _ColorPlaceholder(
-                  label: '第三页(待定)',
-                  color: _thirdColor,
+                return WorkspaceTerminalPage(
+                  topInset: _topBarHeight,
                   onBack: _onBack,
                 );
             }
@@ -297,50 +294,4 @@ class _EmptyEditor extends StatelessWidget {
   }
 }
 
-class _ColorPlaceholder extends StatelessWidget {
-  const _ColorPlaceholder({
-    required this.label,
-    required this.color,
-    required this.onBack,
-  });
 
-  final String label;
-  final Color color;
-  final VoidCallback onBack;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: color,
-      child: Stack(
-        children: [
-          Center(
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 4, top: 4),
-              child: IconButton(
-                tooltip: '返回',
-                icon: const Icon(
-                  LucideIcons.arrowLeft,
-                  size: 20,
-                  color: Colors.white,
-                ),
-                onPressed: onBack,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

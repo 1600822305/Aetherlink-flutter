@@ -734,6 +734,30 @@ class RemoteSshBackend extends WorkspaceBackend {
     );
   }
 
+  @override
+  Future<WorkspaceShellSession> startShell({
+    int columns = 80,
+    int rows = 24,
+    String? workingDirectory,
+  }) async {
+    final client = await _sshClient();
+    final SSHSession session;
+    try {
+      session = await client.shell(
+        pty: SSHPtyConfig(width: columns, height: rows),
+      );
+    } catch (e) {
+      throw SshBackendException('打开终端失败 · $e');
+    }
+    if (workingDirectory != null && workingDirectory.isNotEmpty) {
+      // cd into the workspace root before handing the prompt to the user.
+      session.write(
+        Uint8List.fromList(utf8.encode('cd ${_shellQuote(workingDirectory)}\n')),
+      );
+    }
+    return _SshShellSession(session);
+  }
+
   /// Ensures the transport is up (reusing the same lazy connect as SFTP) and
   /// returns the live [SSHClient] for opening exec / shell channels.
   Future<SSHClient> _sshClient() async {
@@ -807,5 +831,49 @@ class RemoteSshBackend extends WorkspaceBackend {
       sftp?.close();
       client?.close();
     }
+  }
+}
+
+/// Backend-neutral wrapper over a dartssh2 [SSHSession] opened as a PTY shell
+/// (设计文档 §8.2). Merges stdout + stderr into one broadcast byte stream and
+/// maps write / resize / close onto the session. Keeps dartssh2 out of the UI.
+class _SshShellSession implements WorkspaceShellSession {
+  _SshShellSession(this._session) {
+    _outSub = _session.stdout.listen(_out.add, onError: (_) {});
+    _errSub = _session.stderr.listen(_out.add, onError: (_) {});
+    // Close the output stream once the remote shell exits.
+    _session.done.whenComplete(() {
+      if (!_out.isClosed) _out.close();
+    });
+  }
+
+  final SSHSession _session;
+  final StreamController<List<int>> _out =
+      StreamController<List<int>>.broadcast();
+  StreamSubscription<Uint8List>? _outSub;
+  StreamSubscription<Uint8List>? _errSub;
+
+  @override
+  Stream<List<int>> get output => _out.stream;
+
+  @override
+  void write(List<int> data) => _session.write(Uint8List.fromList(data));
+
+  @override
+  void resize(int columns, int rows) =>
+      _session.resizeTerminal(columns, rows);
+
+  @override
+  Future<void> get done => _session.done;
+
+  @override
+  int? get exitCode => _session.exitCode;
+
+  @override
+  Future<void> close() async {
+    await _outSub?.cancel();
+    await _errSub?.cancel();
+    _session.close();
+    if (!_out.isClosed) await _out.close();
   }
 }
