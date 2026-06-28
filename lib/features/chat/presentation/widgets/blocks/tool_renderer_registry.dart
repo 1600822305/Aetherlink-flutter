@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/file_editor_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/file_editor_read_block_view.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/run_command_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/web_search_block_view.dart';
 
 /// Builds a special-purpose widget for a [ToolBlock].
@@ -38,6 +39,7 @@ const Set<String> _fileEditorReadTools = {
 /// JSON tool card.
 final Map<String, ToolBlockBuilder> _toolRenderers = {
   'builtin_web_search': (b) => WebSearchBlockView(block: b),
+  'run_command': (b) => RunCommandBlockView(block: b),
   for (final t in _fileEditorWriteTools)
     t: (b) => FileEditorBlockView(block: b),
   for (final t in _fileEditorReadTools)
