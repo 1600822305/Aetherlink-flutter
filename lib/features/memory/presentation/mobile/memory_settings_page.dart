@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_sele
 import 'package:aetherlink_flutter/features/memory/application/memory_settings_controller.dart';
 import 'package:aetherlink_flutter/features/memory/domain/embedding_model_key.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_settings.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 
 /// 记忆设置 (记忆 → 记忆设置) — the configuration sub-page governing how stored
@@ -139,6 +140,19 @@ class MemorySettingsPage extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 14),
+          const _GroupLabel('检索排序'),
+          const SizedBox(height: 6),
+          _OutlinedCard(
+            child: _ToggleRow(
+              icon: LucideIcons.brain,
+              accent: const Color(0xFF8B5CF6),
+              label: '激活加权排序',
+              description: '向量检索在相似度主导的基础上，叠加近因/命中/重要性加权（语义与高重要记忆不因时间衰减）；关闭则按纯余弦排序',
+              value: config.activationRanking,
+              onChanged: controller.setActivationRanking,
+            ),
+          ),
+          const SizedBox(height: 14),
           Text(
             '注入方式选择「关闭」时，本轮不会注入任何记忆。向量检索（semantic / auto）会用上方所选嵌入模型把当前提问与记忆比对取 top-k；未配置嵌入模型时自动退回关键词检索。',
             style: theme.textTheme.bodySmall?.copyWith(
@@ -161,7 +175,7 @@ class MemorySettingsPage extends ConsumerWidget {
     case MemoryInjectionMode.full:
       return (label: '全量注入', description: '把范围内全部记忆塞进 prompt，零漏召回但更耗 token');
     case MemoryInjectionMode.semantic:
-      return (label: '向量检索', description: '仅注入相似度 top-k，精准省 token（后续版本启用）');
+      return (label: '向量检索', description: '仅注入相似度 top-k，精准省 token');
     case MemoryInjectionMode.keyword:
       return (label: '文本检索', description: '关键词匹配，不调用嵌入，纯本地');
     case MemoryInjectionMode.tool:
@@ -433,6 +447,75 @@ class _StepperRow extends StatelessWidget {
             enabled: value < max,
             onTap: () => onChanged((value + step).clamp(min, max)),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A labelled switch row matching [_StepperRow]'s layout (icon tile + title +
+/// description), with a [CustomSwitch] trailing.
+class _ToggleRow extends StatelessWidget {
+  const _ToggleRow({
+    required this.icon,
+    required this.accent,
+    required this.label,
+    required this.description,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final Color accent;
+  final String label;
+  final String description;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, size: 18, color: accent),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  description,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          CustomSwitch(value: value, onChanged: onChanged),
         ],
       ),
     );

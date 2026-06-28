@@ -241,11 +241,15 @@ Future<List<MemoryItem>> _semanticTopK(
     if (queryVector.isEmpty) {
       return _keywordTopK(candidates, query, settings.topK);
     }
-    final ranked = rankBySimilarity(
-      queryVector,
-      resolved.values.toList(),
-      settings.topK,
-    );
+    final pool = resolved.values.toList();
+    final ranked = settings.activationRanking
+        ? rankByActivation(
+            queryVector,
+            pool,
+            settings.topK,
+            nowMillis: DateTime.now().millisecondsSinceEpoch,
+          )
+        : rankBySimilarity(queryVector, pool, settings.topK);
     if (ranked.isEmpty) {
       return _keywordTopK(candidates, query, settings.topK);
     }

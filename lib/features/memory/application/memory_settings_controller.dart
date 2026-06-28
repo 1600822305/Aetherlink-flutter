@@ -73,4 +73,8 @@ class MemorySettingsController extends _$MemorySettingsController
   /// Records when the last 整理记忆 (consolidation) run finished.
   void setLastConsolidated(int epochMillis) =>
       persist(state.copyWith(lastConsolidatedAt: epochMillis));
+
+  /// Toggles ACT-R activation-weighted ranking (off → pure cosine top-k).
+  void setActivationRanking(bool value) =>
+      persist(state.copyWith(activationRanking: value));
 }
