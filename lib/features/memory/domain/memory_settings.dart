@@ -47,6 +47,12 @@ abstract class MemorySettings with _$MemorySettings {
     @Default(false) bool enabled,
     @Default(true) bool autoWritePrivate,
     @Default(false) bool autoWriteGlobal,
+
+    /// When true, the user's turn is cheaply captured as a raw 情景 (episodic)
+    /// memory right away — no LLM call (海马快写) — to be distilled into semantic
+    /// facts later by 整理记忆 (Dream). Off by default: it relies on consolidation
+    /// actually running, or episodic rows pile up (§5.1 of the design).
+    @Default(false) bool episodicFastWrite,
     @Default(MemoryInjectionMode.auto) MemoryInjectionMode injectionMode,
     @Default(1500) int tokenBudget,
     @Default(5) int topK,

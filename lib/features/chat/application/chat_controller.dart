@@ -1767,12 +1767,13 @@ class ChatController extends _$ChatController {
         unawaited(_refreshTopicPreview(turnTopicId));
         unawaited(_generateTitle(turnTopicId));
         unawaited(_maybeGenerateSuggestions(turnTopicId, List.of(views)));
-        // Extract first, then let 整理记忆 (Dream) opportunistically distil the
-        // fresh episodic memories — both best-effort and off the turn's path.
+        // 情景快写 first, then semantic extract, then let 整理记忆 (Dream)
+        // opportunistically distil the fresh episodic memories — all
+        // best-effort and off the turn's critical path.
         unawaited(
-          _maybeExtractMemory(
-            turnTopicId,
-          ).then((_) => maybeAutoConsolidateChatMemories(ref)),
+          _maybeFastWriteEpisodic(turnTopicId)
+              .then((_) => _maybeExtractMemory(turnTopicId))
+              .then((_) => maybeAutoConsolidateChatMemories(ref)),
         );
         return;
       } on Object catch (error) {
@@ -2141,6 +2142,36 @@ class ChatController extends _$ChatController {
       _emitSuggestions(turnTopicId, suggestions);
     } on Object catch (_) {
       // Suggestion generation is non-critical; swallow errors.
+    }
+  }
+
+  /// 情景快写 (海马快写): cheaply records the last user turn on [turnTopicId] as a
+  /// raw episodic memory — no LLM call — so 整理记忆 (Dream) can later distil it
+  /// into semantic facts. A no-op unless 记忆 + 情景快写 are on. Best-effort: any
+  /// failure is swallowed, like title generation.
+  Future<void> _maybeFastWriteEpisodic(String turnTopicId) async {
+    try {
+      final messages = await _repo.getMessagesByTopicId(turnTopicId)
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      final userMessages =
+          messages.where((m) => m.role == MessageRole.user).toList();
+      if (userMessages.isEmpty) return;
+      final blocks = await _repo.getMessageBlocksByMessageId(
+        userMessages.last.id,
+      );
+      final text = blocks
+          .whereType<MainTextBlock>()
+          .map((b) => b.content)
+          .join('\n')
+          .trim();
+      if (text.isEmpty) return;
+      await fastWriteEpisodicFromTurn(
+        ref,
+        assistantId: _assistantId,
+        userText: text,
+      );
+    } on Object catch (_) {
+      // 情景快写 is non-critical; swallow errors.
     }
   }
 

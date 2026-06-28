@@ -239,6 +239,15 @@ class MemoryHomePage extends ConsumerWidget {
             value: config.autoWriteGlobal,
             onChanged: controller.setAutoWriteGlobal,
           ),
+          Divider(height: 1, color: theme.dividerColor),
+          _PrimaryRow(
+            icon: LucideIcons.zap,
+            accent: const Color(0xFFF59E0B),
+            label: '情景快写',
+            description: '对话后立即把本轮低成本存为情景记忆（不调模型），稍后由整理记忆提炼；需配合自动整理，否则会堆积（默认关闭）',
+            value: config.episodicFastWrite,
+            onChanged: controller.setEpisodicFastWrite,
+          ),
         ],
       ),
     );

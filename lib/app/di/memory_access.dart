@@ -372,6 +372,43 @@ Future<int> storeExtractedChatMemories(
   return written;
 }
 
+/// Default 显著性 for a 情景快写 row — low, since it is a raw unrefined event
+/// that 整理记忆 may later promote into a higher-importance semantic fact.
+const double _fastEpisodicImportance = 0.3;
+
+/// 情景快写 (海马快写): cheaply records the user's [userText] as a raw episodic
+/// memory — no LLM call — so 整理记忆 (Dream) can distil it into semantic facts
+/// later. A no-op (returns 0) when memory or 情景快写 is off, when the turn isn't
+/// worth recording ([fastEpisodicContent]), or when an equal memory already
+/// exists. Scoped to [assistantId] when present, else global. Best-effort, like
+/// the semantic [storeExtractedChatMemories] path.
+///
+/// Composed in `app/` so the chat feature never reaches into `memory/*`.
+Future<int> fastWriteEpisodicFromTurn(
+  Ref ref, {
+  required String assistantId,
+  required String userText,
+}) async {
+  final settings = ref.read(memorySettingsControllerProvider);
+  if (!settings.enabled || !settings.episodicFastWrite) return 0;
+  final content = fastEpisodicContent(userText);
+  if (content == null) return 0;
+  return storeExtractedChatMemories(
+    ref,
+    assistantId: assistantId,
+    candidates: [
+      MemoryExtractionCandidate(
+        content: content,
+        level: assistantId.isNotEmpty
+            ? MemoryLevel.owner
+            : MemoryLevel.global,
+        type: MemoryType.episodic,
+        importance: _fastEpisodicImportance,
+      ),
+    ],
+  );
+}
+
 /// Tally of an opportunistic 巩固 (Dream) run: how many semantic facts were
 /// newly [created], how many existing ones were [updated] (再巩固), how many
 /// episodic rows were [scannedEpisodic] across all buckets, and how many

@@ -47,6 +47,10 @@ class MemorySettingsController extends _$MemorySettingsController
   void setAutoWriteGlobal(bool value) =>
       persist(state.copyWith(autoWriteGlobal: value));
 
+  /// Toggles 情景快写 (cheap, no-LLM episodic capture of each turn).
+  void setEpisodicFastWrite(bool value) =>
+      persist(state.copyWith(episodicFastWrite: value));
+
   /// Sets the memory injection mode (记忆设置 sub-page).
   void setInjectionMode(MemoryInjectionMode mode) =>
       persist(state.copyWith(injectionMode: mode));
