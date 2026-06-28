@@ -373,18 +373,21 @@ Future<int> storeExtractedChatMemories(
 }
 
 /// Tally of an opportunistic 巩固 (Dream) run: how many semantic facts were
-/// newly [created], how many existing ones were [updated] (再巩固), and how many
-/// episodic rows were [scannedEpisodic] across all buckets.
+/// newly [created], how many existing ones were [updated] (再巩固), how many
+/// episodic rows were [scannedEpisodic] across all buckets, and how many
+/// soft-deleted memories were [purged] (permanently removed past retention).
 class MemoryConsolidationResult {
   const MemoryConsolidationResult({
     required this.created,
     required this.updated,
     required this.scannedEpisodic,
+    this.purged = 0,
   });
 
   final int created;
   final int updated;
   final int scannedEpisodic;
+  final int purged;
 
   int get changed => created + updated;
 }
@@ -427,6 +430,11 @@ Future<MemoryConsolidationResult> consolidateChatMemories(Ref ref) async {
       MemoryConsolidationResult(created: 0, updated: 0, scannedEpisodic: 0);
   final settings = ref.read(memorySettingsControllerProvider);
   if (!settings.enabled) return empty;
+  final store = ref.read(chatMemoryStoreProvider);
+
+  // Purge soft-deleted memories past their retention window first — this needs
+  // no model and reclaims space even when consolidation has nothing to do.
+  final purged = await store.purge(retentionDays: settings.retentionDays);
 
   // Resolve the consolidation model: 快速 → 标题 → current chat model.
   final auxState = ref.read(auxiliaryModelControllerProvider);
@@ -434,10 +442,23 @@ Future<MemoryConsolidationResult> consolidateChatMemories(Ref ref) async {
   var resolved = resolveAuxiliaryModel(auxState.fastModelKey, providers);
   resolved ??= resolveAuxiliaryModel(auxState.titleModelKey, providers);
   resolved ??= findCurrentModel(providers);
-  if (resolved == null) return empty;
+  // No model to consolidate with, but a purge may still have happened above —
+  // surface it (and refresh the lists) instead of discarding the count.
+  if (resolved == null) {
+    if (purged > 0) {
+      ref.invalidate(memoryCountsProvider);
+      ref.invalidate(globalMemoriesControllerProvider);
+      ref.invalidate(assistantMemoryOwnerCountsProvider);
+    }
+    return MemoryConsolidationResult(
+      created: 0,
+      updated: 0,
+      scannedEpisodic: 0,
+      purged: purged,
+    );
+  }
   final effective = effectiveModelFor(resolved);
   final gateway = ref.read(appLlmGatewayFactoryProvider).forModel(effective);
-  final store = ref.read(chatMemoryStoreProvider);
 
   // The buckets to consolidate: global + each assistant that owns memories.
   final scopes = <MemoryScope>[const MemoryScope.chatGlobal()];
@@ -516,15 +537,20 @@ Future<MemoryConsolidationResult> consolidateChatMemories(Ref ref) async {
       .read(memorySettingsControllerProvider.notifier)
       .setLastConsolidated(DateTime.now().millisecondsSinceEpoch);
 
-  if (created + updated > 0) {
+  if (created + updated > 0 || purged > 0) {
     ref.invalidate(memoryCountsProvider);
-    if (touchedGlobal) ref.invalidate(globalMemoriesControllerProvider);
-    if (touchedAssistant) ref.invalidate(assistantMemoryOwnerCountsProvider);
+    if (touchedGlobal || purged > 0) {
+      ref.invalidate(globalMemoriesControllerProvider);
+    }
+    if (touchedAssistant || purged > 0) {
+      ref.invalidate(assistantMemoryOwnerCountsProvider);
+    }
   }
   return MemoryConsolidationResult(
     created: created,
     updated: updated,
     scannedEpisodic: scanned,
+    purged: purged,
   );
 }
 

@@ -133,6 +133,43 @@ class MemoryDao extends DatabaseAccessor<AppDatabase> with _$MemoryDaoMixin {
         .length;
   }
 
+  /// Permanently removes memories that were soft-deleted before [cutoffMillis],
+  /// reclaiming space. A memory's deletion time is the newest `DELETE` audit
+  /// entry (falling back to its `createdAt` when none was recorded). The purged
+  /// memories' audit rows are dropped too, since the memory is gone for good.
+  /// Returns how many memories were purged.
+  Future<int> purgeSoftDeleted(int cutoffMillis) async {
+    final deleted = await (select(memoryRows)
+          ..where((t) => t.isDeleted.equals(true)))
+        .get();
+    if (deleted.isEmpty) return 0;
+
+    // Newest DELETE-audit time per memory, used as the deletion timestamp.
+    final maxDeletedAt = memoryHistoryRows.createdAt.max();
+    final deleteTimeRows = await (selectOnly(memoryHistoryRows)
+          ..addColumns([memoryHistoryRows.memoryId, maxDeletedAt])
+          ..where(memoryHistoryRows.action.equals(MemoryAction.delete.wire))
+          ..groupBy([memoryHistoryRows.memoryId]))
+        .get();
+    final deletedAtById = <String, int>{
+      for (final row in deleteTimeRows)
+        if (row.read(maxDeletedAt) != null)
+          row.read(memoryHistoryRows.memoryId)!: row.read(maxDeletedAt)!,
+    };
+
+    final expiredIds = <String>[
+      for (final row in deleted)
+        if ((deletedAtById[row.id] ?? row.createdAt) < cutoffMillis) row.id,
+    ];
+    if (expiredIds.isEmpty) return 0;
+
+    await (delete(memoryRows)..where((t) => t.id.isIn(expiredIds))).go();
+    await (delete(memoryHistoryRows)
+          ..where((t) => t.memoryId.isIn(expiredIds)))
+        .go();
+    return expiredIds.length;
+  }
+
   /// Appends one audit [entry] (ADD/UPDATE/DELETE) to the memory history log.
   Future<void> insertHistory(MemoryHistoryEntry entry) {
     return into(memoryHistoryRows).insert(
