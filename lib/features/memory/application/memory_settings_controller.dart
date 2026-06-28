@@ -69,4 +69,8 @@ class MemorySettingsController extends _$MemorySettingsController
   void setEmbeddingModelKey(String? key) => persist(
     state.copyWith(embeddingModelKey: (key == null || key.isEmpty) ? null : key),
   );
+
+  /// Records when the last 整理记忆 (consolidation) run finished.
+  void setLastConsolidated(int epochMillis) =>
+      persist(state.copyWith(lastConsolidatedAt: epochMillis));
 }

@@ -55,6 +55,10 @@ abstract class MemorySettings with _$MemorySettings {
     /// The `providerId:modelId` key of the embedding model used for semantic
     /// retrieval (null → not configured, semantic/auto fall back to keyword).
     String? embeddingModelKey,
+
+    /// Epoch milliseconds of the last 整理记忆 (consolidation/Dream) run, or null
+    /// if it has never run. Surfaced as 「最近整理」 on the 记忆 home page.
+    int? lastConsolidatedAt,
   }) = _MemorySettings;
 
   factory MemorySettings.fromJson(Map<String, dynamic> json) =>
