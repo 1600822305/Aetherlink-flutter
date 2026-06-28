@@ -47,10 +47,6 @@ class MemorySettingsController extends _$MemorySettingsController
   void setAutoWriteGlobal(bool value) =>
       persist(state.copyWith(autoWriteGlobal: value));
 
-  /// Toggles 情景快写 (cheap, no-LLM episodic capture of each turn).
-  void setEpisodicFastWrite(bool value) =>
-      persist(state.copyWith(episodicFastWrite: value));
-
   /// Sets the memory injection mode (记忆设置 sub-page).
   void setInjectionMode(MemoryInjectionMode mode) =>
       persist(state.copyWith(injectionMode: mode));
@@ -82,19 +78,6 @@ class MemorySettingsController extends _$MemorySettingsController
   /// Records when the last 整理记忆 (consolidation) run finished.
   void setLastConsolidated(int epochMillis) =>
       persist(state.copyWith(lastConsolidatedAt: epochMillis));
-
-  /// Toggles opportunistic auto-consolidation (off → manual 整理记忆 only).
-  void setAutoConsolidate(bool value) =>
-      persist(state.copyWith(autoConsolidate: value));
-
-  /// Sets the minimum hours between auto-consolidation runs (clamped ≥ 1).
-  void setAutoConsolidateIntervalHours(int value) => persist(
-    state.copyWith(autoConsolidateIntervalHours: value < 1 ? 1 : value),
-  );
-
-  /// Toggles ACT-R activation-weighted ranking (off → pure cosine top-k).
-  void setActivationRanking(bool value) =>
-      persist(state.copyWith(activationRanking: value));
 
   /// 实验性: toggles native sqlite-vec KNN retrieval (off → Dart cosine path).
   void setUseSqliteVec(bool value) =>

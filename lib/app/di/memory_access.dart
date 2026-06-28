@@ -263,14 +263,7 @@ Future<List<MemoryItem>> _semanticTopK(
       final vecHits = _sqliteVecTopK(ref, queryVector, pool, settings.topK);
       if (vecHits != null && vecHits.isNotEmpty) return vecHits;
     }
-    final ranked = settings.activationRanking
-        ? rankByActivation(
-            queryVector,
-            pool,
-            settings.topK,
-            nowMillis: DateTime.now().millisecondsSinceEpoch,
-          )
-        : rankBySimilarity(queryVector, pool, settings.topK);
+    final ranked = rankBySimilarity(queryVector, pool, settings.topK);
     if (ranked.isEmpty) {
       return _keywordTopK(candidates, query, settings.topK);
     }
@@ -575,43 +568,6 @@ Future<int> storeExtractedChatMemories(
   return written;
 }
 
-/// Default 显著性 for a 情景快写 row — low, since it is a raw unrefined event
-/// that 整理记忆 may later promote into a higher-importance semantic fact.
-const double _fastEpisodicImportance = 0.3;
-
-/// 情景快写 (海马快写): cheaply records the user's [userText] as a raw episodic
-/// memory — no LLM call — so 整理记忆 (Dream) can distil it into semantic facts
-/// later. A no-op (returns 0) when memory or 情景快写 is off, when the turn isn't
-/// worth recording ([fastEpisodicContent]), or when an equal memory already
-/// exists. Scoped to [assistantId] when present, else global. Best-effort, like
-/// the semantic [storeExtractedChatMemories] path.
-///
-/// Composed in `app/` so the chat feature never reaches into `memory/*`.
-Future<int> fastWriteEpisodicFromTurn(
-  Ref ref, {
-  required String assistantId,
-  required String userText,
-}) async {
-  final settings = ref.read(memorySettingsControllerProvider);
-  if (!settings.enabled || !settings.episodicFastWrite) return 0;
-  final content = fastEpisodicContent(userText);
-  if (content == null) return 0;
-  return storeExtractedChatMemories(
-    ref,
-    assistantId: assistantId,
-    candidates: [
-      MemoryExtractionCandidate(
-        content: content,
-        level: assistantId.isNotEmpty
-            ? MemoryLevel.owner
-            : MemoryLevel.global,
-        type: MemoryType.episodic,
-        importance: _fastEpisodicImportance,
-      ),
-    ],
-  );
-}
-
 /// Tally of an opportunistic 巩固 (Dream) run: how many semantic facts were
 /// newly [created], how many existing ones were [updated] (再巩固), how many
 /// episodic rows were [scannedEpisodic] across all buckets, and how many
@@ -797,34 +753,6 @@ Future<MemoryConsolidationResult> consolidateChatMemories(Ref ref) async {
     scannedEpisodic: scanned,
     purged: purged,
   );
-}
-
-/// Guards against re-entrant auto-consolidation within a process (e.g. several
-/// chat turns finishing in quick succession).
-bool _autoConsolidationInFlight = false;
-
-/// Opportunistically runs [consolidateChatMemories] after a chat turn when
-/// [shouldAutoConsolidate] allows it (memory + 自动整理 on, interval elapsed) and
-/// no auto-run is already in flight. Best-effort and never throws, so the chat
-/// pipeline can fire-and-forget it; returns null when it does not run. Mobile
-/// has no background scheduler, so this turn-driven trigger stands in for a
-/// timer.
-Future<MemoryConsolidationResult?> maybeAutoConsolidateChatMemories(
-  Ref ref,
-) async {
-  if (_autoConsolidationInFlight) return null;
-  final settings = ref.read(memorySettingsControllerProvider);
-  if (!shouldAutoConsolidate(settings, DateTime.now().millisecondsSinceEpoch)) {
-    return null;
-  }
-  _autoConsolidationInFlight = true;
-  try {
-    return await consolidateChatMemories(ref);
-  } on Object {
-    return null;
-  } finally {
-    _autoConsolidationInFlight = false;
-  }
 }
 
 /// Runs one bucket's consolidation prompt through [gateway] and parses the

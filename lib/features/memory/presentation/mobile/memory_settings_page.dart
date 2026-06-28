@@ -199,54 +199,6 @@ class MemorySettingsPage extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 14),
-          const _GroupLabel('检索排序'),
-          const SizedBox(height: 6),
-          _OutlinedCard(
-            child: _ToggleRow(
-              icon: LucideIcons.brain,
-              accent: const Color(0xFF8B5CF6),
-              label: '激活加权排序',
-              description: '向量检索在相似度主导的基础上，叠加近因/命中/重要性加权（语义与高重要记忆不因时间衰减）；关闭则按纯余弦排序',
-              value: config.activationRanking,
-              onChanged: controller.setActivationRanking,
-            ),
-          ),
-          const SizedBox(height: 14),
-          const _GroupLabel('自动整理'),
-          const SizedBox(height: 6),
-          _OutlinedCard(
-            child: Column(
-              children: [
-                _ToggleRow(
-                  icon: LucideIcons.moon,
-                  accent: const Color(0xFF6366F1),
-                  label: '自动整理记忆',
-                  description: '对话结束后，距上次整理超过下方间隔时，在后台自动把情景记忆提炼为长期记忆并清理过期记忆；关闭则仅手动「整理记忆」',
-                  value: config.autoConsolidate,
-                  onChanged: controller.setAutoConsolidate,
-                ),
-                Divider(height: 1, color: theme.dividerColor),
-                Opacity(
-                  opacity: config.autoConsolidate ? 1 : 0.5,
-                  child: IgnorePointer(
-                    ignoring: !config.autoConsolidate,
-                    child: _StepperRow(
-                      icon: LucideIcons.timer,
-                      accent: const Color(0xFF6366F1),
-                      label: '整理间隔（小时）',
-                      description: '两次自动整理之间至少间隔的小时数',
-                      value: config.autoConsolidateIntervalHours,
-                      min: 1,
-                      max: 168,
-                      step: 1,
-                      onChanged: controller.setAutoConsolidateIntervalHours,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
           const _GroupLabel('原生向量（实验）'),
           const SizedBox(height: 6),
           _OutlinedCard(
@@ -256,7 +208,7 @@ class MemorySettingsPage extends ConsumerWidget {
                   icon: LucideIcons.zap,
                   accent: const Color(0xFFEC4899),
                   label: 'sqlite-vec 原生向量检索',
-                  description: '实验性：用原生 sqlite-vec 扩展做向量最近邻检索（纯向量，不含激活加权）。扩展可能在部分平台无法加载，加载失败会自动退回 Dart 余弦。建议先用下方按钮检测可用性',
+                  description: '实验性：用原生 sqlite-vec 扩展做向量最近邻检索。扩展可能在部分平台无法加载，加载失败会自动退回 Dart 余弦。建议先用下方按钮检测可用性',
                   value: config.useSqliteVec,
                   onChanged: controller.setUseSqliteVec,
                 ),

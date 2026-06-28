@@ -96,28 +96,6 @@ List<MemoryExtractionCandidate> parseMemoryExtractionResponse(String raw) {
   return result;
 }
 
-/// Shortest user turn worth keeping as a 情景 (episodic) fast-write; below this
-/// it is almost certainly a greeting/acknowledgement, not an event.
-const int _minEpisodicChars = 6;
-
-/// Longest stored 情景 content; longer turns are truncated with an ellipsis so a
-/// single verbose message can't bloat the store.
-const int _maxEpisodicChars = 200;
-
-/// Cheap (no-LLM) 情景快写 heuristic: turns the user's [userText] into the raw
-/// episodic content to store, or null when it isn't worth recording. Collapses
-/// whitespace, drops too-short turns and bare questions (events, not queries),
-/// and truncates very long turns. Pure, so it is trivially unit-tested; the
-/// model-driven 深加工 (semantic extraction) still runs separately.
-String? fastEpisodicContent(String userText) {
-  final normalized = userText.replaceAll(RegExp(r'\s+'), ' ').trim();
-  if (normalized.length < _minEpisodicChars) return null;
-  // A turn that is purely a question is a query, not a recordable event.
-  if (normalized.endsWith('?') || normalized.endsWith('？')) return null;
-  if (normalized.length <= _maxEpisodicChars) return normalized;
-  return '${normalized.substring(0, _maxEpisodicChars).trimRight()}…';
-}
-
 /// Isolates the outermost `[...]` from [raw], or null when none is present.
 String? _extractJsonArray(String raw) {
   final start = raw.indexOf('[');
