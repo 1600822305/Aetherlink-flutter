@@ -78,16 +78,17 @@
 现状：`localSafBackendProvider` 是 **keepAlive 单例**（SAF 插件 Dart 侧无状态）。SSH 不同——**每个连接是有状态的 `SSHClient`**，必须按"连接"维度持有，且要管理建立/断开/重连。
 
 ```dart
-// 设想：按工作区(host+port+user+root 唯一)持有一个连接
+// 按 SshConnection.id（而非工作区）持有一个 SSHClient —— 多个指向同一连接的
+// 工作区共享同一条 transport（呼应 §5.1 方案 C 的连接复用）。
 @riverpod
-class RemoteSshBackends ... // family or 自管池
+class RemoteSshClients ... // keyed by connectionId，自管连接池
 ```
 
 落地建议：
-- `workspaceBackendProvider(workspace)`（现 family，ssh 分支当前抛错）改为：ssh → 返回 `RemoteSshBackend`，其内部持有/惰性建立 `SSHClient` + `SftpClient`。
-- 连接惰性建立（首次 IO 时 connect）；断线后下次调用自动重连；`dispose` 时 `client.close()`。
-- 一个工作区一个连接；多个 SSH 工作区各自独立连接。
-- **复用一条 SSH 连接同时承载 SFTP（文件）与 shell（终端）**（dartssh2 支持在同一 client 上开多通道），省一次握手。
+- `workspaceBackendProvider(workspace)`（现 family，ssh 分支当前抛错）改为：ssh → 返回 `RemoteSshBackend(connectionId)`，其内部惰性建立/复用 `SSHClient` + `SftpClient`。
+- **连接按 `connectionId` 池化复用**：同一服务器上多个工作区共用一条 SSH 连接，不重复握手。
+- 连接惰性建立（首次 IO 时 connect）；断线后下次调用自动重连；连接无引用时 `client.close()`。
+- **一条 SSH 连接同时承载 SFTP（文件）与 shell（终端）**（dartssh2 支持在同一 client 上开多通道），省握手。
 
 ### 4.2 连接状态对 UI 的暴露
 
@@ -99,14 +100,44 @@ class RemoteSshBackends ... // family or 自管池
 
 ## 5. 数据模型变更
 
-### 5.1 `Workspace` 扩展连接参数
+### 5.1 连接落点（已决策：方案 C — 独立连接实体 + 引用）
 
-现 `Workspace`（`domain/workspace.dart`）只有 `id/name/backendType/root/displayPath/lastOpenedAt`，`root` 对 SAF 是 `content://`。SSH 需要 host/port/username/认证方式。两条路线：
+现 `Workspace`（`domain/workspace.dart`）只有 `id/name/backendType/root/displayPath/lastOpenedAt`，`root` 对 SAF 是 `content://`。SSH 还需要 host/port/username/认证方式。考虑过三种落点：
 
-- **(A) 复用 `root` 编码为 URI**：`ssh://user@host:port/abs/path`。优点：不改 `Workspace` 结构。缺点：解析脆弱，认证信息混入。
-- **(B) `Workspace` 增加可选 `connection` 子对象**（host/port/username/authType/keyId…），`root` 仅存远端绝对路径。**推荐 (B)**：结构清晰，凭据与连接解耦。
+- **(A) 复用 `root` 编码为 URI**（`ssh://user@host:port/abs/path`）：不改结构，但解析脆弱、语义混乱、认证信息混入。**否决。**
+- **(B) `Workspace` 内嵌 `connection` 子对象**：清晰，但同一服务器多工作区会重复连接信息，改一处要改多份。
+- **(C) 独立 `SshConnection` 实体 + `Workspace.connectionId` 引用**：**采用**。借鉴企业级做法（VS Code Remote-SSH / JetBrains Gateway / Termius）——连接是可复用的一等公民，多个工作区共享一份连接；改端口/凭据一处生效。
 
-> 注意 `WorkspaceStore.open()` 现以 `(backendType, root)` 判重；引入 connection 后判重键要含 host/port/user。
+**数据模型：**
+
+```dart
+/// 一个可复用的 SSH 连接档案。多个 Workspace 可按 id 引用同一连接。
+class SshConnection {
+  final String id;            // 稳定 id（generateId('ssh')）
+  final String label;         // 展示名，如 "我的 VPS"
+  final String host;
+  final int port;             // 默认 22
+  final String username;
+  final SshAuthType authType; // password | privateKey
+  final String credentialKeyId; // → 指向独立 KV 里的秘密（见 §5.2），非秘密本身
+  final String? hostKeyFingerprint; // TOFU 记住的指纹（非秘密，普通 KV）
+  // 预留（首期不做）：jumpHost / keepAliveSec / ...
+}
+
+class Workspace {
+  // 现有字段不变……
+  final String root;          // SSH 下 = 远端绝对路径，如 /home/alice/project
+  final String? connectionId; // SSH 工作区指向一个 SshConnection；SAF 为 null
+}
+```
+
+- `SshConnection` 列表与「最近打开」一样，存进 Drift KV（独立键，如 `workspace_ssh_connections`），用一个 `SshConnectionStore` 管增删改查。
+- `root` 语义统一为"路径"；连接信息全在 `SshConnection` 里。
+- **秘密不进 `SshConnection`**：只存 `credentialKeyId`，秘密本体在独立 KV 键（§5.2）。
+
+> 判重：`WorkspaceStore.open()` 现以 `(backendType, root)` 判重；SSH 工作区改为 `(backendType, connectionId, root)`。
+>
+> 暂不做的企业级特性（列为后续）：读 `~/.ssh/config`、系统 `known_hosts`、ssh-agent、跳板机 ProxyJump、SSH 证书、连接池多路复用工程化。首期 `SshConnection` 结构已为它们预留扩展位。
 
 ### 5.2 凭据存储（已决策：先明文，后期按需加密）
 
@@ -121,7 +152,7 @@ secure storage 作为可选的后续硬化项，有需求时再统一上（API k
 
 首期必须做到的**最低防护**（成本几乎为零）：
 - SSH 秘密（password / private key / passphrase）虽明文存，但**必须排除出 backup / 导出功能**（这是明文方案下最大的真实泄露面：`adb backup`/云备份带出 DB）。检查 `features/backup/` 不导出 SSH 凭据键。
-- 秘密单独存（独立 KV 键，按 `keyId` 引用），不混进「最近打开」JSON——这样将来迁 secure storage 时只换存取实现，`Workspace.connection` 不动。
+- 秘密单独存（独立 KV 键，按 `credentialKeyId` 引用），不混进 `SshConnection` / 「最近打开」JSON——将来迁 secure storage 时只换存取实现，`SshConnection` 结构不动。
 - 私钥优先支持带 passphrase。
 
 后续硬化（非首期）：引入 `flutter_secure_storage`（Android Keystore / iOS Keychain），把 `keyId → 秘密` 的存取换成它即可，上层无感。
@@ -219,8 +250,8 @@ WorkspaceShellSession startShell({String? cwd, int cols, int rows});
 
 > 每阶段独立可合并、可验证；先打通只读，逐步加写/终端。
 
-- **SSH-0 依赖与接缝**：加 `dartssh2`；`workspace_text_ops.dart` 纯函数 + 单测；`workspaceBackendProvider` ssh 分支不再抛错（返回未连接的 `RemoteSshBackend`）。
-- **SSH-1 只读浏览**：连接配置表单 + 凭据明文 KV（独立键 + 排除备份）+ host key TOFU；SFTP `listDir/readFile/readFileBytes/getFileInfo/stat`；文件树/查看器走真连接。`verifyAccess`。
+- **SSH-0 依赖与接缝**：加 `dartssh2`；`SshConnection` 实体 + `SshConnectionStore` + `Workspace.connectionId` 字段（含 fromJson/toJson 迁移）；`workspace_text_ops.dart` 纯函数 + 单测；`workspaceBackendProvider` ssh 分支不再抛错（返回未连接的 `RemoteSshBackend`）。
+- **SSH-1 只读浏览**：连接配置表单（建/选 `SshConnection`）+ 凭据明文 KV（独立键 + 排除备份）+ host key TOFU；按 `connectionId` 池化连接；SFTP `listDir/readFile/readFileBytes/getFileInfo/stat`；文件树/查看器走真连接。`verifyAccess`。
 - **SSH-2 写与编辑**：SFTP 写族 + `workspace_text_ops` 接 `applyDiff/replace/insert/readFileRange`；编辑器 `_writable` 解耦为能力判断；事件总线 `_emit`（实时刷新）；`searchFiles`（远端 grep/find）。
 - **SSH-3 终端**：抽象新增 `startShell`/`WorkspaceShellSession`；SSH PTY 接入；第三页终端 UI（`xterm` 调研）。
 - **SSH-4（可选）外部监听**：`inotifywait` / 轮询补 `watch` 外部变更。
@@ -231,7 +262,7 @@ WorkspaceShellSession startShell({String? cwd, int cols, int rows});
 ## 14. 未决策点（请拍板）
 
 1. ~~**凭据存储**：引入 `flutter_secure_storage` 还是沿用现明文 KV？~~ → **已决策：首期明文 KV（独立键 + 排除备份），secure storage 列为后续硬化项。**
-2. **连接参数落点**：`Workspace.connection` 子对象（推荐）还是 `ssh://` URI 编码进 `root`？
+2. ~~**连接参数落点**：内嵌子对象还是 URI？~~ → **已决策：方案 C — 独立 `SshConnection` 实体 + `Workspace.connectionId` 引用（可复用、好扩展），见 §5.1。**
 3. **Termux 入口**：占位提示「请在 Termux 开 sshd」并跳 SSH 配置，还是单独做 intent 版 `TermuxBackend`？
 4. **终端组件**：用 `xterm` 还是自绘最小终端？
 5. **首期范围**：先到 SSH-1（只读）/ SSH-2（可写）/ 还是直奔含终端的 SSH-3？
