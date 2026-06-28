@@ -125,14 +125,14 @@ class _WorkspaceManagementPageState
     ref.listenManual<Workspace?>(currentWorkspaceProvider, (prev, next) {
       if (navigated || !mounted || next == null || next.id == before) return;
       navigated = true;
-      context.go(AppRouter.workspacePath);
+      context.push(AppRouter.workspacePath);
     });
     await showOpenWorkspaceSheet(context, ref);
   }
 
   Future<void> _open(Workspace w) async {
     await openRecent(ref, w);
-    if (mounted) context.go(AppRouter.workspacePath);
+    if (mounted) context.push(AppRouter.workspacePath);
   }
 
   Future<void> _rename(Workspace w) async {
