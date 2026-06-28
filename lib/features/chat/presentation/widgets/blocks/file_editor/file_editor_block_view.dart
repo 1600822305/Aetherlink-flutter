@@ -59,7 +59,9 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
         label: _opLabel(),
         status: status,
         pending: pending,
-        onApprove: pending == null ? null : () => _respond(pending, true),
+        onApprove: pending == null
+            ? null
+            : (grace) => _respond(pending, true, grace: grace),
         onReject: pending == null ? null : () => _respond(pending, false),
         errorText: hasError ? _resultError() : null,
       );
@@ -104,7 +106,7 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
           if (pending != null)
             FileEditorConfirmBar(
               summary: pending.summary,
-              onApprove: () => _respond(pending, true),
+              onApprove: (grace) => _respond(pending, true, grace: grace),
               onReject: () => _respond(pending, false),
             )
           else if (isProcessing)
@@ -249,10 +251,14 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
     return null;
   }
 
-  void _respond(ToolConfirmationRequest req, bool approved) {
+  void _respond(
+    ToolConfirmationRequest req,
+    bool approved, {
+    ConfirmationGrace grace = ConfirmationGrace.none,
+  }) {
     ref
         .read(toolConfirmationProvider.notifier)
-        .respond(req.id, approved: approved);
+        .respond(req.id, approved: approved, grace: grace);
   }
 
   IconData _fileIcon(String name) {

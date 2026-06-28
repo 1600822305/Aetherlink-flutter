@@ -156,7 +156,7 @@ class FileEditorOpCard extends StatelessWidget {
   final String label;
   final MessageBlockStatus status;
   final ToolConfirmationRequest? pending;
-  final VoidCallback? onApprove;
+  final void Function(ConfirmationGrace grace)? onApprove;
   final VoidCallback? onReject;
   final String? errorText;
 
@@ -285,7 +285,11 @@ class FileEditorConfirmBar extends StatelessWidget {
   });
 
   final String summary;
-  final VoidCallback onApprove;
+
+  /// Approve the operation. [ConfirmationGrace.none] runs it once;
+  /// [ConfirmationGrace.fiveMinutes] / [ConfirmationGrace.forever] additionally
+  /// open a 免确认 window for the rest of this conversation.
+  final void Function(ConfirmationGrace grace) onApprove;
   final VoidCallback onReject;
 
   @override
@@ -316,8 +320,10 @@ class FileEditorConfirmBar extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 8,
+            runSpacing: 8,
             children: [
               _ConfirmButton(
                 label: '拒绝',
@@ -325,12 +331,23 @@ class FileEditorConfirmBar extends StatelessWidget {
                 filled: false,
                 onTap: onReject,
               ),
-              const SizedBox(width: 8),
+              _ConfirmButton(
+                label: '5 分钟内免确认',
+                color: theme.colorScheme.primary,
+                filled: false,
+                onTap: () => onApprove(ConfirmationGrace.fiveMinutes),
+              ),
+              _ConfirmButton(
+                label: '本对话免确认',
+                color: theme.colorScheme.primary,
+                filled: false,
+                onTap: () => onApprove(ConfirmationGrace.forever),
+              ),
               _ConfirmButton(
                 label: '确认执行',
                 color: _warningColor,
                 filled: true,
-                onTap: onApprove,
+                onTap: () => onApprove(ConfirmationGrace.none),
               ),
             ],
           ),
