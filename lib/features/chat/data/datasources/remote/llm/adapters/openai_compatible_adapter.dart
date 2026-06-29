@@ -626,6 +626,9 @@ class OpenAiCompatibleAdapter implements LlmGateway {
     MessageRole.user => 'user',
     MessageRole.assistant => 'assistant',
     MessageRole.system => 'system',
+    // 虚拟根是消息树的结构性哨兵，会被读取路径过滤、不应进入 LLM 请求；
+    // 这里仅为穷尽性做防御性映射。
+    MessageRole.root => 'system',
   };
 
   static String _chatCompletionsUrl(String? baseUrl) {

@@ -682,6 +682,8 @@ class _ResultItem extends StatelessWidget {
       case MessageRole.assistant:
         return '助手';
       case MessageRole.system:
+      // 虚拟根（结构性哨兵）不会出现在搜索结果里；归入「系统」仅为穷尽性。
+      case MessageRole.root:
         return '系统';
       case MessageRole.user:
       case null:

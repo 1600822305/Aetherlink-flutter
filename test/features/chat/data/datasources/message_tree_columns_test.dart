@@ -42,8 +42,8 @@ void main() {
     siblingsGroupId: siblingsGroupId,
   );
 
-  test('schemaVersion is 7', () {
-    expect(db.schemaVersion, 7);
+  test('schemaVersion is at least 7 (tree columns present)', () {
+    expect(db.schemaVersion, greaterThanOrEqualTo(7));
   });
 
   test('parentId / siblingsGroupId round-trip through the entity blob', () async {
@@ -106,7 +106,7 @@ void main() {
     expect(row.read<String?>('role'), 'root');
   });
 
-  test('the parentId lookup index exists on a fresh v7 DB', () async {
+  test('the parentId lookup index exists on a fresh DB', () async {
     final rows = await db
         .customSelect(
           "SELECT name FROM sqlite_master "

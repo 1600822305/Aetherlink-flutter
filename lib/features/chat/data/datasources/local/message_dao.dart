@@ -3,6 +3,7 @@ import 'package:drift/drift.dart';
 import 'package:aetherlink_flutter/core/database/app_database.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/local/messages_table.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 
 part 'message_dao.g.dart';
 
@@ -32,11 +33,31 @@ class MessageDao extends DatabaseAccessor<AppDatabase> with _$MessageDaoMixin {
     return rows.map((row) => row.data).toList();
   }
 
+  /// Content messages of a topic, **excluding the structural virtual root**
+  /// (`role = 'root'`). The root is purely structural (message-tree model); no
+  /// current display/logic consumer wants it, so filtering here keeps the flat
+  /// list identical to before the tree backfill. Tree code that needs the root
+  /// uses [getRootByTopicId] (or, later, the dedicated tree queries).
   Future<List<Message>> getByTopicId(String topicId) async {
     final rows = await (select(
       messageRows,
     )..where((t) => t.topicId.equals(topicId))).get();
-    return rows.map((row) => row.data).toList();
+    return rows
+        .map((row) => row.data)
+        .where((m) => m.role != MessageRole.root)
+        .toList();
+  }
+
+  /// The topic's virtual-root message (`role = 'root'`), or null if it has none
+  /// yet (pre-backfill). Used by the tree backfill (idempotency guard) and tree
+  /// read paths.
+  Future<Message?> getRootByTopicId(String topicId) async {
+    final row =
+        await (select(messageRows)..where(
+              (t) => t.topicId.equals(topicId) & t.role.equals('root'),
+            ))
+            .getSingleOrNull();
+    return row?.data;
   }
 
   Future<List<Message>> getByAssistantId(String assistantId) async {

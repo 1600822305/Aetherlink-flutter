@@ -17,6 +17,7 @@ import 'package:aetherlink_flutter/features/chat/data/datasources/local/message_
 import 'package:aetherlink_flutter/features/chat/data/datasources/local/message_dao.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/local/messages_table.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/local/model_converters.dart';
+import 'package:aetherlink_flutter/features/chat/data/message_tree_backfill.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/local/topic_dao.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/local/topics_table.dart';
 // Domain entities persisted as JSON blobs. The generated `app_database.g.dart`
@@ -82,7 +83,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.open() : super(_openConnection());
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   // v1 → v2 adds the model-provider store ([ProviderRows]); v2 → v3 adds the
   // sidebar group store ([GroupRows]); v3 → v4 adds the key/value preferences
@@ -95,7 +96,13 @@ class AppDatabase extends _$AppDatabase {
   // columns on [MessageRows] and adds the parentId lookup index — PR-1 of the
   // message-tree refactor (see docs/design/message-tree-model-design.md). It
   // only adds columns + index; backfill, the single-root partial-unique index
-  // and read-path switch land in later PRs.
+  // and read-path switch land in later PRs. v7 → v8 backfills existing data
+  // into the tree shape (PR-2): a virtual root per topic + parentId /
+  // siblingsGroupId / activeNodeId, via [backfillMessageTree]. The single-root
+  // partial-unique index is deliberately deferred to PR-3 — until the write
+  // path attaches new messages to the tree, a freshly-sent message would still
+  // have parentId=null and collide with the (also-null-parent) root under that
+  // index.
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),
@@ -125,6 +132,11 @@ class AppDatabase extends _$AppDatabase {
           'CREATE INDEX IF NOT EXISTS idx_messages_parent_id '
           'ON message_rows (parent_id)',
         );
+      }
+      if (from < 8) {
+        // 回填存量数据为树形：建虚拟根 + parentId/siblingsGroupId + activeNodeId。
+        // 非破坏性（不删旧字段）、幂等（已有根的话题跳过），失败可由回退代码恢复。
+        await backfillMessageTree(this);
       }
     },
   );
