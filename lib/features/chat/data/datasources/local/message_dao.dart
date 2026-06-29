@@ -71,5 +71,12 @@ class MessageDao extends DatabaseAccessor<AppDatabase> with _$MessageDaoMixin {
         topicId: message.topicId,
         assistantId: message.assistantId,
         data: message,
+        // 树模型列（PR-1）：从实体取值写入真实列，与 data blob 内保持一致。
+        // 现阶段 parentId 多为 null（回填在 PR-2），role/siblingsGroupId/createdAt
+        // 对新写入即刻可用，但暂无读取方依赖。
+        parentId: Value(message.parentId),
+        role: Value(message.role.name),
+        siblingsGroupId: Value(message.siblingsGroupId),
+        createdAt: Value(message.createdAt),
       );
 }

@@ -27,6 +27,10 @@ abstract class Topic with _$Topic {
     @IsoDateTimeConverter() required DateTime updatedAt,
     @Default(false) bool isNameManuallyEdited,
     @Default(<String>[]) List<String> messageIds,
+    // 消息树模型（见 docs/design/message-tree-model-design.md）：当前选中的叶子，
+    // 读取路径从它沿父链走到（不含）虚拟根。空话题为 null。话题本就整体存 JSON
+    // blob，故无需 Drift schema 变更。PR-1 仅引入字段，回填与读取在后续 PR。
+    String? activeNodeId,
     String? lastMessageTime,
     String? lastMessagePreview,
     String? inputTemplate,

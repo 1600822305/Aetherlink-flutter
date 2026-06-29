@@ -82,7 +82,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.open() : super(_openConnection());
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   // v1 → v2 adds the model-provider store ([ProviderRows]); v2 → v3 adds the
   // sidebar group store ([GroupRows]); v3 → v4 adds the key/value preferences
@@ -90,7 +90,12 @@ class AppDatabase extends _$AppDatabase {
   // one-time IndexedDB (`aetherlink-db-new` v9) → SQLite data import remains a
   // separate cross-cutting task (see docs/ROADMAP.md). v4 → v5 adds the
   // long-term memory store ([MemoryRows]); v5 → v6 adds the memory audit log
-  // ([MemoryHistoryRows]).
+  // ([MemoryHistoryRows]). v6 → v7 promotes the message-tree columns
+  // (parentId / role / siblingsGroupId / createdAt) from the JSON blob to real
+  // columns on [MessageRows] and adds the parentId lookup index — PR-1 of the
+  // message-tree refactor (see docs/design/message-tree-model-design.md). It
+  // only adds columns + index; backfill, the single-root partial-unique index
+  // and read-path switch land in later PRs.
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),
@@ -109,6 +114,17 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 6) {
         await m.createTable(memoryHistoryRows);
+      }
+      if (from < 7) {
+        await m.addColumn(messageRows, messageRows.parentId);
+        await m.addColumn(messageRows, messageRows.role);
+        await m.addColumn(messageRows, messageRows.siblingsGroupId);
+        await m.addColumn(messageRows, messageRows.createdAt);
+        // @TableIndex 只在 createTable/createAll 时建；对已存在的表手动建索引。
+        await customStatement(
+          'CREATE INDEX IF NOT EXISTS idx_messages_parent_id '
+          'ON message_rows (parent_id)',
+        );
       }
     },
   );

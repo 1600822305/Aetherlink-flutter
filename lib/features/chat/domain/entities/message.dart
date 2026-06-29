@@ -22,6 +22,12 @@ abstract class Message with _$Message {
     required MessageRole role,
     required String assistantId,
     required String topicId,
+    // 消息树模型（见 docs/design/message-tree-model-design.md）：
+    // [parentId] 指父消息（仅虚拟根为 null）；[siblingsGroupId] 0=普通单分支，
+    // >0=同一父下的多模型兄弟组成员。值同时冗余进 JSON blob 与提升后的真实列。
+    // PR-1 仅引入字段（默认 null/0），回填与读取在后续 PR。
+    String? parentId,
+    @Default(0) int siblingsGroupId,
     @IsoDateTimeConverter() required DateTime createdAt,
     @IsoDateTimeConverter() DateTime? updatedAt,
     required MessageStatus status,
