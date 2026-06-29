@@ -120,9 +120,15 @@ class MessageActionsBuilder {
           onInvoke: openVersionHistory,
         ),
       MessageAction(
-        id: MessageActionId.branch,
+        id: MessageActionId.fork,
         icon: LucideIcons.gitBranch,
-        tooltip: '创建分支',
+        tooltip: '从此处分叉',
+        onInvoke: branchFromHere,
+      ),
+      MessageAction(
+        id: MessageActionId.branch,
+        icon: LucideIcons.save,
+        tooltip: '另存为新话题',
         onInvoke: createBranch,
       ),
       MessageAction(
@@ -238,11 +244,21 @@ class MessageActionsBuilder {
     );
   }
 
+  /// 话题内树分支（决策 B 选项 1 的核心）：把当前对话定位到此消息为活动叶子，下一次
+  /// 发送即在此处长出一条新分支（`switchToBranch` = setActiveNode + 刷新）。已有后续
+  /// 的消息会暂时从展示中隐去，可用 `◀ k/n ▶` 切换器切回。
+  void branchFromHere() {
+    ref.read(chatControllerProvider.notifier).switchToBranch(view.id);
+    _toast('已定位到此消息，下次发送将在此处创建新分支');
+  }
+
+  /// 另存为新话题（决策 B 选项 1 保留的克隆语义）：把到此消息为止的前缀克隆成一个新
+  /// 话题。与话题内分支并存。
   Future<void> createBranch() async {
     final created = await ref
         .read(topicsProvider.notifier)
         .createBranch(view.id);
-    _toast(created == null ? '创建分支失败' : '已创建分支');
+    _toast(created == null ? '创建失败' : '已另存为新话题');
   }
 
   void delete() =>

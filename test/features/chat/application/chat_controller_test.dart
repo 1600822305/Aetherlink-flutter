@@ -22,6 +22,7 @@ import 'package:aetherlink_flutter/features/chat/data/repositories/chat_reposito
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
+import 'package:aetherlink_flutter/shared/domain/topic.dart';
 
 /// A fake gateway that replays a fixed chunk script — no network, no key. It
 /// records the request it was asked to stream so tests can assert the composed
@@ -598,4 +599,81 @@ void main() {
     );
     expect(first.foldSelected, isFalse);
   });
+
+  test(
+    'branch fork: switcher data appears and switchActiveBranch crosses branches',
+    () async {
+      final gateway = _FakeGateway(const [
+        LlmStreamChunk.textDelta('a'),
+        LlmStreamChunk.done(),
+      ]);
+      // A real current topic (not the null override) so the controller's
+      // _topicId survives the refresh that switchToBranch triggers.
+      final now = DateTime.now();
+      final topic = Topic(
+        id: 'topic-fork',
+        assistantId: 'default-assistant',
+        name: '分叉',
+        createdAt: now,
+        updatedAt: now,
+      );
+      await repo.saveTopic(topic);
+      final container = ProviderContainer(
+        overrides: [
+          chatRepositoryProvider.overrideWithValue(repo),
+          llmGatewayFactoryProvider.overrideWithValue(_FakeFactory(gateway)),
+          currentTopicProvider.overrideWith((ref) async => topic),
+          appCurrentModelProvider.overrideWith((ref) async => _currentModel()),
+          appModelProvidersProvider.overrideWith(
+            (ref) async => <ModelProvider>[_currentModel().provider],
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final ctrl = container.read(chatControllerProvider.notifier);
+      await container.read(chatControllerProvider.future);
+
+      await ctrl.send('q1'); // U1 → A1 (active A1)
+      await ctrl.send('q2'); // U2(child of A1) → A2 (active A2)
+
+      final all = await repo.getMessagesByTopicId(topic.id)
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      final u1 = all.firstWhere((m) => m.role == MessageRole.user);
+      final a1 = all.firstWhere(
+        (m) => m.role == MessageRole.assistant && m.askId == u1.id,
+      );
+
+      // Go back to A1 and ask a different follow-up → a fork at A1.
+      await ctrl.switchToBranch(a1.id);
+      await ctrl.send('q3'); // U3(child of A1) → A3 (active A3)
+
+      // A1 now has two regular branch children (U2, U3).
+      final children =
+          (await repo.getMessagesByTopicId(topic.id))
+              .where((m) => m.parentId == a1.id && m.siblingsGroupId == 0)
+              .toList()
+            ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      expect(children, hasLength(2));
+      final u2Id = children.first.id;
+      final u3Id = children.last.id;
+
+      // Displayed (active) path is U1 → A1 → U3 → A3; U3 carries the switcher
+      // data for both branch siblings. Branch info is computed in build()/_load,
+      // so reload (as a topic switch / refresh would) before asserting it.
+      container.invalidate(chatControllerProvider);
+      var state = await container.read(chatControllerProvider.future);
+      final u3View = state.messages.firstWhere((v) => v.id == u3Id);
+      expect(u3View.branchSiblingIds, containsAll(<String>[u2Id, u3Id]));
+      expect(u3View.branchSiblingIds, hasLength(2));
+      expect(state.messages.any((v) => v.id == u2Id), isFalse);
+
+      // Switch to the other branch → active path becomes U1 → A1 → U2 → A2.
+      await ctrl.switchActiveBranch(u2Id);
+      container.invalidate(chatControllerProvider);
+      state = await container.read(chatControllerProvider.future);
+      expect(state.messages.any((v) => v.id == u2Id), isTrue);
+      expect(state.messages.any((v) => v.id == u3Id), isFalse);
+      expect(state.messages.last.role, MessageRole.assistant);
+    },
+  );
 }

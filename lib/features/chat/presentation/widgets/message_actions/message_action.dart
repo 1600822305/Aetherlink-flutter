@@ -16,6 +16,7 @@ enum MessageActionId {
   tts,
   translate,
   versionHistory,
+  fork,
   branch,
   delete,
 }

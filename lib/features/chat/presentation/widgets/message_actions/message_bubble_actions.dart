@@ -65,12 +65,21 @@ class _MessageMicroBubblesState extends ConsumerState<MessageMicroBubbles> {
     final primary = actions.where((a) => a.isPrimary).toList();
 
     final hasVersions = widget.view.versions.isNotEmpty;
-    if (primary.isEmpty && !hasVersions) return const SizedBox.shrink();
+    final hasBranches = widget.view.branchSiblingIds.length > 1;
+    if (primary.isEmpty && !hasVersions && !hasBranches) {
+      return const SizedBox.shrink();
+    }
 
     return Wrap(
       spacing: 6,
       runSpacing: 6,
       children: [
+        if (hasBranches)
+          _BranchSwitcher(
+            view: widget.view,
+            baseColor: baseColor,
+            pillColor: pillColor,
+          ),
         if (hasVersions)
           _VersionSwitcher(
             view: widget.view,
@@ -127,14 +136,16 @@ class _MessageActionMenuState extends ConsumerState<MessageActionMenu> {
     MessageActionId.regenerate,
     MessageActionId.translate,
     MessageActionId.versionHistory,
+    MessageActionId.fork,
     MessageActionId.branch,
     MessageActionId.delete,
   ];
 
-  /// Original web shows leading icons only on 导出 (FileText) and 分支
-  /// (GitBranch); every other menu item is text-only.
+  /// Leading icons on 导出 (FileText), 从此处分叉 (GitBranch) and 另存为新话题
+  /// (Save); every other menu item is text-only.
   static const Set<MessageActionId> _menuIconIds = {
     MessageActionId.export,
+    MessageActionId.fork,
     MessageActionId.branch,
   };
 
@@ -514,6 +525,78 @@ class _VersionSwitcher extends ConsumerWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (_) => MessageVersionHistorySheet(messageId: view.id),
+    );
+  }
+}
+
+/// The 分支切换 control rendered at a 叉路 (a message whose parent has multiple
+/// regular branch children). Shows `‹ k/n ›` arrows that flip the topic's active
+/// branch ([ChatController.switchActiveBranch]); wraps around like Cherry's
+/// `SiblingNavigator`. Only shown when [ChatMessageView.branchSiblingIds] has 2+.
+class _BranchSwitcher extends ConsumerWidget {
+  const _BranchSwitcher({
+    required this.view,
+    required this.baseColor,
+    required this.pillColor,
+  });
+
+  final ChatMessageView view;
+  final Color baseColor;
+  final Color pillColor;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final siblings = view.branchSiblingIds;
+    final total = siblings.length;
+    final index = siblings.indexOf(view.id).clamp(0, total - 1);
+    final label = '${index + 1}/$total';
+
+    void switchBy(int direction) {
+      final next = (index + direction + total) % total;
+      ref
+          .read(chatControllerProvider.notifier)
+          .switchActiveBranch(siblings[next]);
+    }
+
+    return Tooltip(
+      message: '切换分支',
+      child: Material(
+        color: pillColor,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: _pillShadowColor,
+        elevation: 1,
+        shape: const StadiumBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _ArrowButton(
+              icon: LucideIcons.chevronLeft,
+              color: baseColor,
+              enabled: true,
+              onTap: () => switchBy(-1),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(LucideIcons.gitBranch, size: 12, color: baseColor),
+                const SizedBox(width: 3),
+                Text(
+                  label,
+                  style: theme.textTheme.labelSmall?.copyWith(color: baseColor),
+                ),
+              ],
+            ),
+            _ArrowButton(
+              icon: LucideIcons.chevronRight,
+              color: baseColor,
+              enabled: true,
+              onTap: () => switchBy(1),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -41,6 +41,11 @@ abstract class ChatMessageView with _$ChatMessageView {
     /// Whether this is the chosen sibling of its multi-model group (the one the
     /// conversation continues from). Drives the 对比 group's selected highlight.
     @Default(false) bool foldSelected,
+    /// When this message sits at a 叉路 (its parent has multiple regular branch
+    /// children, e.g. from 从此处分叉 + 发送), the ids of all those branch siblings
+    /// in display order — drives the `◀ k/n ▶` branch switcher. Length ≤ 1 means
+    /// no fork. Computed in `build()`/`_load`, empty on live streaming views.
+    @Default(<String>[]) List<String> branchSiblingIds,
     @Default(<MessageVersion>[]) List<MessageVersion> versions,
     String? currentVersionId,
     Usage? usage,

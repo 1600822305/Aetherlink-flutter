@@ -79,10 +79,15 @@ class ChatRepositoryImpl implements ChatRepository {
       rootId: root?.id,
       activeNodeId: topic?.activeNodeId,
     );
-    // Safety net: if the tree projection doesn't cover every content message
-    // (legacy/inconsistent data, or off-path branches), fall back to the
-    // chronological order so the display never silently loses a message.
-    if (ordered.length != content.length) {
+    // A non-empty projection is the authoritative active path: it *intentionally*
+    // excludes off-path branches (forks created via 从此处分叉, or the unselected
+    // members of a multi-model group), so we trust it even when it's shorter than
+    // the full content — that's what makes branch switching actually hide the
+    // other branch. Only fall back to a chronological sort when projection is
+    // impossible (missing root/active node, a cycle, or the active node can't
+    // reach the root, e.g. legacy/restored flat data) so a broken tree never
+    // silently loses messages.
+    if (ordered.isEmpty) {
       return content..sort(compareMessagesChronologically);
     }
     return ordered;

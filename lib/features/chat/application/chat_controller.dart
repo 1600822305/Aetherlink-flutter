@@ -185,11 +185,45 @@ class ChatController extends _$ChatController {
     // multi-model siblings); getBranchMessages falls back to a chronological
     // sort when the tree can't project faithfully, so the set never changes.
     final messages = await _repo.getBranchMessages(topic.id);
+    // Group every content message by parent so each displayed node can report
+    // its regular (non multi-model) branch siblings — the 叉路 switcher data.
+    final all = await _repo.getMessagesByTopicId(topic.id);
+    final childrenByParent = <String, List<Message>>{};
+    for (final m in all) {
+      (childrenByParent[m.parentId ?? ''] ??= <Message>[]).add(m);
+    }
     final views = <ChatMessageView>[];
     for (final message in messages) {
-      views.add(await _viewOf(message));
+      var view = await _viewOf(message);
+      final siblings = _branchSiblingIdsOf(message, childrenByParent);
+      if (siblings.length > 1) {
+        view = view.copyWith(branchSiblingIds: siblings);
+      }
+      views.add(view);
     }
     return ChatState(messages: views);
+  }
+
+  /// The ids of [message]'s regular branch siblings (its parent's children with
+  /// `siblingsGroupId == 0`, chronologically ordered) when there is a 叉路 — used
+  /// by the `◀ k/n ▶` branch switcher. Returns empty when [message] is part of a
+  /// multi-model group or there is only one branch. Multi-model groups are a
+  /// separate concern handled by the comparison group widget.
+  List<String> _branchSiblingIdsOf(
+    Message message,
+    Map<String, List<Message>> childrenByParent,
+  ) {
+    final parent = message.parentId;
+    if (parent == null || message.siblingsGroupId != 0) {
+      return const <String>[];
+    }
+    final siblings =
+        (childrenByParent[parent] ?? const <Message>[])
+            .where((c) => c.siblingsGroupId == 0)
+            .toList()
+          ..sort(compareMessagesChronologically);
+    if (siblings.length <= 1) return const <String>[];
+    return [for (final s in siblings) s.id];
   }
 
   /// Sends [text] as a user message and streams the assistant reply. A
@@ -2599,6 +2633,38 @@ class ChatController extends _$ChatController {
     final topicId = _topicId;
     if (topicId == null) return;
     await _repo.setActiveNode(topicId, nodeId);
+    ref.read(chatRefreshProvider.notifier).bump();
+  }
+
+  /// Switches the active branch to the one headed by [headId] (a branch sibling
+  /// from the `◀ k/n ▶` switcher), descending to that branch's deepest leaf so
+  /// the whole alternate path shows — not just the fork point. Follows the
+  /// `foldSelected` child at each step (multi-model selected reply), else the
+  /// last child chronologically. No-op while streaming.
+  Future<void> switchActiveBranch(String headId) async {
+    final snapshot = state.value;
+    if (snapshot == null || snapshot.isStreaming) return;
+    final topicId = _topicId;
+    if (topicId == null) return;
+    final all = await _repo.getMessagesByTopicId(topicId);
+    final childrenByParent = <String, List<Message>>{};
+    for (final m in all) {
+      (childrenByParent[m.parentId ?? ''] ??= <Message>[]).add(m);
+    }
+    var leaf = headId;
+    final guard = <String>{};
+    while (guard.add(leaf)) {
+      final children = childrenByParent[leaf];
+      if (children == null || children.isEmpty) break;
+      children.sort(compareMessagesChronologically);
+      leaf = children
+          .firstWhere(
+            (c) => c.foldSelected == true,
+            orElse: () => children.last,
+          )
+          .id;
+    }
+    await _repo.setActiveNode(topicId, leaf);
     ref.read(chatRefreshProvider.notifier).bump();
   }
 
