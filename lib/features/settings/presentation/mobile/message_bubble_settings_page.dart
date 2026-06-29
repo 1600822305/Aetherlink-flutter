@@ -285,10 +285,6 @@ class _FunctionCard extends StatelessWidget {
             items: _modes,
             onChanged: controller.setMessageActionMode,
           ),
-          const SizedBox(height: 12),
-          const _PendingNote(
-            text: '消息操作功能（复制 / 重新生成 / 播放 / 版本切换）即将支持，以下功能设置会先保存。',
-          ),
           if (isBubbles) ...[
             const _CardDivider(),
             _SubSwitchRow(
@@ -1016,40 +1012,6 @@ class _CardHeader extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// A "saved-only" banner explaining a setting is not wired to the chat view yet.
-class _PendingNote extends StatelessWidget {
-  const _PendingNote({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final hue = theme.colorScheme.primary;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: hue.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: hue.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(LucideIcons.info, size: 16, color: hue),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: theme.textTheme.bodySmall?.copyWith(color: hue),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

@@ -11,7 +11,8 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.da
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_block_renderer.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/bubble_footer_layout.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_toolbar.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_bubble_actions.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_toolbar.dart';
 import 'package:aetherlink_flutter/features/chat/application/user_avatar_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/user_avatar_widget.dart';
 import 'package:aetherlink_flutter/shared/domain/message_bubble_settings.dart';
@@ -110,11 +111,13 @@ class ChatMessageBubble extends ConsumerWidget {
     final align = isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start;
 
     final isSummaryMessage = view.blocks.any((b) => b is ContextSummaryBlock);
+    final showActions =
+        !isStreaming && view.blocks.isNotEmpty && !isSummaryMessage;
     final showToolbar =
-        settings.messageActionMode == MessageActionMode.toolbar &&
-        !isStreaming &&
-        view.blocks.isNotEmpty &&
-        !isSummaryMessage;
+        showActions && settings.messageActionMode == MessageActionMode.toolbar;
+    // 功能气泡模式: small 功能气泡 above the bubble + a 三点菜单 alongside them.
+    final showBubbleActions =
+        showActions && settings.messageActionMode == MessageActionMode.bubbles;
 
     // Check whether this message was truncated and should show a "继续生成"
     // button. Only the last assistant message is eligible.
@@ -154,6 +157,28 @@ class ChatMessageBubble extends ConsumerWidget {
         crossAxisAlignment: align,
         children: [
           if (header != null) ...[header, const SizedBox(height: 4)],
+          if (showBubbleActions) ...[
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (settings.showMicroBubbles) ...[
+                  MessageMicroBubbles(
+                    view: view,
+                    showTtsButton: settings.showTTSButton,
+                    versionSwitchStyle: settings.versionSwitchStyle,
+                    baseColor: customTextColor,
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                MessageActionMenu(
+                  view: view,
+                  showTtsButton: settings.showTTSButton,
+                  baseColor: customTextColor,
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+          ],
           LayoutBuilder(
             builder: (context, constraints) {
               final maxWidth = constraints.maxWidth * maxWidthFactor;

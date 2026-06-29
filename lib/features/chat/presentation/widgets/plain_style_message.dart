@@ -10,7 +10,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_block_renderer.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_toolbar.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_toolbar.dart';
 
 /// A single chat message rendered in **plain / minimal** style.
 ///
