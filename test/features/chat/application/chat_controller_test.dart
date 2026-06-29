@@ -600,6 +600,42 @@ void main() {
     expect(first.foldSelected, isFalse);
   });
 
+  test('switchToBranch onto a multi-model sibling syncs its fold flag', () async {
+    final gateway = _FakeGateway(const [
+      LlmStreamChunk.textDelta('Hi'),
+      LlmStreamChunk.done(),
+    ]);
+    final container = _container(
+      gateway: gateway,
+      repo: repo,
+      current: _currentModel(),
+    );
+
+    await container.read(chatControllerProvider.future);
+    await container
+        .read(chatControllerProvider.notifier)
+        .sendMultiModel('hi', [_currentModel(), modelB()]);
+
+    final topic = (await repo.getRecentTopics()).single;
+    var messages = await repo.getMessagesByTopicId(topic.id);
+    final second = messages.firstWhere((m) => m.model?.id == 'gpt-test-2');
+    expect(second.foldSelected ?? false, isFalse);
+
+    // Picking the sibling in the 分支管理 canvas must move the active leaf AND
+    // flip foldSelected, so 折叠 mode shows the same model the conversation
+    // continues from.
+    await container
+        .read(chatControllerProvider.notifier)
+        .switchToBranch(second.id);
+
+    final reloaded = await repo.getTopic(topic.id);
+    expect(reloaded!.activeNodeId, second.id);
+    messages = await repo.getMessagesByTopicId(topic.id);
+    final first = messages.firstWhere((m) => m.model?.id == 'gpt-test');
+    expect(messages.firstWhere((m) => m.id == second.id).foldSelected, isTrue);
+    expect(first.foldSelected, isFalse);
+  });
+
   test(
     'branch fork: switcher data appears and switchActiveBranch crosses branches',
     () async {

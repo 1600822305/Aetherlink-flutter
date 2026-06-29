@@ -716,19 +716,30 @@ class ChatController extends _$ChatController {
     if (message == null || message.siblingsGroupId <= 0) return;
     if (message.foldSelected == true) return;
 
-    // Flip foldSelected within the group, then move the active leaf.
+    await _syncFoldSelectedForGroup(topicId, messageId);
+    await _repo.setActiveNode(topicId, messageId);
+    ref.read(chatRefreshProvider.notifier).bump();
+  }
+
+  /// Makes [nodeId] the `foldSelected` member of its multi-model group (clearing
+  /// the flag on its peers), so the 对比 group's 折叠 selection stays in sync with
+  /// whatever made [nodeId] the active branch — whether that was the in-group
+  /// model chip ([selectSibling]) or the 分支管理 canvas ([switchToBranch]). A
+  /// no-op when [nodeId] isn't a grouped sibling or is already selected.
+  Future<void> _syncFoldSelectedForGroup(String topicId, String nodeId) async {
+    final message = await _repo.getMessage(nodeId);
+    if (message == null || message.siblingsGroupId <= 0) return;
+    if (message.foldSelected == true) return;
     final all = await _repo.getMessagesByTopicId(topicId);
     for (final m in all) {
       if (m.parentId == message.parentId &&
           m.siblingsGroupId == message.siblingsGroupId) {
-        final selected = m.id == messageId;
+        final selected = m.id == nodeId;
         if ((m.foldSelected ?? false) != selected) {
           await _repo.saveMessage(m.copyWith(foldSelected: selected));
         }
       }
     }
-    await _repo.setActiveNode(topicId, messageId);
-    ref.read(chatRefreshProvider.notifier).bump();
   }
 
   /// Persists the multi-model 对比 layout [style] onto every member of a group
@@ -2696,11 +2707,17 @@ class ChatController extends _$ChatController {
   /// Switches the displayed branch to the one whose leaf is [nodeId] (moves the
   /// topic's active leaf), then reloads. The next reply will continue from the
   /// newly-active branch. A no-op while a reply is streaming or with no topic.
+  ///
+  /// When [nodeId] is a multi-model sibling, this also makes it the group's
+  /// `foldSelected` one, so picking a reply in the 分支管理 canvas keeps the 对比
+  /// group's 折叠 selection in sync (otherwise 折叠 would still show the old model
+  /// while the conversation continues from the tapped one).
   Future<void> switchToBranch(String nodeId) async {
     final snapshot = state.value;
     if (snapshot == null || snapshot.isStreaming) return;
     final topicId = _topicId;
     if (topicId == null) return;
+    await _syncFoldSelectedForGroup(topicId, nodeId);
     await _repo.setActiveNode(topicId, nodeId);
     ref.read(chatRefreshProvider.notifier).bump();
   }
