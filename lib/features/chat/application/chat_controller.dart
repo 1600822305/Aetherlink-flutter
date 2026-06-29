@@ -1044,17 +1044,6 @@ class ChatController extends _$ChatController {
     }
   }
 
-  /// Regenerates the assistant reply [messageId] in place.
-  ///
-  /// Port of the toolbar 重新生成 action (`regenerateResponse` with
-  /// `source: 'assistant'`): the message keeps its id but its old blocks are
-  /// dropped, it is reset to a streaming state re-pointed at the current model,
-  /// and a fresh reply is streamed from the conversation that preceded it.
-  /// Before overwriting, the currently displayed content is archived as a
-  /// version via [_prepareForRegenerate] (mirroring `prepareForRegenerate`), so
-  /// the previous reply can be restored from 版本历史. A no-op while a reply is
-  /// streaming, when the conversation has not loaded, when no model is selected,
-  /// or when [messageId] is not a loaded assistant message.
   /// Resolves the [CurrentModel] for an assistant reply's own [model]: the
   /// listed provider that owns `model.provider` paired with its live copy of
   /// the model (so fresh apiKey/baseUrl apply), falling back to the stored model
@@ -1074,6 +1063,14 @@ class ChatController extends _$ChatController {
     return null;
   }
 
+  /// Regenerates the assistant reply [messageId] as a NEW sibling branch.
+  ///
+  /// Cherry 语义：重新生成不再就地覆盖旧回复，而是在旧回复的同一个父节点下新建
+  /// 一个兄弟 assistant 节点并设为活动叶子。旧回复因此作为另一条分支保留，可在
+  /// 分支管理里来回切换。新回复在它自己的模型上流式（`regenerateWithCapabilities`
+  /// ——纯重试用回复自身的模型，回复无模型/供应商已失效时回落当前模型）。A no-op
+  /// while a reply is streaming, when the conversation has not loaded, when no
+  /// model is selected, or when [messageId] is not a loaded assistant message.
   Future<void> regenerate(String messageId) async {
     _truncatedMessageId = null;
     final snapshot = state.value;
@@ -1099,48 +1096,50 @@ class ChatController extends _$ChatController {
     final now = DateTime.now();
     final effective = effectiveModelFor(current);
 
-    // Archive the currently displayed content as a version, then reset the
-    // assistant message: drop its old blocks and attach a single fresh
-    // streaming main_text block, re-pointed at the current model, with the
-    // freshly streamed reply becoming the new latest (currentVersionId null).
-    final prepared = await _prepareForRegenerate(target, now);
-    final oldBlocks = await _repo.getMessageBlocksByMessageId(messageId);
-    for (final block in oldBlocks) {
-      await _repo.deleteMessageBlock(block.id);
-    }
+    // 在旧回复的同一个父节点下新建一个兄弟分支节点：共用旧回复的 askId 即可与它同
+    // 父，parentId 留空让 saveMessage 按 askId 挂树。旧回复原样保留为另一条分支。
+    final topicId = target.topicId;
+    final newAssistantId = generateId('msg');
     final assistantBlockId = generateId('block');
+    await _repo.saveMessage(
+      Message(
+        id: newAssistantId,
+        role: MessageRole.assistant,
+        assistantId: _assistantId,
+        topicId: topicId,
+        createdAt: now,
+        status: MessageStatus.streaming,
+        model: effective,
+        askId: target.askId,
+        blocks: <String>[assistantBlockId],
+      ),
+    );
     await _repo.saveMessageBlock(
       MessageBlock.mainText(
         id: assistantBlockId,
-        messageId: messageId,
+        messageId: newAssistantId,
         status: MessageBlockStatus.streaming,
         createdAt: now,
         content: '',
       ),
     );
-    await _repo.saveMessage(
-      prepared.copyWith(
-        status: MessageStatus.streaming,
-        updatedAt: now,
-        model: effective,
-        blocks: <String>[assistantBlockId],
-        currentVersionId: null,
-      ),
-    );
+    // 旧回复通常是当前活动叶子，新兄弟的 parentId 不等于它，saveMessage 不会自动
+    // 前移活动叶子，这里显式切到新分支。
+    await _repo.setActiveNode(topicId, newAssistantId);
 
-    // Reset the view to a streaming placeholder; the request history is the
-    // conversation up to (excluding) this assistant message.
-    final views = List<ChatMessageView>.of(snapshot.messages);
+    // 显示：保留到被重新生成回复之前的对话，把新回复作为流式占位追加在末尾（旧回
+    // 复移出当前路径）。请求历史就是 views.sublist(0, index)。
+    final views = List<ChatMessageView>.of(snapshot.messages.sublist(0, index));
     final assistantView = ChatMessageView(
-      id: messageId,
+      id: newAssistantId,
       role: MessageRole.assistant,
       status: MessageStatus.streaming,
-      createdAt: target.createdAt,
+      createdAt: now,
       modelName: effective.name,
       providerName: current.provider.name,
     );
-    views[index] = assistantView;
-    _emitTurn(target.topicId, views, streaming: true);
+    views.add(assistantView);
+    _emitTurn(topicId, views, streaming: true);
 
     final mcp = await _mcpSetup();
     final ctx = _contextSettings();
@@ -1196,8 +1195,8 @@ class ChatController extends _$ChatController {
       request: request,
       effective: effective,
       provider: current.provider,
-      turnTopicId: target.topicId,
-      assistantMessageId: messageId,
+      turnTopicId: topicId,
+      assistantMessageId: newAssistantId,
       assistantBlockId: assistantBlockId,
       assistantTime: now,
       views: views,
@@ -1210,8 +1209,8 @@ class ChatController extends _$ChatController {
   ///
   /// Port of the toolbar 重新发送 action (`regenerateResponse` with
   /// `source: 'user'`): finds the assistant message whose `askId` points at this
-  /// user message and regenerates it in place (archiving its previous content as
-  /// a version, exactly like 重新生成); if no reply exists yet, a fresh assistant
+  /// user message and [regenerate]s it — which now forks a NEW sibling reply
+  /// branch (旧回复保留为另一条分支); if no reply exists yet, a fresh assistant
   /// message linked via `askId` is created and streamed from the conversation so
   /// far. A no-op while a reply is streaming, when the conversation has not
   /// loaded, when no model is selected, or when [messageId] is not a loaded user
@@ -3102,25 +3101,6 @@ class ChatController extends _$ChatController {
     await _reloadIntoState(messageId);
   }
 
-  /// Archives the message's currently displayed content ahead of a regenerate.
-  ///
-  /// On the latest view it saves the live content as a `regenerate` version; on
-  /// a historical view it promotes the stashed latest snapshot to a permanent
-  /// version (so it survives) and clears the snapshot. The blocks on display
-  /// are dropped by [regenerate] right after. Port of
-  /// `versionService.prepareForRegenerate`.
-  Future<Message> _prepareForRegenerate(Message message, DateTime now) async {
-    if (message.currentVersionId == null) {
-      return await _saveCurrentAsVersion(
-            message,
-            source: 'regenerate',
-            timestamp: now,
-          ) ??
-          message;
-    }
-    return _promoteLatestSnapshot(message, now);
-  }
-
   /// Clones the message's current blocks into a new [MessageVersion] and
   /// appends it (pruning the oldest beyond [_maxVersionsPerMessage]). Returns
   /// the updated message, or `null` when the content is empty (nothing to
@@ -3154,52 +3134,6 @@ class ChatController extends _$ChatController {
     );
     final versions = await _appendVersion(message.versions, version);
     final updated = message.copyWith(versions: versions);
-    await _repo.saveMessage(updated);
-    return updated;
-  }
-
-  /// Promotes the stashed latest snapshot into a permanent version and clears
-  /// the snapshot + [Message.currentVersionId]. Used when regenerating while a
-  /// historical version is on display, mirroring the history branch of
-  /// `versionService.prepareForRegenerate`.
-  Future<Message> _promoteLatestSnapshot(Message message, DateTime now) async {
-    final snap = _latestSnapshot(message);
-    var versions = message.versions ?? const <MessageVersion>[];
-    if (snap != null && snap.blockIds.isNotEmpty) {
-      final stashed = await _repo.getMessageBlocksByIds(snap.blockIds);
-      final content = _mainTextOf(stashed);
-      if (stashed.isNotEmpty && content.trim().isNotEmpty) {
-        final versionId = generateId('version');
-        final retagged = [
-          for (final block in stashed)
-            block.copyWith(messageId: 'version_$versionId', updatedAt: now),
-        ];
-        await _repo.saveMessageBlocks(retagged);
-        versions = await _appendVersion(
-          versions,
-          MessageVersion(
-            id: versionId,
-            messageId: message.id,
-            blocks: [for (final block in retagged) block.id],
-            createdAt: now,
-            model: snap.model ?? message.model,
-            isActive: false,
-            metadata: <String, dynamic>{
-              'source': 'regenerate',
-              'timestamp': now.millisecondsSinceEpoch,
-              'contentSnapshot': content,
-            },
-          ),
-        );
-      } else {
-        await _deleteBlocks(snap.blockIds);
-      }
-    }
-    final updated = message.copyWith(
-      versions: versions,
-      currentVersionId: null,
-      metadata: _metadataWithoutSnapshot(message),
-    );
     await _repo.saveMessage(updated);
     return updated;
   }

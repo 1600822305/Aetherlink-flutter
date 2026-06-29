@@ -712,4 +712,70 @@ void main() {
       expect(state.messages.last.role, MessageRole.assistant);
     },
   );
+
+  test(
+    'regenerate forks a new sibling reply branch instead of overwriting',
+    () async {
+      final gateway = _FakeGateway(const [
+        LlmStreamChunk.textDelta('v2'),
+        LlmStreamChunk.done(),
+      ]);
+      final now = DateTime.now();
+      final topic = Topic(
+        id: 'topic-regen',
+        assistantId: 'default-assistant',
+        name: '重新生成',
+        createdAt: now,
+        updatedAt: now,
+      );
+      await repo.saveTopic(topic);
+      final container = ProviderContainer(
+        overrides: [
+          chatRepositoryProvider.overrideWithValue(repo),
+          llmGatewayFactoryProvider.overrideWithValue(_FakeFactory(gateway)),
+          currentTopicProvider.overrideWith((ref) async => topic),
+          appCurrentModelProvider.overrideWith((ref) async => _currentModel()),
+          appModelProvidersProvider.overrideWith(
+            (ref) async => <ModelProvider>[_currentModel().provider],
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final ctrl = container.read(chatControllerProvider.notifier);
+      await container.read(chatControllerProvider.future);
+
+      await ctrl.send('q1'); // U1 → A1 (active A1)
+      final beforeAll = await repo.getMessagesByTopicId(topic.id);
+      final u1 = beforeAll.firstWhere((m) => m.role == MessageRole.user);
+      final a1 = beforeAll.firstWhere(
+        (m) => m.role == MessageRole.assistant && m.askId == u1.id,
+      );
+
+      // 重新生成 A1 → forks a NEW assistant sibling under U1; A1 is preserved.
+      await ctrl.regenerate(a1.id);
+
+      final after = await repo.getMessagesByTopicId(topic.id);
+      final replies = after
+          .where((m) => m.role == MessageRole.assistant && m.askId == u1.id)
+          .toList();
+      // Two sibling replies share the same parent (U1); A1 still exists.
+      expect(replies, hasLength(2));
+      expect(replies.any((m) => m.id == a1.id), isTrue);
+      for (final r in replies) {
+        expect(r.parentId, u1.id);
+      }
+      final fresh = replies.firstWhere((m) => m.id != a1.id);
+      // The fresh sibling becomes the active leaf.
+      final reloaded = await repo.getTopic(topic.id);
+      expect(reloaded!.activeNodeId, fresh.id);
+
+      // Displayed (active) path ends at the freshly streamed reply, not the old
+      // one.
+      container.invalidate(chatControllerProvider);
+      final state = await container.read(chatControllerProvider.future);
+      expect(state.messages.last.id, fresh.id);
+      expect(state.messages.last.text, 'v2');
+      expect(state.messages.any((v) => v.id == a1.id), isFalse);
+    },
+  );
 }
