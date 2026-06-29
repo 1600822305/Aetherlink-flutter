@@ -1044,6 +1044,25 @@ class ChatController extends _$ChatController {
   /// the previous reply can be restored from 版本历史. A no-op while a reply is
   /// streaming, when the conversation has not loaded, when no model is selected,
   /// or when [messageId] is not a loaded assistant message.
+  /// Resolves the [CurrentModel] for an assistant reply's own [model]: the
+  /// listed provider that owns `model.provider` paired with its live copy of
+  /// the model (so fresh apiKey/baseUrl apply), falling back to the stored model
+  /// when it is no longer listed. Returns null when [model] is null or its
+  /// provider is gone, so callers can fall back to the current model.
+  Future<CurrentModel?> _currentModelForOwnModel(Model? model) async {
+    if (model == null) return null;
+    final providers = await ref.read(appModelProvidersProvider.future);
+    for (final provider in providers) {
+      if (provider.id != model.provider) continue;
+      final live = provider.models.firstWhere(
+        (m) => m.id == model.id,
+        orElse: () => model,
+      );
+      return CurrentModel(provider: provider, model: live);
+    }
+    return null;
+  }
+
   Future<void> regenerate(String messageId) async {
     _truncatedMessageId = null;
     final snapshot = state.value;
@@ -1052,11 +1071,19 @@ class ChatController extends _$ChatController {
     final index = snapshot.messages.indexWhere((view) => view.id == messageId);
     if (index == -1) return;
 
-    final current = await ref.read(appCurrentModelProvider.future);
-    if (current == null) return;
-
     final target = await _repo.getMessage(messageId);
     if (target == null || target.role != MessageRole.assistant) return;
+
+    // Plain regenerate keeps the reply on its OWN model (port of Cherry's
+    // regenerateWithCapabilities — "a plain retry on an assistant uses the
+    // target's own model, otherwise retrying kimi would produce a gemini reply
+    // when the assistant default is gemini"). Falls back to the current model
+    // when the reply has no stored model or its provider is gone. This is what
+    // makes 多模型对比 的「重试失败」re-run each sibling on its own model.
+    final current =
+        await _currentModelForOwnModel(target.model) ??
+        await ref.read(appCurrentModelProvider.future);
+    if (current == null) return;
 
     final now = DateTime.now();
     final effective = effectiveModelFor(current);

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/chat_interface_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
@@ -10,23 +11,19 @@ import 'package:aetherlink_flutter/shared/domain/chat_interface_settings.dart';
 import 'package:aetherlink_flutter/shared/utils/provider_icons.dart';
 
 /// Lays out a multi-model 兄弟组 (assistant replies sharing one `siblingsGroupId`)
-/// as a comparison block — the Flutter analogue of the web `MultiModelMessageGroup`
-/// and cherry-studio's `MessageGroup`.
+/// as a comparison block — a faithful Flutter port of the web original's
+/// `MultiModelMessageGroup` (`Aetherlink-original`).
 ///
-/// Faithful to the web original, the group supports **four** layouts
-/// ([MultiModelMessageStyle]): 折叠 `fold` (only the selected reply shows, with a
-/// model picker), 水平 `horizontal` (cards scroll side by side), 垂直 `vertical`
-/// (cards stacked) and 网格 `grid` (responsive fixed-height cards, tap to expand).
-/// The layout toggle, model picker and group actions live in a **bottom menu
-/// bar** (`renderMenuBar`); the chosen layout is persisted onto every member
-/// (`multiModelMessageStyle`) so it survives a reload, defaulting to the first
-/// member's saved style, then the global 多模型布局 setting, then `fold`.
+/// Four layouts ([MultiModelMessageStyle]): 折叠 `fold` (only the selected reply
+/// shows, with a model picker), 水平 `horizontal` (cards scroll side by side), 垂直
+/// `vertical` (cards stacked) and 网格 `grid` (responsive fixed-height cards, tap
+/// to expand). The layout toggle, the fold model list (with an 展开/压缩 toggle
+/// that switches the list between 完整名称 chips and 图标 avatars) and the group
+/// actions (重试失败 / 删除分组) live in a **bottom menu bar**.
 ///
-/// Each cell is the real [ChatMessageBubble] (the model name comes from the
-/// bubble's own header/footer). In 折叠 the menu bar's model list switches which
-/// reply shows and which one 采用(选定) the conversation continues from
-/// ([ChatController.selectSibling]); that list can render as compact 图标 or as
-/// 完整名称 chips via an 展开/压缩 toggle.
+/// The chosen layout is persisted onto every member (`multiModelMessageStyle`)
+/// so it survives a reload, defaulting to the first member's saved style, then
+/// the global 多模型布局 setting, then `fold`.
 class MultiModelMessageGroup extends ConsumerStatefulWidget {
   const MultiModelMessageGroup({super.key, required this.memberIds});
 
@@ -47,7 +44,7 @@ class _MultiModelMessageGroupState
   /// `false` = 图标 avatars (compact). Mirrors the web `modelListMode`.
   bool _expandedModelList = true;
 
-  /// Maps the global 多模型布局 setting (three values) into the four-value layout.
+  /// Maps the global 多模型布局 setting onto the four-value layout.
   static MultiModelMessageStyle _fromDisplay(MultiModelDisplayStyle d) {
     switch (d) {
       case MultiModelDisplayStyle.horizontal:
@@ -73,8 +70,6 @@ class _MultiModelMessageGroupState
     final theme = Theme.of(context);
     final members = widget.memberIds;
 
-    // The chosen layout: a local override, else the first member's persisted
-    // style, else the global setting (mapped), else fold.
     final memberStyle = members.isEmpty
         ? null
         : ref.watch(
@@ -86,10 +81,8 @@ class _MultiModelMessageGroupState
       chatInterfaceSettingsProvider.select((s) => s.multiModelDisplayStyle),
     );
     final base = _style ?? memberStyle ?? _fromDisplay(globalStyle);
-    // A lone reply always folds (matches the web's `effectiveStyle`).
     final style = members.length < 2 ? MultiModelMessageStyle.fold : base;
 
-    // The selected sibling id (the one the conversation continues from).
     final selectedId = ref.watch(
       chatControllerProvider.select((a) {
         for (final id in members) {
@@ -100,13 +93,23 @@ class _MultiModelMessageGroupState
     );
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _body(theme, style, members, selectedId),
-          _menuBar(theme, style, members, selectedId),
+          _MenuBar(
+            style: style,
+            members: members,
+            selectedId: selectedId,
+            expandedModelList: _expandedModelList,
+            onStyleChanged: _setStyle,
+            onToggleModelListMode: () =>
+                setState(() => _expandedModelList = !_expandedModelList),
+            onSelect: (id) =>
+                ref.read(chatControllerProvider.notifier).selectSibling(id),
+          ),
         ],
       ),
     );
@@ -131,38 +134,39 @@ class _MultiModelMessageGroupState
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             for (final id in members)
-              _MemberCell(
-                messageId: id,
-                style: style,
-                selected: id == selectedId,
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _MemberCell(
+                  messageId: id,
+                  style: style,
+                  selected: id == selectedId,
+                ),
               ),
           ],
         );
 
       case MultiModelMessageStyle.horizontal:
         final size = MediaQuery.of(context).size;
-        final cardWidth = (size.width * 0.85).clamp(0.0, 420.0);
-        final maxHeight = (size.height - 350).clamp(280.0, double.infinity);
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final id in members)
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: cardWidth,
-                      maxHeight: maxHeight,
-                    ),
-                    child: _MemberCell(
-                      messageId: id,
-                      style: style,
-                      selected: id == selectedId,
-                    ),
-                  ),
-              ],
+        final cardWidth = (size.width - 56).clamp(260.0, 460.0);
+        // Bound the viewport height so each card's inner vertical scroll has a
+        // finite height (NO IntrinsicHeight — it can't measure a scroll view,
+        // which was zero-sizing the content). Cards size to min(content, this).
+        final maxHeight = (size.height - 320).clamp(320.0, 560.0);
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxHeight),
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(top: 2, bottom: 4),
+            shrinkWrap: true,
+            itemCount: members.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 12),
+            itemBuilder: (context, i) => SizedBox(
+              width: cardWidth,
+              child: _MemberCell(
+                messageId: members[i],
+                style: style,
+                selected: members[i] == selectedId,
+              ),
             ),
           ),
         );
@@ -171,7 +175,6 @@ class _MultiModelMessageGroupState
         return LayoutBuilder(
           builder: (context, constraints) {
             final width = constraints.maxWidth;
-            // Responsive columns: phone 1, tablet 2, desktop 3 (web breakpoints).
             final columns = width >= 1024
                 ? (members.length > 2 ? 3 : 2)
                 : width >= 600
@@ -226,98 +229,106 @@ class _MultiModelMessageGroupState
       },
     );
   }
+}
 
-  // ------------------------------------------------------------- menu bar ---
+/// The bottom menu bar (port of the web `MenuBar`): the four-way layout toggle,
+/// the 折叠 model list with its 展开/压缩 toggle, and the group actions.
+class _MenuBar extends ConsumerWidget {
+  const _MenuBar({
+    required this.style,
+    required this.members,
+    required this.selectedId,
+    required this.expandedModelList,
+    required this.onStyleChanged,
+    required this.onToggleModelListMode,
+    required this.onSelect,
+  });
 
-  /// The bottom menu bar: the four-way layout toggle, the 折叠 model list (with
-  /// 展开/压缩 toggle) and the group actions (重试失败 / 删除分组).
-  Widget _menuBar(
-    ThemeData theme,
-    MultiModelMessageStyle style,
-    List<String> members,
-    String? selectedId,
-  ) {
+  final MultiModelMessageStyle style;
+  final List<String> members;
+  final String? selectedId;
+  final bool expandedModelList;
+  final ValueChanged<MultiModelMessageStyle> onStyleChanged;
+  final VoidCallback onToggleModelListMode;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final isFold = style == MultiModelMessageStyle.fold;
     final hasFailed = ref.watch(
       chatControllerProvider.select(
-        (a) => members.any((id) => a.messageById(id)?.status == MessageStatus.error),
+        (a) => members.any(
+          (id) => a.messageById(id)?.status == MessageStatus.error,
+        ),
       ),
     );
 
     return Container(
-      margin: const EdgeInsets.only(top: 6),
-      height: 44,
+      margin: const EdgeInsets.only(top: 8, bottom: 4),
+      height: 40,
       padding: const EdgeInsets.symmetric(horizontal: 6),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
-          width: 0.5,
-        ),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.6)),
       ),
       child: Row(
         children: [
-          _StyleToggle(current: style, onChanged: _setStyle),
+          _StyleToggle(current: style, onChanged: onStyleChanged),
           if (isFold && members.length >= 2) ...[
             const SizedBox(width: 4),
-            IconButton(
-              tooltip: _expandedModelList ? '压缩' : '展开',
-              visualDensity: VisualDensity.compact,
-              iconSize: 16,
-              onPressed: () =>
-                  setState(() => _expandedModelList = !_expandedModelList),
-              icon: Icon(
-                _expandedModelList ? Icons.close_fullscreen : Icons.open_in_full,
-              ),
+            _BarIconButton(
+              icon: expandedModelList
+                  ? LucideIcons.minimize2
+                  : LucideIcons.maximize2,
+              tooltip: expandedModelList ? '压缩' : '展开',
+              onPressed: onToggleModelListMode,
             ),
             Expanded(
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    for (final id in members)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
-                        child: _ModelEntry(
-                          messageId: id,
-                          selected: id == selectedId,
-                          expanded: _expandedModelList,
-                          onTap: () => ref
-                              .read(chatControllerProvider.notifier)
-                              .selectSibling(id),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Row(
+                    children: [
+                      for (final id in members)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 3),
+                          child: _ModelEntry(
+                            messageId: id,
+                            selected: id == selectedId,
+                            expanded: expandedModelList,
+                            onTap: () => onSelect(id),
+                          ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
           ] else
             const Spacer(),
           if (hasFailed)
-            IconButton(
+            _BarIconButton(
+              icon: LucideIcons.rotateCcw,
               tooltip: '重试失败',
-              visualDensity: VisualDensity.compact,
-              iconSize: 16,
               color: theme.colorScheme.tertiary,
               onPressed: () => ref
                   .read(chatControllerProvider.notifier)
                   .retryFailedSiblings(members),
-              icon: const Icon(Icons.refresh),
             ),
-          IconButton(
+          _BarIconButton(
+            icon: LucideIcons.trash2,
             tooltip: '删除分组',
-            visualDensity: VisualDensity.compact,
-            iconSize: 16,
             color: theme.colorScheme.error,
-            onPressed: () => _confirmDeleteGroup(members),
-            icon: const Icon(Icons.delete_outline),
+            onPressed: () => _confirmDeleteGroup(context, ref),
           ),
         ],
       ),
     );
   }
 
-  Future<void> _confirmDeleteGroup(List<String> members) async {
+  Future<void> _confirmDeleteGroup(BuildContext context, WidgetRef ref) async {
     final askId = members.isEmpty
         ? null
         : ref.read(chatControllerProvider).messageById(members.first)?.askId;
@@ -340,12 +351,51 @@ class _MultiModelMessageGroupState
       ),
     );
     if (confirmed != true) return;
-    await ref.read(chatControllerProvider.notifier).deleteMultiModelGroup(askId);
+    await ref
+        .read(chatControllerProvider.notifier)
+        .deleteMultiModelGroup(askId);
   }
 }
 
-/// The four-way layout toggle: 折叠 / 水平 / 垂直 / 网格, a segmented row of icon
-/// buttons highlighting the active layout (the web `ToggleButtonGroup`).
+/// A small ghost icon button matching the menu bar's compact controls.
+class _BarIconButton extends StatelessWidget {
+  const _BarIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    this.color,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(6),
+        child: SizedBox(
+          width: 28,
+          height: 28,
+          child: Icon(
+            icon,
+            size: 15,
+            color: color ?? theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The four-way layout toggle: 折叠 / 水平 / 垂直 / 网格 — a segmented row of icon
+/// buttons highlighting the active layout (the web `ToggleButtonGroup`), using
+/// the project's Lucide icons to match the web's lucide-react set.
 class _StyleToggle extends StatelessWidget {
   const _StyleToggle({required this.current, required this.onChanged});
 
@@ -353,10 +403,10 @@ class _StyleToggle extends StatelessWidget {
   final ValueChanged<MultiModelMessageStyle> onChanged;
 
   static const _items = <(MultiModelMessageStyle, IconData, String)>[
-    (MultiModelMessageStyle.fold, Icons.unfold_less, '折叠'),
-    (MultiModelMessageStyle.horizontal, Icons.view_week, '水平'),
-    (MultiModelMessageStyle.vertical, Icons.view_agenda, '垂直'),
-    (MultiModelMessageStyle.grid, Icons.grid_view, '网格'),
+    (MultiModelMessageStyle.fold, LucideIcons.folderClosed, '折叠'),
+    (MultiModelMessageStyle.horizontal, LucideIcons.columns2, '水平'),
+    (MultiModelMessageStyle.vertical, LucideIcons.rows3, '垂直'),
+    (MultiModelMessageStyle.grid, LucideIcons.layoutGrid, '网格'),
   ];
 
   @override
@@ -366,10 +416,7 @@ class _StyleToggle extends StatelessWidget {
       height: 28,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
-          width: 0.5,
-        ),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.6)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -405,7 +452,7 @@ class _StyleToggle extends StatelessWidget {
           ),
           child: Icon(
             icon,
-            size: 15,
+            size: 14,
             color: active
                 ? theme.colorScheme.primary
                 : theme.colorScheme.onSurfaceVariant,
@@ -416,10 +463,9 @@ class _StyleToggle extends StatelessWidget {
   }
 }
 
-/// A single grouped reply rendered as the real [ChatMessageBubble], framed
-/// according to [style]: bordered scrollable cards for 水平/垂直, a fixed-height
-/// tappable preview for 网格, and a plain bubble for 折叠 (only the selected reply
-/// is rendered by the parent).
+/// A single grouped reply rendered as the real [ChatMessageBubble], framed by
+/// [style]: bordered scrollable cards for 水平/垂直, a fixed-height tappable
+/// preview for 网格, a plain bubble for 折叠.
 class _MemberCell extends StatelessWidget {
   const _MemberCell({
     required this.messageId,
@@ -441,11 +487,14 @@ class _MemberCell extends StatelessWidget {
       messageId: messageId,
     );
 
-    Border border() => Border.all(
-      color: selected
-          ? theme.colorScheme.primary
-          : theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-      width: selected ? 1.5 : 0.5,
+    BoxDecoration decoration() => BoxDecoration(
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(
+        color: selected
+            ? theme.colorScheme.primary
+            : theme.dividerColor.withValues(alpha: 0.6),
+        width: selected ? 1.5 : 0.5,
+      ),
     );
 
     switch (style) {
@@ -454,28 +503,18 @@ class _MemberCell extends StatelessWidget {
 
       case MultiModelMessageStyle.vertical:
         return Container(
-          margin: const EdgeInsets.symmetric(vertical: 4),
           padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: border(),
-          ),
+          decoration: decoration(),
           child: bubble,
         );
 
       case MultiModelMessageStyle.horizontal:
         return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: border(),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(4),
-              child: bubble,
-            ),
+          decoration: decoration(),
+          clipBehavior: Clip.antiAlias,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(6),
+            child: bubble,
           ),
         );
 
@@ -485,20 +524,11 @@ class _MemberCell extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
           child: Container(
             height: 300,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: border(),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              // A non-scrolling preview; tap opens the full reply (see _openDetail).
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Align(
-                  alignment: Alignment.topLeft,
-                  child: bubble,
-                ),
-              ),
+            decoration: decoration(),
+            clipBehavior: Clip.antiAlias,
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Align(alignment: Alignment.topLeft, child: bubble),
             ),
           ),
         );
@@ -506,9 +536,9 @@ class _MemberCell extends StatelessWidget {
   }
 }
 
-/// A model entry in the 折叠 model list: either a compact 图标 avatar (with a
-/// name tooltip) or an expanded chip showing the 完整名称, depending on [expanded].
-/// Selected = the 采用 sibling; a streaming/pending sibling pulses. Tap = 采用.
+/// A model entry in the 折叠 model list: a compact 图标 avatar (name in tooltip)
+/// or, when [expanded], a chip showing the 完整名称. Selected = the 采用 sibling; a
+/// streaming/pending sibling dims. Tap = 采用.
 class _ModelEntry extends ConsumerWidget {
   const _ModelEntry({
     required this.messageId,
@@ -544,58 +574,76 @@ class _ModelEntry extends ConsumerWidget {
       size: 20,
     );
 
+    final Widget child;
     if (expanded) {
-      final chip = ChoiceChip(
-        selected: selected,
-        onSelected: (_) => onTap(),
-        visualDensity: VisualDensity.compact,
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        avatar: logo,
-        label: Text(
-          name,
-          style: theme.textTheme.bodySmall,
-          overflow: TextOverflow.ellipsis,
+      child = AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        height: 28,
+        padding: const EdgeInsets.fromLTRB(4, 0, 10, 0),
+        decoration: BoxDecoration(
+          color: selected
+              ? theme.colorScheme.primary
+              : theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(14),
+          border: selected
+              ? null
+              : Border.all(
+                  color: theme.dividerColor.withValues(alpha: 0.6),
+                ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            logo,
+            const SizedBox(width: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 140),
+              child: Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w500,
+                  color: selected
+                      ? theme.colorScheme.onPrimary
+                      : theme.colorScheme.onSurface,
+                ),
+              ),
+            ),
+          ],
         ),
       );
-      return Opacity(opacity: isProcessing ? 0.6 : 1, child: chip);
-    }
-
-    return Tooltip(
-      message: name,
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const CircleBorder(),
-        child: Opacity(
-          opacity: isProcessing ? 0.6 : 1,
-          child: Container(
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: selected
-                    ? theme.colorScheme.primary
-                    : Colors.transparent,
-                width: 2,
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(1),
-              child: _ModelLogo(
-                modelId: view?.modelId,
-                providerId: view?.providerId,
-                name: name,
-                size: 22,
-              ),
+    } else {
+      child = Tooltip(
+        message: name,
+        child: Container(
+          width: 26,
+          height: 26,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: selected ? theme.colorScheme.primary : Colors.transparent,
+              width: 2,
             ),
           ),
+          padding: const EdgeInsets.all(1),
+          child: logo,
         ),
+      );
+    }
+
+    return Opacity(
+      opacity: isProcessing ? 0.5 : 1,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(expanded ? 14 : 13),
+        child: child,
       ),
     );
   }
 }
 
-/// A small provider/model logo with a first-letter fallback, sized [size].
+/// A round provider/model logo with a first-letter fallback, sized [size].
 class _ModelLogo extends StatelessWidget {
   const _ModelLogo({
     required this.modelId,
