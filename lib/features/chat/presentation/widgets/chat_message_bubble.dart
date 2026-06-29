@@ -241,6 +241,7 @@ class ChatMessageBubble extends ConsumerWidget {
                             showTtsButton: settings.showTTSButton,
                             versionSwitchStyle: settings.versionSwitchStyle,
                             baseColor: customTextColor,
+                            bubbleColor: bubbleColor,
                           ),
                         ),
                       // 三点菜单: inside the bubble's top-right corner.
