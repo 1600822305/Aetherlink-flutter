@@ -13,6 +13,7 @@ import 'package:aetherlink_flutter/features/backup/domain/backup_file_item.dart'
 import 'package:aetherlink_flutter/features/backup/domain/backup_manifest.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
@@ -417,6 +418,20 @@ class BackupService {
       }
     }
 
+    // Merge the top-level models registry (full: settings.models, selective:
+    // modelConfig.models) into the matching providers — Flutter stores models
+    // only nested under their provider.
+    List<dynamic>? rawModels;
+    if (rawSettings is Map<String, dynamic> && rawSettings['models'] is List) {
+      rawModels = rawSettings['models'] as List<dynamic>;
+    } else if (rawModelConfig is Map<String, dynamic> &&
+        rawModelConfig['models'] is List) {
+      rawModels = rawModelConfig['models'] as List<dynamic>;
+    }
+    if (rawModels != null && rawModels.isNotEmpty) {
+      _mergeTopLevelModels(providersJson, rawModels);
+    }
+
     // --- Settings / localStorage → KV pairs ---
     // Web stores settings as a JSON object + localStorage object.
     // Flutter stores them in app_setting_rows (key-value table).
@@ -483,6 +498,15 @@ class BackupService {
       });
     }
 
+    // --- Memories (Web `memories` table → Flutter MemoryRows) ---
+    final memoriesJson = <Map<String, dynamic>>[];
+    final rawMemories = root['memories'];
+    if (rawMemories is List) {
+      for (final m in rawMemories) {
+        if (m is Map<String, dynamic>) memoriesJson.add(m);
+      }
+    }
+
     return _RawBackupData(
       topics: topicsJson,
       messages: messagesJson,
@@ -491,6 +515,7 @@ class BackupService {
       providers: providersJson,
       groups: const [],
       settings: settingsJson,
+      memories: memoriesJson,
     );
   }
 
@@ -535,35 +560,10 @@ class BackupService {
     }
 
     // Normalize each model, filtering out entries that would crash fromJson.
-    // Model.fromJson requires: id (String), name (String), provider (String).
     final models = <Map<String, dynamic>>[];
     for (final m in json['models'] as List) {
-      if (m is! Map<String, dynamic>) continue;
-      final modelJson = Map<String, dynamic>.from(m);
-
-      // id is required — skip models without one.
-      final modelId = modelJson['id'];
-      if (modelId == null || modelId.toString().isEmpty) continue;
-
-      // name defaults to id if missing.
-      modelJson['name'] ??= modelId.toString();
-
-      // provider defaults to the parent provider's id.
-      modelJson['provider'] ??= json['id'];
-
-      // Filter modelTypes to known enum values to prevent fromJson crash.
-      // ModelType enum only accepts specific string values; unknown values
-      // would cause the entire Model.fromJson to throw.
-      if (modelJson['modelTypes'] is List) {
-        modelJson['modelTypes'] = (modelJson['modelTypes'] as List)
-            .where((t) => _knownModelTypes.contains(t))
-            .toList();
-      }
-
-      // Strip web-only model fields.
-      modelJson.remove('useCorsPlugin');
-
-      models.add(modelJson);
+      final modelJson = _normalizeWebModel(m, json['id']);
+      if (modelJson != null) models.add(modelJson);
     }
     json['models'] = models;
 
@@ -572,6 +572,86 @@ class BackupService {
     json.remove('customModelEndpoint');
 
     return json;
+  }
+
+  /// Normalizes a single Web Model JSON to match Flutter's Model shape.
+  ///
+  /// `Model.fromJson` requires `id`, `name`, `provider`; returns null for
+  /// entries that would crash deserialization (missing id).
+  static Map<String, dynamic>? _normalizeWebModel(
+    dynamic m,
+    Object? providerId,
+  ) {
+    if (m is! Map<String, dynamic>) return null;
+    final modelJson = Map<String, dynamic>.from(m);
+
+    // id is required — skip models without one.
+    final modelId = modelJson['id'];
+    if (modelId == null || modelId.toString().isEmpty) return null;
+
+    // name defaults to id if missing.
+    modelJson['name'] ??= modelId.toString();
+
+    // provider defaults to the owning provider's id.
+    modelJson['provider'] ??= providerId;
+
+    // Filter modelTypes to known enum values to prevent fromJson crash.
+    // ModelType enum only accepts specific string values; unknown values
+    // would cause the entire Model.fromJson to throw.
+    if (modelJson['modelTypes'] is List) {
+      modelJson['modelTypes'] = (modelJson['modelTypes'] as List)
+          .where((t) => _knownModelTypes.contains(t))
+          .toList();
+    }
+
+    // Strip web-only model fields.
+    modelJson.remove('useCorsPlugin');
+
+    return modelJson;
+  }
+
+  /// Merges Web's top-level `models` registry into [providersJson].
+  ///
+  /// Web keeps a flat `settings.models` / `modelConfig.models` list alongside
+  /// each provider's embedded `models`. Flutter stores models only nested under
+  /// their provider, so models that live solely in the flat list are otherwise
+  /// lost. Each model is appended to the provider matching its `provider` field
+  /// (deduplicated by id); models whose provider is absent are grouped into a
+  /// new minimal provider so nothing is dropped.
+  static void _mergeTopLevelModels(
+    List<Map<String, dynamic>> providersJson,
+    List<dynamic> rawModels,
+  ) {
+    final providersById = <String, Map<String, dynamic>>{};
+    for (final p in providersJson) {
+      final id = p['id']?.toString() ?? '';
+      if (id.isNotEmpty) providersById[id] = p;
+    }
+
+    for (final m in rawModels) {
+      if (m is! Map<String, dynamic>) continue;
+      final providerId = (m['provider'] ?? '').toString();
+      final model = _normalizeWebModel(m, providerId);
+      if (model == null) continue;
+      final modelId = model['id'].toString();
+
+      var provider = providersById[providerId];
+      if (provider == null) {
+        // Orphan model — synthesize a minimal provider to hold it.
+        provider = _normalizeWebProvider({
+          'id': providerId,
+          'models': <dynamic>[],
+        });
+        providersById[providerId] = provider;
+        providersJson.add(provider);
+      }
+
+      final existing = (provider['models'] as List).cast<Map<String, dynamic>>();
+      final alreadyPresent = existing.any(
+        (e) => e['id']?.toString() == modelId,
+      );
+      if (!alreadyPresent) existing.add(model);
+    }
   }
 
   /// Extracts user settings from a Web settings/userSettings map and composes
@@ -1211,6 +1291,11 @@ class BackupService {
         await db.delete(db.assistantRows).go();
         await db.delete(db.providerRows).go();
         await db.delete(db.groupRows).go();
+        // Only clear memories when the backup actually carries them, so that
+        // restoring a native Flutter backup (which has none) doesn't wipe them.
+        if (data.memories.isNotEmpty) {
+          await db.delete(db.memoryRows).go();
+        }
       }
 
       // Write topics.
@@ -1361,6 +1446,28 @@ class BackupService {
           failed++;
         }
       }
+
+      // Write memories.
+      for (final json in data.memories) {
+        final id = json['id'] as String? ?? '';
+        // Skip rows without an id or that were soft-deleted on the web side.
+        if (id.isEmpty || json['isDeleted'] == true) {
+          skipped++;
+          continue;
+        }
+        if (mode == RestoreMode.merge) {
+          final existing = await db.memoryDao.getById(id);
+          if (existing != null) {
+            skipped++;
+            continue;
+          }
+        }
+        if (await _rawInsertMemory(json)) {
+          succeeded++;
+        } else {
+          failed++;
+        }
+      }
     });
 
     return RestoreResult(
@@ -1429,6 +1536,64 @@ class BackupService {
     } catch (_) {
       return false;
     }
+  }
+
+  /// Builds a Flutter [MemoryItem] from a Web `memories` record and upserts it.
+  ///
+  /// Web's shape differs from Flutter's (web `memory` → Flutter `content`, ISO
+  /// timestamps → epoch millis, `assistantId` → owner scope, `metadata.*` →
+  /// category/source), so the entity is composed field by field rather than via
+  /// `fromJson`.
+  Future<bool> _rawInsertMemory(Map<String, dynamic> json) async {
+    try {
+      final id = (json['id'] ?? '').toString();
+      final content = (json['memory'] ?? json['content'] ?? '').toString();
+      if (id.isEmpty || content.isEmpty) return false;
+
+      final ownerId = (json['assistantId'] as String?)?.trim();
+      final hasOwner = ownerId != null && ownerId.isNotEmpty;
+
+      final metadata = json['metadata'];
+      String? category;
+      String? source;
+      if (metadata is Map<String, dynamic>) {
+        final c = metadata['category'];
+        if (c is String && c.isNotEmpty) category = c;
+        final s = metadata['source'];
+        if (s is String) source = s;
+      }
+
+      final embedding = json['embedding'];
+      final embeddingList = embedding is List
+          ? embedding.whereType<num>().map((n) => n.toDouble()).toList()
+          : null;
+
+      final item = MemoryItem(
+        id: id,
+        content: content,
+        level: hasOwner ? MemoryLevel.owner : MemoryLevel.global,
+        ownerId: hasOwner ? ownerId : null,
+        category: category,
+        source: source == 'manual' ? MemorySource.manual : MemorySource.auto,
+        createdAt: _epochMillis(json['createdAt']),
+        updatedAt: _epochMillis(json['updatedAt']),
+        embedding: (embeddingList?.isEmpty ?? true) ? null : embeddingList,
+      );
+      await db.memoryDao.upsert(item);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Coerces a Web timestamp (ISO-8601 string or epoch number) to epoch millis;
+  /// returns 0 when absent or unparseable.
+  static int _epochMillis(Object? value) {
+    if (value is num) return value.toInt();
+    if (value is String && value.isNotEmpty) {
+      return DateTime.tryParse(value)?.millisecondsSinceEpoch ?? 0;
+    }
+    return 0;
   }
 
   // ---------------------------------------------------------------------------
@@ -1514,6 +1679,10 @@ class _RawBackupData {
   final List<Map<String, dynamic>> groups;
   final List<Map<String, dynamic>> settings;
 
+  /// Long-term memory records (Web `memories` table). Empty for native Flutter
+  /// backups, which don't carry memories.
+  final List<Map<String, dynamic>> memories;
+
   const _RawBackupData({
     required this.topics,
     required this.messages,
@@ -1522,5 +1691,6 @@ class _RawBackupData {
     required this.providers,
     required this.groups,
     required this.settings,
+    this.memories = const [],
   });
 }
