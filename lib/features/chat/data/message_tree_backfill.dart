@@ -29,7 +29,7 @@ import 'package:aetherlink_flutter/shared/domain/topic.dart';
 Future<void> backfillMessageTree(AppDatabase db) async {
   final topics = await db.topicDao.getAll();
   for (final topic in topics) {
-    await _backfillTopic(db, topic);
+    await linkTopicMessageTree(db, topic);
   }
 }
 
@@ -98,7 +98,16 @@ Future<void> repairMessageTree(AppDatabase db) async {
   }
 }
 
-Future<void> _backfillTopic(AppDatabase db, Topic topic) async {
+/// Backfills a single [topic]'s tree shape: creates its content-less virtual
+/// root, runs [buildMessageTree] over its chronologically-sorted messages to
+/// assign `parentId` / `siblingsGroupId` (first-turn messages reparent to the
+/// root), and sets `topic.activeNodeId` via [findActiveNodeId]. Idempotent —
+/// topics that already own a virtual root are skipped.
+///
+/// Used both by the bulk [backfillMessageTree] migration and by the
+/// third-party importers (Cherry / Chatbox), which write flat messages and need
+/// the same tree linkage so the branch graph and active path are correct.
+Future<void> linkTopicMessageTree(AppDatabase db, Topic topic) async {
   // Idempotency: already migrated (has a virtual root) → nothing to do.
   if (await db.messageDao.getRootByTopicId(topic.id) != null) return;
 

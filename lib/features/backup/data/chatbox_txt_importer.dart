@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:aetherlink_flutter/core/database/app_database.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
+import 'package:aetherlink_flutter/features/chat/data/message_tree_backfill.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
@@ -138,6 +139,10 @@ class ChatboxTxtImporter {
           messageCount: messageIds.length,
         );
         await db.topicDao.upsert(topic);
+        // Link the flat imported messages into the tree shape (virtual root +
+        // parentId + activeNodeId) so the branch graph and active path are
+        // correct; without this every node is an orphan root.
+        await linkTopicMessageTree(db, topic);
         convCount++;
       }
 
