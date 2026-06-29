@@ -41,11 +41,16 @@ class _BranchManagerSheetState extends ConsumerState<_BranchManagerSheet> {
   late final Future<_BranchData> _future = _load();
 
   Future<_BranchData> _load() async {
-    final topic = await ref.read(currentTopicProvider.future);
-    if (topic == null) {
+    final selected = await ref.read(currentTopicProvider.future);
+    if (selected == null) {
       return (layout: BranchFlowLayout.empty, previews: const <String, String>{});
     }
     final repo = ref.read(chatRepositoryProvider);
+    // Read the topic fresh from the repo (not the possibly-cached
+    // currentTopicProvider): after 发送 advances activeNodeId without bumping the
+    // refresh signal, the cached topic still holds the old activeNodeId, which
+    // would make 「当前」 stick to the previous leaf instead of the new reply.
+    final topic = await repo.getTopic(selected.id) ?? selected;
     final messages = await repo.getMessagesByTopicId(topic.id);
     if (messages.isEmpty) {
       return (layout: BranchFlowLayout.empty, previews: const <String, String>{});
