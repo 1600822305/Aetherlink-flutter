@@ -79,7 +79,7 @@ class MessageActionsBuilder {
       ),
       MessageAction(
         id: MessageActionId.export,
-        icon: LucideIcons.share2,
+        icon: LucideIcons.fileText,
         tooltip: '导出/分享',
         onInvoke: enterSelectionMode,
       ),

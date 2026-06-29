@@ -157,28 +157,13 @@ class ChatMessageBubble extends ConsumerWidget {
         crossAxisAlignment: align,
         children: [
           if (header != null) ...[header, const SizedBox(height: 4)],
-          if (showBubbleActions) ...[
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (settings.showMicroBubbles) ...[
-                  MessageMicroBubbles(
-                    view: view,
-                    showTtsButton: settings.showTTSButton,
-                    versionSwitchStyle: settings.versionSwitchStyle,
-                    baseColor: customTextColor,
-                  ),
-                  const SizedBox(width: 6),
-                ],
-                MessageActionMenu(
-                  view: view,
-                  showTtsButton: settings.showTTSButton,
-                  baseColor: customTextColor,
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-          ],
+          // 功能气泡模式: 小功能气泡 float above the bubble (inner-side aligned)
+          // and the 三点菜单 sits inside the bubble's top-right corner — mirroring
+          // the original web `BubbleStyleMessage`'s absolutely-positioned chrome.
+          // Reserve headroom so the floating micro-bubbles don't overlap the
+          // previous message / header.
+          if (showBubbleActions && settings.showMicroBubbles)
+            const SizedBox(height: 22),
           LayoutBuilder(
             builder: (context, constraints) {
               final maxWidth = constraints.maxWidth * maxWidthFactor;
@@ -195,47 +180,81 @@ class ChatMessageBubble extends ConsumerWidget {
                     maxWidth: maxWidth,
                     minWidth: minWidth,
                   ),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: hideBubble ? Colors.transparent : bubbleColor,
-                      borderRadius: BorderRadius.circular(
-                        hideBubble ? 0 : radius,
-                      ),
-                    ),
-                    child: showToolbar
-                        ? BubbleFooterLayout(
-                            content: content,
-                            // The bubble-internal bottom toolbar, separated
-                            // from the content by a 1px divider and stretched to
-                            // the full bubble width so the token chip sits flush
-                            // against the far edge, mirroring
-                            // `BubbleStyleMessage`'s toolbar mode.
-                            footer: Container(
-                              margin: const EdgeInsets.only(top: 8),
-                              padding: const EdgeInsets.only(top: 8),
-                              decoration: BoxDecoration(
-                                border: Border(
-                                  top: BorderSide(
-                                    color:
-                                        (theme.brightness == Brightness.dark
-                                                ? Colors.white
-                                                : Colors.black)
-                                            .withValues(alpha: 0.1),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        // Extra right padding in 气泡模式 leaves room for the
+                        // 三点菜单 anchored in the top-right corner.
+                        padding: EdgeInsets.only(
+                          left: 12,
+                          right: showBubbleActions ? 30 : 12,
+                          top: 10,
+                          bottom: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: hideBubble ? Colors.transparent : bubbleColor,
+                          borderRadius: BorderRadius.circular(
+                            hideBubble ? 0 : radius,
+                          ),
+                        ),
+                        child: showToolbar
+                            ? BubbleFooterLayout(
+                                content: content,
+                                // The bubble-internal bottom toolbar, separated
+                                // from the content by a 1px divider and stretched
+                                // to the full bubble width so the token chip sits
+                                // flush against the far edge, mirroring
+                                // `BubbleStyleMessage`'s toolbar mode.
+                                footer: Container(
+                                  margin: const EdgeInsets.only(top: 8),
+                                  padding: const EdgeInsets.only(top: 8),
+                                  decoration: BoxDecoration(
+                                    border: Border(
+                                      top: BorderSide(
+                                        color:
+                                            (theme.brightness == Brightness.dark
+                                                    ? Colors.white
+                                                    : Colors.black)
+                                                .withValues(alpha: 0.1),
+                                      ),
+                                    ),
+                                  ),
+                                  child: MessageToolbar(
+                                    view: view,
+                                    showTtsButton: settings.showTTSButton,
+                                    customTextColor: customTextColor,
                                   ),
                                 ),
-                              ),
-                              child: MessageToolbar(
-                                view: view,
-                                showTtsButton: settings.showTTSButton,
-                                customTextColor: customTextColor,
-                              ),
-                            ),
-                          )
-                        : content,
+                              )
+                            : content,
+                      ),
+                      // 小功能气泡: floating above the bubble, aligned to its inner
+                      // side (用户消息→左上, AI消息→右上), like the original web.
+                      if (showBubbleActions && settings.showMicroBubbles)
+                        Positioned(
+                          top: -26,
+                          left: isUser ? 0 : null,
+                          right: isUser ? null : 0,
+                          child: MessageMicroBubbles(
+                            view: view,
+                            showTtsButton: settings.showTTSButton,
+                            versionSwitchStyle: settings.versionSwitchStyle,
+                            baseColor: customTextColor,
+                          ),
+                        ),
+                      // 三点菜单: inside the bubble's top-right corner.
+                      if (showBubbleActions)
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: MessageActionMenu(
+                            view: view,
+                            showTtsButton: settings.showTTSButton,
+                            baseColor: customTextColor,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               );
