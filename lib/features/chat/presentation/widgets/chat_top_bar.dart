@@ -17,6 +17,7 @@ import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_search_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/context_condense_dialog.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/branch_manager_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/mini_map_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
@@ -35,6 +36,7 @@ const String _clearTooltip = '清空内容';
 const String _searchTooltip = '搜索';
 const String _condenseTooltip = '压缩上下文';
 const String _miniMapTooltip = '迷你地图';
+const String _branchManagerTooltip = '分支管理';
 const String _modelPlaceholderLabel = '未配置模型';
 
 /// The chat top bar, driven by the appearance 顶部工具栏 DIY 设置 page's
@@ -194,6 +196,17 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
           ? const SizedBox.shrink()
           : _TopicTitle(name: topic.name),
       actions: [
+        if (topic != null)
+          _buildComponent(
+            TopToolbarComponent.branchManagerButton,
+            context: context,
+            ref: ref,
+            theme: theme,
+            settings: settings,
+            topicName: topic.name,
+            current: current,
+            hasModels: hasModels,
+          )!,
         _buildComponent(
           TopToolbarComponent.miniMapButton,
           context: context,
@@ -356,6 +369,15 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
           ),
           tooltip: _miniMapTooltip,
           onPressed: () => _openMiniMap(context, ref),
+        );
+      case TopToolbarComponent.branchManagerButton:
+        return _ToolbarIconButton(
+          icon: topToolbarComponentIcon(
+            component,
+            color: theme.colorScheme.onSurface,
+          ),
+          tooltip: _branchManagerTooltip,
+          onPressed: () => showBranchManagerSheet(context),
         );
     }
   }
