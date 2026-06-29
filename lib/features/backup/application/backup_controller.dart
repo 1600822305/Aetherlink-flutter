@@ -18,6 +18,7 @@ import 'package:aetherlink_flutter/features/backup/data/webdav_client.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_file_item.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_manifest.dart';
+import 'package:aetherlink_flutter/features/backup/domain/restore_plan.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 
 part 'backup_controller.g.dart';
@@ -291,6 +292,51 @@ class BackupController extends _$BackupController {
       );
     } catch (e) {
       state = state.copyWith(status: BackupStatus.error, message: '恢复失败: $e');
+    }
+  }
+
+  /// Scans a backup file (ZIP or Web JSON) for the pre-restore selection
+  /// checklist. Returns null on failure (error surfaced via state).
+  Future<BackupScan?> scanBackupFile(String filePath) async {
+    try {
+      return await _service.scanBackup(File(filePath));
+    } catch (e) {
+      state = state.copyWith(
+        status: BackupStatus.error,
+        message: '无法扫描备份文件: $e',
+      );
+      return null;
+    }
+  }
+
+  /// Restores only the categories chosen in [selection], streaming per-category
+  /// progress via [onProgress]. Returns the per-category reconciliation result,
+  /// or null on failure.
+  Future<RestoreResult?> restoreSelective(
+    String filePath,
+    RestoreSelection selection, {
+    void Function(RestoreProgress)? onProgress,
+  }) async {
+    try {
+      final result = await _service.restoreFromFile(
+        File(filePath),
+        mode: selection.mode,
+        selection: selection,
+        onProgress: onProgress,
+      );
+      final locals = await _service.listLocalBackups();
+      final msg = result.failed > 0
+          ? '恢复完成（${result.summary}）'
+          : '数据恢复成功（${result.succeeded} 条记录）';
+      state = state.copyWith(
+        status: BackupStatus.success,
+        message: msg,
+        localBackups: locals,
+      );
+      return result;
+    } catch (e) {
+      state = state.copyWith(status: BackupStatus.error, message: '恢复失败: $e');
+      return null;
     }
   }
 

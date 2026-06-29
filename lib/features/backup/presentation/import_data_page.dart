@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/backup/application/backup_controller.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
+import 'package:aetherlink_flutter/features/backup/presentation/restore_selection_sheet.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
@@ -76,6 +77,15 @@ class _ImportDataPageState extends ConsumerState<ImportDataPage> {
                           '请使用 Cherry Studio「导出到手机」功能生成的备份文件',
                       onTap: () => _showImportDialog(controller, 'cherry'),
                     ),
+                    Divider(height: 1, color: theme.dividerColor),
+                    _ActionRow(
+                      icon: LucideIcons.cloudDownload,
+                      accent: const Color(0xFF0EA5E9),
+                      label: '导入 AetherLink Web 备份',
+                      description:
+                          '从 Web 版导出的 JSON/ZIP 备份导入，可分领域自选并对数校验',
+                      onTap: () => _importWebBackup(controller),
+                    ),
                   ],
                 ),
               ),
@@ -125,6 +135,33 @@ class _ImportDataPageState extends ConsumerState<ImportDataPage> {
             ),
         ],
       ),
+    );
+  }
+
+  /// Imports an AetherLink Web/Flutter backup through the pre-scan selection
+  /// flow (分领域 + 对数校验 + 自选 + 流式).
+  Future<void> _importWebBackup(BackupController controller) async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['json', 'zip'],
+    );
+    if (result == null || result.files.isEmpty) return;
+    final path = result.files.single.path;
+    if (path == null) return;
+
+    final scan = await controller.scanBackupFile(path);
+    if (!mounted || scan == null) return;
+
+    if (scan.presentCategories.isEmpty) {
+      AppToast.error(context, '该备份没有可导入的数据');
+      return;
+    }
+
+    await RestoreSelectionSheet.show(
+      context,
+      controller: controller,
+      scan: scan,
+      filePath: path,
     );
   }
 

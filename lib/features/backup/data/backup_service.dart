@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/core/database/app_database.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_config.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_file_item.dart';
 import 'package:aetherlink_flutter/features/backup/domain/backup_manifest.dart';
+import 'package:aetherlink_flutter/features/backup/domain/restore_plan.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
@@ -35,6 +36,26 @@ class BackupService {
   /// backup from importing workspace's `application`.
   static const Set<String> _excludedSettingKeys = {
     'workspace_ssh_credentials',
+  };
+
+  /// How many records to write between progress emits / event-loop yields when
+  /// restoring a category. Keeps the UI responsive and bounds work per tick on
+  /// large backups (the "流式" part of the import).
+  static const int _restoreBatchSize = 100;
+
+  /// Web backup top-level keys Flutter has no table for, mapped to a display
+  /// name. Surfaced in the scan as [UnsupportedCategory] so the user knows
+  /// what a restore will drop instead of silently losing it.
+  static const Map<String, String> _unsupportedWebKeys = {
+    'knowledgeBases': '知识库',
+    'knowledge': '知识库',
+    'quickPhrases': '快捷短语',
+    'files': '文件',
+    'images': '生成的图片',
+    'generatedImages': '生成的图片',
+    'agents': '智能体',
+    'skills': '技能',
+    'documents': '文档',
   };
 
   BackupService({required this.db});
@@ -131,27 +152,55 @@ class BackupService {
   }
 
   /// Restores data from a backup file (ZIP or Web JSON format).
-  /// Returns a [RestoreResult] with success/skipped/failed counts.
+  ///
+  /// When [selection] is provided, only the chosen [BackupCategory] values are
+  /// imported (and, in overwrite mode, only those tables are cleared); a null
+  /// selection imports everything. [onProgress] streams per-category progress
+  /// for the UI. Returns a [RestoreResult] carrying per-category reconciliation
+  /// stats (`byCategory`) alongside the aggregate counts.
   Future<RestoreResult> restoreFromFile(
     File file, {
     RestoreMode mode = RestoreMode.overwrite,
+    RestoreSelection? selection,
+    void Function(RestoreProgress)? onProgress,
   }) async {
     final ext = p.extension(file.path).toLowerCase();
 
     // Detect Web JSON backup format.
     if (ext == '.json') {
-      return _restoreFromWebJson(file, mode);
+      return _restoreFromWebJson(
+        file,
+        mode,
+        selection: selection,
+        onProgress: onProgress,
+      );
     }
 
     // Default: ZIP backup.
-    return _restoreFromZip(file, mode);
+    return _restoreFromZip(
+      file,
+      mode,
+      selection: selection,
+      onProgress: onProgress,
+    );
+  }
+
+  /// Scans a backup file without importing it, returning the per-category
+  /// importable counts and any unsupported categories. Drives the pre-restore
+  /// selection checklist.
+  Future<BackupScan> scanBackup(File file) async {
+    final ext = p.extension(file.path).toLowerCase();
+    if (ext == '.json') return _scanWebJson(file);
+    return _scanZip(file);
   }
 
   /// Restores from a Flutter ZIP backup.
   Future<RestoreResult> _restoreFromZip(
     File zipFile,
-    RestoreMode mode,
-  ) async {
+    RestoreMode mode, {
+    RestoreSelection? selection,
+    void Function(RestoreProgress)? onProgress,
+  }) async {
     // 1. Extract ZIP.
     final extractDir = await _extractZip(zipFile);
 
@@ -180,7 +229,13 @@ class BackupService {
       final backupData = await _parseExtractedData(extractDir, manifest);
 
       // 6. Write to database in a transaction.
-      return await _writeData(backupData, mode, manifest.schemaVersion);
+      return await _writeData(
+        backupData,
+        mode,
+        manifest.schemaVersion,
+        selection: selection,
+        onProgress: onProgress,
+      );
     } finally {
       // Cleanup extracted directory.
       try {
@@ -207,12 +262,18 @@ class BackupService {
   /// nested inside topics instead of stored in flat separate files.
   Future<RestoreResult> _restoreFromWebJson(
     File jsonFile,
-    RestoreMode mode,
-  ) async {
+    RestoreMode mode, {
+    RestoreSelection? selection,
+    void Function(RestoreProgress)? onProgress,
+  }) async {
     final content = await jsonFile.readAsString();
     final Map<String, dynamic> root;
     try {
-      root = jsonDecode(content) as Map<String, dynamic>;
+      // Decode off the UI isolate — a large web backup's JSON tree is the
+      // single most expensive parse step.
+      root = await Isolate.run<Map<String, dynamic>>(
+        () => jsonDecode(content) as Map<String, dynamic>,
+      );
     } catch (_) {
       throw const FormatException('无法解析 JSON 备份文件');
     }
@@ -237,7 +298,91 @@ class BackupService {
     final flatData = _flattenWebBackup(root);
 
     // Write to database.
-    return await _writeData(flatData, mode, db.schemaVersion);
+    return await _writeData(
+      flatData,
+      mode,
+      db.schemaVersion,
+      selection: selection,
+      onProgress: onProgress,
+    );
+  }
+
+  /// Scans a Flutter ZIP backup, deriving per-category counts from its
+  /// manifest (no full extraction of data files needed).
+  Future<BackupScan> _scanZip(File file) async {
+    final manifest = await peekManifest(file);
+    final s = manifest.stats;
+    return BackupScan(
+      isWebFormat: false,
+      manifest: manifest,
+      available: {
+        BackupCategory.topics: s.topics,
+        BackupCategory.messages: s.messages,
+        BackupCategory.messageBlocks: s.messageBlocks,
+        BackupCategory.assistants: s.assistants,
+        BackupCategory.providers: s.providers,
+        BackupCategory.groups: s.groups,
+        BackupCategory.settings: s.settings,
+      },
+    );
+  }
+
+  /// Scans a Web JSON backup. Reuses [_flattenWebBackup] so the reported counts
+  /// match exactly what a restore would import, then collects the categories
+  /// Flutter has no table for.
+  Future<BackupScan> _scanWebJson(File file) async {
+    final content = await file.readAsString();
+    final Map<String, dynamic> root;
+    try {
+      root = await Isolate.run<Map<String, dynamic>>(
+        () => jsonDecode(content) as Map<String, dynamic>,
+      );
+    } catch (_) {
+      throw const FormatException('无法解析 JSON 备份文件');
+    }
+
+    final flat = _flattenWebBackup(root);
+    final importableMemories = flat.memories
+        .where((m) =>
+            m['isDeleted'] != true && (m['id'] ?? '').toString().isNotEmpty)
+        .length;
+
+    return BackupScan(
+      isWebFormat: true,
+      manifest: await _peekWebJsonManifest(file),
+      available: {
+        BackupCategory.topics: flat.topics.length,
+        BackupCategory.messages: flat.messages.length,
+        BackupCategory.messageBlocks: flat.messageBlocks.length,
+        BackupCategory.assistants: flat.assistants.length,
+        BackupCategory.providers: flat.providers.length,
+        BackupCategory.groups: flat.groups.length,
+        BackupCategory.settings: flat.settings.length,
+        BackupCategory.memories: importableMemories,
+      },
+      unsupported: _collectUnsupported(root),
+    );
+  }
+
+  /// Collects Web backup sections Flutter cannot import (see
+  /// [_unsupportedWebKeys]) so the scan can show them greyed out.
+  static List<UnsupportedCategory> _collectUnsupported(
+    Map<String, dynamic> root,
+  ) {
+    final result = <UnsupportedCategory>[];
+    final seen = <String>{};
+    for (final entry in _unsupportedWebKeys.entries) {
+      final value = root[entry.key];
+      final count = value is List ? value.length : (value is Map ? value.length : 0);
+      if (count <= 0 || seen.contains(entry.value)) continue;
+      seen.add(entry.value);
+      result.add(UnsupportedCategory(
+        name: entry.value,
+        count: count,
+        reason: 'Flutter 暂无对应存储，导入时会忽略',
+      ));
+    }
+    return result;
   }
 
   /// Flattens a Web backup's nested JSON into the same flat structure
@@ -1275,202 +1420,204 @@ class BackupService {
   Future<RestoreResult> _writeData(
     _RawBackupData data,
     RestoreMode mode,
-    int sourceSchema,
-  ) async {
-    int succeeded = 0;
-    int skipped = 0;
-    int failed = 0;
+    int sourceSchema, {
+    RestoreSelection? selection,
+    void Function(RestoreProgress)? onProgress,
+  }) async {
+    bool selected(BackupCategory c) =>
+        selection == null || selection.includes(c);
+
+    final stats = <BackupCategory, CategoryStat>{};
 
     await db.transaction(() async {
       if (mode == RestoreMode.overwrite) {
-        // Clear all tables.
-        await db.delete(db.appSettingRows).go();
-        await db.delete(db.messageBlockRows).go();
-        await db.delete(db.messageRows).go();
-        await db.delete(db.topicRows).go();
-        await db.delete(db.assistantRows).go();
-        await db.delete(db.providerRows).go();
-        await db.delete(db.groupRows).go();
+        // Clear only the tables for the categories being restored. Child tables
+        // first to respect referential order.
+        if (selected(BackupCategory.settings)) {
+          await db.delete(db.appSettingRows).go();
+        }
+        if (selected(BackupCategory.messageBlocks)) {
+          await db.delete(db.messageBlockRows).go();
+        }
+        if (selected(BackupCategory.messages)) {
+          await db.delete(db.messageRows).go();
+        }
+        if (selected(BackupCategory.topics)) {
+          await db.delete(db.topicRows).go();
+        }
+        if (selected(BackupCategory.assistants)) {
+          await db.delete(db.assistantRows).go();
+        }
+        if (selected(BackupCategory.providers)) {
+          await db.delete(db.providerRows).go();
+        }
+        if (selected(BackupCategory.groups)) {
+          await db.delete(db.groupRows).go();
+        }
         // Only clear memories when the backup actually carries them, so that
         // restoring a native Flutter backup (which has none) doesn't wipe them.
-        if (data.memories.isNotEmpty) {
+        if (selected(BackupCategory.memories) && data.memories.isNotEmpty) {
           await db.delete(db.memoryRows).go();
         }
       }
 
-      // Write topics.
-      for (final json in data.topics) {
-        final id = json['id'] as String? ?? '';
-        if (id.isEmpty) {
-          skipped++;
-          continue;
-        }
-        if (mode == RestoreMode.merge) {
-          final existing = await db.topicDao.getById(id);
-          if (existing != null) {
-            skipped++;
-            continue;
-          }
-        }
-        if (await _rawInsertTopic(json)) {
-          succeeded++;
-        } else {
-          failed++;
-        }
+      if (selected(BackupCategory.topics)) {
+        stats[BackupCategory.topics] = await _restoreList(
+          BackupCategory.topics,
+          data.topics,
+          mode,
+          exists: (id) async => await db.topicDao.getById(id) != null,
+          insert: _rawInsertTopic,
+          onProgress: onProgress,
+        );
       }
-
-      // Write messages.
-      for (final json in data.messages) {
-        final id = json['id'] as String? ?? '';
-        if (id.isEmpty) {
-          skipped++;
-          continue;
-        }
-        if (mode == RestoreMode.merge) {
-          final existing = await db.messageDao.getById(id);
-          if (existing != null) {
-            skipped++;
-            continue;
-          }
-        }
-        if (await _rawInsertMessage(json)) {
-          succeeded++;
-        } else {
-          failed++;
-        }
+      if (selected(BackupCategory.messages)) {
+        stats[BackupCategory.messages] = await _restoreList(
+          BackupCategory.messages,
+          data.messages,
+          mode,
+          exists: (id) async => await db.messageDao.getById(id) != null,
+          insert: _rawInsertMessage,
+          onProgress: onProgress,
+        );
       }
-
-      // Write message blocks.
-      for (final json in data.messageBlocks) {
-        final id = json['id'] as String? ?? '';
-        if (id.isEmpty) {
-          skipped++;
-          continue;
-        }
-        if (mode == RestoreMode.merge) {
-          final existing = await db.messageBlockDao.getById(id);
-          if (existing != null) {
-            skipped++;
-            continue;
-          }
-        }
-        if (await _rawInsertMessageBlock(json)) {
-          succeeded++;
-        } else {
-          failed++;
-        }
+      if (selected(BackupCategory.messageBlocks)) {
+        stats[BackupCategory.messageBlocks] = await _restoreList(
+          BackupCategory.messageBlocks,
+          data.messageBlocks,
+          mode,
+          exists: (id) async => await db.messageBlockDao.getById(id) != null,
+          insert: _rawInsertMessageBlock,
+          onProgress: onProgress,
+        );
       }
-
-      // Write assistants.
-      for (final json in data.assistants) {
-        final id = json['id'] as String? ?? '';
-        if (id.isEmpty) {
-          skipped++;
-          continue;
-        }
-        if (mode == RestoreMode.merge) {
-          final existing = await db.assistantDao.getById(id);
-          if (existing != null) {
-            skipped++;
-            continue;
-          }
-        }
-        if (await _rawInsertAssistant(json)) {
-          succeeded++;
-        } else {
-          failed++;
-        }
+      if (selected(BackupCategory.assistants)) {
+        stats[BackupCategory.assistants] = await _restoreList(
+          BackupCategory.assistants,
+          data.assistants,
+          mode,
+          exists: (id) async => await db.assistantDao.getById(id) != null,
+          insert: _rawInsertAssistant,
+          onProgress: onProgress,
+        );
       }
-
-      // Write providers.
-      for (final json in data.providers) {
-        final id = json['id'] as String? ?? '';
-        if (id.isEmpty) {
-          skipped++;
-          continue;
-        }
-        if (mode == RestoreMode.merge) {
-          final existing = await db.providerDao.getById(id);
-          if (existing != null) {
-            skipped++;
-            continue;
-          }
-        }
-        if (await _rawInsertProvider(json)) {
-          succeeded++;
-        } else {
-          failed++;
-        }
+      if (selected(BackupCategory.providers)) {
+        stats[BackupCategory.providers] = await _restoreList(
+          BackupCategory.providers,
+          data.providers,
+          mode,
+          exists: (id) async => await db.providerDao.getById(id) != null,
+          insert: _rawInsertProvider,
+          onProgress: onProgress,
+        );
       }
-
-      // Write groups.
-      for (final json in data.groups) {
-        final id = json['id'] as String? ?? '';
-        if (id.isEmpty) {
-          skipped++;
-          continue;
-        }
-        if (mode == RestoreMode.merge) {
-          final existing = await db.groupDao.getById(id);
-          if (existing != null) {
-            skipped++;
-            continue;
-          }
-        }
-        if (await _rawInsertGroup(json)) {
-          succeeded++;
-        } else {
-          failed++;
-        }
+      if (selected(BackupCategory.groups)) {
+        stats[BackupCategory.groups] = await _restoreList(
+          BackupCategory.groups,
+          data.groups,
+          mode,
+          exists: (id) async => await db.groupDao.getById(id) != null,
+          insert: _rawInsertGroup,
+          onProgress: onProgress,
+        );
       }
-
-      // Write settings.
-      for (final json in data.settings) {
-        final key = json['key'] as String? ?? '';
-        if (key.isEmpty) {
-          skipped++;
-          continue;
-        }
-        if (mode == RestoreMode.merge) {
-          final existing = await db.appSettingDao.getValue(key);
-          if (existing != null) {
-            skipped++;
-            continue;
-          }
-        }
-        final value = json['value'] as String? ?? '';
-        try {
-          await db.appSettingDao.setValue(key, value);
-          succeeded++;
-        } catch (_) {
-          failed++;
-        }
+      if (selected(BackupCategory.settings)) {
+        stats[BackupCategory.settings] = await _restoreList(
+          BackupCategory.settings,
+          data.settings,
+          mode,
+          idOf: (json) => json['key'] as String? ?? '',
+          exists: (key) async => await db.appSettingDao.getValue(key) != null,
+          insert: (json) async {
+            try {
+              await db.appSettingDao
+                  .setValue(json['key'] as String, json['value'] as String? ?? '');
+              return true;
+            } catch (_) {
+              return false;
+            }
+          },
+          onProgress: onProgress,
+        );
       }
-
-      // Write memories.
-      for (final json in data.memories) {
-        final id = json['id'] as String? ?? '';
-        // Skip rows without an id or that were soft-deleted on the web side.
-        if (id.isEmpty || json['isDeleted'] == true) {
-          skipped++;
-          continue;
-        }
-        if (mode == RestoreMode.merge) {
-          final existing = await db.memoryDao.getById(id);
-          if (existing != null) {
-            skipped++;
-            continue;
-          }
-        }
-        if (await _rawInsertMemory(json)) {
-          succeeded++;
-        } else {
-          failed++;
-        }
+      if (selected(BackupCategory.memories) && data.memories.isNotEmpty) {
+        stats[BackupCategory.memories] = await _restoreList(
+          BackupCategory.memories,
+          data.memories,
+          mode,
+          exists: (id) async => await db.memoryDao.getById(id) != null,
+          insert: _rawInsertMemory,
+          // Skip rows soft-deleted on the web side.
+          skipWhen: (json) => json['isDeleted'] == true,
+          onProgress: onProgress,
+        );
       }
     });
 
+    int succeeded = 0;
+    int skipped = 0;
+    int failed = 0;
+    for (final s in stats.values) {
+      succeeded += s.succeeded;
+      skipped += s.skipped;
+      failed += s.failed;
+    }
+
     return RestoreResult(
+      succeeded: succeeded,
+      skipped: skipped,
+      failed: failed,
+      byCategory: stats,
+    );
+  }
+
+  /// Writes one category's records with conflict handling, reconciliation
+  /// counting and streamed progress.
+  ///
+  /// Records are processed in [_restoreBatchSize] chunks; after each chunk the
+  /// loop emits progress and yields to the event loop so large imports don't
+  /// freeze the UI. Returns the category's [CategoryStat] for 对数校验.
+  Future<CategoryStat> _restoreList(
+    BackupCategory category,
+    List<Map<String, dynamic>> records,
+    RestoreMode mode, {
+    required Future<bool> Function(String id) exists,
+    required Future<bool> Function(Map<String, dynamic> json) insert,
+    String Function(Map<String, dynamic> json)? idOf,
+    bool Function(Map<String, dynamic> json)? skipWhen,
+    void Function(RestoreProgress)? onProgress,
+  }) async {
+    final total = records.length;
+    final id = idOf ?? (json) => json['id'] as String? ?? '';
+    int succeeded = 0;
+    int skipped = 0;
+    int failed = 0;
+    int done = 0;
+
+    onProgress?.call(RestoreProgress(category, 0, total));
+
+    for (final json in records) {
+      final recordId = id(json);
+      if (recordId.isEmpty || (skipWhen?.call(json) ?? false)) {
+        skipped++;
+      } else if (mode == RestoreMode.merge && await exists(recordId)) {
+        skipped++;
+      } else if (await insert(json)) {
+        succeeded++;
+      } else {
+        failed++;
+      }
+
+      done++;
+      if (done % _restoreBatchSize == 0 || done == total) {
+        onProgress?.call(RestoreProgress(category, done, total));
+        // Yield so the UI can paint between batches.
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
+    return CategoryStat(
+      source: total,
       succeeded: succeeded,
       skipped: skipped,
       failed: failed,
@@ -1656,9 +1803,22 @@ class RestoreResult {
   final int skipped;
   final int failed;
 
-  const RestoreResult({this.succeeded = 0, this.skipped = 0, this.failed = 0});
+  /// Per-category reconciliation stats (源/目标/跳过/失败). Empty for callers
+  /// that don't request a selective restore.
+  final Map<BackupCategory, CategoryStat> byCategory;
+
+  const RestoreResult({
+    this.succeeded = 0,
+    this.skipped = 0,
+    this.failed = 0,
+    this.byCategory = const {},
+  });
 
   int get total => succeeded + skipped + failed;
+
+  /// True when every restored category reconciled (no failures, write count
+  /// covered the non-skipped source records).
+  bool get reconciled => byCategory.values.every((s) => s.reconciled);
 
   String get summary {
     final parts = <String>[];
