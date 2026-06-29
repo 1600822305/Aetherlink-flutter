@@ -69,6 +69,38 @@ class _RestoreSelectionSheetState extends State<RestoreSelectionSheet> {
 
   bool get _anySelected => _selected.isNotEmpty;
 
+  /// Categories present in this backup, for filtering dependency links.
+  late final Set<BackupCategory> _present =
+      widget.scan.presentCategories.toSet();
+
+  /// Toggles [c], keeping dependent categories consistent so an overwrite
+  /// restore can't orphan child records:
+  /// - checking a child also checks the parents it needs (messages→topics, …)
+  /// - unchecking a parent also unchecks the children that depend on it.
+  void _toggle(BackupCategory c, bool checked) {
+    setState(() {
+      if (checked) {
+        _selected.add(c);
+        _selected.addAll(c.requiredAncestors.where(_present.contains));
+      } else {
+        _selected.remove(c);
+        _selected.removeAll(c.dependentDescendants);
+      }
+    });
+  }
+
+  /// In overwrite mode, warn when a selected category's parent is missing from
+  /// the backup (so its records can't be reattached and would be orphaned).
+  bool get _hasOrphanRisk {
+    if (_mode != RestoreMode.overwrite) return false;
+    for (final c in _selected) {
+      for (final dep in c.requiredAncestors) {
+        if (_present.contains(dep) && !_selected.contains(dep)) return true;
+      }
+    }
+    return false;
+  }
+
   Future<void> _start() async {
     setState(() {
       _phase = _Phase.running;
@@ -92,17 +124,22 @@ class _RestoreSelectionSheetState extends State<RestoreSelectionSheet> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottomInset),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+    // Block the system back button while a restore is streaming so the sheet
+    // can't be dismissed mid-write (the DB transaction would keep running).
+    return PopScope(
+      canPop: _phase != _Phase.running,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+          ),
+          child: switch (_phase) {
+            _Phase.select => _buildSelect(context),
+            _Phase.running => _buildRunning(context),
+            _Phase.result => _buildResult(context),
+          },
         ),
-        child: switch (_phase) {
-          _Phase.select => _buildSelect(context),
-          _Phase.running => _buildRunning(context),
-          _Phase.result => _buildResult(context),
-        },
       ),
     );
   }
@@ -136,13 +173,7 @@ class _RestoreSelectionSheetState extends State<RestoreSelectionSheet> {
                   dense: true,
                   controlAffinity: ListTileControlAffinity.leading,
                   value: _selected.contains(c),
-                  onChanged: (v) => setState(() {
-                    if (v == true) {
-                      _selected.add(c);
-                    } else {
-                      _selected.remove(c);
-                    }
-                  }),
+                  onChanged: (v) => _toggle(c, v == true),
                   title: Text(c.label),
                   secondary: Text(
                     '${widget.scan.countOf(c)}',
@@ -211,6 +242,29 @@ class _RestoreSelectionSheetState extends State<RestoreSelectionSheet> {
             ],
           ),
         ),
+        if (_hasOrphanRisk)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  LucideIcons.triangleAlert,
+                  size: 14,
+                  color: theme.colorScheme.error,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '所选数据的关联上级未一并导入，覆盖后可能产生无法关联的记录',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.error,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         Padding(
           padding: EdgeInsets.fromLTRB(
             16,

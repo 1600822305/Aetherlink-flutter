@@ -18,6 +18,43 @@ enum BackupCategory {
 }
 
 extension BackupCategoryX on BackupCategory {
+  /// Categories this one directly depends on. In overwrite restores a child
+  /// whose parent isn't also restored would reference a record that no longer
+  /// exists (orphan), so the checklist keeps these linked.
+  ///
+  /// Chain: messageBlocks → messages → topics.
+  Set<BackupCategory> get directDependencies {
+    switch (this) {
+      case BackupCategory.messages:
+        return {BackupCategory.topics};
+      case BackupCategory.messageBlocks:
+        return {BackupCategory.messages};
+      case BackupCategory.topics:
+      case BackupCategory.assistants:
+      case BackupCategory.providers:
+      case BackupCategory.groups:
+      case BackupCategory.settings:
+      case BackupCategory.memories:
+        return const {};
+    }
+  }
+
+  /// Transitive closure of [directDependencies] (parents this category needs).
+  Set<BackupCategory> get requiredAncestors {
+    final result = <BackupCategory>{};
+    final queue = [...directDependencies];
+    while (queue.isNotEmpty) {
+      final c = queue.removeLast();
+      if (result.add(c)) queue.addAll(c.directDependencies);
+    }
+    return result;
+  }
+
+  /// Categories that depend (transitively) on this one — its descendants.
+  Set<BackupCategory> get dependentDescendants => BackupCategory.values
+      .where((c) => c.requiredAncestors.contains(this))
+      .toSet();
+
   /// Human-readable label shown in the selection checklist and result report.
   String get label {
     switch (this) {
