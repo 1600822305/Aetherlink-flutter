@@ -5,11 +5,14 @@ part 'chat_interface_settings.g.dart';
 
 /// The multi-model comparison layout (`settings.multiModelDisplayStyle`,
 /// `ChatInterfaceSettings.tsx`): `horizontal` (responses side by side, the
-/// default), `vertical` (stacked rows) and `single` (one column, switchable).
+/// default), `vertical` (stacked rows), `single` (折叠，one column switchable)
+/// and `grid` (网格，responsive fixed-height cards). The 对比 group widget maps
+/// these onto its four-value [MultiModelMessageStyle].
 enum MultiModelDisplayStyle {
   horizontal('horizontal'),
   vertical('vertical'),
-  single('single');
+  single('single'),
+  grid('grid');
 
   const MultiModelDisplayStyle(this.id);
 

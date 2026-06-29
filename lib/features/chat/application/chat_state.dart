@@ -4,6 +4,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_version.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/multi_model_message_style.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/metrics.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/usage.dart';
 
@@ -34,10 +35,19 @@ abstract class ChatMessageView with _$ChatMessageView {
     DateTime? createdAt,
     String? modelName,
     String? providerName,
+    /// The model / provider ids of this message's model, used by the 多模型对比
+    /// group's model selector to render the per-model logo (the bubble itself
+    /// shows the name). Null for user messages or models without an id.
+    String? modelId,
+    String? providerId,
     // 多模型对比分组：[askId] 指向被回答的用户消息，[siblingsGroupId]>0 表示该助手
     // 消息属于同一父下的多模型兄弟组。消息列表据此把连续的同组兄弟摞进对比控件。
     String? askId,
     @Default(0) int siblingsGroupId,
+    /// The group's chosen comparison layout (折叠/水平/垂直/网格), persisted on
+    /// each sibling message. The 对比 group widget reads the first member's value
+    /// to initialise its layout toggle, falling back to the global setting.
+    MultiModelMessageStyle? multiModelMessageStyle,
     /// Whether this is the chosen sibling of its multi-model group (the one the
     /// conversation continues from). Drives the 对比 group's selected highlight.
     @Default(false) bool foldSelected,

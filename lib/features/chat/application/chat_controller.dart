@@ -570,8 +570,11 @@ class ChatController extends _$ChatController {
         createdAt: assistantTime,
         modelName: effective.name,
         providerName: current.provider.name,
+        modelId: effective.id,
+        providerId: current.provider.id,
         askId: userMessageId,
         siblingsGroupId: siblingsGroupId,
+        multiModelMessageStyle: defaultStyle,
         foldSelected: i == 0,
       );
       assistantViews.add(assistantView);
@@ -726,6 +729,45 @@ class ChatController extends _$ChatController {
     }
     await _repo.setActiveNode(topicId, messageId);
     ref.read(chatRefreshProvider.notifier).bump();
+  }
+
+  /// Persists the multi-model 对比 layout [style] onto every member of a group
+  /// (port of the web `handleStyleChange`, which writes `multiModelMessageStyle`
+  /// to all grouped assistant messages). The 对比 group widget keeps its own
+  /// immediate UI state, so this only persists the choice for the next load — no
+  /// list refresh is bumped, avoiding a rebuild flicker mid-toggle.
+  Future<void> setMultiModelStyle(
+    List<String> memberIds,
+    MultiModelMessageStyle style,
+  ) async {
+    for (final id in memberIds) {
+      final message = await _repo.getMessage(id);
+      if (message == null || message.multiModelMessageStyle == style) continue;
+      await _repo.saveMessage(message.copyWith(multiModelMessageStyle: style));
+    }
+  }
+
+  /// Re-runs every errored sibling of a multi-model group (port of the web
+  /// `handleRetryFailed`, which calls `onRegenerate` for each failed message).
+  /// No-op while streaming.
+  Future<void> retryFailedSiblings(List<String> memberIds) async {
+    final snapshot = state.value;
+    if (snapshot == null || snapshot.isStreaming) return;
+    for (final id in memberIds) {
+      final failed = snapshot.messages.any(
+        (v) => v.id == id && v.status == MessageStatus.error,
+      );
+      if (failed) await regenerate(id);
+    }
+  }
+
+  /// Deletes a whole multi-model 对比 group — the asked user message and all its
+  /// sibling replies — by cascade-removing the subtree rooted at [askId] (port
+  /// of the web `handleDeleteGroup`). No-op while streaming.
+  Future<void> deleteMultiModelGroup(String askId) async {
+    final snapshot = state.value;
+    if (snapshot == null || snapshot.isStreaming) return;
+    await deleteMessage(askId, cascade: true);
   }
 
   /// Sends a user message and streams the combo (sequential) response.
@@ -4098,8 +4140,11 @@ class ChatController extends _$ChatController {
       createdAt: message.createdAt,
       modelName: model?.name,
       providerName: providerName,
+      modelId: model?.id ?? message.modelId,
+      providerId: model?.provider,
       askId: message.askId,
       siblingsGroupId: message.siblingsGroupId,
+      multiModelMessageStyle: message.multiModelMessageStyle,
       foldSelected: message.foldSelected ?? false,
       versions: message.versions ?? const <MessageVersion>[],
       currentVersionId: message.currentVersionId,

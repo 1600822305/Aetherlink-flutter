@@ -258,6 +258,7 @@ class _MultiModelCard extends StatelessWidget {
     MultiModelDisplayStyle.horizontal: '水平布局（默认）',
     MultiModelDisplayStyle.vertical: '垂直布局（并排显示）',
     MultiModelDisplayStyle.single: '单独布局（堆叠显示）',
+    MultiModelDisplayStyle.grid: '网格布局（卡片平铺）',
   };
 
   @override
@@ -279,7 +280,7 @@ class _MultiModelCard extends StatelessWidget {
                   title: '多模型对比显示',
                   tooltip: '配置多模型对比时的布局方式',
                   description:
-                      '设置多模型对比时的布局方式。水平布局将模型响应并排显示，垂直布局将模型响应上下排列，单独布局将模型响应堆叠显示。',
+                      '设置多模型对比时的布局方式。水平布局将模型响应并排显示，垂直布局将模型响应上下排列，单独布局将模型响应堆叠显示，网格布局将模型响应以卡片平铺。',
                 ),
               ),
             ],
