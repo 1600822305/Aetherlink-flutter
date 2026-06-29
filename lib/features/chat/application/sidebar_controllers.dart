@@ -5,6 +5,8 @@ import 'package:aetherlink_flutter/features/chat/application/assistant_presets.d
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/message_ordering.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/parameter_settings.dart';
@@ -543,6 +545,20 @@ class Topics extends _$Topics {
     final toClone = ordered.sublist(0, branchIndex + 1);
     final newTopicId = generateId('topic');
 
+    // The new topic needs its own content-less virtual root, exactly like a
+    // freshly-created topic — without it getRootMessageId is null, so
+    // orderBranchMessages / the 分支管理 canvas can't project an active path and
+    // fall back to a flat chronological list (点节点切分支看起来没反应).
+    final rootId = generateId('root');
+    final rootMessage = Message(
+      id: rootId,
+      role: MessageRole.root,
+      assistantId: source.assistantId,
+      topicId: newTopicId,
+      createdAt: now,
+      status: MessageStatus.success,
+    );
+
     // Pass 1: map every cloned message's old id to a fresh one so intra-branch
     // references (askId) can be remapped in pass 2.
     final idMap = <String, String>{
@@ -571,10 +587,13 @@ class Topics extends _$Topics {
         message.copyWith(
           id: newId,
           topicId: newTopicId,
-          // Remap the tree link to the cloned parent; a parent outside the
-          // cloned prefix becomes null (a new root) so the branch tree stays
-          // connected instead of every node falling back to an orphan root.
-          parentId: message.parentId == null ? null : idMap[message.parentId],
+          // Remap the tree link to the cloned parent; first-turn messages and
+          // any whose parent falls outside the cloned prefix hang off the new
+          // topic's virtual root, so the branch tree stays connected and the
+          // active path can be projected.
+          parentId: message.parentId == null
+              ? rootId
+              : (idMap[message.parentId] ?? rootId),
           askId: message.askId == null ? null : idMap[message.askId],
           blocks: newBlocks.map((b) => b.id).toList(),
           versions: null,
@@ -606,7 +625,7 @@ class Topics extends _$Topics {
     if (clonedBlocks.isNotEmpty) {
       await _repo.saveMessageBlocks(clonedBlocks);
     }
-    await _repo.saveMessages(clonedMessages);
+    await _repo.saveMessages([rootMessage, ...clonedMessages]);
 
     final assistant = await _repo.getAssistant(source.assistantId);
     if (assistant != null) {
