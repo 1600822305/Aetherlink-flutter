@@ -1,5 +1,6 @@
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
+import 'package:aetherlink_flutter/features/chat/domain/message_ordering.dart';
 
 /// One node's tree placement: its parent and its multi-model sibling group.
 /// `parentId == null` marks a first-turn message — the backfill reparents it to
@@ -124,6 +125,72 @@ String? findActiveNodeId(List<Message> messages) {
     }
   }
   return last.id;
+}
+
+/// Projects a topic's flat [content] messages (virtual root already excluded)
+/// into the **displayed conversation order** — the Dart analogue of Cherry's
+/// `getBranchMessages`. It walks the active path from [activeNodeId] up to
+/// [rootId], and for each node on the path that belongs to a multi-model
+/// sibling group it **inlines the whole group** (chronologically), so
+/// multi-model replies all show. Off-path branches are excluded.
+///
+/// Returns an empty list when it cannot produce a faithful projection (missing
+/// root/active node, a cycle, or the active node not reaching the root). Callers
+/// treat that — and any projection that doesn't cover every content message — as
+/// a signal to fall back to a plain chronological sort, so no message is ever
+/// dropped from the display.
+List<Message> orderBranchMessages(
+  List<Message> content, {
+  required String? rootId,
+  required String? activeNodeId,
+}) {
+  if (rootId == null || activeNodeId == null || content.isEmpty) {
+    return const [];
+  }
+  final byId = {for (final m in content) m.id: m};
+  if (!byId.containsKey(activeNodeId)) return const [];
+
+  // Ancestor chain of the active node (the path ids), including itself.
+  final pathIds = <String>{};
+  String? cur = activeNodeId;
+  while (cur != null && cur != rootId) {
+    if (!pathIds.add(cur)) return const []; // cycle
+    cur = byId[cur]?.parentId;
+  }
+  if (cur != rootId) return const []; // active node never reaches the root
+
+  final childrenByParent = <String, List<Message>>{};
+  for (final m in content) {
+    (childrenByParent[m.parentId ?? ''] ??= <Message>[]).add(m);
+  }
+  for (final list in childrenByParent.values) {
+    list.sort(compareMessagesChronologically);
+  }
+
+  final result = <Message>[];
+  var parent = rootId;
+  while (true) {
+    final children = childrenByParent[parent];
+    if (children == null || children.isEmpty) break;
+    Message? found;
+    for (final c in children) {
+      if (pathIds.contains(c.id)) {
+        found = c;
+        break;
+      }
+    }
+    if (found == null) break;
+    final pathChild = found; // final so it promotes inside the closure below
+    // Inline the path node's sibling group (multi-model); otherwise just itself.
+    final group = pathChild.siblingsGroupId > 0
+        ? children
+              .where((c) => c.siblingsGroupId == pathChild.siblingsGroupId)
+              .toList()
+        : [pathChild];
+    result.addAll(group);
+    parent = pathChild.id;
+  }
+  return result;
 }
 
 /// Validates a built tree (used by tests and as a migration dry-run check):

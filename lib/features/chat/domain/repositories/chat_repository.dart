@@ -38,6 +38,13 @@ abstract interface class ChatRepository {
 
   Future<List<Message>> getMessagesByTopicId(String topicId);
 
+  /// The topic's messages in **display order**, derived from the message tree:
+  /// the active path (from `topic.activeNodeId` up to the virtual root) with each
+  /// path node's multi-model sibling group inlined. The virtual root is excluded.
+  /// Falls back to a chronological sort if the tree can't produce a faithful
+  /// projection, so the displayed set never loses a message.
+  Future<List<Message>> getBranchMessages(String topicId);
+
   Future<List<Message>> getMessagesByAssistantId(String assistantId);
 
   Future<void> saveMessage(Message message);

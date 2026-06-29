@@ -144,6 +144,75 @@ void main() {
     });
   });
 
+  group('orderBranchMessages', () {
+    var clk = DateTime.utc(2024, 2, 1);
+    Message node(
+      String id, {
+      required String? parentId,
+      int siblingsGroupId = 0,
+    }) {
+      clk = clk.add(const Duration(seconds: 1));
+      return Message(
+        id: id,
+        role: MessageRole.assistant,
+        assistantId: 'a',
+        topicId: 't',
+        createdAt: clk,
+        status: MessageStatus.success,
+        parentId: parentId,
+        siblingsGroupId: siblingsGroupId,
+      );
+    }
+
+    test('linear path is returned root→leaf', () {
+      final content = [
+        node('u1', parentId: 'root'),
+        node('a1', parentId: 'u1'),
+        node('u2', parentId: 'a1'),
+        node('a2', parentId: 'u2'),
+      ];
+      final ordered = orderBranchMessages(
+        content,
+        rootId: 'root',
+        activeNodeId: 'a2',
+      );
+      expect(ordered.map((m) => m.id), ['u1', 'a1', 'u2', 'a2']);
+    });
+
+    test('inlines a multi-model sibling group on the path', () {
+      final content = [
+        node('u1', parentId: 'root'),
+        node('a1', parentId: 'u1', siblingsGroupId: 1),
+        node('a2', parentId: 'u1', siblingsGroupId: 1),
+        node('a3', parentId: 'u1', siblingsGroupId: 1),
+      ];
+      // Active node is one sibling; the whole group should still be returned.
+      final ordered = orderBranchMessages(
+        content,
+        rootId: 'root',
+        activeNodeId: 'a2',
+      );
+      expect(ordered.map((m) => m.id), ['u1', 'a1', 'a2', 'a3']);
+    });
+
+    test('returns empty (→ caller falls back) on bad inputs', () {
+      final content = [node('u1', parentId: 'root')];
+      expect(orderBranchMessages(content, rootId: null, activeNodeId: 'u1'), isEmpty);
+      expect(orderBranchMessages(content, rootId: 'root', activeNodeId: null), isEmpty);
+      // active node not present
+      expect(
+        orderBranchMessages(content, rootId: 'root', activeNodeId: 'ghost'),
+        isEmpty,
+      );
+      // active node never reaches the root
+      final orphan = [node('x', parentId: 'missing')];
+      expect(
+        orderBranchMessages(orphan, rootId: 'root', activeNodeId: 'x'),
+        isEmpty,
+      );
+    });
+  });
+
   group('validateTree', () {
     test('a valid tree (parents mapped to root) has no problems', () {
       final tree = <String, TreePlacement>{

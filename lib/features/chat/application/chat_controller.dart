@@ -167,8 +167,10 @@ class ChatController extends _$ChatController {
       );
     }
 
-    final messages = await _repo.getMessagesByTopicId(topic.id)
-      ..sort(compareMessagesChronologically);
+    // Display order now comes from the message tree (active path + inlined
+    // multi-model siblings); getBranchMessages falls back to a chronological
+    // sort when the tree can't project faithfully, so the set never changes.
+    final messages = await _repo.getBranchMessages(topic.id);
     final views = <ChatMessageView>[];
     for (final message in messages) {
       views.add(await _viewOf(message));
