@@ -571,6 +571,10 @@ class Topics extends _$Topics {
         message.copyWith(
           id: newId,
           topicId: newTopicId,
+          // Remap the tree link to the cloned parent; a parent outside the
+          // cloned prefix becomes null (a new root) so the branch tree stays
+          // connected instead of every node falling back to an orphan root.
+          parentId: message.parentId == null ? null : idMap[message.parentId],
           askId: message.askId == null ? null : idMap[message.askId],
           blocks: newBlocks.map((b) => b.id).toList(),
           versions: null,
@@ -589,6 +593,10 @@ class Topics extends _$Topics {
         ).copyWith(
           name: '${source.name} (分支)',
           messageIds: clonedMessages.map((m) => m.id).toList(),
+          // Make the cloned branch point the active leaf so the new topic opens
+          // on that path (branch manager shows 当前) and the next reply appends
+          // to it instead of forking off the root.
+          activeNodeId: clonedMessages.isEmpty ? null : clonedMessages.last.id,
           lastMessageTime: clonedMessages.isEmpty
               ? now.toIso8601String()
               : clonedMessages.last.createdAt.toIso8601String(),
