@@ -571,6 +571,10 @@ class Topics extends _$Topics {
         message.copyWith(
           id: newId,
           topicId: newTopicId,
+          // Remap the tree link to the cloned parent; a parent outside the
+          // cloned prefix becomes null (a new root) so the branch tree stays
+          // connected instead of every node falling back to an orphan root.
+          parentId: message.parentId == null ? null : idMap[message.parentId],
           askId: message.askId == null ? null : idMap[message.askId],
           blocks: newBlocks.map((b) => b.id).toList(),
           versions: null,
