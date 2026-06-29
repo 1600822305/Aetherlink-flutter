@@ -175,15 +175,20 @@ class ChatMessageBubble extends ConsumerWidget {
                 alignment: isUser
                     ? Alignment.centerRight
                     : Alignment.centerLeft,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: maxWidth,
-                    minWidth: minWidth,
-                  ),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Container(
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // 宽度约束加在气泡本体上（而不是外层 Stack）：否则 最小宽度 会把
+                    // Stack 整体撑宽，而 Stack 默认 topStart 对齐会把气泡推到内侧边缘，
+                    // 导致用户气泡贴不到右边。约束气泡本身后，Stack 收缩到气泡尺寸，
+                    // 再由外层 Align 把它钉到 右/左 侧，和原版 web 的
+                    // `minWidth:50% + alignSelf:flex-end` 行为一致。
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: maxWidth,
+                        minWidth: minWidth,
+                      ),
+                      child: Container(
                         // Extra right padding in 气泡模式 leaves room for the
                         // 三点菜单 anchored in the top-right corner.
                         padding: EdgeInsets.only(
@@ -229,34 +234,34 @@ class ChatMessageBubble extends ConsumerWidget {
                               )
                             : content,
                       ),
-                      // 小功能气泡: floating above the bubble, aligned to its inner
-                      // side (用户消息→左上, AI消息→右上), like the original web.
-                      if (showBubbleActions && settings.showMicroBubbles)
-                        Positioned(
-                          top: -26,
-                          left: isUser ? 0 : null,
-                          right: isUser ? null : 0,
-                          child: MessageMicroBubbles(
-                            view: view,
-                            showTtsButton: settings.showTTSButton,
-                            versionSwitchStyle: settings.versionSwitchStyle,
-                            baseColor: customTextColor,
-                            bubbleColor: bubbleColor,
-                          ),
+                    ),
+                    // 小功能气泡: floating above the bubble, aligned to its inner
+                    // side (用户消息→左上, AI消息→右上), like the original web.
+                    if (showBubbleActions && settings.showMicroBubbles)
+                      Positioned(
+                        top: -26,
+                        left: isUser ? 0 : null,
+                        right: isUser ? null : 0,
+                        child: MessageMicroBubbles(
+                          view: view,
+                          showTtsButton: settings.showTTSButton,
+                          versionSwitchStyle: settings.versionSwitchStyle,
+                          baseColor: customTextColor,
+                          bubbleColor: bubbleColor,
                         ),
-                      // 三点菜单: inside the bubble's top-right corner.
-                      if (showBubbleActions)
-                        Positioned(
-                          top: 4,
-                          right: 4,
-                          child: MessageActionMenu(
-                            view: view,
-                            showTtsButton: settings.showTTSButton,
-                            baseColor: customTextColor,
-                          ),
+                      ),
+                    // 三点菜单: inside the bubble's top-right corner.
+                    if (showBubbleActions)
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: MessageActionMenu(
+                          view: view,
+                          showTtsButton: settings.showTTSButton,
+                          baseColor: customTextColor,
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
               );
             },
