@@ -5,6 +5,7 @@ import 'package:aetherlink_flutter/features/chat/application/assistant_presets.d
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/domain/message_ordering.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/parameter_settings.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
@@ -534,7 +535,7 @@ class Topics extends _$Topics {
     if (source == null) return null;
 
     final ordered = await _repo.getMessagesByTopicId(source.id)
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      ..sort(compareMessagesChronologically);
     final branchIndex = ordered.indexWhere((m) => m.id == branchPointMessageId);
     if (branchIndex == -1) return null;
 

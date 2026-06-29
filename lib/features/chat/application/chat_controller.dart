@@ -30,6 +30,7 @@ import 'package:aetherlink_flutter/features/chat/application/translate_controlle
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/api_key_manager.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
+import 'package:aetherlink_flutter/features/chat/domain/message_ordering.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_file_reference.dart';
@@ -167,7 +168,7 @@ class ChatController extends _$ChatController {
     }
 
     final messages = await _repo.getMessagesByTopicId(topic.id)
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      ..sort(compareMessagesChronologically);
     final views = <ChatMessageView>[];
     for (final message in messages) {
       views.add(await _viewOf(message));
@@ -1959,7 +1960,7 @@ class ChatController extends _$ChatController {
       String preview = '';
       String? lastTime;
       if (messages.isNotEmpty) {
-        messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        messages.sort(compareMessagesChronologically);
         final last = messages.last;
         lastTime = (last.updatedAt ?? last.createdAt).toIso8601String();
         final blocks = await _repo.getMessageBlocksByMessageId(last.id);
@@ -2022,7 +2023,7 @@ class ChatController extends _$ChatController {
 
       // Gather the last 4 messages' text for context.
       final messages = await _repo.getMessagesByTopicId(topicId)
-        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        ..sort(compareMessagesChronologically);
       if (messages.isEmpty) return;
 
       final recent = messages.length > 4
@@ -2180,7 +2181,7 @@ class ChatController extends _$ChatController {
 
       // Gather the last 6 messages' text as the extraction context.
       final messages = await _repo.getMessagesByTopicId(turnTopicId)
-        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        ..sort(compareMessagesChronologically);
       if (messages.isEmpty) return;
       final recent = messages.length > 6
           ? messages.sublist(messages.length - 6)
