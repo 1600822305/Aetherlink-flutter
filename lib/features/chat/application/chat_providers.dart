@@ -162,6 +162,10 @@ Future<void> debugChatSeed(Ref ref) async {
 Future<Topic?> currentTopic(Ref ref) async {
   final assistants = await ref.watch(assistantsProvider.future);
   final repo = ref.watch(chatRepositoryProvider);
+  // Re-fetch when an in-place topic mutation (切换分支 / 选择多模型回复 / 清空消息)
+  // bumps the refresh signal — otherwise this returns the cached Topic with a
+  // stale activeNodeId, so 分支管理 的「当前」节点固化、点节点没反应。
+  ref.watch(chatRefreshProvider);
 
   final selectedId = ref.watch(currentTopicIdProvider);
   if (selectedId != null) {
