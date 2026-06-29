@@ -151,25 +151,33 @@ class _MultiModelMessageGroupState
         // bubble gets close to its normal width — a narrow card overflowed
         // right because the bubble's action toolbar has a minimum width.
         final cardWidth = (size.width - 24).clamp(300.0, 560.0);
-        // Bound the viewport height so each card's inner vertical scroll has a
-        // finite height (NO IntrinsicHeight — it can't measure a scroll view,
-        // which was zero-sizing the content). Cards size to min(content, this).
+        // Cap the height so a long reply scrolls inside its card, but let short
+        // replies shrink to their content. A horizontal ListView would force
+        // every card to the full viewport height (→ big blank space under short
+        // replies); a Row with crossAxisAlignment.start hands children LOOSE
+        // height (0..maxHeight) so each card sizes to min(content, maxHeight) —
+        // the web's `maxHeight + overflowY:auto`.
         final maxHeight = (size.height - 320).clamp(320.0, 560.0);
         return ConstrainedBox(
           constraints: BoxConstraints(maxHeight: maxHeight),
-          child: ListView.separated(
+          child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.only(top: 2, bottom: 4),
-            shrinkWrap: true,
-            itemCount: members.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 12),
-            itemBuilder: (context, i) => SizedBox(
-              width: cardWidth,
-              child: _MemberCell(
-                messageId: members[i],
-                style: style,
-                selected: members[i] == selectedId,
-              ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < members.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 12),
+                  SizedBox(
+                    width: cardWidth,
+                    child: _MemberCell(
+                      messageId: members[i],
+                      style: style,
+                      selected: members[i] == selectedId,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         );
