@@ -1085,7 +1085,11 @@ class _GroupEditorSheetState extends ConsumerState<_GroupEditorSheet> {
         16,
         0,
         16,
-        16 + MediaQuery.viewInsetsOf(context).bottom,
+        // Keep clear of the keyboard (viewInsets) AND the home-indicator /
+        // gesture bar (padding) so the bottom actions aren't clipped.
+        16 +
+            MediaQuery.viewInsetsOf(context).bottom +
+            MediaQuery.paddingOf(context).bottom,
       ),
       child: SingleChildScrollView(
         child: Column(

@@ -458,34 +458,30 @@ class _GroupButton extends StatelessWidget {
                     ),
                   ),
                 ),
-                Wrap(
-                  spacing: 16,
-                  runSpacing: 12,
-                  children: [
-                    for (final component in group.children)
-                      if (buildChild(component) case final Widget child)
-                        SizedBox(
-                          width: 72,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              child,
-                              const SizedBox(height: 2),
-                              Text(
-                                topToolbarComponentName(component),
-                                textAlign: TextAlign.center,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
+                // One function per row (a list, not equal-width tiles), so
+                // long labels stay readable and the order matches the editor.
+                for (final component in group.children)
+                  if (buildChild(component) case final Widget child)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          child,
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              topToolbarComponentName(component),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: theme.colorScheme.onSurface,
                               ),
-                            ],
+                            ),
                           ),
-                        ),
-                  ],
-                ),
+                        ],
+                      ),
+                    ),
               ],
             ),
           ),
