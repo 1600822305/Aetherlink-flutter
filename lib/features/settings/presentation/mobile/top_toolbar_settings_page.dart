@@ -381,7 +381,9 @@ class _DiyCard extends StatelessWidget {
               ),
               icon: const Icon(LucideIcons.settings, size: 16),
               label: const Text('矫正对齐'),
-              onPressed: settings.positions.isEmpty ? null : onAlign,
+              onPressed: settings.positions.isEmpty && settings.groups.isEmpty
+                  ? null
+                  : onAlign,
             ),
           ),
           // Model selector display style.

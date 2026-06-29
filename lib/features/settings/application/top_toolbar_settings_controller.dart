@@ -81,16 +81,23 @@ class TopToolbarSettingsController extends _$TopToolbarSettingsController
     persist(state.copyWith(positions: const []));
   }
 
-  /// 矫正对齐: vertically center every placed component (y = 50%) and re-clamp x
-  /// into the air-wall (`handleAlignComponents`).
+  /// 矫正对齐: vertically center every placed component AND 聚合按钮 (y = 50%)
+  /// and re-clamp x into the air-wall (`handleAlignComponents`).
   void alignLayout() {
-    if (state.positions.isEmpty) return;
+    if (state.positions.isEmpty && state.groups.isEmpty) return;
     persist(
       state.copyWith(
         positions: List.unmodifiable([
           for (final p in state.positions)
             p.copyWith(
               x: p.x.clamp(_edgePadding, 100 - _edgePadding).toDouble(),
+              y: 50,
+            ),
+        ]),
+        groups: List.unmodifiable([
+          for (final g in state.groups)
+            g.copyWith(
+              x: g.x.clamp(_edgePadding, 100 - _edgePadding).toDouble(),
               y: 50,
             ),
         ]),
