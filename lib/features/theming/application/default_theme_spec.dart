@@ -6,8 +6,10 @@ import 'package:aetherlink_flutter/features/theming/domain/theme_spec.dart';
 /// presets and gradient/decoration tokens are deferred (M4.0 ports only the
 /// default light+dark core tokens).
 ///
-/// Chat-bubble roles are not defined by `themes.ts`; they are seeded here with
-/// palette-consistent values and will be refined when the chat UI lands (M4.1).
+/// Chat-bubble roles are calibrated 1:1 to the original `src/shared/design-
+/// tokens` default-theme `message.user.background` / `message.ai.background`
+/// tokens (soft tinted user bubble + a distinct AI bubble) so the chat keeps the
+/// layered look of the web app instead of bubbles blending into the surface.
 const ThemeSpec defaultThemeSpec = ThemeSpec(
   id: 'default',
   name: '默认主题',
@@ -19,8 +21,8 @@ const ThemeSpec defaultThemeSpec = ThemeSpec(
       surface: 0xFFFFFFFF,
       textPrimary: 0xFF1E293B,
       textSecondary: 0xFF64748B,
-      bubbleUser: 0xFF64748B,
-      bubbleAi: 0xFFF1F5F9,
+      bubbleUser: 0xFFE0F2FE,
+      bubbleAi: 0xFFF8FAFC,
     ),
     dark: ColorRoleSet(
       primary: 0xFF64748B,
@@ -29,8 +31,8 @@ const ThemeSpec defaultThemeSpec = ThemeSpec(
       surface: 0xFF2A2A2A,
       textPrimary: 0xFFF0F0F0,
       textSecondary: 0xFFB0B0B0,
-      bubbleUser: 0xFF334155,
-      bubbleAi: 0xFF2A2A2A,
+      bubbleUser: 0xFF1E3A5F,
+      bubbleAi: 0xFF2D3748,
     ),
   ),
   // Roboto is the cross-platform member of the original's system font stack

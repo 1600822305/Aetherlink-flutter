@@ -8,10 +8,11 @@ import 'package:aetherlink_flutter/features/theming/domain/theme_spec.dart';
 /// Each preset reuses the shared typography / shape / density of
 /// [defaultThemeSpec] (the original keeps font + radius theme-independent and
 /// only swaps colors), so only the per-brightness color roles and the preview
-/// gradient differ. Chat-bubble roles are not defined by `themes.ts`; they are
-/// seeded palette-consistently (user bubble = the theme `primary`, AI bubble = a
-/// neutral light tint / the dark surface) exactly as [defaultThemeSpec] does,
-/// and remain user-overridable on the 信息气泡设置 page.
+/// gradient differ. Chat-bubble roles are calibrated 1:1 to the original
+/// `src/shared/design-tokens` per-theme `message.user.background` /
+/// `message.ai.background` tokens (the soft tinted user bubble + distinct AI
+/// bubble that give the chat its layered look), and remain user-overridable on
+/// the 信息气泡设置 page.
 final List<ThemePreset> themePresets = [
   // The default preset reuses [defaultThemeSpec] verbatim so its (already
   // shipped) bubble roles are preserved.
@@ -38,6 +39,10 @@ final List<ThemePreset> themePresets = [
     textPrimaryDark: 0xFFF5F5F4,
     textSecondaryLight: 0xFF78716C,
     textSecondaryDark: 0xFFA8A29E,
+    bubbleUserLight: 0xFFFED7AA,
+    bubbleUserDark: 0xFF7C2D12,
+    bubbleAiLight: 0xFFFFF8E7,
+    bubbleAiDark: 0xFF292524,
   ),
   _preset(
     id: 'nature',
@@ -56,6 +61,10 @@ final List<ThemePreset> themePresets = [
     textPrimaryDark: 0xFFE8E6E3,
     textSecondaryLight: 0xFF5D6B47,
     textSecondaryDark: 0xFFB8B5B0,
+    bubbleUserLight: 0xFFE8E3D8,
+    bubbleUserDark: 0xFF3D4E2C,
+    bubbleAiLight: 0xFFFDFCFB,
+    bubbleAiDark: 0xFF252B20,
   ),
   _preset(
     id: 'tech',
@@ -74,6 +83,10 @@ final List<ThemePreset> themePresets = [
     textPrimaryDark: 0xFFF1F5F9,
     textSecondaryLight: 0xFF64748B,
     textSecondaryDark: 0xFF94A3B8,
+    bubbleUserLight: 0xFFDBEAFE,
+    bubbleUserDark: 0xFF1E3A8A,
+    bubbleAiLight: 0xFFF0F9FF,
+    bubbleAiDark: 0xFF1E293B,
   ),
   _preset(
     id: 'soft',
@@ -92,6 +105,10 @@ final List<ThemePreset> themePresets = [
     textPrimaryDark: 0xFFFCE7F3,
     textSecondaryLight: 0xFF9F1239,
     textSecondaryDark: 0xFFF9A8D4,
+    bubbleUserLight: 0xFFFBCFE8,
+    bubbleUserDark: 0xFF831843,
+    bubbleAiLight: 0xFFFEF3FB,
+    bubbleAiDark: 0xFF2D1B3D,
   ),
   _preset(
     id: 'ocean',
@@ -110,6 +127,10 @@ final List<ThemePreset> themePresets = [
     textPrimaryDark: 0xFFE0F2FE,
     textSecondaryLight: 0xFF0369A1,
     textSecondaryDark: 0xFF7DD3FC,
+    bubbleUserLight: 0xFFCFFAFE,
+    bubbleUserDark: 0xFF164E63,
+    bubbleAiLight: 0xFFE0F2FE,
+    bubbleAiDark: 0xFF1E3A5F,
   ),
   _preset(
     id: 'sunset',
@@ -128,6 +149,10 @@ final List<ThemePreset> themePresets = [
     textPrimaryDark: 0xFFFED7AA,
     textSecondaryLight: 0xFFC2410C,
     textSecondaryDark: 0xFFFDBA74,
+    bubbleUserLight: 0xFFFEF3C7,
+    bubbleUserDark: 0xFF713F12,
+    bubbleAiLight: 0xFFFFEDD5,
+    bubbleAiDark: 0xFF292524,
   ),
   _preset(
     id: 'cinnamonSlate',
@@ -146,6 +171,10 @@ final List<ThemePreset> themePresets = [
     textPrimaryDark: 0xFFF0EBE3,
     textSecondaryLight: 0xFF5D4E4A,
     textSecondaryDark: 0xFFC4B5A8,
+    bubbleUserLight: 0xFFE6DDD3,
+    bubbleUserDark: 0xFF4A3B32,
+    bubbleAiLight: 0xFFFAF7F3,
+    bubbleAiDark: 0xFF2B2420,
   ),
   _preset(
     id: 'horizonGreen',
@@ -164,6 +193,10 @@ final List<ThemePreset> themePresets = [
     textPrimaryDark: 0xFFE8F5F1,
     textSecondaryLight: 0xFF2D6B5E,
     textSecondaryDark: 0xFFA8D5C8,
+    bubbleUserLight: 0xFFC5E8DF,
+    bubbleUserDark: 0xFF1E4D42,
+    bubbleAiLight: 0xFFECF7F3,
+    bubbleAiDark: 0xFF1A2B26,
   ),
   _preset(
     id: 'cherryCoded',
@@ -182,6 +215,10 @@ final List<ThemePreset> themePresets = [
     textPrimaryDark: 0xFFFFE8ED,
     textSecondaryLight: 0xFF78121C,
     textSecondaryDark: 0xFFFFB3C6,
+    bubbleUserLight: 0xFFFFD1DC,
+    bubbleUserDark: 0xFF6B1E2E,
+    bubbleAiLight: 0xFFFFEEF2,
+    bubbleAiDark: 0xFF2B1418,
   ),
 ];
 
@@ -196,7 +233,8 @@ ThemeSpec themeSpecForStyle(String id) =>
     (themePresetsById[id] ?? themePresetsById['default']!).spec;
 
 /// Builds a colored preset that shares the default theme's typography / shape /
-/// density and seeds chat-bubble roles palette-consistently (see file doc).
+/// density; chat-bubble roles are passed in from the original design tokens
+/// (see file doc).
 ThemePreset _preset({
   required String id,
   required String name,
@@ -214,8 +252,11 @@ ThemePreset _preset({
   required int textPrimaryDark,
   required int textSecondaryLight,
   required int textSecondaryDark,
+  required int bubbleUserLight,
+  required int bubbleUserDark,
+  required int bubbleAiLight,
+  required int bubbleAiDark,
 }) {
-  const neutralAiBubbleLight = 0xFFF1F5F9;
   return ThemePreset(
     spec: ThemeSpec(
       id: id,
@@ -229,8 +270,8 @@ ThemePreset _preset({
           surface: surfaceLight,
           textPrimary: textPrimaryLight,
           textSecondary: textSecondaryLight,
-          bubbleUser: primary,
-          bubbleAi: neutralAiBubbleLight,
+          bubbleUser: bubbleUserLight,
+          bubbleAi: bubbleAiLight,
         ),
         dark: ColorRoleSet(
           primary: primary,
@@ -240,8 +281,8 @@ ThemePreset _preset({
           surface: surfaceDark,
           textPrimary: textPrimaryDark,
           textSecondary: textSecondaryDark,
-          bubbleUser: primary,
-          bubbleAi: surfaceDark,
+          bubbleUser: bubbleUserDark,
+          bubbleAi: bubbleAiDark,
         ),
       ),
       typography: const ThemeTypography(fontFamily: 'Roboto'),
