@@ -23,8 +23,8 @@ import 'package:aetherlink_flutter/shared/widgets/color_picker.dart';
 /// instead of fake buttons.
 ///
 /// The five cards are organised into a top tab strip (styled like 辅助模型设置页 —
-/// a segmented pill TabBar): 功能 (气泡功能设置), 外观 (宽度 / 头像和名称 /
-/// 隐藏气泡) and 颜色 (自定义气泡颜色 + 预览). Tab content swaps instantly via an
+/// a segmented pill TabBar): 功能 (气泡功能设置) and 外观 (宽度 / 头像和名称 /
+/// 隐藏气泡 / 自定义气泡颜色 + 预览). Tab content swaps instantly via an
 /// [IndexedStack] and a >60px horizontal swipe jumps to the adjacent tab.
 class MessageBubbleSettingsPage extends ConsumerStatefulWidget {
   const MessageBubbleSettingsPage({super.key});
@@ -40,7 +40,7 @@ class _MessageBubbleSettingsPageState
     extends ConsumerState<MessageBubbleSettingsPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController = TabController(
-    length: 3,
+    length: 2,
     vsync: this,
   )..addListener(_onTabChanged);
 
@@ -60,7 +60,7 @@ class _MessageBubbleSettingsPageState
 
   void _onSwipeEnd() {
     if (_swipeDx.abs() <= 60) return;
-    final next = (_tabController.index + (_swipeDx < 0 ? 1 : -1)).clamp(0, 2);
+    final next = (_tabController.index + (_swipeDx < 0 ? 1 : -1)).clamp(0, 1);
     if (next != _tabController.index) _tabController.animateTo(next);
   }
 
@@ -135,10 +135,6 @@ class _MessageBubbleSettingsPageState
                         settings: settings,
                         controller: controller,
                       ),
-                    ],
-                  ),
-                  _TabList(
-                    children: [
                       _ColorsCard(settings: settings, controller: controller),
                     ],
                   ),
@@ -163,10 +159,10 @@ class _TabList extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView(
       padding: EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        16 + MediaQuery.paddingOf(context).bottom,
+        12,
+        12,
+        12,
+        12 + MediaQuery.paddingOf(context).bottom,
       ),
       children: children,
     );
@@ -184,7 +180,6 @@ class _TabBarHeader extends StatelessWidget {
   static const List<(IconData, String)> _tabs = [
     (LucideIcons.sliders, '功能'),
     (LucideIcons.layout, '外观'),
-    (LucideIcons.palette, '颜色'),
   ];
 
   @override
@@ -278,7 +273,7 @@ class _FunctionCard extends StatelessWidget {
             title: '气泡功能设置',
             tooltip: '设置信息气泡的功能和显示方式',
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           _Select<MessageActionMode>(
             label: '消息操作显示模式',
             value: settings.messageActionMode,
@@ -350,7 +345,7 @@ class _WidthCard extends StatelessWidget {
             title: '消息气泡宽度设置',
             tooltip: '自定义聊天界面中消息气泡的宽度范围，适配不同设备屏幕',
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           _WidthSlider(
             icon: LucideIcons.bot,
             label: 'AI消息最大宽度',
@@ -477,19 +472,19 @@ class _AvatarCard extends StatelessWidget {
             value: settings.showUserAvatar,
             onChanged: controller.setShowUserAvatar,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           _PlainSwitchRow(
             title: '显示用户名称',
             value: settings.showUserName,
             onChanged: controller.setShowUserName,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           _PlainSwitchRow(
             title: '显示模型头像',
             value: settings.showModelAvatar,
             onChanged: controller.setShowModelAvatar,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           _PlainSwitchRow(
             title: '显示模型名称',
             value: settings.showModelName,
@@ -531,7 +526,7 @@ class _HideBubbleCard extends StatelessWidget {
             value: settings.hideUserBubble,
             onChanged: controller.setHideUserBubble,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           _DescribedSwitchRow(
             title: '隐藏AI气泡',
             description: '隐藏AI回复的气泡背景，只显示消息内容',
@@ -587,7 +582,7 @@ class _ColorsCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           // Header row: 空 / 背景色 / 字体色.
           Row(
             children: [
@@ -612,7 +607,7 @@ class _ColorsCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           _ColorRow(
             icon: LucideIcons.user,
             label: '用户消息',
@@ -626,7 +621,7 @@ class _ColorsCard extends StatelessWidget {
             onBubbleChanged: (c) => update(colors.copyWith(userBubbleColor: c)),
             onTextChanged: (c) => update(colors.copyWith(userTextColor: c)),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           _ColorRow(
             icon: LucideIcons.bot,
             label: 'AI回复',
@@ -639,14 +634,14 @@ class _ColorsCard extends StatelessWidget {
             onBubbleChanged: (c) => update(colors.copyWith(aiBubbleColor: c)),
             onTextChanged: (c) => update(colors.copyWith(aiTextColor: c)),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Text(
             '提示：字体颜色同时控制气泡内文字和工具栏按钮的颜色。',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           _MessageBubblePreview(settings: settings),
         ],
       ),
@@ -930,8 +925,8 @@ class _Card extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(18),
@@ -949,7 +944,7 @@ class _CardDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Divider(height: 1, color: Theme.of(context).dividerColor),
     );
   }
