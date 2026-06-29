@@ -32,6 +32,7 @@ class MessageMicroBubbles extends ConsumerStatefulWidget {
     required this.showTtsButton,
     required this.versionSwitchStyle,
     this.baseColor,
+    this.bubbleColor,
     super.key,
   });
 
@@ -39,6 +40,7 @@ class MessageMicroBubbles extends ConsumerStatefulWidget {
   final bool showTtsButton;
   final VersionSwitchStyle versionSwitchStyle;
   final Color? baseColor;
+  final Color? bubbleColor;
 
   @override
   ConsumerState<MessageMicroBubbles> createState() =>
@@ -50,6 +52,8 @@ class _MessageMicroBubblesState extends ConsumerState<MessageMicroBubbles> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final baseColor = widget.baseColor ?? theme.colorScheme.onSurface;
+    final pillColor =
+        widget.bubbleColor ?? theme.colorScheme.surfaceContainerHighest;
 
     final actions = MessageActionsBuilder(
       ref: ref,
@@ -72,12 +76,14 @@ class _MessageMicroBubblesState extends ConsumerState<MessageMicroBubbles> {
             view: widget.view,
             style: widget.versionSwitchStyle,
             baseColor: baseColor,
+            pillColor: pillColor,
           ),
         for (final action in primary)
           if (action.id == MessageActionId.tts)
             _TtsMicroBubble(
               messageId: widget.view.id,
               baseColor: baseColor,
+              pillColor: pillColor,
               onTap: () => action.onInvoke(),
             )
           else
@@ -291,16 +297,18 @@ class _MicroBubble extends StatelessWidget {
   }
 }
 
-/// The 语音播放 micro-bubble: swaps icon/color with live playback state.
+/// The 语音播放 micro-bubble: swaps icon/background with live playback state.
 class _TtsMicroBubble extends ConsumerWidget {
   const _TtsMicroBubble({
     required this.messageId,
     required this.baseColor,
+    required this.pillColor,
     required this.onTap,
   });
 
   final String messageId;
   final Color baseColor;
+  final Color pillColor;
   final VoidCallback onTap;
 
   @override
@@ -316,12 +324,15 @@ class _TtsMicroBubble extends ConsumerWidget {
         (ttsState.status == TtsStatus.playing ||
             ttsState.status == TtsStatus.loading);
     // Original web 播放 chip: idle shows the muted icon + 「播放」, while playing
-    // shows the speaker icon + 「播放中」, tinted with the primary color.
+    // shows the speaker icon + 「播放中」. Like the web Chip, the icon/text keep
+    // the 文本主色 and only the background switches to the 气泡激活色 — it never
+    // recolors to the primary swatch.
     return _LabeledBubble(
       icon: isPlayingThis ? LucideIcons.volume2 : LucideIcons.volumeX,
       label: isPlayingThis ? '播放中' : '播放',
       tooltip: isPlayingThis ? '停止播放' : '语音播放',
-      color: isPlayingThis ? Theme.of(context).colorScheme.primary : baseColor,
+      color: baseColor,
+      backgroundColor: isPlayingThis ? _activeColor(pillColor, baseColor) : pillColor,
       onTap: onTap,
     );
   }
@@ -335,6 +346,7 @@ class _LabeledBubble extends StatelessWidget {
     required this.label,
     required this.tooltip,
     required this.color,
+    required this.backgroundColor,
     required this.onTap,
   });
 
@@ -342,6 +354,7 @@ class _LabeledBubble extends StatelessWidget {
   final String label;
   final String tooltip;
   final Color color;
+  final Color backgroundColor;
   final VoidCallback onTap;
 
   @override
@@ -350,9 +363,10 @@ class _LabeledBubble extends StatelessWidget {
     return Tooltip(
       message: tooltip,
       child: Material(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(
-          alpha: 0.6,
-        ),
+        color: backgroundColor,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: _pillShadowColor,
+        elevation: 1,
         shape: const StadiumBorder(),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -377,6 +391,14 @@ class _LabeledBubble extends StatelessWidget {
   }
 }
 
+/// Soft drop shadow matching the original web chip's `0 1px 2px rgba(0,0,0,0.1)`.
+const Color _pillShadowColor = Color(0x66000000);
+
+/// The 气泡激活色: the original web swaps a chip to `--theme-msg-*-bg-active`
+/// when active. We approximate it by nudging the 气泡底色 toward the 文本主色.
+Color _activeColor(Color base, Color toward) =>
+    Color.alphaBlend(toward.withValues(alpha: 0.14), base);
+
 /// The 版本切换 control. In [VersionSwitchStyle.popup] it shows a pill with the
 /// current index that opens the 版本历史 sheet; in [VersionSwitchStyle.arrows] it
 /// shows `‹ n/total ›` arrows that step between versions (the final slot is the
@@ -386,11 +408,13 @@ class _VersionSwitcher extends ConsumerWidget {
     required this.view,
     required this.style,
     required this.baseColor,
+    required this.pillColor,
   });
 
   final ChatMessageView view;
   final VersionSwitchStyle style;
   final Color baseColor;
+  final Color pillColor;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -407,13 +431,13 @@ class _VersionSwitcher extends ConsumerWidget {
 
     final label = '${currentIndex + 1}/$total';
     final popupLabel = '版本 $label';
-    final pillColor = theme.colorScheme.surfaceContainerHighest.withValues(
-      alpha: 0.6,
-    );
 
     if (style == VersionSwitchStyle.arrows) {
       return Material(
         color: pillColor,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: _pillShadowColor,
+        elevation: 1,
         shape: const StadiumBorder(),
         clipBehavior: Clip.antiAlias,
         child: Row(
@@ -445,6 +469,9 @@ class _VersionSwitcher extends ConsumerWidget {
       message: '版本历史',
       child: Material(
         color: pillColor,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: _pillShadowColor,
+        elevation: 1,
         shape: const StadiumBorder(),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
