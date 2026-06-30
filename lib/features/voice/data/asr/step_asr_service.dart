@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/features/voice/domain/asr_provider_setting.dart';
 
 /// HTTP segmented + SSE streaming ASR using StepFun (stepaudio-2.5-asr).
@@ -20,7 +21,7 @@ import 'package:aetherlink_flutter/features/voice/domain/asr_provider_setting.da
 /// Official docs:
 /// https://platform.stepfun.com/docs/zh/api-reference/audio/asr-sse
 class StepAsrService {
-  StepAsrService({Dio? dio}) : _dio = dio ?? Dio();
+  StepAsrService({Dio? dio}) : _dio = dio ?? buildAppDio();
 
   final Dio _dio;
 

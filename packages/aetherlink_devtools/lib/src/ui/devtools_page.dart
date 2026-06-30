@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../console/console_store.dart';
 import '../panel.dart';
 
 /// The in-app developer tools page: an [AppBar] action row over a [TabBar] whose
@@ -35,21 +34,29 @@ class _DevToolsPageState extends State<DevToolsPage>
     super.dispose();
   }
 
-  Future<void> _copyConsole() async {
-    final lines = ConsoleStore.instance.filtered.map((e) => e.toLine());
-    await Clipboard.setData(ClipboardData(text: lines.join('\n')));
+  DevToolsPanel? get _activePanel {
+    if (_panels.isEmpty) return null;
+    final i = _panels.length == 1 ? 0 : _tabs.index;
+    return _panels[i];
+  }
+
+  Future<void> _copyActive() async {
+    final text = _activePanel?.exportAsText() ?? '';
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('当前面板暂无可复制内容')));
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: text));
     if (mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('已复制控制台日志')));
+      ).showSnackBar(const SnackBar(content: Text('已复制')));
     }
   }
 
-  void _clearActive() {
-    // P0 only hosts the Console; later panels clear their own store keyed off
-    // the active tab index.
-    ConsoleStore.instance.clear();
-  }
+  void _clearActive() => _activePanel?.onClear();
 
   @override
   Widget build(BuildContext context) {
@@ -73,7 +80,7 @@ class _DevToolsPageState extends State<DevToolsPage>
         actions: [
           IconButton(
             tooltip: '复制',
-            onPressed: _copyConsole,
+            onPressed: _copyActive,
             icon: const Icon(Icons.copy_outlined, size: 20),
           ),
           IconButton(

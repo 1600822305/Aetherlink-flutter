@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:aetherlink_devtools/aetherlink_devtools.dart';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:socks5_proxy/socks_client.dart' as socks;
@@ -14,16 +15,27 @@ import 'network_proxy_config.dart';
 /// Provider-specific auth headers, request bodies and endpoints live in the
 /// adapters, never here — this layer carries no protocol semantics
 /// (ADR-0004 / ADR-0006).
-Dio buildLlmDio({NetworkProxyConfig? proxy}) {
-  final dio = Dio(
-    BaseOptions(
-      connectTimeout: const Duration(seconds: 30),
-      // Streamed completions can run for minutes; keep the socket open.
-      receiveTimeout: const Duration(minutes: 5),
-      headers: const {Headers.contentTypeHeader: Headers.jsonContentType},
-    ),
-  );
+Dio buildLlmDio({NetworkProxyConfig? proxy}) => buildAppDio(
+  proxy: proxy,
+  options: BaseOptions(
+    connectTimeout: const Duration(seconds: 30),
+    // Streamed completions can run for minutes; keep the socket open.
+    receiveTimeout: const Duration(minutes: 5),
+    headers: const {Headers.contentTypeHeader: Headers.jsonContentType},
+  ),
+);
+
+/// The app-wide收口 Dio factory (devtools-design §4.2 / §7-①): every [Dio] should
+/// be built through here so the in-app Network panel captures all traffic.
+///
+/// It applies [proxy] (if any) and installs [DioDevInterceptor], which records
+/// requests/responses/streams into the Network panel and is observe-only (it
+/// never alters requests). New code calls this directly; the dedicated factories
+/// ([buildLlmDio], [buildMcpDio]) delegate here so they're covered too.
+Dio buildAppDio({BaseOptions? options, NetworkProxyConfig? proxy}) {
+  final dio = Dio(options);
   configureDioProxy(dio, proxy);
+  dio.interceptors.add(DioDevInterceptor());
   return dio;
 }
 

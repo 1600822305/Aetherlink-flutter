@@ -11,6 +11,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Required for DioDevInterceptor (the Network panel's capture point). dio is
+  # already the app's core HTTP client (^5.9.2); no new third-party download.
+  dio: ^5.9.2
 
 dev_dependencies:
   flutter_test:

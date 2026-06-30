@@ -204,14 +204,14 @@ class _NetworkProxySettingsPageState
       _testError = null;
     });
 
-    final dio = Dio(
-      BaseOptions(
+    final dio = buildAppDio(
+      proxy: config,
+      options: BaseOptions(
         connectTimeout: const Duration(seconds: 8),
         receiveTimeout: const Duration(seconds: 8),
         validateStatus: (_) => true,
       ),
     );
-    configureDioProxy(dio, config);
     try {
       final response = await dio.get<dynamic>(url);
       if (!mounted) return;

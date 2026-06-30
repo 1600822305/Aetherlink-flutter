@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 
+import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/engines/azure_tts_engine.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/engines/elevenlabs_tts_engine.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/engines/gemini_tts_engine.dart';
@@ -30,7 +31,7 @@ export 'package:aetherlink_flutter/features/voice/data/tts/engines/tts_engine.da
 /// Each provider lives in its own engine file under `engines/`. This class is
 /// a thin registry/factory keeping a stable public API for callers.
 class NetworkTtsService {
-  NetworkTtsService({Dio? dio}) : _dio = dio ?? Dio();
+  NetworkTtsService({Dio? dio}) : _dio = dio ?? buildAppDio();
 
   final Dio _dio;
 

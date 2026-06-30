@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/features/voice/domain/asr_provider_setting.dart';
 
 /// HTTP segmented ASR using Xiaomi MiMo (mimo-v2.5-asr).
@@ -19,7 +20,7 @@ import 'package:aetherlink_flutter/features/voice/domain/asr_provider_setting.da
 /// Official docs:
 /// https://platform.xiaomimimo.com/docs/zh-CN/api/audio/Speech-Recognition
 class MimoAsrService {
-  MimoAsrService({Dio? dio}) : _dio = dio ?? Dio();
+  MimoAsrService({Dio? dio}) : _dio = dio ?? buildAppDio();
 
   final Dio _dio;
 

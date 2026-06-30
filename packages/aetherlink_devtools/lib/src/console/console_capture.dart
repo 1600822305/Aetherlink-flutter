@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../models/log_entry.dart';
+import '../network/network_panel.dart';
 import '../panel.dart';
 import 'console_panel.dart';
 import 'console_store.dart';
@@ -29,9 +30,11 @@ class DevToolsCapture {
     if (_installed) return;
     _installed = true;
 
-    // Register the built-in Console panel so [DevToolsPage] has at least one
-    // tab. Later phases register their own panels alongside it.
+    // Register the built-in panels so [DevToolsPage] has its tabs. Later phases
+    // register their own panels alongside these. The Network panel is fed by
+    // [DioDevInterceptor] (installed on Dio via the app's `buildAppDio` factory).
     DevToolsRegistry.register(const ConsolePanel());
+    DevToolsRegistry.register(const NetworkPanel());
 
     final prevFlutterOnError = FlutterError.onError;
     FlutterError.onError = (FlutterErrorDetails details) {

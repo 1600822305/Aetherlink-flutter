@@ -20,6 +20,14 @@ abstract class DevToolsPanel {
 
   /// Builds the panel body shown when its tab is active.
   Widget build(BuildContext context);
+
+  /// Clears this panel's underlying store, invoked by the page's "清空" action
+  /// for the active tab. Default: no-op (a stateless panel has nothing to clear).
+  void onClear() {}
+
+  /// A flat text snapshot of the panel's current (filtered) contents for the
+  /// page's "复制" action. Default: empty (the action is disabled when blank).
+  String exportAsText() => '';
 }
 
 /// The ordered set of panels the [DevToolsPage] renders. Panels register

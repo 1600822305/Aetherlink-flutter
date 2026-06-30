@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
+import 'package:aetherlink_flutter/core/network/dio_client.dart';
 
 part 'skillsmp_service.g.dart';
 
@@ -70,8 +71,8 @@ class SkillsMpService extends _$SkillsMpService {
 
   @override
   String? build() {
-    _dio = Dio(
-      BaseOptions(
+    _dio = buildAppDio(
+      options: BaseOptions(
         baseUrl: _baseUrl,
         connectTimeout: const Duration(seconds: 15),
         receiveTimeout: const Duration(seconds: 15),

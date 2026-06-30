@@ -2,7 +2,7 @@
 
 > **版本**: v0.1
 > **日期**: 2026-06-30
-> **状态**: P0 + P1 已完成（Console + 全局捕获 + 页面 + 关于页入口 + 悬浮按钮），P2~P4 待开工
+> **状态**: P0~P2 已完成（Console + 全局捕获 + 页面 + 关于页入口 + 悬浮按钮 + Network 网络面板 + Dio 收口），P3~P4 待开工
 > **目标**: 做一个「UI 对齐原版 Web、功能媲美 Chrome DevTools、整体比原版更强」的应用内开发者工具面板。
 
 ---
@@ -162,7 +162,7 @@
 |------|------|------|---------|
 | **P0** | 独立 package 骨架 + `ConsoleStore` + 全局错误/print 捕获(§4.1-A) + DevToolsPage(Console tab) | ✅ | 2026-06-30 |
 | **P1** | 可拖拽悬浮按钮 `DevToolsFloatingButton` + 设置开关接线(补占位项) | ✅ | 2026-06-30 |
-| **P2** | `DioDevInterceptor` + 统一 Dio 工厂(§4.2) + Network 面板(含 SSE 流式) | ⬜ | - |
+| **P2** | `DioDevInterceptor` + 统一 Dio 工厂(§4.2) + Network 面板(含 SSE 流式) | ✅ | 2026-06-30 |
 | **P3** | Performance tab（并入 aetherlink_perf） | ⬜ | - |
 | **P4** | Storage / Device 面板 + AI 导出增强 + logger 门面(§4.1-B) | ⬜ | - |
 
@@ -185,6 +185,18 @@
 ## 8. 进度日志
 
 > 每完成一个阶段或重要节点，在此追加一条（日期 + 做了什么 + 关键文件 + 遗留问题）。最新在最上。
+
+### 2026-06-30 — P2 完成（Network 网络面板 + Dio 收口）
+- 包内新增 `src/network/`：
+  - `network_entry.dart` — `NetworkEntry`(可变，随响应/流式逐 chunk 填充) / `NetworkStatus`(pending/success/error/cancelled) + `formatSize`/`formatDuration`(对齐原版 Web 辅助函数)。
+  - `network_store.dart` — 环形缓冲(500 上限) + 过滤(`NetworkFilter`：方法/状态/搜索/仅错误)，`ValueListenable` 驱动，仿 `console_store.dart`。`filtered` 倒序(最新在上)。提供 `start`/`completeResponse`/`beginStream`/`appendStream`/`endStream`/`completeError`/`markCancelled`。
+  - `dio_dev_interceptor.dart` — `DioDevInterceptor`（仅观察，不改请求）：`onRequest` 建条目并把 id 存入 `RequestOptions.extra`；`onResponse` 对 `ResponseType.stream` 的 `ResponseBody` 用 `StreamTransformer` **tee** 字节流，边消费边逐 chunk 写入 store(SSE/LLM 流式杀手锏)，非流式直接序列化记录；`onError` 记错误/取消；`CancelToken.whenCancel` 兜底把仍 pending 的条目置为 cancelled。敏感头(`authorization`/`*-api-key`/`cookie`…)做掩码脱敏。
+  - `network_panel.dart` — Network UI：过滤栏(搜索 + 方法 Chip + 仅错误) + 请求行(方法色标/状态码/短 URL/流式图标/耗时/大小) + 详情抽屉(General + 请求头/请求体/响应头/响应体/错误，流式时实时刷新带进度圈)，复制全部。
+  - **零额外 UI 依赖**(图标用 Material Icons)；新增 `dio: ^5.9.2` 依赖(拦截器必需，已是主 App 核心依赖，本地 path 包无新下载)。
+- 接入：`DevToolsCapture.install()` 注册 `NetworkPanel`；`DevToolsPanel` 接口加可选 `onClear()`/`exportAsText()`，`DevToolsPage` 的「清空/复制」按当前 Tab 委派给对应面板(P0 时是 console 专用硬编码，现泛化，仍不破坏"加面板不改页面"扩展点)；Console/Network 各自实现。库入口导出 Network 相关类型。
+- Dio 收口(§7-①，分步迁移)：`dio_client.dart` 新增 `buildAppDio({options, proxy})`(内置 `DioDevInterceptor`)；`buildLlmDio`/`buildMcpDio` 改为走它；逐个迁移老调用点 → `skill_store_page` / `skillsmp_service` / `network_proxy_settings_page` / `font_settings_controller` / TTS `network_tts_service` / ASR `step_asr`·`mimo_asr`·`whisper_asr`。全仓直接 `Dio(...)` 实例化仅剩 `buildAppDio` 内部一处。
+- 验证：包内 `flutter analyze` 零问题、`flutter test` 11/11(console 5 + network 6)；迁移文件逐一 analyze 无新增问题(仅 `skill_store_page` 存量 `_total`/const 告警，与本次无关，按 AGENTS.md 不顺手改)。架构边界测试不受影响(新增导入均为 `core/network` 与外部包，非 feature→feature)。
+- 遗留/下一步：流式每 chunk 都 `_publish` 与原版 Web 一致(未节流，devtools 关闭时仅多一次列表拷贝，开销可忽略)；cURL 导出 / 失败重发(§5.2 增强项)未做，可后续补。P3 起 Performance(并入 `aetherlink_perf`)。
 
 ### 2026-06-30 — P1 完成（悬浮按钮 + 设置开关）
 - 包内新增 `src/ui/floating_button.dart`：`DevToolsFloatingButton`(48px 圆形 Terminal 蓝按钮，可拖拽，会话内记忆位置) + `DevToolsFloatingButtonHost`(仿 `PerfOverlayHost`，`enabled` 控制挂载，`onPressed` 由宿主注入以避开 router 依赖)。已在库入口导出。

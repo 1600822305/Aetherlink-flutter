@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/features/voice/domain/asr_provider_setting.dart';
 
 /// HTTP-based ASR using OpenAI Whisper (or compatible) endpoint. Records audio,
@@ -8,7 +9,7 @@ import 'package:aetherlink_flutter/features/voice/domain/asr_provider_setting.da
 ///
 /// Supported models: whisper-1, gpt-4o-transcribe, gpt-4o-mini-transcribe.
 class WhisperAsrService {
-  WhisperAsrService({Dio? dio}) : _dio = dio ?? Dio();
+  WhisperAsrService({Dio? dio}) : _dio = dio ?? buildAppDio();
 
   final Dio _dio;
 

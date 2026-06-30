@@ -18,6 +18,13 @@ class ConsolePanel extends DevToolsPanel {
 
   @override
   Widget build(BuildContext context) => const _ConsoleView();
+
+  @override
+  void onClear() => ConsoleStore.instance.clear();
+
+  @override
+  String exportAsText() =>
+      ConsoleStore.instance.filtered.map((e) => e.toLine()).join('\n');
 }
 
 class _ConsoleView extends StatefulWidget {

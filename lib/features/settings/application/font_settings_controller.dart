@@ -10,6 +10,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:system_fonts/system_fonts.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
+import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/shared/domain/font_settings.dart';
 
@@ -207,7 +208,7 @@ class FontLoaderService {
     String family,
     Directory familyDir,
   ) async {
-    final dio = Dio();
+    final dio = buildAppDio();
     final cssUrl =
         'https://fonts.googleapis.com/css2'
         '?family=${Uri.encodeQueryComponent(family)}&display=swap';

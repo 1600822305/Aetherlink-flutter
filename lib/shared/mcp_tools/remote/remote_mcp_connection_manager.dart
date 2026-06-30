@@ -13,11 +13,10 @@ import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_client.dar
 /// connect timeout (so an unreachable active server fails fast instead of
 /// stalling the turn), and no global receive timeout (the legacy SSE GET stream
 /// is long-lived; per-request liveness is enforced by [RemoteMcpClient]).
-Dio buildMcpDio({NetworkProxyConfig? proxy}) {
-  final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 15)));
-  configureDioProxy(dio, proxy);
-  return dio;
-}
+Dio buildMcpDio({NetworkProxyConfig? proxy}) => buildAppDio(
+  proxy: proxy,
+  options: BaseOptions(connectTimeout: const Duration(seconds: 15)),
+);
 
 /// Caches one live [RemoteMcpClient] per configured server — the Flutter port of
 /// the web `MCPConnectionManager`, minus the in-memory / stdio paths (those are
