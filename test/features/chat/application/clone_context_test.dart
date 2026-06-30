@@ -126,4 +126,74 @@ void main() {
       }
     });
   }
+
+  test('clone keeps full context for a flat legacy topic (旧版 web 迁移)',
+      () async {
+    // Simulate a topic imported from old AetherLink web: messages are flat
+    // (no parentId, no virtual root), written in bulk. After 克隆补建虚拟 root,
+    // such rows used to all dangle off the new root → the active path collapsed
+    // to a single message (上下文丢失). The clone must re-chain them.
+    final t = DateTime.utc(2024, 1, 1, 12);
+    await repo.saveTopic(
+      Topic(
+        id: 'src',
+        assistantId: 'asst-1',
+        name: 'Legacy',
+        createdAt: t,
+        updatedAt: t,
+      ),
+    );
+    final flat = <Message>[];
+    final flatBlocks = <MessageBlock>[];
+    var seq = 0;
+    void addFlat(String id, MessageRole role, String text) {
+      final ts = t.add(Duration(seconds: seq++));
+      flatBlocks.add(MessageBlock.mainText(
+        id: 'blk-$id',
+        messageId: id,
+        status: MessageBlockStatus.success,
+        createdAt: ts,
+        content: text,
+      ));
+      flat.add(Message(
+        id: id,
+        role: role,
+        assistantId: 'asst-1',
+        topicId: 'src',
+        createdAt: ts,
+        status: MessageStatus.success,
+        // No parentId — the hallmark of legacy flat data.
+        blocks: <String>['blk-$id'],
+      ));
+    }
+
+    addFlat('m1', MessageRole.user, 'hello');
+    addFlat('m2', MessageRole.assistant, 'hi there');
+    addFlat('m3', MessageRole.user, 'how are you');
+    addFlat('m4', MessageRole.assistant, 'fine');
+    await repo.saveMessageBlocks(flatBlocks);
+    await repo.saveMessages(flat); // bulk write, keeps rows flat
+
+    final container = ProviderContainer(
+      overrides: [chatRepositoryProvider.overrideWithValue(repo)],
+    );
+    addTearDown(container.dispose);
+
+    final branch =
+        await container.read(topicsProvider.notifier).createBranch('m4');
+    expect(branch, isNotNull);
+
+    // Full conversation cloned in displayed order — not collapsed to one row.
+    expect(
+      await projectedTexts(branch!.id),
+      ['hello', 'hi there', 'how are you', 'fine'],
+    );
+
+    // And the clone is now a connected chain (root → m1 → … → m4), not flat:
+    // every cloned row except the first points at another cloned row.
+    final cloned = await repo.getMessagesByTopicId(branch.id);
+    final clonedIds = cloned.map((m) => m.id).toSet();
+    final rooted = cloned.where((m) => !clonedIds.contains(m.parentId)).toList();
+    expect(rooted.length, 1); // exactly one row hangs off the virtual root
+  });
 }

@@ -545,19 +545,34 @@ class Topics extends _$Topics {
     final byId = {for (final m in content) m.id: m};
     if (!byId.containsKey(branchPointMessageId)) return null;
 
-    // Collect the path from the branch point up to the root via parentId, then
-    // reverse to root→leaf order. This is robust to tied/equal createdAt and,
-    // unlike a chronological prefix, never pulls in off-path sibling branches.
-    final pathLeafFirst = <Message>[];
-    final visited = <String>{};
-    String? cursor = branchPointMessageId;
-    while (cursor != null && byId.containsKey(cursor)) {
-      if (!visited.add(cursor)) break; // cycle guard
-      final node = byId[cursor]!;
-      pathLeafFirst.add(node);
-      cursor = node.parentId;
+    // A topic built by the app has a message tree (every content message has a
+    // parentId); 旧版 web 迁移 / 未建树的导入 leaves it flat (all parentId null).
+    final hasTree = content.any((m) => m.parentId != null);
+
+    final List<Message> toClone;
+    if (hasTree) {
+      // Collect the path from the branch point up to the root via parentId, then
+      // reverse to root→leaf order. Robust to tied/equal createdAt and, unlike a
+      // chronological prefix, never pulls in off-path sibling branches.
+      final pathLeafFirst = <Message>[];
+      final visited = <String>{};
+      String? cursor = branchPointMessageId;
+      while (cursor != null && byId.containsKey(cursor)) {
+        if (!visited.add(cursor)) break; // cycle guard
+        final node = byId[cursor]!;
+        pathLeafFirst.add(node);
+        cursor = node.parentId;
+      }
+      toClone = pathLeafFirst.reversed.toList();
+    } else {
+      // Flat/legacy topic: clone the prefix in the *displayed* order (the same
+      // projection the chat list uses, so the clone matches what the user sees)
+      // up to and including the branch point. The cloned rows are re-chained
+      // into a proper tree below so the new topic isn't flat in turn.
+      final displayed = await _repo.getBranchMessages(source.id);
+      final idx = displayed.indexWhere((m) => m.id == branchPointMessageId);
+      toClone = idx == -1 ? const [] : displayed.sublist(0, idx + 1);
     }
-    final toClone = pathLeafFirst.reversed.toList();
     if (toClone.isEmpty) return null;
 
     final now = DateTime.now();
@@ -578,10 +593,22 @@ class Topics extends _$Topics {
     );
 
     // Pass 1: map every cloned message's old id to a fresh one so intra-branch
-    // references (askId) can be remapped in pass 2.
+    // references (askId / parentId) can be remapped in pass 2.
     final idMap = <String, String>{
       for (final message in toClone) message.id: generateId('msg'),
     };
+
+    // The cloned parentId for each message: a real tree keeps its shape (remap
+    // via idMap); a flat topic is re-chained linearly (each row hangs off the
+    // previous one) so the new topic becomes a connected tree instead of every
+    // message dangling off the root (分支管理 变一长行).
+    String parentForCloned(int index) {
+      if (!hasTree) {
+        return index == 0 ? rootId : idMap[toClone[index - 1].id]!;
+      }
+      final original = toClone[index].parentId;
+      return original == null ? rootId : (idMap[original] ?? rootId);
+    }
 
     // Pass 2: clone each message with its blocks (fresh ids), remap askId, and
     // drop version history. Each row gets a distinct increasing timestamp
@@ -608,13 +635,7 @@ class Topics extends _$Topics {
         message.copyWith(
           id: newId,
           topicId: newTopicId,
-          // Remap the tree link to the cloned parent; the root-most message of
-          // the path (and anything whose parent falls outside it) hangs off the
-          // new topic's virtual root, so the branch tree stays connected and
-          // the active path can be projected.
-          parentId: message.parentId == null
-              ? rootId
-              : (idMap[message.parentId] ?? rootId),
+          parentId: parentForCloned(i),
           askId: message.askId == null ? null : idMap[message.askId],
           blocks: newBlocks.map((b) => b.id).toList(),
           versions: null,
