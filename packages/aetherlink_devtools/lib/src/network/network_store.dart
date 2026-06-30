@@ -212,6 +212,9 @@ class NetworkFilter {
     },
     this.search = '',
     this.onlyErrors = false,
+    this.statusClasses = const <int>{},
+    this.onlyStream = false,
+    this.minSize = 0,
   });
 
   /// Visible HTTP methods. Empty means "all" (so new verbs aren't hidden).
@@ -220,10 +223,25 @@ class NetworkFilter {
   final String search;
   final bool onlyErrors;
 
+  /// Visible status-code classes by leading digit (2/3/4/5). Empty means "all".
+  /// A still-pending request (no code yet) is kept so it doesn't vanish.
+  final Set<int> statusClasses;
+
+  /// Show only streaming/SSE responses.
+  final bool onlyStream;
+
+  /// Minimum response size in bytes (0 = no minimum).
+  final int minSize;
+
   bool matches(NetworkEntry e) {
     if (methods.isNotEmpty && !methods.contains(e.method)) return false;
     if (!statuses.contains(e.status)) return false;
     if (onlyErrors && e.status != NetworkStatus.error) return false;
+    if (onlyStream && !e.isStream) return false;
+    if (statusClasses.isNotEmpty && e.statusCode != null) {
+      if (!statusClasses.contains(e.statusCode! ~/ 100)) return false;
+    }
+    if (minSize > 0 && (e.responseSize ?? 0) < minSize) return false;
     if (search.isEmpty) return true;
     final q = search.toLowerCase();
     return e.url.toLowerCase().contains(q) ||
@@ -236,10 +254,16 @@ class NetworkFilter {
     Set<NetworkStatus>? statuses,
     String? search,
     bool? onlyErrors,
+    Set<int>? statusClasses,
+    bool? onlyStream,
+    int? minSize,
   }) => NetworkFilter(
     methods: methods ?? this.methods,
     statuses: statuses ?? this.statuses,
     search: search ?? this.search,
     onlyErrors: onlyErrors ?? this.onlyErrors,
+    statusClasses: statusClasses ?? this.statusClasses,
+    onlyStream: onlyStream ?? this.onlyStream,
+    minSize: minSize ?? this.minSize,
   );
 }

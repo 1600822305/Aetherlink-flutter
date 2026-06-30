@@ -7,6 +7,10 @@ import 'console_store.dart';
 /// The Console [DevToolsPanel]: a searchable, level-filterable view of the
 /// captured log ring buffer, styled after the original web `ConsolePanel`
 /// (monospace rows, level color + icon, expandable stack traces).
+///
+/// Enhancements over the web original: regex search with match highlighting,
+/// per-level count badges on the filter chips, and an optional group-by-context
+/// view with collapsible sections.
 class ConsolePanel extends DevToolsPanel {
   const ConsolePanel();
 
@@ -39,6 +43,7 @@ class _ConsoleViewState extends State<_ConsoleView> {
   final ScrollController _scroll = ScrollController();
   final TextEditingController _searchCtrl = TextEditingController();
   bool _autoScroll = true;
+  bool _groupByContext = false;
 
   @override
   void dispose() {
@@ -48,7 +53,7 @@ class _ConsoleViewState extends State<_ConsoleView> {
   }
 
   void _maybeAutoScroll() {
-    if (!_autoScroll || !_scroll.hasClients) return;
+    if (!_autoScroll || _groupByContext || !_scroll.hasClients) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) {
         _scroll.jumpTo(_scroll.position.maxScrollExtent);
@@ -65,6 +70,8 @@ class _ConsoleViewState extends State<_ConsoleView> {
           searchCtrl: _searchCtrl,
           autoScroll: _autoScroll,
           onAutoScrollChanged: (v) => setState(() => _autoScroll = v),
+          groupByContext: _groupByContext,
+          onGroupChanged: (v) => setState(() => _groupByContext = v),
         ),
         const Divider(height: 1, thickness: 1),
         Expanded(
@@ -73,17 +80,19 @@ class _ConsoleViewState extends State<_ConsoleView> {
             builder: (context, _, _) {
               return ValueListenableBuilder<ConsoleFilter>(
                 valueListenable: _store.filter,
-                builder: (context, _, _) {
+                builder: (context, filter, _) {
                   final rows = _store.filtered;
-                  _maybeAutoScroll();
-                  if (rows.isEmpty) {
-                    return const _EmptyHint();
+                  if (rows.isEmpty) return const _EmptyHint();
+                  if (_groupByContext) {
+                    return _GroupedList(rows: rows, filter: filter);
                   }
+                  _maybeAutoScroll();
                   return ListView.builder(
                     controller: _scroll,
                     padding: EdgeInsets.zero,
                     itemCount: rows.length,
-                    itemBuilder: (context, i) => _LogRow(entry: rows[i]),
+                    itemBuilder: (context, i) =>
+                        _LogRow(entry: rows[i], filter: filter),
                   );
                 },
               );
@@ -95,20 +104,25 @@ class _ConsoleViewState extends State<_ConsoleView> {
   }
 }
 
-/// Top bar: a search field plus a row of toggleable level chips and an
-/// auto-scroll toggle.
+/// Top bar: a search field (with regex toggle) plus a row of toggleable level
+/// chips (with count badges), a group-by-context toggle and an auto-scroll
+/// toggle.
 class _FilterBar extends StatelessWidget {
   const _FilterBar({
     required this.store,
     required this.searchCtrl,
     required this.autoScroll,
     required this.onAutoScrollChanged,
+    required this.groupByContext,
+    required this.onGroupChanged,
   });
 
   final ConsoleStore store;
   final TextEditingController searchCtrl;
   final bool autoScroll;
   final ValueChanged<bool> onAutoScrollChanged;
+  final bool groupByContext;
+  final ValueChanged<bool> onGroupChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -117,52 +131,82 @@ class _FilterBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       child: Column(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  height: 38,
-                  child: TextField(
-                    controller: searchCtrl,
-                    style: theme.textTheme.bodyMedium,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      hintText: '搜索日志…',
-                      prefixIcon: const Icon(Icons.search, size: 18),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
+          ValueListenableBuilder<ConsoleFilter>(
+            valueListenable: store.filter,
+            builder: (context, filter, _) {
+              final invalidRegex =
+                  filter.regex && filter.search.isNotEmpty &&
+                  filter.compiledRegExp == null;
+              return Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 38,
+                      child: TextField(
+                        controller: searchCtrl,
+                        style: theme.textTheme.bodyMedium,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          hintText: filter.regex ? '正则搜索…' : '搜索日志…',
+                          errorText: invalidRegex ? '无效的正则' : null,
+                          prefixIcon: const Icon(Icons.search, size: 18),
+                          contentPadding:
+                              const EdgeInsets.symmetric(vertical: 8),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onChanged: (v) =>
+                            store.setFilter(filter.copyWith(search: v)),
                       ),
                     ),
-                    onChanged: (v) => store.setFilter(
-                      store.filter.value.copyWith(search: v),
+                  ),
+                  IconButton(
+                    tooltip: '正则匹配',
+                    isSelected: filter.regex,
+                    onPressed: () =>
+                        store.setFilter(filter.copyWith(regex: !filter.regex)),
+                    icon: const Text(
+                      '.*',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'monospace',
+                      ),
                     ),
                   ),
-                ),
-              ),
-              IconButton(
-                tooltip: '自动滚动',
-                isSelected: autoScroll,
-                onPressed: () => onAutoScrollChanged(!autoScroll),
-                icon: Icon(
-                  autoScroll
-                      ? Icons.vertical_align_bottom
-                      : Icons.vertical_align_center,
-                  size: 20,
-                ),
-              ),
-            ],
+                  IconButton(
+                    tooltip: '按来源分组',
+                    isSelected: groupByContext,
+                    onPressed: () => onGroupChanged(!groupByContext),
+                    icon: const Icon(Icons.account_tree_outlined, size: 20),
+                  ),
+                  IconButton(
+                    tooltip: '自动滚动',
+                    isSelected: autoScroll,
+                    onPressed: () => onAutoScrollChanged(!autoScroll),
+                    icon: Icon(
+                      autoScroll
+                          ? Icons.vertical_align_bottom
+                          : Icons.vertical_align_center,
+                      size: 20,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 6),
           ValueListenableBuilder<ConsoleFilter>(
             valueListenable: store.filter,
             builder: (context, filter, _) {
+              final counts = store.levelCounts;
               return Wrap(
                 spacing: 6,
                 children: [
                   for (final level in LogLevel.values)
                     _LevelChip(
                       level: level,
+                      count: counts[level] ?? 0,
                       selected: filter.levels.contains(level),
                       onTap: () {
                         final next = Set<LogLevel>.from(filter.levels);
@@ -183,11 +227,13 @@ class _FilterBar extends StatelessWidget {
 class _LevelChip extends StatelessWidget {
   const _LevelChip({
     required this.level,
+    required this.count,
     required this.selected,
     required this.onTap,
   });
 
   final LogLevel level;
+  final int count;
   final bool selected;
   final VoidCallback onTap;
 
@@ -195,7 +241,7 @@ class _LevelChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = _levelColor(context, level);
     return FilterChip(
-      label: Text(level.label),
+      label: Text(count > 0 ? '${level.label} $count' : level.label),
       selected: selected,
       showCheckmark: false,
       visualDensity: VisualDensity.compact,
@@ -212,11 +258,139 @@ class _LevelChip extends StatelessWidget {
   }
 }
 
-/// One log line. Tappable to expand a stack trace when present.
+/// Group-by-context view: one collapsible section per emitting context, each
+/// with its entry count, expanded by default.
+class _GroupedList extends StatelessWidget {
+  const _GroupedList({required this.rows, required this.filter});
+
+  final List<LogEntry> rows;
+  final ConsoleFilter filter;
+
+  @override
+  Widget build(BuildContext context) {
+    // Preserve first-seen order of contexts.
+    final groups = <String, List<LogEntry>>{};
+    for (final e in rows) {
+      (groups[e.context ?? '(无来源)'] ??= <LogEntry>[]).add(e);
+    }
+    final keys = groups.keys.toList(growable: false);
+    return ListView.builder(
+      padding: EdgeInsets.zero,
+      itemCount: keys.length,
+      itemBuilder: (context, i) {
+        final key = keys[i];
+        final entries = groups[key]!;
+        return _ContextGroup(context_: key, entries: entries, filter: filter);
+      },
+    );
+  }
+}
+
+class _ContextGroup extends StatefulWidget {
+  const _ContextGroup({
+    required this.context_,
+    required this.entries,
+    required this.filter,
+  });
+
+  final String context_;
+  final List<LogEntry> entries;
+  final ConsoleFilter filter;
+
+  @override
+  State<_ContextGroup> createState() => _ContextGroupState();
+}
+
+class _ContextGroupState extends State<_ContextGroup> {
+  bool _expanded = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final errorCount =
+        widget.entries.where((e) => e.level == LogLevel.error).length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            color: theme.colorScheme.surfaceContainerHighest.withValues(
+              alpha: 0.35,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  _expanded ? Icons.expand_more : Icons.chevron_right,
+                  size: 18,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    widget.context_,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (errorCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: _Badge(
+                      text: '$errorCount',
+                      color: theme.colorScheme.error,
+                    ),
+                  ),
+                _Badge(
+                  text: '${widget.entries.length}',
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_expanded)
+          for (final e in widget.entries) _LogRow(entry: e, filter: widget.filter),
+      ],
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge({required this.text, required this.color});
+
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+/// One log line. Tappable to expand a stack trace when present; search matches
+/// in the message are highlighted.
 class _LogRow extends StatefulWidget {
-  const _LogRow({required this.entry});
+  const _LogRow({required this.entry, required this.filter});
 
   final LogEntry entry;
+  final ConsoleFilter filter;
 
   @override
   State<_LogRow> createState() => _LogRowState();
@@ -235,6 +409,7 @@ class _LogRowState extends State<_LogRow> {
       fontFamily: 'monospace',
       height: 1.35,
     );
+    final hlColor = theme.colorScheme.primary.withValues(alpha: 0.28);
 
     return InkWell(
       onTap: hasStack ? () => setState(() => _expanded = !_expanded) : null,
@@ -254,15 +429,27 @@ class _LogRowState extends State<_LogRow> {
               children: [
                 Icon(_levelIcon(e.level), size: 14, color: color),
                 const SizedBox(width: 6),
-                Text(_time(e.timestamp), style: mono?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                )),
+                Text(
+                  _time(e.timestamp),
+                  style: mono?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
                 if (e.context != null) ...[
                   const SizedBox(width: 6),
                   Text('[${e.context}]', style: mono?.copyWith(color: color)),
                 ],
                 const SizedBox(width: 8),
-                Expanded(child: Text(e.message, style: mono)),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      children: _highlightSpans(
+                        e.message,
+                        widget.filter,
+                        mono,
+                        hlColor,
+                      ),
+                    ),
+                  ),
+                ),
                 if (hasStack)
                   Icon(
                     _expanded ? Icons.expand_less : Icons.expand_more,
@@ -276,9 +463,7 @@ class _LogRowState extends State<_LogRow> {
                 padding: const EdgeInsets.only(top: 6, left: 20),
                 child: Text(
                   e.stackTrace!,
-                  style: mono?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                  style: mono?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
               ),
           ],
@@ -291,6 +476,62 @@ class _LogRowState extends State<_LogRow> {
     String two(int v) => v.toString().padLeft(2, '0');
     return '${two(t.hour)}:${two(t.minute)}:${two(t.second)}';
   }
+}
+
+/// Splits [text] into spans, highlighting the regions matched by the active
+/// search (substring or regex). Falls back to a single plain span when there's
+/// no search or no match.
+List<TextSpan> _highlightSpans(
+  String text,
+  ConsoleFilter filter,
+  TextStyle? base,
+  Color highlight,
+) {
+  if (filter.search.isEmpty) return [TextSpan(text: text, style: base)];
+
+  final ranges = <_Range>[];
+  if (filter.regex) {
+    final re = filter.compiledRegExp;
+    if (re == null) return [TextSpan(text: text, style: base)];
+    for (final m in re.allMatches(text)) {
+      if (m.end > m.start) ranges.add(_Range(m.start, m.end));
+    }
+  } else {
+    final q = filter.search.toLowerCase();
+    final lower = text.toLowerCase();
+    var from = 0;
+    while (true) {
+      final idx = lower.indexOf(q, from);
+      if (idx < 0) break;
+      ranges.add(_Range(idx, idx + q.length));
+      from = idx + q.length;
+    }
+  }
+  if (ranges.isEmpty) return [TextSpan(text: text, style: base)];
+
+  final spans = <TextSpan>[];
+  var cursor = 0;
+  final hlStyle = base?.copyWith(
+    backgroundColor: highlight,
+    fontWeight: FontWeight.w700,
+  );
+  for (final r in ranges) {
+    if (r.start > cursor) {
+      spans.add(TextSpan(text: text.substring(cursor, r.start), style: base));
+    }
+    spans.add(TextSpan(text: text.substring(r.start, r.end), style: hlStyle));
+    cursor = r.end;
+  }
+  if (cursor < text.length) {
+    spans.add(TextSpan(text: text.substring(cursor), style: base));
+  }
+  return spans;
+}
+
+class _Range {
+  const _Range(this.start, this.end);
+  final int start;
+  final int end;
 }
 
 class _EmptyHint extends StatelessWidget {

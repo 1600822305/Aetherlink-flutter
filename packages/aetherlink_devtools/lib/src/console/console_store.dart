@@ -65,10 +65,24 @@ class ConsoleStore {
   void setFilter(ConsoleFilter value) => _filter.value = value;
 
   /// The entries matching the current [filter] — what the panel renders and
-  /// what copy/share operate on.
+  /// what copy/share operate on. Compiles the regex once (when enabled) instead
+  /// of per-entry, so a 2000-line buffer stays cheap to re-filter on keystroke.
   List<LogEntry> get filtered {
     final f = _filter.value;
-    return _buffer.where(f.matches).toList(growable: false);
+    final re = f.compiledRegExp;
+    return _buffer
+        .where((e) => f.matchesWith(e, re))
+        .toList(growable: false);
+  }
+
+  /// Per-level counts over the whole buffer (for the filter chips' badges),
+  /// independent of the active search/level filter.
+  Map<LogLevel, int> get levelCounts {
+    final counts = <LogLevel, int>{for (final l in LogLevel.values) l: 0};
+    for (final e in _buffer) {
+      counts[e.level] = (counts[e.level] ?? 0) + 1;
+    }
+    return counts;
   }
 }
 
@@ -84,19 +98,49 @@ class ConsoleFilter {
       LogLevel.trace,
     },
     this.search = '',
+    this.regex = false,
   });
 
   final Set<LogLevel> levels;
   final String search;
 
-  bool matches(LogEntry e) {
+  /// When true, [search] is a case-insensitive regular expression; an invalid
+  /// pattern matches nothing (so the field visibly "finds nothing" rather than
+  /// silently falling back to substring).
+  final bool regex;
+
+  /// The compiled pattern for regex mode, or null (substring mode / empty / bad
+  /// pattern). Computed lazily so [ConsoleStore.filtered] can compile once.
+  RegExp? get compiledRegExp {
+    if (!regex || search.isEmpty) return null;
+    try {
+      return RegExp(search, caseSensitive: false);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool matches(LogEntry e) => matchesWith(e, compiledRegExp);
+
+  /// Like [matches] but reuses a pre-compiled [re] (regex mode) to avoid
+  /// recompiling per entry.
+  bool matchesWith(LogEntry e, RegExp? re) {
     if (!levels.contains(e.level)) return false;
     if (search.isEmpty) return true;
+    if (regex) {
+      if (re == null) return false; // invalid pattern → no matches
+      return re.hasMatch(e.message) ||
+          (e.context != null && re.hasMatch(e.context!));
+    }
     final q = search.toLowerCase();
     return e.message.toLowerCase().contains(q) ||
         (e.context?.toLowerCase().contains(q) ?? false);
   }
 
-  ConsoleFilter copyWith({Set<LogLevel>? levels, String? search}) =>
-      ConsoleFilter(levels: levels ?? this.levels, search: search ?? this.search);
+  ConsoleFilter copyWith({Set<LogLevel>? levels, String? search, bool? regex}) =>
+      ConsoleFilter(
+        levels: levels ?? this.levels,
+        search: search ?? this.search,
+        regex: regex ?? this.regex,
+      );
 }

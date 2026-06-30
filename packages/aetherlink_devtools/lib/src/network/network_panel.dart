@@ -69,11 +69,19 @@ class _NetworkViewState extends State<_NetworkView> {
                 builder: (context, _, _) {
                   final rows = _store.filtered;
                   if (rows.isEmpty) return const _EmptyHint();
+                  // Longest latency among visible rows → the waterfall bars are
+                  // drawn relative to it.
+                  var maxMs = 1;
+                  for (final e in rows) {
+                    final ms = e.duration?.inMilliseconds ?? 0;
+                    if (ms > maxMs) maxMs = ms;
+                  }
                   return ListView.builder(
                     padding: EdgeInsets.zero,
                     itemCount: rows.length,
                     itemBuilder: (context, i) => _RequestRow(
                       entry: rows[i],
+                      maxDurationMs: maxMs,
                       onTap: () => _openDetails(rows[i].id),
                     ),
                   );
@@ -100,17 +108,32 @@ class _NetworkViewState extends State<_NetworkView> {
   }
 }
 
-/// Top bar: a search field plus toggleable method chips and an errors-only
-/// toggle, mirroring [ConsolePanel]'s filter bar.
-class _FilterBar extends StatelessWidget {
+const Map<String, int> _sizeThresholds = <String, int>{
+  '全部': 0,
+  '>1KB': 1024,
+  '>100KB': 102400,
+  '>1MB': 1048576,
+};
+
+/// Top bar: a search field + errors/advanced toggles, method chips, and a
+/// collapsible advanced row (status-code class / 仅流式 / 最小大小).
+class _FilterBar extends StatefulWidget {
   const _FilterBar({required this.store, required this.searchCtrl});
 
   final NetworkStore store;
   final TextEditingController searchCtrl;
 
   @override
+  State<_FilterBar> createState() => _FilterBarState();
+}
+
+class _FilterBarState extends State<_FilterBar> {
+  bool _showAdvanced = false;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final store = widget.store;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       child: Column(
@@ -123,7 +146,7 @@ class _FilterBar extends StatelessWidget {
                   child: SizedBox(
                     height: 38,
                     child: TextField(
-                      controller: searchCtrl,
+                      controller: widget.searchCtrl,
                       style: theme.textTheme.bodyMedium,
                       decoration: InputDecoration(
                         isDense: true,
@@ -146,12 +169,17 @@ class _FilterBar extends StatelessWidget {
                     filter.copyWith(onlyErrors: !filter.onlyErrors),
                   ),
                   icon: Icon(
-                    filter.onlyErrors
-                        ? Icons.error
-                        : Icons.error_outline,
+                    filter.onlyErrors ? Icons.error : Icons.error_outline,
                     size: 20,
                     color: filter.onlyErrors ? theme.colorScheme.error : null,
                   ),
+                ),
+                IconButton(
+                  tooltip: '更多筛选',
+                  isSelected: _showAdvanced,
+                  onPressed: () =>
+                      setState(() => _showAdvanced = !_showAdvanced),
+                  icon: const Icon(Icons.tune, size: 20),
                 ),
               ],
             ),
@@ -182,8 +210,61 @@ class _FilterBar extends StatelessWidget {
               );
             },
           ),
+          if (_showAdvanced) ...[
+            const SizedBox(height: 8),
+            ValueListenableBuilder<NetworkFilter>(
+              valueListenable: store.filter,
+              builder: (context, filter, _) => _advancedRow(context, filter),
+            ),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _advancedRow(BuildContext context, NetworkFilter filter) {
+    final store = widget.store;
+    final theme = Theme.of(context);
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (final cls in const [2, 3, 4, 5])
+          FilterChip(
+            label: Text('${cls}xx'),
+            selected: filter.statusClasses.contains(cls),
+            showCheckmark: false,
+            visualDensity: VisualDensity.compact,
+            labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+            onSelected: (_) {
+              final next = Set<int>.from(filter.statusClasses);
+              if (!next.remove(cls)) next.add(cls);
+              store.setFilter(filter.copyWith(statusClasses: next));
+            },
+          ),
+        FilterChip(
+          label: const Text('仅流式'),
+          selected: filter.onlyStream,
+          showCheckmark: false,
+          visualDensity: VisualDensity.compact,
+          labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+          onSelected: (_) =>
+              store.setFilter(filter.copyWith(onlyStream: !filter.onlyStream)),
+        ),
+        DropdownButton<int>(
+          value: filter.minSize,
+          isDense: true,
+          underline: const SizedBox.shrink(),
+          style: theme.textTheme.bodySmall,
+          items: [
+            for (final e in _sizeThresholds.entries)
+              DropdownMenuItem<int>(value: e.value, child: Text(e.key)),
+          ],
+          onChanged: (v) =>
+              store.setFilter(filter.copyWith(minSize: v ?? 0)),
+        ),
+      ],
     );
   }
 }
@@ -220,11 +301,17 @@ class _MethodChip extends StatelessWidget {
   }
 }
 
-/// One request line: method chip + status + short URL + duration/size.
+/// One request line: method chip + status + short URL + duration/size, with a
+/// waterfall bar underneath sized relative to the slowest visible request.
 class _RequestRow extends StatelessWidget {
-  const _RequestRow({required this.entry, required this.onTap});
+  const _RequestRow({
+    required this.entry,
+    required this.maxDurationMs,
+    required this.onTap,
+  });
 
   final NetworkEntry entry;
+  final int maxDurationMs;
   final VoidCallback onTap;
 
   @override
@@ -237,6 +324,9 @@ class _RequestRow extends StatelessWidget {
     );
     final d = entry.duration;
     final size = entry.responseSize;
+    final fraction = d == null
+        ? null
+        : (d.inMilliseconds / maxDurationMs).clamp(0.02, 1.0);
 
     return InkWell(
       onTap: onTap,
@@ -248,49 +338,75 @@ class _RequestRow extends StatelessWidget {
             bottom: BorderSide(color: theme.dividerColor, width: 0.5),
           ),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _Tag(text: entry.method, color: _methodColor(entry.method)),
-            const SizedBox(width: 8),
-            SizedBox(
-              width: 44,
-              child: Text(
-                entry.statusCode?.toString() ?? entry.status.label,
-                style: mono?.copyWith(
-                  color: statusColor,
-                  fontWeight: FontWeight.w600,
+            Row(
+              children: [
+                _Tag(text: entry.method, color: _methodColor(entry.method)),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 44,
+                  child: Text(
+                    entry.statusCode?.toString() ?? entry.status.label,
+                    style: mono?.copyWith(
+                      color: statusColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            Expanded(
-              child: Text(
-                entry.shortUrl,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: mono,
-              ),
-            ),
-            if (entry.isStream)
-              Padding(
-                padding: const EdgeInsets.only(left: 6),
-                child: Icon(
-                  Icons.stream,
-                  size: 14,
-                  color: theme.colorScheme.primary,
+                Expanded(
+                  child: Text(
+                    entry.shortUrl,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: mono,
+                  ),
                 ),
-              ),
-            const SizedBox(width: 8),
-            Text(
-              d == null ? '—' : formatDuration(d),
-              style: mono?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                if (entry.isStream)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: Icon(
+                      Icons.stream,
+                      size: 14,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                const SizedBox(width: 8),
+                Text(
+                  d == null ? '—' : formatDuration(d),
+                  style: mono?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (size != null && size > 0) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    formatSize(size),
+                    style: mono?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
             ),
-            if (size != null && size > 0) ...[
-              const SizedBox(width: 8),
-              Text(
-                formatSize(size),
-                style: mono?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(height: 5),
+            // Waterfall bar: width ∝ latency relative to the slowest visible row.
+            ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: ((fraction ?? 0) * 1000).round(),
+                    child: Container(height: 3, color: statusColor),
+                  ),
+                  Expanded(
+                    flex: 1000 - ((fraction ?? 0) * 1000).round(),
+                    child: const SizedBox(height: 3),
+                  ),
+                ],
               ),
-            ],
+            ),
           ],
         ),
       ),
@@ -338,6 +454,18 @@ class _DetailsSheet extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
+                  IconButton(
+                    tooltip: '复制为 cURL',
+                    onPressed: () => _copy(context, e.toCurl(), label: '已复制 cURL'),
+                    icon: const Icon(Icons.terminal, size: 20),
+                  ),
+                  IconButton(
+                    tooltip: '复制响应体',
+                    onPressed: (e.responseData == null || e.responseData!.isEmpty)
+                        ? null
+                        : () => _copy(context, e.responseData!, label: '已复制响应体'),
+                    icon: const Icon(Icons.download_outlined, size: 20),
+                  ),
                   IconButton(
                     tooltip: '复制全部',
                     onPressed: () => _copy(context, e.toDetailText()),
@@ -445,12 +573,16 @@ class _DetailsSheet extends StatelessWidget {
     return m.entries.map((e) => '${e.key}: ${e.value}').join('\n');
   }
 
-  Future<void> _copy(BuildContext context, String text) async {
+  Future<void> _copy(
+    BuildContext context,
+    String text, {
+    String label = '已复制',
+  }) async {
     await Clipboard.setData(ClipboardData(text: text));
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('已复制')));
+      ).showSnackBar(SnackBar(content: Text(label)));
     }
   }
 }

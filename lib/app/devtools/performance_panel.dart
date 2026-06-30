@@ -1,7 +1,12 @@
+import 'dart:collection';
+
 import 'package:aetherlink_devtools/aetherlink_devtools.dart';
 import 'package:aetherlink_perf/aetherlink_perf.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'package:aetherlink_flutter/features/settings/application/perf_monitor_controller.dart';
 
 /// The Performance [DevToolsPanel]: a full-page view over the existing
 /// `aetherlink_perf` monitor (devtools-design §5.3 — integrate, don't rewrite).
@@ -11,11 +16,14 @@ import 'package:flutter/services.dart';
 /// to depend on `aetherlink_perf`. It's registered via [DevToolsRegistry] at
 /// startup, using the same extension point the Console/Network panels use.
 ///
-/// It reads [PerfMonitor.instance]: live FPS/build/raster/memory, the aggregated
-/// window summary (percentiles + tiered jank), the rule-based bottleneck verdict,
-/// and a one-tap AI-friendly JSON export. The monitor singleton is shared with
-/// the floating 性能监控 overlay; this panel can start it on demand when the
-/// overlay is off.
+/// It reads [PerfMonitor.instance]: live FPS/build/raster/memory with rolling
+/// sparklines, the aggregated window summary (percentiles + tiered jank), the
+/// rule-based bottleneck verdict, and a one-tap AI-friendly JSON export.
+///
+/// Ownership of the shared monitor singleton is resolved against the 显示性能监控
+/// overlay flag: while the overlay is on it drives collection (the panel only
+/// observes); while it's off the panel may start collection on demand and stops
+/// it again when disposed (so it never leaks a running monitor).
 class PerformancePanel extends DevToolsPanel {
   const PerformancePanel();
 
@@ -34,19 +42,90 @@ class PerformancePanel extends DevToolsPanel {
       PerfMonitor.instance.isRunning ? PerfMonitor.instance.exportJson() : '';
 }
 
-class _PerformanceView extends StatefulWidget {
+class _PerformanceView extends ConsumerStatefulWidget {
   const _PerformanceView();
 
   @override
-  State<_PerformanceView> createState() => _PerformanceViewState();
+  ConsumerState<_PerformanceView> createState() => _PerformanceViewState();
 }
 
-class _PerformanceViewState extends State<_PerformanceView> {
+class _PerformanceViewState extends ConsumerState<_PerformanceView> {
   final PerfMonitor _monitor = PerfMonitor.instance;
+
+  /// ~60s of history at the monitor's 2 Hz sampling.
+  static const int _historyCap = 120;
+  final ListQueue<double> _fps = ListQueue<double>();
+  final ListQueue<double> _build = ListQueue<double>();
+  final ListQueue<double> _raster = ListQueue<double>();
+
+  /// Whether this panel (rather than the overlay) started the monitor — used to
+  /// decide whether to stop it on dispose.
+  bool _startedByPanel = false;
+
+  /// Last-seen overlay flag, captured in build so [dispose] can read it.
+  bool _overlayEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _monitor.live.addListener(_onLive);
+  }
+
+  @override
+  void dispose() {
+    _monitor.live.removeListener(_onLive);
+    // Only tear down collection we ourselves started, and never while the
+    // overlay still wants it running.
+    if (_startedByPanel && !_overlayEnabled) _monitor.stop();
+    super.dispose();
+  }
+
+  void _onLive() {
+    if (!_monitor.isRunning) return;
+    final m = _monitor.live.value;
+    _push(_fps, m.fps);
+    _push(_build, m.buildMs);
+    _push(_raster, m.rasterMs);
+    if (mounted) setState(() {});
+  }
+
+  void _push(ListQueue<double> q, double v) {
+    q.add(v);
+    while (q.length > _historyCap) {
+      q.removeFirst();
+    }
+  }
+
+  void _start() {
+    _monitor.start();
+    _startedByPanel = true;
+    setState(() {});
+  }
+
+  void _stop() {
+    _monitor.stop();
+    _startedByPanel = false;
+    _fps.clear();
+    _build.clear();
+    _raster.clear();
+    setState(() {});
+  }
+
+  Future<void> _copyJson() async {
+    await Clipboard.setData(ClipboardData(text: _monitor.exportJson()));
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已复制性能诊断 JSON')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    _overlayEnabled = ref.watch(perfMonitorControllerProvider);
+
     if (!_monitor.isRunning) return _StoppedHint(onStart: _start);
+
     return ValueListenableBuilder<PerfLiveMetrics>(
       valueListenable: _monitor.live,
       builder: (context, m, _) {
@@ -58,6 +137,8 @@ class _PerformanceViewState extends State<_PerformanceView> {
           children: [
             _liveCard(context, m),
             const SizedBox(height: 12),
+            _chartsCard(context),
+            const SizedBox(height: 12),
             _summaryCard(context, snap),
             const SizedBox(height: 12),
             _actions(context),
@@ -65,25 +146,6 @@ class _PerformanceViewState extends State<_PerformanceView> {
         );
       },
     );
-  }
-
-  void _start() {
-    _monitor.start();
-    setState(() {});
-  }
-
-  void _stop() {
-    _monitor.stop();
-    setState(() {});
-  }
-
-  Future<void> _copyJson() async {
-    await Clipboard.setData(ClipboardData(text: _monitor.exportJson()));
-    if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('已复制性能诊断 JSON')));
-    }
   }
 
   // --- live ------------------------------------------------------------------
@@ -107,6 +169,40 @@ class _PerformanceViewState extends State<_PerformanceView> {
               _memColor(m.imageCacheMb * 2)),
           const SizedBox(height: 8),
           _verdictChip(context, m.verdict, m.jankRate),
+        ],
+      ),
+    );
+  }
+
+  // --- charts ----------------------------------------------------------------
+
+  Widget _chartsCard(BuildContext context) {
+    final budget = _monitor.budgetMs;
+    return _Card(
+      title: '实时曲线（近 ${_fps.length ~/ 2}s）',
+      child: Column(
+        children: [
+          _SparkRow(
+            label: 'FPS',
+            values: _fps.toList(growable: false),
+            color: const Color(0xFF66BB6A),
+            // Higher is better; scale to the refresh rate.
+            maxHint: 1000 / budget,
+          ),
+          const SizedBox(height: 10),
+          _SparkRow(
+            label: 'Build',
+            values: _build.toList(growable: false),
+            color: const Color(0xFF42A5F5),
+            budget: budget,
+          ),
+          const SizedBox(height: 10),
+          _SparkRow(
+            label: 'Raster',
+            values: _raster.toList(growable: false),
+            color: const Color(0xFFFFB74D),
+            budget: budget,
+          ),
         ],
       ),
     );
@@ -147,22 +243,47 @@ class _PerformanceViewState extends State<_PerformanceView> {
   }
 
   Widget _actions(BuildContext context) {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: _stop,
-            icon: const Icon(Icons.stop_circle_outlined, size: 18),
-            label: const Text('停止采集'),
+        if (_overlayEnabled)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Theme.of(context)
+                  .colorScheme
+                  .surfaceContainerHighest
+                  .withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '采集由「显示性能监控」浮窗驱动，关闭浮窗后可在此独立控制。',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: FilledButton.icon(
-            onPressed: _copyJson,
-            icon: const Icon(Icons.copy_all_outlined, size: 18),
-            label: const Text('复制诊断 JSON'),
-          ),
+        if (_overlayEnabled) const SizedBox(height: 12),
+        Row(
+          children: [
+            if (!_overlayEnabled) ...[
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _stop,
+                  icon: const Icon(Icons.stop_circle_outlined, size: 18),
+                  label: const Text('停止采集'),
+                ),
+              ),
+              const SizedBox(width: 12),
+            ],
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _copyJson,
+                icon: const Icon(Icons.copy_all_outlined, size: 18),
+                label: const Text('复制诊断 JSON'),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -302,6 +423,143 @@ class _PerformanceViewState extends State<_PerformanceView> {
   }
 
   static String _pct(double v) => '${(v * 100).toStringAsFixed(1)}%';
+}
+
+/// A labeled sparkline: current value chip + a hand-drawn line chart (no chart
+/// dependency). [budget] draws a dashed reference line; [maxHint] sets a minimum
+/// y-axis ceiling so a flat-but-good series isn't amplified into noise.
+class _SparkRow extends StatelessWidget {
+  const _SparkRow({
+    required this.label,
+    required this.values,
+    required this.color,
+    this.budget,
+    this.maxHint,
+  });
+
+  final String label;
+  final List<double> values;
+  final Color color;
+  final double? budget;
+  final double? maxHint;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final last = values.isEmpty ? 0.0 : values.last;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: 52,
+          child: Text(label, style: theme.textTheme.bodySmall),
+        ),
+        Expanded(
+          child: SizedBox(
+            height: 40,
+            child: CustomPaint(
+              painter: _SparkPainter(
+                values: values,
+                color: color,
+                budget: budget,
+                maxHint: maxHint,
+                gridColor: theme.dividerColor,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 44,
+          child: Text(
+            last.toStringAsFixed(budget == null ? 0 : 1),
+            textAlign: TextAlign.right,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontFamily: 'monospace',
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SparkPainter extends CustomPainter {
+  _SparkPainter({
+    required this.values,
+    required this.color,
+    required this.gridColor,
+    this.budget,
+    this.maxHint,
+  });
+
+  final List<double> values;
+  final Color color;
+  final Color gridColor;
+  final double? budget;
+  final double? maxHint;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final baseline = Paint()
+      ..color = gridColor
+      ..strokeWidth = 1;
+    canvas.drawLine(
+      Offset(0, size.height - 0.5),
+      Offset(size.width, size.height - 0.5),
+      baseline,
+    );
+
+    if (values.length < 2) return;
+
+    var maxV = maxHint ?? 0;
+    for (final v in values) {
+      if (v > maxV) maxV = v;
+    }
+    if (budget != null && budget! > maxV) maxV = budget!;
+    if (maxV <= 0) maxV = 1;
+
+    double x(int i) => size.width * i / (values.length - 1);
+    double y(double v) => size.height - (v / maxV).clamp(0, 1) * size.height;
+
+    // Optional budget reference line (dashed).
+    if (budget != null) {
+      final by = y(budget!);
+      final dash = Paint()
+        ..color = gridColor
+        ..strokeWidth = 1;
+      for (double dx = 0; dx < size.width; dx += 6) {
+        canvas.drawLine(Offset(dx, by), Offset(dx + 3, by), dash);
+      }
+    }
+
+    final path = Path()..moveTo(x(0), y(values[0]));
+    for (var i = 1; i < values.length; i++) {
+      path.lineTo(x(i), y(values[i]));
+    }
+
+    // Faint fill under the line.
+    final fill = Path.from(path)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(fill, Paint()..color = color.withValues(alpha: 0.12));
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.6
+        ..strokeJoin = StrokeJoin.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_SparkPainter old) =>
+      old.values != values || old.color != color || old.budget != budget;
 }
 
 class _Card extends StatelessWidget {

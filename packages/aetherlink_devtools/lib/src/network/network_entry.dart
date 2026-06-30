@@ -134,6 +134,21 @@ class NetworkEntry {
     return b.toString().trimRight();
   }
 
+  /// A `curl` command reproducing this request. Sensitive headers stay masked
+  /// (the interceptor redacted them), so a runnable copy needs the real
+  /// credential substituted — safe to share/screenshot by default.
+  String toCurl() {
+    String esc(String s) => s.replaceAll("'", r"'\''");
+    final b = StringBuffer("curl -X $method '${esc(url)}'");
+    for (final h in requestHeaders.entries) {
+      b.write(" \\\n  -H '${esc(h.key)}: ${esc(h.value)}'");
+    }
+    if (requestPayload != null && requestPayload!.isNotEmpty) {
+      b.write(" \\\n  --data '${esc(requestPayload!)}'");
+    }
+    return b.toString();
+  }
+
   static String _mapText(Map<String, String> m) {
     if (m.isEmpty) return '(none)';
     return m.entries.map((e) => '${e.key}: ${e.value}').join('\n');

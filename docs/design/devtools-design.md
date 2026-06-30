@@ -186,6 +186,21 @@
 
 > 每完成一个阶段或重要节点，在此追加一条（日期 + 做了什么 + 关键文件 + 遗留问题）。最新在最上。
 
+### 2026-06-30 — 增强批次（Console / Network / Performance §5 增强项）
+- **Console**（`console_store.dart` + `console_panel.dart`）：
+  - 正则搜索:`ConsoleFilter.regex` + `compiledRegExp`(编译一次,无效模式匹配空并在输入框报错);搜索命中在日志行内 `Text.rich` 高亮(子/正则通用)。
+  - 错误计数徽标:`ConsoleStore.levelCounts`,等级 Chip 显示 `ERROR 3` 计数。
+  - 按 context 分组折叠:过滤栏「按来源分组」开关,分组视图每组可折叠、显示条数 + 错误数徽标。
+- **Network**（`network_entry.dart` + `network_store.dart` + `network_panel.dart`）：
+  - cURL 导出 `NetworkEntry.toCurl()`(脱敏头保持掩码,复制后需替换真实凭证)+ 详情抽屉「复制响应体 / 复制 cURL / 复制全部」三按钮。
+  - 状态码/类型/大小筛选:`NetworkFilter` 加 `statusClasses`(2xx/3xx/4xx/5xx)、`onlyStream`、`minSize`;过滤栏「更多筛选」(tune 图标)展开二级行(类码 Chip + 仅流式 + 大小下拉)。
+  - 瀑布耗时条:每行底部细条,宽度 ∝ 本行耗时/可见行最大耗时,按状态着色。
+  - **失败重发**:经评估**不做真重发**——已脱敏鉴权头无法安全重放、包内触达不到 App 的 Dio 工厂、重发 POST 有真实副作用;cURL 导出即标准安全"重放"路径(同 Chrome DevTools)。
+- **Performance**（`lib/app/devtools/performance_panel.dart`）：
+  - 实时折线图:`CustomPainter` 手绘 FPS/Build/Raster 近 ~60s 曲线(零图表依赖,带预算虚线参考),面板内环形缓冲(120 样本 @2Hz)由 `live` 监听喂入。
+  - 共用单例取舍:面板改为 `ConsumerStatefulWidget` 读 `perfMonitorControllerProvider`——浮窗开启时采集归浮窗驱动(面板仅观察、隐藏起停并提示),浮窗关闭时面板可独立「开始/停止采集」,且仅在「自身启动且浮窗关闭」时于 `dispose` 停止,避免泄漏与生命周期打架。
+- 验证:包内 `flutter analyze` 零问题、`flutter test` 11/11;`performance_panel.dart` analyze 零问题。
+
 ### 2026-06-30 — P3 完成（Performance 性能面板，整合 aetherlink_perf）
 - 新增桥接面板 `lib/app/devtools/performance_panel.dart`（`PerformancePanel implements DevToolsPanel`）：读 `PerfMonitor.instance`，展示「实时」(FPS/Build/Raster/慢帧率/RSS/图片缓存 + 瓶颈 Chip，随 `live` ~2Hz 刷新) + 「窗口汇总」(build/raster/total 的 p50/p95/p99/max、慢帧/严重/冻结、内存趋势、设备、预热、规则诊断) + 「停止采集 / 复制诊断 JSON」。`exportAsText()` 接到页面级「复制」(导出 AI 诊断 JSON)。
 - **依赖归属**：面板放在主 App(组合根)而非 `aetherlink_devtools` 包内，桥接 `aetherlink_perf`，使 devtools 包保持零额外依赖；在 `main.dart` 用 `DevToolsRegistry.register(const PerformancePanel())` 注册(扩展点，紧跟 `DevToolsCapture.install()`)。Tab 顺序：控制台 / 网络 / 性能。
