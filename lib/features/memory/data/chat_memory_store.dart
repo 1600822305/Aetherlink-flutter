@@ -112,16 +112,15 @@ class ChatMemoryStore {
   /// Records a retrieval hit on each of [items]: bumps `accessCount` and stamps
   /// `lastAccessedAt` with now. `updatedAt` is left untouched so logging a hit
   /// never reorders the newest-first lists. Backs the 命中日志 surface.
-  Future<void> recordHits(Iterable<MemoryItem> items) async {
+  Future<void> recordHits(Iterable<MemoryItem> items) {
     final now = DateTime.now().millisecondsSinceEpoch;
-    for (final item in items) {
-      await _dao.upsert(
+    return _dao.upsertAll([
+      for (final item in items)
         item.copyWith(
           accessCount: item.accessCount + 1,
           lastAccessedAt: now,
         ),
-      );
-    }
+    ]);
   }
 
   Future<MemoryCounts> counts() async {

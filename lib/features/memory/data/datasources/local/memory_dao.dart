@@ -84,6 +84,14 @@ class MemoryDao extends DatabaseAccessor<AppDatabase> with _$MemoryDaoMixin {
     );
   }
 
+  /// Upserts many memories in a single transaction, so logging N retrieval hits
+  /// is one commit instead of N (avoids the per-statement fsync cost).
+  Future<void> upsertAll(Iterable<MemoryItem> items) => transaction(() async {
+    for (final item in items) {
+      await upsert(item);
+    }
+  });
+
   /// Marks a memory deleted (excluded from every read) without removing the row.
   Future<void> softDelete(String id) {
     return (update(memoryRows)..where((t) => t.id.equals(id))).write(

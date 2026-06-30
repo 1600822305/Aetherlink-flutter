@@ -72,12 +72,14 @@ class NotesFileStore {
     if (!dir.existsSync()) return const <NoteNode>[];
 
     final out = <NoteNode>[];
-    for (final entity in dir.listSync(followLinks: false)) {
+    // Async list/stat so a folder with many entries never blocks the UI isolate
+    // (statSync per entry was synchronous main-thread IO).
+    for (final entity in await dir.list(followLinks: false).toList()) {
       final name = p.basename(entity.path);
       if (name.startsWith('.')) continue; // hidden
       final isDir = entity is Directory;
       if (!isDir && !name.toLowerCase().endsWith('.md')) continue;
-      final stat = entity.statSync();
+      final stat = await entity.stat();
       out.add(
         NoteNode(
           name: name,
@@ -293,7 +295,7 @@ class NotesFileStore {
     if (depth > maxDepth || out.length >= maxResults) return;
     final List<FileSystemEntity> entries;
     try {
-      entries = dir.listSync(followLinks: false);
+      entries = await dir.list(followLinks: false).toList();
     } on FileSystemException {
       return;
     }
@@ -309,7 +311,7 @@ class NotesFileStore {
       }
       if (entity is! File || !name.toLowerCase().endsWith('.md')) continue;
 
-      final stat = entity.statSync();
+      final stat = await entity.stat();
       final node = NoteNode(
         name: name,
         relativePath: _rel(root, entity.path),

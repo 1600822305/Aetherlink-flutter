@@ -99,33 +99,7 @@ class BackupService {
       ),
     );
 
-    // 3. Serialize JSON strings.
-    final topicsJson = jsonEncode(data.topics);
-    final messagesJson = jsonEncode(data.messages);
-    final blocksJson = jsonEncode(data.messageBlocks);
-    final assistantsJson = jsonEncode(data.assistants);
-    final providersJson = jsonEncode(data.providers);
-    final groupsJson = jsonEncode(data.groups);
-    final settingsJson = jsonEncode(data.settings);
-
-    // 4. Compute checksum over data files.
-    final allBytes = utf8.encode(
-      '$topicsJson$messagesJson$blocksJson$assistantsJson$providersJson$groupsJson$settingsJson',
-    );
-    final checksumHex = sha256.convert(allBytes).toString();
-    final manifestWithChecksum = BackupManifest(
-      version: manifest.version,
-      appVersion: manifest.appVersion,
-      platform: manifest.platform,
-      schemaVersion: manifest.schemaVersion,
-      createdAt: manifest.createdAt,
-      deviceInfo: manifest.deviceInfo,
-      checksum: 'sha256:$checksumHex',
-      stats: manifest.stats,
-      options: manifest.options,
-    );
-
-    // 5. Pack ZIP in isolate.
+    // 3. Pick the output path (cheap, stays on the UI isolate).
     final timestamp = DateTime.now()
         .toIso8601String()
         .replaceAll(':', '-')
@@ -134,7 +108,35 @@ class BackupService {
     final backupDir = await _backupDirectory();
     final outPath = p.join(backupDir.path, 'aetherlink_backup_$timestamp.zip');
 
+    // 4. Serialize JSON, compute the checksum and pack the ZIP — all inside one
+    // isolate so a large database never blocks the UI on jsonEncode / sha256.
+    // `data` is plain Map/List and `manifest` is a plain value, so both copy
+    // across the isolate boundary safely.
     await Isolate.run(() {
+      final topicsJson = jsonEncode(data.topics);
+      final messagesJson = jsonEncode(data.messages);
+      final blocksJson = jsonEncode(data.messageBlocks);
+      final assistantsJson = jsonEncode(data.assistants);
+      final providersJson = jsonEncode(data.providers);
+      final groupsJson = jsonEncode(data.groups);
+      final settingsJson = jsonEncode(data.settings);
+
+      final allBytes = utf8.encode(
+        '$topicsJson$messagesJson$blocksJson$assistantsJson$providersJson$groupsJson$settingsJson',
+      );
+      final checksumHex = sha256.convert(allBytes).toString();
+      final manifestWithChecksum = BackupManifest(
+        version: manifest.version,
+        appVersion: manifest.appVersion,
+        platform: manifest.platform,
+        schemaVersion: manifest.schemaVersion,
+        createdAt: manifest.createdAt,
+        deviceInfo: manifest.deviceInfo,
+        checksum: 'sha256:$checksumHex',
+        stats: manifest.stats,
+        options: manifest.options,
+      );
+
       _packZip(
         outPath: outPath,
         manifestJson: manifestWithChecksum.toJsonString(),
