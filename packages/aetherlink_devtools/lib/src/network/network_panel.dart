@@ -99,6 +99,7 @@ class _NetworkViewState extends State<_NetworkView> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
+      useSafeArea: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.9,

@@ -68,7 +68,7 @@ class _DevToolsPageState extends State<DevToolsPage>
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleSpacing: 0,
+        titleSpacing: 4,
         shape: Border(bottom: BorderSide(color: theme.dividerColor)),
         iconTheme: IconThemeData(color: theme.colorScheme.primary),
         titleTextStyle: theme.textTheme.titleLarge?.copyWith(
@@ -76,7 +76,11 @@ class _DevToolsPageState extends State<DevToolsPage>
           fontWeight: FontWeight.w600,
           color: theme.colorScheme.onSurface,
         ),
-        title: const Text('开发者工具'),
+        // Tabs live inline in the top bar (no separate title text); a lone panel
+        // falls back to its own name so the bar isn't empty.
+        title: _panels.length > 1
+            ? _SegmentedTabs(controller: _tabs, panels: _panels)
+            : Text(_panels.isEmpty ? '开发者工具' : _panels.first.title),
         actions: [
           IconButton(
             tooltip: '复制',
@@ -89,71 +93,80 @@ class _DevToolsPageState extends State<DevToolsPage>
             icon: const Icon(Icons.delete_outline, size: 20),
           ),
         ],
-        bottom: _panels.length > 1
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(56),
-                // Replicates the app's unified segmented tab style (rounded
-                // container + pill indicator + scrollable, content-sized tabs).
-                // Copied rather than imported because this package is
-                // dependency-free of the app's lib/.
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: theme.dividerColor),
-                      color: theme.colorScheme.surface,
-                    ),
-                    padding: const EdgeInsets.all(3),
-                    child: TabBar(
-                      controller: _tabs,
-                      isScrollable: true,
-                      tabAlignment: TabAlignment.start,
-                      indicator: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        color: theme.colorScheme.primary.withValues(alpha: 0.12),
-                      ),
-                      indicatorSize: TabBarIndicatorSize.tab,
-                      dividerHeight: 0,
-                      labelColor: theme.colorScheme.primary,
-                      unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-                      labelStyle: theme.textTheme.labelLarge?.copyWith(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      unselectedLabelStyle: theme.textTheme.labelLarge?.copyWith(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      labelPadding: const EdgeInsets.symmetric(horizontal: 8),
-                      tabs: [
-                        for (final p in _panels)
-                          Tab(
-                            height: 34,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(p.icon, size: 15),
-                                const SizedBox(width: 5),
-                                Text(p.title),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              )
-            : null,
       ),
-      body: _panels.isEmpty
-          ? const Center(child: Text('未注册任何面板'))
-          : (_panels.length == 1
-                ? _panels.first.build(context)
-                : TabBarView(
-                    controller: _tabs,
-                    children: [for (final p in _panels) p.build(context)],
-                  )),
+      // Respect the bottom (and side) insets so the last list row / action isn't
+      // hidden behind the system navigation bar in the edge-to-edge app shell.
+      body: SafeArea(
+        top: false,
+        child: _panels.isEmpty
+            ? const Center(child: Text('未注册任何面板'))
+            : (_panels.length == 1
+                  ? _panels.first.build(context)
+                  : TabBarView(
+                      controller: _tabs,
+                      children: [for (final p in _panels) p.build(context)],
+                    )),
+      ),
+    );
+  }
+}
+
+/// The app's unified segmented tab control (rounded container + pill indicator +
+/// scrollable, content-sized tabs), replicated here because this package stays
+/// dependency-free of the app's `lib/`. Used inline as the [AppBar] title so the
+/// tabs sit in the top bar rather than a separate row below it.
+class _SegmentedTabs extends StatelessWidget {
+  const _SegmentedTabs({required this.controller, required this.panels});
+
+  final TabController controller;
+  final List<DevToolsPanel> panels;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.dividerColor),
+        color: theme.colorScheme.surface,
+      ),
+      padding: const EdgeInsets.all(3),
+      child: TabBar(
+        controller: controller,
+        isScrollable: true,
+        tabAlignment: TabAlignment.start,
+        indicator: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          color: theme.colorScheme.primary.withValues(alpha: 0.12),
+        ),
+        indicatorSize: TabBarIndicatorSize.tab,
+        dividerHeight: 0,
+        labelColor: theme.colorScheme.primary,
+        unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+        labelStyle: theme.textTheme.labelLarge?.copyWith(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+        unselectedLabelStyle: theme.textTheme.labelLarge?.copyWith(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+        labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+        tabs: [
+          for (final p in panels)
+            Tab(
+              height: 34,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(p.icon, size: 15),
+                  const SizedBox(width: 5),
+                  Text(p.title),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
