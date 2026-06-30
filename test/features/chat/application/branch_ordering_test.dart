@@ -30,11 +30,11 @@ void main() {
     await db.close();
   });
 
-  // All three messages carry the *same* timestamp, so ordering is decided by
-  // the id tiebreak rather than an arbitrary (unstable) sort.
+  // All messages carry the *same* timestamp, so the fork must follow the tree
+  // (parentId chain) rather than any (unstable) chronological/id sort.
   final tiedTime = DateTime.utc(2024, 1, 1, 12);
 
-  Future<void> seedMessage(String id, String content) async {
+  Future<void> seedMessage(String id, String content, String parentId) async {
     final block = MessageBlock.mainText(
       id: 'blk-$id',
       messageId: id,
@@ -51,6 +51,7 @@ void main() {
         topicId: 'topic-1',
         createdAt: tiedTime,
         status: MessageStatus.success,
+        parentId: parentId,
         blocks: <String>[block.id],
       ),
     );
@@ -62,7 +63,7 @@ void main() {
     return block is MainTextBlock ? block.content : '';
   }
 
-  test('branches at the selected message when timestamps tie', () async {
+  test('forks the tree path to the node when timestamps tie', () async {
     await repo.saveTopic(
       Topic(
         id: 'topic-1',
@@ -72,23 +73,34 @@ void main() {
         updatedAt: tiedTime,
       ),
     );
-    // Insert out of id order to prove the result doesn't depend on insertion.
-    await seedMessage('msg-c', 'C');
-    await seedMessage('msg-a', 'A');
-    await seedMessage('msg-b', 'B');
+    await repo.saveMessage(
+      Message(
+        id: 'root',
+        role: MessageRole.root,
+        assistantId: 'asst-1',
+        topicId: 'topic-1',
+        createdAt: tiedTime,
+        status: MessageStatus.success,
+      ),
+    );
+    // Explicit chain root → A → B → C, inserted out of id order to prove the
+    // result follows the tree (parentId) and not insertion / id order.
+    await seedMessage('msg-c', 'C', 'msg-b');
+    await seedMessage('msg-a', 'A', 'root');
+    await seedMessage('msg-b', 'B', 'msg-a');
 
     final container = ProviderContainer(
       overrides: [chatRepositoryProvider.overrideWithValue(repo)],
     );
     addTearDown(container.dispose);
 
-    // Fork at the middle message (msg-b): expect [A, B], never [..., C].
+    // Fork at the middle node (msg-b): clone its ancestors + itself = [A, B];
+    // the descendant C is off-path and excluded.
     final branch =
         await container.read(topicsProvider.notifier).createBranch('msg-b');
     expect(branch, isNotNull);
 
-    final cloned = await repo.getMessagesByTopicId(branch!.id)
-      ..sort((a, b) => a.id.compareTo(b.id));
+    final cloned = await repo.getMessagesByTopicId(branch!.id);
     final contents = <String>[];
     for (final id in branch.messageIds) {
       contents.add(await branchContentOf(id));

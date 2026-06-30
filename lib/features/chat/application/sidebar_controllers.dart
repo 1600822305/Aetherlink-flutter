@@ -7,7 +7,6 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
-import 'package:aetherlink_flutter/features/chat/domain/message_ordering.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/parameter_settings.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
@@ -523,26 +522,60 @@ class Topics extends _$Topics {
     return topic;
   }
 
-  /// Forks the conversation into a new topic, cloning every message from the
-  /// start up to and including [branchPointMessageId], then selects the new
-  /// topic — the port of `TopicService.createTopicBranch` (工具栏 创建分支).
-  /// Each cloned message and block gets a fresh id, `askId` is remapped to the
-  /// cloned user message so intra-branch links survive, and version history is
-  /// dropped (the branch is a new starting point). A no-op (returns null) when
-  /// the branch-point message or its topic can't be resolved.
+  /// Forks the conversation into a new topic, cloning the **tree path** from the
+  /// root up to and including [branchPointMessageId], then selects the new
+  /// topic — the port of `TopicService.duplicate` / `getPathRowsToNodeTx`
+  /// (分支管理 复制为新对话 / 工具栏 创建分支). The prefix is taken by walking
+  /// `parentId` ancestors (not a flat chronological slice): a chronological
+  /// `sublist` mis-orders and drops messages whenever timestamps tie — which
+  /// clones themselves cause (every cloned row used to share `createdAt`), so
+  /// re-cloning or cloning imported/tied histories lost the conversation. Each
+  /// cloned message/block gets a fresh id and a distinct increasing timestamp,
+  /// `askId` is remapped to the cloned user message so intra-branch links
+  /// survive, and version history is dropped (the branch is a new starting
+  /// point). A no-op (returns null) when the branch-point message or its topic
+  /// can't be resolved.
   Future<Topic?> createBranch(String branchPointMessageId) async {
     final branchMessage = await _repo.getMessage(branchPointMessageId);
     if (branchMessage == null) return null;
     final source = await _repo.getTopic(branchMessage.topicId);
     if (source == null) return null;
 
-    final ordered = await _repo.getMessagesByTopicId(source.id)
-      ..sort(compareMessagesChronologically);
-    final branchIndex = ordered.indexWhere((m) => m.id == branchPointMessageId);
-    if (branchIndex == -1) return null;
+    final content = await _repo.getMessagesByTopicId(source.id);
+    final byId = {for (final m in content) m.id: m};
+    if (!byId.containsKey(branchPointMessageId)) return null;
+
+    // A topic built by the app has a message tree (every content message has a
+    // parentId); 旧版 web 迁移 / 未建树的导入 leaves it flat (all parentId null).
+    final hasTree = content.any((m) => m.parentId != null);
+
+    final List<Message> toClone;
+    if (hasTree) {
+      // Collect the path from the branch point up to the root via parentId, then
+      // reverse to root→leaf order. Robust to tied/equal createdAt and, unlike a
+      // chronological prefix, never pulls in off-path sibling branches.
+      final pathLeafFirst = <Message>[];
+      final visited = <String>{};
+      String? cursor = branchPointMessageId;
+      while (cursor != null && byId.containsKey(cursor)) {
+        if (!visited.add(cursor)) break; // cycle guard
+        final node = byId[cursor]!;
+        pathLeafFirst.add(node);
+        cursor = node.parentId;
+      }
+      toClone = pathLeafFirst.reversed.toList();
+    } else {
+      // Flat/legacy topic: clone the prefix in the *displayed* order (the same
+      // projection the chat list uses, so the clone matches what the user sees)
+      // up to and including the branch point. The cloned rows are re-chained
+      // into a proper tree below so the new topic isn't flat in turn.
+      final displayed = await _repo.getBranchMessages(source.id);
+      final idx = displayed.indexWhere((m) => m.id == branchPointMessageId);
+      toClone = idx == -1 ? const [] : displayed.sublist(0, idx + 1);
+    }
+    if (toClone.isEmpty) return null;
 
     final now = DateTime.now();
-    final toClone = ordered.sublist(0, branchIndex + 1);
     final newTopicId = generateId('topic');
 
     // The new topic needs its own content-less virtual root, exactly like a
@@ -560,16 +593,31 @@ class Topics extends _$Topics {
     );
 
     // Pass 1: map every cloned message's old id to a fresh one so intra-branch
-    // references (askId) can be remapped in pass 2.
+    // references (askId / parentId) can be remapped in pass 2.
     final idMap = <String, String>{
       for (final message in toClone) message.id: generateId('msg'),
     };
 
+    // The cloned parentId for each message: a real tree keeps its shape (remap
+    // via idMap); a flat topic is re-chained linearly (each row hangs off the
+    // previous one) so the new topic becomes a connected tree instead of every
+    // message dangling off the root (分支管理 变一长行).
+    String parentForCloned(int index) {
+      if (!hasTree) {
+        return index == 0 ? rootId : idMap[toClone[index - 1].id]!;
+      }
+      final original = toClone[index].parentId;
+      return original == null ? rootId : (idMap[original] ?? rootId);
+    }
+
     // Pass 2: clone each message with its blocks (fresh ids), remap askId, and
-    // drop version history.
+    // drop version history. Each row gets a distinct increasing timestamp
+    // (now + index µs) so the clone never inherits the tied-timestamp hazard.
     final clonedMessages = <Message>[];
     final clonedBlocks = <MessageBlock>[];
-    for (final message in toClone) {
+    for (var i = 0; i < toClone.length; i++) {
+      final message = toClone[i];
+      final stamp = now.add(Duration(microseconds: i));
       final newId = idMap[message.id]!;
       final originalBlocks = await _repo.getMessageBlocksByIds(message.blocks);
       final newBlocks = originalBlocks
@@ -577,8 +625,8 @@ class Topics extends _$Topics {
             (block) => block.copyWith(
               id: generateId('block'),
               messageId: newId,
-              createdAt: now,
-              updatedAt: now,
+              createdAt: stamp,
+              updatedAt: stamp,
             ),
           )
           .toList();
@@ -587,19 +635,13 @@ class Topics extends _$Topics {
         message.copyWith(
           id: newId,
           topicId: newTopicId,
-          // Remap the tree link to the cloned parent; first-turn messages and
-          // any whose parent falls outside the cloned prefix hang off the new
-          // topic's virtual root, so the branch tree stays connected and the
-          // active path can be projected.
-          parentId: message.parentId == null
-              ? rootId
-              : (idMap[message.parentId] ?? rootId),
+          parentId: parentForCloned(i),
           askId: message.askId == null ? null : idMap[message.askId],
           blocks: newBlocks.map((b) => b.id).toList(),
           versions: null,
           currentVersionId: null,
-          createdAt: now,
-          updatedAt: now,
+          createdAt: stamp,
+          updatedAt: stamp,
         ),
       );
     }
