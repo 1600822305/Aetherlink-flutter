@@ -16,13 +16,16 @@ import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 /// The "聊天界面设置" sub-page (外观设置 → this page), a compact port of the
 /// original `src/pages/Settings/ChatInterfaceSettings.tsx`.
 ///
-/// Mirrors the original's icon-tinted Paper cards (24px radius, 1px divider
-/// border, no shadow), the `CustomSwitch`, dropdowns and the collapsible chat
-/// background block. Every option is persisted via
-/// [ChatInterfaceSettingsController]. The behaviours that drive the chat view
-/// (multi-model layout, tool / citation details, the wallpaper render) are not
-/// wired into the chat page yet, so the page shows an "即将支持" note and only
-/// saves the configuration for now.
+/// Uses the shared 外观设置 card scaffolding (`_Card` / `_CardHeader` /
+/// `_CardDivider` / `_DescribedSwitchRow` / `_Select`, mirroring
+/// `thinking_settings_page.dart` and `message_bubble_settings_page.dart`) so the
+/// three sub-pages stay visually consistent and compact: related options share a
+/// single card instead of each option owning a large card.
+///
+/// Wiring status (consumed by the chat view): 多模型对比布局 drives
+/// `multi_model_message_group.dart`, 系统提示词气泡 and 聊天背景 drive
+/// `chat_page.dart`. 工具调用详情 / 引用详情 are persisted but not yet read by the
+/// block renderer (parity with the web original, where they were also unwired).
 class ChatInterfaceSettingsPage extends ConsumerWidget {
   const ChatInterfaceSettingsPage({super.key});
 
@@ -74,36 +77,11 @@ class ChatInterfaceSettingsPage extends ConsumerWidget {
           16 + MediaQuery.paddingOf(context).bottom,
         ),
         children: [
-          const _PendingNote(),
-          const SizedBox(height: 16),
           _MultiModelCard(
             value: settings.multiModelDisplayStyle,
             onChanged: controller.setMultiModelDisplayStyle,
           ),
-          _SwitchCard(
-            icon: LucideIcons.messageSquare,
-            hue: const Color(0xFF6366F1),
-            title: '工具调用设置',
-            description: '控制是否显示工具调用的详细信息，包括调用参数和返回结果。',
-            value: settings.showToolDetails,
-            onChanged: controller.setShowToolDetails,
-          ),
-          _SwitchCard(
-            icon: LucideIcons.quote,
-            hue: const Color(0xFF10B981),
-            title: '引用设置',
-            description: '控制是否显示引用的详细信息，包括引用来源和相关内容。',
-            value: settings.showCitationDetails,
-            onChanged: controller.setShowCitationDetails,
-          ),
-          _SwitchCard(
-            icon: LucideIcons.fileText,
-            hue: const Color(0xFFF59E0B),
-            title: '系统提示词气泡设置',
-            description: '控制是否在聊天界面顶部显示系统提示词气泡。系统提示词气泡可以帮助您查看和编辑当前会话的系统提示词。',
-            value: settings.showSystemPromptBubble,
-            onChanged: controller.setShowSystemPromptBubble,
-          ),
+          _DisplayCard(settings: settings, controller: controller),
           _BackgroundCard(
             value: settings.background,
             onChanged: controller.setBackground,
@@ -114,140 +92,8 @@ class ChatInterfaceSettingsPage extends ConsumerWidget {
   }
 }
 
-/// `ChatInterfaceSettings.tsx` `cardStyle`: `mb:2` (16px) gap, `p:2.5` (20px)
-/// padding, `borderRadius:3` (24px), a 1px divider border, the paper surface and
-/// no shadow.
-class _Card extends StatelessWidget {
-  const _Card({required this.child});
-
-  final Widget child;
-
-  static const double _radius = 24;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(_radius),
-        border: Border.all(color: theme.dividerColor),
-      ),
-      child: child,
-    );
-  }
-}
-
-/// The original `getIconSize(20)` avatar: a `p:1` (8px) `borderRadius:2` (16px)
-/// box tinted with `alpha(hue, 0.1)`, holding the `hue`-colored glyph.
-class _IconAvatar extends StatelessWidget {
-  const _IconAvatar({required this.icon, required this.hue});
-
-  final IconData icon;
-  final Color hue;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: hue.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Icon(icon, size: 20, color: hue),
-    );
-  }
-}
-
-/// A title (subtitle1 / weight 600) optionally followed by a muted Info glyph
-/// carrying [tooltip], over a `body2` `text.secondary` [description].
-class _CardText extends StatelessWidget {
-  const _CardText({required this.title, this.tooltip, this.description});
-
-  final String title;
-  final String? tooltip;
-  final String? description;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Flexible(
-              child: Text(
-                title,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            if (tooltip != null) ...[
-              const SizedBox(width: 4),
-              Tooltip(
-                message: tooltip!,
-                triggerMode: TooltipTriggerMode.tap,
-                child: Icon(
-                  LucideIcons.info,
-                  size: 16,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ],
-        ),
-        if (description != null) ...[
-          const SizedBox(height: 4),
-          Text(
-            description!,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-/// A small "saved-only" banner explaining the effects are not wired to the chat
-/// view yet (the project's convention for UI-complete-but-unwired settings).
-class _PendingNote extends StatelessWidget {
-  const _PendingNote();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final hue = theme.colorScheme.primary;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: hue.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: hue.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(LucideIcons.info, size: 16, color: hue),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '以下设置会立即保存，部分效果将在聊天页接入后生效（即将支持）。',
-              style: theme.textTheme.bodySmall?.copyWith(color: hue),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The 多模型对比显示 card: icon + title + tooltip over a full-width layout select.
+/// The 多模型对比显示 card: a tinted header (with the layouts in its tooltip)
+/// over the full-width layout select.
 class _MultiModelCard extends StatelessWidget {
   const _MultiModelCard({required this.value, required this.onChanged});
 
@@ -267,25 +113,15 @@ class _MultiModelCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _IconAvatar(
-                icon: LucideIcons.layout,
-                hue: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: _CardText(
-                  title: '多模型对比显示',
-                  tooltip: '配置多模型对比时的布局方式',
-                  description:
-                      '设置多模型对比时的布局方式。水平布局将模型响应并排显示，垂直布局将模型响应上下排列，单独布局将模型响应堆叠显示，网格布局将模型响应以卡片平铺。',
-                ),
-              ),
-            ],
+          _CardHeader(
+            icon: LucideIcons.layout,
+            hue: Theme.of(context).colorScheme.primary,
+            title: '多模型对比显示',
+            tooltip:
+                '水平：模型响应并排显示；垂直：上下排列；单独：堆叠切换；网格：卡片平铺。',
+            description: '设置多模型对比时的布局方式。',
           ),
-          const SizedBox(height: 16),
+          const _CardDivider(),
           _Select<MultiModelDisplayStyle>(
             label: '布局方式',
             value: value,
@@ -298,40 +134,47 @@ class _MultiModelCard extends StatelessWidget {
   }
 }
 
-/// The tool-call / citation / system-prompt cards: icon + text on the left, a
-/// [CustomSwitch] on the right (the original `settingRowStyle`).
-class _SwitchCard extends StatelessWidget {
-  const _SwitchCard({
-    required this.icon,
-    required this.hue,
-    required this.title,
-    required this.description,
-    required this.value,
-    required this.onChanged,
-  });
+/// The 消息显示 card: groups the 工具调用详情 / 引用详情 / 系统提示词气泡 toggles
+/// (the web original's "开关类设置组") under a single header.
+class _DisplayCard extends StatelessWidget {
+  const _DisplayCard({required this.settings, required this.controller});
 
-  final IconData icon;
-  final Color hue;
-  final String title;
-  final String description;
-  final bool value;
-  final ValueChanged<bool> onChanged;
+  final ChatInterfaceSettings settings;
+  final ChatInterfaceSettingsController controller;
 
   @override
   Widget build(BuildContext context) {
     return _Card(
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _IconAvatar(icon: icon, hue: hue),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _CardText(title: title, description: description),
+          const _CardHeader(
+            icon: LucideIcons.messageSquare,
+            hue: Color(0xFF6366F1),
+            title: '消息显示',
+            tooltip: '控制聊天消息中工具调用、引用与系统提示词的显示',
+            description: '控制工具调用、引用详情与系统提示词气泡的显示。',
           ),
-          const SizedBox(width: 12),
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: CustomSwitch(value: value, onChanged: onChanged),
+          const _CardDivider(),
+          _DescribedSwitchRow(
+            title: '工具调用详情',
+            description: '显示工具调用的调用参数与返回结果。',
+            value: settings.showToolDetails,
+            onChanged: controller.setShowToolDetails,
+          ),
+          const SizedBox(height: 14),
+          _DescribedSwitchRow(
+            title: '引用详情',
+            description: '显示引用的来源与相关内容。',
+            value: settings.showCitationDetails,
+            onChanged: controller.setShowCitationDetails,
+          ),
+          const SizedBox(height: 14),
+          _DescribedSwitchRow(
+            title: '系统提示词气泡',
+            description: '在聊天顶部显示系统提示词气泡，便于查看和编辑当前会话的系统提示词。',
+            value: settings.showSystemPromptBubble,
+            onChanged: controller.setShowSystemPromptBubble,
           ),
         ],
       ),
@@ -339,8 +182,9 @@ class _SwitchCard extends StatelessWidget {
   }
 }
 
-/// The 聊天背景设置 card: the enable switch plus, when on, the collapsible
-/// image / opacity / overlay / size / position / repeat controls.
+/// The 聊天背景 card: the enable switch sits inline in the header; when on, the
+/// collapsible image / opacity / overlay / size / position / repeat controls
+/// fade in below.
 class _BackgroundCard extends ConsumerWidget {
   const _BackgroundCard({required this.value, required this.onChanged});
 
@@ -384,125 +228,75 @@ class _BackgroundCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     return _Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const _IconAvatar(
-                icon: LucideIcons.image,
-                hue: Color(0xFFEC4899),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: _CardText(
-                  title: '聊天背景设置',
-                  description: '自定义聊天界面背景图片。背景只会显示在聊天消息区域，不会影响顶部工具栏和侧边栏。',
-                ),
-              ),
-              const SizedBox(width: 12),
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: CustomSwitch(
-                  value: value.enabled,
-                  onChanged: (v) => onChanged(value.copyWith(enabled: v)),
-                ),
-              ),
-            ],
+          _CardHeader(
+            icon: LucideIcons.image,
+            hue: const Color(0xFFEC4899),
+            title: '聊天背景',
+            description: '自定义聊天消息区域的背景图片，不影响顶栏与侧边栏。',
+            trailing: CustomSwitch(
+              value: value.enabled,
+              onChanged: (v) => onChanged(value.copyWith(enabled: v)),
+            ),
           ),
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 200),
             crossFadeState: value.enabled
                 ? CrossFadeState.showFirst
                 : CrossFadeState.showSecond,
-            firstChild: Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '背景图片',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  _ImageArea(
-                    imageUrl: value.imageUrl,
-                    onPick: () => _pickImage(ref),
-                    onRemove: () => onChanged(value.copyWith(imageUrl: '')),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    '背景透明度  ${(value.opacity * 100).round()}%',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Slider(
-                    min: 0.1,
-                    max: 1,
-                    divisions: 9,
-                    value: value.opacity.clamp(0.1, 1),
-                    label: '${(value.opacity * 100).round()}%',
-                    onChanged: (v) => onChanged(value.copyWith(opacity: v)),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.onSurface.withValues(
-                        alpha: 0.04,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        const Expanded(
-                          child: _CardText(
-                            title: '显示渐变遮罩',
-                            description:
-                                '在背景上方添加白色渐变遮罩，提高文字可读性。关闭后可直接通过透明度控制背景。',
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        CustomSwitch(
-                          value: value.showOverlay,
-                          onChanged: (v) =>
-                              onChanged(value.copyWith(showOverlay: v)),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _Select<ChatBackgroundSize>(
-                    label: '背景尺寸',
-                    value: value.size,
-                    items: _sizes,
-                    onChanged: (v) => onChanged(value.copyWith(size: v)),
-                  ),
-                  const SizedBox(height: 12),
-                  _Select<ChatBackgroundPosition>(
-                    label: '背景位置',
-                    value: value.position,
-                    items: _positions,
-                    onChanged: (v) => onChanged(value.copyWith(position: v)),
-                  ),
-                  const SizedBox(height: 12),
-                  _Select<ChatBackgroundRepeat>(
-                    label: '背景重复',
-                    value: value.repeat,
-                    items: _repeats,
-                    onChanged: (v) => onChanged(value.copyWith(repeat: v)),
-                  ),
-                ],
-              ),
+            firstChild: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _CardDivider(),
+                const _FieldLabel('背景图片'),
+                const SizedBox(height: 8),
+                _ImageArea(
+                  imageUrl: value.imageUrl,
+                  onPick: () => _pickImage(ref),
+                  onRemove: () => onChanged(value.copyWith(imageUrl: '')),
+                ),
+                const SizedBox(height: 16),
+                _FieldLabel('背景透明度  ${(value.opacity * 100).round()}%'),
+                Slider(
+                  min: 0.1,
+                  max: 1,
+                  divisions: 9,
+                  value: value.opacity.clamp(0.1, 1),
+                  label: '${(value.opacity * 100).round()}%',
+                  onChanged: (v) => onChanged(value.copyWith(opacity: v)),
+                ),
+                const SizedBox(height: 8),
+                _DescribedSwitchRow(
+                  title: '显示渐变遮罩',
+                  description: '在背景上方添加白色渐变遮罩，提高文字可读性。',
+                  value: value.showOverlay,
+                  onChanged: (v) => onChanged(value.copyWith(showOverlay: v)),
+                ),
+                const SizedBox(height: 16),
+                _Select<ChatBackgroundSize>(
+                  label: '背景尺寸',
+                  value: value.size,
+                  items: _sizes,
+                  onChanged: (v) => onChanged(value.copyWith(size: v)),
+                ),
+                const SizedBox(height: 12),
+                _Select<ChatBackgroundPosition>(
+                  label: '背景位置',
+                  value: value.position,
+                  items: _positions,
+                  onChanged: (v) => onChanged(value.copyWith(position: v)),
+                ),
+                const SizedBox(height: 12),
+                _Select<ChatBackgroundRepeat>(
+                  label: '背景重复',
+                  value: value.repeat,
+                  items: _repeats,
+                  onChanged: (v) => onChanged(value.copyWith(repeat: v)),
+                ),
+              ],
             ),
             secondChild: const SizedBox(width: double.infinity),
           ),
@@ -611,6 +405,197 @@ class _ImageArea extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared card scaffolding (mirrors `thinking_settings_page.dart` /
+// `message_bubble_settings_page.dart`)
+// ---------------------------------------------------------------------------
+
+/// A 12px-gap, 16px-padded, 18px-radius card with a 1px divider border.
+class _Card extends StatelessWidget {
+  const _Card({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// A 12px-vertical hairline divider marking a card section break.
+class _CardDivider extends StatelessWidget {
+  const _CardDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Divider(height: 1, color: Theme.of(context).dividerColor),
+    );
+  }
+}
+
+/// A card header: the tinted icon avatar plus the title (with optional Info
+/// tooltip) over an optional description, and an optional [trailing] widget
+/// (e.g. the section's enable switch) pinned to the right.
+class _CardHeader extends StatelessWidget {
+  const _CardHeader({
+    required this.icon,
+    required this.hue,
+    required this.title,
+    this.tooltip,
+    this.description,
+    this.trailing,
+  });
+
+  final IconData icon;
+  final Color hue;
+  final String title;
+  final String? tooltip;
+  final String? description;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(7),
+          decoration: BoxDecoration(
+            color: hue.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, size: 18, color: hue),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (tooltip != null) ...[
+                    const SizedBox(width: 4),
+                    Tooltip(
+                      message: tooltip!,
+                      triggerMode: TooltipTriggerMode.tap,
+                      child: Icon(
+                        LucideIcons.info,
+                        size: 16,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              if (description != null) ...[
+                const SizedBox(height: 2),
+                Text(
+                  description!,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (trailing != null) ...[
+          const SizedBox(width: 12),
+          Padding(padding: const EdgeInsets.only(top: 2), child: trailing!),
+        ],
+      ],
+    );
+  }
+}
+
+/// A bold, slightly-muted field label used above an input control.
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: Theme.of(
+        context,
+      ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+    );
+  }
+}
+
+/// A switch row with a title and a muted sub-description.
+class _DescribedSwitchRow extends StatelessWidget {
+  const _DescribedSwitchRow({
+    required this.title,
+    required this.description,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String description;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                description,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: CustomSwitch(value: value, onChanged: onChanged),
+        ),
+      ],
     );
   }
 }
