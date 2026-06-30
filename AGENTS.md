@@ -26,7 +26,7 @@ flutter analyze <改动的文件...>
    - `git commit -F .git/COMMIT_MSG_TMP.txt`
    - `Remove-Item .git/COMMIT_MSG_TMP.txt`
 3. 多条命令在 PowerShell 里用 `;` 连接，不要用 bash 的 `&&`/heredoc。
-4. 仅在用户**明确要求**时才推送：`git push origin main`。
+4. **提交后默认直接推送** `git push origin main`，不用每次再问。除非用户明确说「先别推/只提交」。
 
 ### 提交信息规范
 
