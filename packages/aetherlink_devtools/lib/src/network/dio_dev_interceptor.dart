@@ -15,8 +15,9 @@ import 'network_store.dart';
 /// the byte stream so the panel captures each SSE/LLM chunk while the original
 /// consumer still receives the bytes untouched.
 ///
-/// Sensitive header values (`authorization`, `*-api-key`, `cookie`, …) are masked
-/// before they reach the store, so copy/export never leaks full credentials.
+/// Headers are recorded verbatim (no redaction) so the Network panel behaves like
+/// a real browser devtools — cURL export / replay work out of the box. This is a
+/// local, open-source developer tool; don't paste exports into public channels.
 class DioDevInterceptor extends Interceptor {
   DioDevInterceptor();
 
@@ -35,7 +36,7 @@ class DioDevInterceptor extends Interceptor {
     final id = _store.start(
       method: options.method,
       url: options.uri.toString(),
-      requestHeaders: _maskHeaders(options.headers),
+      requestHeaders: _headers(options.headers),
       requestPayload: payload,
       requestSize: payload == null ? null : utf8.encode(payload).length,
     );
@@ -65,7 +66,7 @@ class DioDevInterceptor extends Interceptor {
         id,
         statusCode: response.statusCode ?? data.statusCode,
         statusText: response.statusMessage,
-        headers: _maskResponseHeaders(response.headers),
+        headers: _responseHeaders(response.headers),
       );
       response.data = ResponseBody(
         _captureStream(id, data.stream),
@@ -84,7 +85,7 @@ class DioDevInterceptor extends Interceptor {
       id,
       statusCode: response.statusCode ?? 0,
       statusText: response.statusMessage,
-      headers: _maskResponseHeaders(response.headers),
+      headers: _responseHeaders(response.headers),
       body: body,
       size: body == null ? null : utf8.encode(body).length,
     );
@@ -109,7 +110,7 @@ class DioDevInterceptor extends Interceptor {
       statusText: res?.statusMessage,
       headers: res == null
           ? const <String, String>{}
-          : _maskResponseHeaders(res.headers),
+          : _responseHeaders(res.headers),
       body: body,
       cancelled: cancelled,
     );
@@ -139,39 +140,26 @@ class DioDevInterceptor extends Interceptor {
     );
   }
 
-  // --- serialization / masking ------------------------------------------------
+  // --- serialization ----------------------------------------------------------
 
-  static const Set<String> _sensitiveHeaders = <String>{
-    'authorization',
-    'proxy-authorization',
-    'api-key',
-    'x-api-key',
-    'x-goog-api-key',
-    'cookie',
-    'set-cookie',
-  };
+  // Headers are captured verbatim (no redaction): this is a local, open-source
+  // developer tool — like Chrome DevTools' network panel it shows full headers so
+  // cURL export / replay actually work. Don't paste exports somewhere public.
 
-  Map<String, String> _maskHeaders(Map<String, dynamic> headers) {
+  Map<String, String> _headers(Map<String, dynamic> headers) {
     final out = <String, String>{};
     headers.forEach((key, value) {
-      final v = value is Iterable ? value.join(', ') : '$value';
-      out[key] = _sensitiveHeaders.contains(key.toLowerCase()) ? _mask(v) : v;
+      out[key] = value is Iterable ? value.join(', ') : '$value';
     });
     return out;
   }
 
-  Map<String, String> _maskResponseHeaders(Headers headers) {
+  Map<String, String> _responseHeaders(Headers headers) {
     final out = <String, String>{};
     headers.map.forEach((key, values) {
-      final v = values.join(', ');
-      out[key] = _sensitiveHeaders.contains(key.toLowerCase()) ? _mask(v) : v;
+      out[key] = values.join(', ');
     });
     return out;
-  }
-
-  static String _mask(String value) {
-    if (value.length <= 8) return '***';
-    return '${value.substring(0, 4)}…${value.substring(value.length - 4)}';
   }
 
   static String? _serializeBody(Object? data) {

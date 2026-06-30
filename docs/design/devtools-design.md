@@ -186,6 +186,9 @@
 
 > 每完成一个阶段或重要节点，在此追加一条（日期 + 做了什么 + 关键文件 + 遗留问题）。最新在最上。
 
+### 2026-06-30 — Network 取消请求头脱敏（对齐浏览器 devtools）
+- 移除 `DioDevInterceptor` 的敏感头掩码逻辑（原 `_maskHeaders`/`_sensitiveHeaders`/`_mask`），请求/响应头**逐字记录**。理由：这是本地、开源的开发者工具，Chrome DevTools 的网络面板也不脱敏；脱敏反而让 cURL 导出/重放不可用。`NetworkEntry.toCurl()` 现在**可直接运行**。提示：导出内容含真实凭证，勿贴到公开渠道。
+
 ### 2026-06-30 — UI 打磨（统一 Tab 样式 + 紧凑化 + 详情段内滑动）
 - **统一 Tab 样式**：DevTools 页 TabBar 此前用的是 Material 默认 primary tab（字体/样式与全 App 不一致）。现改为复刻项目统一的分段胶囊样式（`_SegmentedTabBar`：圆角容器 + 边框 + `primary@0.12` 胶囊指示条 + `isScrollable`/`TabAlignment.start` 内容自适应宽度 + `labelLarge/13/w600` + `labelPadding 8`）。因 `aetherlink_devtools` 包零依赖、不能 import `lib/`，故**在包内 1:1 复刻**而非引用（`devtools_page.dart` 用 `PreferredSize` 包裹，高 56）。
 - **全页紧凑化**：Console/Network 过滤栏外边距 12/8→10/6、搜索框高 38→34、行距 6→4；日志行/请求行内边距收紧到 `10,4`/`10,6`；Performance `ListView`/卡片内边距与卡片间距收紧，卡片标题改 `labelLarge` 次级色。

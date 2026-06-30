@@ -48,7 +48,7 @@ class NetworkEntry {
   final String url;
   final DateTime startTime;
 
-  /// Sanitised request headers (sensitive values masked by the interceptor).
+  /// Request headers, captured verbatim (no redaction — see [DioDevInterceptor]).
   Map<String, String> requestHeaders;
 
   /// Serialised request body, or `null` for bodyless requests.
@@ -134,9 +134,8 @@ class NetworkEntry {
     return b.toString().trimRight();
   }
 
-  /// A `curl` command reproducing this request. Sensitive headers stay masked
-  /// (the interceptor redacted them), so a runnable copy needs the real
-  /// credential substituted — safe to share/screenshot by default.
+  /// A `curl` command reproducing this request, with full headers — directly
+  /// runnable (the panel doesn't redact, like browser devtools).
   String toCurl() {
     String esc(String s) => s.replaceAll("'", r"'\''");
     final b = StringBuffer("curl -X $method '${esc(url)}'");
