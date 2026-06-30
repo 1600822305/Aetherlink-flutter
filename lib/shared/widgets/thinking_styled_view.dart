@@ -381,11 +381,27 @@ class ThinkingStyledView extends StatelessWidget {
   // ----------------------------------------------------------------- Devin 风格
   // Minimal collapsible "Thought for Xs" header with a chevron; the expanded
   // body is indented behind a thin vertical guide line, mirroring Devin's UI.
+  //
+  // While streaming and collapsed, a 3-line rolling preview of the latest
+  // reasoning is shown behind the guide line (like Devin's live "thinking"
+  // peek); it disappears when reasoning finishes, leaving the header-only
+  // collapsed state (输出完自动折叠).
+
+  /// The trailing few lines of the live reasoning, for the streaming peek.
+  String _devinPreviewTail() {
+    final text = previewContent ?? content;
+    final lines =
+        text.split('\n').where((l) => l.trim().isNotEmpty).toList();
+    if (lines.length <= 3) return lines.join('\n');
+    return lines.sublist(lines.length - 3).join('\n');
+  }
 
   Widget _buildDevin(BuildContext context) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
     final label = isThinking ? '正在思考…' : '已思考 ${_secondsLabel}s';
+    final showPreview =
+        !expanded && isThinking && (previewContent ?? content).trim().isNotEmpty;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -456,6 +472,45 @@ class ThinkingStyledView extends StatelessWidget {
                     inlineTools!,
                   ],
                 ],
+              ),
+            )
+          else if (showPreview)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(top: 2, left: 9),
+              padding: const EdgeInsets.only(left: 14),
+              decoration: BoxDecoration(
+                border: Border(
+                  left: BorderSide(color: theme.dividerColor, width: 1.5),
+                ),
+              ),
+              // ~3 lines tall (fontSize 12.5 × height 1.5 ≈ 19px/line). The
+              // newest line stays pinned via reverse scrolling, and the top
+              // fades out so it reads as a rolling peek rather than a clip.
+              child: ShaderMask(
+                shaderCallback: (rect) => const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, Colors.black],
+                  stops: [0.0, 0.45],
+                ).createShader(rect),
+                blendMode: BlendMode.dstIn,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 58),
+                  child: SingleChildScrollView(
+                    reverse: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    child: markdownBuilder(
+                      context,
+                      _devinPreviewTail(),
+                      TextStyle(
+                        color: muted.withValues(alpha: 0.85),
+                        fontSize: 12.5,
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
         ],
