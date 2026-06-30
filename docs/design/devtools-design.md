@@ -2,7 +2,7 @@
 
 > **版本**: v0.1
 > **日期**: 2026-06-30
-> **状态**: P0~P3 已完成（Console + 全局捕获 + 页面 + 关于页入口 + 悬浮按钮 + Network 网络面板 + Dio 收口 + Performance 性能面板），P4 待开工
+> **状态**: P0~P3 完成 + P4 部分（Console + 全局捕获 + 页面 + 入口 + 悬浮按钮 + Network + Dio 收口 + Performance + Storage 存储面板 + Device 设备面板），P4 余项(AI 导出增强 / logger 门面)待做
 > **目标**: 做一个「UI 对齐原版 Web、功能媲美 Chrome DevTools、整体比原版更强」的应用内开发者工具面板。
 
 ---
@@ -164,7 +164,7 @@
 | **P1** | 可拖拽悬浮按钮 `DevToolsFloatingButton` + 设置开关接线(补占位项) | ✅ | 2026-06-30 |
 | **P2** | `DioDevInterceptor` + 统一 Dio 工厂(§4.2) + Network 面板(含 SSE 流式) | ✅ | 2026-06-30 |
 | **P3** | Performance tab（并入 aetherlink_perf） | ✅ | 2026-06-30 |
-| **P4** | Storage / Device 面板 + AI 导出增强 + logger 门面(§4.1-B) | ⬜ | - |
+| **P4** | Storage / Device 面板 + AI 导出增强 + logger 门面(§4.1-B) | 🟡 | Storage/Device 已完成(2026-06-30)；AI 导出增强 + logger 门面待做 |
 
 **推荐起步**：P0（零前置依赖，立刻可用，验证整体 UI 风格）。
 
@@ -185,6 +185,16 @@
 ## 8. 进度日志
 
 > 每完成一个阶段或重要节点，在此追加一条（日期 + 做了什么 + 关键文件 + 遗留问题）。最新在最上。
+
+### 2026-06-30 — P4 部分（Storage 存储面板 + Device 设备面板）
+- **Storage**（`lib/app/devtools/storage_panel.dart`，`ConsumerStatefulWidget`）：
+  - SharedPreferences：列出全部键(类型 Chip + 值)，String 可编辑、任意键可删除(带确认)，改后刷新。
+  - Drift/SQLite：`appDatabaseProvider` + `db.allTables` 内省，每表显示行数(`COUNT(*)`)，点开懒加载前 100 行(`customSelect`)并用 `DataTable`(横竖双向滚动、限高 280)浏览。只读(改表风险高，暂不做)。
+  - 不脱敏(与 Network 一致；本地开源 dev-tool)。
+- **Device**（`lib/app/devtools/device_panel.dart`）：运行时(构建模式/OS/Locale/CPU/Dart) + 屏幕显示(逻辑/物理分辨率、密度、刷新率、文字缩放、亮度、安全区) + 内存(ProcessInfo RSS/峰值) + 设备(device_info_plus `.data` 全量扁平展示) + 「复制全部」(同时喂页面级复制，库级缓存供无 context 的 `exportAsText`)。
+- **依赖归属**：两面板均放主 App `app/devtools/`，在 `main.dart` 用 `DevToolsRegistry.register` 注册(扩展点)，使 `aetherlink_devtools` 包仍零依赖于 Drift/device_info。Tab 顺序：控制台/网络/性能/存储/设备(分段栏 `isScrollable` 自适应)。
+- 验证：`flutter analyze`(两面板 + main.dart)零问题;`device_info_plus`/`shared_preferences` 均为既有直接依赖。
+- 遗留：P4 余项 — Console「复制为 AI 诊断」(带设备+上下文) 与 logger 门面(§4.1-B) 未做。
 
 ### 2026-06-30 — Network 取消请求头脱敏（对齐浏览器 devtools）
 - 移除 `DioDevInterceptor` 的敏感头掩码逻辑（原 `_maskHeaders`/`_sensitiveHeaders`/`_mask`），请求/响应头**逐字记录**。理由：这是本地、开源的开发者工具，Chrome DevTools 的网络面板也不脱敏；脱敏反而让 cURL 导出/重放不可用。`NetworkEntry.toCurl()` 现在**可直接运行**。提示：导出内容含真实凭证，勿贴到公开渠道。
