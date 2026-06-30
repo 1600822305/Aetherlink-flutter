@@ -55,13 +55,13 @@ void main() {
   test('jank events context drives the note suffix', () {
     final events = List.generate(
       4,
-      (_) => JankEvent(
+      (_) => const JankEvent(
         atMs: 1000,
         totalMs: 48,
         buildMs: 6,
         rasterMs: 42,
         verdict: Bottleneck.raster,
-        context: const PerfContext(route: '/chat', scrolling: true, streaming: true),
+        context: PerfContext(route: '/chat', scrolling: true, streaming: true),
       ),
     );
     final diag = d.diagnose(
