@@ -2,7 +2,7 @@
 
 > **版本**: v0.1
 > **日期**: 2026-06-30
-> **状态**: 设计阶段（未开工）
+> **状态**: 设计定稿（§7 三项决策已拍板，待从 P0 开工）
 > **目标**: 做一个「UI 对齐原版 Web、功能媲美 Chrome DevTools、整体比原版更强」的应用内开发者工具面板。
 
 ---
@@ -170,17 +170,26 @@
 
 ---
 
-## 7. 待拍板决策
+## 7. 已拍板决策（2026-06-30 定稿）
 
-1. **抓网络流量方式**：收口 `buildAppDio()` 工厂（干净全量，改多处）vs Dio 注册表（快但不全）。— **未定**
-2. **打包形态**：独立 `packages/aetherlink_devtools`（推荐）vs 主 App `lib/features/devtools/`（快但耦合）。— **未定**
-3. **入口位置**：DevTools 页放在设置哪一级？原版从「设置/关于」进。— **未定**
+1. **抓网络流量方式 → A：收口工厂 `buildAppDio()`，分步迁移。**
+   建统一工厂内置 `DioDevInterceptor`，新代码一律用它，老调用点（`skill_store_page`、`network_proxy_settings`、各 TTS/ASR、`buildLlmDio` 等）逐个迁移、每处迁完验证一次。**不在 P0 动它，放到 P2。** 理由：企业级要求全量可观测 + 横切关注点(鉴权/重试/脱敏)统一收口。
+2. **打包形态 → A：独立 package `packages/aetherlink_devtools`。**
+   照搬 `aetherlink_perf` 结构。理由：可裁剪不进 release 包、依赖边界清晰、可独立单测。先做单包即可，暂不拆"采集/UI"两包（避免过度设计）。
+3. **入口位置 → 对齐原版：悬浮按钮 + 「关于」页开发者入口行。**
+   - 在 `lib/features/settings/presentation/mobile/about_page.dart` 加一行（Terminal 图标 + "开发者工具"）跳 DevTools 页，对应原版 `AboutPage.tsx:147-155`（`PressableRow` → `navigate('/devtools')`）。
+   - 外加可拖拽悬浮按钮（复用 `aetherlink_perf` 拖拽逻辑），开关接到外观→开发者工具卡片现有的占位项。
 
 ---
 
 ## 8. 进度日志
 
 > 每完成一个阶段或重要节点，在此追加一条（日期 + 做了什么 + 关键文件 + 遗留问题）。最新在最上。
+
+### 2026-06-30 — 决策定稿
+- §7 三项决策拍板：① 网络=收口工厂 `buildAppDio()` 分步迁移；② 独立 package `packages/aetherlink_devtools`；③ 入口=悬浮按钮 + 「关于」页开发者入口行（对齐原版 `AboutPage.tsx:147-155`）。
+- 确认 Flutter 关于页位置：`lib/features/settings/presentation/mobile/about_page.dart`。
+- 下一步：从 **P0** 开工（建 package 骨架 + 日志缓冲 + 全局捕获 + Console tab）。
 
 ### 2026-06-30 — 文档创建 / 设计阶段
 - 调研原版 Web DevTools（DevToolsPage / ConsolePanel / NetworkPanel / DevToolsFloatingButton）与 Flutter 现状。
