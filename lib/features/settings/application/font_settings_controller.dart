@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:aetherlink_devtools/aetherlink_devtools.dart';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +16,9 @@ import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_reposi
 import 'package:aetherlink_flutter/shared/domain/font_settings.dart';
 
 part 'font_settings_controller.g.dart';
+
+/// Context-tagged logger feeding the in-app Console (devtools logger façade).
+final _log = createLogger('FontSettings');
 
 /// Storage key for the persisted 全局字体 settings (a single JSON blob, mirroring
 /// how the other appearance settings live under the `settings` slice).
@@ -144,8 +148,14 @@ class FontLoaderService {
         // first apply silently falls back to the platform default).
         try {
           await _ensureGoogleRegistered(selection.family);
-        } catch (_) {
-          // Unknown Google family or network error — fall back to the default.
+        } catch (e, s) {
+          // Unknown Google family or network error — fall back to the default,
+          // but surface it in the in-app Console (devtools logger façade).
+          _log.warn(
+            'Google 字体注册失败：${selection.family}',
+            error: e,
+            stackTrace: s,
+          );
         }
     }
   }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../diagnostics.dart';
 import '../models/log_entry.dart';
 import '../panel.dart';
 import 'console_store.dart';
@@ -191,6 +193,11 @@ class _FilterBar extends StatelessWidget {
                       size: 20,
                     ),
                   ),
+                  IconButton(
+                    tooltip: '复制为 AI 诊断',
+                    onPressed: () => _copyAiReport(context),
+                    icon: const Icon(Icons.smart_toy_outlined, size: 20),
+                  ),
                 ],
               );
             },
@@ -221,6 +228,37 @@ class _FilterBar extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// Builds an AI-friendly report (host-provided device/env context + the recent
+  /// filtered log tail) and copies it to the clipboard.
+  Future<void> _copyAiReport(BuildContext context) async {
+    const tailLimit = 300;
+    final b = StringBuffer('=== Aetherlink 诊断报告 ===')
+      ..writeln()
+      ..writeln('生成时间: ${DateTime.now().toIso8601String()}');
+    final ctx = DevToolsDiagnostics.contextProvider?.call();
+    if (ctx != null && ctx.trim().isNotEmpty) {
+      b
+        ..writeln()
+        ..writeln(ctx.trim());
+    }
+    final rows = store.filtered;
+    final tail = rows.length > tailLimit
+        ? rows.sublist(rows.length - tailLimit)
+        : rows;
+    b
+      ..writeln()
+      ..writeln('=== 最近 ${tail.length} 条日志（共 ${rows.length}）===');
+    for (final e in tail) {
+      b.writeln(e.toLine());
+    }
+    await Clipboard.setData(ClipboardData(text: b.toString()));
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已复制 AI 诊断报告')));
+    }
   }
 }
 

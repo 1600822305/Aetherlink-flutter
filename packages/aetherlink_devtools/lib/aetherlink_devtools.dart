@@ -28,6 +28,8 @@ library;
 export 'src/console/console_capture.dart' show DevToolsCapture;
 export 'src/console/console_panel.dart' show ConsolePanel;
 export 'src/console/console_store.dart' show ConsoleStore, ConsoleFilter;
+export 'src/diagnostics.dart' show DevToolsDiagnostics;
+export 'src/logging/dev_logger.dart' show DevLogger, createLogger;
 export 'src/models/log_entry.dart' show LogEntry, LogLevel;
 export 'src/network/dio_dev_interceptor.dart' show DioDevInterceptor;
 export 'src/network/network_entry.dart'

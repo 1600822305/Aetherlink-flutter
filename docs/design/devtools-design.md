@@ -2,7 +2,7 @@
 
 > **版本**: v0.1
 > **日期**: 2026-06-30
-> **状态**: P0~P3 完成 + P4 部分（Console + 全局捕获 + 页面 + 入口 + 悬浮按钮 + Network + Dio 收口 + Performance + Storage 存储面板 + Device 设备面板），P4 余项(AI 导出增强 / logger 门面)待做
+> **状态**: P0~P4 全部完成（Console + 全局捕获 + 页面 + 入口 + 悬浮按钮 + Network + Dio 收口 + Performance + Storage + Device + AI 诊断导出 + logger 门面）。各面板另有多项 §5 增强(见 §8)。
 > **目标**: 做一个「UI 对齐原版 Web、功能媲美 Chrome DevTools、整体比原版更强」的应用内开发者工具面板。
 
 ---
@@ -164,7 +164,7 @@
 | **P1** | 可拖拽悬浮按钮 `DevToolsFloatingButton` + 设置开关接线(补占位项) | ✅ | 2026-06-30 |
 | **P2** | `DioDevInterceptor` + 统一 Dio 工厂(§4.2) + Network 面板(含 SSE 流式) | ✅ | 2026-06-30 |
 | **P3** | Performance tab（并入 aetherlink_perf） | ✅ | 2026-06-30 |
-| **P4** | Storage / Device 面板 + AI 导出增强 + logger 门面(§4.1-B) | 🟡 | Storage/Device 已完成(2026-06-30)；AI 导出增强 + logger 门面待做 |
+| **P4** | Storage / Device 面板 + AI 导出增强 + logger 门面(§4.1-B) | ✅ | 2026-06-30 |
 
 **推荐起步**：P0（零前置依赖，立刻可用，验证整体 UI 风格）。
 
@@ -185,6 +185,11 @@
 ## 8. 进度日志
 
 > 每完成一个阶段或重要节点，在此追加一条（日期 + 做了什么 + 关键文件 + 遗留问题）。最新在最上。
+
+### 2026-06-30 — P4 收尾（AI 诊断导出 + logger 门面）
+- **logger 门面**（§4.1-B，`packages/aetherlink_devtools/lib/src/logging/dev_logger.dart`）：`createLogger('Context')` → `DevLogger`，`.error/.warn/.info/.debug/.trace` 写入 `ConsoleStore`(带 level + context)并镜像到 `dart:developer` 的 `log`(IDE 控制台);**不走 `debugPrint`**(已被全局捕获,避免重复)。Console 因此获得真正的「按模块(context)分级过滤」。已导出 + 3 个单测。示范接入:`font_settings_controller` 的 Google 字体注册失败(原静默 `catch(_)`)改为 `_log.warn(...)`。
+- **AI 诊断导出**（§5.1）：包内新增扩展点 `DevToolsDiagnostics.contextProvider`(`String Function()?`,宿主注入设备/环境,保持包零依赖);Console 过滤栏加「复制为 AI 诊断」按钮(`smart_toy`),拼装 `设备/环境上下文 + 最近 300 条日志` 一键复制。App 侧 `lib/app/devtools/diagnostics_context.dart` 提供环境块(构建模式/OS/Locale/CPU/Dart/RSS + device_info 扁平字段),`main.dart` 调 `initDiagnosticsContext()` 注入。
+- 验证:包内 `flutter analyze` 零问题、`flutter test` 14/14;App 侧改动文件 analyze 零问题。**P4 全部完成,DevTools P0~P4 收官。**
 
 ### 2026-06-30 — P4 部分（Storage 存储面板 + Device 设备面板）
 - **Storage**（`lib/app/devtools/storage_panel.dart`，`ConsumerStatefulWidget`）：

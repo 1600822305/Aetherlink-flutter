@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/app.dart';
 import 'package:aetherlink_flutter/app/devtools/device_panel.dart';
+import 'package:aetherlink_flutter/app/devtools/diagnostics_context.dart';
 import 'package:aetherlink_flutter/app/devtools/performance_panel.dart';
 import 'package:aetherlink_flutter/app/devtools/storage_panel.dart';
 import 'package:aetherlink_flutter/features/backup/data/backup_notification_service.dart';
@@ -27,6 +28,8 @@ void main() async {
       DevToolsRegistry.register(const PerformancePanel());
       DevToolsRegistry.register(const StoragePanel());
       DevToolsRegistry.register(const DevicePanel());
+      // Feed device/env context into the Console's "复制为 AI 诊断" export.
+      initDiagnosticsContext();
       // Draw behind the status / navigation bars so the themed overlay (set per
       // brightness in [AetherlinkApp]) replaces Android's opaque/contrast-scrimmed
       // system bars — no white mask behind the bottom navigation bar.
