@@ -1,3 +1,4 @@
+import 'package:aetherlink_devtools/aetherlink_devtools.dart';
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
@@ -111,6 +112,7 @@ abstract final class AppRouter {
   static const String welcomePath = '/welcome';
   static const String translatePath = '/translate';
   static const String workspacePath = '/workspace';
+  static const String devToolsPath = '/devtools';
 
   /// The model-provider third-level pages (M4.3.1). The detail / edit / advanced
   /// routes are parameterized by `:providerId`; the helpers below build a
@@ -181,6 +183,11 @@ abstract final class AppRouter {
         path: aboutPath,
         name: 'about',
         pageBuilder: (context, state) => _instant(state, const AboutPage()),
+      ),
+      GoRoute(
+        path: devToolsPath,
+        name: 'devtools',
+        pageBuilder: (context, state) => _instant(state, const DevToolsPage()),
       ),
       GoRoute(
         path: modelComboPath,

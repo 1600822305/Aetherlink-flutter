@@ -203,7 +203,10 @@ class _AboutLinkRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final url = link.url;
-    final enabled = url != null;
+    // 开发者工具是应用内目的地（无外链 URL），点击进入 /devtools 页（aetherlink_devtools，
+    // 见 docs/design/devtools-design.md）。其余行靠外链 URL 判断是否可用。
+    final isDevTools = link.kind == AboutLinkKind.devTools;
+    final enabled = url != null || isDevTools;
 
     final row = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -229,7 +232,13 @@ class _AboutLinkRow extends StatelessWidget {
     if (!enabled) {
       return Opacity(opacity: 0.5, child: row);
     }
-    return InkWell(onTap: () => _open(url), child: row);
+    if (isDevTools) {
+      return InkWell(
+        onTap: () => context.push(AppRouter.devToolsPath),
+        child: row,
+      );
+    }
+    return InkWell(onTap: () => _open(url!), child: row);
   }
 }
 

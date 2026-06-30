@@ -83,6 +83,10 @@ dependencies:
   # zero extra deps; per-thread frame timing + AI-friendly JSON export.
   aetherlink_perf:
     path: packages/aetherlink_perf
+  # In-app developer tools (关于我们→开发者工具). Pure-Dart, zero extra deps;
+  # DevTools-style panel host + global log capture. See docs/design/devtools-design.md.
+  aetherlink_devtools:
+    path: packages/aetherlink_devtools
   scrollview_observer: ^1.27.0
   # Voice feature: TTS + ASR
   flutter_tts:

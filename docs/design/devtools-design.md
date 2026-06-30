@@ -2,7 +2,7 @@
 
 > **版本**: v0.1
 > **日期**: 2026-06-30
-> **状态**: 设计定稿（§7 三项决策已拍板，待从 P0 开工）
+> **状态**: P0 已完成（Console + 全局捕获 + 页面骨架 + 入口已落地），P1~P4 待开工
 > **目标**: 做一个「UI 对齐原版 Web、功能媲美 Chrome DevTools、整体比原版更强」的应用内开发者工具面板。
 
 ---
@@ -160,7 +160,7 @@
 
 | 阶段 | 内容 | 状态 | 完成日期 |
 |------|------|------|---------|
-| **P0** | 独立 package 骨架 + `LogSink`/`ConsoleStore` + 全局错误/print 捕获(§4.1-A) + DevToolsPage(Console tab) | ⬜ | - |
+| **P0** | 独立 package 骨架 + `ConsoleStore` + 全局错误/print 捕获(§4.1-A) + DevToolsPage(Console tab) | ✅ | 2026-06-30 |
 | **P1** | 可拖拽悬浮按钮 `DevToolsFloatingButton` + 设置开关接线(补占位项) | ⬜ | - |
 | **P2** | `DioDevInterceptor` + 统一 Dio 工厂(§4.2) + Network 面板(含 SSE 流式) | ⬜ | - |
 | **P3** | Performance tab（并入 aetherlink_perf） | ⬜ | - |
@@ -185,6 +185,21 @@
 ## 8. 进度日志
 
 > 每完成一个阶段或重要节点，在此追加一条（日期 + 做了什么 + 关键文件 + 遗留问题）。最新在最上。
+
+### 2026-06-30 — P0 完成（Console + 骨架 + 入口）
+- 新增独立包 `packages/aetherlink_devtools`（零额外依赖，仿 `aetherlink_perf`）。代码地图：
+  - `lib/aetherlink_devtools.dart` — 对外导出。
+  - `src/models/log_entry.dart` — `LogEntry` / `LogLevel`。
+  - `src/panel.dart` — **扩展点**：`DevToolsPanel` 接口 + `DevToolsRegistry`。新面板 = 新 `DevToolsPanel` 子类 + `DevToolsRegistry.register(...)` 一行，**不改 `DevToolsPage`**（这是 P1~P4 可并行的关键）。
+  - `src/console/console_store.dart` — 环形缓冲(2000 上限) + 过滤，`ValueListenable` 驱动。
+  - `src/console/console_capture.dart` — `DevToolsCapture.install()`：链式接管 `FlutterError.onError` / `PlatformDispatcher.onError` / `debugPrint`，并注册内置 Console 面板；`zoneErrorHandler` 给 `runZonedGuarded`。
+  - `src/console/console_panel.dart` — Console UI（搜索 + 等级 Chip + 等宽行 + 可展开堆栈 + 自动滚动）。
+  - `src/ui/devtools_page.dart` — `DevToolsPage`：AppBar(复制/清空) + TabBar 宿主（按注册面板渲染 tab）。
+  - `test/console_store_test.dart` — 5 个单测（环形/过滤/格式化），全过。
+- 主 App 接入：`pubspec.yaml` 加路径依赖；`lib/main.dart` 用 `runZonedGuarded` 包裹 + `DevToolsCapture.install()`；`app_router.dart` 加 `devToolsPath='/devtools'` 路由；`about_page.dart` 的「开发者工具」行接通 `context.push('/devtools')`。
+- 验证：`flutter analyze`（4 项目标）零问题；包内 `flutter test` 5/5 通过。
+- 入口现状：**关于我们 → 开发者工具** 可进入 Console。悬浮按钮入口属 P1，尚未做。
+- 遗留/下一步：P1 悬浮按钮 + 外观设置占位开关接线；P2 起 Network（需统一 Dio）。
 
 ### 2026-06-30 — 决策定稿
 - §7 三项决策拍板：① 网络=收口工厂 `buildAppDio()` 分步迁移；② 独立 package `packages/aetherlink_devtools`；③ 入口=悬浮按钮 + 「关于」页开发者入口行（对齐原版 `AboutPage.tsx:147-155`）。

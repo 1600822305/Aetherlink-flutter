@@ -1,0 +1,17 @@
+# Flutter / Dart build artifacts
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+generated_plugin_registrant.dart
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# macOS
+.DS_Store
