@@ -147,6 +147,34 @@ data: [DONE]
       expect(adapter.requestBody, contains('"model":"test-model"'));
     });
 
+    test('appends /v1 to a versionless baseUrl; # opts out', () async {
+      // Bare host → /v1 auto-appended (Cherry formatApiHost parity).
+      final a1 = _ReplayAdapter(sse);
+      await OpenAiCompatibleAdapter(_dioWith(a1))
+          .streamChat(_request(_model(
+            provider: 'openai',
+            baseUrl: 'https://api.example.test',
+          )))
+          .toList();
+      expect(
+        a1.request!.uri.toString(),
+        'https://api.example.test/v1/chat/completions',
+      );
+
+      // Trailing # → exact base, no /v1.
+      final a2 = _ReplayAdapter(sse);
+      await OpenAiCompatibleAdapter(_dioWith(a2))
+          .streamChat(_request(_model(
+            provider: 'openai',
+            baseUrl: 'https://api.example.test#',
+          )))
+          .toList();
+      expect(
+        a2.request!.uri.toString(),
+        'https://api.example.test/chat/completions',
+      );
+    });
+
     test('extracts text from content parts and message fallback', () async {
       const partsAndMessageSse = '''
 data: {"choices":[{"delta":{"content":[{"type":"text","text":"Hello"},{"type":"image_url","image_url":{"url":"data:image/png;base64,AA=="}},{"type":"text","delta":", parts"}]},"finish_reason":null}]}

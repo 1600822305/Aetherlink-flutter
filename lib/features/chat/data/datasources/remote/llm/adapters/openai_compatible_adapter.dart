@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway.dar
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
+import 'package:aetherlink_flutter/shared/utils/api_host.dart';
 import 'package:dio/dio.dart';
 
 /// Speaks the OpenAI Chat Completions wire protocol: `POST /chat/completions`
@@ -631,19 +632,21 @@ class OpenAiCompatibleAdapter implements LlmGateway {
     MessageRole.root => 'system',
   };
 
-  static String _chatCompletionsUrl(String? baseUrl) {
-    final base = (baseUrl == null || baseUrl.isEmpty)
-        ? 'https://api.openai.com/v1'
-        : baseUrl.replaceAll(RegExp(r'/+$'), '');
-    return '$base/chat/completions';
+  // Normalizes the stored host to a base that carries the API version, mirroring
+  // Cherry Studio's `formatApiHost`: a bare `https://host` gains `/v1`, a host
+  // already carrying a version (`/v1`, `/v3`, …) is left as-is, and a trailing
+  // `#` is the escape hatch (exact base, no `/v1`). Empty/degenerate input falls
+  // back to the OpenAI default.
+  static String _apiBase(String? baseUrl) {
+    final base = formatApiHost(baseUrl);
+    return base.isEmpty ? 'https://api.openai.com/v1' : base;
   }
 
-  static String _responsesUrl(String? baseUrl) {
-    final base = (baseUrl == null || baseUrl.isEmpty)
-        ? 'https://api.openai.com/v1'
-        : baseUrl.replaceAll(RegExp(r'/+$'), '');
-    return '$base/responses';
-  }
+  static String _chatCompletionsUrl(String? baseUrl) =>
+      '${_apiBase(baseUrl)}/chat/completions';
+
+  static String _responsesUrl(String? baseUrl) =>
+      '${_apiBase(baseUrl)}/responses';
 }
 
 /// Mutable scratch for merging a single streamed OpenAI `tool_calls[index]`
