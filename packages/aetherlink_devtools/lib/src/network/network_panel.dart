@@ -606,7 +606,32 @@ class _Section extends StatefulWidget {
 }
 
 class _SectionState extends State<_Section> {
+  /// Each body scrolls within this height instead of expanding the whole sheet,
+  /// so a huge JSON payload/response no longer forces a long page-scroll to
+  /// reach the sections below it.
+  static const double _maxBodyHeight = 260;
+
   bool _expanded = true;
+  final ScrollController _bodyScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _bodyScroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(_Section old) {
+    super.didUpdateWidget(old);
+    // Follow the tail while a stream is still appending (like a live log).
+    if (widget.streaming && widget.body != old.body) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_bodyScroll.hasClients) {
+          _bodyScroll.jumpTo(_bodyScroll.position.maxScrollExtent);
+        }
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -658,12 +683,23 @@ class _SectionState extends State<_Section> {
               ),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: SelectableText(
-              widget.body,
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontFamily: 'monospace',
-                height: 1.4,
-                color: widget.tint,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: _maxBodyHeight),
+              child: Scrollbar(
+                controller: _bodyScroll,
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  controller: _bodyScroll,
+                  primary: false,
+                  child: SelectableText(
+                    widget.body,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontFamily: 'monospace',
+                      height: 1.4,
+                      color: widget.tint,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
