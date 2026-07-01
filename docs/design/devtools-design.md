@@ -186,6 +186,14 @@
 
 > 每完成一个阶段或重要节点，在此追加一条（日期 + 做了什么 + 关键文件 + 遗留问题）。最新在最上。
 
+### 2026-06-30 — 悬浮按钮补齐到对齐原版 Web（切换/绿色态/位置持久化）
+- P1 的悬浮按钮此前只做了「打开(push) + 会话内记忆位置」，缺 §5.6 里定的另外几点。本次补齐到与原版 Web `DevToolsFloatingButton.tsx` 一致：
+  - **点击切换**：已在 `/devtools` 页时再点按不再叠栈 push，而是 `router.pop()`（栈内无可 pop 时 `router.go(上一个非 devtools 页)`），对齐 Web 的 `previousPageRef` 返回逻辑。`app.dart` 用一个 `_lastNonDevToolsPath` 字段记录进入前的路由。
+  - **绿色激活态**：按钮新增 `active` 参数，处于 devtools 页时变绿（`0xE64CAF50`），否则蓝（`0xE62196F3`），对齐 Web 的蓝/绿双色。`app.dart` 每次导航从 `router.routeInformationProvider.value.uri.path` 现算 `onDevTools` 传入。
+  - **位置持久化**：按钮新增 `initialPosition` / `onPositionChanged` 回调（包仍零存储依赖），拖拽结束回吐位置；新增 `dev_tools_button_position_controller.dart`（仿 `dev_tools_button_controller`，键 `devToolsFloatingButtonPosition`，值 `'dx,dy'`，Drift 持久化、`keepAlive`）把位置写入 KV，重启后恢复，对齐 Web 的 `localStorage`。按钮内部仍保留本地 `_position` 保证拖拽顺滑，`didUpdateWidget` 在非拖拽时采纳异步 hydrate 回来的持久值。
+- 关键文件：`packages/aetherlink_devtools/lib/src/ui/floating_button.dart`、`lib/features/settings/application/dev_tools_button_position_controller.dart`、`lib/app/app.dart`。
+- 注意：新增 riverpod 注解，需跑**完整** `dart run build_runner build`（勿用 `--build-filter`）再 `flutter analyze`。
+
 ### 2026-06-30 — P4 收尾（AI 诊断导出 + logger 门面）
 - **logger 门面**（§4.1-B，`packages/aetherlink_devtools/lib/src/logging/dev_logger.dart`）：`createLogger('Context')` → `DevLogger`，`.error/.warn/.info/.debug/.trace` 写入 `ConsoleStore`(带 level + context)并镜像到 `dart:developer` 的 `log`(IDE 控制台);**不走 `debugPrint`**(已被全局捕获,避免重复)。Console 因此获得真正的「按模块(context)分级过滤」。已导出 + 3 个单测。示范接入:`font_settings_controller` 的 Google 字体注册失败(原静默 `catch(_)`)改为 `_log.warn(...)`。
 - **AI 诊断导出**（§5.1）：包内新增扩展点 `DevToolsDiagnostics.contextProvider`(`String Function()?`,宿主注入设备/环境,保持包零依赖);Console 过滤栏加「复制为 AI 诊断」按钮(`smart_toy`),拼装 `设备/环境上下文 + 最近 300 条日志` 一键复制。App 侧 `lib/app/devtools/diagnostics_context.dart` 提供环境块(构建模式/OS/Locale/CPU/Dart/RSS + device_info 扁平字段),`main.dart` 调 `initDiagnosticsContext()` 注入。

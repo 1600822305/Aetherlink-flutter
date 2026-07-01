@@ -12,6 +12,7 @@ import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 import 'package:aetherlink_flutter/features/settings/application/font_settings_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/font_size_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/dev_tools_button_controller.dart';
+import 'package:aetherlink_flutter/features/settings/application/dev_tools_button_position_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/perf_monitor_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/theme_mode_controller.dart';
 import 'package:aetherlink_flutter/features/settings/domain/app_theme_mode.dart';
@@ -39,6 +40,11 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
   /// reset navigation. First-time users land on the welcome page; the decision
   /// is read from the now-persisted `first-time-user` flag.
   GoRouter? _router;
+
+  /// The last route the user was on before opening the DevTools page, so the
+  /// floating button can return there when tapped while DevTools is open
+  /// (mirrors the web's `previousPageRef`). Defaults to the chat home.
+  String _lastNonDevToolsPath = AppRouter.chatPath;
 
   @override
   void initState() {
@@ -72,6 +78,7 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
     });
     final perfEnabled = ref.watch(perfMonitorControllerProvider);
     final devToolsButtonEnabled = ref.watch(devToolsButtonControllerProvider);
+    final devToolsButtonPosition = ref.watch(devToolsButtonPositionProvider);
 
     final spec = ref.watch(themeControllerProvider);
     final mode = ref.watch(themeModeControllerProvider);
@@ -150,13 +157,42 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
             data: MediaQuery.of(
               context,
             ).copyWith(textScaler: TextScaler.linear(textScale)),
-            child: DevToolsFloatingButtonHost(
-              enabled: devToolsButtonEnabled,
-              onPressed: () => router.push(AppRouter.devToolsPath),
-              child: PerfOverlayHost(
-                enabled: perfEnabled,
-                child: child ?? const SizedBox.shrink(),
-              ),
+            child: Builder(
+              builder: (context) {
+                // Recomputed on every navigation (the router rebuilds this
+                // subtree): drives the button's green "on DevTools" state and
+                // remembers the page to return to.
+                final currentPath =
+                    router.routeInformationProvider.value.uri.path;
+                final onDevTools = currentPath == AppRouter.devToolsPath;
+                if (!onDevTools) _lastNonDevToolsPath = currentPath;
+                return DevToolsFloatingButtonHost(
+                  enabled: devToolsButtonEnabled,
+                  active: onDevTools,
+                  initialPosition: devToolsButtonPosition,
+                  onPositionChanged: (pos) => ref
+                      .read(devToolsButtonPositionProvider.notifier)
+                      .set(pos),
+                  // Tap toggles: open DevTools, or return to the previous page
+                  // when already there (no route stacking on repeat taps).
+                  onPressed: () {
+                    if (router.routeInformationProvider.value.uri.path ==
+                        AppRouter.devToolsPath) {
+                      if (router.canPop()) {
+                        router.pop();
+                      } else {
+                        router.go(_lastNonDevToolsPath);
+                      }
+                    } else {
+                      router.push(AppRouter.devToolsPath);
+                    }
+                  },
+                  child: PerfOverlayHost(
+                    enabled: perfEnabled,
+                    child: child ?? const SizedBox.shrink(),
+                  ),
+                );
+              },
             ),
           ),
         );
