@@ -65,6 +65,7 @@ import 'package:aetherlink_flutter/shared/domain/topic.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_bridge_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_prompt.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
@@ -2070,7 +2071,9 @@ class ChatController extends _$ChatController {
                     inferSettingsPermission(call.name) ==
                         SettingsToolPermission.confirm) ||
                 (route is _FileEditorToolRoute &&
-                    fileEditorNeedsConfirmation(call.name));
+                    fileEditorNeedsConfirmation(call.name)) ||
+                (route is _KnowledgeToolRoute &&
+                    knowledgeToolNeedsConfirmation(call.name, args));
 
             // `run_command` can be aborted mid-flight: register a cancel signal
             // (keyed by this block) before running so the block's 中断 button
@@ -3694,6 +3697,7 @@ class ChatController extends _$ChatController {
       addReadSkill();
       _maybeInjectWebSearch(tools, routes);
       _maybeInjectMemorySearch(tools, routes);
+      await _maybeInjectKnowledgeSearch(tools, routes);
       if (tools.isEmpty) return const _McpSetup.disabled();
       return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
     }
@@ -3705,6 +3709,7 @@ class ChatController extends _$ChatController {
       addReadSkill();
       _maybeInjectWebSearch(tools, routes);
       _maybeInjectMemorySearch(tools, routes);
+      await _maybeInjectKnowledgeSearch(tools, routes);
       return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
     }
 
@@ -3712,17 +3717,19 @@ class ChatController extends _$ChatController {
     for (final server in servers) {
       if (!server.isActive) continue;
 
-      // Ref-dependent built-ins (@aether/settings, @aether/file-editor): run
-      // in-process with Riverpod [Ref] access to app state.
+      // Ref-dependent built-ins (@aether/settings, @aether/file-editor,
+      // @aether/knowledge): run in-process with Riverpod [Ref] access to app
+      // state.
       if (kRefDependentBuiltins.contains(server.name)) {
         final disabled = server.disabledTools?.toSet() ?? const <String>{};
         for (final tool in builtinToolsFor(server.name)) {
           if (disabled.contains(tool.name)) continue;
           if (routes.containsKey(tool.name)) continue;
           tools.add(tool);
-          routes[tool.name] = server.name == kFileEditorServerName
-              ? _FileEditorToolRoute(tool.name)
-              : _SettingsToolRoute(tool.name);
+          routes[tool.name] = _routeForRefDependentBuiltin(
+            server.name,
+            tool.name,
+          );
         }
         continue;
       }
@@ -3766,7 +3773,19 @@ class ChatController extends _$ChatController {
     addReadSkill();
     _maybeInjectWebSearch(tools, routes);
     _maybeInjectMemorySearch(tools, routes);
+    await _maybeInjectKnowledgeSearch(tools, routes);
     return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
+  }
+
+  /// Picks the in-process route for a ref-dependent built-in tool by server.
+  _ToolRoute _routeForRefDependentBuiltin(String serverName, String toolName) {
+    if (serverName == kFileEditorServerName) {
+      return _FileEditorToolRoute(toolName);
+    }
+    if (serverName == kKnowledgeServerName) {
+      return _KnowledgeToolRoute(toolName);
+    }
+    return _SettingsToolRoute(toolName);
   }
 
   /// Injects the `builtin_web_search` tool when [InputMode.webSearch] is active.
@@ -3793,6 +3812,27 @@ class ChatController extends _$ChatController {
     if (routes.containsKey(kSearchMemoryToolName)) return;
     tools.add(kSearchMemoryToolDefinition);
     routes[kSearchMemoryToolName] = const _MemorySearchToolRoute();
+  }
+
+  /// Injects the knowledge `kb_search` tool whenever至少有一个「对聊天开放」的
+  /// 知识库存在——即便 MCP 工具 总开关关着（设计文档 §7 的「提供给普通聊天」开关，
+  /// 与 [_maybeInjectMemorySearch] 同款）。若 `@aether/knowledge` 服务器已激活，
+  /// 4 个工具已在上面注入，这里靠 [routes] 去重不重复添加。
+  Future<void> _maybeInjectKnowledgeSearch(
+    List<McpToolDefinition> tools,
+    Map<String, _ToolRoute> routes,
+  ) async {
+    if (routes.containsKey(kKnowledgeSearchTool)) return;
+    if (!await hasChatEnabledKnowledgeBase(ref)) return;
+    final def = builtinToolsFor(
+      kKnowledgeServerName,
+    ).where((t) => t.name == kKnowledgeSearchTool).firstOrNull;
+    if (def == null) return;
+    if (routes.containsKey(kKnowledgeSearchTool)) return;
+    tools.add(def);
+    routes[kKnowledgeSearchTool] = const _KnowledgeToolRoute(
+      kKnowledgeSearchTool,
+    );
   }
 
   /// Executes one tool call along its [route]: a built-in runs in-process via
@@ -3844,6 +3884,8 @@ class ChatController extends _$ChatController {
         return _runWebSearch(args);
       case _MemorySearchToolRoute():
         return _runMemorySearch(args);
+      case _KnowledgeToolRoute():
+        return await runKnowledgeTool(ref, route.toolName, args);
     }
   }
 
@@ -4119,6 +4161,13 @@ class ChatController extends _$ChatController {
           '当回答可能依赖用户的个人偏好或既往信息时，请先调用该工具确认。';
       prompt = (prompt ?? '') + hint;
     }
+    if (mcp.routes.values.any((r) => r is _KnowledgeToolRoute)) {
+      const hint =
+          '\n\n[知识库已启用] '
+          '你可以使用 kb_search 工具在用户的知识库中检索资料，用 kb_read 取回条目全文。'
+          '当用户的问题可能依赖其知识库内容时，请主动检索，并在回答中引用来源。';
+      prompt = (prompt ?? '') + hint;
+    }
     return prompt;
   }
 
@@ -4268,8 +4317,29 @@ class ChatController extends _$ChatController {
         return '在「${_pathTail(args['path'])}」中替换「${args['search'] ?? ''}」';
       case 'run_command':
         return '在工作区执行命令：${args['command'] ?? ''}';
+      // @aether/knowledge 写操作（kb_manage）。
+      case 'kb_manage':
+        return _knowledgeManageSummary(args);
       default:
         return '执行操作: $toolName';
+    }
+  }
+
+  /// Confirmation summary for a `kb_manage` call, keyed by its `action`.
+  static String _knowledgeManageSummary(Map<String, Object?> args) {
+    final action = (args['action'] as String?)?.toLowerCase();
+    switch (action) {
+      case 'create':
+        return '创建知识库「${args['name'] ?? '未命名'}」';
+      case 'add_note':
+        final title = (args['title'] as String?)?.trim();
+        return '向知识库添加笔记${title == null || title.isEmpty ? '' : '「$title」'}';
+      case 'delete':
+        return '删除知识库（ID: ${args['base_id'] ?? ''}）';
+      case 'refresh':
+        return '重建知识库索引（ID: ${args['base_id'] ?? ''}）';
+      default:
+        return '管理知识库: ${action ?? '未知操作'}';
     }
   }
 
@@ -4400,6 +4470,12 @@ class _SettingsToolRoute extends _ToolRoute {
 /// A `@aether/file-editor` workspace tool, run in-process with [Ref] access.
 class _FileEditorToolRoute extends _ToolRoute {
   const _FileEditorToolRoute(super.toolName);
+}
+
+/// A `@aether/knowledge` tool (kb_list/kb_search/kb_read/kb_manage), run
+/// in-process with [Ref] access. Write ops (kb_manage) go through HITL.
+class _KnowledgeToolRoute extends _ToolRoute {
+  const _KnowledgeToolRoute(super.toolName);
 }
 
 /// A tool run in-process by [runBuiltinTool] (calculator / time / searxng).

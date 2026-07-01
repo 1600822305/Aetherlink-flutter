@@ -969,6 +969,88 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
   ],
+  '@aether/knowledge': [
+    McpToolDefinition(
+      name: 'kb_list',
+      description:
+          '列出对聊天开放的知识库；传入 base_id 时改为列出该库下的条目（文档）。只读操作，无需确认。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'base_id': {
+            'type': 'string',
+            'description': '知识库 ID（可选）。省略时列出所有对聊天开放的知识库；提供时列出该库的条目。',
+          },
+        },
+      },
+    ),
+    McpToolDefinition(
+      name: 'kb_search',
+      description:
+          '在知识库中检索与 query 最相关的内容片段（按库的检索模式走语义/关键词/混合，自动关键词兜底）。'
+          '省略 base_id 时跨所有对聊天开放的知识库检索并按相似度融合。返回片段含 documentId，可交给 kb_read 取全文。只读。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'query': {'type': 'string', 'description': '检索关键词或问题。'},
+          'base_id': {
+            'type': 'string',
+            'description': '限定检索的知识库 ID（可选）。省略时检索所有对聊天开放的知识库。',
+          },
+          'top_k': {
+            'type': 'number',
+            'description': '返回的最大片段数（可选，默认 5）。',
+          },
+        },
+        'required': ['query'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'kb_read',
+      description: '按 base_id + document_id（来自 kb_search 结果的 documentId）读取某个条目的完整正文。只读。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'base_id': {'type': 'string', 'description': '知识库 ID。'},
+          'document_id': {
+            'type': 'string',
+            'description': '条目（文档）ID，即 kb_search 结果里的 documentId。',
+          },
+        },
+        'required': ['base_id', 'document_id'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'kb_manage',
+      description:
+          '管理知识库（写操作，需用户确认）。action=create 建库（可选 embedding_model_key/search_mode）；'
+          'action=add_note 向库中加入一条文本笔记；action=delete 删除整个知识库。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'action': {
+            'type': 'string',
+            'description': '操作类型。',
+            'enum': ['create', 'add_note', 'delete'],
+          },
+          'name': {'type': 'string', 'description': 'create 时的知识库名称。'},
+          'embedding_model_key': {
+            'type': 'string',
+            'description': 'create 时可选的嵌入模型键（providerId:modelId）。提供后可启用语义检索。',
+          },
+          'search_mode': {
+            'type': 'string',
+            'description': 'create 时的检索模式（需配合 embedding_model_key）。',
+            'enum': ['keyword', 'vector', 'hybrid'],
+          },
+          'base_id': {'type': 'string', 'description': 'add_note / delete 的目标知识库 ID。'},
+          'title': {'type': 'string', 'description': 'add_note 的笔记标题（可选）。'},
+          'text': {'type': 'string', 'description': 'add_note 的笔记正文。'},
+        },
+        'required': ['action'],
+      },
+    ),
+  ],
 };
 
 /// Whether [serverName] is a built-in server whose tools can be executed
@@ -987,6 +1069,7 @@ const Set<String> kLocallyRunnableBuiltins = {
 const Set<String> kRefDependentBuiltins = {
   '@aether/settings',
   '@aether/file-editor',
+  '@aether/knowledge',
 };
 
 /// The tools a built-in MCP server exposes, or an empty list for servers
