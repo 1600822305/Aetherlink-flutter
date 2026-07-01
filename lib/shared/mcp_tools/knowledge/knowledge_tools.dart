@@ -53,6 +53,7 @@ KnowledgeToolRisk? knowledgeToolRiskLevel(
     case 'add_url':
     case 'add_workspace':
     case 'refresh':
+    case 'retry_embeddings':
       return KnowledgeToolRisk.medium;
   }
   // 未知/缺失 action 也当作写操作，防御性地要求确认。
@@ -321,10 +322,26 @@ Future<McpToolResult> _runManage(
         'knowledgeBaseName': base.name,
         'reindexedItems': count,
       });
+    case 'retry_embeddings':
+      final base = await _requireChatBase(
+        service,
+        requireKnowledgeString(args, 'base_id'),
+      );
+      // 失败恢复（设计文档 §11）：只补嵌嵌入失败/中断留下的待补切块，
+      // 已嵌入的不重算、不重复扣费，比 refresh 整库重建轻。
+      final embedded = await service.retryPendingEmbeddings(base.id);
+      final remaining = await service.pendingEmbeddingCount(base.id);
+      return knowledgeOk({
+        'action': 'retry_embeddings',
+        'knowledgeBaseId': base.id,
+        'knowledgeBaseName': base.name,
+        'embeddedChunks': embedded,
+        'pendingChunks': remaining,
+      });
   }
   throw KnowledgeToolError(
-    '未知的 kb_manage 操作: $action'
-    '（可用: create / add_note / add_url / add_workspace / delete / refresh）',
+    '未知的 kb_manage 操作: $action（可用: create / add_note / add_url / '
+    'add_workspace / delete / refresh / retry_embeddings）',
   );
 }
 

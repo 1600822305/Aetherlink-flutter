@@ -762,4 +762,161 @@ void main() {
       }
     });
   });
+
+  group('KnowledgeService (failure recovery / quota / GC P3d)', () {
+    late AppDatabase db;
+    late List<List<String>> embedLog;
+
+    KnowledgeService buildService({bool returnEmpty = false, bool known = true}) {
+      final embedder = _FakeEmbedder(const [
+        'dart',
+        'python',
+        'language',
+      ], embedLog, returnEmpty: returnEmpty);
+      return KnowledgeService(
+        db.knowledgeDao,
+        embedderResolver: (key) async =>
+            (known && key == 'model-a') ? embedder : null,
+      );
+    }
+
+    setUp(() {
+      db = AppDatabase(NativeDatabase.memory());
+      embedLog = [];
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    test('retryPendingEmbeddings backfills chunks left without vectors',
+        () async {
+      // Ingest while the embedder yields empty vectors → chunks stay pending.
+      final broken = buildService(returnEmpty: true);
+      final base = await broken.createBase(
+        name: 'KB',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      await broken.addNote(baseId: base.id, title: 'a', text: 'dart language');
+      expect(await broken.pendingEmbeddingCount(base.id), greaterThan(0));
+
+      // Retry with a healthy embedder only embeds the pending chunks.
+      final healthy = buildService();
+      final embedded = await healthy.retryPendingEmbeddings(base.id);
+      expect(embedded, greaterThan(0));
+      expect(await healthy.pendingEmbeddingCount(base.id), 0);
+
+      // The backfilled vectors are live: vector search ranks by cosine.
+      final hits = await healthy.search(baseId: base.id, query: 'dart');
+      expect(hits, isNotEmpty);
+      expect(hits.first.similarity, greaterThan(0));
+    });
+
+    test('retryPendingEmbeddings is a no-op when nothing is pending', () async {
+      final service = buildService();
+      final base = await service.createBase(
+        name: 'KB',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      await service.addNote(baseId: base.id, title: 'a', text: 'dart');
+      final batches = embedLog.length;
+      expect(await service.retryPendingEmbeddings(base.id), 0);
+      expect(embedLog.length, batches); // no extra embed calls
+    });
+
+    test('retryPendingEmbeddings returns 0 for keyword bases and when the '
+        'model is unresolved', () async {
+      final service = buildService();
+      final kw = await service.createBase(name: 'KW');
+      await service.addNote(baseId: kw.id, title: 'a', text: 'dart');
+      expect(await service.retryPendingEmbeddings(kw.id), 0);
+      expect(await service.pendingEmbeddingCount(kw.id), 0);
+
+      final broken = buildService(returnEmpty: true);
+      final vec = await broken.createBase(
+        name: 'V',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      await broken.addNote(baseId: vec.id, title: 'a', text: 'dart');
+      final unresolved = buildService(known: false);
+      expect(await unresolved.retryPendingEmbeddings(vec.id), 0);
+      // Still pending — nothing was consumed by the failed retry.
+      expect(await unresolved.pendingEmbeddingCount(vec.id), greaterThan(0));
+    });
+
+    test('retryPendingEmbeddings reuses existing vectors without re-embedding',
+        () async {
+      const text = 'dart language';
+      // Ingest while the embedder is broken → chunks left pending.
+      final broken = buildService(returnEmpty: true);
+      final bad = await broken.createBase(
+        name: 'B',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      await broken.addNote(baseId: bad.id, title: 'b', text: text);
+      expect(await broken.pendingEmbeddingCount(bad.id), greaterThan(0));
+
+      // The same content is later embedded successfully elsewhere.
+      final service = buildService();
+      final good = await service.createBase(
+        name: 'A',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      await service.addNote(baseId: good.id, title: 'a', text: text);
+
+      final batches = embedLog.length;
+      final embedded = await service.retryPendingEmbeddings(bad.id);
+      expect(embedded, greaterThan(0));
+      // Identical content + model → embeddingKey already exists, so the retry
+      // attaches the stored vector without a new embed batch.
+      expect(embedLog.length, batches);
+    });
+
+    test('storageUsage aggregates counts and flags the soft limit', () async {
+      final service = buildService();
+      final base = await service.createBase(name: 'KB');
+      await service.addNote(baseId: base.id, title: 'a', text: 'dart python');
+
+      final usage = await service.storageUsage();
+      expect(usage.stats.baseCount, 1);
+      expect(usage.stats.itemCount, 1);
+      expect(usage.stats.chunkCount, greaterThan(0));
+      expect(usage.stats.contentBytes, greaterThan(0));
+      expect(usage.stats.totalBytes, greaterThanOrEqualTo(
+        usage.stats.contentBytes + usage.stats.chunkBytes,
+      ));
+      // Tiny fixture stays far below the 200MB soft limit.
+      expect(usage.overSoftLimit, isFalse);
+    });
+
+    test('gcOrphanEmbeddings removes unreferenced vectors only', () async {
+      final service = buildService();
+      final base = await service.createBase(
+        name: 'KB',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      await service.addNote(baseId: base.id, title: 'a', text: 'dart');
+      expect(await service.gcOrphanEmbeddings(), 0); // all referenced
+
+      // Simulate an orphan left behind by an interrupted rebuild.
+      await db.into(db.kbEmbeddingRows).insert(
+            KbEmbeddingRowsCompanion.insert(
+              embeddingKey: 'orphan-key',
+              dimensions: 2,
+              vector: encodeVector(const [1.0, 0.0]),
+              createdAt: 0,
+            ),
+          );
+      expect(await service.gcOrphanEmbeddings(), 1);
+      final rest = await db.select(db.kbEmbeddingRows).get();
+      expect(rest.every((r) => r.embeddingKey != 'orphan-key'), isTrue);
+      expect(rest, isNotEmpty); // referenced vectors survive
+    });
+  });
 }

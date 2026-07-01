@@ -313,6 +313,95 @@ class KnowledgeService {
     return entries.length;
   }
 
+  /// 失败恢复（设计文档 §11）：只补嵌本库里 `embeddingKey` 为空的切块（摄取时嵌入
+  /// 失败/中断留下的待补索引），已嵌入的切块不重算、不重复扣费——比整库
+  /// [reindexBase] 轻得多。关键词库 / 无嵌入器 / 无待补切块时直接返回 0；嵌入调用
+  /// 失败同样返回 0（best-effort，下次再重试）。返回本次补嵌成功的切块数。
+  Future<int> retryPendingEmbeddings(String baseId) async {
+    final base = await _requireBase(baseId);
+    final modelKey = base.embeddingModelKey;
+    final resolver = _resolveEmbedder;
+    if (resolver == null ||
+        modelKey == null ||
+        modelKey.isEmpty ||
+        base.searchMode == KnowledgeSearchMode.keyword) {
+      return 0;
+    }
+    final pending = await _dao.pendingEmbeddingChunks(baseId);
+    if (pending.isEmpty) return 0;
+    try {
+      final embedder = await resolver(modelKey);
+      if (embedder == null) return 0;
+
+      final chunkKeys = <String, String>{};
+      final keyToText = <String, String>{};
+      for (final chunk in pending) {
+        final key = computeEmbeddingKey(modelKey, chunk.content);
+        chunkKeys[chunk.chunkId] = key;
+        keyToText.putIfAbsent(key, () => chunk.content);
+      }
+
+      final existing = await _dao.existingEmbeddingKeys(keyToText.keys);
+      final missingKeys = [
+        for (final key in keyToText.keys)
+          if (!existing.contains(key)) key,
+      ];
+      final vectors = <String, List<double>>{};
+      if (missingKeys.isNotEmpty) {
+        final texts = [for (final key in missingKeys) keyToText[key]!];
+        final embedded = await embedder.embed(texts);
+        for (var i = 0; i < missingKeys.length && i < embedded.length; i++) {
+          if (embedded[i].isNotEmpty) vectors[missingKeys[i]] = embedded[i];
+        }
+      }
+
+      // 只给「向量已落库（既存或本次新嵌）」的切块补键，嵌入仍缺失的下次再试。
+      final resolved = <String, String>{
+        for (final entry in chunkKeys.entries)
+          if (existing.contains(entry.value) ||
+              vectors.containsKey(entry.value))
+            entry.key: entry.value,
+      };
+      if (resolved.isEmpty) return 0;
+      await _dao.attachChunkEmbeddings(
+        chunkKeys: resolved,
+        embeddings: vectors,
+      );
+      return resolved.length;
+    } catch (_) {
+      // best-effort：嵌入器报错不影响已有数据，保持待补状态供下次重试。
+      return 0;
+    }
+  }
+
+  /// 某库当前待补嵌入的切块数（供 UI 展示「重试」入口）。关键词库恒为 0——
+  /// 它本就不需要嵌入。
+  Future<int> pendingEmbeddingCount(String baseId) async {
+    final base = await _dao.getBase(baseId);
+    if (base == null || base.searchMode == KnowledgeSearchMode.keyword) {
+      return 0;
+    }
+    final pending = await _dao.pendingEmbeddingChunks(baseId);
+    return pending.length;
+  }
+
+  /// 知识库整体存储占用软配额（设计文档 §11.1）：超过后只提示不拦截。
+  static const int softStorageLimitBytes = 200 * 1024 * 1024;
+
+  /// 存储占用汇总 + 软配额判定（设计文档 §11.1）。
+  Future<({KnowledgeStorageStats stats, bool overSoftLimit})>
+  storageUsage() async {
+    final stats = await _dao.storageStats();
+    return (
+      stats: stats,
+      overSoftLimit: stats.totalBytes > softStorageLimitBytes,
+    );
+  }
+
+  /// 手动回收孤儿嵌入（设计文档 §11.1），返回回收行数。常规删除/重索引路径已
+  /// 自动 GC，此入口供存储管理兜底。
+  Future<int> gcOrphanEmbeddings() => _dao.gcOrphanEmbeddings();
+
   Future<KnowledgeBase> _requireBase(String baseId) async {
     final base = await _dao.getBase(baseId);
     if (base == null) {
@@ -458,7 +547,16 @@ class KnowledgeService {
           if (embedded[i].isNotEmpty) vectors[missingKeys[i]] = embedded[i];
         }
       }
-      return (keys: keys, vectors: vectors);
+      // 只把「向量已落库（既存或本次新嵌）」的键写到切块上；嵌入缺失的切块保持
+      // 空键（= 待补状态），供 [retryPendingEmbeddings] 事后补嵌。
+      final resolved = <int, String>{
+        for (final entry in keys.entries)
+          if (existing.contains(entry.value) ||
+              vectors.containsKey(entry.value))
+            entry.key: entry.value,
+      };
+      if (resolved.isEmpty) return null;
+      return (keys: resolved, vectors: vectors);
     } catch (_) {
       // best-effort：任何嵌入错误都不阻断摄取，落成纯关键词切块。
       return null;

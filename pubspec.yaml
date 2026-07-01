@@ -134,6 +134,7 @@ dev_dependencies:
   drift_dev: ^2.34.0
   share_plus_platform_interface: ^6.1.0
   image_picker_platform_interface: ^2.11.1
+  path_provider_platform_interface: ^2.1.2
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

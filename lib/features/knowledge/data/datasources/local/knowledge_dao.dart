@@ -39,6 +39,31 @@ class ReindexItem {
   final Map<int, String>? embeddingKeys;
 }
 
+/// 知识库派生数据的存储占用汇总（设计文档 §11.1 存储配额）。[contentBytes] 为权威
+/// 正文的 UTF-8 字节数，[chunkBytes] / [embeddingBytes] 为派生索引占用（可通过
+/// 重建回收/再生）。
+class KnowledgeStorageStats {
+  const KnowledgeStorageStats({
+    required this.baseCount,
+    required this.itemCount,
+    required this.contentBytes,
+    required this.chunkCount,
+    required this.chunkBytes,
+    required this.embeddingCount,
+    required this.embeddingBytes,
+  });
+
+  final int baseCount;
+  final int itemCount;
+  final int contentBytes;
+  final int chunkCount;
+  final int chunkBytes;
+  final int embeddingCount;
+  final int embeddingBytes;
+
+  int get totalBytes => contentBytes + chunkBytes + embeddingBytes;
+}
+
 /// Data-access object for the knowledge-base tables (设计文档 §4)。摄取写入走
 /// 单个 Drift 事务（条目 + 正文 + 切块 [+ 向量] 一起提交），删除按 `baseId` /
 /// `itemId` 级联清理派生数据。P1 起额外覆盖 `kb_embedding` 持久向量表。
@@ -122,14 +147,106 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
 
   /// Removes `kb_embedding` rows whose `embeddingKey` is no longer referenced by
   /// any surviving chunk — a safe GC that preserves cross-base dedup reuse.
-  Future<void> _deleteOrphanEmbeddings() async {
+  /// 返回回收的行数。
+  Future<int> _deleteOrphanEmbeddings() async {
     final referenced = selectOnly(kbChunkRows, distinct: true)
       ..addColumns([kbChunkRows.embeddingKey])
       ..where(kbChunkRows.embeddingKey.isNotNull());
-    await (delete(kbEmbeddingRows)
+    return (delete(kbEmbeddingRows)
           ..where((t) => t.embeddingKey.isNotInQuery(referenced)))
         .go();
   }
+
+  /// 手动触发孤儿嵌入 GC（设计文档 §11.1）。删除/重索引路径已自动 GC，此入口供
+  /// 存储管理 / 异常残留时兜底清理。返回回收的行数。
+  Future<int> gcOrphanEmbeddings() =>
+      transaction(() => _deleteOrphanEmbeddings());
+
+  /// 知识库整体存储占用汇总（设计文档 §11.1）。字节数按各表文本列的 UTF-8 长度
+  /// 估算（`LENGTH()`），足够支撑软配额提示。
+  Future<KnowledgeStorageStats> storageStats() async {
+    final baseCount = knowledgeBaseRows.id.count();
+    final baseRow = await (selectOnly(knowledgeBaseRows)
+          ..addColumns([baseCount]))
+        .getSingle();
+
+    final itemCount = knowledgeItemRows.id.count();
+    final itemRow = await (selectOnly(knowledgeItemRows)
+          ..addColumns([itemCount]))
+        .getSingle();
+
+    final contentBytes = knowledgeContentRows.content.length.sum();
+    final contentRow = await (selectOnly(knowledgeContentRows)
+          ..addColumns([contentBytes]))
+        .getSingle();
+
+    final chunkCount = kbChunkRows.chunkId.count();
+    final chunkBytes = kbChunkRows.content.length.sum();
+    final chunkRow = await (selectOnly(kbChunkRows)
+          ..addColumns([chunkCount, chunkBytes]))
+        .getSingle();
+
+    final embeddingCount = kbEmbeddingRows.embeddingKey.count();
+    final embeddingBytes = kbEmbeddingRows.vector.length.sum();
+    final embeddingRow = await (selectOnly(kbEmbeddingRows)
+          ..addColumns([embeddingCount, embeddingBytes]))
+        .getSingle();
+
+    return KnowledgeStorageStats(
+      baseCount: baseRow.read(baseCount) ?? 0,
+      itemCount: itemRow.read(itemCount) ?? 0,
+      contentBytes: contentRow.read(contentBytes) ?? 0,
+      chunkCount: chunkRow.read(chunkCount) ?? 0,
+      chunkBytes: chunkRow.read(chunkBytes) ?? 0,
+      embeddingCount: embeddingRow.read(embeddingCount) ?? 0,
+      embeddingBytes: embeddingRow.read(embeddingBytes) ?? 0,
+    );
+  }
+
+  /// 某库里「已完成条目但尚未嵌入（`embeddingKey` 为空）」的切块——嵌入失败/中断
+  /// 后留下的待补索引（设计文档 §11「失败恢复」）。
+  Future<List<KbChunkRow>> pendingEmbeddingChunks(String baseId) {
+    final completedItemIds = selectOnly(knowledgeItemRows)
+      ..addColumns([knowledgeItemRows.id])
+      ..where(
+        knowledgeItemRows.baseId.equals(baseId) &
+            knowledgeItemRows.status.equals(
+              KnowledgeItemStatus.completed.name,
+            ),
+      );
+    final query = select(kbChunkRows)
+      ..where(
+        (t) => t.baseId.equals(baseId) &
+            t.itemId.isInQuery(completedItemIds) &
+            t.embeddingKey.isNull(),
+      )
+      ..orderBy([(t) => OrderingTerm(expression: t.unitIndex)]);
+    return query.get();
+  }
+
+  /// 给一批已存在的切块补写 `embeddingKey` 并落库新增向量（失败恢复的写入侧），
+  /// 全在一个事务里。[chunkKeys] 是 `chunkId → embeddingKey`；[embeddings] 是本次
+  /// 要新写入的 `embeddingKey → 向量`（调用方已按已存在键去重）。
+  Future<void> attachChunkEmbeddings({
+    required Map<String, String> chunkKeys,
+    required Map<String, List<double>> embeddings,
+  }) => transaction(() async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final entry in embeddings.entries) {
+      await into(kbEmbeddingRows).insertOnConflictUpdate(
+        KbEmbeddingRowsCompanion.insert(
+          embeddingKey: entry.key,
+          dimensions: entry.value.length,
+          vector: encodeVector(entry.value),
+          createdAt: now,
+        ),
+      );
+    }
+    for (final entry in chunkKeys.entries) {
+      await (update(kbChunkRows)..where((t) => t.chunkId.equals(entry.key)))
+          .write(KbChunkRowsCompanion(embeddingKey: Value(entry.value)));
+    }
+  });
 
   // ── knowledge_item ──
 

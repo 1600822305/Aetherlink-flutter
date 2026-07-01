@@ -15,6 +15,7 @@ enum BackupCategory {
   groups,
   settings,
   memories,
+  knowledge,
 }
 
 extension BackupCategoryX on BackupCategory {
@@ -35,6 +36,7 @@ extension BackupCategoryX on BackupCategory {
       case BackupCategory.groups:
       case BackupCategory.settings:
       case BackupCategory.memories:
+      case BackupCategory.knowledge:
         return const {};
     }
   }
@@ -74,6 +76,8 @@ extension BackupCategoryX on BackupCategory {
         return '设置';
       case BackupCategory.memories:
         return '记忆';
+      case BackupCategory.knowledge:
+        return '知识库';
     }
   }
 }

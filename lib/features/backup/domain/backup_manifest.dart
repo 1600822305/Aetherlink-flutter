@@ -89,6 +89,9 @@ class BackupStats {
   final int groups;
   final int settings;
 
+  /// 知识库个数（一个库连同其条目/正文作为一条记录导出，见 knowledge.json）。
+  final int knowledge;
+
   const BackupStats({
     this.topics = 0,
     this.messages = 0,
@@ -97,6 +100,7 @@ class BackupStats {
     this.providers = 0,
     this.groups = 0,
     this.settings = 0,
+    this.knowledge = 0,
   });
 
   Map<String, dynamic> toJson() => {
@@ -107,6 +111,7 @@ class BackupStats {
     'providers': providers,
     'groups': groups,
     'settings': settings,
+    'knowledge': knowledge,
   };
 
   factory BackupStats.fromJson(Map<String, dynamic> json) {
@@ -118,6 +123,7 @@ class BackupStats {
       providers: json['providers'] as int? ?? 0,
       groups: json['groups'] as int? ?? 0,
       settings: json['settings'] as int? ?? 0,
+      knowledge: json['knowledge'] as int? ?? 0,
     );
   }
 }

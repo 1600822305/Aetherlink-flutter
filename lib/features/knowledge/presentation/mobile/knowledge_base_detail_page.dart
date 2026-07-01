@@ -250,6 +250,23 @@ class _KnowledgeBaseDetailPageState
     }
   }
 
+  /// 只补嵌失败/中断留下的待补切块（失败恢复，设计文档 §11），已嵌入的不重算。
+  Future<void> _retryEmbeddings() async {
+    try {
+      final count = await ref
+          .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
+          .retryEmbeddings();
+      if (!mounted) return;
+      if (count > 0) {
+        AppToast.success(context, '已补嵌 $count 个切块');
+      } else {
+        AppToast.error(context, '本次未能补嵌，请检查嵌入模型后重试');
+      }
+    } catch (e) {
+      if (mounted) AppToast.error(context, '补嵌失败：$e');
+    }
+  }
+
   /// 从已存正文重建整库索引（切块 + 向量）。适用于调整切块/嵌入配置后刷新。
   Future<void> _refresh() async {
     try {
@@ -268,6 +285,11 @@ class _KnowledgeBaseDetailPageState
     final itemsAsync = ref.watch(
       knowledgeItemsControllerProvider(widget.baseId),
     );
+    final pendingEmbeddings = ref
+            .watch(knowledgePendingEmbeddingCountProvider(widget.baseId))
+            .asData
+            ?.value ??
+        0;
 
     return Scaffold(
       appBar: AppBar(
@@ -332,6 +354,22 @@ class _KnowledgeBaseDetailPageState
       ),
       body: Column(
         children: [
+          if (pendingEmbeddings > 0)
+            MaterialBanner(
+              backgroundColor: theme.colorScheme.errorContainer,
+              content: Text(
+                '有 $pendingEmbeddings 个切块嵌入未完成，向量检索可能不完整',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onErrorContainer,
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: _retryEmbeddings,
+                  child: const Text('重试嵌入'),
+                ),
+              ],
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: TextField(

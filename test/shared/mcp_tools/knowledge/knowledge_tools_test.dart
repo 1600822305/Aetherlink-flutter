@@ -86,6 +86,7 @@ void main() {
         'add_url',
         'add_workspace',
         'refresh',
+        'retry_embeddings',
       ]) {
         expect(
           knowledgeToolRiskLevel(kKnowledgeManageTool, {'action': action}),
@@ -385,6 +386,32 @@ void main() {
       final base = await service.createBase(name: 'private');
       final result = await run(kKnowledgeManageTool, {
         'action': 'refresh',
+        'base_id': base.id,
+      });
+      expect(result.isError, isTrue);
+    });
+
+    test('kb_manage retry_embeddings reports embedded and pending counts',
+        () async {
+      final base = await service.createBase(
+        name: 'shared',
+        scope: const KnowledgeScope(chatEnabled: true),
+      );
+      await service.addNote(baseId: base.id, title: 'n', text: 'alpha');
+      final result = await run(kKnowledgeManageTool, {
+        'action': 'retry_embeddings',
+        'base_id': base.id,
+      });
+      // Keyword base → nothing to backfill, but the call succeeds.
+      expect(result.isError, isFalse);
+      expect(result.text, contains('"embeddedChunks": 0'));
+      expect(result.text, contains('"pendingChunks": 0'));
+    });
+
+    test('kb_manage retry_embeddings rejects a non-chat base', () async {
+      final base = await service.createBase(name: 'private');
+      final result = await run(kKnowledgeManageTool, {
+        'action': 'retry_embeddings',
         'base_id': base.id,
       });
       expect(result.isError, isTrue);

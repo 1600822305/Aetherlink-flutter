@@ -1026,7 +1026,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '管理知识库（写操作，需用户确认）。action=create 建库（可选 embedding_model_key/search_mode）；'
           'action=add_note 向库中加入一条文本笔记；action=add_url 抓取网页转 Markdown 后加入；'
           'action=add_workspace 遍历一个工作区目录，把其中的文本文件逐个加入；'
-          'action=delete 删除整个知识库；action=refresh 从已存正文重建整库索引（切块+向量）。',
+          'action=delete 删除整个知识库；action=refresh 从已存正文重建整库索引（切块+向量）；'
+          'action=retry_embeddings 只补嵌嵌入失败/中断留下的待补切块（比 refresh 轻）。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1040,6 +1041,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
               'add_workspace',
               'delete',
               'refresh',
+              'retry_embeddings',
             ],
           },
           'name': {'type': 'string', 'description': 'create 时的知识库名称。'},
@@ -1055,7 +1057,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           'base_id': {
             'type': 'string',
             'description':
-                'add_note / add_url / add_workspace / delete / refresh 的目标知识库 ID。',
+                'add_note / add_url / add_workspace / delete / refresh / '
+                'retry_embeddings 的目标知识库 ID。',
           },
           'title': {
             'type': 'string',

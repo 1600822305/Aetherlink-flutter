@@ -1,6 +1,8 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
+import 'package:aetherlink_flutter/features/knowledge/data/datasources/local/knowledge_dao.dart'
+    show KnowledgeStorageStats;
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
@@ -110,4 +112,25 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
     await future;
     return count;
   }
+
+  /// 只补嵌本库里嵌入失败/中断留下的待补切块（失败恢复，§11），已嵌入的不重算。
+  /// 返回本次补嵌成功的切块数。
+  Future<int> retryEmbeddings() async {
+    final count = await ref
+        .read(knowledgeServiceProvider)
+        .retryPendingEmbeddings(baseId);
+    ref.invalidate(knowledgePendingEmbeddingCountProvider(baseId));
+    return count;
+  }
 }
+
+/// 某库当前待补嵌入的切块数（驱动详情页的「重试嵌入」入口，关键词库恒为 0）。
+@riverpod
+Future<int> knowledgePendingEmbeddingCount(Ref ref, String baseId) =>
+    ref.watch(knowledgeServiceProvider).pendingEmbeddingCount(baseId);
+
+/// 知识库整体存储占用 + 软配额判定（§11.1，驱动列表页的占用提示）。
+@riverpod
+Future<({KnowledgeStorageStats stats, bool overSoftLimit})>
+knowledgeStorageUsage(Ref ref) =>
+    ref.watch(knowledgeServiceProvider).storageUsage();
