@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
+import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_reference_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/application/knowledge_providers.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
@@ -117,6 +118,45 @@ class _KnowledgeBaseDetailPageState
     if (mounted) AppToast.success(context, '已添加笔记');
   }
 
+  /// 选择一个 txt / md 文件并摄取为条目。读取按 UTF-8；富文档（PDF/DOCX）暂不支持。
+  Future<void> _addFile() async {
+    final picked = await ref
+        .read(fileSystemApiProvider)
+        .pickFile(allowedExtensions: const ['txt', 'md', 'markdown', 'text']);
+    if (picked == null) return;
+    String text;
+    try {
+      text = await ref.read(fileSystemApiProvider).readAsString(picked.path);
+    } catch (e) {
+      if (mounted) AppToast.error(context, '读取文件失败：$e');
+      return;
+    }
+    if (text.trim().isEmpty) {
+      if (mounted) AppToast.error(context, '文件内容为空，未摄取');
+      return;
+    }
+    try {
+      await ref
+          .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
+          .addFile(fileName: picked.name, text: text, sourcePath: picked.path);
+      if (mounted) AppToast.success(context, '已上传「${picked.name}」');
+    } catch (e) {
+      if (mounted) AppToast.error(context, '上传失败：$e');
+    }
+  }
+
+  /// 从已存正文重建整库索引（切块 + 向量）。适用于调整切块/嵌入配置后刷新。
+  Future<void> _refresh() async {
+    try {
+      final count = await ref
+          .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
+          .refresh();
+      if (mounted) AppToast.success(context, '已重建索引（$count 个条目）');
+    } catch (e) {
+      if (mounted) AppToast.error(context, '重建索引失败：$e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -152,6 +192,18 @@ class _KnowledgeBaseDetailPageState
         ),
         title: Text(widget.baseName.isEmpty ? '知识库' : widget.baseName),
         actions: [
+          IconButton(
+            icon: const Icon(LucideIcons.refreshCw, size: 20),
+            color: theme.colorScheme.primary,
+            tooltip: '重建索引',
+            onPressed: _refresh,
+          ),
+          IconButton(
+            icon: const Icon(LucideIcons.upload, size: 20),
+            color: theme.colorScheme.primary,
+            tooltip: '上传文件（txt / md）',
+            onPressed: _addFile,
+          ),
           IconButton(
             icon: const Icon(LucideIcons.filePlus, size: 22),
             color: theme.colorScheme.primary,

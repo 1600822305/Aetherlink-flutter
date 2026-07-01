@@ -56,4 +56,30 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
     // Base status flips to completed on first item — refresh the base list too.
     ref.invalidate(knowledgeBasesControllerProvider);
   }
+
+  /// 摄取一个纯文本文件（txt / md）。调用方已把文件读成 UTF-8 文本。
+  Future<void> addFile({
+    required String fileName,
+    required String text,
+    String? sourcePath,
+  }) async {
+    if (text.trim().isEmpty) return;
+    await ref.read(knowledgeServiceProvider).addFile(
+          baseId: baseId,
+          fileName: fileName,
+          text: text,
+          sourcePath: sourcePath,
+        );
+    ref.invalidateSelf();
+    await future;
+    ref.invalidate(knowledgeBasesControllerProvider);
+  }
+
+  /// 从已存正文原子重建整库派生索引（切块 + 向量），返回重建覆盖的条目数。
+  Future<int> refresh() async {
+    final count = await ref.read(knowledgeServiceProvider).reindexBase(baseId);
+    ref.invalidateSelf();
+    await future;
+    return count;
+  }
 }

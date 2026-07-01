@@ -263,10 +263,23 @@ Future<McpToolResult> _runManage(
         'knowledgeBaseName': base.name,
       });
     case 'refresh':
-      // 重建索引依赖 P3 的源摄取/重索引管线，本阶段尚未实现。
-      throw const KnowledgeToolError('refresh（重建索引）尚未实现，将在后续阶段提供。');
+      final base = await _requireChatBase(
+        service,
+        requireKnowledgeString(args, 'base_id'),
+      );
+      // 从权威正文原子重建整库派生索引（切块 + 向量），未变内容命中已存向量、
+      // 不重复调用嵌入 API（设计文档 §5.1）。
+      final count = await service.reindexBase(base.id);
+      return knowledgeOk({
+        'action': 'refresh',
+        'knowledgeBaseId': base.id,
+        'knowledgeBaseName': base.name,
+        'reindexedItems': count,
+      });
   }
-  throw KnowledgeToolError('未知的 kb_manage 操作: $action（可用: create / add_note / delete）');
+  throw KnowledgeToolError(
+    '未知的 kb_manage 操作: $action（可用: create / add_note / delete / refresh）',
+  );
 }
 
 // ── helpers ──
