@@ -26,6 +26,11 @@ import 'package:aetherlink_flutter/features/chat/data/datasources/local/topics_t
 // `test/architecture/import_boundaries_test.dart`.
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/knowledge/data/datasources/local/knowledge_dao.dart';
+import 'package:aetherlink_flutter/features/knowledge/data/datasources/local/knowledge_tables.dart';
+// Persisted via a converter in [KnowledgeBaseRows]; the generated part
+// references the converter's value type.
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
 import 'package:aetherlink_flutter/features/memory/data/datasources/local/memories_table.dart';
 import 'package:aetherlink_flutter/features/memory/data/datasources/local/memory_converters.dart';
 import 'package:aetherlink_flutter/features/memory/data/datasources/local/memory_dao.dart';
@@ -63,6 +68,10 @@ part 'app_database.g.dart';
     AppSettingRows,
     MemoryRows,
     MemoryHistoryRows,
+    KnowledgeBaseRows,
+    KnowledgeItemRows,
+    KnowledgeContentRows,
+    KbChunkRows,
   ],
   daos: [
     TopicDao,
@@ -73,6 +82,7 @@ part 'app_database.g.dart';
     GroupDao,
     AppSettingDao,
     MemoryDao,
+    KnowledgeDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -83,7 +93,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.open() : super(_openConnection());
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   // SQLite can't ALTER a table-level CHECK/FK onto an existing table, but a
   // partial UNIQUE index CAN be created on one. This enforces the single-root
@@ -164,6 +174,14 @@ class AppDatabase extends _$AppDatabase {
         // 先修复数据（单根 + 重挂 NULL-parent 残留），再建单根偏唯一索引。
         await repairMessageTree(this);
         await customStatement(_rootUniqueIndexSql);
+      }
+      if (from < 10) {
+        // 知识库 P0 骨架：权威三表 + 关键词检索用的 kb_chunk
+        // （见 docs/知识库功能-设计构想.md §4）。
+        await m.createTable(knowledgeBaseRows);
+        await m.createTable(knowledgeItemRows);
+        await m.createTable(knowledgeContentRows);
+        await m.createTable(kbChunkRows);
       }
     },
   );

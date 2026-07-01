@@ -1,0 +1,48 @@
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
+
+part 'knowledge_providers.g.dart';
+
+/// Loads and mutates the knowledge-base list (轨道 A / UI 的建库入口)。
+@riverpod
+class KnowledgeBasesController extends _$KnowledgeBasesController {
+  @override
+  Future<List<KnowledgeBase>> build() =>
+      ref.watch(knowledgeServiceProvider).listBases();
+
+  Future<void> createBase(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    await ref.read(knowledgeServiceProvider).createBase(name: trimmed);
+    ref.invalidateSelf();
+    await future;
+  }
+
+  Future<void> deleteBase(String id) async {
+    await ref.read(knowledgeServiceProvider).deleteBase(id);
+    ref.invalidateSelf();
+    await future;
+  }
+}
+
+/// Loads and mutates the items inside one knowledge base.
+@riverpod
+class KnowledgeItemsController extends _$KnowledgeItemsController {
+  @override
+  Future<List<KnowledgeItem>> build(String baseId) =>
+      ref.watch(knowledgeServiceProvider).listItems(baseId);
+
+  Future<void> addNote({required String title, required String text}) async {
+    if (text.trim().isEmpty) return;
+    await ref
+        .read(knowledgeServiceProvider)
+        .addNote(baseId: baseId, title: title, text: text);
+    ref.invalidateSelf();
+    await future;
+    // Base status flips to completed on first item — refresh the base list too.
+    ref.invalidate(knowledgeBasesControllerProvider);
+  }
+}
