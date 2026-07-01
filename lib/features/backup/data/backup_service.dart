@@ -269,35 +269,24 @@ class BackupService {
     void Function(RestoreProgress)? onProgress,
   }) async {
     final content = await jsonFile.readAsString();
-    final Map<String, dynamic> root;
+    final _RawBackupData flatData;
     try {
-      // Decode off the UI isolate — a large web backup's JSON tree is the
-      // single most expensive parse step.
-      root = await Isolate.run<Map<String, dynamic>>(
-        () => jsonDecode(content) as Map<String, dynamic>,
+      // Decode + validate + flatten inside a single isolate: the raw string and
+      // the (far larger) decoded JSON tree never live on the UI isolate, and
+      // only the flattened result — exactly what _writeData consumes — crosses
+      // back. This roughly halves peak memory versus decoding the tree on / and
+      // copying it to the UI isolate, which is what OOM-crashed large imports.
+      flatData = await Isolate.run<_RawBackupData>(
+        () => _decodeAndFlattenWebJson(content),
       );
+    } on FormatException {
+      rethrow;
     } catch (_) {
       throw const FormatException('无法解析 JSON 备份文件');
     }
 
-    // Validate: must have topics or assistants or appInfo or modelConfig.
-    final hasTopics = root['topics'] is List;
-    final hasAssistants = root['assistants'] is List;
-    final hasAppInfo = root['appInfo'] is Map;
-    final hasModelConfig = root['modelConfig'] is Map;
-    final hasUserSettings = root['userSettings'] is Map;
-    if (!hasTopics && !hasAssistants && !hasAppInfo && !hasModelConfig &&
-        !hasUserSettings) {
-      throw const FormatException(
-        '不是有效的 AetherLink Web 备份文件',
-      );
-    }
-
     // Safety net.
     await createAutoBackup(reason: 'pre_restore');
-
-    // Flatten nested structure.
-    final flatData = _flattenWebBackup(root);
 
     // Write to database.
     return await _writeData(
@@ -334,15 +323,50 @@ class BackupService {
   /// Flutter has no table for.
   Future<BackupScan> _scanWebJson(File file) async {
     final content = await file.readAsString();
-    final Map<String, dynamic> root;
     try {
-      root = await Isolate.run<Map<String, dynamic>>(
-        () => jsonDecode(content) as Map<String, dynamic>,
-      );
+      // Decode + flatten + tally entirely inside one isolate so neither the raw
+      // string nor the decoded/flattened trees ever live on the UI isolate;
+      // only the compact BackupScan crosses back. Previously the scan decoded
+      // the whole tree twice (once here, once again on the UI isolate inside
+      // _peekWebJsonManifest), which OOM-crashed large (~20MB) backups on
+      // lower-memory devices.
+      return await Isolate.run<BackupScan>(() => _buildWebScan(content));
+    } on FormatException {
+      rethrow;
     } catch (_) {
       throw const FormatException('无法解析 JSON 备份文件');
     }
+  }
 
+  /// Decodes, validates and flattens raw Web JSON [content] into the flat
+  /// backup structure. Runs inside an isolate (see [_restoreFromWebJson]);
+  /// references only static helpers so it captures no instance state. Throws a
+  /// [FormatException] with a user-facing message on invalid input.
+  static _RawBackupData _decodeAndFlattenWebJson(String content) {
+    final Map<String, dynamic> root;
+    try {
+      root = jsonDecode(content) as Map<String, dynamic>;
+    } catch (_) {
+      throw const FormatException('无法解析 JSON 备份文件');
+    }
+    // Validate: must have topics or assistants or appInfo or modelConfig.
+    final hasTopics = root['topics'] is List;
+    final hasAssistants = root['assistants'] is List;
+    final hasAppInfo = root['appInfo'] is Map;
+    final hasModelConfig = root['modelConfig'] is Map;
+    final hasUserSettings = root['userSettings'] is Map;
+    if (!hasTopics && !hasAssistants && !hasAppInfo && !hasModelConfig &&
+        !hasUserSettings) {
+      throw const FormatException('不是有效的 AetherLink Web 备份文件');
+    }
+    return _flattenWebBackup(root);
+  }
+
+  /// Builds a [BackupScan] from raw Web JSON [content]. Runs inside an isolate
+  /// (see [_scanWebJson]); references only static helpers so it captures no
+  /// instance state.
+  static BackupScan _buildWebScan(String content) {
+    final root = jsonDecode(content) as Map<String, dynamic>;
     final flat = _flattenWebBackup(root);
     final importableMemories = flat.memories
         .where((m) =>
@@ -351,7 +375,7 @@ class BackupService {
 
     return BackupScan(
       isWebFormat: true,
-      manifest: await _peekWebJsonManifest(file),
+      manifest: _webManifestFromRoot(root),
       available: {
         BackupCategory.topics: flat.topics.length,
         BackupCategory.messages: flat.messages.length,
@@ -389,7 +413,7 @@ class BackupService {
 
   /// Flattens a Web backup's nested JSON into the same flat structure
   /// used by Flutter's ZIP backup.
-  _RawBackupData _flattenWebBackup(Map<String, dynamic> root) {
+  static _RawBackupData _flattenWebBackup(Map<String, dynamic> root) {
     final topicsJson = <Map<String, dynamic>>[];
     final messagesJson = <Map<String, dynamic>>[];
     final blocksJson = <Map<String, dynamic>>[];
@@ -1188,8 +1212,14 @@ class BackupService {
   /// Synthesizes a [BackupManifest] from a Web JSON backup for preview.
   Future<BackupManifest> _peekWebJsonManifest(File jsonFile) async {
     final content = await jsonFile.readAsString();
-    final root = jsonDecode(content) as Map<String, dynamic>;
+    // Decode off the UI isolate; only the compact manifest crosses back.
+    return Isolate.run<BackupManifest>(
+      () => _webManifestFromRoot(jsonDecode(content) as Map<String, dynamic>),
+    );
+  }
 
+  /// Synthesizes a [BackupManifest] from an already-decoded Web backup root.
+  static BackupManifest _webManifestFromRoot(Map<String, dynamic> root) {
     final rawTopics = root['topics'] as List<dynamic>? ?? [];
     final rawAssistants = root['assistants'] as List<dynamic>? ?? [];
 
