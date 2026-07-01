@@ -160,6 +160,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.bookOpen,
         title: '知识库设置',
         description: '管理知识库配置和嵌入模型',
+        route: AppRouter.knowledgeBasePath,
       ),
       SettingItemData(
         icon: LucideIcons.database,

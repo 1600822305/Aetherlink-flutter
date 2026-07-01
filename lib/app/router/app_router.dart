@@ -9,6 +9,8 @@ import 'package:aetherlink_flutter/features/backup/presentation/backup_settings_
 import 'package:aetherlink_flutter/features/notes/presentation/mobile/note_editor_page.dart';
 import 'package:aetherlink_flutter/features/notes/presentation/mobile/notes_page.dart';
 import 'package:aetherlink_flutter/features/notes/presentation/mobile/notes_settings_page.dart';
+import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/knowledge_base_detail_page.dart';
+import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/knowledge_base_page.dart';
 import 'package:aetherlink_flutter/features/memory/presentation/mobile/assistant_memory_index_page.dart';
 import 'package:aetherlink_flutter/features/memory/presentation/mobile/assistant_memory_list_page.dart';
 import 'package:aetherlink_flutter/features/memory/presentation/mobile/global_memory_list_page.dart';
@@ -98,6 +100,8 @@ abstract final class AppRouter {
   static const String settingsSearchPath = '/settings/search';
   static const String voiceSettingsPath = '/settings/voice';
   static const String backupSettingsPath = '/settings/backup';
+  static const String knowledgeBasePath = '/settings/knowledge';
+  static const String knowledgeBaseDetailPath = '/settings/knowledge/:baseId';
   static const String memoryPath = '/settings/memory';
   static const String globalMemoryPath = '/settings/memory/global';
   static const String assistantMemoryIndexPath = '/settings/memory/assistants';
@@ -295,6 +299,23 @@ abstract final class AppRouter {
         name: 'behavior',
         pageBuilder: (context, state) =>
             _instant(state, const BehaviorSettingsPage()),
+      ),
+      GoRoute(
+        path: knowledgeBasePath,
+        name: 'knowledge',
+        pageBuilder: (context, state) =>
+            _instant(state, const KnowledgeBasePage()),
+      ),
+      GoRoute(
+        path: knowledgeBaseDetailPath,
+        name: 'knowledgeDetail',
+        pageBuilder: (context, state) => _instant(
+          state,
+          KnowledgeBaseDetailPage(
+            baseId: state.pathParameters['baseId'] ?? '',
+            baseName: state.extra is String ? state.extra! as String : '',
+          ),
+        ),
       ),
       GoRoute(
         path: memoryPath,
