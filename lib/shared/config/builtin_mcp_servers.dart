@@ -113,9 +113,18 @@ const List<McpServer> kBuiltinMcpServers = [
     name: '@aether/settings',
     type: McpServerType.inMemory,
     category: McpServerCategory.assistant,
-    description: '智能设置助手，让 AI 管理知识库（创建、编辑、删除、搜索）和应用设置。支持自然语言操作，危险操作需用户确认。',
+    description: '智能设置助手，让 AI 管理应用设置。支持自然语言操作，危险操作需用户确认。',
     provider: 'AetherAI',
-    tags: ['设置', '知识库', '管理', 'AI', '工具'],
+    tags: ['设置', '管理', 'AI', '工具'],
+  ),
+  McpServer(
+    id: 'builtin-knowledge',
+    name: '@aether/knowledge',
+    type: McpServerType.inMemory,
+    category: McpServerCategory.assistant,
+    description: 'AI 知识库工具，支持列出知识库、语义/关键词检索、读取条目原文，以及建库、加笔记、删库等管理操作（管理操作会先请用户确认）。只作用于「对聊天开放」的知识库。',
+    provider: 'AetherAI',
+    tags: ['知识库', '检索', 'RAG', 'AI', '工具'],
   ),
 ];
 

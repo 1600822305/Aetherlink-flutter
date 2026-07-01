@@ -125,6 +125,13 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
     return row.read(count) ?? 0;
   }
 
+  Future<KnowledgeItem?> getItem(String itemId) async {
+    final row = await (select(
+      knowledgeItemRows,
+    )..where((t) => t.id.equals(itemId))).getSingleOrNull();
+    return row == null ? null : _toItem(row);
+  }
+
   Future<String?> readItemContent(String itemId) async {
     final row = await (select(
       knowledgeContentRows,

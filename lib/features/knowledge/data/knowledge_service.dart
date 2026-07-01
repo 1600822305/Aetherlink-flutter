@@ -33,6 +33,14 @@ class KnowledgeService {
 
   Future<int> itemCount(String baseId) => _dao.countItems(baseId);
 
+  Future<KnowledgeBase?> getBase(String id) => _dao.getBase(id);
+
+  Future<KnowledgeItem?> getItem(String itemId) => _dao.getItem(itemId);
+
+  /// 读取一个条目的完整正文（供 `kb_read` 按 documentId 取回原文），不存在返回 null。
+  Future<String?> readItemContent(String itemId) =>
+      _dao.readItemContent(itemId);
+
   /// Creates an empty base. [embeddingModelKey] 非空且 [searchMode] 不是 keyword
   /// 时该库启用语义检索（摄取时嵌入切块）；否则纯关键词。[scope] 默认聊天关闭
   /// （聊天轨道是 P2 的事）。
