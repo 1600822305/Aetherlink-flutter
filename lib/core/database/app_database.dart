@@ -26,6 +26,7 @@ import 'package:aetherlink_flutter/features/chat/data/datasources/local/topics_t
 // `test/architecture/import_boundaries_test.dart`.
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/knowledge/data/datasources/local/knowledge_converters.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/datasources/local/knowledge_dao.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/datasources/local/knowledge_tables.dart';
 // Persisted via a converter in [KnowledgeBaseRows]; the generated part
