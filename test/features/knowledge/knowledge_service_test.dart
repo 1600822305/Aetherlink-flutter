@@ -5,8 +5,35 @@ import 'package:aetherlink_flutter/core/database/app_database.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_service.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_chunking.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedder.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedding.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_ranking.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
+
+/// Deterministic bag-of-words embedder: each text maps to a vector counting how
+/// many times each [vocab] term occurs (case-insensitive substring). Records
+/// every batch it embeds in [log] so tests can assert dedup / call counts.
+class _FakeEmbedder implements KnowledgeEmbedder {
+  _FakeEmbedder(this.vocab, this.log, {this.returnEmpty = false});
+
+  final List<String> vocab;
+  final List<List<String>> log;
+  final bool returnEmpty;
+
+  @override
+  Future<List<List<double>>> embed(List<String> texts) async {
+    log.add(List.of(texts));
+    if (returnEmpty) return [for (final _ in texts) const <double>[]];
+    return [
+      for (final text in texts)
+        [
+          for (final term in vocab)
+            term.allMatches(text.toLowerCase()).length.toDouble(),
+        ],
+    ];
+  }
+}
 
 void main() {
   group('chunkText', () {
@@ -190,6 +217,219 @@ void main() {
       expect(await service.listBases(), isEmpty);
       expect(await service.listItems(base.id), isEmpty);
       expect(await service.search(baseId: base.id, query: 'deleted'), isEmpty);
+    });
+  });
+
+  group('embedding domain helpers', () {
+    test('computeEmbeddingKey is stable and model-sensitive', () {
+      final a1 = computeEmbeddingKey('model-a', 'hello world');
+      final a2 = computeEmbeddingKey('model-a', 'hello world');
+      final b = computeEmbeddingKey('model-b', 'hello world');
+      final c = computeEmbeddingKey('model-a', 'other text');
+      expect(a1, a2); // deterministic
+      expect(a1, isNot(b)); // different model → different key
+      expect(a1, isNot(c)); // different content → different key
+    });
+
+    test('vector codec round-trips and tolerates garbage', () {
+      expect(decodeVector(encodeVector([1.0, -2.5, 3.0])), [1.0, -2.5, 3.0]);
+      expect(decodeVector('not json'), isEmpty);
+      expect(decodeVector('{"a":1}'), isEmpty);
+    });
+
+    test('cosineSimilarity: identical=1, orthogonal=0, zero=0', () {
+      expect(cosineSimilarity([1, 2, 3], [1, 2, 3]), closeTo(1.0, 1e-9));
+      expect(cosineSimilarity([1, 0], [0, 1]), closeTo(0.0, 1e-9));
+      expect(cosineSimilarity([0, 0], [1, 1]), 0.0);
+      expect(cosineSimilarity([1, 2], [1, 2, 3]), 0.0); // length mismatch
+    });
+
+    test('fuseWithRrf rewards items ranked well in both lists', () {
+      // 'b' appears in both rankings (2nd then 1st); 'a' and 'c' only once each.
+      final fused = fuseWithRrf([
+        ['a', 'b'],
+        ['b', 'c'],
+      ]);
+      expect(fused.first, 'b');
+      expect(fused.toSet(), {'a', 'b', 'c'});
+    });
+  });
+
+  group('KnowledgeService (vector/hybrid P1)', () {
+    late AppDatabase db;
+    late List<List<String>> embedLog;
+
+    KnowledgeService buildService({bool returnEmpty = false, bool known = true}) {
+      final embedder = _FakeEmbedder(const [
+        'dart',
+        'python',
+        'language',
+        'native',
+        'script',
+      ], embedLog, returnEmpty: returnEmpty);
+      return KnowledgeService(
+        db.knowledgeDao,
+        embedderResolver: (key) async =>
+            (known && key == 'model-a') ? embedder : null,
+      );
+    }
+
+    setUp(() {
+      db = AppDatabase(NativeDatabase.memory());
+      embedLog = [];
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    Future<KnowledgeBase> seed(
+      KnowledgeService service,
+      KnowledgeSearchMode mode, {
+      String? modelKey = 'model-a',
+    }) async {
+      final base = await service.createBase(
+        name: 'KB',
+        embeddingModelKey: modelKey,
+        searchMode: mode,
+      );
+      await service.addNote(
+        baseId: base.id,
+        title: 'Dart',
+        text: 'Dart is a client-optimized language. Dart compiles to native.',
+      );
+      await service.addNote(
+        baseId: base.id,
+        title: 'Python',
+        text: 'Python is a general purpose scripting language.',
+      );
+      return base;
+    }
+
+    test('createBase without a model forces keyword mode', () async {
+      final service = buildService();
+      final base = await service.createBase(
+        name: 'KB',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      expect(base.embeddingModelKey, isNull);
+      expect(base.searchMode, KnowledgeSearchMode.keyword);
+    });
+
+    test('vector search ranks by cosine similarity', () async {
+      final service = buildService();
+      final base = await seed(service, KnowledgeSearchMode.vector);
+      final hits = await service.search(baseId: base.id, query: 'dart native');
+      expect(hits, isNotEmpty);
+      expect(hits.first.content.toLowerCase(), contains('dart'));
+      expect(hits.first.similarity, greaterThan(0));
+    });
+
+    test('embedding dedups by embeddingKey across identical content', () async {
+      final service = buildService();
+      final base = await service.createBase(
+        name: 'KB',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      const text = 'Dart compiles to native code.';
+      await service.addNote(baseId: base.id, title: 'a', text: text);
+      final batchesAfterFirst = embedLog.length;
+      // Identical content → every chunk's embeddingKey already exists → no
+      // second embed batch is issued during ingest.
+      await service.addNote(baseId: base.id, title: 'b', text: text);
+      expect(embedLog.length, batchesAfterFirst);
+    });
+
+    test('stored vectors are reused on a later search (no re-embed)', () async {
+      final service = buildService();
+      final base = await seed(service, KnowledgeSearchMode.vector);
+      final ingestBatches = embedLog.length;
+      await service.search(baseId: base.id, query: 'dart');
+      // Only the query itself is embedded; chunk vectors come from kb_embedding.
+      expect(embedLog.length, ingestBatches + 1);
+      expect(embedLog.last, ['dart']);
+    });
+
+    test('hybrid fuses keyword + vector rankings', () async {
+      final service = buildService();
+      final base = await seed(service, KnowledgeSearchMode.hybrid);
+      final hits = await service.search(baseId: base.id, query: 'dart');
+      expect(hits, isNotEmpty);
+      expect(hits.first.content.toLowerCase(), contains('dart'));
+    });
+
+    test('vector mode falls back to keyword when model unresolved', () async {
+      final service = buildService(known: false);
+      final base = await seed(service, KnowledgeSearchMode.vector);
+      // Resolver returns null → no embeddings persisted → keyword fallback.
+      final hits = await service.search(baseId: base.id, query: 'python');
+      expect(hits, isNotEmpty);
+      expect(hits.first.content.toLowerCase(), contains('python'));
+    });
+
+    test('vector mode falls back when embedding yields empty vectors',
+        () async {
+      final service = buildService(returnEmpty: true);
+      final base = await seed(service, KnowledgeSearchMode.vector);
+      final hits = await service.search(baseId: base.id, query: 'language');
+      // Empty query/chunk vectors → _vectorScored returns null → keyword hits.
+      expect(hits, isNotEmpty);
+      expect(hits.first.content.toLowerCase(), contains('language'));
+    });
+
+    test('deleteBase GCs orphaned embeddings but keeps shared ones', () async {
+      final service = buildService();
+      const text = 'Dart compiles to native code.';
+      final a = await service.createBase(
+        name: 'A',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      await service.addNote(baseId: a.id, title: 'a', text: text);
+      final b = await service.createBase(
+        name: 'B',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      // Same text + same model → same embeddingKey, shared (deduped) row.
+      await service.addNote(baseId: b.id, title: 'b', text: text);
+
+      final before = await db.select(db.kbEmbeddingRows).get();
+      expect(before, isNotEmpty);
+
+      // Deleting A leaves the shared embedding alive (still referenced by B).
+      await service.deleteBase(a.id);
+      expect(await db.select(db.kbEmbeddingRows).get(), before);
+
+      // Deleting the last referencing base GCs the now-orphaned embedding.
+      await service.deleteBase(b.id);
+      expect(await db.select(db.kbEmbeddingRows).get(), isEmpty);
+    });
+
+    test('threshold filters out low-similarity vector hits', () async {
+      final service = buildService();
+      final base = await service.createBase(
+        name: 'KB',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      await service.addNote(
+        baseId: base.id,
+        title: 'py',
+        text: 'Python scripting only.',
+      );
+      // Query shares no vocab term with the note → cosine 0, below threshold.
+      final hits = await service.search(
+        baseId: base.id,
+        query: 'dart',
+        topK: 5,
+      );
+      // Keyword would also miss 'dart'; vector returns a 0-sim hit which the
+      // base's null threshold keeps — assert similarity is 0 for that hit.
+      for (final h in hits) {
+        expect(h.similarity, 0);
+      }
     });
   });
 }

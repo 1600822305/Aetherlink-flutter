@@ -56,8 +56,9 @@ class KnowledgeContentRows extends Table {
   Set<Column<Object>> get primaryKey => {itemId};
 }
 
-/// 派生切块表（设计文档 §4.3，可从正文重建）。P0 只用它做关键词检索
-/// （`LIKE` on [content]）；`embeddingKey` 等向量相关列在 P1 补上。
+/// 派生切块表（设计文档 §4.3，可从正文重建）。关键词检索走 `LIKE` on [content]；
+/// 向量检索走 [embeddingKey]——它指向 [KbEmbeddingRows] 里的向量（P0 关键词模式下
+/// 为空，P1 摄取时按需回填）。
 ///
 /// 保持不变式 `KnowledgeContentRows.content.substring(charStart, charEnd)
 /// == content`。
@@ -74,6 +75,27 @@ class KbChunkRows extends Table {
   TextColumn get content => text()();
   TextColumn get contentHash => text()();
 
+  /// 复合去重键 `sha256(embeddingModelKey|sha256(content))`（设计文档 §4.3）。
+  /// 关键词库或尚未嵌入的切块为空。
+  TextColumn get embeddingKey => text().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {chunkId};
+}
+
+/// 向量存储（设计文档 §4.3）。按 [embeddingKey] 去重：同一段文本在同一嵌入模型下
+/// 只嵌入一次（§A4：不变内容不重复扣费），不同模型（维度不同）因模型键不同天然隔离。
+///
+/// 向量以 JSON 编码的 `List<double>` 存于 [vector]；[dimensions] 便于校验/按维度归类。
+/// 这是权威的持久向量层——检索时从此表取回向量在 Dart 侧算 cosine（sqlite-vec 原生
+/// 索引作为后续可选加速项）。
+@DataClassName('KbEmbeddingRow')
+class KbEmbeddingRows extends Table {
+  TextColumn get embeddingKey => text()();
+  IntColumn get dimensions => integer()();
+  TextColumn get vector => text()();
+  IntColumn get createdAt => integer()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {embeddingKey};
 }
