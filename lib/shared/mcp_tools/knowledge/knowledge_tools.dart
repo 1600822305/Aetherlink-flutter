@@ -51,6 +51,7 @@ KnowledgeToolRisk? knowledgeToolRiskLevel(
     case 'create':
     case 'add_note':
     case 'add_url':
+    case 'add_workspace':
     case 'refresh':
       return KnowledgeToolRisk.medium;
   }
@@ -273,6 +274,28 @@ Future<McpToolResult> _runManage(
         'title': item.title,
         'source': item.source,
       });
+    case 'add_workspace':
+      final base = await _requireChatBase(
+        service,
+        requireKnowledgeString(args, 'base_id'),
+      );
+      final workspaceId = requireKnowledgeString(args, 'workspace_id');
+      // 遍历工作区目录下的文本文件逐个摄取（type=workspace），并记录来源指纹
+      // 供 staleness 检测（设计文档 §8/§8.1）。
+      final items = await service.addWorkspace(
+        baseId: base.id,
+        workspaceId: workspaceId,
+      );
+      return knowledgeOk({
+        'action': 'add_workspace',
+        'knowledgeBaseId': base.id,
+        'workspaceId': workspaceId,
+        'ingestedFiles': items.length,
+        'documents': [
+          for (final item in items)
+            {'documentId': item.id, 'title': item.title},
+        ],
+      });
     case 'delete':
       final base = await _requireChatBase(
         service,
@@ -301,7 +324,7 @@ Future<McpToolResult> _runManage(
   }
   throw KnowledgeToolError(
     '未知的 kb_manage 操作: $action'
-    '（可用: create / add_note / add_url / delete / refresh）',
+    '（可用: create / add_note / add_url / add_workspace / delete / refresh）',
   );
 }
 

@@ -38,6 +38,11 @@ class KnowledgeItemRows extends Table {
   TextColumn get title => text().nullable()();
   TextColumn get status => text().withDefault(const Constant('idle'))();
   TextColumn get error => text().nullable()();
+
+  /// 来源指纹快照（JSON，设计文档 §8.1）。仅 workspace 条目写入摄取时的
+  /// `{path, mtime, size}`，供 staleness 检测异步比对；其它来源为空。P3c 起新增。
+  TextColumn get sourceFingerprint => text().nullable()();
+
   IntColumn get createdAt => integer()();
 
   @override

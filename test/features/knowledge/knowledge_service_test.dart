@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_ranking.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_url_fetcher.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_workspace_source.dart';
 
 /// Deterministic bag-of-words embedder: each text maps to a vector counting how
 /// many times each [vocab] term occurs (case-insensitive substring). Records
@@ -33,6 +34,45 @@ class _FakeEmbedder implements KnowledgeEmbedder {
             term.allMatches(text.toLowerCase()).length.toDouble(),
         ],
     ];
+  }
+}
+
+/// In-memory workspace source. [files] maps an opaque path to a
+/// `(name, text, mtime, size)` record — tests mutate/remove entries to simulate
+/// file edits and deletions between ingestion and search. [statThrows] makes
+/// [statFile] throw, to prove staleness checks stay best-effort.
+class _FakeWorkspaceSource implements KnowledgeWorkspaceSource {
+  _FakeWorkspaceSource(
+    Map<String, (String, String, int, int)> files, {
+    this.statThrows = false,
+  }) : files = Map.of(files);
+
+  final Map<String, (String, String, int, int)> files;
+  final bool statThrows;
+
+  @override
+  Future<List<KnowledgeWorkspaceFile>> listTextFiles(
+    String workspaceId,
+  ) async => [
+    for (final entry in files.entries)
+      KnowledgeWorkspaceFile(
+        path: entry.key,
+        name: entry.value.$1,
+        text: entry.value.$2,
+        mtime: entry.value.$3,
+        size: entry.value.$4,
+      ),
+  ];
+
+  @override
+  Future<KnowledgeWorkspaceStat?> statFile(
+    String workspaceId,
+    String path,
+  ) async {
+    if (statThrows) throw StateError('stat failed');
+    final file = files[path];
+    if (file == null) return null;
+    return KnowledgeWorkspaceStat(mtime: file.$3, size: file.$4);
   }
 }
 
@@ -332,6 +372,106 @@ void main() {
         () => emptyFetcher.addUrl(baseId: base2.id, url: 'https://x.test'),
         throwsStateError, // empty fetched content
       );
+    });
+
+    test('addWorkspace ingests every text file with a source fingerprint',
+        () async {
+      final wsService = KnowledgeService(
+        db.knowledgeDao,
+        workspaceSource: _FakeWorkspaceSource({
+          '/a.md': ('a.md', 'alpha content', 100, 13),
+          '/sub/b.txt': ('b.txt', 'bravo content', 200, 13),
+          '/empty.txt': ('empty.txt', '   ', 300, 3), // blank → skipped
+        }),
+      );
+      final base = await wsService.createBase(name: 'KB');
+      final items = await wsService.addWorkspace(
+        baseId: base.id,
+        workspaceId: 'ws-1',
+      );
+
+      expect(items, hasLength(2));
+      for (final item in items) {
+        expect(item.type, KnowledgeItemType.workspace);
+        expect(item.sourceFingerprint, isNotNull);
+        expect(item.sourceFingerprint, contains('"workspaceId":"ws-1"'));
+      }
+      // Ingested content is searchable through the same pipeline.
+      final hits = await wsService.search(baseId: base.id, query: 'bravo');
+      expect(hits, isNotEmpty);
+      expect(hits.first.possiblyStale, isNot(true));
+    });
+
+    test('addWorkspace rejects missing source / no ingestible files',
+        () async {
+      final base = await service.createBase(name: 'KB');
+      // No workspace source configured on the default `service`.
+      expect(
+        () => service.addWorkspace(baseId: base.id, workspaceId: 'ws-1'),
+        throwsStateError,
+      );
+
+      final emptyService = KnowledgeService(
+        db.knowledgeDao,
+        workspaceSource: _FakeWorkspaceSource(const {}),
+      );
+      final base2 = await emptyService.createBase(name: 'KB2');
+      expect(
+        () => emptyService.addWorkspace(baseId: base2.id, workspaceId: 'ws-1'),
+        throwsStateError,
+      );
+    });
+
+    test('search marks workspace hits possiblyStale when the file changed',
+        () async {
+      final source = _FakeWorkspaceSource({
+        '/a.md': ('a.md', 'zulu content', 100, 12),
+        '/b.md': ('b.md', 'yankee content', 100, 14),
+      });
+      final wsService =
+          KnowledgeService(db.knowledgeDao, workspaceSource: source);
+      final base = await wsService.createBase(name: 'KB');
+      await wsService.addWorkspace(baseId: base.id, workspaceId: 'ws-1');
+
+      // Untouched files → no stale flag.
+      var hits = await wsService.search(baseId: base.id, query: 'zulu');
+      expect(hits, isNotEmpty);
+      expect(hits.first.possiblyStale, isNot(true));
+
+      // mtime changed → stale; deleted file (stat null) → stale.
+      source.files['/a.md'] = ('a.md', 'zulu content', 999, 12);
+      hits = await wsService.search(baseId: base.id, query: 'zulu');
+      expect(hits.first.possiblyStale, true);
+
+      source.files.remove('/b.md');
+      hits = await wsService.search(baseId: base.id, query: 'yankee');
+      expect(hits.first.possiblyStale, true);
+
+      // Non-workspace items are never flagged.
+      await wsService.addNote(
+        baseId: base.id,
+        title: 'note',
+        text: 'xray note',
+      );
+      hits = await wsService.search(baseId: base.id, query: 'xray');
+      expect(hits, isNotEmpty);
+      expect(hits.first.possiblyStale, isNot(true));
+    });
+
+    test('staleness check is best-effort: stat errors never break search',
+        () async {
+      final source = _FakeWorkspaceSource(
+        {'/a.md': ('a.md', 'whiskey content', 100, 15)},
+        statThrows: true,
+      );
+      final wsService =
+          KnowledgeService(db.knowledgeDao, workspaceSource: source);
+      final base = await wsService.createBase(name: 'KB');
+      await wsService.addWorkspace(baseId: base.id, workspaceId: 'ws-1');
+
+      final hits = await wsService.search(baseId: base.id, query: 'whiskey');
+      expect(hits, isNotEmpty);
+      expect(hits.first.possiblyStale, isNot(true));
     });
 
     test('deleteItem removes only that item and its derived rows', () async {

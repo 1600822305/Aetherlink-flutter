@@ -8,9 +8,14 @@ import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_service.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedder.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_url_fetcher.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_workspace_source.dart';
 import 'package:aetherlink_flutter/features/memory/data/embedding_service.dart';
 import 'package:aetherlink_flutter/features/memory/domain/embedding_model_key.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/tools/fetch_tool.dart';
@@ -31,6 +36,7 @@ KnowledgeService knowledgeService(Ref ref) => KnowledgeService(
   embedderResolver: (embeddingModelKey) =>
       _resolveKnowledgeEmbedder(ref, embeddingModelKey),
   urlFetcher: (url) => _fetchKnowledgeUrl(ref, url),
+  workspaceSource: _WorkspaceBackendSource(ref),
 );
 
 /// 默认 URL 抓取器（设计文档 §5「URL 抓取 → Markdown 快照」）：走应用统一的
@@ -111,6 +117,122 @@ Model? _resolveEmbeddingModel(List<ModelProvider> providers, String? key) {
     }
   }
   return null;
+}
+
+/// 组合根里的工作区源实现（设计文档 §8 workspace 目录源）：把知识核心持有的
+/// [KnowledgeWorkspaceSource] 落到 workspace 特性的 [WorkspaceBackend] 上——按 id 从
+/// [WorkspaceStore] 找回工作区、经 [workspaceBackendProvider] 拿后端，递归遍历目录读
+/// 文本。知识核心因此不必导入 workspace 特性，导入边界保持在这一个组合根文件。
+class _WorkspaceBackendSource implements KnowledgeWorkspaceSource {
+  _WorkspaceBackendSource(this._ref);
+
+  final Ref _ref;
+
+  /// 单文件读取上限：超出的（多为大二进制 / 生成物）跳过，避免撑爆内存与切块。
+  static const int _maxFileBytes = 2 * 1024 * 1024;
+
+  /// 单次摄取的文件数上限：目录极大时截断，防止一次性摄取失控。
+  static const int _maxFiles = 2000;
+
+  /// 目录遍历深度上限：防御环形 / 超深目录。
+  static const int _maxDepth = 24;
+
+  /// 可摄取的文本 / 代码扩展名（小写，不含点）。其余（图片 / 压缩包 / 可执行文件等）
+  /// 一律跳过——workspace 源只摄取纯文本，富文档转换是后续 P3e 的事。
+  static const Set<String> _textExtensions = {
+    'txt', 'text', 'md', 'markdown', 'rst', 'org',
+    'json', 'jsonc', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf', 'properties',
+    'xml', 'html', 'htm', 'csv', 'tsv', 'log',
+    'dart', 'js', 'jsx', 'ts', 'tsx', 'py', 'java', 'kt', 'kts', 'swift',
+    'c', 'h', 'cc', 'cpp', 'hpp', 'cs', 'go', 'rs', 'rb', 'php', 'scala',
+    'sh', 'bash', 'zsh', 'sql', 'gradle', 'pro', 'cmake', 'make', 'mk',
+    'gitignore', 'env', 'lock', 'gql', 'graphql', 'proto', 'vue', 'svelte',
+  };
+
+  Future<(Workspace, WorkspaceBackend)> _resolve(String workspaceId) async {
+    final workspaces = await _ref.read(workspaceStoreProvider.future);
+    Workspace? workspace;
+    for (final w in workspaces) {
+      if (w.id == workspaceId) {
+        workspace = w;
+        break;
+      }
+    }
+    if (workspace == null) {
+      throw StateError('工作区不存在: $workspaceId');
+    }
+    final backend = _ref.read(workspaceBackendProvider(workspace));
+    return (workspace, backend);
+  }
+
+  static bool _isTextFile(String name) {
+    final lower = name.toLowerCase();
+    final dot = lower.lastIndexOf('.');
+    // 无扩展名的隐藏配置（如 .gitignore）会被 lastIndexOf 取到「gitignore」，仍能命中。
+    final ext = dot <= 0 ? lower.replaceFirst('.', '') : lower.substring(dot + 1);
+    return _textExtensions.contains(ext);
+  }
+
+  @override
+  Future<List<KnowledgeWorkspaceFile>> listTextFiles(String workspaceId) async {
+    final (workspace, backend) = await _resolve(workspaceId);
+    final files = <KnowledgeWorkspaceFile>[];
+    // BFS 遍历：从根目录逐层展开，跳过隐藏项、超限文件与非文本扩展名。
+    final queue = <(String, int)>[(workspace.root, 0)];
+    while (queue.isNotEmpty && files.length < _maxFiles) {
+      final (dir, depth) = queue.removeAt(0);
+      if (depth > _maxDepth) continue;
+      final List<WorkspaceEntry> entries;
+      try {
+        entries = await backend.listDir(dir);
+      } catch (_) {
+        // 单个子目录读失败（授权 / 权限）不应中断整次遍历。
+        continue;
+      }
+      for (final entry in entries) {
+        if (entry.isHidden) continue;
+        if (entry.isDirectory) {
+          queue.add((entry.path, depth + 1));
+          continue;
+        }
+        if (!_isTextFile(entry.name)) continue;
+        if (entry.size > _maxFileBytes) continue;
+        String text;
+        try {
+          text = await backend.readFile(entry.path);
+        } catch (_) {
+          continue;
+        }
+        if (text.trim().isEmpty) continue;
+        files.add(
+          KnowledgeWorkspaceFile(
+            path: entry.path,
+            name: entry.name,
+            text: text,
+            mtime: entry.mtime,
+            size: entry.size,
+          ),
+        );
+        if (files.length >= _maxFiles) break;
+      }
+    }
+    return files;
+  }
+
+  @override
+  Future<KnowledgeWorkspaceStat?> statFile(
+    String workspaceId,
+    String path,
+  ) async {
+    try {
+      final (_, backend) = await _resolve(workspaceId);
+      final info = await backend.getFileInfo(path);
+      return KnowledgeWorkspaceStat(mtime: info.mtime, size: info.size);
+    } catch (_) {
+      // 文件失联 / 授权失效 / 后端不支持 → 交由调用方按「可能已过期」处理。
+      return null;
+    }
+  }
 }
 
 /// Adapts the memory feature's protocol-only [EmbeddingService] (which needs a

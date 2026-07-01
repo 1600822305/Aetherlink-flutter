@@ -95,7 +95,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.open() : super(_openConnection());
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   // SQLite can't ALTER a table-level CHECK/FK onto an existing table, but a
   // partial UNIQUE index CAN be created on one. This enforces the single-root
@@ -190,6 +190,14 @@ class AppDatabase extends _$AppDatabase {
         // embeddingKey 去重的持久向量表，并给 kb_chunk 补 embeddingKey 外键列。
         await m.createTable(kbEmbeddingRows);
         await m.addColumn(kbChunkRows, kbChunkRows.embeddingKey);
+      }
+      if (from < 12) {
+        // 知识库 P3c workspace 目录源（见 docs/知识库功能-设计构想.md §8.1）：给
+        // knowledge_item 补来源指纹列，供 workspace 条目做 staleness 检测。
+        await m.addColumn(
+          knowledgeItemRows,
+          knowledgeItemRows.sourceFingerprint,
+        );
       }
     },
   );

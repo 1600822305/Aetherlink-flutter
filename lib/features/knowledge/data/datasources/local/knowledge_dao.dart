@@ -273,6 +273,7 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
         title: Value(item.title),
         status: Value(item.status.name),
         error: Value(item.error),
+        sourceFingerprint: Value(item.sourceFingerprint),
         createdAt: item.createdAt.millisecondsSinceEpoch,
       ),
     );
@@ -418,6 +419,7 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
     title: row.title,
     status: KnowledgeItemStatus.fromName(row.status),
     error: row.error,
+    sourceFingerprint: row.sourceFingerprint,
     createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
   );
 }
