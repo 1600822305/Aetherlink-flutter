@@ -73,6 +73,7 @@ part 'app_database.g.dart';
     KnowledgeItemRows,
     KnowledgeContentRows,
     KbChunkRows,
+    KbEmbeddingRows,
   ],
   daos: [
     TopicDao,
@@ -94,7 +95,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.open() : super(_openConnection());
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   // SQLite can't ALTER a table-level CHECK/FK onto an existing table, but a
   // partial UNIQUE index CAN be created on one. This enforces the single-root
@@ -183,6 +184,12 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(knowledgeItemRows);
         await m.createTable(knowledgeContentRows);
         await m.createTable(kbChunkRows);
+      }
+      if (from < 11) {
+        // 知识库 P1 向量层（见 docs/知识库功能-设计构想.md §4.3）：新增按
+        // embeddingKey 去重的持久向量表，并给 kb_chunk 补 embeddingKey 外键列。
+        await m.createTable(kbEmbeddingRows);
+        await m.addColumn(kbChunkRows, kbChunkRows.embeddingKey);
       }
     },
   );

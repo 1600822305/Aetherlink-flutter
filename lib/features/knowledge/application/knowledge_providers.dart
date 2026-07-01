@@ -3,6 +3,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
 
 part 'knowledge_providers.g.dart';
 
@@ -13,10 +14,20 @@ class KnowledgeBasesController extends _$KnowledgeBasesController {
   Future<List<KnowledgeBase>> build() =>
       ref.watch(knowledgeServiceProvider).listBases();
 
-  Future<void> createBase(String name) async {
+  Future<void> createBase(
+    String name, {
+    String? embeddingModelKey,
+    KnowledgeSearchMode searchMode = KnowledgeSearchMode.keyword,
+    KnowledgeScope scope = const KnowledgeScope(),
+  }) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return;
-    await ref.read(knowledgeServiceProvider).createBase(name: trimmed);
+    await ref.read(knowledgeServiceProvider).createBase(
+          name: trimmed,
+          embeddingModelKey: embeddingModelKey,
+          searchMode: searchMode,
+          scope: scope,
+        );
     ref.invalidateSelf();
     await future;
   }
