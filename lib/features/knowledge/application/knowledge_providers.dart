@@ -75,6 +75,20 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
     ref.invalidate(knowledgeBasesControllerProvider);
   }
 
+  /// 抓取一个网页并摄取为条目（type=url）。抓取 + HTML→Markdown 由服务层注入的
+  /// 抓取器完成；失败会抛异常交由 UI 提示。
+  Future<void> addUrl({required String url, String? title}) async {
+    if (url.trim().isEmpty) return;
+    await ref.read(knowledgeServiceProvider).addUrl(
+          baseId: baseId,
+          url: url,
+          title: title,
+        );
+    ref.invalidateSelf();
+    await future;
+    ref.invalidate(knowledgeBasesControllerProvider);
+  }
+
   /// 从已存正文原子重建整库派生索引（切块 + 向量），返回重建覆盖的条目数。
   Future<int> refresh() async {
     final count = await ref.read(knowledgeServiceProvider).reindexBase(baseId);

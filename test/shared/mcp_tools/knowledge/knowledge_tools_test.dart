@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/core/database/app_database.dart';
 import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_service.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_url_fetcher.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
 
@@ -49,7 +50,7 @@ void main() {
         knowledgeToolRiskLevel(kKnowledgeManageTool, {'action': 'delete'}),
         KnowledgeToolRisk.high,
       );
-      for (final action in ['create', 'add_note', 'refresh']) {
+      for (final action in ['create', 'add_note', 'add_url', 'refresh']) {
         expect(
           knowledgeToolRiskLevel(kKnowledgeManageTool, {'action': action}),
           KnowledgeToolRisk.medium,
@@ -226,6 +227,50 @@ void main() {
       );
       expect(data['documentId'], isNotNull);
       expect(await service.itemCount(base.id), 1);
+    });
+
+    test('kb_manage add_url fetches, converts and ingests into a chat base',
+        () async {
+      final urlService = KnowledgeService(
+        db.knowledgeDao,
+        urlFetcher: (url) async => KnowledgeFetchedPage(
+          markdown: '# Fetched\n\nbody of $url',
+          title: 'Fetched',
+        ),
+      );
+      final urlContainer = ProviderContainer(
+        overrides: [knowledgeServiceProvider.overrideWithValue(urlService)],
+      );
+      addTearDown(urlContainer.dispose);
+      final urlRun = urlContainer.read(_runnerProvider);
+
+      final base = await urlService.createBase(
+        name: 'shared',
+        scope: const KnowledgeScope(chatEnabled: true),
+      );
+      final data = _data(
+        await urlRun(kKnowledgeManageTool, {
+          'action': 'add_url',
+          'base_id': base.id,
+          'url': 'https://example.com/a',
+        }),
+      );
+      expect(data['documentId'], isNotNull);
+      expect(data['title'], 'Fetched');
+      expect(data['source'], 'https://example.com/a');
+      expect(await urlService.itemCount(base.id), 1);
+    });
+
+    test('kb_manage add_url requires the url argument', () async {
+      final base = await service.createBase(
+        name: 'shared',
+        scope: const KnowledgeScope(chatEnabled: true),
+      );
+      final result = await run(kKnowledgeManageTool, {
+        'action': 'add_url',
+        'base_id': base.id,
+      });
+      expect(result.isError, isTrue);
     });
 
     test('kb_manage delete removes the base', () async {

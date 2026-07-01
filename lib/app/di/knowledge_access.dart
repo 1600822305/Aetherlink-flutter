@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
@@ -6,11 +7,13 @@ import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_service.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedder.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_url_fetcher.dart';
 import 'package:aetherlink_flutter/features/memory/data/embedding_service.dart';
 import 'package:aetherlink_flutter/features/memory/domain/embedding_model_key.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/tools/fetch_tool.dart';
 
 part 'knowledge_access.g.dart';
 
@@ -27,7 +30,50 @@ KnowledgeService knowledgeService(Ref ref) => KnowledgeService(
   ref.watch(appDatabaseProvider).knowledgeDao,
   embedderResolver: (embeddingModelKey) =>
       _resolveKnowledgeEmbedder(ref, embeddingModelKey),
+  urlFetcher: (url) => _fetchKnowledgeUrl(ref, url),
 );
+
+/// 默认 URL 抓取器（设计文档 §5「URL 抓取 → Markdown 快照」）：走应用统一的
+/// LLM Dio（含代理配置），HTML 用与 `@aether/fetch` 同一套 [htmlToMarkdown] 转成
+/// Markdown，其余内容按纯文本原样返回。标题取转换结果里的首个一级标题（HTML
+/// `<title>` 会被 [htmlToMarkdown] 放在正文最前面的 `# ` 行），取不到则留空由
+/// 调用方回落到 URL。抓取失败会抛异常，交由 [KnowledgeService.addUrl] 上抛。
+Future<KnowledgeFetchedPage> _fetchKnowledgeUrl(Ref ref, String url) async {
+  final dio = buildLlmDio(proxy: ref.read(appNetworkProxyConfigProvider));
+  final response = await dio.get<String>(
+    url,
+    options: Options(
+      responseType: ResponseType.plain,
+      headers: const {
+        'User-Agent': 'AetherLink/1.0 (Knowledge Fetch)',
+        'Accept':
+            'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      },
+    ),
+  );
+  final body = response.data ?? '';
+  final contentType =
+      (response.headers.value('content-type') ?? '').toLowerCase();
+  final isHtml = contentType.contains('html') || body.trimLeft().startsWith('<');
+  final markdown = isHtml ? htmlToMarkdown(body) : body;
+  return KnowledgeFetchedPage(
+    markdown: markdown,
+    title: isHtml ? _firstMarkdownHeading(markdown) : null,
+  );
+}
+
+/// 取 Markdown 最前面的一级标题（`# ` 行）作为条目标题；首个非空行不是标题则返回
+/// null。[htmlToMarkdown] 会把页面 `<title>` 放到正文最前的 `# ` 行，故此处即页面标题。
+String? _firstMarkdownHeading(String markdown) {
+  for (final line in markdown.split('\n')) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) continue;
+    if (trimmed.startsWith('# ')) return trimmed.substring(2).trim();
+    return null;
+  }
+  return null;
+}
 
 /// Resolves a base's `embeddingModelKey` to a ready [KnowledgeEmbedder], or null
 /// when the key is unset/malformed or its provider/model no longer exists (→ the
