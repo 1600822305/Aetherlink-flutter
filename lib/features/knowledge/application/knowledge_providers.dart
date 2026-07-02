@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
@@ -77,6 +79,24 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
     ref.invalidate(knowledgeBasesControllerProvider);
   }
 
+  /// 把一个富文档（PDF / DOCX）交给库配置的云端解析器转 Markdown 后摄取
+  /// （§5.2 云端预处理轨）。失败抛异常交由 UI 提示。
+  Future<void> addProcessedFile({
+    required String fileName,
+    required Uint8List bytes,
+    String? sourcePath,
+  }) async {
+    await ref.read(knowledgeServiceProvider).addProcessedFile(
+          baseId: baseId,
+          fileName: fileName,
+          bytes: bytes,
+          sourcePath: sourcePath,
+        );
+    ref.invalidateSelf();
+    await future;
+    ref.invalidate(knowledgeBasesControllerProvider);
+  }
+
   /// 抓取一个网页并摄取为条目（type=url）。抓取 + HTML→Markdown 由服务层注入的
   /// 抓取器完成；失败会抛异常交由 UI 提示。
   Future<void> addUrl({required String url, String? title}) async {
@@ -121,6 +141,23 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
         .retryPendingEmbeddings(baseId);
     ref.invalidate(knowledgePendingEmbeddingCountProvider(baseId));
     return count;
+  }
+}
+
+/// 单个知识库的元数据（驱动详情页的云端解析配置入口，§5.2）。
+@riverpod
+class KnowledgeBaseController extends _$KnowledgeBaseController {
+  @override
+  Future<KnowledgeBase?> build(String baseId) =>
+      ref.watch(knowledgeServiceProvider).getBase(baseId);
+
+  /// 更新库级云端文件预处理器；传 null 回到本地解析轨。
+  Future<void> setFileProcessor(String? processorId) async {
+    await ref
+        .read(knowledgeServiceProvider)
+        .setFileProcessor(baseId, processorId);
+    ref.invalidateSelf();
+    await future;
   }
 }
 

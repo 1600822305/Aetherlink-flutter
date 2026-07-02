@@ -97,6 +97,7 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
         scope: base.scope,
         status: Value(base.status.name),
         createdAt: base.createdAt.millisecondsSinceEpoch,
+        fileProcessorId: Value(base.fileProcessorId),
       ),
     );
   }
@@ -123,6 +124,13 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
   Future<void> updateBaseStatus(String id, KnowledgeBaseStatus status) {
     return (update(knowledgeBaseRows)..where((t) => t.id.equals(id))).write(
       KnowledgeBaseRowsCompanion(status: Value(status.name)),
+    );
+  }
+
+  /// 更新库级云端文件预处理器 id（§5.2 云端预处理轨）；传 null 回到本地解析轨。
+  Future<void> updateBaseFileProcessor(String id, String? processorId) {
+    return (update(knowledgeBaseRows)..where((t) => t.id.equals(id))).write(
+      KnowledgeBaseRowsCompanion(fileProcessorId: Value(processorId)),
     );
   }
 
@@ -525,6 +533,7 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
     scope: row.scope,
     status: KnowledgeBaseStatus.fromName(row.status),
     createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
+    fileProcessorId: row.fileProcessorId,
   );
 
   KnowledgeItem _toItem(KnowledgeItemRow row) => KnowledgeItem(
