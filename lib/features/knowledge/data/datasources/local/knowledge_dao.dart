@@ -307,10 +307,25 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
   Future<List<KnowledgeItem>> listItems(String baseId) async {
     final rows =
         await (select(knowledgeItemRows)
-              ..where((t) => t.baseId.equals(baseId))
+              ..where((t) => t.baseId.equals(baseId) & t.deletedAt.isNull())
               ..orderBy([
                 (t) => OrderingTerm(
                   expression: t.createdAt,
+                  mode: OrderingMode.desc,
+                ),
+              ]))
+            .get();
+    return rows.map(_toItem).toList();
+  }
+
+  /// 回收站里的条目（功能缺口⑩），按删除时间倒序。
+  Future<List<KnowledgeItem>> listDeletedItems(String baseId) async {
+    final rows =
+        await (select(knowledgeItemRows)
+              ..where((t) => t.baseId.equals(baseId) & t.deletedAt.isNotNull())
+              ..orderBy([
+                (t) => OrderingTerm(
+                  expression: t.deletedAt,
                   mode: OrderingMode.desc,
                 ),
               ]))
@@ -322,7 +337,10 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
     final count = knowledgeItemRows.id.count();
     final query = selectOnly(knowledgeItemRows)
       ..addColumns([count])
-      ..where(knowledgeItemRows.baseId.equals(baseId));
+      ..where(
+        knowledgeItemRows.baseId.equals(baseId) &
+            knowledgeItemRows.deletedAt.isNull(),
+      );
     final row = await query.getSingle();
     return row.read(count) ?? 0;
   }
@@ -346,7 +364,7 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
   Future<List<KnowledgeItemWithContent>> itemsWithContent(String baseId) async {
     final items =
         await (select(knowledgeItemRows)
-              ..where((t) => t.baseId.equals(baseId))
+              ..where((t) => t.baseId.equals(baseId) & t.deletedAt.isNull())
               ..orderBy([(t) => OrderingTerm(expression: t.createdAt)]))
             .get();
     if (items.isEmpty) return const [];
@@ -394,8 +412,27 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
     return query.get();
   }
 
-  /// 删除单个条目及其派生数据（正文 + 切块），并回收随之产生的孤儿嵌入，全在一个
-  /// 事务里。`kb_embedding` 按 `embeddingKey` 全局去重共享，故删完切块后才 GC。
+  /// 软删除单个条目（功能缺口⑩ 回收站）：标记 `deletedAt` 并删掉派生切块
+  /// （检索随之排除）+ 回收孤儿嵌入；权威正文保留，供 [restoreItem] 无损重建。
+  Future<void> softDeleteItem(String itemId) => transaction(() async {
+    await (update(knowledgeItemRows)..where((t) => t.id.equals(itemId))).write(
+      KnowledgeItemRowsCompanion(
+        deletedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+    await (delete(kbChunkRows)..where((t) => t.itemId.equals(itemId))).go();
+    await _deleteOrphanEmbeddings();
+  });
+
+  /// 把回收站里的条目标回未删除（切块由服务层重建）。
+  Future<void> restoreItem(String itemId) {
+    return (update(knowledgeItemRows)..where((t) => t.id.equals(itemId))).write(
+      const KnowledgeItemRowsCompanion(deletedAt: Value(null)),
+    );
+  }
+
+  /// 彻底删除单个条目及其派生数据（正文 + 切块），并回收随之产生的孤儿嵌入，全在
+  /// 一个事务里。`kb_embedding` 按 `embeddingKey` 全局去重共享，故删完切块后才 GC。
   Future<void> deleteItem(String itemId) => transaction(() async {
     await (delete(
       knowledgeContentRows,
@@ -646,6 +683,9 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
   );
 
   KnowledgeItem _toItem(KnowledgeItemRow row) => KnowledgeItem(
+    deletedAt: row.deletedAt == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(row.deletedAt!),
     id: row.id,
     baseId: row.baseId,
     type: KnowledgeItemType.fromName(row.type),

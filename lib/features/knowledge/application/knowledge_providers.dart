@@ -170,12 +170,35 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
     return count;
   }
 
-  /// 删除单个条目及其派生数据（正文 + 切块 + 孤儿嵌入）。
+  /// 把条目移入回收站（功能缺口⑩）：软删除，可从回收站恢复。
   Future<void> deleteItem(String itemId) async {
-    await ref.read(knowledgeServiceProvider).deleteItem(itemId);
+    await ref.read(knowledgeServiceProvider).trashItem(itemId);
     ref.invalidateSelf();
     await future;
     ref.invalidate(knowledgeBasesControllerProvider);
+    ref.invalidate(knowledgeTrashProvider(baseId));
+  }
+
+  /// 从回收站恢复条目（重建切块 + 嵌入）。
+  Future<void> restoreItem(String itemId) async {
+    await ref.read(knowledgeServiceProvider).restoreItem(itemId);
+    ref.invalidateSelf();
+    await future;
+    ref.invalidate(knowledgeTrashProvider(baseId));
+    ref.invalidate(knowledgePendingEmbeddingCountProvider(baseId));
+  }
+
+  /// 彻底删除回收站里的单个条目，不可恢复。
+  Future<void> purgeItem(String itemId) async {
+    await ref.read(knowledgeServiceProvider).deleteItem(itemId);
+    ref.invalidate(knowledgeTrashProvider(baseId));
+  }
+
+  /// 清空回收站，返回清理的条目数。
+  Future<int> emptyTrash() async {
+    final count = await ref.read(knowledgeServiceProvider).emptyTrash(baseId);
+    ref.invalidate(knowledgeTrashProvider(baseId));
+    return count;
   }
 
   /// 只补嵌本库里嵌入失败/中断留下的待补切块（失败恢复，§11），已嵌入的不重算。
@@ -228,6 +251,11 @@ class KnowledgeBaseController extends _$KnowledgeBaseController {
     ref.invalidate(knowledgeBasesControllerProvider);
   }
 }
+
+/// 某库回收站里的条目（功能缺口⑩），按删除时间倒序。
+@riverpod
+Future<List<KnowledgeItem>> knowledgeTrash(Ref ref, String baseId) =>
+    ref.watch(knowledgeServiceProvider).listTrash(baseId);
 
 /// 某条目的全部切块（驱动条目切块详情面板）。
 @riverpod

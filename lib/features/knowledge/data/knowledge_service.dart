@@ -393,8 +393,36 @@ class KnowledgeService {
     return item;
   }
 
-  /// 删除单个条目及其派生数据（正文 + 切块 + 孤儿嵌入），见 [KnowledgeDao.deleteItem]。
+  /// 把条目移入回收站（功能缺口⑩）：软删除 + 删派生切块，检索随之排除；
+  /// 正文保留可由 [restoreItem] 恢复。
+  Future<void> trashItem(String itemId) => _dao.softDeleteItem(itemId);
+
+  /// 回收站里的条目，按删除时间倒序。
+  Future<List<KnowledgeItem>> listTrash(String baseId) =>
+      _dao.listDeletedItems(baseId);
+
+  /// 从回收站恢复条目：标回未删除后从保留的权威正文重建切块 + 嵌入
+  /// （复用 [reindexItem] 的重建管线）。条目不在回收站里抛错。
+  Future<void> restoreItem(String itemId) async {
+    final item = await _dao.getItem(itemId);
+    if (item == null) throw StateError('条目不存在: $itemId');
+    if (item.deletedAt == null) throw StateError('条目不在回收站里: $itemId');
+    await _dao.restoreItem(itemId);
+    await reindexItem(itemId);
+  }
+
+  /// 彻底删除单个条目及其派生数据（正文 + 切块 + 孤儿嵌入），不可恢复，
+  /// 见 [KnowledgeDao.deleteItem]。
   Future<void> deleteItem(String itemId) => _dao.deleteItem(itemId);
+
+  /// 清空回收站：彻底删除本库所有软删除条目。返回清理的条目数。
+  Future<int> emptyTrash(String baseId) async {
+    final trashed = await _dao.listDeletedItems(baseId);
+    for (final item in trashed) {
+      await _dao.deleteItem(item.id);
+    }
+    return trashed.length;
+  }
 
   /// 某条目的全部切块（按 unitIndex 排序），供切块详情展示。[embedded]
   /// 表示该切块是否已有向量索引。
