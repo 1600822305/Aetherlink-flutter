@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -7,6 +9,7 @@ import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_chunking.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedder.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedding.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_file_processor.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_ranking.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
@@ -371,6 +374,107 @@ void main() {
       expect(
         () => emptyFetcher.addUrl(baseId: base2.id, url: 'https://x.test'),
         throwsStateError, // empty fetched content
+      );
+    });
+
+    test('setFileProcessor persists, clears and rejects unknown ids',
+        () async {
+      final base = await service.createBase(name: 'KB');
+      expect(base.fileProcessorId, isNull);
+
+      await service.setFileProcessor(base.id, 'mineru');
+      expect((await service.getBase(base.id))!.fileProcessorId, 'mineru');
+
+      await service.setFileProcessor(base.id, null);
+      expect((await service.getBase(base.id))!.fileProcessorId, isNull);
+
+      expect(
+        () => service.setFileProcessor(base.id, 'nope'),
+        throwsStateError,
+      );
+    });
+
+    test(
+        'addProcessedFile ingests the cloud markdown snapshot and refresh '
+        'does not re-call the cloud', () async {
+      final calls = <(KnowledgeFileProcessor, String)>[];
+      final cloudService = KnowledgeService(
+        db.knowledgeDao,
+        filePreprocessor: ({
+          required processor,
+          required fileName,
+          required bytes,
+        }) async {
+          calls.add((processor, fileName));
+          return '# Cloud Result\n\nParsed by cloud service.';
+        },
+      );
+      final base = await cloudService.createBase(name: 'KB');
+      await cloudService.setFileProcessor(base.id, 'doc2x');
+
+      final item = await cloudService.addProcessedFile(
+        baseId: base.id,
+        fileName: 'paper.pdf',
+        bytes: Uint8List.fromList([1, 2, 3]),
+      );
+      expect(calls, [(KnowledgeFileProcessor.doc2x, 'paper.pdf')]);
+      expect(item.type, KnowledgeItemType.file);
+      expect(
+        await cloudService.readItemContent(item.id),
+        contains('Parsed by cloud service'),
+      );
+
+      // 权威快照已落库：重建索引从已存正文重建，不再重复调云端。
+      final count = await cloudService.reindexBase(base.id);
+      expect(count, 1);
+      expect(calls.length, 1);
+
+      final hits = await cloudService.search(baseId: base.id, query: 'cloud');
+      expect(hits, isNotEmpty);
+    });
+
+    test(
+        'addProcessedFile rejects missing processor / preprocessor / empty '
+        'result', () async {
+      // 库未配置处理器。
+      final cloudService = KnowledgeService(
+        db.knowledgeDao,
+        filePreprocessor: ({
+          required processor,
+          required fileName,
+          required bytes,
+        }) async =>
+            '   ',
+      );
+      final base = await cloudService.createBase(name: 'KB');
+      expect(
+        () => cloudService.addProcessedFile(
+          baseId: base.id,
+          fileName: 'a.pdf',
+          bytes: Uint8List(0),
+        ),
+        throwsStateError,
+      );
+
+      // 未注入预处理器。
+      await service.setFileProcessor(base.id, 'mistral');
+      expect(
+        () => service.addProcessedFile(
+          baseId: base.id,
+          fileName: 'a.pdf',
+          bytes: Uint8List(0),
+        ),
+        throwsStateError,
+      );
+
+      // 云端返回空结果。
+      expect(
+        () => cloudService.addProcessedFile(
+          baseId: base.id,
+          fileName: 'a.pdf',
+          bytes: Uint8List(0),
+        ),
+        throwsStateError,
       );
     });
 

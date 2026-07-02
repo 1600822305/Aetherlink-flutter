@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
@@ -9,6 +10,7 @@ import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_chunking.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedder.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedding.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_file_processor.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_ranking.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
@@ -27,14 +29,17 @@ class KnowledgeService {
     KnowledgeEmbedderResolver? embedderResolver,
     KnowledgeUrlFetcher? urlFetcher,
     KnowledgeWorkspaceSource? workspaceSource,
+    KnowledgeFilePreprocessor? filePreprocessor,
   })  : _resolveEmbedder = embedderResolver,
         _fetchUrl = urlFetcher,
-        _workspaceSource = workspaceSource;
+        _workspaceSource = workspaceSource,
+        _preprocessFile = filePreprocessor;
 
   final KnowledgeDao _dao;
   final KnowledgeEmbedderResolver? _resolveEmbedder;
   final KnowledgeUrlFetcher? _fetchUrl;
   final KnowledgeWorkspaceSource? _workspaceSource;
+  final KnowledgeFilePreprocessor? _preprocessFile;
 
   Future<List<KnowledgeBase>> listBases() => _dao.listBases();
 
@@ -128,6 +133,56 @@ class KnowledgeService {
       conceptId: source,
       title: label,
       text: text,
+    );
+  }
+
+  /// 把一个富文档交给库配置的云端预处理器转 Markdown 后摄取（设计文档 §5.2
+  /// 云端预处理轨）。转好的 Markdown 作为权威快照落库（与 URL 抓取同一语义），
+  /// 后续 refresh 直接从快照重建索引、不再重复调云端。库未配置处理器 / 未注入
+  /// 预处理器 / 云端解析失败或结果为空都抛错交由调用方提示。
+  Future<KnowledgeItem> addProcessedFile({
+    required String baseId,
+    required String fileName,
+    required Uint8List bytes,
+    String? sourcePath,
+  }) async {
+    final base = await _requireBase(baseId);
+    final processor = KnowledgeFileProcessor.fromId(base.fileProcessorId);
+    if (processor == null) {
+      throw StateError('该库未配置云端解析器: $baseId');
+    }
+    final preprocess = _preprocessFile;
+    if (preprocess == null) {
+      throw StateError('未配置云端文件预处理器，无法摄取');
+    }
+    final markdown = await preprocess(
+      processor: processor,
+      fileName: fileName,
+      bytes: bytes,
+    );
+    if (markdown.trim().isEmpty) {
+      throw StateError('${processor.label} 解析结果为空: $fileName');
+    }
+    return addFile(
+      baseId: baseId,
+      fileName: fileName,
+      text: markdown,
+      sourcePath: sourcePath,
+    );
+  }
+
+  /// 更新库级云端文件预处理器（§5.2）；传 null 回到本地解析轨。
+  Future<void> setFileProcessor(String baseId, String? processorId) async {
+    await _requireBase(baseId);
+    final normalized = processorId?.trim();
+    if (normalized != null &&
+        normalized.isNotEmpty &&
+        KnowledgeFileProcessor.fromId(normalized) == null) {
+      throw StateError('未知的云端解析器: $normalized');
+    }
+    await _dao.updateBaseFileProcessor(
+      baseId,
+      (normalized == null || normalized.isEmpty) ? null : normalized,
     );
   }
 

@@ -48,6 +48,7 @@ class KnowledgeBase {
     this.chunkOverlap = kDefaultChunkOverlap,
     this.threshold,
     this.topK = kDefaultTopK,
+    this.fileProcessorId,
   });
 
   /// 默认切块参数（设计文档 §5：P0 用简单定长切块，P1 再升级结构感知切块）。
@@ -67,6 +68,10 @@ class KnowledgeBase {
   final KnowledgeScope scope;
   final KnowledgeBaseStatus status;
   final DateTime createdAt;
+
+  /// 云端文件预处理器 id（设计文档 §5.2 云端预处理轨）。为空时 PDF / DOCX
+  /// 走默认本地解析轨；非空时对应 `KnowledgeFileProcessor.id`。
+  final String? fileProcessorId;
 
   KnowledgeBase copyWith({
     String? name,
@@ -91,6 +96,7 @@ class KnowledgeBase {
       scope: scope ?? this.scope,
       status: status ?? this.status,
       createdAt: createdAt,
+      fileProcessorId: fileProcessorId,
     );
   }
 }

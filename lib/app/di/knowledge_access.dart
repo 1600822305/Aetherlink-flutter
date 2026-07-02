@@ -1,12 +1,15 @@
 import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' show WidgetRef;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/network_proxy_access.dart';
 import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/knowledge/data/knowledge_file_preprocessing.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_service.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedder.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_file_processor.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_url_fetcher.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_workspace_source.dart';
 import 'package:aetherlink_flutter/features/memory/data/embedding_service.dart';
@@ -37,7 +40,53 @@ KnowledgeService knowledgeService(Ref ref) => KnowledgeService(
       _resolveKnowledgeEmbedder(ref, embeddingModelKey),
   urlFetcher: (url) => _fetchKnowledgeUrl(ref, url),
   workspaceSource: _WorkspaceBackendSource(ref),
+  filePreprocessor: ({
+    required processor,
+    required fileName,
+    required bytes,
+  }) async {
+    final apiKey = await ref
+        .read(appDatabaseProvider)
+        .appSettingDao
+        .getValue(knowledgeFileProcessorApiKeySetting(processor));
+    final key = apiKey?.trim();
+    if (key == null || key.isEmpty) {
+      throw StateError('未配置 ${processor.label} 的 API Key，请先在云端解析设置里填写');
+    }
+    return preprocessFileInCloud(
+      dio: buildLlmDio(proxy: ref.read(appNetworkProxyConfigProvider)),
+      processor: processor,
+      apiKey: key,
+      fileName: fileName,
+      bytes: bytes,
+    );
+  },
 );
+
+/// 云端解析器 API Key 在 app 设置表里的键（app 级、按服务存一份，§5.2）。
+String knowledgeFileProcessorApiKeySetting(KnowledgeFileProcessor processor) =>
+    'knowledge.file_processor.${processor.id}.api_key';
+
+/// 读一个云端解析器已保存的 API Key（供设置 UI 回显）。
+Future<String?> readKnowledgeFileProcessorApiKey(
+  WidgetRef ref,
+  KnowledgeFileProcessor processor,
+) =>
+    ref
+        .read(appDatabaseProvider)
+        .appSettingDao
+        .getValue(knowledgeFileProcessorApiKeySetting(processor));
+
+/// 保存一个云端解析器的 API Key。
+Future<void> saveKnowledgeFileProcessorApiKey(
+  WidgetRef ref,
+  KnowledgeFileProcessor processor,
+  String apiKey,
+) =>
+    ref
+        .read(appDatabaseProvider)
+        .appSettingDao
+        .setValue(knowledgeFileProcessorApiKeySetting(processor), apiKey);
 
 /// 默认 URL 抓取器（设计文档 §5「URL 抓取 → Markdown 快照」）：走应用统一的
 /// LLM Dio（含代理配置），HTML 用与 `@aether/fetch` 同一套 [htmlToMarkdown] 转成
