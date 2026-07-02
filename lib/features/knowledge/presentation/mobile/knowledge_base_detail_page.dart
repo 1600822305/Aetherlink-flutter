@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
+import 'package:aetherlink_flutter/app/di/notes_knowledge_access.dart';
 import 'package:aetherlink_flutter/core/platform/file_system_api.dart'
     show PickedFile;
 import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
@@ -254,18 +255,26 @@ class _KnowledgeBaseDetailPageState
     await action();
   }
 
+  /// 从笔记功能里选一篇摄取（对齐 CS：知识库的「笔记」数据源从笔记功能获取，
+  /// 而不是现场手写 markdown）。标题取笔记名，重复添加时二次确认。
   Future<void> _addNote() async {
-    final result = await showModalBottomSheet<({String title, String text})>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (ctx) => const KnowledgeAddNoteSheet(),
-    );
-    if (result == null || result.text.trim().isEmpty) return;
+    final picked = await pickNoteForKnowledge(context, ref);
+    if (picked == null || !mounted) return;
+    if (picked.text.trim().isEmpty) {
+      AppToast.error(context, '笔记「${picked.title}」内容为空，无法摄取');
+      return;
+    }
+    final existing = _findExisting(title: picked.title);
+    if (existing != null) {
+      final proceed = await _confirmDuplicate(
+        '库里已有同名笔记「${picked.title}」，仍然添加？',
+      );
+      if (!proceed || !mounted) return;
+    }
     await ref
         .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
-        .addNote(title: result.title, text: result.text);
-    if (mounted) AppToast.success(context, '已添加笔记');
+        .addNote(title: picked.title, text: picked.text);
+    if (mounted) AppToast.success(context, '已添加笔记「${picked.title}」');
   }
 
   /// 选择一个或多个文件并逐个摄取为条目。纯文本（含 csv / json）按 UTF-8
