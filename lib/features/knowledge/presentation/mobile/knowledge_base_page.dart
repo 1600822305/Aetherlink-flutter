@@ -726,6 +726,49 @@ class _GroupNameSheetState extends State<_GroupNameSheet> {
   }
 }
 
+/// 嵌入模型的维度探测提示（功能缺口⑨）：选中模型后真实调一次嵌入 API，
+/// 展示「向量维度：N」；探测中显示进度、失败提示不阻断创建。
+class _DimensionHint extends ConsumerWidget {
+  const _DimensionHint({required this.modelKey});
+
+  final String modelKey;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final async = ref.watch(knowledgeEmbeddingDimensionsProvider(modelKey));
+    final style = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final Widget child;
+    if (async.isLoading) {
+      child = Row(
+        children: [
+          const SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 6),
+          Text('正在探测向量维度…', style: style),
+        ],
+      );
+    } else {
+      final dimensions = async.asData?.value;
+      child = Text(
+        dimensions == null ? '维度探测失败（不影响创建）' : '向量维度：$dimensions',
+        style: dimensions == null
+            ? style
+            : style?.copyWith(color: theme.colorScheme.primary),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, left: 26),
+      child: child,
+    );
+  }
+}
+
 /// The choices returned by [_CreateBaseSheet]. [embeddingModelKey] is null for
 /// a pure keyword base; when set, [searchMode] is vector or hybrid.
 class _CreateBaseResult {
@@ -880,6 +923,7 @@ class _CreateBaseSheetState extends ConsumerState<_CreateBaseSheet> {
                   ),
                 ),
               ),
+              if (hasModel) _DimensionHint(modelKey: _modelKey!),
               const SizedBox(height: 12),
               Text(
                 '检索模式',
