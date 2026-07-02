@@ -1,0 +1,15 @@
+name: pdf_to_markdown
+description: "PDF → Markdown-ish text converter built on pdfrx_engine (PDFium). Extracts the structured text layer per page and reflows it into paragraphs. No Flutter dependency."
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  # PDFium FFI engine (BSD-3-Clause), shared with the host app's pdfrx plugin.
+  pdfrx_engine: ^0.4.3
+
+dev_dependencies:
+  test: any
+  lints: ^6.0.0

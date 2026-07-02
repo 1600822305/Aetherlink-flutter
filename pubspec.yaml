@@ -91,6 +91,11 @@ dependencies:
   # DOCX→Markdown 转换（仅依赖 archive+xml，可在 isolate 跑）。
   docx_to_markdown:
     path: packages/docx_to_markdown
+  # 知识库 P3e 本地解析轨（同上 §5.2）：PDF 文本层抽取 + 段落重排，
+  # 基于 pdfrx_engine（PDFium，BSD-3）；pdfrx 插件负责各平台打包 PDFium 原生库。
+  pdf_to_markdown:
+    path: packages/pdf_to_markdown
+  pdfrx: ^2.4.4
   scrollview_observer: ^1.27.0
   # Voice feature: TTS + ASR
   flutter_tts:

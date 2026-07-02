@@ -121,19 +121,25 @@ class _KnowledgeBaseDetailPageState
     if (mounted) AppToast.success(context, '已添加笔记');
   }
 
-  /// 选择一个 txt / md / docx 文件并摄取为条目。纯文本按 UTF-8 读取；DOCX 先在
-  /// isolate 里转 Markdown（§5.2 本地解析轨）再走同一条摄取管线；PDF 暂不支持。
+  /// 选择一个 txt / md / docx / pdf 文件并摄取为条目。纯文本按 UTF-8 读取；
+  /// DOCX 在 isolate 里、PDF 在 PDFium 原生 worker 里转 Markdown（§5.2 本地解析轨）
+  /// 后走同一条摄取管线。
   Future<void> _addFile() async {
     final picked = await ref.read(fileSystemApiProvider).pickFile(
-      allowedExtensions: const ['txt', 'md', 'markdown', 'text', 'docx'],
+      allowedExtensions: const ['txt', 'md', 'markdown', 'text', 'docx', 'pdf'],
     );
     if (picked == null) return;
+    final isPdf = isPdfFileName(picked.name);
     String text;
     try {
       if (isDocxFileName(picked.name)) {
         final bytes =
             await ref.read(fileSystemApiProvider).readAsBytes(picked.path);
         text = await convertDocxBytesToMarkdown(bytes);
+      } else if (isPdf) {
+        final bytes =
+            await ref.read(fileSystemApiProvider).readAsBytes(picked.path);
+        text = await convertPdfBytesToMarkdown(bytes);
       } else {
         text = await ref.read(fileSystemApiProvider).readAsString(picked.path);
       }
@@ -142,7 +148,12 @@ class _KnowledgeBaseDetailPageState
       return;
     }
     if (text.trim().isEmpty) {
-      if (mounted) AppToast.error(context, '文件内容为空，未摄取');
+      if (mounted) {
+        AppToast.error(
+          context,
+          isPdf ? 'PDF 无文本层（可能为扫描件），未摄取' : '文件内容为空，未摄取',
+        );
+      }
       return;
     }
     try {
@@ -336,7 +347,7 @@ class _KnowledgeBaseDetailPageState
           IconButton(
             icon: const Icon(LucideIcons.upload, size: 20),
             color: theme.colorScheme.primary,
-            tooltip: '上传文件（txt / md / docx）',
+            tooltip: '上传文件（txt / md / docx / pdf）',
             onPressed: _addFile,
           ),
           IconButton(
