@@ -19,6 +19,25 @@ class MessageBlockDao extends DatabaseAccessor<AppDatabase>
     return rows.map((row) => row.data).toList();
   }
 
+  /// (messageId, content) of every `main_text` block, filtered and projected
+  /// in SQL so the image/file 块（含内联 base64）从不加载、也不做 JSON 反序列化 —
+  /// 聊天搜索的全库扫描只需要这两个字段。
+  Future<List<({String messageId, String content})>> getAllMainTexts() async {
+    final rows = await customSelect(
+      "SELECT message_id, json_extract(data, '\$.content') AS content "
+      "FROM message_block_rows "
+      "WHERE json_extract(data, '\$.type') = 'main_text'",
+      readsFrom: {messageBlockRows},
+    ).get();
+    return [
+      for (final row in rows)
+        (
+          messageId: row.read<String>('message_id'),
+          content: row.readNullable<String>('content') ?? '',
+        ),
+    ];
+  }
+
   Future<MessageBlock?> getById(String id) async {
     final row = await (select(
       messageBlockRows,

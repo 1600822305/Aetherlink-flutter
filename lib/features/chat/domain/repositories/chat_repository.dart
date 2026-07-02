@@ -1,5 +1,6 @@
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/domain/search/chat_search.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
@@ -76,10 +77,10 @@ abstract interface class ChatRepository {
 
   Future<MessageBlock?> getMessageBlock(String id);
 
-  /// Every stored message block, across all messages. Used by full-database
-  /// scans such as 聊天搜索 (port of the web
-  /// `dexieStorage.message_blocks.toArray()`).
-  Future<List<MessageBlock>> getAllMessageBlocks();
+  /// Every `main_text` block's (messageId, content), across all messages —
+  /// filtered and projected at the SQL layer so 聊天搜索's full-database scan
+  /// never loads image/file 块（含内联 base64）into memory.
+  Future<List<ChatSearchableText>> getAllMainTexts();
 
   /// Blocks for the given ids, in the requested order (missing ids skipped).
   Future<List<MessageBlock>> getMessageBlocksByIds(List<String> ids);

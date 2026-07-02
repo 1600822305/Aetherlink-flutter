@@ -1,5 +1,4 @@
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
-import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 
@@ -7,11 +6,16 @@ import 'package:aetherlink_flutter/shared/domain/topic.dart';
 /// (`src/shared/services/search/queryUtils.ts` + `ChatSearchService.ts`).
 ///
 /// Stays framework-free (no Flutter / Riverpod / Drift) so it can be unit
-/// tested and lives in `domain`. The application layer fetches the full
-/// topic / message / block sets through [ChatRepository] and hands them to
+/// tested and lives in `domain`. The application layer fetches the topics,
+/// messages and `main_text` contents (projected in SQL — image/file 块的
+/// base64 永远不进内存) through [ChatRepository] and hands them to
 /// [runChatSearch]; everything below is case-insensitive substring matching,
 /// which also covers Chinese (no word segmentation — the whole phrase is one
 /// keyword), exactly like the web.
+
+/// A searchable `main_text` block's owning message id plus its text content —
+/// the only two fields the search scan needs.
+typedef ChatSearchableText = ({String messageId, String content});
 
 /// AND = every term must match; OR = any term matches.
 enum ChatSearchMode { and, or }
@@ -258,7 +262,7 @@ int _occurrenceScore(String text, ParsedQuery parsed) {
   return raw > _scoreOccurrenceCap ? _scoreOccurrenceCap : raw;
 }
 
-/// Runs a full search over [topics] / [messages] / [blocks], scoring topic
+/// Runs a full search over [topics] / [messages] / [mainTexts], scoring topic
 /// titles (base 1000) and message bodies (base 500), sorting by score then
 /// recency, and truncating to [maxResults] — the port of
 /// `ChatSearchService.search`. Only `main_text` blocks are scanned, matching
@@ -268,7 +272,7 @@ ChatSearchResultSet runChatSearch({
   required String rawQuery,
   required List<Topic> topics,
   required List<Message> messages,
-  required List<MessageBlock> blocks,
+  required List<ChatSearchableText> mainTexts,
   ChatSearchMode mode = ChatSearchMode.and,
   int maxResults = kChatSearchDefaultMaxResults,
 }) {
@@ -318,8 +322,7 @@ ChatSearchResultSet runChatSearch({
       };
 
   final seenMessageIds = <String>{};
-  for (final block in blocks) {
-    if (block is! MainTextBlock) continue;
+  for (final block in mainTexts) {
     final content = block.content;
     final meta = messageMeta[block.messageId];
     if (content.isEmpty ||
