@@ -1,5 +1,8 @@
 import 'package:docx_to_markdown/docx_to_markdown.dart';
 import 'package:flutter/foundation.dart';
+
+import 'package:aetherlink_flutter/shared/mcp_tools/tools/fetch_tool.dart'
+    show htmlToMarkdown;
 import 'package:office_to_markdown/office_to_markdown.dart';
 import 'package:pdf_to_markdown/pdf_to_markdown.dart';
 import 'package:pdfrx/pdfrx.dart' show pdfrxFlutterInitialize;
@@ -22,6 +25,23 @@ bool isXlsxFileName(String name) => name.trim().toLowerCase().endsWith('.xlsx');
 
 /// 文件名（或路径）是否为 EPUB。
 bool isEpubFileName(String name) => name.trim().toLowerCase().endsWith('.epub');
+
+/// 文件名（或路径）是否为 HTML。
+bool isHtmlFileName(String name) {
+  final lower = name.trim().toLowerCase();
+  return lower.endsWith('.html') || lower.endsWith('.htm');
+}
+
+/// 直接按 UTF-8 文本摄取的扩展名：csv / json 本身就是结构化文本，
+/// 切块与检索直接可用，无需额外转换。
+const List<String> kPlainTextKnowledgeExtensions = [
+  'txt',
+  'md',
+  'markdown',
+  'text',
+  'csv',
+  'json',
+];
 
 /// 本地解析轨支持的 Office / 电子书扩展名（功能缺口④）：无需云端解析器即可
 /// 摄取，库配置了云端解析器时仍优先走云端轨。
@@ -71,3 +91,8 @@ Future<String> convertXlsxBytesToMarkdown(Uint8List bytes) =>
 /// 无效包或解析失败抛 [OfficeParseException]。
 Future<String> convertEpubBytesToMarkdown(Uint8List bytes) =>
     compute(EpubToMarkdown.convert, bytes);
+
+/// 在后台 isolate 中把 HTML 源码转成 Markdown，用与 `@aether/fetch` /
+/// URL 抓取同一套 [htmlToMarkdown]（页面 `<title>` 会放到正文最前的 `# ` 行）。
+Future<String> convertHtmlTextToMarkdown(String html) =>
+    compute(htmlToMarkdown, html);
