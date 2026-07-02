@@ -16,6 +16,7 @@ import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_reference_item.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/knowledge/application/knowledge_providers.dart';
+import 'package:aetherlink_flutter/features/knowledge/application/knowledge_recall_history_controller.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_document_converter.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_file_processor.dart';
@@ -1820,6 +1821,9 @@ class _RecallTestSheetState extends ConsumerState<_RecallTestSheet> {
           .read(knowledgeServiceProvider)
           .search(baseId: widget.baseId, query: query);
       if (!mounted) return;
+      ref
+          .read(knowledgeRecallHistoryControllerProvider.notifier)
+          .record(widget.baseId, query);
       setState(() {
         _results = results;
         _searching = false;
@@ -1837,9 +1841,16 @@ class _RecallTestSheetState extends ConsumerState<_RecallTestSheet> {
     KnowledgeSearchMode.hybrid => '混合',
   };
 
+  void _runHistory(String query) {
+    _queryController.text = query;
+    _run();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final history = ref
+        .watch(knowledgeRecallHistoryControllerProvider)[widget.baseId];
     final base = ref
         .watch(knowledgeBaseControllerProvider(widget.baseId))
         .asData
@@ -1913,6 +1924,34 @@ class _RecallTestSheetState extends ConsumerState<_RecallTestSheet> {
                   ),
                 ],
               ),
+              if (history != null && history.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    for (final query in history)
+                      InputChip(
+                        label: Text(
+                          query,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: _searching
+                            ? null
+                            : () => _runHistory(query),
+                        onDeleted: () => ref
+                            .read(
+                              knowledgeRecallHistoryControllerProvider
+                                  .notifier,
+                            )
+                            .remove(widget.baseId, query),
+                        deleteIcon: const Icon(LucideIcons.x, size: 14),
+                      ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 12),
               if (_searching)
                 const Padding(
