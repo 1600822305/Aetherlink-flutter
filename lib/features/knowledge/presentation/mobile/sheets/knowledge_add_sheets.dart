@@ -1,4 +1,5 @@
-// 「添加数据源」相关面板：来源选择 / 添加笔记 / 添加网址。
+// 「添加数据源」相关面板：来源选择 / 添加网址。笔记来源从笔记功能里选取
+// （见 app/di/notes_knowledge_access.dart），不再现场手写。
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/widgets/knowledge_common.dart';
@@ -60,9 +61,9 @@ class KnowledgeAddSourceSheet extends StatelessWidget {
               ),
             ),
             entry(
-              icon: LucideIcons.filePlus,
+              icon: LucideIcons.notebookPen,
               title: '笔记',
-              subtitle: '手写一段文本并摄取',
+              subtitle: '从笔记中选择一篇并摄取',
               action: onNote,
             ),
             entry(
@@ -88,55 +89,6 @@ class KnowledgeAddSourceSheet extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// 添加笔记面板。
-class KnowledgeAddNoteSheet extends StatefulWidget {
-  const KnowledgeAddNoteSheet({super.key});
-
-  @override
-  State<KnowledgeAddNoteSheet> createState() => _KnowledgeAddNoteSheetState();
-}
-
-class _KnowledgeAddNoteSheetState extends State<KnowledgeAddNoteSheet> {
-  final _titleController = TextEditingController();
-  final _textController = TextEditingController();
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _textController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return KnowledgeSheetScaffold(
-      title: '添加笔记',
-      confirmLabel: '保存',
-      onConfirm: () => Navigator.of(
-        context,
-      ).pop((title: _titleController.text.trim(), text: _textController.text)),
-      children: [
-        TextField(
-          controller: _titleController,
-          decoration: const InputDecoration(labelText: '标题（可选）'),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _textController,
-          autofocus: true,
-          minLines: 4,
-          maxLines: 10,
-          decoration: const InputDecoration(
-            labelText: '内容',
-            hintText: '粘贴或输入文本（支持 txt / md）',
-            alignLabelWithHint: true,
-          ),
-        ),
-      ],
     );
   }
 }
