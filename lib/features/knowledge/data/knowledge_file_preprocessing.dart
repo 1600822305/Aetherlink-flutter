@@ -61,6 +61,8 @@ Future<String> _mineruToMarkdown(
       'files': [
         {'name': fileName},
       ],
+      // 官方推荐的 vlm 模型，解析质量优于默认 pipeline。
+      'model_version': 'vlm',
     },
     options: auth,
   );
