@@ -517,6 +517,24 @@ class _KnowledgeBaseDetailPageState
     );
   }
 
+  /// 「更多」菜单的一项：图标 + 文字标签，选中后执行 [action]。
+  PopupMenuItem<VoidCallback> _menuItem(
+    IconData icon,
+    String label,
+    VoidCallback action,
+  ) {
+    return PopupMenuItem<VoidCallback>(
+      value: action,
+      child: Row(
+        children: [
+          Icon(icon, size: 18),
+          const SizedBox(width: 12),
+          Text(label),
+        ],
+      ),
+    );
+  }
+
   /// 从已存正文重建整库索引（切块 + 向量）。适用于调整切块/嵌入配置后刷新。
   Future<void> _refresh() async {
     try {
@@ -578,40 +596,26 @@ class _KnowledgeBaseDetailPageState
         title: Text(baseName.isEmpty ? '知识库' : baseName),
         actions: [
           IconButton(
-            icon: const Icon(LucideIcons.settings2, size: 20),
-            color: theme.colorScheme.primary,
-            tooltip: '库设置（重命名 / RAG 参数）',
-            onPressed: _openBaseSettings,
-          ),
-          IconButton(
-            icon: const Icon(LucideIcons.cloudCog, size: 20),
-            color: theme.colorScheme.primary,
-            tooltip: '云端解析设置',
-            onPressed: _configureCloudParsing,
-          ),
-          IconButton(
-            icon: const Icon(LucideIcons.testTube2, size: 20),
-            color: theme.colorScheme.primary,
-            tooltip: '检索测试',
-            onPressed: _openRecallTest,
-          ),
-          IconButton(
-            icon: const Icon(LucideIcons.refreshCw, size: 20),
-            color: theme.colorScheme.primary,
-            tooltip: '重建索引',
-            onPressed: _refresh,
-          ),
-          IconButton(
-            icon: const Icon(LucideIcons.trash2, size: 20),
-            color: theme.colorScheme.primary,
-            tooltip: '回收站',
-            onPressed: _openTrash,
-          ),
-          IconButton(
             icon: const Icon(LucideIcons.plus, size: 22),
             color: theme.colorScheme.primary,
             tooltip: '添加数据源',
             onPressed: _openAddMenu,
+          ),
+          PopupMenuButton<VoidCallback>(
+            icon: Icon(
+              LucideIcons.ellipsisVertical,
+              size: 20,
+              color: theme.colorScheme.primary,
+            ),
+            tooltip: '更多',
+            onSelected: (action) => action(),
+            itemBuilder: (ctx) => [
+              _menuItem(LucideIcons.settings2, '库设置', _openBaseSettings),
+              _menuItem(LucideIcons.cloudCog, '云端解析设置', _configureCloudParsing),
+              _menuItem(LucideIcons.testTube2, '检索测试', _openRecallTest),
+              _menuItem(LucideIcons.refreshCw, '重建索引', _refresh),
+              _menuItem(LucideIcons.trash2, '回收站', _openTrash),
+            ],
           ),
           const SizedBox(width: 4),
         ],
@@ -673,7 +677,10 @@ class _KnowledgeBaseDetailPageState
                     data: (items) => _ItemList(
                       items: items,
                       theme: theme,
-                      onAdd: _addNote,
+                      onNote: _addNote,
+                      onFile: _addFile,
+                      onUrl: _addUrl,
+                      onWorkspace: _addWorkspace,
                       onTapItem: _showItemDetail,
                     ),
                   ),
@@ -688,19 +695,31 @@ class _ItemList extends StatelessWidget {
   const _ItemList({
     required this.items,
     required this.theme,
-    required this.onAdd,
+    required this.onNote,
+    required this.onFile,
+    required this.onUrl,
+    required this.onWorkspace,
     required this.onTapItem,
   });
 
   final List<KnowledgeItem> items;
   final ThemeData theme;
-  final VoidCallback onAdd;
+  final VoidCallback onNote;
+  final VoidCallback onFile;
+  final VoidCallback onUrl;
+  final VoidCallback onWorkspace;
   final ValueChanged<KnowledgeItem> onTapItem;
 
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) {
-      return _EmptyHint(theme: theme, onAdd: onAdd);
+      return _EmptyHint(
+        theme: theme,
+        onNote: onNote,
+        onFile: onFile,
+        onUrl: onUrl,
+        onWorkspace: onWorkspace,
+      );
     }
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -738,6 +757,7 @@ class _ItemRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final statusColor = _statusColor(item.status, theme);
     return ListTile(
       onTap: onTap,
       trailing: Icon(
@@ -754,13 +774,47 @@ class _ItemRow extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      subtitle: Text(
-        '${_typeLabel(item.type)} · ${_statusLabel(item.status)}',
+      subtitle: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: '${_typeLabel(item.type)} · '),
+            TextSpan(
+              text: _statusLabel(item.status),
+              style: statusColor == null
+                  ? null
+                  : TextStyle(
+                      color: statusColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+            ),
+            TextSpan(text: ' · ${_relativeTime(item.createdAt)}'),
+          ],
+        ),
         style: theme.textTheme.bodySmall?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
     );
+  }
+
+  /// 状态着色（对齐 CS statusStyles）：失败=错误色、处理中=主色、就绪不着色。
+  static Color? _statusColor(KnowledgeItemStatus status, ThemeData theme) =>
+      switch (status) {
+        KnowledgeItemStatus.failed => theme.colorScheme.error,
+        KnowledgeItemStatus.reading ||
+        KnowledgeItemStatus.chunking ||
+        KnowledgeItemStatus.embedding => theme.colorScheme.primary,
+        KnowledgeItemStatus.idle || KnowledgeItemStatus.completed => null,
+      };
+
+  static String _relativeTime(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inMinutes < 1) return '刚刚';
+    if (diff.inHours < 1) return '${diff.inMinutes} 分钟前';
+    if (diff.inDays < 1) return '${diff.inHours} 小时前';
+    if (diff.inDays < 30) return '${diff.inDays} 天前';
+    String pad(int v) => v.toString().padLeft(2, '0');
+    return '${time.year}-${pad(time.month)}-${pad(time.day)}';
   }
 
   static String _typeLabel(KnowledgeItemType type) => switch (type) {
@@ -832,13 +886,30 @@ class _SearchResults extends StatelessWidget {
 }
 
 class _EmptyHint extends StatelessWidget {
-  const _EmptyHint({required this.theme, required this.onAdd});
+  const _EmptyHint({
+    required this.theme,
+    required this.onNote,
+    required this.onFile,
+    required this.onUrl,
+    required this.onWorkspace,
+  });
 
   final ThemeData theme;
-  final VoidCallback onAdd;
+  final VoidCallback onNote;
+  final VoidCallback onFile;
+  final VoidCallback onUrl;
+  final VoidCallback onWorkspace;
 
   @override
   Widget build(BuildContext context) {
+    Widget source(IconData icon, String label, VoidCallback onTap) {
+      return OutlinedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 16),
+        label: Text(label),
+      );
+    }
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -854,16 +925,23 @@ class _EmptyHint extends StatelessWidget {
             Text('还没有任何条目', style: theme.textTheme.bodyMedium),
             const SizedBox(height: 4),
             Text(
-              '添加笔记后即可关键词搜索',
+              '添加笔记、文件、网址或工作区目录，即可在此检索',
+              textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: onAdd,
-              icon: const Icon(LucideIcons.filePlus, size: 18),
-              label: const Text('添加笔记'),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                source(LucideIcons.filePlus, '笔记', onNote),
+                source(LucideIcons.upload, '文件', onFile),
+                source(LucideIcons.link, '网址', onUrl),
+                source(LucideIcons.folder, '工作区', onWorkspace),
+              ],
             ),
           ],
         ),
@@ -1038,7 +1116,8 @@ class _AddSourceSheet extends StatelessWidget {
             entry(
               icon: LucideIcons.upload,
               title: '文件',
-              subtitle: 'txt / md / docx / pdf，配置云端解析后支持更多格式',
+              subtitle: 'txt / md / html / docx / pdf / pptx / xlsx / epub，'
+                  '配置云端解析后支持 doc / ppt / xls 等更多格式',
               action: onFile,
             ),
             entry(
@@ -1770,6 +1849,36 @@ class _ItemDetailSheet extends ConsumerWidget {
                 ),
               ),
             ),
+            if (item.status == KnowledgeItemStatus.failed &&
+                (item.error?.isNotEmpty ?? false))
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '摄取失败',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onErrorContainer,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      item.error!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             chunksAsync.when(
               loading: () => const Padding(
                 padding: EdgeInsets.all(24),
