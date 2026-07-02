@@ -30,12 +30,16 @@ class KnowledgeBasePage extends ConsumerWidget {
   const KnowledgeBasePage({super.key});
 
   Future<void> _createBase(BuildContext context, WidgetRef ref) async {
-    final result = await showDialog<_CreateBaseResult>(
+    final result = await showModalBottomSheet<_CreateBaseResult>(
       context: context,
-      builder: (ctx) => const _CreateBaseDialog(),
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => const _CreateBaseSheet(),
     );
     if (result == null || result.name.isEmpty) return;
-    await ref.read(knowledgeBasesControllerProvider.notifier).createBase(
+    await ref
+        .read(knowledgeBasesControllerProvider.notifier)
+        .createBase(
           result.name,
           embeddingModelKey: result.embeddingModelKey,
           searchMode: result.searchMode,
@@ -131,14 +135,16 @@ class KnowledgeBasePage extends ConsumerWidget {
           children: [
             _SectionHeader(title: '知识库 (${bases.length})'),
             if (bases.isEmpty)
-              _EmptyHint(theme: theme, onCreate: () => _createBase(context, ref))
+              _EmptyHint(
+                theme: theme,
+                onCreate: () => _createBase(context, ref),
+              )
             else
               _OutlinedCard(
                 child: Column(
                   children: [
                     for (var i = 0; i < bases.length; i++) ...[
-                      if (i > 0)
-                        Divider(height: 1, color: theme.dividerColor),
+                      if (i > 0) Divider(height: 1, color: theme.dividerColor),
                       _BaseRow(
                         base: bases[i],
                         onOpen: () => context.push(
@@ -228,15 +234,8 @@ class _BaseRow extends StatelessWidget {
     final theme = Theme.of(context);
     return ListTile(
       onTap: onOpen,
-      leading: Icon(
-        LucideIcons.bookOpen,
-        color: theme.colorScheme.primary,
-      ),
-      title: Text(
-        base.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
+      leading: Icon(LucideIcons.bookOpen, color: theme.colorScheme.primary),
+      title: Text(base.name, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         '${_modeLabel(base.searchMode)} · ${_statusLabel(base.status)}',
         style: theme.textTheme.bodySmall?.copyWith(
@@ -327,7 +326,7 @@ class _EmptyHint extends StatelessWidget {
   }
 }
 
-/// The choices returned by [_CreateBaseDialog]. [embeddingModelKey] is null for
+/// The choices returned by [_CreateBaseSheet]. [embeddingModelKey] is null for
 /// a pure keyword base; when set, [searchMode] is vector or hybrid.
 class _CreateBaseResult {
   const _CreateBaseResult({
@@ -341,16 +340,16 @@ class _CreateBaseResult {
   final KnowledgeSearchMode searchMode;
 }
 
-/// 新建知识库对话框：名称 + 可选嵌入模型 + 检索模式。未选嵌入模型时锁定关键词检索
+/// 新建知识库面板：名称 + 可选嵌入模型 + 检索模式。未选嵌入模型时锁定关键词检索
 /// （与服务端 `createBase` 的约束一致，避免建出「向量库却无从嵌入」的坏状态）。
-class _CreateBaseDialog extends ConsumerStatefulWidget {
-  const _CreateBaseDialog();
+class _CreateBaseSheet extends ConsumerStatefulWidget {
+  const _CreateBaseSheet();
 
   @override
-  ConsumerState<_CreateBaseDialog> createState() => _CreateBaseDialogState();
+  ConsumerState<_CreateBaseSheet> createState() => _CreateBaseSheetState();
 }
 
-class _CreateBaseDialogState extends ConsumerState<_CreateBaseDialog> {
+class _CreateBaseSheetState extends ConsumerState<_CreateBaseSheet> {
   final _controller = TextEditingController();
   String? _modelKey;
   KnowledgeSearchMode _mode = KnowledgeSearchMode.keyword;
@@ -407,106 +406,129 @@ class _CreateBaseDialogState extends ConsumerState<_CreateBaseDialog> {
         const <ModelProvider>[];
     final hasModel = _modelKey != null;
 
-    return AlertDialog(
-      title: const Text('新建知识库'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: '名称'),
-            onChanged: (_) => setState(() {}),
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
           ),
-          const SizedBox(height: 16),
-          Text(
-            '嵌入模型',
-            style: theme.textTheme.labelLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 4),
-          InkWell(
-            onTap: _pickModel,
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                children: [
-                  Icon(
-                    LucideIcons.boxes,
-                    size: 18,
-                    color: hasModel
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.onSurfaceVariant,
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12, left: 4),
+                child: Text(
+                  '新建知识库',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _modelDisplayName(providers),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium?.copyWith(
+                ),
+              ),
+              TextField(
+                controller: _controller,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: '名称'),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '嵌入模型',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 4),
+              InkWell(
+                onTap: _pickModel,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
+                      Icon(
+                        LucideIcons.boxes,
+                        size: 18,
                         color: hasModel
                             ? theme.colorScheme.primary
                             : theme.colorScheme.onSurfaceVariant,
                       ),
-                    ),
-                  ),
-                  if (hasModel)
-                    IconButton(
-                      icon: const Icon(LucideIcons.x, size: 16),
-                      visualDensity: VisualDensity.compact,
-                      tooltip: '清除',
-                      onPressed: _clearModel,
-                    ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            '检索模式',
-            style: theme.textTheme.labelLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          _ModeSelector(
-            mode: _mode,
-            enableSemantic: hasModel,
-            onChanged: (m) => setState(() => _mode = m),
-          ),
-          if (!hasModel) ...[
-            const SizedBox(height: 6),
-            Text(
-              '未选嵌入模型时仅支持关键词检索',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: _controller.text.trim().isEmpty
-              ? null
-              : () => Navigator.of(context).pop(
-                  _CreateBaseResult(
-                    name: _controller.text.trim(),
-                    embeddingModelKey: _modelKey,
-                    searchMode: _mode,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _modelDisplayName(providers),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: hasModel
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      if (hasModel)
+                        IconButton(
+                          icon: const Icon(LucideIcons.x, size: 16),
+                          visualDensity: VisualDensity.compact,
+                          tooltip: '清除',
+                          onPressed: _clearModel,
+                        ),
+                    ],
                   ),
                 ),
-          child: const Text('创建'),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '检索模式',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _ModeSelector(
+                mode: _mode,
+                enableSemantic: hasModel,
+                onChanged: (m) => setState(() => _mode = m),
+              ),
+              if (!hasModel) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '未选嵌入模型时仅支持关键词检索',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('取消'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: _controller.text.trim().isEmpty
+                        ? null
+                        : () => Navigator.of(context).pop(
+                            _CreateBaseResult(
+                              name: _controller.text.trim(),
+                              embeddingModelKey: _modelKey,
+                              searchMode: _mode,
+                            ),
+                          ),
+                    child: const Text('创建'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-      ],
+      ),
     );
   }
 }

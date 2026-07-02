@@ -17,6 +17,19 @@ import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dar
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_url_fetcher.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_workspace_source.dart';
 
+/// 一个条目切块的展示单元（[KnowledgeService.itemChunks] 的返回单元）。
+class KnowledgeChunkPreview {
+  const KnowledgeChunkPreview({
+    required this.unitIndex,
+    required this.content,
+    required this.embedded,
+  });
+
+  final int unitIndex;
+  final String content;
+  final bool embedded;
+}
+
 /// 知识库核心服务（设计文档 §5 摄取 + §6 检索）。
 ///
 /// 只依赖 [KnowledgeDao] 与一个可选的 [KnowledgeEmbedderResolver]（组合根注入，
@@ -30,10 +43,10 @@ class KnowledgeService {
     KnowledgeUrlFetcher? urlFetcher,
     KnowledgeWorkspaceSource? workspaceSource,
     KnowledgeFilePreprocessor? filePreprocessor,
-  })  : _resolveEmbedder = embedderResolver,
-        _fetchUrl = urlFetcher,
-        _workspaceSource = workspaceSource,
-        _preprocessFile = filePreprocessor;
+  }) : _resolveEmbedder = embedderResolver,
+       _fetchUrl = urlFetcher,
+       _workspaceSource = workspaceSource,
+       _preprocessFile = filePreprocessor;
 
   final KnowledgeDao _dao;
   final KnowledgeEmbedderResolver? _resolveEmbedder;
@@ -186,6 +199,39 @@ class KnowledgeService {
     );
   }
 
+  /// 更新库的可编辑配置（名称 + RAG 参数）。参数非法（空名 / 切块参数越界）视为
+  /// 坏输入抛错。切块参数变化后需调用方另行 [reindexBase] 才会对已有条目生效。
+  Future<void> updateBaseConfig(
+    String baseId, {
+    required String name,
+    required int chunkSize,
+    required int chunkOverlap,
+    required int topK,
+    required double? threshold,
+  }) async {
+    await _requireBase(baseId);
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) throw StateError('名称不能为空');
+    if (chunkSize < 100 || chunkSize > 10000) {
+      throw StateError('切块大小需在 100–10000 之间');
+    }
+    if (chunkOverlap < 0 || chunkOverlap >= chunkSize) {
+      throw StateError('切块重叠需 ≥ 0 且小于切块大小');
+    }
+    if (topK < 1 || topK > 50) throw StateError('topK 需在 1–50 之间');
+    if (threshold != null && (threshold < 0 || threshold > 1)) {
+      throw StateError('相似度阈值需在 0–1 之间');
+    }
+    await _dao.updateBaseConfig(
+      baseId,
+      name: trimmed,
+      chunkSize: chunkSize,
+      chunkOverlap: chunkOverlap,
+      topK: topK,
+      threshold: threshold,
+    );
+  }
+
   /// 抓取一个网页并摄取为条目（设计文档 §5「URL 抓取 → Markdown 快照」）。抓取器
   /// 由组合根注入（HTTP + HTML→Markdown），未注入时抛错。抓回的正文当作权威快照
   /// 落库（`type=url`、`source=url`），后续 refresh 直接从这份快照重建索引，不再
@@ -275,13 +321,12 @@ class KnowledgeService {
     required String path,
     required int mtime,
     required int size,
-  }) =>
-      jsonEncode({
-        'workspaceId': workspaceId,
-        'path': path,
-        'mtime': mtime,
-        'size': size,
-      });
+  }) => jsonEncode({
+    'workspaceId': workspaceId,
+    'path': path,
+    'mtime': mtime,
+    'size': size,
+  });
 
   /// 通用摄取骨架：切块 → 惰性/去重嵌入 → 单事务落库（条目 + 正文 + 切块 [+ 向量]）
   /// → 首个条目落地时把库状态置 completed。note / file / url 等来源只是传入不同的
@@ -330,6 +375,20 @@ class KnowledgeService {
 
   /// 删除单个条目及其派生数据（正文 + 切块 + 孤儿嵌入），见 [KnowledgeDao.deleteItem]。
   Future<void> deleteItem(String itemId) => _dao.deleteItem(itemId);
+
+  /// 某条目的全部切块（按 unitIndex 排序），供切块详情展示。[embedded]
+  /// 表示该切块是否已有向量索引。
+  Future<List<KnowledgeChunkPreview>> itemChunks(String itemId) async {
+    final rows = await _dao.listItemChunks(itemId);
+    return [
+      for (final row in rows)
+        KnowledgeChunkPreview(
+          unitIndex: row.unitIndex,
+          content: row.content,
+          embedded: row.embeddingKey != null,
+        ),
+    ];
+  }
 
   /// 重建整库派生索引（设计文档 §5.1 原子重建）。从每个条目已存的权威正文重新切块，
   /// 复用与摄取一致的惰性/去重嵌入（未变的内容命中已存向量、不重复调用嵌入 API），

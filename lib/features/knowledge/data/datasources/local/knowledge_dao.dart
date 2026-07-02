@@ -103,14 +103,14 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
   }
 
   Future<List<KnowledgeBase>> listBases() async {
-    final rows = await (select(knowledgeBaseRows)
-          ..orderBy([
-            (t) => OrderingTerm(
-              expression: t.createdAt,
-              mode: OrderingMode.desc,
-            ),
-          ]))
-        .get();
+    final rows =
+        await (select(knowledgeBaseRows)..orderBy([
+              (t) => OrderingTerm(
+                expression: t.createdAt,
+                mode: OrderingMode.desc,
+              ),
+            ]))
+            .get();
     return rows.map(_toBase).toList();
   }
 
@@ -131,6 +131,27 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
   Future<void> updateBaseFileProcessor(String id, String? processorId) {
     return (update(knowledgeBaseRows)..where((t) => t.id.equals(id))).write(
       KnowledgeBaseRowsCompanion(fileProcessorId: Value(processorId)),
+    );
+  }
+
+  /// 更新库的可编辑配置（名称 + RAG 参数，设计文档 §6）。[threshold] 传 null
+  /// 表示清除相似度阈值。
+  Future<void> updateBaseConfig(
+    String id, {
+    required String name,
+    required int chunkSize,
+    required int chunkOverlap,
+    required int topK,
+    required double? threshold,
+  }) {
+    return (update(knowledgeBaseRows)..where((t) => t.id.equals(id))).write(
+      KnowledgeBaseRowsCompanion(
+        name: Value(name),
+        chunkSize: Value(chunkSize),
+        chunkOverlap: Value(chunkOverlap),
+        topK: Value(topK),
+        threshold: Value(threshold),
+      ),
     );
   }
 
@@ -160,9 +181,9 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
     final referenced = selectOnly(kbChunkRows, distinct: true)
       ..addColumns([kbChunkRows.embeddingKey])
       ..where(kbChunkRows.embeddingKey.isNotNull());
-    return (delete(kbEmbeddingRows)
-          ..where((t) => t.embeddingKey.isNotInQuery(referenced)))
-        .go();
+    return (delete(
+      kbEmbeddingRows,
+    )..where((t) => t.embeddingKey.isNotInQuery(referenced))).go();
   }
 
   /// 手动触发孤儿嵌入 GC（设计文档 §11.1）。删除/重索引路径已自动 GC，此入口供
@@ -174,31 +195,31 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
   /// 估算（`LENGTH()`），足够支撑软配额提示。
   Future<KnowledgeStorageStats> storageStats() async {
     final baseCount = knowledgeBaseRows.id.count();
-    final baseRow = await (selectOnly(knowledgeBaseRows)
-          ..addColumns([baseCount]))
-        .getSingle();
+    final baseRow = await (selectOnly(
+      knowledgeBaseRows,
+    )..addColumns([baseCount])).getSingle();
 
     final itemCount = knowledgeItemRows.id.count();
-    final itemRow = await (selectOnly(knowledgeItemRows)
-          ..addColumns([itemCount]))
-        .getSingle();
+    final itemRow = await (selectOnly(
+      knowledgeItemRows,
+    )..addColumns([itemCount])).getSingle();
 
     final contentBytes = knowledgeContentRows.content.length.sum();
-    final contentRow = await (selectOnly(knowledgeContentRows)
-          ..addColumns([contentBytes]))
-        .getSingle();
+    final contentRow = await (selectOnly(
+      knowledgeContentRows,
+    )..addColumns([contentBytes])).getSingle();
 
     final chunkCount = kbChunkRows.chunkId.count();
     final chunkBytes = kbChunkRows.content.length.sum();
-    final chunkRow = await (selectOnly(kbChunkRows)
-          ..addColumns([chunkCount, chunkBytes]))
-        .getSingle();
+    final chunkRow = await (selectOnly(
+      kbChunkRows,
+    )..addColumns([chunkCount, chunkBytes])).getSingle();
 
     final embeddingCount = kbEmbeddingRows.embeddingKey.count();
     final embeddingBytes = kbEmbeddingRows.vector.length.sum();
-    final embeddingRow = await (selectOnly(kbEmbeddingRows)
-          ..addColumns([embeddingCount, embeddingBytes]))
-        .getSingle();
+    final embeddingRow = await (selectOnly(
+      kbEmbeddingRows,
+    )..addColumns([embeddingCount, embeddingBytes])).getSingle();
 
     return KnowledgeStorageStats(
       baseCount: baseRow.read(baseCount) ?? 0,
@@ -218,13 +239,12 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
       ..addColumns([knowledgeItemRows.id])
       ..where(
         knowledgeItemRows.baseId.equals(baseId) &
-            knowledgeItemRows.status.equals(
-              KnowledgeItemStatus.completed.name,
-            ),
+            knowledgeItemRows.status.equals(KnowledgeItemStatus.completed.name),
       );
     final query = select(kbChunkRows)
       ..where(
-        (t) => t.baseId.equals(baseId) &
+        (t) =>
+            t.baseId.equals(baseId) &
             t.itemId.isInQuery(completedItemIds) &
             t.embeddingKey.isNull(),
       )
@@ -259,15 +279,16 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
   // ── knowledge_item ──
 
   Future<List<KnowledgeItem>> listItems(String baseId) async {
-    final rows = await (select(knowledgeItemRows)
-          ..where((t) => t.baseId.equals(baseId))
-          ..orderBy([
-            (t) => OrderingTerm(
-              expression: t.createdAt,
-              mode: OrderingMode.desc,
-            ),
-          ]))
-        .get();
+    final rows =
+        await (select(knowledgeItemRows)
+              ..where((t) => t.baseId.equals(baseId))
+              ..orderBy([
+                (t) => OrderingTerm(
+                  expression: t.createdAt,
+                  mode: OrderingMode.desc,
+                ),
+              ]))
+            .get();
     return rows.map(_toItem).toList();
   }
 
@@ -297,14 +318,15 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
   /// 一个库里所有条目连同其正文（供 [reindexBase] 从权威正文重建派生切块）。
   /// 缺正文的条目（极少见的坏状态）跳过——没有正文就无从重新切块。
   Future<List<KnowledgeItemWithContent>> itemsWithContent(String baseId) async {
-    final items = await (select(knowledgeItemRows)
-          ..where((t) => t.baseId.equals(baseId))
-          ..orderBy([(t) => OrderingTerm(expression: t.createdAt)]))
-        .get();
+    final items =
+        await (select(knowledgeItemRows)
+              ..where((t) => t.baseId.equals(baseId))
+              ..orderBy([(t) => OrderingTerm(expression: t.createdAt)]))
+            .get();
     if (items.isEmpty) return const [];
-    final contents = await (select(knowledgeContentRows)
-          ..where((t) => t.itemId.isIn([for (final i in items) i.id])))
-        .get();
+    final contents = await (select(
+      knowledgeContentRows,
+    )..where((t) => t.itemId.isIn([for (final i in items) i.id]))).get();
     final byItem = {for (final c in contents) c.itemId: c};
     final result = <KnowledgeItemWithContent>[];
     for (final item in items) {
@@ -319,6 +341,14 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
       );
     }
     return result;
+  }
+
+  /// 某条目的全部切块（按 unitIndex 排序），供条目切块详情展示。
+  Future<List<KbChunkRow>> listItemChunks(String itemId) {
+    final query = select(kbChunkRows)
+      ..where((t) => t.itemId.equals(itemId))
+      ..orderBy([(t) => OrderingTerm(expression: t.unitIndex)]);
+    return query.get();
   }
 
   /// 删除单个条目及其派生数据（正文 + 切块），并回收随之产生的孤儿嵌入，全在一个
@@ -452,9 +482,7 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
       ..addColumns([knowledgeItemRows.id])
       ..where(
         knowledgeItemRows.baseId.equals(baseId) &
-            knowledgeItemRows.status.equals(
-              KnowledgeItemStatus.completed.name,
-            ),
+            knowledgeItemRows.status.equals(KnowledgeItemStatus.completed.name),
       );
 
     Expression<bool> anyToken = const Constant(false);
@@ -464,7 +492,8 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
 
     final query = select(kbChunkRows)
       ..where(
-        (t) => t.baseId.equals(baseId) &
+        (t) =>
+            t.baseId.equals(baseId) &
             t.itemId.isInQuery(completedItemIds) &
             anyToken,
       )
@@ -481,13 +510,12 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
       ..addColumns([knowledgeItemRows.id])
       ..where(
         knowledgeItemRows.baseId.equals(baseId) &
-            knowledgeItemRows.status.equals(
-              KnowledgeItemStatus.completed.name,
-            ),
+            knowledgeItemRows.status.equals(KnowledgeItemStatus.completed.name),
       );
     final query = select(kbChunkRows)
       ..where(
-        (t) => t.baseId.equals(baseId) &
+        (t) =>
+            t.baseId.equals(baseId) &
             t.itemId.isInQuery(completedItemIds) &
             t.embeddingKey.isNotNull(),
       )
@@ -502,9 +530,7 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
     final rows = await (select(
       kbEmbeddingRows,
     )..where((t) => t.embeddingKey.isIn(keyList))).get();
-    return {
-      for (final row in rows) row.embeddingKey: decodeVector(row.vector),
-    };
+    return {for (final row in rows) row.embeddingKey: decodeVector(row.vector)};
   }
 
   /// 已存在于 `kb_embedding` 的键子集，供摄取前去重（不重复调用嵌入 API）。
