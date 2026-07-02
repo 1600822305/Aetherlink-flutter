@@ -257,8 +257,9 @@ class KnowledgeService {
     );
   }
 
-  /// 更新库的可编辑配置（名称 + RAG 参数）。参数非法（空名 / 切块参数越界）视为
-  /// 坏输入抛错。切块参数变化后需调用方另行 [reindexBase] 才会对已有条目生效。
+  /// 更新库的可编辑配置（名称 + RAG 参数 + 可选 [searchMode]）。参数非法
+  /// （空名 / 切块参数越界 / 无嵌入模型却选语义检索）视为坏输入抛错。
+  /// 切块参数变化后需调用方另行 [reindexBase] 才会对已有条目生效。
   Future<void> updateBaseConfig(
     String baseId, {
     required String name,
@@ -266,8 +267,9 @@ class KnowledgeService {
     required int chunkOverlap,
     required int topK,
     required double? threshold,
+    KnowledgeSearchMode? searchMode,
   }) async {
-    await _requireBase(baseId);
+    final base = await _requireBase(baseId);
     final trimmed = name.trim();
     if (trimmed.isEmpty) throw StateError('名称不能为空');
     if (chunkSize < 100 || chunkSize > 10000) {
@@ -280,6 +282,11 @@ class KnowledgeService {
     if (threshold != null && (threshold < 0 || threshold > 1)) {
       throw StateError('相似度阈值需在 0–1 之间');
     }
+    if (searchMode != null &&
+        searchMode != KnowledgeSearchMode.keyword &&
+        (base.embeddingModelKey == null || base.embeddingModelKey!.isEmpty)) {
+      throw StateError('未选嵌入模型时仅支持关键词检索');
+    }
     await _dao.updateBaseConfig(
       baseId,
       name: trimmed,
@@ -287,6 +294,7 @@ class KnowledgeService {
       chunkOverlap: chunkOverlap,
       topK: topK,
       threshold: threshold,
+      searchMode: searchMode,
     );
   }
 

@@ -162,9 +162,7 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
 
   /// 重建单个条目的派生索引（功能缺口⑪），返回重建出的切块数。
   Future<int> reindexItem(String itemId) async {
-    final count = await ref
-        .read(knowledgeServiceProvider)
-        .reindexItem(itemId);
+    final count = await ref.read(knowledgeServiceProvider).reindexItem(itemId);
     ref.invalidate(knowledgeItemChunksProvider(itemId));
     ref.invalidate(knowledgePendingEmbeddingCountProvider(baseId));
     return count;
@@ -239,10 +237,17 @@ class KnowledgeBaseController extends _$KnowledgeBaseController {
 
   /// 更换嵌入模型并整库重建向量索引（建库后换模型 / 库级恢复重建）。
   /// 返回重建覆盖的条目数。
-  Future<int> changeEmbeddingModel(String embeddingModelKey) async {
+  Future<int> changeEmbeddingModel(
+    String embeddingModelKey, {
+    KnowledgeSearchMode? searchMode,
+  }) async {
     final count = await ref
         .read(knowledgeServiceProvider)
-        .changeEmbeddingModel(baseId, embeddingModelKey: embeddingModelKey);
+        .changeEmbeddingModel(
+          baseId,
+          embeddingModelKey: embeddingModelKey,
+          searchMode: searchMode,
+        );
     ref.invalidateSelf();
     await future;
     ref.invalidate(knowledgeBasesControllerProvider);
@@ -251,13 +256,15 @@ class KnowledgeBaseController extends _$KnowledgeBaseController {
     return count;
   }
 
-  /// 更新库的可编辑配置（名称 + RAG 参数）。名称同时显示在列表页，一并刷新。
+  /// 更新库的可编辑配置（名称 + RAG 参数 + 可选检索模式）。名称同时显示在
+  /// 列表页，一并刷新。
   Future<void> updateConfig({
     required String name,
     required int chunkSize,
     required int chunkOverlap,
     required int topK,
     required double? threshold,
+    KnowledgeSearchMode? searchMode,
   }) async {
     await ref
         .read(knowledgeServiceProvider)
@@ -268,6 +275,7 @@ class KnowledgeBaseController extends _$KnowledgeBaseController {
           chunkOverlap: chunkOverlap,
           topK: topK,
           threshold: threshold,
+          searchMode: searchMode,
         );
     ref.invalidateSelf();
     await future;

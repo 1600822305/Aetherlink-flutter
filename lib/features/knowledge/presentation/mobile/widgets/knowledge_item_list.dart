@@ -184,10 +184,14 @@ class KnowledgeSearchResultsView extends StatelessWidget {
     super.key,
     required this.results,
     required this.theme,
+    required this.items,
+    required this.onTapItem,
   });
 
   final List<KnowledgeReferenceItem> results;
   final ThemeData theme;
+  final List<KnowledgeItem> items;
+  final ValueChanged<KnowledgeItem> onTapItem;
 
   @override
   Widget build(BuildContext context) {
@@ -201,6 +205,7 @@ class KnowledgeSearchResultsView extends StatelessWidget {
         ),
       );
     }
+    final itemById = {for (final item in items) item.id: item};
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       children: [
@@ -210,20 +215,40 @@ class KnowledgeSearchResultsView extends StatelessWidget {
             children: [
               for (var i = 0; i < results.length; i++) ...[
                 if (i > 0) Divider(height: 1, color: theme.dividerColor),
-                ListTile(
-                  title: Text(
-                    results[i].content,
-                    maxLines: 4,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                  trailing: Text(
-                    '${(results[i].similarity * 100).round()}%',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                Builder(
+                  builder: (context) {
+                    final hit = results[i];
+                    final item = itemById[hit.documentId];
+                    return ListTile(
+                      onTap: item == null ? null : () => onTapItem(item),
+                      title: Text(
+                        '#${hit.index} · '
+                        '${item?.title ?? item?.source ?? '未知来源'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          hit.content,
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ),
+                      trailing: Text(
+                        '${(hit.similarity * 100).round()}%',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ],
             ],
