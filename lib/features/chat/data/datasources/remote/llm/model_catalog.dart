@@ -3,6 +3,7 @@ import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/core/network/network_proxy_config.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/llm_protocol.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_model_catalog.dart';
+import 'package:aetherlink_flutter/shared/utils/api_host.dart';
 import 'package:dio/dio.dart';
 
 /// The single entry point for the `自动获取模型` feature: lists a provider's
@@ -145,17 +146,13 @@ class LlmModelCatalogImpl implements LlmModelCatalog {
   }
 
   static String _openaiModelsUrl(String? baseUrl) {
-    final base = (baseUrl == null || baseUrl.isEmpty)
-        ? 'https://api.openai.com/v1'
-        : baseUrl.replaceAll(RegExp(r'/+$'), '');
-    return base.contains('/v1') ? '$base/models' : '$base/v1/models';
+    final base = formatApiHost(baseUrl);
+    return '${base.isEmpty ? 'https://api.openai.com/v1' : base}/models';
   }
 
   static String _anthropicModelsUrl(String? baseUrl) {
-    final base = (baseUrl == null || baseUrl.isEmpty)
-        ? 'https://api.anthropic.com'
-        : baseUrl.replaceAll(RegExp(r'/+$'), '');
-    return base.contains('/v1') ? '$base/models' : '$base/v1/models';
+    final base = formatApiHost(baseUrl);
+    return '${base.isEmpty ? 'https://api.anthropic.com/v1' : base}/models';
   }
 
   static String _geminiModelsUrl(String? baseUrl, String? apiKey) {
