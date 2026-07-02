@@ -16,6 +16,10 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/knowledge/application/knowledge_providers.dart';
+import 'package:aetherlink_flutter/features/knowledge/data/datasources/local/knowledge_dao.dart'
+    show KnowledgeStorageStats;
+import 'package:aetherlink_flutter/features/knowledge/data/knowledge_service.dart'
+    show KnowledgeService;
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 import 'package:aetherlink_flutter/features/memory/domain/embedding_model_key.dart';
 import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
@@ -78,6 +82,7 @@ class KnowledgeBasePage extends ConsumerWidget {
     final theme = Theme.of(context);
     final basesAsync = ref.watch(knowledgeBasesControllerProvider);
     final bases = basesAsync.asData?.value ?? const <KnowledgeBase>[];
+    final usage = ref.watch(knowledgeStorageUsageProvider).asData?.value;
 
     return Scaffold(
       appBar: AppBar(
@@ -146,10 +151,64 @@ class KnowledgeBasePage extends ConsumerWidget {
                   ],
                 ),
               ),
+            if (usage != null && usage.stats.itemCount > 0) ...[
+              const SizedBox(height: 16),
+              _StorageUsageCard(usage: usage, theme: theme),
+            ],
           ],
         ),
       ),
     );
+  }
+}
+
+/// 存储占用提示（设计文档 §11.1 软配额）：展示正文/索引占用，超过软上限时变色
+/// 提醒但不拦截。
+class _StorageUsageCard extends StatelessWidget {
+  const _StorageUsageCard({required this.usage, required this.theme});
+
+  final ({KnowledgeStorageStats stats, bool overSoftLimit}) usage;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    final stats = usage.stats;
+    final over = usage.overSoftLimit;
+    final color = over
+        ? theme.colorScheme.error
+        : theme.colorScheme.onSurfaceVariant;
+    return _OutlinedCard(
+      child: ListTile(
+        leading: Icon(
+          over ? LucideIcons.triangleAlert : LucideIcons.database,
+          color: over ? theme.colorScheme.error : theme.colorScheme.primary,
+        ),
+        title: Text(
+          '存储占用 ${_formatBytes(stats.totalBytes)}'
+          '${over ? '（已超软上限 ${_formatBytes(KnowledgeService.softStorageLimitBytes)}）' : ''}',
+          style: theme.textTheme.bodyMedium?.copyWith(color: color),
+        ),
+        subtitle: Text(
+          '${stats.itemCount} 个条目 · ${stats.chunkCount} 个切块 · '
+          '${stats.embeddingCount} 个向量'
+          '${over ? '，建议清理不再使用的库或条目' : ''}',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+
+  static String _formatBytes(int bytes) {
+    if (bytes >= 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+    }
+    if (bytes >= 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '$bytes B';
   }
 }
 

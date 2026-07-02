@@ -12,6 +12,8 @@ import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedding
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_ranking.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_url_fetcher.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_workspace_source.dart';
 
 /// 知识库核心服务（设计文档 §5 摄取 + §6 检索）。
 ///
@@ -20,11 +22,19 @@ import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dar
 /// 关键词检索，绝不中断。同一套核心未来供 UI（轨道 A）、聊天工具（轨道 B）、智能体
 /// （轨道 C）复用；[search] 的 [allowedIds] 现在恒传 null，预留给智能体轨道（§9）。
 class KnowledgeService {
-  KnowledgeService(this._dao, {KnowledgeEmbedderResolver? embedderResolver})
-    : _resolveEmbedder = embedderResolver;
+  KnowledgeService(
+    this._dao, {
+    KnowledgeEmbedderResolver? embedderResolver,
+    KnowledgeUrlFetcher? urlFetcher,
+    KnowledgeWorkspaceSource? workspaceSource,
+  })  : _resolveEmbedder = embedderResolver,
+        _fetchUrl = urlFetcher,
+        _workspaceSource = workspaceSource;
 
   final KnowledgeDao _dao;
   final KnowledgeEmbedderResolver? _resolveEmbedder;
+  final KnowledgeUrlFetcher? _fetchUrl;
+  final KnowledgeWorkspaceSource? _workspaceSource;
 
   Future<List<KnowledgeBase>> listBases() => _dao.listBases();
 
@@ -121,6 +131,103 @@ class KnowledgeService {
     );
   }
 
+  /// 抓取一个网页并摄取为条目（设计文档 §5「URL 抓取 → Markdown 快照」）。抓取器
+  /// 由组合根注入（HTTP + HTML→Markdown），未注入时抛错。抓回的正文当作权威快照
+  /// 落库（`type=url`、`source=url`），后续 refresh 直接从这份快照重建索引，不再
+  /// 重新联网。`title` 显式给定时优先，否则用页面 `<title>`，再回落到 URL 本身。
+  /// 抓取失败或内容为空视为坏输入抛错。
+  Future<KnowledgeItem> addUrl({
+    required String baseId,
+    required String url,
+    String? title,
+  }) async {
+    final base = await _requireBase(baseId);
+    final normalized = url.trim();
+    if (normalized.isEmpty) {
+      throw StateError('URL 为空，无法摄取');
+    }
+    final fetcher = _fetchUrl;
+    if (fetcher == null) {
+      throw StateError('未配置 URL 抓取器，无法摄取网页');
+    }
+    final page = await fetcher(normalized);
+    final text = page.markdown.trim();
+    if (text.isEmpty) {
+      throw StateError('URL 抓取到的内容为空: $normalized');
+    }
+    final explicit = title?.trim();
+    final fetched = page.title?.trim();
+    final label = (explicit != null && explicit.isNotEmpty)
+        ? explicit
+        : (fetched != null && fetched.isNotEmpty ? fetched : normalized);
+    return _ingest(
+      base: base,
+      type: KnowledgeItemType.url,
+      source: normalized,
+      conceptId: normalized,
+      title: label,
+      text: text,
+    );
+  }
+
+  /// 摄取一个工作区目录（设计文档 §8「workspace 目录源」）。经注入的
+  /// [KnowledgeWorkspaceSource] 递归遍历 [workspaceId] 根目录下的文本文件，逐个当作
+  /// 一条 `type=workspace` 条目落库，并把摄取时的 `{workspaceId, path, mtime, size}`
+  /// 记为来源指纹（[KnowledgeItem.sourceFingerprint]），供 §8.1 的 staleness 检测在
+  /// 检索时异步比对。未配置工作区源时抛错；目录里无可摄取文本时抛错（坏输入）。
+  /// 返回成功摄取的条目列表。
+  Future<List<KnowledgeItem>> addWorkspace({
+    required String baseId,
+    required String workspaceId,
+  }) async {
+    final base = await _requireBase(baseId);
+    final source = _workspaceSource;
+    if (source == null) {
+      throw StateError('未配置工作区源，无法摄取目录');
+    }
+    final files = await source.listTextFiles(workspaceId);
+    final ingestible = [
+      for (final f in files)
+        if (f.text.trim().isNotEmpty) f,
+    ];
+    if (ingestible.isEmpty) {
+      throw StateError('工作区目录里没有可摄取的文本文件: $workspaceId');
+    }
+    final items = <KnowledgeItem>[];
+    for (final file in ingestible) {
+      final item = await _ingest(
+        base: base,
+        type: KnowledgeItemType.workspace,
+        source: file.path,
+        conceptId: file.path,
+        title: file.name,
+        text: file.text,
+        sourceFingerprint: _encodeFingerprint(
+          workspaceId: workspaceId,
+          path: file.path,
+          mtime: file.mtime,
+          size: file.size,
+        ),
+      );
+      items.add(item);
+    }
+    return items;
+  }
+
+  /// 把 workspace 条目的来源快照编成 JSON 存入 [KnowledgeItem.sourceFingerprint]。
+  static String _encodeFingerprint({
+    required String workspaceId,
+    required String path,
+    required int mtime,
+    required int size,
+  }) =>
+      jsonEncode({
+        'workspaceId': workspaceId,
+        'path': path,
+        'mtime': mtime,
+        'size': size,
+      });
+
   /// 通用摄取骨架：切块 → 惰性/去重嵌入 → 单事务落库（条目 + 正文 + 切块 [+ 向量]）
   /// → 首个条目落地时把库状态置 completed。note / file / url 等来源只是传入不同的
   /// `type` / `source` / `title`，管线完全一致。
@@ -131,6 +238,7 @@ class KnowledgeService {
     required String conceptId,
     required String title,
     required String text,
+    String? sourceFingerprint,
   }) async {
     final contentHash = sha256.convert(utf8.encode(text)).toString();
     final chunks = chunkText(
@@ -146,6 +254,7 @@ class KnowledgeService {
       conceptId: conceptId,
       title: title,
       status: KnowledgeItemStatus.completed,
+      sourceFingerprint: sourceFingerprint,
       createdAt: DateTime.now(),
     );
 
@@ -204,6 +313,95 @@ class KnowledgeService {
     return entries.length;
   }
 
+  /// 失败恢复（设计文档 §11）：只补嵌本库里 `embeddingKey` 为空的切块（摄取时嵌入
+  /// 失败/中断留下的待补索引），已嵌入的切块不重算、不重复扣费——比整库
+  /// [reindexBase] 轻得多。关键词库 / 无嵌入器 / 无待补切块时直接返回 0；嵌入调用
+  /// 失败同样返回 0（best-effort，下次再重试）。返回本次补嵌成功的切块数。
+  Future<int> retryPendingEmbeddings(String baseId) async {
+    final base = await _requireBase(baseId);
+    final modelKey = base.embeddingModelKey;
+    final resolver = _resolveEmbedder;
+    if (resolver == null ||
+        modelKey == null ||
+        modelKey.isEmpty ||
+        base.searchMode == KnowledgeSearchMode.keyword) {
+      return 0;
+    }
+    final pending = await _dao.pendingEmbeddingChunks(baseId);
+    if (pending.isEmpty) return 0;
+    try {
+      final embedder = await resolver(modelKey);
+      if (embedder == null) return 0;
+
+      final chunkKeys = <String, String>{};
+      final keyToText = <String, String>{};
+      for (final chunk in pending) {
+        final key = computeEmbeddingKey(modelKey, chunk.content);
+        chunkKeys[chunk.chunkId] = key;
+        keyToText.putIfAbsent(key, () => chunk.content);
+      }
+
+      final existing = await _dao.existingEmbeddingKeys(keyToText.keys);
+      final missingKeys = [
+        for (final key in keyToText.keys)
+          if (!existing.contains(key)) key,
+      ];
+      final vectors = <String, List<double>>{};
+      if (missingKeys.isNotEmpty) {
+        final texts = [for (final key in missingKeys) keyToText[key]!];
+        final embedded = await embedder.embed(texts);
+        for (var i = 0; i < missingKeys.length && i < embedded.length; i++) {
+          if (embedded[i].isNotEmpty) vectors[missingKeys[i]] = embedded[i];
+        }
+      }
+
+      // 只给「向量已落库（既存或本次新嵌）」的切块补键，嵌入仍缺失的下次再试。
+      final resolved = <String, String>{
+        for (final entry in chunkKeys.entries)
+          if (existing.contains(entry.value) ||
+              vectors.containsKey(entry.value))
+            entry.key: entry.value,
+      };
+      if (resolved.isEmpty) return 0;
+      await _dao.attachChunkEmbeddings(
+        chunkKeys: resolved,
+        embeddings: vectors,
+      );
+      return resolved.length;
+    } catch (_) {
+      // best-effort：嵌入器报错不影响已有数据，保持待补状态供下次重试。
+      return 0;
+    }
+  }
+
+  /// 某库当前待补嵌入的切块数（供 UI 展示「重试」入口）。关键词库恒为 0——
+  /// 它本就不需要嵌入。
+  Future<int> pendingEmbeddingCount(String baseId) async {
+    final base = await _dao.getBase(baseId);
+    if (base == null || base.searchMode == KnowledgeSearchMode.keyword) {
+      return 0;
+    }
+    final pending = await _dao.pendingEmbeddingChunks(baseId);
+    return pending.length;
+  }
+
+  /// 知识库整体存储占用软配额（设计文档 §11.1）：超过后只提示不拦截。
+  static const int softStorageLimitBytes = 200 * 1024 * 1024;
+
+  /// 存储占用汇总 + 软配额判定（设计文档 §11.1）。
+  Future<({KnowledgeStorageStats stats, bool overSoftLimit})>
+  storageUsage() async {
+    final stats = await _dao.storageStats();
+    return (
+      stats: stats,
+      overSoftLimit: stats.totalBytes > softStorageLimitBytes,
+    );
+  }
+
+  /// 手动回收孤儿嵌入（设计文档 §11.1），返回回收行数。常规删除/重索引路径已
+  /// 自动 GC，此入口供存储管理兜底。
+  Future<int> gcOrphanEmbeddings() => _dao.gcOrphanEmbeddings();
+
   Future<KnowledgeBase> _requireBase(String baseId) async {
     final base = await _dao.getBase(baseId);
     if (base == null) {
@@ -228,18 +426,83 @@ class KnowledgeService {
     if (base == null) return const [];
     final limit = topK ?? base.topK;
 
+    final List<KnowledgeReferenceItem> refs;
     switch (base.searchMode) {
       case KnowledgeSearchMode.keyword:
-        return _keywordSearch(base, query, limit);
+        refs = await _keywordSearch(base, query, limit);
       case KnowledgeSearchMode.vector:
         final scored = await _vectorScored(base, query);
-        if (scored == null) return _keywordSearch(base, query, limit);
-        return _toReferences(base, _applyThreshold(base, scored), limit);
+        refs = scored == null
+            ? await _keywordSearch(base, query, limit)
+            : _toReferences(base, _applyThreshold(base, scored), limit);
       case KnowledgeSearchMode.hybrid:
         final vector = await _vectorScored(base, query);
-        if (vector == null) return _keywordSearch(base, query, limit);
-        final keyword = await _keywordScored(base, query);
-        return _hybridReferences(base, keyword, vector, limit);
+        if (vector == null) {
+          refs = await _keywordSearch(base, query, limit);
+        } else {
+          final keyword = await _keywordScored(base, query);
+          refs = _hybridReferences(base, keyword, vector, limit);
+        }
+    }
+    return _annotateStaleness(refs);
+  }
+
+  /// 为命中结果里的 workspace 条目标记「可能已过期」（设计文档 §8.1）。对结果中出现
+  /// 的每个 workspace 条目，用存好的来源指纹与后端当前 `(mtime, size)` 异步比对：变化
+  /// 或文件失联即置 `possiblyStale=true`。全程 best-effort——未配置工作区源、无
+  /// workspace 条目、或任何比对错误都原样返回，绝不阻断检索。
+  Future<List<KnowledgeReferenceItem>> _annotateStaleness(
+    List<KnowledgeReferenceItem> refs,
+  ) async {
+    final source = _workspaceSource;
+    if (source == null || refs.isEmpty) return refs;
+    final itemIds = <String>{
+      for (final r in refs)
+        if (r.documentId != null) r.documentId!,
+    };
+    final staleIds = <String>{};
+    for (final id in itemIds) {
+      try {
+        final item = await _dao.getItem(id);
+        if (item == null || item.type != KnowledgeItemType.workspace) continue;
+        final fp = _decodeFingerprint(item.sourceFingerprint);
+        if (fp == null) continue;
+        final stat = await source.statFile(fp.workspaceId, fp.path);
+        if (stat == null || stat.mtime != fp.mtime || stat.size != fp.size) {
+          staleIds.add(id);
+        }
+      } catch (_) {
+        // best-effort：任何比对错误都不影响检索结果。
+      }
+    }
+    if (staleIds.isEmpty) return refs;
+    return [
+      for (final r in refs)
+        if (r.documentId != null && staleIds.contains(r.documentId))
+          r.copyWith(possiblyStale: true)
+        else
+          r,
+    ];
+  }
+
+  /// 解析存好的来源指纹 JSON；格式不符 / 缺字段返回 null（→ 跳过该条 staleness 比对）。
+  static ({String workspaceId, String path, int mtime, int size})?
+  _decodeFingerprint(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final workspaceId = decoded['workspaceId'];
+      final path = decoded['path'];
+      if (workspaceId is! String || path is! String) return null;
+      return (
+        workspaceId: workspaceId,
+        path: path,
+        mtime: (decoded['mtime'] as num?)?.toInt() ?? 0,
+        size: (decoded['size'] as num?)?.toInt() ?? 0,
+      );
+    } catch (_) {
+      return null;
     }
   }
 
@@ -284,7 +547,16 @@ class KnowledgeService {
           if (embedded[i].isNotEmpty) vectors[missingKeys[i]] = embedded[i];
         }
       }
-      return (keys: keys, vectors: vectors);
+      // 只把「向量已落库（既存或本次新嵌）」的键写到切块上；嵌入缺失的切块保持
+      // 空键（= 待补状态），供 [retryPendingEmbeddings] 事后补嵌。
+      final resolved = <int, String>{
+        for (final entry in keys.entries)
+          if (existing.contains(entry.value) ||
+              vectors.containsKey(entry.value))
+            entry.key: entry.value,
+      };
+      if (resolved.isEmpty) return null;
+      return (keys: resolved, vectors: vectors);
     } catch (_) {
       // best-effort：任何嵌入错误都不阻断摄取，落成纯关键词切块。
       return null;

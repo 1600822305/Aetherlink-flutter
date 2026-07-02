@@ -46,6 +46,7 @@ class KnowledgeItem {
     required this.createdAt,
     this.title,
     this.error,
+    this.sourceFingerprint,
   });
 
   final String id;
@@ -64,5 +65,10 @@ class KnowledgeItem {
 
   /// 摄取失败原因（成功时为空）。
   final String? error;
+
+  /// 来源指纹快照，JSON 编码（设计文档 §8.1）。仅 workspace 条目使用：记录摄取时
+  /// 的 `{path, mtime, size}`，检索时异步比对以标记 `possiblyStale`。其它来源为空。
+  final String? sourceFingerprint;
+
   final DateTime createdAt;
 }

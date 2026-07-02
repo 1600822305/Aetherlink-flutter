@@ -4,6 +4,7 @@ import 'dart:isolate';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -14,6 +15,8 @@ import 'package:aetherlink_flutter/features/backup/domain/backup_manifest.dart';
 import 'package:aetherlink_flutter/features/backup/domain/restore_plan.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_chunking.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
@@ -91,6 +94,7 @@ class BackupService {
         providers: data.providers.length,
         groups: data.groups.length,
         settings: data.settings.length,
+        knowledge: data.knowledge.length,
       ),
       options: BackupOptions(
         includeMessages: includeMessages,
@@ -120,9 +124,10 @@ class BackupService {
       final providersJson = jsonEncode(data.providers);
       final groupsJson = jsonEncode(data.groups);
       final settingsJson = jsonEncode(data.settings);
+      final knowledgeJson = jsonEncode(data.knowledge);
 
       final allBytes = utf8.encode(
-        '$topicsJson$messagesJson$blocksJson$assistantsJson$providersJson$groupsJson$settingsJson',
+        '$topicsJson$messagesJson$blocksJson$assistantsJson$providersJson$groupsJson$settingsJson$knowledgeJson',
       );
       final checksumHex = sha256.convert(allBytes).toString();
       final manifestWithChecksum = BackupManifest(
@@ -147,6 +152,7 @@ class BackupService {
         providersJson: providersJson,
         groupsJson: groupsJson,
         settingsJson: settingsJson,
+        knowledgeJson: knowledgeJson,
       );
     });
 
@@ -314,6 +320,7 @@ class BackupService {
         BackupCategory.providers: s.providers,
         BackupCategory.groups: s.groups,
         BackupCategory.settings: s.settings,
+        BackupCategory.knowledge: s.knowledge,
       },
     );
   }
@@ -1313,6 +1320,47 @@ class BackupService {
             .toList();
       }
 
+      // 知识库只导权威数据（库 + 条目 + 正文，设计文档 §11.2）；派生的切块/向量
+      // 可从正文重建，不进备份。一个库连同其条目打包成一条记录，恢复时整库原子写入。
+      final baseRows = await db.select(db.knowledgeBaseRows).get();
+      final itemRows = await db.select(db.knowledgeItemRows).get();
+      final contentRows = await db.select(db.knowledgeContentRows).get();
+      final contentByItem = {for (final c in contentRows) c.itemId: c};
+      final knowledgeJson = <Map<String, dynamic>>[
+        for (final base in baseRows)
+          {
+            'id': base.id,
+            'name': base.name,
+            'embeddingModelKey': base.embeddingModelKey,
+            'dimensions': base.dimensions,
+            'chunkSize': base.chunkSize,
+            'chunkOverlap': base.chunkOverlap,
+            'searchMode': base.searchMode,
+            'threshold': base.threshold,
+            'topK': base.topK,
+            'scope': base.scope.toJson(),
+            'status': base.status,
+            'createdAt': base.createdAt,
+            'items': [
+              for (final item in itemRows)
+                if (item.baseId == base.id)
+                  {
+                    'id': item.id,
+                    'type': item.type,
+                    'source': item.source,
+                    'conceptId': item.conceptId,
+                    'title': item.title,
+                    'status': item.status,
+                    'error': item.error,
+                    'sourceFingerprint': item.sourceFingerprint,
+                    'createdAt': item.createdAt,
+                    'content': contentByItem[item.id]?.content,
+                    'contentHash': contentByItem[item.id]?.contentHash,
+                  },
+            ],
+          },
+      ];
+
       return _RawBackupData(
         topics: topicsJson,
         messages: messagesJson,
@@ -1321,6 +1369,7 @@ class BackupService {
         providers: providersJson,
         groups: groupsJson,
         settings: settingsJson,
+        knowledge: knowledgeJson,
       );
     });
   }
@@ -1339,6 +1388,7 @@ class BackupService {
     required String providersJson,
     required String groupsJson,
     required String settingsJson,
+    required String knowledgeJson,
   }) {
     final archive = Archive();
 
@@ -1355,6 +1405,7 @@ class BackupService {
     addJson('providers.json', providersJson);
     addJson('groups.json', groupsJson);
     addJson('settings.json', settingsJson);
+    addJson('knowledge.json', knowledgeJson);
 
     final zipData = ZipEncoder().encode(archive);
     if (zipData != null) {
@@ -1408,6 +1459,7 @@ class BackupService {
       'providers.json',
       'groups.json',
       'settings.json',
+      'knowledge.json',
     ];
 
     final buffer = StringBuffer();
@@ -1446,6 +1498,7 @@ class BackupService {
       providers: await readJsonList('providers.json'),
       groups: await readJsonList('groups.json'),
       settings: await readJsonList('settings.json'),
+      knowledge: await readJsonList('knowledge.json'),
     );
   }
 
@@ -1490,6 +1543,14 @@ class BackupService {
         // restoring a native Flutter backup (which has none) doesn't wipe them.
         if (selected(BackupCategory.memories) && data.memories.isNotEmpty) {
           await db.delete(db.memoryRows).go();
+        }
+        // 同理：旧备份没有 knowledge.json，不能拿空集把现有知识库清掉。清表顺序
+        // 先派生后权威，孤儿嵌入在写入完成后统一 GC。
+        if (selected(BackupCategory.knowledge) && data.knowledge.isNotEmpty) {
+          await db.delete(db.kbChunkRows).go();
+          await db.delete(db.knowledgeContentRows).go();
+          await db.delete(db.knowledgeItemRows).go();
+          await db.delete(db.knowledgeBaseRows).go();
         }
       }
 
@@ -1583,6 +1644,19 @@ class BackupService {
           skipWhen: (json) => json['isDeleted'] == true,
           onProgress: onProgress,
         );
+      }
+      if (selected(BackupCategory.knowledge) && data.knowledge.isNotEmpty) {
+        stats[BackupCategory.knowledge] = await _restoreList(
+          BackupCategory.knowledge,
+          data.knowledge,
+          mode,
+          exists: (id) async =>
+              await db.knowledgeDao.getBase(id) != null,
+          insert: _rawInsertKnowledgeBase,
+          onProgress: onProgress,
+        );
+        // 重建完成后回收不再被任何切块引用的孤儿嵌入（设计文档 §11.1）。
+        await db.knowledgeDao.gcOrphanEmbeddings();
       }
     });
 
@@ -1765,6 +1839,97 @@ class BackupService {
     }
   }
 
+  /// 恢复一个知识库（设计文档 §11.2）：写回权威行（库 + 条目 + 正文），并用库的
+  /// 切块参数从正文重建派生 `kb_chunk`——`embeddingKey` 留空，关键词检索立即可用，
+  /// 向量索引由重试补嵌 / refresh 惰性回填（不在恢复路径里联网调嵌入 API）。
+  Future<bool> _rawInsertKnowledgeBase(Map<String, dynamic> json) async {
+    try {
+      final id = (json['id'] ?? '').toString();
+      final name = (json['name'] ?? '').toString();
+      if (id.isEmpty || name.isEmpty) return false;
+      final chunkSize = (json['chunkSize'] as num?)?.toInt() ?? 1000;
+      final chunkOverlap = (json['chunkOverlap'] as num?)?.toInt() ?? 200;
+      final scopeJson = json['scope'];
+      final scope = scopeJson is Map<String, dynamic>
+          ? KnowledgeScope.fromJson(scopeJson)
+          : const KnowledgeScope();
+
+      await db.into(db.knowledgeBaseRows).insertOnConflictUpdate(
+        KnowledgeBaseRowsCompanion.insert(
+          id: id,
+          name: name,
+          embeddingModelKey: Value(json['embeddingModelKey'] as String?),
+          dimensions: Value((json['dimensions'] as num?)?.toInt()),
+          chunkSize: Value(chunkSize),
+          chunkOverlap: Value(chunkOverlap),
+          searchMode: Value((json['searchMode'] ?? 'keyword').toString()),
+          threshold: Value((json['threshold'] as num?)?.toDouble()),
+          topK: Value((json['topK'] as num?)?.toInt() ?? 5),
+          scope: scope,
+          status: Value((json['status'] ?? 'idle').toString()),
+          createdAt: (json['createdAt'] as num?)?.toInt() ?? 0,
+        ),
+      );
+
+      final items = json['items'];
+      if (items is! List) return true;
+      for (final raw in items) {
+        if (raw is! Map<String, dynamic>) continue;
+        final itemId = (raw['id'] ?? '').toString();
+        final content = raw['content'] as String?;
+        if (itemId.isEmpty) continue;
+        await db.into(db.knowledgeItemRows).insertOnConflictUpdate(
+          KnowledgeItemRowsCompanion.insert(
+            id: itemId,
+            baseId: id,
+            type: (raw['type'] ?? 'note').toString(),
+            source: (raw['source'] ?? '').toString(),
+            conceptId: (raw['conceptId'] ?? itemId).toString(),
+            title: Value(raw['title'] as String?),
+            status: Value((raw['status'] ?? 'idle').toString()),
+            error: Value(raw['error'] as String?),
+            sourceFingerprint: Value(raw['sourceFingerprint'] as String?),
+            createdAt: (raw['createdAt'] as num?)?.toInt() ?? 0,
+          ),
+        );
+        if (content == null) continue;
+        final contentHash = (raw['contentHash'] ?? '').toString();
+        await db.into(db.knowledgeContentRows).insertOnConflictUpdate(
+          KnowledgeContentRowsCompanion.insert(
+            itemId: itemId,
+            content: content,
+            contentHash: contentHash,
+          ),
+        );
+        // 派生切块：先清后建，保证 merge 模式下重复恢复也幂等。
+        await (db.delete(db.kbChunkRows)
+              ..where((t) => t.itemId.equals(itemId)))
+            .go();
+        for (final chunk in chunkText(
+          content,
+          size: chunkSize,
+          overlap: chunkOverlap,
+        )) {
+          await db.into(db.kbChunkRows).insert(
+            KbChunkRowsCompanion.insert(
+              chunkId: '$itemId#${chunk.unitIndex}',
+              baseId: id,
+              itemId: itemId,
+              unitIndex: chunk.unitIndex,
+              charStart: chunk.charStart,
+              charEnd: chunk.charEnd,
+              content: chunk.text,
+              contentHash: contentHash,
+            ),
+          );
+        }
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Coerces a Web timestamp (ISO-8601 string or epoch number) to epoch millis;
   /// returns 0 when absent or unparseable.
   static int _epochMillis(Object? value) {
@@ -1875,6 +2040,10 @@ class _RawBackupData {
   /// backups, which don't carry memories.
   final List<Map<String, dynamic>> memories;
 
+  /// 知识库权威数据（设计文档 §11.2）：每条记录是一个库连同其条目/正文；派生的
+  /// 切块/向量不进备份，恢复时从正文重建。旧备份没有这一段时为空。
+  final List<Map<String, dynamic>> knowledge;
+
   const _RawBackupData({
     required this.topics,
     required this.messages,
@@ -1884,5 +2053,6 @@ class _RawBackupData {
     required this.groups,
     required this.settings,
     this.memories = const [],
+    this.knowledge = const [],
   });
 }

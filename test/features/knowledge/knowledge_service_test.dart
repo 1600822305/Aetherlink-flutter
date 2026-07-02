@@ -10,6 +10,8 @@ import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedding
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_ranking.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_url_fetcher.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_workspace_source.dart';
 
 /// Deterministic bag-of-words embedder: each text maps to a vector counting how
 /// many times each [vocab] term occurs (case-insensitive substring). Records
@@ -32,6 +34,45 @@ class _FakeEmbedder implements KnowledgeEmbedder {
             term.allMatches(text.toLowerCase()).length.toDouble(),
         ],
     ];
+  }
+}
+
+/// In-memory workspace source. [files] maps an opaque path to a
+/// `(name, text, mtime, size)` record — tests mutate/remove entries to simulate
+/// file edits and deletions between ingestion and search. [statThrows] makes
+/// [statFile] throw, to prove staleness checks stay best-effort.
+class _FakeWorkspaceSource implements KnowledgeWorkspaceSource {
+  _FakeWorkspaceSource(
+    Map<String, (String, String, int, int)> files, {
+    this.statThrows = false,
+  }) : files = Map.of(files);
+
+  final Map<String, (String, String, int, int)> files;
+  final bool statThrows;
+
+  @override
+  Future<List<KnowledgeWorkspaceFile>> listTextFiles(
+    String workspaceId,
+  ) async => [
+    for (final entry in files.entries)
+      KnowledgeWorkspaceFile(
+        path: entry.key,
+        name: entry.value.$1,
+        text: entry.value.$2,
+        mtime: entry.value.$3,
+        size: entry.value.$4,
+      ),
+  ];
+
+  @override
+  Future<KnowledgeWorkspaceStat?> statFile(
+    String workspaceId,
+    String path,
+  ) async {
+    if (statThrows) throw StateError('stat failed');
+    final file = files[path];
+    if (file == null) return null;
+    return KnowledgeWorkspaceStat(mtime: file.$3, size: file.$4);
   }
 }
 
@@ -255,6 +296,182 @@ void main() {
         () => service.addFile(baseId: base.id, fileName: 'blank.txt', text: '  '),
         throwsStateError,
       );
+    });
+
+    test('addUrl fetches, converts and ingests a url-typed, searchable item',
+        () async {
+      final calls = <String>[];
+      final urlService = KnowledgeService(
+        db.knowledgeDao,
+        urlFetcher: (url) async {
+          calls.add(url);
+          return const KnowledgeFetchedPage(
+            markdown: '# Riverpod Guide\n\nProviders compose your app state.',
+            title: 'Riverpod Guide',
+          );
+        },
+      );
+      final base = await urlService.createBase(name: 'KB');
+      final item = await urlService.addUrl(
+        baseId: base.id,
+        url: '  https://example.com/riverpod  ',
+      );
+
+      expect(calls, ['https://example.com/riverpod']); // trimmed before fetch
+      expect(item.type, KnowledgeItemType.url);
+      expect(item.source, 'https://example.com/riverpod');
+      expect(item.title, 'Riverpod Guide'); // fetched page title
+
+      final hits =
+          await urlService.search(baseId: base.id, query: 'providers');
+      expect(hits, isNotEmpty);
+      expect(hits.first.content.toLowerCase(), contains('providers'));
+    });
+
+    test('addUrl prefers an explicit title and falls back to the URL',
+        () async {
+      final urlService = KnowledgeService(
+        db.knowledgeDao,
+        urlFetcher: (url) async =>
+            const KnowledgeFetchedPage(markdown: 'body text', title: null),
+      );
+      final base = await urlService.createBase(name: 'KB');
+
+      final explicit = await urlService.addUrl(
+        baseId: base.id,
+        url: 'https://a.test',
+        title: '  My Title  ',
+      );
+      expect(explicit.title, 'My Title');
+
+      final fallback =
+          await urlService.addUrl(baseId: base.id, url: 'https://b.test');
+      expect(fallback.title, 'https://b.test'); // no title → URL itself
+    });
+
+    test('addUrl rejects empty url / empty fetched content / no fetcher',
+        () async {
+      final base = await service.createBase(name: 'KB');
+      // No fetcher configured on the default `service`.
+      expect(
+        () => service.addUrl(baseId: base.id, url: 'https://x.test'),
+        throwsStateError,
+      );
+
+      final emptyFetcher = KnowledgeService(
+        db.knowledgeDao,
+        urlFetcher: (url) async =>
+            const KnowledgeFetchedPage(markdown: '   ', title: null),
+      );
+      final base2 = await emptyFetcher.createBase(name: 'KB2');
+      expect(
+        () => emptyFetcher.addUrl(baseId: base2.id, url: '  '),
+        throwsStateError, // empty url
+      );
+      expect(
+        () => emptyFetcher.addUrl(baseId: base2.id, url: 'https://x.test'),
+        throwsStateError, // empty fetched content
+      );
+    });
+
+    test('addWorkspace ingests every text file with a source fingerprint',
+        () async {
+      final wsService = KnowledgeService(
+        db.knowledgeDao,
+        workspaceSource: _FakeWorkspaceSource({
+          '/a.md': ('a.md', 'alpha content', 100, 13),
+          '/sub/b.txt': ('b.txt', 'bravo content', 200, 13),
+          '/empty.txt': ('empty.txt', '   ', 300, 3), // blank → skipped
+        }),
+      );
+      final base = await wsService.createBase(name: 'KB');
+      final items = await wsService.addWorkspace(
+        baseId: base.id,
+        workspaceId: 'ws-1',
+      );
+
+      expect(items, hasLength(2));
+      for (final item in items) {
+        expect(item.type, KnowledgeItemType.workspace);
+        expect(item.sourceFingerprint, isNotNull);
+        expect(item.sourceFingerprint, contains('"workspaceId":"ws-1"'));
+      }
+      // Ingested content is searchable through the same pipeline.
+      final hits = await wsService.search(baseId: base.id, query: 'bravo');
+      expect(hits, isNotEmpty);
+      expect(hits.first.possiblyStale, isNot(true));
+    });
+
+    test('addWorkspace rejects missing source / no ingestible files',
+        () async {
+      final base = await service.createBase(name: 'KB');
+      // No workspace source configured on the default `service`.
+      expect(
+        () => service.addWorkspace(baseId: base.id, workspaceId: 'ws-1'),
+        throwsStateError,
+      );
+
+      final emptyService = KnowledgeService(
+        db.knowledgeDao,
+        workspaceSource: _FakeWorkspaceSource(const {}),
+      );
+      final base2 = await emptyService.createBase(name: 'KB2');
+      expect(
+        () => emptyService.addWorkspace(baseId: base2.id, workspaceId: 'ws-1'),
+        throwsStateError,
+      );
+    });
+
+    test('search marks workspace hits possiblyStale when the file changed',
+        () async {
+      final source = _FakeWorkspaceSource({
+        '/a.md': ('a.md', 'zulu content', 100, 12),
+        '/b.md': ('b.md', 'yankee content', 100, 14),
+      });
+      final wsService =
+          KnowledgeService(db.knowledgeDao, workspaceSource: source);
+      final base = await wsService.createBase(name: 'KB');
+      await wsService.addWorkspace(baseId: base.id, workspaceId: 'ws-1');
+
+      // Untouched files → no stale flag.
+      var hits = await wsService.search(baseId: base.id, query: 'zulu');
+      expect(hits, isNotEmpty);
+      expect(hits.first.possiblyStale, isNot(true));
+
+      // mtime changed → stale; deleted file (stat null) → stale.
+      source.files['/a.md'] = ('a.md', 'zulu content', 999, 12);
+      hits = await wsService.search(baseId: base.id, query: 'zulu');
+      expect(hits.first.possiblyStale, true);
+
+      source.files.remove('/b.md');
+      hits = await wsService.search(baseId: base.id, query: 'yankee');
+      expect(hits.first.possiblyStale, true);
+
+      // Non-workspace items are never flagged.
+      await wsService.addNote(
+        baseId: base.id,
+        title: 'note',
+        text: 'xray note',
+      );
+      hits = await wsService.search(baseId: base.id, query: 'xray');
+      expect(hits, isNotEmpty);
+      expect(hits.first.possiblyStale, isNot(true));
+    });
+
+    test('staleness check is best-effort: stat errors never break search',
+        () async {
+      final source = _FakeWorkspaceSource(
+        {'/a.md': ('a.md', 'whiskey content', 100, 15)},
+        statThrows: true,
+      );
+      final wsService =
+          KnowledgeService(db.knowledgeDao, workspaceSource: source);
+      final base = await wsService.createBase(name: 'KB');
+      await wsService.addWorkspace(baseId: base.id, workspaceId: 'ws-1');
+
+      final hits = await wsService.search(baseId: base.id, query: 'whiskey');
+      expect(hits, isNotEmpty);
+      expect(hits.first.possiblyStale, isNot(true));
     });
 
     test('deleteItem removes only that item and its derived rows', () async {
@@ -543,6 +760,163 @@ void main() {
       for (final h in hits) {
         expect(h.similarity, 0);
       }
+    });
+  });
+
+  group('KnowledgeService (failure recovery / quota / GC P3d)', () {
+    late AppDatabase db;
+    late List<List<String>> embedLog;
+
+    KnowledgeService buildService({bool returnEmpty = false, bool known = true}) {
+      final embedder = _FakeEmbedder(const [
+        'dart',
+        'python',
+        'language',
+      ], embedLog, returnEmpty: returnEmpty);
+      return KnowledgeService(
+        db.knowledgeDao,
+        embedderResolver: (key) async =>
+            (known && key == 'model-a') ? embedder : null,
+      );
+    }
+
+    setUp(() {
+      db = AppDatabase(NativeDatabase.memory());
+      embedLog = [];
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    test('retryPendingEmbeddings backfills chunks left without vectors',
+        () async {
+      // Ingest while the embedder yields empty vectors → chunks stay pending.
+      final broken = buildService(returnEmpty: true);
+      final base = await broken.createBase(
+        name: 'KB',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      await broken.addNote(baseId: base.id, title: 'a', text: 'dart language');
+      expect(await broken.pendingEmbeddingCount(base.id), greaterThan(0));
+
+      // Retry with a healthy embedder only embeds the pending chunks.
+      final healthy = buildService();
+      final embedded = await healthy.retryPendingEmbeddings(base.id);
+      expect(embedded, greaterThan(0));
+      expect(await healthy.pendingEmbeddingCount(base.id), 0);
+
+      // The backfilled vectors are live: vector search ranks by cosine.
+      final hits = await healthy.search(baseId: base.id, query: 'dart');
+      expect(hits, isNotEmpty);
+      expect(hits.first.similarity, greaterThan(0));
+    });
+
+    test('retryPendingEmbeddings is a no-op when nothing is pending', () async {
+      final service = buildService();
+      final base = await service.createBase(
+        name: 'KB',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      await service.addNote(baseId: base.id, title: 'a', text: 'dart');
+      final batches = embedLog.length;
+      expect(await service.retryPendingEmbeddings(base.id), 0);
+      expect(embedLog.length, batches); // no extra embed calls
+    });
+
+    test('retryPendingEmbeddings returns 0 for keyword bases and when the '
+        'model is unresolved', () async {
+      final service = buildService();
+      final kw = await service.createBase(name: 'KW');
+      await service.addNote(baseId: kw.id, title: 'a', text: 'dart');
+      expect(await service.retryPendingEmbeddings(kw.id), 0);
+      expect(await service.pendingEmbeddingCount(kw.id), 0);
+
+      final broken = buildService(returnEmpty: true);
+      final vec = await broken.createBase(
+        name: 'V',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      await broken.addNote(baseId: vec.id, title: 'a', text: 'dart');
+      final unresolved = buildService(known: false);
+      expect(await unresolved.retryPendingEmbeddings(vec.id), 0);
+      // Still pending — nothing was consumed by the failed retry.
+      expect(await unresolved.pendingEmbeddingCount(vec.id), greaterThan(0));
+    });
+
+    test('retryPendingEmbeddings reuses existing vectors without re-embedding',
+        () async {
+      const text = 'dart language';
+      // Ingest while the embedder is broken → chunks left pending.
+      final broken = buildService(returnEmpty: true);
+      final bad = await broken.createBase(
+        name: 'B',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      await broken.addNote(baseId: bad.id, title: 'b', text: text);
+      expect(await broken.pendingEmbeddingCount(bad.id), greaterThan(0));
+
+      // The same content is later embedded successfully elsewhere.
+      final service = buildService();
+      final good = await service.createBase(
+        name: 'A',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      await service.addNote(baseId: good.id, title: 'a', text: text);
+
+      final batches = embedLog.length;
+      final embedded = await service.retryPendingEmbeddings(bad.id);
+      expect(embedded, greaterThan(0));
+      // Identical content + model → embeddingKey already exists, so the retry
+      // attaches the stored vector without a new embed batch.
+      expect(embedLog.length, batches);
+    });
+
+    test('storageUsage aggregates counts and flags the soft limit', () async {
+      final service = buildService();
+      final base = await service.createBase(name: 'KB');
+      await service.addNote(baseId: base.id, title: 'a', text: 'dart python');
+
+      final usage = await service.storageUsage();
+      expect(usage.stats.baseCount, 1);
+      expect(usage.stats.itemCount, 1);
+      expect(usage.stats.chunkCount, greaterThan(0));
+      expect(usage.stats.contentBytes, greaterThan(0));
+      expect(usage.stats.totalBytes, greaterThanOrEqualTo(
+        usage.stats.contentBytes + usage.stats.chunkBytes,
+      ));
+      // Tiny fixture stays far below the 200MB soft limit.
+      expect(usage.overSoftLimit, isFalse);
+    });
+
+    test('gcOrphanEmbeddings removes unreferenced vectors only', () async {
+      final service = buildService();
+      final base = await service.createBase(
+        name: 'KB',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      await service.addNote(baseId: base.id, title: 'a', text: 'dart');
+      expect(await service.gcOrphanEmbeddings(), 0); // all referenced
+
+      // Simulate an orphan left behind by an interrupted rebuild.
+      await db.into(db.kbEmbeddingRows).insert(
+            KbEmbeddingRowsCompanion.insert(
+              embeddingKey: 'orphan-key',
+              dimensions: 2,
+              vector: encodeVector(const [1.0, 0.0]),
+              createdAt: 0,
+            ),
+          );
+      expect(await service.gcOrphanEmbeddings(), 1);
+      final rest = await db.select(db.kbEmbeddingRows).get();
+      expect(rest.every((r) => r.embeddingKey != 'orphan-key'), isTrue);
+      expect(rest, isNotEmpty); // referenced vectors survive
     });
   });
 }

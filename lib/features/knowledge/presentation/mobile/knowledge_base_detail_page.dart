@@ -13,6 +13,8 @@ import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_reference_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/application/knowledge_providers.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 class KnowledgeBaseDetailPage extends ConsumerStatefulWidget {
@@ -145,6 +147,126 @@ class _KnowledgeBaseDetailPageState
     }
   }
 
+  /// 输入一个网址，抓取网页转成 Markdown 快照后摄取为条目（type=url）。
+  Future<void> _addUrl() async {
+    final urlController = TextEditingController();
+    final titleController = TextEditingController();
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('添加网址'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: urlController,
+                autofocus: true,
+                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(
+                  labelText: '网址',
+                  hintText: 'https://example.com/article',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: titleController,
+                decoration: const InputDecoration(
+                  labelText: '标题（可选，留空用网页标题）',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('抓取'),
+          ),
+        ],
+      ),
+    );
+    final url = urlController.text.trim();
+    final title = titleController.text.trim();
+    urlController.dispose();
+    titleController.dispose();
+    if (saved != true || url.isEmpty) return;
+    try {
+      await ref
+          .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
+          .addUrl(url: url, title: title.isEmpty ? null : title);
+      if (mounted) AppToast.success(context, '已抓取「$url」');
+    } catch (e) {
+      if (mounted) AppToast.error(context, '抓取失败：$e');
+    }
+  }
+
+  /// 选择一个「最近打开」的工作区，遍历其目录下文本文件摄取为条目（type=workspace）。
+  /// 摄取时记录来源指纹，供检索时的 staleness 检测异步比对（设计文档 §8.1）。
+  Future<void> _addWorkspace() async {
+    final workspaces = await ref.read(workspaceStoreProvider.future);
+    if (!mounted) return;
+    if (workspaces.isEmpty) {
+      AppToast.error(context, '还没有打开过工作区，先在「工作区」里打开一个目录');
+      return;
+    }
+    final picked = await showDialog<Workspace>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('选择工作区目录'),
+        children: [
+          for (final w in workspaces)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(w),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(LucideIcons.folder, size: 20),
+                title: Text(w.name.isEmpty ? '未命名工作区' : w.name),
+                subtitle: w.displayPath == null
+                    ? null
+                    : Text(
+                        w.displayPath!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    try {
+      final count = await ref
+          .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
+          .addWorkspace(workspaceId: picked.id);
+      if (mounted) AppToast.success(context, '已摄取「${picked.name}」（$count 个文件）');
+    } catch (e) {
+      if (mounted) AppToast.error(context, '摄取工作区失败：$e');
+    }
+  }
+
+  /// 只补嵌失败/中断留下的待补切块（失败恢复，设计文档 §11），已嵌入的不重算。
+  Future<void> _retryEmbeddings() async {
+    try {
+      final count = await ref
+          .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
+          .retryEmbeddings();
+      if (!mounted) return;
+      if (count > 0) {
+        AppToast.success(context, '已补嵌 $count 个切块');
+      } else {
+        AppToast.error(context, '本次未能补嵌，请检查嵌入模型后重试');
+      }
+    } catch (e) {
+      if (mounted) AppToast.error(context, '补嵌失败：$e');
+    }
+  }
+
   /// 从已存正文重建整库索引（切块 + 向量）。适用于调整切块/嵌入配置后刷新。
   Future<void> _refresh() async {
     try {
@@ -163,6 +285,11 @@ class _KnowledgeBaseDetailPageState
     final itemsAsync = ref.watch(
       knowledgeItemsControllerProvider(widget.baseId),
     );
+    final pendingEmbeddings = ref
+            .watch(knowledgePendingEmbeddingCountProvider(widget.baseId))
+            .asData
+            ?.value ??
+        0;
 
     return Scaffold(
       appBar: AppBar(
@@ -205,6 +332,18 @@ class _KnowledgeBaseDetailPageState
             onPressed: _addFile,
           ),
           IconButton(
+            icon: const Icon(LucideIcons.link, size: 20),
+            color: theme.colorScheme.primary,
+            tooltip: '添加网址',
+            onPressed: _addUrl,
+          ),
+          IconButton(
+            icon: const Icon(LucideIcons.folder, size: 20),
+            color: theme.colorScheme.primary,
+            tooltip: '摄取工作区目录',
+            onPressed: _addWorkspace,
+          ),
+          IconButton(
             icon: const Icon(LucideIcons.filePlus, size: 22),
             color: theme.colorScheme.primary,
             tooltip: '添加笔记',
@@ -215,6 +354,22 @@ class _KnowledgeBaseDetailPageState
       ),
       body: Column(
         children: [
+          if (pendingEmbeddings > 0)
+            MaterialBanner(
+              backgroundColor: theme.colorScheme.errorContainer,
+              content: Text(
+                '有 $pendingEmbeddings 个切块嵌入未完成，向量检索可能不完整',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onErrorContainer,
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: _retryEmbeddings,
+                  child: const Text('重试嵌入'),
+                ),
+              ],
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: TextField(

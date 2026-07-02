@@ -50,7 +50,10 @@ KnowledgeToolRisk? knowledgeToolRiskLevel(
       return KnowledgeToolRisk.high;
     case 'create':
     case 'add_note':
+    case 'add_url':
+    case 'add_workspace':
     case 'refresh':
+    case 'retry_embeddings':
       return KnowledgeToolRisk.medium;
   }
   // 未知/缺失 action 也当作写操作，防御性地要求确认。
@@ -251,6 +254,49 @@ Future<McpToolResult> _runManage(
         'documentId': item.id,
         'title': item.title,
       });
+    case 'add_url':
+      final base = await _requireChatBase(
+        service,
+        requireKnowledgeString(args, 'base_id'),
+      );
+      final url = requireKnowledgeString(args, 'url');
+      final title = optionalKnowledgeString(args, 'title');
+      // 抓取网页 → HTML 转 Markdown 快照 → 走与 note/file 一致的摄取管线
+      // （设计文档 §5「URL 抓取」）。
+      final item = await service.addUrl(
+        baseId: base.id,
+        url: url,
+        title: title,
+      );
+      return knowledgeOk({
+        'action': 'add_url',
+        'knowledgeBaseId': base.id,
+        'documentId': item.id,
+        'title': item.title,
+        'source': item.source,
+      });
+    case 'add_workspace':
+      final base = await _requireChatBase(
+        service,
+        requireKnowledgeString(args, 'base_id'),
+      );
+      final workspaceId = requireKnowledgeString(args, 'workspace_id');
+      // 遍历工作区目录下的文本文件逐个摄取（type=workspace），并记录来源指纹
+      // 供 staleness 检测（设计文档 §8/§8.1）。
+      final items = await service.addWorkspace(
+        baseId: base.id,
+        workspaceId: workspaceId,
+      );
+      return knowledgeOk({
+        'action': 'add_workspace',
+        'knowledgeBaseId': base.id,
+        'workspaceId': workspaceId,
+        'ingestedFiles': items.length,
+        'documents': [
+          for (final item in items)
+            {'documentId': item.id, 'title': item.title},
+        ],
+      });
     case 'delete':
       final base = await _requireChatBase(
         service,
@@ -276,9 +322,26 @@ Future<McpToolResult> _runManage(
         'knowledgeBaseName': base.name,
         'reindexedItems': count,
       });
+    case 'retry_embeddings':
+      final base = await _requireChatBase(
+        service,
+        requireKnowledgeString(args, 'base_id'),
+      );
+      // 失败恢复（设计文档 §11）：只补嵌嵌入失败/中断留下的待补切块，
+      // 已嵌入的不重算、不重复扣费，比 refresh 整库重建轻。
+      final embedded = await service.retryPendingEmbeddings(base.id);
+      final remaining = await service.pendingEmbeddingCount(base.id);
+      return knowledgeOk({
+        'action': 'retry_embeddings',
+        'knowledgeBaseId': base.id,
+        'knowledgeBaseName': base.name,
+        'embeddedChunks': embedded,
+        'pendingChunks': remaining,
+      });
   }
   throw KnowledgeToolError(
-    '未知的 kb_manage 操作: $action（可用: create / add_note / delete / refresh）',
+    '未知的 kb_manage 操作: $action（可用: create / add_note / add_url / '
+    'add_workspace / delete / refresh / retry_embeddings）',
   );
 }
 

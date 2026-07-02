@@ -1,6 +1,8 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
+import 'package:aetherlink_flutter/features/knowledge/data/datasources/local/knowledge_dao.dart'
+    show KnowledgeStorageStats;
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
@@ -75,6 +77,34 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
     ref.invalidate(knowledgeBasesControllerProvider);
   }
 
+  /// 抓取一个网页并摄取为条目（type=url）。抓取 + HTML→Markdown 由服务层注入的
+  /// 抓取器完成；失败会抛异常交由 UI 提示。
+  Future<void> addUrl({required String url, String? title}) async {
+    if (url.trim().isEmpty) return;
+    await ref.read(knowledgeServiceProvider).addUrl(
+          baseId: baseId,
+          url: url,
+          title: title,
+        );
+    ref.invalidateSelf();
+    await future;
+    ref.invalidate(knowledgeBasesControllerProvider);
+  }
+
+  /// 摄取一个工作区目录（type=workspace）：遍历目录下文本文件逐个建索引，并记录来源
+  /// 指纹供 staleness 检测。遍历 + 读文件由服务层注入的工作区源完成；失败抛异常交由
+  /// UI 提示。返回成功摄取的条目数。
+  Future<int> addWorkspace({required String workspaceId}) async {
+    if (workspaceId.trim().isEmpty) return 0;
+    final items = await ref
+        .read(knowledgeServiceProvider)
+        .addWorkspace(baseId: baseId, workspaceId: workspaceId);
+    ref.invalidateSelf();
+    await future;
+    ref.invalidate(knowledgeBasesControllerProvider);
+    return items.length;
+  }
+
   /// 从已存正文原子重建整库派生索引（切块 + 向量），返回重建覆盖的条目数。
   Future<int> refresh() async {
     final count = await ref.read(knowledgeServiceProvider).reindexBase(baseId);
@@ -82,4 +112,25 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
     await future;
     return count;
   }
+
+  /// 只补嵌本库里嵌入失败/中断留下的待补切块（失败恢复，§11），已嵌入的不重算。
+  /// 返回本次补嵌成功的切块数。
+  Future<int> retryEmbeddings() async {
+    final count = await ref
+        .read(knowledgeServiceProvider)
+        .retryPendingEmbeddings(baseId);
+    ref.invalidate(knowledgePendingEmbeddingCountProvider(baseId));
+    return count;
+  }
 }
+
+/// 某库当前待补嵌入的切块数（驱动详情页的「重试嵌入」入口，关键词库恒为 0）。
+@riverpod
+Future<int> knowledgePendingEmbeddingCount(Ref ref, String baseId) =>
+    ref.watch(knowledgeServiceProvider).pendingEmbeddingCount(baseId);
+
+/// 知识库整体存储占用 + 软配额判定（§11.1，驱动列表页的占用提示）。
+@riverpod
+Future<({KnowledgeStorageStats stats, bool overSoftLimit})>
+knowledgeStorageUsage(Ref ref) =>
+    ref.watch(knowledgeServiceProvider).storageUsage();
