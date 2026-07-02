@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import 'package:aetherlink_flutter/shared/domain/model.dart';
+import 'package:aetherlink_flutter/shared/utils/api_host.dart';
 
 /// Calls an OpenAI-compatible `/embeddings` endpoint to turn text into vectors
 /// for semantic memory retrieval. Protocol-only: it carries no memory logic and
@@ -10,7 +11,8 @@ import 'package:aetherlink_flutter/shared/domain/model.dart';
 ///
 /// Mirrors the auth / baseUrl handling of `openai_compatible_adapter.dart`:
 /// `Authorization: Bearer <apiKey>` plus the model's extra headers, posting to
-/// `<baseUrl>/embeddings` (defaulting to OpenAI when no baseUrl is set).
+/// `<formatApiHost(baseUrl)>/embeddings`（裸 host 自动补 `/v1`，末尾 `#` 为
+/// 精确地址逃生口，与 CS 的 `formatApiHost` 一致），无 baseUrl 时回落 OpenAI。
 class EmbeddingService {
   EmbeddingService(this._dio);
 
@@ -59,9 +61,7 @@ class EmbeddingService {
   }
 
   static String _embeddingsUrl(String? baseUrl) {
-    final base = (baseUrl == null || baseUrl.isEmpty)
-        ? 'https://api.openai.com/v1'
-        : baseUrl.replaceAll(RegExp(r'/+$'), '');
-    return '$base/embeddings';
+    final base = formatApiHost(baseUrl);
+    return '${base.isEmpty ? 'https://api.openai.com/v1' : base}/embeddings';
   }
 }
