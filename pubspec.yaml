@@ -95,6 +95,10 @@ dependencies:
   # 基于 pdfrx_engine（PDFium，BSD-3）；pdfrx 插件负责各平台打包 PDFium 原生库。
   pdf_to_markdown:
     path: packages/pdf_to_markdown
+  # 知识库本地解析轨（同上 §5.2，功能缺口④）：纯 Dart PPTX / XLSX / EPUB →
+  # Markdown 转换（仅依赖 archive+xml，可在 isolate 跑）。
+  office_to_markdown:
+    path: packages/office_to_markdown
   pdfrx: ^2.4.4
   scrollview_observer: ^1.27.0
   # Voice feature: TTS + ASR

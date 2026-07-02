@@ -904,6 +904,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "9.4.1"
+  office_to_markdown:
+    dependency: "direct main"
+    description:
+      path: "packages/office_to_markdown"
+      relative: true
+    source: path
+    version: "0.1.0"
   package_config:
     dependency: transitive
     description:
