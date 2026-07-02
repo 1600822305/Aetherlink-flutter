@@ -12,6 +12,23 @@ bool isDocxFileName(String name) => name.trim().toLowerCase().endsWith('.docx');
 /// 文件名（或路径）是否为 PDF。
 bool isPdfFileName(String name) => name.trim().toLowerCase().endsWith('.pdf');
 
+/// 仅云端预处理轨支持的富文档扩展名（功能缺口④）：本地解析轨暂无对应转换器，
+/// 只有库配置了云端解析器（MinerU / Doc2X 等）时才放开选择。
+const List<String> kCloudOnlyKnowledgeExtensions = [
+  'doc',
+  'ppt',
+  'pptx',
+  'xls',
+  'xlsx',
+  'epub',
+];
+
+/// 文件名（或路径）是否为「仅云端轨」富文档（见 [kCloudOnlyKnowledgeExtensions]）。
+bool isCloudOnlyKnowledgeFileName(String name) {
+  final lower = name.trim().toLowerCase();
+  return kCloudOnlyKnowledgeExtensions.any((ext) => lower.endsWith('.$ext'));
+}
+
 /// 在后台 isolate 中把 DOCX 字节转成 Markdown。
 ///
 /// 无效包或解析失败抛 [DocxParseException]，内容为空（如纯图片文档）由调用方
