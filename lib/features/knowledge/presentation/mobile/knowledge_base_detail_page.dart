@@ -614,6 +614,11 @@ class _KnowledgeBaseDetailPageState
             .read(knowledgeBaseControllerProvider(widget.baseId).notifier)
             .setRerankModel(result.rerankModelKey);
       }
+      if (result.chatEnabled != base.scope.chatEnabled) {
+        await ref
+            .read(knowledgeBaseControllerProvider(widget.baseId).notifier)
+            .setChatEnabled(result.chatEnabled);
+      }
       if (mounted) AppToast.success(context, '已保存库设置');
     } catch (e) {
       if (mounted) AppToast.error(context, '保存失败：$e');

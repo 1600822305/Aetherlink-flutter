@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_chunking.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedding.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
 
 part 'knowledge_dao.g.dart';
 
@@ -169,6 +170,13 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
         dimensions: Value(dimensions),
         searchMode: Value(searchMode.name),
       ),
+    );
+  }
+
+  /// 更新库的作用域（§7「提供给普通聊天」等开关）。
+  Future<void> updateBaseScope(String id, KnowledgeScope scope) {
+    return (update(knowledgeBaseRows)..where((t) => t.id.equals(id))).write(
+      KnowledgeBaseRowsCompanion(scope: Value(scope)),
     );
   }
 

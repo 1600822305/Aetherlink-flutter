@@ -209,6 +209,17 @@ class KnowledgeService {
     );
   }
 
+  /// 设置库是否「提供给普通聊天」（设计文档 §7 轨道 B）：打开后该库对聊天可见
+  /// ——可挂载、可被 `kb_*` 内置工具检索。
+  Future<void> setChatEnabled(String baseId, bool enabled) async {
+    final base = await _requireBase(baseId);
+    if (base.scope.chatEnabled == enabled) return;
+    await _dao.updateBaseScope(
+      baseId,
+      base.scope.copyWith(chatEnabled: enabled),
+    );
+  }
+
   /// 更新库级云端文件预处理器（§5.2）；传 null 回到本地解析轨。
   Future<void> setFileProcessor(String baseId, String? processorId) async {
     await _requireBase(baseId);

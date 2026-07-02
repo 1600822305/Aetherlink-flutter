@@ -23,6 +23,7 @@ class KnowledgeBaseSettingsResult {
     required this.searchMode,
     required this.rerankModelKey,
     required this.embeddingModelKey,
+    required this.chatEnabled,
   });
 
   final String name;
@@ -33,6 +34,7 @@ class KnowledgeBaseSettingsResult {
   final KnowledgeSearchMode searchMode;
   final String? rerankModelKey;
   final String? embeddingModelKey;
+  final bool chatEnabled;
 }
 
 /// 库设置面板：重命名 + RAG 参数（切块大小 / 重叠 / topK / 相似度阈值）+
@@ -62,6 +64,7 @@ class _KnowledgeBaseSettingsSheetState
   late KnowledgeSearchMode _searchMode = widget.base.searchMode;
   late String? _rerankModelKey = widget.base.rerankModelKey;
   late String? _embeddingModelKey = widget.base.embeddingModelKey;
+  late bool _chatEnabled = widget.base.scope.chatEnabled;
 
   @override
   void dispose() {
@@ -93,6 +96,7 @@ class _KnowledgeBaseSettingsSheetState
         searchMode: _searchMode,
         rerankModelKey: _rerankModelKey,
         embeddingModelKey: _embeddingModelKey,
+        chatEnabled: _chatEnabled,
       ),
     );
   }
@@ -157,7 +161,15 @@ class _KnowledgeBaseSettingsSheetState
           controller: _nameController,
           decoration: const InputDecoration(labelText: '名称'),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('提供给普通聊天'),
+          subtitle: const Text('打开后可在聊天里挂载本库，模型也可用 kb_search 工具检索'),
+          value: _chatEnabled,
+          onChanged: (v) => setState(() => _chatEnabled = v),
+        ),
+        const SizedBox(height: 8),
         const KnowledgeSectionHeader(title: '切块'),
         Row(
           children: [
