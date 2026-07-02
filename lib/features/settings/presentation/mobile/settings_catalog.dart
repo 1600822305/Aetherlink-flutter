@@ -184,6 +184,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.database,
         title: 'Notion 集成',
         description: '配置Notion数据库导出设置',
+        route: AppRouter.notionSettingsPath,
       ),
     ],
   ),
