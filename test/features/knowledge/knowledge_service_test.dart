@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedding
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_ranking.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_url_fetcher.dart';
 
 /// Deterministic bag-of-words embedder: each text maps to a vector counting how
 /// many times each [vocab] term occurs (case-insensitive substring). Records
@@ -254,6 +255,82 @@ void main() {
       expect(
         () => service.addFile(baseId: base.id, fileName: 'blank.txt', text: '  '),
         throwsStateError,
+      );
+    });
+
+    test('addUrl fetches, converts and ingests a url-typed, searchable item',
+        () async {
+      final calls = <String>[];
+      final urlService = KnowledgeService(
+        db.knowledgeDao,
+        urlFetcher: (url) async {
+          calls.add(url);
+          return const KnowledgeFetchedPage(
+            markdown: '# Riverpod Guide\n\nProviders compose your app state.',
+            title: 'Riverpod Guide',
+          );
+        },
+      );
+      final base = await urlService.createBase(name: 'KB');
+      final item = await urlService.addUrl(
+        baseId: base.id,
+        url: '  https://example.com/riverpod  ',
+      );
+
+      expect(calls, ['https://example.com/riverpod']); // trimmed before fetch
+      expect(item.type, KnowledgeItemType.url);
+      expect(item.source, 'https://example.com/riverpod');
+      expect(item.title, 'Riverpod Guide'); // fetched page title
+
+      final hits =
+          await urlService.search(baseId: base.id, query: 'providers');
+      expect(hits, isNotEmpty);
+      expect(hits.first.content.toLowerCase(), contains('providers'));
+    });
+
+    test('addUrl prefers an explicit title and falls back to the URL',
+        () async {
+      final urlService = KnowledgeService(
+        db.knowledgeDao,
+        urlFetcher: (url) async =>
+            const KnowledgeFetchedPage(markdown: 'body text', title: null),
+      );
+      final base = await urlService.createBase(name: 'KB');
+
+      final explicit = await urlService.addUrl(
+        baseId: base.id,
+        url: 'https://a.test',
+        title: '  My Title  ',
+      );
+      expect(explicit.title, 'My Title');
+
+      final fallback =
+          await urlService.addUrl(baseId: base.id, url: 'https://b.test');
+      expect(fallback.title, 'https://b.test'); // no title → URL itself
+    });
+
+    test('addUrl rejects empty url / empty fetched content / no fetcher',
+        () async {
+      final base = await service.createBase(name: 'KB');
+      // No fetcher configured on the default `service`.
+      expect(
+        () => service.addUrl(baseId: base.id, url: 'https://x.test'),
+        throwsStateError,
+      );
+
+      final emptyFetcher = KnowledgeService(
+        db.knowledgeDao,
+        urlFetcher: (url) async =>
+            const KnowledgeFetchedPage(markdown: '   ', title: null),
+      );
+      final base2 = await emptyFetcher.createBase(name: 'KB2');
+      expect(
+        () => emptyFetcher.addUrl(baseId: base2.id, url: '  '),
+        throwsStateError, // empty url
+      );
+      expect(
+        () => emptyFetcher.addUrl(baseId: base2.id, url: 'https://x.test'),
+        throwsStateError, // empty fetched content
       );
     });
 

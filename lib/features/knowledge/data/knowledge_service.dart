@@ -12,6 +12,7 @@ import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedding
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_ranking.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_url_fetcher.dart';
 
 /// 知识库核心服务（设计文档 §5 摄取 + §6 检索）。
 ///
@@ -20,11 +21,16 @@ import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dar
 /// 关键词检索，绝不中断。同一套核心未来供 UI（轨道 A）、聊天工具（轨道 B）、智能体
 /// （轨道 C）复用；[search] 的 [allowedIds] 现在恒传 null，预留给智能体轨道（§9）。
 class KnowledgeService {
-  KnowledgeService(this._dao, {KnowledgeEmbedderResolver? embedderResolver})
-    : _resolveEmbedder = embedderResolver;
+  KnowledgeService(
+    this._dao, {
+    KnowledgeEmbedderResolver? embedderResolver,
+    KnowledgeUrlFetcher? urlFetcher,
+  })  : _resolveEmbedder = embedderResolver,
+        _fetchUrl = urlFetcher;
 
   final KnowledgeDao _dao;
   final KnowledgeEmbedderResolver? _resolveEmbedder;
+  final KnowledgeUrlFetcher? _fetchUrl;
 
   Future<List<KnowledgeBase>> listBases() => _dao.listBases();
 
@@ -116,6 +122,45 @@ class KnowledgeService {
       type: KnowledgeItemType.file,
       source: source,
       conceptId: source,
+      title: label,
+      text: text,
+    );
+  }
+
+  /// 抓取一个网页并摄取为条目（设计文档 §5「URL 抓取 → Markdown 快照」）。抓取器
+  /// 由组合根注入（HTTP + HTML→Markdown），未注入时抛错。抓回的正文当作权威快照
+  /// 落库（`type=url`、`source=url`），后续 refresh 直接从这份快照重建索引，不再
+  /// 重新联网。`title` 显式给定时优先，否则用页面 `<title>`，再回落到 URL 本身。
+  /// 抓取失败或内容为空视为坏输入抛错。
+  Future<KnowledgeItem> addUrl({
+    required String baseId,
+    required String url,
+    String? title,
+  }) async {
+    final base = await _requireBase(baseId);
+    final normalized = url.trim();
+    if (normalized.isEmpty) {
+      throw StateError('URL 为空，无法摄取');
+    }
+    final fetcher = _fetchUrl;
+    if (fetcher == null) {
+      throw StateError('未配置 URL 抓取器，无法摄取网页');
+    }
+    final page = await fetcher(normalized);
+    final text = page.markdown.trim();
+    if (text.isEmpty) {
+      throw StateError('URL 抓取到的内容为空: $normalized');
+    }
+    final explicit = title?.trim();
+    final fetched = page.title?.trim();
+    final label = (explicit != null && explicit.isNotEmpty)
+        ? explicit
+        : (fetched != null && fetched.isNotEmpty ? fetched : normalized);
+    return _ingest(
+      base: base,
+      type: KnowledgeItemType.url,
+      source: normalized,
+      conceptId: normalized,
       title: label,
       text: text,
     );

@@ -145,6 +145,65 @@ class _KnowledgeBaseDetailPageState
     }
   }
 
+  /// 输入一个网址，抓取网页转成 Markdown 快照后摄取为条目（type=url）。
+  Future<void> _addUrl() async {
+    final urlController = TextEditingController();
+    final titleController = TextEditingController();
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('添加网址'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: urlController,
+                autofocus: true,
+                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(
+                  labelText: '网址',
+                  hintText: 'https://example.com/article',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: titleController,
+                decoration: const InputDecoration(
+                  labelText: '标题（可选，留空用网页标题）',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('抓取'),
+          ),
+        ],
+      ),
+    );
+    final url = urlController.text.trim();
+    final title = titleController.text.trim();
+    urlController.dispose();
+    titleController.dispose();
+    if (saved != true || url.isEmpty) return;
+    try {
+      await ref
+          .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
+          .addUrl(url: url, title: title.isEmpty ? null : title);
+      if (mounted) AppToast.success(context, '已抓取「$url」');
+    } catch (e) {
+      if (mounted) AppToast.error(context, '抓取失败：$e');
+    }
+  }
+
   /// 从已存正文重建整库索引（切块 + 向量）。适用于调整切块/嵌入配置后刷新。
   Future<void> _refresh() async {
     try {
@@ -203,6 +262,12 @@ class _KnowledgeBaseDetailPageState
             color: theme.colorScheme.primary,
             tooltip: '上传文件（txt / md）',
             onPressed: _addFile,
+          ),
+          IconButton(
+            icon: const Icon(LucideIcons.link, size: 20),
+            color: theme.colorScheme.primary,
+            tooltip: '添加网址',
+            onPressed: _addUrl,
           ),
           IconButton(
             icon: const Icon(LucideIcons.filePlus, size: 22),
