@@ -56,6 +56,59 @@ class _KnowledgeBaseDetailPageState
 
   bool get _selectionMode => _selectedIds.isNotEmpty;
 
+  /// 长任务（批量添加 / 整库重建）的 x/y 进度，非空时在列表上方显示进度条。
+  ({String label, int done, int total})? _progress;
+
+  void _setProgress(String label, int done, int total) {
+    if (!mounted) return;
+    setState(() => _progress = (label: label, done: done, total: total));
+  }
+
+  void _clearProgress() {
+    if (!mounted) return;
+    setState(() => _progress = null);
+  }
+
+  /// 重复添加检测：库里已有 source 或标题相同的条目时返回它，否则 null。
+  KnowledgeItem? _findExisting({String? source, String? title}) {
+    final items = ref
+        .read(knowledgeItemsControllerProvider(widget.baseId))
+        .asData
+        ?.value;
+    if (items == null) return null;
+    for (final item in items) {
+      if (source != null && source.isNotEmpty && item.source == source) {
+        return item;
+      }
+      if (title != null && title.isNotEmpty && item.title == title) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  /// 重复添加确认：返回 true 表示仍然添加，false / 关闭表示跳过。
+  Future<bool> _confirmDuplicate(String message) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('重复添加'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('跳过'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('仍然添加'),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
   void _toggleSelected(KnowledgeItem item) {
     setState(() {
       if (!_selectedIds.add(item.id)) _selectedIds.remove(item.id);
@@ -70,7 +123,9 @@ class _KnowledgeBaseDetailPageState
     _exitSelection();
     var ok = 0;
     Object? firstError;
+    var done = 0;
     for (final id in ids) {
+      _setProgress('正在重建选中条目的索引', done, ids.length);
       try {
         await ref
             .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
@@ -79,7 +134,9 @@ class _KnowledgeBaseDetailPageState
       } catch (e) {
         firstError ??= e;
       }
+      done++;
     }
+    _clearProgress();
     if (!mounted) return;
     if (firstError == null) {
       AppToast.success(context, '已重建 $ok 个条目的索引');
@@ -217,11 +274,31 @@ class _KnowledgeBaseDetailPageState
           ],
         );
     if (pickedFiles.isEmpty) return;
-    if (pickedFiles.length == 1) {
-      final error = await _ingestPickedFile(pickedFiles.first, processor);
+    final dupes = [
+      for (final p in pickedFiles)
+        if (_findExisting(source: p.path, title: p.name) != null) p,
+    ];
+    var files = pickedFiles;
+    if (dupes.isNotEmpty && mounted) {
+      final names = dupes.map((p) => '「${p.name}」').join('、');
+      final addAnyway = await _confirmDuplicate(
+        dupes.length == pickedFiles.length && pickedFiles.length == 1
+            ? '$names 已在库中，仍要再次添加吗？'
+            : '${dupes.length} 个文件已在库中：$names，仍要再次添加吗？',
+      );
+      if (!addAnyway) {
+        files = [
+          for (final p in pickedFiles)
+            if (!dupes.contains(p)) p,
+        ];
+      }
+      if (files.isEmpty || !mounted) return;
+    }
+    if (files.length == 1) {
+      final error = await _ingestPickedFile(files.first, processor);
       if (!mounted) return;
       if (error == null) {
-        AppToast.success(context, '已上传「${pickedFiles.first.name}」');
+        AppToast.success(context, '已上传「${files.first.name}」');
       } else {
         AppToast.error(context, error);
       }
@@ -229,19 +306,23 @@ class _KnowledgeBaseDetailPageState
     }
     var ok = 0;
     String? firstError;
-    for (final picked in pickedFiles) {
+    var done = 0;
+    for (final picked in files) {
+      _setProgress('正在上传「${picked.name}」', done, files.length);
       final error = await _ingestPickedFile(picked, processor);
       if (error == null) {
         ok++;
       } else {
         firstError ??= '「${picked.name}」$error';
       }
+      done++;
     }
+    _clearProgress();
     if (!mounted) return;
     if (firstError == null) {
       AppToast.success(context, '已上传 $ok 个文件');
     } else {
-      AppToast.error(context, '上传完成 $ok/${pickedFiles.length}，$firstError');
+      AppToast.error(context, '上传完成 $ok/${files.length}，$firstError');
     }
   }
 
@@ -355,6 +436,10 @@ class _KnowledgeBaseDetailPageState
     if (result == null || result.url.isEmpty) return;
     final url = result.url;
     final title = result.title;
+    if (_findExisting(source: url) != null && mounted) {
+      final addAnyway = await _confirmDuplicate('「$url」已在库中，仍要再次抓取并添加吗？');
+      if (!addAnyway || !mounted) return;
+    }
     try {
       await ref
           .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
@@ -550,9 +635,16 @@ class _KnowledgeBaseDetailPageState
     try {
       final count = await ref
           .read(knowledgeBaseControllerProvider(widget.baseId).notifier)
-          .changeEmbeddingModel(modelKey, searchMode: searchMode);
+          .changeEmbeddingModel(
+            modelKey,
+            searchMode: searchMode,
+            onProgress: (done, total) =>
+                _setProgress('正在重建向量索引', done, total),
+          );
+      _clearProgress();
       if (mounted) AppToast.success(context, '已更换嵌入模型并重建索引（$count 个条目）');
     } catch (e) {
+      _clearProgress();
       if (mounted) AppToast.error(context, '更换嵌入模型失败：$e');
     }
   }
@@ -651,9 +743,13 @@ class _KnowledgeBaseDetailPageState
     try {
       final count = await ref
           .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
-          .refresh();
+          .refresh(
+            onProgress: (done, total) => _setProgress('正在重建索引', done, total),
+          );
+      _clearProgress();
       if (mounted) AppToast.success(context, '已重建索引（$count 个条目）');
     } catch (e) {
+      _clearProgress();
       if (mounted) AppToast.error(context, '重建索引失败：$e');
     }
   }
@@ -748,6 +844,7 @@ class _KnowledgeBaseDetailPageState
                   onPressed: _openAddMenu,
                 ),
                 PopupMenuButton<VoidCallback>(
+                  popUpAnimationStyle: AnimationStyle.noAnimation,
                   icon: Icon(
                     LucideIcons.ellipsisVertical,
                     size: 20,
@@ -772,6 +869,29 @@ class _KnowledgeBaseDetailPageState
       ),
       body: Column(
         children: [
+          if (_progress case final progress?)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${progress.label}（${progress.done}/${progress.total}）',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  LinearProgressIndicator(
+                    value: progress.total == 0
+                        ? null
+                        : progress.done / progress.total,
+                  ),
+                ],
+              ),
+            ),
           if (pendingEmbeddings > 0)
             MaterialBanner(
               backgroundColor: theme.colorScheme.errorContainer,

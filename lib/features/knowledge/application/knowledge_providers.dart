@@ -153,8 +153,10 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
   }
 
   /// 从已存正文原子重建整库派生索引（切块 + 向量），返回重建覆盖的条目数。
-  Future<int> refresh() async {
-    final count = await ref.read(knowledgeServiceProvider).reindexBase(baseId);
+  Future<int> refresh({void Function(int done, int total)? onProgress}) async {
+    final count = await ref
+        .read(knowledgeServiceProvider)
+        .reindexBase(baseId, onProgress: onProgress);
     ref.invalidateSelf();
     await future;
     return count;
@@ -240,6 +242,7 @@ class KnowledgeBaseController extends _$KnowledgeBaseController {
   Future<int> changeEmbeddingModel(
     String embeddingModelKey, {
     KnowledgeSearchMode? searchMode,
+    void Function(int done, int total)? onProgress,
   }) async {
     final count = await ref
         .read(knowledgeServiceProvider)
@@ -247,6 +250,7 @@ class KnowledgeBaseController extends _$KnowledgeBaseController {
           baseId,
           embeddingModelKey: embeddingModelKey,
           searchMode: searchMode,
+          onProgress: onProgress,
         );
     ref.invalidateSelf();
     await future;

@@ -141,6 +141,7 @@ class KnowledgeGroupHeader extends StatelessWidget {
           ),
           if (onRename != null || onDissolve != null)
             PopupMenuButton<String>(
+              popUpAnimationStyle: AnimationStyle.noAnimation,
               icon: Icon(
                 LucideIcons.ellipsis,
                 size: 16,
