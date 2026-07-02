@@ -536,6 +536,8 @@ class _ModeSelector extends StatelessWidget {
           label: Text(label),
           selected: selected,
           onSelected: enabled ? (_) => onChanged(value) : null,
+          selectedColor: theme.colorScheme.primary,
+          disabledColor: theme.colorScheme.onSurface.withValues(alpha: 0.06),
           labelStyle: TextStyle(
             color: !enabled
                 ? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5)
