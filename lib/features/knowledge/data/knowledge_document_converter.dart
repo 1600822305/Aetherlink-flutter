@@ -5,7 +5,8 @@ import 'package:aetherlink_flutter/shared/mcp_tools/tools/fetch_tool.dart'
     show htmlToMarkdown;
 import 'package:office_to_markdown/office_to_markdown.dart';
 import 'package:pdf_to_markdown/pdf_to_markdown.dart';
-import 'package:pdfrx/pdfrx.dart' show pdfrxFlutterInitialize;
+
+import 'package:aetherlink_flutter/features/knowledge/data/pdfium_engine_manager.dart';
 
 /// 富文档 → 纯文本的转换层（设计文档 §5.2 本地解析轨）：把 DOCX / PDF / PPTX /
 /// XLSX / EPUB 等格式转成 Markdown 后再交给 `KnowledgeService.addFile` 走通用
@@ -67,9 +68,11 @@ Future<String> convertDocxBytesToMarkdown(Uint8List bytes) =>
 /// 抽取 PDF 字节的文本层并重排为段落文本。
 ///
 /// PDFium 解析在引擎的原生 worker 中执行，不阻塞 UI isolate。扫描件（无文本层）
-/// 返回空字符串，由调用方提示；打开失败抛 [PdfParseException]。
+/// 返回空字符串，由调用方提示；打开失败抛 [PdfParseException]；PDFium
+/// 引擎未安装时抛 [PdfiumEngineMissingException]（引擎按需下载/导入，不随
+/// 安装包内置，见 [PdfiumEngineManager]）。
 Future<String> convertPdfBytesToMarkdown(Uint8List bytes) async {
-  await pdfrxFlutterInitialize();
+  await PdfiumEngineManager.instance.ensureInitialized();
   return PdfToMarkdown.convert(bytes);
 }
 

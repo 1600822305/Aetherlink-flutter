@@ -16,6 +16,7 @@ import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_reference_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/application/knowledge_providers.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_document_converter.dart';
+import 'package:aetherlink_flutter/features/knowledge/data/pdfium_engine_manager.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_file_processor.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
@@ -26,6 +27,7 @@ import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/sheets
 import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/sheets/knowledge_recall_test_sheet.dart';
 import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/sheets/knowledge_restore_embedding_sheet.dart';
 import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/sheets/knowledge_trash_sheet.dart';
+import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/sheets/pdfium_engine_setup_sheet.dart';
 import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/widgets/knowledge_item_list.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
@@ -287,7 +289,7 @@ class _KnowledgeBaseDetailPageState
       knowledgeBaseControllerProvider(widget.baseId).future,
     );
     final processor = KnowledgeFileProcessor.fromId(base?.fileProcessorId);
-    final pickedFiles = await ref
+    var pickedFiles = await ref
         .read(fileSystemApiProvider)
         .pickFiles(
           allowedExtensions: [
@@ -301,6 +303,26 @@ class _KnowledgeBaseDetailPageState
           ],
         );
     if (pickedFiles.isEmpty) return;
+    // PDF 本地解析轨需要按需安装的 PDFium 引擎（不随安装包内置）；云端解析轨
+    // 不需要。未安装时先引导下载/导入，用户放弃则跳过 PDF 只摄取其余。
+    if (processor == null &&
+        pickedFiles.any((f) => isPdfFileName(f.name)) &&
+        !await PdfiumEngineManager.instance.isInstalled()) {
+      if (!mounted) return;
+      final ready = await showPdfiumEngineSetupSheet(
+        context,
+        ref.read(fileSystemApiProvider),
+      );
+      if (!mounted) return;
+      if (!ready) {
+        pickedFiles = [
+          for (final f in pickedFiles)
+            if (!isPdfFileName(f.name)) f,
+        ];
+        AppToast.info(context, '未安装 PDF 解析引擎，已跳过 PDF 文件');
+        if (pickedFiles.isEmpty) return;
+      }
+    }
     final dupes = [
       for (final p in pickedFiles)
         if (_findExisting(source: p.path, title: p.name) != null) p,
