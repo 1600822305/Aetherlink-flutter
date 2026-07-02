@@ -50,6 +50,7 @@ class KnowledgeBase {
     this.topK = kDefaultTopK,
     this.fileProcessorId,
     this.groupName,
+    this.rerankModelKey,
   });
 
   /// 默认切块参数（设计文档 §5：P0 用简单定长切块，P1 再升级结构感知切块）。
@@ -77,6 +78,10 @@ class KnowledgeBase {
   /// 所属分组名（功能缺口⑦）。轻量字符串分组：同名即同组，为空表示未分组。
   final String? groupName;
 
+  /// 重排序模型 key（功能缺口⑥），编码同 [embeddingModelKey]。非空时检索
+  /// 结果经 rerank 模型重排；为空保持原排序。
+  final String? rerankModelKey;
+
   KnowledgeBase copyWith({
     String? name,
     String? embeddingModelKey,
@@ -102,6 +107,7 @@ class KnowledgeBase {
       createdAt: createdAt,
       fileProcessorId: fileProcessorId,
       groupName: groupName,
+      rerankModelKey: rerankModelKey,
     );
   }
 }

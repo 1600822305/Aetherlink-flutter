@@ -8,10 +8,12 @@ import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_reference_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_file_preprocessing.dart';
+import 'package:aetherlink_flutter/features/knowledge/data/knowledge_rerank_service.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_service.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedder.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_file_processor.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_reranker.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_url_fetcher.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_workspace_source.dart';
 import 'package:aetherlink_flutter/features/memory/data/embedding_service.dart';
@@ -40,6 +42,8 @@ KnowledgeService knowledgeService(Ref ref) => KnowledgeService(
   ref.watch(appDatabaseProvider).knowledgeDao,
   embedderResolver: (embeddingModelKey) =>
       _resolveKnowledgeEmbedder(ref, embeddingModelKey),
+  rerankerResolver: (rerankModelKey) =>
+      _resolveKnowledgeReranker(ref, rerankModelKey),
   urlFetcher: (url) => _fetchKnowledgeUrl(ref, url),
   workspaceSource: _WorkspaceBackendSource(ref),
   filePreprocessor: ({
@@ -228,6 +232,23 @@ Future<KnowledgeEmbedder?> _resolveKnowledgeEmbedder(
   return _EmbeddingServiceEmbedder(service, model);
 }
 
+/// Resolves a base's `rerankModelKey` to a ready [KnowledgeReranker], or null
+/// when the key is unset/malformed or its provider/model no longer exists (→
+/// 检索保持原排序). Key 编码与嵌入模型同一套（`providerId\0modelId`）。
+Future<KnowledgeReranker?> _resolveKnowledgeReranker(
+  Ref ref,
+  String? rerankModelKey,
+) async {
+  if (rerankModelKey == null || rerankModelKey.isEmpty) return null;
+  final providers = await ref.read(appModelProvidersProvider.future);
+  final model = _resolveEmbeddingModel(providers, rerankModelKey);
+  if (model == null) return null;
+  final service = KnowledgeRerankService(
+    buildLlmDio(proxy: ref.read(appNetworkProxyConfigProvider)),
+  );
+  return _RerankServiceReranker(service, model);
+}
+
 /// Resolves a `providerId\0modelId` key to a fully-merged [Model] (endpoint +
 /// credentials via `effectiveModelFor`), or null when unset/malformed or the
 /// provider/model no longer exists.
@@ -375,4 +396,19 @@ class _EmbeddingServiceEmbedder implements KnowledgeEmbedder {
   @override
   Future<List<List<double>>> embed(List<String> texts) =>
       _service.embedAll(_model, texts);
+}
+
+/// Adapts the protocol-only [KnowledgeRerankService] (which needs a resolved
+/// [Model] per call) to the knowledge core's [KnowledgeReranker].
+class _RerankServiceReranker implements KnowledgeReranker {
+  _RerankServiceReranker(this._service, this._model);
+
+  final KnowledgeRerankService _service;
+  final Model _model;
+
+  @override
+  Future<List<double>?> rerank({
+    required String query,
+    required List<String> documents,
+  }) => _service.rerank(_model, query: query, documents: documents);
 }

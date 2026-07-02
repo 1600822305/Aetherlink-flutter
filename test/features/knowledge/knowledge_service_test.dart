@@ -12,6 +12,7 @@ import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedding
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_file_processor.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_ranking.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_reranker.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_url_fetcher.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_workspace_source.dart';
@@ -38,6 +39,20 @@ class _FakeEmbedder implements KnowledgeEmbedder {
         ],
     ];
   }
+}
+
+/// Deterministic reranker: delegates scoring to [score] so tests control the
+/// new order (or throw to prove reranking stays best-effort).
+class _FakeReranker implements KnowledgeReranker {
+  _FakeReranker(this.score);
+
+  final List<double>? Function(String query, List<String> documents) score;
+
+  @override
+  Future<List<double>?> rerank({
+    required String query,
+    required List<String> documents,
+  }) async => score(query, documents);
 }
 
 /// In-memory workspace source. [files] maps an opaque path to a
@@ -1130,6 +1145,102 @@ void main() {
       final rest = await db.select(db.kbEmbeddingRows).get();
       expect(rest.every((r) => r.embeddingKey != 'orphan-key'), isTrue);
       expect(rest, isNotEmpty); // referenced vectors survive
+    });
+  });
+
+  group('KnowledgeService rerank (gap ⑥)', () {
+    late AppDatabase db;
+
+    setUp(() {
+      db = AppDatabase(NativeDatabase.memory());
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    Future<KnowledgeBase> seed(KnowledgeService service) async {
+      final base = await service.createBase(name: 'KB');
+      await service.updateBaseRerankModel(base.id, 'rerank-a');
+      await service.addNote(
+        baseId: base.id,
+        title: 'Dart',
+        text: 'Dart is a client-optimized language for fast apps.',
+      );
+      await service.addNote(
+        baseId: base.id,
+        title: 'Python',
+        text: 'Python is a general purpose language for scripting.',
+      );
+      return base;
+    }
+
+    test('updateBaseRerankModel persists / clears the key', () async {
+      final service = KnowledgeService(db.knowledgeDao);
+      final base = await service.createBase(name: 'KB');
+      await service.updateBaseRerankModel(base.id, '  rerank-a  ');
+      expect((await service.getBase(base.id))!.rerankModelKey, 'rerank-a');
+      await service.updateBaseRerankModel(base.id, '   ');
+      expect((await service.getBase(base.id))!.rerankModelKey, isNull);
+      await expectLater(
+        service.updateBaseRerankModel('missing', 'x'),
+        throwsStateError,
+      );
+    });
+
+    test('search re-orders hits by reranker scores and rewrites similarity',
+        () async {
+      final queries = <String>[];
+      final service = KnowledgeService(
+        db.knowledgeDao,
+        rerankerResolver: (key) async => key == 'rerank-a'
+            ? _FakeReranker((query, docs) {
+                queries.add(query);
+                // Python 片段拿高分，Dart 片段拿低分 → 反转关键词排序。
+                return [
+                  for (final d in docs) d.contains('Python') ? 0.9 : 0.1,
+                ];
+              })
+            : null,
+      );
+      final base = await seed(service);
+
+      final refs = await service.search(baseId: base.id, query: 'language');
+      expect(refs, hasLength(2));
+      expect(refs.first.content, contains('Python'));
+      expect(refs.first.similarity, 0.9);
+      expect(refs.first.index, 1);
+      expect(refs.last.similarity, 0.1);
+      expect(refs.last.index, 2);
+      expect(queries, ['language']);
+    });
+
+    test('rerank is best-effort: failures keep the original order', () async {
+      final service = KnowledgeService(
+        db.knowledgeDao,
+        rerankerResolver: (key) async =>
+            _FakeReranker((_, _) => throw StateError('rerank down')),
+      );
+      final base = await seed(service);
+      final refs = await service.search(baseId: base.id, query: 'Dart');
+      expect(refs, isNotEmpty);
+      expect(refs.first.content, contains('Dart'));
+    });
+
+    test('no rerank model → reranker never resolved, order unchanged',
+        () async {
+      var resolved = 0;
+      final service = KnowledgeService(
+        db.knowledgeDao,
+        rerankerResolver: (key) async {
+          resolved++;
+          return null;
+        },
+      );
+      final base = await service.createBase(name: 'KB');
+      await service.addNote(baseId: base.id, title: 'Dart', text: 'Dart');
+      await service.search(baseId: base.id, query: 'Dart');
+      expect(resolved, 0);
     });
   });
 }

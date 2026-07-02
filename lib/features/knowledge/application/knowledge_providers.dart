@@ -228,6 +228,15 @@ class KnowledgeBaseController extends _$KnowledgeBaseController {
     await future;
   }
 
+  /// 更新库的重排序模型（功能缺口⑥）；传 null 关闭重排。
+  Future<void> setRerankModel(String? rerankModelKey) async {
+    await ref
+        .read(knowledgeServiceProvider)
+        .updateBaseRerankModel(baseId, rerankModelKey);
+    ref.invalidateSelf();
+    await future;
+  }
+
   /// 更新库的可编辑配置（名称 + RAG 参数）。名称同时显示在列表页，一并刷新。
   Future<void> updateConfig({
     required String name,
