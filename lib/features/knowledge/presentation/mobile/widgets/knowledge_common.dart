@@ -122,12 +122,13 @@ class KnowledgeSheetScaffold extends StatelessWidget {
           constraints: BoxConstraints(
             maxHeight: MediaQuery.sizeOf(context).height * 0.85,
           ),
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          // 标题与底部按钮固定，仅中间内容区滚动，长面板也无需滑到底才能保存。
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
-                padding: const EdgeInsets.only(bottom: 12, left: 4),
+                padding: const EdgeInsets.fromLTRB(20, 0, 16, 12),
                 child: Text(
                   title,
                   style: theme.textTheme.titleMedium?.copyWith(
@@ -135,18 +136,29 @@ class KnowledgeSheetScaffold extends StatelessWidget {
                   ),
                 ),
               ),
-              ...children,
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('取消'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(onPressed: onConfirm, child: Text(confirmLabel)),
-                ],
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  children: children,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('取消'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: onConfirm,
+                      child: Text(confirmLabel),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

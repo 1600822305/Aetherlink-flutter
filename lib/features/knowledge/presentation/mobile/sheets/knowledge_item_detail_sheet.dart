@@ -49,12 +49,13 @@ class KnowledgeItemDetailSheet extends ConsumerWidget {
         constraints: BoxConstraints(
           maxHeight: MediaQuery.sizeOf(context).height * 0.85,
         ),
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        // 标题与底部操作按钮固定，切块列表在中间滚动。
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.only(bottom: 4, left: 4),
+              padding: const EdgeInsets.fromLTRB(20, 0, 16, 4),
               child: Text(
                 item.title ?? item.source,
                 style: theme.textTheme.titleMedium?.copyWith(
@@ -63,7 +64,7 @@ class KnowledgeItemDetailSheet extends ConsumerWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.only(bottom: 12, left: 4),
+              padding: const EdgeInsets.fromLTRB(20, 0, 16, 12),
               child: Text(
                 item.source,
                 maxLines: 2,
@@ -73,107 +74,123 @@ class KnowledgeItemDetailSheet extends ConsumerWidget {
                 ),
               ),
             ),
-            if (item.status == KnowledgeItemStatus.failed &&
-                (item.error?.isNotEmpty ?? false))
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '摄取失败',
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.onErrorContainer,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      item.error!,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onErrorContainer,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            chunksAsync.when(
-              loading: () => const Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(child: CircularProgressIndicator()),
-              ),
-              error: (err, _) => Padding(
-                padding: const EdgeInsets.all(8),
-                child: Text('切块加载失败 · $err'),
-              ),
-              data: (chunks) => Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8, left: 4),
-                    child: Text(
-                      '切块 (${chunks.length})',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  for (final chunk in chunks)
+                  if (item.status == KnowledgeItemStatus.failed &&
+                      (item.error?.isNotEmpty ?? false))
                     Container(
                       width: double.infinity,
-                      margin: const EdgeInsets.only(bottom: 8),
+                      margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceContainerLow,
+                        color: theme.colorScheme.errorContainer,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: theme.dividerColor),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '#${chunk.unitIndex + 1}'
-                            '${chunk.embedded ? ' · 已嵌入' : ''}',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.primary,
-                              fontWeight: FontWeight.w600,
+                            '摄取失败',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: theme.colorScheme.onErrorContainer,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            chunk.content,
-                            maxLines: 6,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall,
+                            item.error!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onErrorContainer,
+                            ),
                           ),
                         ],
                       ),
                     ),
+                  chunksAsync.when(
+                    loading: () => const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                    error: (err, _) => Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text('切块加载失败 · $err'),
+                    ),
+                    data: (chunks) => Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8, left: 4),
+                          child: Text(
+                            '切块 (${chunks.length})',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        for (final chunk in chunks)
+                          Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surfaceContainerLow,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: theme.dividerColor),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '#${chunk.unitIndex + 1}'
+                                  '${chunk.embedded ? ' · 已嵌入' : ''}',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  chunk.content,
+                                  maxLines: 6,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () =>
-                  Navigator.of(context).pop(KnowledgeItemDetailAction.reindex),
-              icon: const Icon(LucideIcons.refreshCw, size: 18),
-              label: const Text('重新索引此条目'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: theme.colorScheme.error,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.of(
+                      context,
+                    ).pop(KnowledgeItemDetailAction.reindex),
+                    icon: const Icon(LucideIcons.refreshCw, size: 18),
+                    label: const Text('重新索引此条目'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: theme.colorScheme.error,
+                    ),
+                    onPressed: () => _confirmDelete(context),
+                    icon: const Icon(LucideIcons.trash2, size: 18),
+                    label: const Text('删除条目'),
+                  ),
+                ],
               ),
-              onPressed: () => _confirmDelete(context),
-              icon: const Icon(LucideIcons.trash2, size: 18),
-              label: const Text('删除条目'),
             ),
           ],
         ),

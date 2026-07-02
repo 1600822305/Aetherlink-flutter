@@ -97,12 +97,13 @@ class _KnowledgeRecallTestSheetState
           constraints: BoxConstraints(
             maxHeight: MediaQuery.sizeOf(context).height * 0.85,
           ),
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          // 标题 / 参数 / 查询输入区固定，仅结果列表滚动。
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
-                padding: const EdgeInsets.only(bottom: 4, left: 4),
+                padding: const EdgeInsets.fromLTRB(20, 0, 16, 4),
                 child: Text(
                   '检索测试',
                   style: theme.textTheme.titleMedium?.copyWith(
@@ -112,7 +113,7 @@ class _KnowledgeRecallTestSheetState
               ),
               if (base != null)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 12, left: 4),
+                  padding: const EdgeInsets.fromLTRB(20, 0, 16, 12),
                   child: Text(
                     '模式 ${_modeLabel(base.searchMode)} · topK ${base.topK}'
                     '${base.threshold == null ? '' : ' · 阈值 ${base.threshold}'}'
@@ -122,130 +123,147 @@ class _KnowledgeRecallTestSheetState
                     ),
                   ),
                 ),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _queryController,
-                      autofocus: true,
-                      textInputAction: TextInputAction.search,
-                      onSubmitted: (_) => _run(),
-                      decoration: InputDecoration(
-                        hintText: '输入要测试的查询语句',
-                        prefixIcon: const Icon(LucideIcons.search, size: 18),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _queryController,
+                        autofocus: true,
+                        textInputAction: TextInputAction.search,
+                        onSubmitted: (_) => _run(),
+                        decoration: InputDecoration(
+                          hintText: '输入要测试的查询语句',
+                          prefixIcon: const Icon(LucideIcons.search, size: 18),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          isDense: true,
                         ),
-                        isDense: true,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed: _searching ? null : _run,
-                    child: const Text('检索'),
-                  ),
-                ],
-              ),
-              if (history != null && history.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: [
-                    for (final query in history)
-                      InputChip(
-                        label: Text(
-                          query,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        visualDensity: VisualDensity.compact,
-                        onPressed: _searching ? null : () => _runHistory(query),
-                        onDeleted: () => ref
-                            .read(
-                              knowledgeRecallHistoryControllerProvider.notifier,
-                            )
-                            .remove(widget.baseId, query),
-                        deleteIcon: const Icon(LucideIcons.x, size: 14),
-                      ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: _searching ? null : _run,
+                      child: const Text('检索'),
+                    ),
                   ],
                 ),
-              ],
-              const SizedBox(height: 12),
-              if (_searching)
-                const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (results != null && results.isEmpty)
+              ),
+              if (history != null && history.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Center(
-                    child: Text(
-                      '未召回任何切块，可尝试降低阈值或换检索模式',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                )
-              else if (results != null) ...[
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8, left: 4),
-                  child: Text(
-                    '召回 ${results.length} 条',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      for (final query in history)
+                        InputChip(
+                          label: Text(
+                            query,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: _searching
+                              ? null
+                              : () => _runHistory(query),
+                          onDeleted: () => ref
+                              .read(
+                                knowledgeRecallHistoryControllerProvider
+                                    .notifier,
+                              )
+                              .remove(widget.baseId, query),
+                          deleteIcon: const Icon(LucideIcons.x, size: 14),
+                        ),
+                    ],
                   ),
                 ),
-                for (final hit in results)
-                  Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerLow,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: theme.dividerColor),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '#${hit.index} · '
-                                '${titleById[hit.documentId] ?? '未知来源'}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.primary,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  children: [
+                    if (_searching)
+                      const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (results != null && results.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Center(
+                          child: Text(
+                            '未召回任何切块，可尝试降低阈值或换检索模式',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
                             ),
-                            Text(
-                              '${(hit.similarity * 100).round()}%',
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                color: theme.colorScheme.primary,
-                                fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      )
+                    else if (results != null) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8, left: 4),
+                        child: Text(
+                          '召回 ${results.length} 条',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      for (final hit in results)
+                        Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceContainerLow,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: theme.dividerColor),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      '#${hit.index} · '
+                                      '${titleById[hit.documentId] ?? '未知来源'}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(
+                                            color: theme.colorScheme.primary,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                  ),
+                                  Text(
+                                    '${(hit.similarity * 100).round()}%',
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(
+                                          color: theme.colorScheme.primary,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                  ),
+                                ],
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 4),
+                              SelectableText(
+                                hit.content,
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 4),
-                        SelectableText(
-                          hit.content,
-                          style: theme.textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
+                    ],
+                  ],
+                ),
+              ),
             ],
           ),
         ),
