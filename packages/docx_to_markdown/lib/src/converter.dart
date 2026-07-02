@@ -25,7 +25,7 @@ class DocxParseException implements Exception {
 /// Pure Dart and synchronous — heavy documents should be converted inside an
 /// isolate (e.g. `compute(DocxToMarkdown.convert, bytes)`).
 class DocxToMarkdown {
-  DocxToMarkdown._(this._relationships, this._bulletNumIds);
+  DocxToMarkdown._(this._relationships, this._bulletNumIds, this._styleNames);
 
   /// Converts DOCX [bytes] to Markdown.
   static String convert(Uint8List bytes) {
@@ -44,6 +44,7 @@ class DocxToMarkdown {
     final converter = DocxToMarkdown._(
       _parseRelationships(_readXml(archive, 'word/_rels/document.xml.rels')),
       _parseBulletNumIds(_readXml(archive, 'word/numbering.xml')),
+      _parseStyleNames(_readXml(archive, 'word/styles.xml')),
     );
 
     final body = document.rootElement.childElements
@@ -58,6 +59,10 @@ class DocxToMarkdown {
 
   /// numIds whose level-0 numFmt is `bullet`; other known numIds are ordered.
   final Set<String> _bulletNumIds;
+
+  /// styleId → style name from `word/styles.xml`. Localized Word builds use
+  /// opaque styleIds (e.g. "1" for 标题 1) while the name stays "heading 1".
+  final Map<String, String> _styleNames;
 
   /// Per-numId ordinal counters, so consecutive ordered items count up.
   final Map<String, Map<int, int>> _orderedCounters = {};
@@ -125,9 +130,15 @@ class DocxToMarkdown {
   }
 
   int? _headingLevel(XmlElement? properties) {
-    final style = _child(properties, 'pStyle')?.getAttribute('w:val');
+    final styleId = _child(properties, 'pStyle')?.getAttribute('w:val');
+    if (styleId == null) return null;
+    return _headingLevelOfStyle(styleId) ??
+        _headingLevelOfStyle(_styleNames[styleId]);
+  }
+
+  static int? _headingLevelOfStyle(String? style) {
     if (style == null) return null;
-    if (style == 'Title') return 1;
+    if (style.toLowerCase() == 'title') return 1;
     final match = RegExp(r'^[Hh]eading\s*([1-9])$').firstMatch(style);
     if (match != null) return int.parse(match.group(1)!);
     return null;
@@ -272,7 +283,10 @@ class DocxToMarkdown {
     final file = archive.findFile(path);
     if (file == null) return null;
     try {
-      return XmlDocument.parse(utf8.decode(file.content as List<int>));
+      var text = utf8.decode(file.content as List<int>);
+      // Strip a UTF-8 BOM — XmlDocument.parse rejects it as leading content.
+      if (text.startsWith('\uFEFF')) text = text.substring(1);
+      return XmlDocument.parse(text);
     } catch (e) {
       throw DocxParseException('Failed to parse $path: $e');
     }
@@ -286,6 +300,18 @@ class DocxToMarkdown {
       final id = element.getAttribute('Id');
       final target = element.getAttribute('Target');
       if (id != null && target != null) result[id] = target;
+    }
+    return result;
+  }
+
+  static Map<String, String> _parseStyleNames(XmlDocument? styles) {
+    if (styles == null) return const {};
+    final result = <String, String>{};
+    for (final style in styles.rootElement.childElements
+        .where((e) => e.localName == 'style')) {
+      final id = style.getAttribute('w:styleId');
+      final name = _child(style, 'name')?.getAttribute('w:val');
+      if (id != null && name != null) result[id] = name;
     }
     return result;
   }
