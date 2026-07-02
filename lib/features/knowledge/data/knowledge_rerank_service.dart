@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import 'package:aetherlink_flutter/shared/domain/model.dart';
+import 'package:aetherlink_flutter/shared/utils/api_host.dart';
 
 /// Calls a Jina/Cohere-compatible `/rerank` endpoint to score documents by
 /// relevance to a query（功能缺口⑥，设计文档 §6）. Protocol-only：不含检索逻辑
@@ -8,7 +9,8 @@ import 'package:aetherlink_flutter/shared/domain/model.dart';
 /// `effectiveModelFor` 合并）再传入。
 ///
 /// 认证 / baseUrl 处理与 `embedding_service.dart` 同款：`Authorization: Bearer
-/// apiKey` + 模型附加请求头，POST 到 `baseUrl/rerank`。请求体
+/// apiKey` + 模型附加请求头，POST 到 `formatApiHost(baseUrl)/rerank`（裸 host
+/// 自动补 `/v1`，末尾 `#` 为精确地址逃生口）。请求体
 /// `{model, query, documents}`、响应 `results: [{index, relevance_score}]` 是
 /// Jina / Cohere / 硅基流动 / 火山方舟等主流 rerank API 的公共子集。
 class KnowledgeRerankService {
@@ -60,9 +62,7 @@ class KnowledgeRerankService {
   }
 
   static String _rerankUrl(String? baseUrl) {
-    final base = (baseUrl == null || baseUrl.isEmpty)
-        ? 'https://api.jina.ai/v1'
-        : baseUrl.replaceAll(RegExp(r'/+$'), '');
-    return '$base/rerank';
+    final base = formatApiHost(baseUrl);
+    return '${base.isEmpty ? 'https://api.jina.ai/v1' : base}/rerank';
   }
 }
