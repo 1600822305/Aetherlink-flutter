@@ -71,6 +71,24 @@ class _KnowledgeBaseDetailPageState
     setState(() => _results = null);
   }
 
+  /// 「添加数据源」统一入口：上拉面板列出四种来源（笔记 / 文件 / 网址 / 工作区
+  /// 目录），选中后走各自原有流程。
+  Future<void> _openAddMenu() async {
+    final action = await showModalBottomSheet<Future<void> Function()>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => _AddSourceSheet(
+        onNote: _addNote,
+        onFile: _addFile,
+        onUrl: _addUrl,
+        onWorkspace: _addWorkspace,
+      ),
+    );
+    if (action == null) return;
+    await action();
+  }
+
   Future<void> _addNote() async {
     final result = await showModalBottomSheet<({String title, String text})>(
       context: context,
@@ -486,28 +504,10 @@ class _KnowledgeBaseDetailPageState
             onPressed: _refresh,
           ),
           IconButton(
-            icon: const Icon(LucideIcons.upload, size: 20),
+            icon: const Icon(LucideIcons.plus, size: 22),
             color: theme.colorScheme.primary,
-            tooltip: '上传文件（txt / md / docx / pdf）',
-            onPressed: _addFile,
-          ),
-          IconButton(
-            icon: const Icon(LucideIcons.link, size: 20),
-            color: theme.colorScheme.primary,
-            tooltip: '添加网址',
-            onPressed: _addUrl,
-          ),
-          IconButton(
-            icon: const Icon(LucideIcons.folder, size: 20),
-            color: theme.colorScheme.primary,
-            tooltip: '摄取工作区目录',
-            onPressed: _addWorkspace,
-          ),
-          IconButton(
-            icon: const Icon(LucideIcons.filePlus, size: 22),
-            color: theme.colorScheme.primary,
-            tooltip: '添加笔记',
-            onPressed: _addNote,
+            tooltip: '添加数据源',
+            onPressed: _openAddMenu,
           ),
           const SizedBox(width: 4),
         ],
@@ -860,6 +860,92 @@ class _SheetScaffold extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 「添加数据源」面板：四种来源各一行，点选后 pop 出对应动作由调用方执行
+/// （先关面板再开来源自己的面板 / 选择器，避免嵌套导航）。
+class _AddSourceSheet extends StatelessWidget {
+  const _AddSourceSheet({
+    required this.onNote,
+    required this.onFile,
+    required this.onUrl,
+    required this.onWorkspace,
+  });
+
+  final Future<void> Function() onNote;
+  final Future<void> Function() onFile;
+  final Future<void> Function() onUrl;
+  final Future<void> Function() onWorkspace;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    Widget entry({
+      required IconData icon,
+      required String title,
+      required String subtitle,
+      required Future<void> Function() action,
+    }) {
+      return ListTile(
+        leading: Icon(icon, color: theme.colorScheme.primary),
+        title: Text(title),
+        subtitle: Text(
+          subtitle,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        onTap: () => Navigator.of(context).pop(action),
+      );
+    }
+
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+        ),
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8, left: 4),
+              child: Text(
+                '添加数据源',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            entry(
+              icon: LucideIcons.filePlus,
+              title: '笔记',
+              subtitle: '手写一段文本并摄取',
+              action: onNote,
+            ),
+            entry(
+              icon: LucideIcons.upload,
+              title: '文件',
+              subtitle: 'txt / md / docx / pdf，配置云端解析后支持更多格式',
+              action: onFile,
+            ),
+            entry(
+              icon: LucideIcons.link,
+              title: '网址',
+              subtitle: '抓取网页正文并摄取',
+              action: onUrl,
+            ),
+            entry(
+              icon: LucideIcons.folder,
+              title: '工作区目录',
+              subtitle: '摄取工作区里的文本文件',
+              action: onWorkspace,
+            ),
+          ],
         ),
       ),
     );
