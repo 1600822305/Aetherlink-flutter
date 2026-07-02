@@ -45,6 +45,27 @@ class KnowledgeBasesController extends _$KnowledgeBasesController {
     ref.invalidateSelf();
     await future;
   }
+
+  /// 设置某库的所属分组（功能缺口⑦）；传 null / 空白移出分组。
+  Future<void> setBaseGroup(String id, String? groupName) async {
+    await ref.read(knowledgeServiceProvider).setBaseGroup(id, groupName);
+    ref.invalidateSelf();
+    await future;
+  }
+
+  /// 重命名分组：组内所有库改挂到新名字。
+  Future<void> renameGroup(String from, String to) async {
+    await ref.read(knowledgeServiceProvider).renameGroup(from, to);
+    ref.invalidateSelf();
+    await future;
+  }
+
+  /// 解散分组：组内所有库移回未分组（库本身保留）。
+  Future<void> dissolveGroup(String name) async {
+    await ref.read(knowledgeServiceProvider).dissolveGroup(name);
+    ref.invalidateSelf();
+    await future;
+  }
 }
 
 /// Loads and mutates the items inside one knowledge base.

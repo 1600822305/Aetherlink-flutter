@@ -199,6 +199,26 @@ class KnowledgeService {
     );
   }
 
+  /// 设置库的所属分组（功能缺口⑦）；[groupName] 传 null 或空白移出分组。
+  Future<void> setBaseGroup(String baseId, String? groupName) async {
+    await _requireBase(baseId);
+    final trimmed = groupName?.trim();
+    await _dao.updateBaseGroup(
+      baseId,
+      (trimmed == null || trimmed.isEmpty) ? null : trimmed,
+    );
+  }
+
+  /// 重命名分组（功能缺口⑦）：组内所有库改挂到 [to]。空名视为坏输入抛错。
+  Future<void> renameGroup(String from, String to) async {
+    final trimmed = to.trim();
+    if (trimmed.isEmpty) throw StateError('分组名不能为空');
+    await _dao.renameGroup(from, trimmed);
+  }
+
+  /// 解散分组（功能缺口⑦）：组内所有库移回未分组，库本身保留。
+  Future<void> dissolveGroup(String name) => _dao.dissolveGroup(name);
+
   /// 更新库的可编辑配置（名称 + RAG 参数）。参数非法（空名 / 切块参数越界）视为
   /// 坏输入抛错。切块参数变化后需调用方另行 [reindexBase] 才会对已有条目生效。
   Future<void> updateBaseConfig(

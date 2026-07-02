@@ -95,7 +95,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.open() : super(_openConnection());
 
   @override
-  int get schemaVersion => 13;
+  int get schemaVersion => 14;
 
   // SQLite can't ALTER a table-level CHECK/FK onto an existing table, but a
   // partial UNIQUE index CAN be created on one. This enforces the single-root
@@ -206,6 +206,10 @@ class AppDatabase extends _$AppDatabase {
           knowledgeBaseRows,
           knowledgeBaseRows.fileProcessorId,
         );
+      }
+      if (from < 14) {
+        // 知识库分组（功能缺口⑦）：给 knowledge_base 补分组名列，为空表示未分组。
+        await m.addColumn(knowledgeBaseRows, knowledgeBaseRows.groupName);
       }
     },
   );
