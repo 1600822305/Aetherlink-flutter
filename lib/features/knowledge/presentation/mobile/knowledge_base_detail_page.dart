@@ -382,6 +382,17 @@ class _KnowledgeBaseDetailPageState
     }
   }
 
+  /// 召回测试面板：用于调参时验证检索效果，展示每条命中的分数与
+  /// 来源条目 / 匹配切块全文。
+  Future<void> _openRecallTest() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => _RecallTestSheet(baseId: widget.baseId),
+    );
+  }
+
   /// 从已存正文重建整库索引（切块 + 向量）。适用于调整切块/嵌入配置后刷新。
   Future<void> _refresh() async {
     try {
@@ -453,6 +464,12 @@ class _KnowledgeBaseDetailPageState
             color: theme.colorScheme.primary,
             tooltip: '云端解析设置',
             onPressed: _configureCloudParsing,
+          ),
+          IconButton(
+            icon: const Icon(LucideIcons.testTube2, size: 20),
+            color: theme.colorScheme.primary,
+            tooltip: '检索测试',
+            onPressed: _openRecallTest,
           ),
           IconButton(
             icon: const Icon(LucideIcons.refreshCw, size: 20),
@@ -1309,6 +1326,213 @@ class _ItemDetailSheet extends ConsumerWidget {
               label: const Text('删除条目'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 召回测试面板（对齐 Cherry Studio 的 RecallTestPanel）：输入查询语句跑一次
+/// 真实检索，逐条展示命中分数、来源条目与匹配切块全文，供调整 RAG 参数后
+/// 立即验证召回效果。
+class _RecallTestSheet extends ConsumerStatefulWidget {
+  const _RecallTestSheet({required this.baseId});
+
+  final String baseId;
+
+  @override
+  ConsumerState<_RecallTestSheet> createState() => _RecallTestSheetState();
+}
+
+class _RecallTestSheetState extends ConsumerState<_RecallTestSheet> {
+  final _queryController = TextEditingController();
+  List<KnowledgeReferenceItem>? _results;
+  bool _searching = false;
+
+  @override
+  void dispose() {
+    _queryController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _run() async {
+    final query = _queryController.text.trim();
+    if (query.isEmpty || _searching) return;
+    setState(() => _searching = true);
+    try {
+      final results = await ref
+          .read(knowledgeServiceProvider)
+          .search(baseId: widget.baseId, query: query);
+      if (!mounted) return;
+      setState(() {
+        _results = results;
+        _searching = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _searching = false);
+      AppToast.error(context, '检索失败：$e');
+    }
+  }
+
+  static String _modeLabel(KnowledgeSearchMode mode) => switch (mode) {
+    KnowledgeSearchMode.vector => '向量',
+    KnowledgeSearchMode.keyword => '关键词',
+    KnowledgeSearchMode.hybrid => '混合',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final base = ref
+        .watch(knowledgeBaseControllerProvider(widget.baseId))
+        .asData
+        ?.value;
+    final items =
+        ref
+            .watch(knowledgeItemsControllerProvider(widget.baseId))
+            .asData
+            ?.value ??
+        const <KnowledgeItem>[];
+    final titleById = {
+      for (final item in items) item.id: item.title ?? item.source,
+    };
+    final results = _results;
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+          ),
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4, left: 4),
+                child: Text(
+                  '检索测试',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (base != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12, left: 4),
+                  child: Text(
+                    '模式 ${_modeLabel(base.searchMode)} · topK ${base.topK}'
+                    '${base.threshold == null ? '' : ' · 阈值 ${base.threshold}'}'
+                    ' —— 在「库设置」调整参数后可在此验证效果',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _queryController,
+                      autofocus: true,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => _run(),
+                      decoration: InputDecoration(
+                        hintText: '输入要测试的查询语句',
+                        prefixIcon: const Icon(LucideIcons.search, size: 18),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: _searching ? null : _run,
+                    child: const Text('检索'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (_searching)
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (results != null && results.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Center(
+                    child: Text(
+                      '未召回任何切块，可尝试降低阈值或换检索模式',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                )
+              else if (results != null) ...[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8, left: 4),
+                  child: Text(
+                    '召回 ${results.length} 条',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                for (final hit in results)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: theme.dividerColor),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '#${hit.index} · '
+                                '${titleById[hit.documentId] ?? '未知来源'}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: theme.colorScheme.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              '${(hit.similarity * 100).round()}%',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        SelectableText(
+                          hit.content,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ],
+          ),
         ),
       ),
     );
