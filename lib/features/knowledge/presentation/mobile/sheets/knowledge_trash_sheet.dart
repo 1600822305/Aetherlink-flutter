@@ -109,90 +109,102 @@ class KnowledgeTrashSheet extends ConsumerWidget {
         constraints: BoxConstraints(
           maxHeight: MediaQuery.sizeOf(context).height * 0.85,
         ),
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        // 标题行（含「清空」）固定，条目列表在下方滚动。
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 4),
-                    child: Text(
-                      '回收站 (${items.length})',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: Text(
+                        '回收站 (${items.length})',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                if (items.isNotEmpty)
-                  TextButton(
-                    style: TextButton.styleFrom(
-                      foregroundColor: theme.colorScheme.error,
+                  if (items.isNotEmpty)
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        foregroundColor: theme.colorScheme.error,
+                      ),
+                      onPressed: () => _emptyTrash(context, ref),
+                      child: const Text('清空'),
                     ),
-                    onPressed: () => _emptyTrash(context, ref),
-                    child: const Text('清空'),
-                  ),
-              ],
+                ],
+              ),
             ),
-            if (trashAsync.isLoading)
-              const Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (items.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(24),
-                child: Center(
-                  child: Text(
-                    '回收站是空的',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              )
-            else
-              for (final item in items)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    LucideIcons.trash2,
-                    size: 20,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  title: Text(
-                    item.title ?? item.source,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: item.deletedAt == null
-                      ? null
-                      : Text(
-                          '删除于 ${_formatTime(item.deletedAt!)}',
-                          style: theme.textTheme.bodySmall?.copyWith(
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                children: [
+                  if (trashAsync.isLoading)
+                    const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (items.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Center(
+                        child: Text(
+                          '回收站是空的',
+                          style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(LucideIcons.undo2, size: 18),
-                        color: theme.colorScheme.primary,
-                        tooltip: '恢复',
-                        onPressed: () => _restore(context, ref, item),
                       ),
-                      IconButton(
-                        icon: const Icon(LucideIcons.x, size: 18),
-                        color: theme.colorScheme.error,
-                        tooltip: '彻底删除',
-                        onPressed: () => _purge(context, ref, item),
+                    )
+                  else
+                    for (final item in items)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          LucideIcons.trash2,
+                          size: 20,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        title: Text(
+                          item.title ?? item.source,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: item.deletedAt == null
+                            ? null
+                            : Text(
+                                '删除于 ${_formatTime(item.deletedAt!)}',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(LucideIcons.undo2, size: 18),
+                              color: theme.colorScheme.primary,
+                              tooltip: '恢复',
+                              onPressed: () => _restore(context, ref, item),
+                            ),
+                            IconButton(
+                              icon: const Icon(LucideIcons.x, size: 18),
+                              color: theme.colorScheme.error,
+                              tooltip: '彻底删除',
+                              onPressed: () => _purge(context, ref, item),
+                            ),
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
-                ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
