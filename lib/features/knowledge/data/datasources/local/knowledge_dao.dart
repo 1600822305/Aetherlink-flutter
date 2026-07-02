@@ -99,6 +99,7 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
         createdAt: base.createdAt.millisecondsSinceEpoch,
         fileProcessorId: Value(base.fileProcessorId),
         groupName: Value(base.groupName),
+        rerankModelKey: Value(base.rerankModelKey),
       ),
     );
   }
@@ -150,6 +151,13 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
       knowledgeBaseRows,
     )..where((t) => t.groupName.equals(name))).write(
       const KnowledgeBaseRowsCompanion(groupName: Value(null)),
+    );
+  }
+
+  /// 更新库的重排序模型 key（功能缺口⑥）；传 null 关闭重排。
+  Future<void> updateBaseRerankModel(String id, String? rerankModelKey) {
+    return (update(knowledgeBaseRows)..where((t) => t.id.equals(id))).write(
+      KnowledgeBaseRowsCompanion(rerankModelKey: Value(rerankModelKey)),
     );
   }
 
@@ -680,6 +688,7 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
     createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
     fileProcessorId: row.fileProcessorId,
     groupName: row.groupName,
+    rerankModelKey: row.rerankModelKey,
   );
 
   KnowledgeItem _toItem(KnowledgeItemRow row) => KnowledgeItem(

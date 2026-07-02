@@ -9,18 +9,23 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
+import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/core/platform/file_system_api.dart'
     show PickedFile;
 import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_reference_item.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/knowledge/application/knowledge_providers.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_document_converter.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_file_processor.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
+import 'package:aetherlink_flutter/features/memory/domain/embedding_model_key.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
+import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 class KnowledgeBaseDetailPage extends ConsumerStatefulWidget {
@@ -420,6 +425,11 @@ class _KnowledgeBaseDetailPageState
             topK: result.topK,
             threshold: result.threshold,
           );
+      if (result.rerankModelKey != base.rerankModelKey) {
+        await ref
+            .read(knowledgeBaseControllerProvider(widget.baseId).notifier)
+            .setRerankModel(result.rerankModelKey);
+      }
       if (mounted) AppToast.success(context, '已保存库设置');
     } catch (e) {
       if (mounted) AppToast.error(context, '保存失败：$e');
@@ -1195,7 +1205,7 @@ class _CloudParsingSheetState extends State<_CloudParsingSheet> {
   }
 }
 
-/// [_BaseSettingsSheet] 的返回值：名称 + RAG 参数。
+/// [_BaseSettingsSheet] 的返回值：名称 + RAG 参数 + 重排模型。
 class _BaseSettingsResult {
   const _BaseSettingsResult({
     required this.name,
@@ -1203,6 +1213,7 @@ class _BaseSettingsResult {
     required this.chunkOverlap,
     required this.topK,
     required this.threshold,
+    required this.rerankModelKey,
   });
 
   final String name;
@@ -1210,19 +1221,21 @@ class _BaseSettingsResult {
   final int chunkOverlap;
   final int topK;
   final double? threshold;
+  final String? rerankModelKey;
 }
 
-/// 库设置面板：重命名 + RAG 参数（切块大小 / 重叠 / topK / 相似度阈值）。
-class _BaseSettingsSheet extends StatefulWidget {
+/// 库设置面板：重命名 + RAG 参数（切块大小 / 重叠 / topK / 相似度阈值）+
+/// 重排序模型（功能缺口⑥，可选）。
+class _BaseSettingsSheet extends ConsumerStatefulWidget {
   const _BaseSettingsSheet({required this.base});
 
   final KnowledgeBase base;
 
   @override
-  State<_BaseSettingsSheet> createState() => _BaseSettingsSheetState();
+  ConsumerState<_BaseSettingsSheet> createState() => _BaseSettingsSheetState();
 }
 
-class _BaseSettingsSheetState extends State<_BaseSettingsSheet> {
+class _BaseSettingsSheetState extends ConsumerState<_BaseSettingsSheet> {
   late final _nameController = TextEditingController(text: widget.base.name);
   late final _chunkSizeController = TextEditingController(
     text: '${widget.base.chunkSize}',
@@ -1236,6 +1249,7 @@ class _BaseSettingsSheetState extends State<_BaseSettingsSheet> {
   late final _thresholdController = TextEditingController(
     text: widget.base.threshold?.toString() ?? '',
   );
+  late String? _rerankModelKey = widget.base.rerankModelKey;
 
   @override
   void dispose() {
@@ -1276,7 +1290,35 @@ class _BaseSettingsSheetState extends State<_BaseSettingsSheet> {
         chunkOverlap: chunkOverlap,
         topK: topK,
         threshold: threshold,
+        rerankModelKey: _rerankModelKey,
       ),
+    );
+  }
+
+  String _rerankModelDisplayName(List<ModelProvider> providers) {
+    final pair = decodeEmbeddingModelKey(_rerankModelKey);
+    if (pair == null) return '未选择（不重排）';
+    for (final p in providers) {
+      if (p.id != pair.$1) continue;
+      for (final m in p.models) {
+        if (m.id == pair.$2) return '${p.name} / ${m.name}';
+      }
+    }
+    return '未选择（不重排）';
+  }
+
+  Future<void> _pickRerankModel() async {
+    final pair = decodeEmbeddingModelKey(_rerankModelKey);
+    await showModelSelectorDialog(
+      context,
+      selectedProviderId: pair?.$1,
+      selectedModelId: pair?.$2,
+      filter: isRerankModel,
+      onSelect: (provider, model) {
+        setState(() {
+          _rerankModelKey = encodeEmbeddingModelKey(provider.id, model.id);
+        });
+      },
     );
   }
 
@@ -1350,6 +1392,63 @@ class _BaseSettingsSheetState extends State<_BaseSettingsSheet> {
         Text(
           '修改切块大小 / 重叠后会自动重建整库索引（向量库会按需补嵌，'
           '未变的内容不重复调用嵌入 API）。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          '重排序模型',
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 4),
+        InkWell(
+          onTap: _pickRerankModel,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                Icon(
+                  LucideIcons.arrowDownUp,
+                  size: 18,
+                  color: _rerankModelKey != null
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _rerankModelDisplayName(
+                      ref.watch(appModelProvidersProvider).asData?.value ??
+                          const <ModelProvider>[],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: _rerankModelKey != null
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                if (_rerankModelKey != null)
+                  IconButton(
+                    icon: const Icon(LucideIcons.x, size: 16),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: '关闭重排',
+                    onPressed: () => setState(() => _rerankModelKey = null),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '选了重排模型后，检索命中会再经 rerank API 按相关性重排；'
+          '调用失败时自动保持原排序。',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),

@@ -13,6 +13,7 @@ import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedding
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_file_processor.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_ranking.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_reranker.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_url_fetcher.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_workspace_source.dart';
@@ -40,16 +41,19 @@ class KnowledgeService {
   KnowledgeService(
     this._dao, {
     KnowledgeEmbedderResolver? embedderResolver,
+    KnowledgeRerankerResolver? rerankerResolver,
     KnowledgeUrlFetcher? urlFetcher,
     KnowledgeWorkspaceSource? workspaceSource,
     KnowledgeFilePreprocessor? filePreprocessor,
   }) : _resolveEmbedder = embedderResolver,
+       _resolveReranker = rerankerResolver,
        _fetchUrl = urlFetcher,
        _workspaceSource = workspaceSource,
        _preprocessFile = filePreprocessor;
 
   final KnowledgeDao _dao;
   final KnowledgeEmbedderResolver? _resolveEmbedder;
+  final KnowledgeRerankerResolver? _resolveReranker;
   final KnowledgeUrlFetcher? _fetchUrl;
   final KnowledgeWorkspaceSource? _workspaceSource;
   final KnowledgeFilePreprocessor? _preprocessFile;
@@ -239,6 +243,19 @@ class KnowledgeService {
 
   /// 解散分组（功能缺口⑦）：组内所有库移回未分组，库本身保留。
   Future<void> dissolveGroup(String name) => _dao.dissolveGroup(name);
+
+  /// 更新库的重排序模型（功能缺口⑥）；传 null 关闭重排。库不存在抛错。
+  Future<void> updateBaseRerankModel(
+    String baseId,
+    String? rerankModelKey,
+  ) async {
+    await _requireBase(baseId);
+    final key = rerankModelKey?.trim();
+    await _dao.updateBaseRerankModel(
+      baseId,
+      (key == null || key.isEmpty) ? null : key,
+    );
+  }
 
   /// 更新库的可编辑配置（名称 + RAG 参数）。参数非法（空名 / 切块参数越界）视为
   /// 坏输入抛错。切块参数变化后需调用方另行 [reindexBase] 才会对已有条目生效。
@@ -653,7 +670,50 @@ class KnowledgeService {
           refs = _hybridReferences(base, keyword, vector, limit);
         }
     }
-    return _annotateStaleness(refs);
+    return _annotateStaleness(await _maybeRerank(base, query, refs));
+  }
+
+  /// 检索后置重排（功能缺口⑥，设计文档 §6）：库配了 rerank 模型时把命中
+  /// 片段送去重打相关性分，按分降序重排并用 rerank 分（clamp 到 0–1）替换
+  /// `similarity`、重编序号。best-effort：未配模型 / 解析不到 / 调用失败 /
+  /// 分数无效都原样返回，绝不中断检索。
+  Future<List<KnowledgeReferenceItem>> _maybeRerank(
+    KnowledgeBase base,
+    String query,
+    List<KnowledgeReferenceItem> refs,
+  ) async {
+    final modelKey = base.rerankModelKey;
+    final resolver = _resolveReranker;
+    if (resolver == null ||
+        modelKey == null ||
+        modelKey.isEmpty ||
+        refs.length < 2 ||
+        query.trim().isEmpty) {
+      return refs;
+    }
+    try {
+      final reranker = await resolver(modelKey);
+      if (reranker == null) return refs;
+      final scores = await reranker.rerank(
+        query: query,
+        documents: [for (final r in refs) r.content],
+      );
+      if (scores == null || scores.length != refs.length) return refs;
+      final order = List<int>.generate(refs.length, (i) => i)
+        ..sort((a, b) => scores[b].compareTo(scores[a]));
+      return [
+        for (var i = 0; i < order.length; i++)
+          refs[order[i]].copyWith(
+            index: i + 1,
+            similarity: scores[order[i]].isFinite
+                ? scores[order[i]].clamp(0.0, 1.0)
+                : 0.0,
+          ),
+      ];
+    } catch (_) {
+      // best-effort：重排失败保持原排序。
+      return refs;
+    }
   }
 
   /// 为命中结果里的 workspace 条目标记「可能已过期」（设计文档 §8.1）。对结果中出现
