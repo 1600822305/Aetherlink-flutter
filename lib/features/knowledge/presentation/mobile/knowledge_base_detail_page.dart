@@ -9,10 +9,13 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
+import 'package:aetherlink_flutter/core/platform/file_system_api.dart'
+    show PickedFile;
 import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_reference_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/application/knowledge_providers.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_document_converter.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_file_processor.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
@@ -123,13 +126,24 @@ class _KnowledgeBaseDetailPageState
 
   /// 选择一个 txt / md / docx / pdf 文件并摄取为条目。纯文本按 UTF-8 读取；
   /// DOCX 在 isolate 里、PDF 在 PDFium 原生 worker 里转 Markdown（§5.2 本地解析轨）
-  /// 后走同一条摄取管线。
+  /// 后走同一条摄取管线；库配置了云端解析器时 PDF / DOCX 改走云端预处理轨。
   Future<void> _addFile() async {
     final picked = await ref.read(fileSystemApiProvider).pickFile(
       allowedExtensions: const ['txt', 'md', 'markdown', 'text', 'docx', 'pdf'],
     );
     if (picked == null) return;
     final isPdf = isPdfFileName(picked.name);
+    final isRichDoc = isPdf || isDocxFileName(picked.name);
+    if (isRichDoc) {
+      final base = await ref.read(
+        knowledgeBaseControllerProvider(widget.baseId).future,
+      );
+      final processor = KnowledgeFileProcessor.fromId(base?.fileProcessorId);
+      if (processor != null) {
+        await _addFileViaCloud(picked, processor);
+        return;
+      }
+    }
     String text;
     try {
       if (isDocxFileName(picked.name)) {
@@ -163,6 +177,39 @@ class _KnowledgeBaseDetailPageState
       if (mounted) AppToast.success(context, '已上传「${picked.name}」');
     } catch (e) {
       if (mounted) AppToast.error(context, '上传失败：$e');
+    }
+  }
+
+  /// 云端预处理轨（§5.2）：把原始字节交给库配置的云端解析器转 Markdown
+  /// 权威快照后摄取。上传 + 轮询可能要几十秒到几分钟，先给提示。
+  Future<void> _addFileViaCloud(
+    PickedFile picked,
+    KnowledgeFileProcessor processor,
+  ) async {
+    try {
+      final bytes =
+          await ref.read(fileSystemApiProvider).readAsBytes(picked.path);
+      if (mounted) {
+        AppToast.success(
+          context,
+          '已交给 ${processor.label} 云端解析，完成后自动入库…',
+        );
+      }
+      await ref
+          .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
+          .addProcessedFile(
+            fileName: picked.name,
+            bytes: bytes,
+            sourcePath: picked.path,
+          );
+      if (mounted) {
+        AppToast.success(
+          context,
+          '已通过 ${processor.label} 解析并上传「${picked.name}」',
+        );
+      }
+    } catch (e) {
+      if (mounted) AppToast.error(context, '云端解析失败：$e');
     }
   }
 
@@ -286,6 +333,124 @@ class _KnowledgeBaseDetailPageState
     }
   }
 
+  /// 库级云端解析设置（§5.2 云端预处理轨）：选择 PDF / DOCX 的解析方式
+  /// （本地 / MinerU / Doc2X / Mistral OCR）并填写对应服务的 API Key。
+  Future<void> _configureCloudParsing() async {
+    final base = await ref.read(
+      knowledgeBaseControllerProvider(widget.baseId).future,
+    );
+    if (!mounted) return;
+    var selected = KnowledgeFileProcessor.fromId(base?.fileProcessorId);
+    final keyControllers = {
+      for (final p in KnowledgeFileProcessor.values)
+        p: TextEditingController(),
+    };
+    for (final p in KnowledgeFileProcessor.values) {
+      final saved = await readKnowledgeFileProcessorApiKey(ref, p);
+      keyControllers[p]!.text = saved ?? '';
+    }
+    if (!mounted) {
+      for (final c in keyControllers.values) {
+        c.dispose();
+      }
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('云端解析设置'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DropdownButtonFormField<KnowledgeFileProcessor?>(
+                  initialValue: selected,
+                  decoration: const InputDecoration(
+                    labelText: 'PDF / DOCX 解析方式',
+                  ),
+                  items: [
+                    const DropdownMenuItem<KnowledgeFileProcessor?>(
+                      value: null,
+                      child: Text('本地解析（默认，不上传）'),
+                    ),
+                    for (final p in KnowledgeFileProcessor.values)
+                      DropdownMenuItem<KnowledgeFileProcessor?>(
+                        value: p,
+                        child: Text(p.label),
+                      ),
+                  ],
+                  onChanged: (value) =>
+                      setDialogState(() => selected = value),
+                ),
+                if (selected != null) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: keyControllers[selected]!,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      labelText: '${selected!.label} API Key',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '启用后本库的 PDF / DOCX 会上传到 ${selected!.label} '
+                    '解析为 Markdown（注意隐私与费用）；解析结果作为权威快照'
+                    '落库，重建索引不会重复调用云端。',
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+    try {
+      if (confirmed != true) return;
+      final processor = selected;
+      if (processor != null) {
+        final key = keyControllers[processor]!.text.trim();
+        if (key.isEmpty) {
+          if (mounted) {
+            AppToast.error(context, '请填写 ${processor.label} 的 API Key');
+          }
+          return;
+        }
+        await saveKnowledgeFileProcessorApiKey(ref, processor, key);
+      }
+      await ref
+          .read(knowledgeBaseControllerProvider(widget.baseId).notifier)
+          .setFileProcessor(processor?.id);
+      if (mounted) {
+        AppToast.success(
+          context,
+          processor == null
+              ? '已切回本地解析'
+              : '已启用 ${processor.label} 云端解析',
+        );
+      }
+    } catch (e) {
+      if (mounted) AppToast.error(context, '保存失败：$e');
+    } finally {
+      for (final c in keyControllers.values) {
+        c.dispose();
+      }
+    }
+  }
+
   /// 从已存正文重建整库索引（切块 + 向量）。适用于调整切块/嵌入配置后刷新。
   Future<void> _refresh() async {
     try {
@@ -338,6 +503,12 @@ class _KnowledgeBaseDetailPageState
         ),
         title: Text(widget.baseName.isEmpty ? '知识库' : widget.baseName),
         actions: [
+          IconButton(
+            icon: const Icon(LucideIcons.cloudCog, size: 20),
+            color: theme.colorScheme.primary,
+            tooltip: '云端解析设置',
+            onPressed: _configureCloudParsing,
+          ),
           IconButton(
             icon: const Icon(LucideIcons.refreshCw, size: 20),
             color: theme.colorScheme.primary,

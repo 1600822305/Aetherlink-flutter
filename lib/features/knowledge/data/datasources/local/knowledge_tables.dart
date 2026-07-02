@@ -22,6 +22,9 @@ class KnowledgeBaseRows extends Table {
   TextColumn get status => text().withDefault(const Constant('idle'))();
   IntColumn get createdAt => integer()();
 
+  /// 云端文件预处理器 id（设计文档 §5.2 云端预处理轨，P3e 起）。为空走本地解析轨。
+  TextColumn get fileProcessorId => text().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {id};
 }
