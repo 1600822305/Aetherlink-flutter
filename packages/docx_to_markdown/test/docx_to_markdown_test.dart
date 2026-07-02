@@ -12,6 +12,8 @@ Uint8List buildDocx({
   required String body,
   String? relationships,
   String? numbering,
+  String? styles,
+  bool withBom = false,
 }) {
   final archive = Archive();
 
@@ -22,9 +24,17 @@ Uint8List buildDocx({
 
   addFile(
     'word/document.xml',
+    '${withBom ? '\uFEFF' : ''}'
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     '<w:document $_wNs><w:body>$body</w:body></w:document>',
   );
+  if (styles != null) {
+    addFile(
+      'word/styles.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      '<w:styles $_wNs>$styles</w:styles>',
+    );
+  }
   if (relationships != null) {
     addFile(
       'word/_rels/document.xml.rels',
@@ -118,6 +128,37 @@ void main() {
         body: p(r('a') + r(' spaced ', properties: '<w:b/>') + r('b')),
       );
       expect(DocxToMarkdown.convert(bytes), 'a **spaced** b');
+    });
+
+    test('resolves localized heading styleIds through styles.xml', () {
+      // 中文版 Word：「标题 1」的 styleId 是 "1"，样式名仍是 "heading 1"。
+      final bytes = buildDocx(
+        body: p(r('中文标题'), properties: '<w:pStyle w:val="1"/>') +
+            p(r('副标题'), properties: '<w:pStyle w:val="2"/>') +
+            p(r('普通段落'), properties: '<w:pStyle w:val="a"/>'),
+        styles: '<w:style w:styleId="1">'
+            '<w:name w:val="heading 1"/></w:style>'
+            '<w:style w:styleId="2">'
+            '<w:name w:val="heading 2"/></w:style>'
+            '<w:style w:styleId="a">'
+            '<w:name w:val="Normal"/></w:style>',
+      );
+      expect(
+        DocxToMarkdown.convert(bytes),
+        '# 中文标题\n\n## 副标题\n\n普通段落',
+      );
+    });
+
+    test('unknown styleId without styles.xml stays a plain paragraph', () {
+      final bytes = buildDocx(
+        body: p(r('段落'), properties: '<w:pStyle w:val="1"/>'),
+      );
+      expect(DocxToMarkdown.convert(bytes), '段落');
+    });
+
+    test('parses document.xml with a UTF-8 BOM', () {
+      final bytes = buildDocx(body: p(r('hello')), withBom: true);
+      expect(DocxToMarkdown.convert(bytes), 'hello');
     });
 
     test('converts hyperlinks via relationships', () {
