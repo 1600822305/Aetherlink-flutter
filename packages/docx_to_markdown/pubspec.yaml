@@ -1,0 +1,16 @@
+name: docx_to_markdown
+description: "Pure Dart DOCX → Markdown converter: unzips the OOXML package and walks word/document.xml (headings, lists, tables, hyperlinks, run formatting). No Flutter dependency, safe to run inside an isolate."
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  # Both already used by the host app (pubspec.yaml pins archive ^4.0.2 / xml ^6.5.0).
+  archive: ^4.0.2
+  xml: ^6.5.0
+
+dev_dependencies:
+  test: any
+  lints: ^6.0.0
