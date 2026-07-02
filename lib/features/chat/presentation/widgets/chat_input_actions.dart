@@ -9,8 +9,10 @@ import 'package:aetherlink_flutter/features/chat/application/composer_attachment
 import 'package:aetherlink_flutter/features/chat/application/composer_attachments_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/mounted_knowledge_bases_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/multi_model_mentions_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/knowledge_mount_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/mcp_quick_panel_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/multi_model_selector_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/quick_phrase_sheet.dart';
@@ -57,6 +59,8 @@ class ChatInputActions implements InputBoxActions {
     InputBoxAction.clearTopic => _ref.read(inputClearConfirmProvider),
     InputBoxAction.mcpTools => _ref.read(mcpToolsControllerProvider).enabled,
     InputBoxAction.reasoningEffort => isReasoningEffortActive(_ref),
+    InputBoxAction.knowledge =>
+      _ref.read(mountedKnowledgeBasesProvider).isNotEmpty,
     _ => false,
   };
 
@@ -117,6 +121,7 @@ class ChatInputActions implements InputBoxActions {
       case InputBoxAction.multiModel:
         _openMultiModelSelector(context);
       case InputBoxAction.knowledge:
+        _openKnowledgeMount(context);
       case InputBoxAction.aiDebate:
         _comingSoon(context);
     }
@@ -133,6 +138,17 @@ class ChatInputActions implements InputBoxActions {
     );
     if (chosen == null) return;
     notifier.set(chosen);
+  }
+
+  /// Opens the 挂载知识库 multi-select sheet and stages the chosen bases; every
+  /// subsequent send retrieves them and injects the hits into the context.
+  Future<void> _openKnowledgeMount(BuildContext context) async {
+    final chosen = await showKnowledgeMountSheet(
+      context,
+      initial: _ref.read(mountedKnowledgeBasesProvider),
+    );
+    if (chosen == null) return;
+    _ref.read(mountedKnowledgeBasesProvider.notifier).set(chosen);
   }
 
   void _toggle(InputMode mode) =>

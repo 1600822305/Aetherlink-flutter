@@ -6,8 +6,10 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/network_proxy_access.dart';
 import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_reference_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_file_preprocessing.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_service.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_embedder.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_file_processor.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_url_fetcher.dart';
@@ -87,6 +89,84 @@ Future<void> saveKnowledgeFileProcessorApiKey(
         .read(appDatabaseProvider)
         .appSettingDao
         .setValue(knowledgeFileProcessorApiKeySetting(processor), apiKey);
+
+/// 聊天挂载知识库（设计文档 §7 轨道 B / 功能缺口⑫）单轮注入的结果：拼进系统提示
+/// 的 `<knowledge_references>` [section]（无命中时为 null），加上送进去的引用明细
+/// [references]（供对话内渲染「知识库引用」块）。与 [ChatMemoryInjection] 同款。
+class ChatKnowledgeInjection {
+  const ChatKnowledgeInjection({
+    this.section,
+    this.references = const <KnowledgeReferenceItem>[],
+  });
+
+  final String? section;
+  final List<KnowledgeReferenceItem> references;
+
+  bool get isEmpty => section == null || references.isEmpty;
+}
+
+/// 单轮注入的引用上限：多库同时挂载时合并后按相似度截断，避免把上下文塞爆。
+const int kChatKnowledgeMaxReferences = 12;
+
+/// 检索聊天挂载的知识库（[baseIds]）并汇总成一次注入：逐库调
+/// [KnowledgeService.search]（各库按自己的检索模式 / topK / 阈值），合并后按
+/// 相似度降序、截断到 [kChatKnowledgeMaxReferences] 并重编序号。单库检索失败
+/// best-effort 跳过，绝不阻断发送；[query] 为空（如纯附件消息）时不检索。
+///
+/// 住在组合根：chat 不能直接 import `knowledge/data`，与
+/// [collectChatMemoryInjection] 同款。
+Future<ChatKnowledgeInjection> collectChatKnowledgeInjection(
+  Ref ref, {
+  required List<String> baseIds,
+  String? query,
+}) async {
+  final q = query?.trim() ?? '';
+  if (baseIds.isEmpty || q.isEmpty) return const ChatKnowledgeInjection();
+  final service = ref.read(knowledgeServiceProvider);
+  final merged = <KnowledgeReferenceItem>[];
+  for (final baseId in baseIds) {
+    try {
+      merged.addAll(await service.search(baseId: baseId, query: q));
+    } on Object {
+      // 检索是 best-effort：单库失败（已删库 / 嵌入故障）不阻断发送。
+    }
+  }
+  if (merged.isEmpty) return const ChatKnowledgeInjection();
+  merged.sort((a, b) => b.similarity.compareTo(a.similarity));
+  final top = merged.take(kChatKnowledgeMaxReferences).toList();
+  final references = <KnowledgeReferenceItem>[
+    for (var i = 0; i < top.length; i++) top[i].copyWith(index: i + 1),
+  ];
+  final buffer = StringBuffer()
+    ..writeln('<knowledge_references>')
+    ..writeln(
+      '以下是从用户挂载的知识库中检索到的相关资料片段。回答时请优先参考这些资料，'
+      '并在引用处标注 [编号]；与问题无关的片段可忽略。',
+    );
+  for (final r in references) {
+    buffer
+      ..writeln(
+        '[${r.index}]（来自知识库「${r.knowledgeBaseName ?? '未知'}」，'
+        '相关度 ${(r.similarity * 100).round()}%）',
+      )
+      ..writeln(r.content)
+      ..writeln();
+  }
+  buffer.write('</knowledge_references>');
+  return ChatKnowledgeInjection(
+    section: buffer.toString(),
+    references: references,
+  );
+}
+
+/// 列出当前所有「对聊天开放」的知识库（供聊天侧的挂载选择面板展示）。
+Future<List<KnowledgeBase>> listChatEnabledKnowledgeBases(WidgetRef ref) async {
+  final bases = await ref.read(knowledgeServiceProvider).listBases();
+  return [
+    for (final base in bases)
+      if (base.scope.chatEnabled) base,
+  ];
+}
 
 /// 默认 URL 抓取器（设计文档 §5「URL 抓取 → Markdown 快照」）：走应用统一的
 /// LLM Dio（含代理配置），HTML 用与 `@aether/fetch` 同一套 [htmlToMarkdown] 转成
