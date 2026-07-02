@@ -1979,8 +1979,16 @@ class ChatController extends _$ChatController {
 
       try {
         var autoContinueCount = 0;
+        // Index in [messages] of the assistant partial fed back for auto-
+        // continue, so consecutive continuations replace it (one assistant
+        // message holding the full accumulated prose) instead of stacking
+        // overlapping copies.
+        var continuationIndex = -1;
         for (var round = 0; ; round++) {
-          buffer.clear();
+          // NB: [buffer] is NOT cleared here — an auto-continue round resumes
+          // into the same buffer/block so the reply stays one seamless
+          // MainText. Tool rounds clear it below after flushing prose, and
+          // each failover attempt resets it before the loop.
           String? lastFinishReason;
           final structuredCalls = <LlmToolCall>[];
           await for (final chunk in gateway.streamChat(
@@ -2039,17 +2047,10 @@ class ChatController extends _$ChatController {
             // re-request so the model resumes from the truncation point.
             if (truncated && autoContinueCount < _kMaxAutoContinues) {
               autoContinueCount++;
+              // The partial prose stays in [buffer] (same block id): the
+              // continuation appends to it seamlessly, so no '\n\n' seam is
+              // introduced mid-sentence by aggregateText's join.
               final partial = roundDisplay();
-              if (partial.isNotEmpty) {
-                completed.add(
-                  _mainTextBlock(
-                    id: roundBlockId,
-                    messageId: assistantMessageId,
-                    createdAt: assistantTime,
-                    content: partial,
-                  ),
-                );
-              }
               if (thinking.isNotEmpty) {
                 completed.add(
                   _thinkingBlock(
@@ -2066,12 +2067,19 @@ class ChatController extends _$ChatController {
                 thinkingEndAt = null;
               }
               // Feed partial output back so the model continues from where it
-              // was cut off.
-              messages = <LlmMessage>[
-                ...messages,
-                LlmMessage(role: MessageRole.assistant, content: partial),
-              ];
-              roundBlockId = generateId('block');
+              // was cut off; replace the previous continuation partial (if
+              // any) since [partial] already contains it.
+              final partialMessage = LlmMessage(
+                role: MessageRole.assistant,
+                content: partial,
+              );
+              if (continuationIndex >= 0) {
+                messages = List<LlmMessage>.of(messages)
+                  ..[continuationIndex] = partialMessage;
+              } else {
+                continuationIndex = messages.length;
+                messages = <LlmMessage>[...messages, partialMessage];
+              }
               update();
               continue; // next round = continuation
             }
@@ -2257,7 +2265,14 @@ class ChatController extends _$ChatController {
             update();
           }
 
-          // Feed the assistant turn + tool results back so the model can continue.
+          // Feed the assistant turn + tool results back so the model can
+          // continue. [roundText] already contains any auto-continued partial
+          // of this prose block, so drop the placeholder fed back earlier.
+          if (continuationIndex >= 0) {
+            messages = List<LlmMessage>.of(messages)
+              ..removeAt(continuationIndex);
+            continuationIndex = -1;
+          }
           if (mcp.usePromptInjection) {
             messages = <LlmMessage>[
               ...messages,
@@ -2450,25 +2465,18 @@ class ChatController extends _$ChatController {
     Metrics? metrics,
   }) async {
     final now = DateTime.now();
-    final existing = await _repo.getMessageBlocksByMessageId(messageId);
-    for (final block in existing) {
-      await _repo.deleteMessageBlock(block.id);
-    }
-    for (final block in blocks) {
-      await _repo.saveMessageBlock(block);
-    }
     final message = await _repo.getMessage(messageId);
-    if (message != null) {
-      await _repo.saveMessage(
-        message.copyWith(
-          status: status,
-          updatedAt: now,
-          blocks: [for (final block in blocks) block.id],
-          usage: usage ?? message.usage,
-          metrics: metrics ?? message.metrics,
-        ),
-      );
-    }
+    await _repo.replaceMessageBlocks(
+      messageId: messageId,
+      blocks: blocks,
+      message: message?.copyWith(
+        status: status,
+        updatedAt: now,
+        blocks: [for (final block in blocks) block.id],
+        usage: usage ?? message.usage,
+        metrics: metrics ?? message.metrics,
+      ),
+    );
   }
 
   /// Recomputes and persists the topic's `lastMessagePreview`, `lastMessageTime`
