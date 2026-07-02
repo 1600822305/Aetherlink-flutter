@@ -387,24 +387,36 @@ class _KnowledgeBaseDetailPageState
     if (chunkingChanged) await _refresh();
   }
 
-  /// 条目详情面板：切块列表 + 删除入口。
+  /// 条目详情面板：切块列表 + 重新索引 / 删除入口。
   Future<void> _showItemDetail(KnowledgeItem item) async {
-    final deleted = await showModalBottomSheet<bool>(
+    final action = await showModalBottomSheet<_ItemDetailAction>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
       builder: (ctx) => _ItemDetailSheet(item: item),
     );
-    if (deleted != true || !mounted) return;
-    try {
-      await ref
-          .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
-          .deleteItem(item.id);
-      if (mounted) {
-        AppToast.success(context, '已删除「${item.title ?? item.source}」');
-      }
-    } catch (e) {
-      if (mounted) AppToast.error(context, '删除失败：$e');
+    if (action == null || !mounted) return;
+    switch (action) {
+      case _ItemDetailAction.delete:
+        try {
+          await ref
+              .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
+              .deleteItem(item.id);
+          if (mounted) {
+            AppToast.success(context, '已删除「${item.title ?? item.source}」');
+          }
+        } catch (e) {
+          if (mounted) AppToast.error(context, '删除失败：$e');
+        }
+      case _ItemDetailAction.reindex:
+        try {
+          final count = await ref
+              .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
+              .reindexItem(item.id);
+          if (mounted) AppToast.success(context, '已重建索引（$count 个切块）');
+        } catch (e) {
+          if (mounted) AppToast.error(context, '重建索引失败：$e');
+        }
     }
   }
 
@@ -1292,6 +1304,9 @@ class _BaseSettingsSheetState extends State<_BaseSettingsSheet> {
 
 /// 条目详情面板：元信息 + 切块列表 + 删除入口。删除前二次确认，确认后
 /// pop(true) 交由页面执行删除。
+/// [_ItemDetailSheet] 关闭时要求调用方执行的动作。
+enum _ItemDetailAction { reindex, delete }
+
 class _ItemDetailSheet extends ConsumerWidget {
   const _ItemDetailSheet({required this.item});
 
@@ -1318,7 +1333,9 @@ class _ItemDetailSheet extends ConsumerWidget {
         ],
       ),
     );
-    if (ok == true && context.mounted) Navigator.of(context).pop(true);
+    if (ok == true && context.mounted) {
+      Navigator.of(context).pop(_ItemDetailAction.delete);
+    }
   }
 
   @override
@@ -1409,6 +1426,13 @@ class _ItemDetailSheet extends ConsumerWidget {
                     ),
                 ],
               ),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () =>
+                  Navigator.of(context).pop(_ItemDetailAction.reindex),
+              icon: const Icon(LucideIcons.refreshCw, size: 18),
+              label: const Text('重新索引此条目'),
             ),
             const SizedBox(height: 8),
             OutlinedButton.icon(

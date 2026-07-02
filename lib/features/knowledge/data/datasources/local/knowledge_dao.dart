@@ -369,6 +369,23 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
     return result;
   }
 
+  /// 单个条目连同其权威正文（供单条目重索引）。条目或正文缺失返 null。
+  Future<KnowledgeItemWithContent?> itemWithContent(String itemId) async {
+    final item = await (select(
+      knowledgeItemRows,
+    )..where((t) => t.id.equals(itemId))).getSingleOrNull();
+    if (item == null) return null;
+    final content = await (select(
+      knowledgeContentRows,
+    )..where((t) => t.itemId.equals(itemId))).getSingleOrNull();
+    if (content == null) return null;
+    return KnowledgeItemWithContent(
+      item: _toItem(item),
+      content: content.content,
+      contentHash: content.contentHash,
+    );
+  }
+
   /// 某条目的全部切块（按 unitIndex 排序），供条目切块详情展示。
   Future<List<KbChunkRow>> listItemChunks(String itemId) {
     final query = select(kbChunkRows)
@@ -415,6 +432,45 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
           ),
         );
       }
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final entry in embeddings.entries) {
+      await into(kbEmbeddingRows).insertOnConflictUpdate(
+        KbEmbeddingRowsCompanion.insert(
+          embeddingKey: entry.key,
+          dimensions: entry.value.length,
+          vector: encodeVector(entry.value),
+          createdAt: now,
+        ),
+      );
+    }
+    await _deleteOrphanEmbeddings();
+  });
+
+  /// 原子重建单个条目的派生切块（功能缺口⑪）：与 [reindexBase] 同构，但只删重
+  /// 该条目的 `kb_chunk`，其它条目不动；同样写入新增嵌入并回收孤儿嵌入。
+  Future<void> reindexItem({
+    required String baseId,
+    required ReindexItem item,
+    required Map<String, List<double>> embeddings,
+  }) => transaction(() async {
+    await (delete(
+      kbChunkRows,
+    )..where((t) => t.itemId.equals(item.itemId))).go();
+    for (final chunk in item.chunks) {
+      await into(kbChunkRows).insert(
+        KbChunkRowsCompanion.insert(
+          chunkId: '${item.itemId}#${chunk.unitIndex}',
+          baseId: baseId,
+          itemId: item.itemId,
+          unitIndex: chunk.unitIndex,
+          charStart: chunk.charStart,
+          charEnd: chunk.charEnd,
+          content: chunk.text,
+          contentHash: item.contentHash,
+          embeddingKey: Value(item.embeddingKeys?[chunk.unitIndex]),
+        ),
+      );
     }
     final now = DateTime.now().millisecondsSinceEpoch;
     for (final entry in embeddings.entries) {
