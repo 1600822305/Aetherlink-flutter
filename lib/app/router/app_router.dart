@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.d
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/translate_page.dart';
 import 'package:aetherlink_flutter/features/backup/presentation/backup_settings_page.dart';
 import 'package:aetherlink_flutter/features/notes/presentation/mobile/note_editor_page.dart';
+import 'package:aetherlink_flutter/features/notion/presentation/mobile/notion_settings_page.dart';
 import 'package:aetherlink_flutter/features/notes/presentation/mobile/notes_page.dart';
 import 'package:aetherlink_flutter/features/notes/presentation/mobile/notes_settings_page.dart';
 import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/knowledge_base_detail_page.dart';
@@ -100,6 +101,7 @@ abstract final class AppRouter {
   static const String settingsSearchPath = '/settings/search';
   static const String voiceSettingsPath = '/settings/voice';
   static const String backupSettingsPath = '/settings/backup';
+  static const String notionSettingsPath = '/settings/notion';
   static const String knowledgeBasePath = '/settings/knowledge';
   static const String knowledgeBaseDetailPath = '/settings/knowledge/:baseId';
   static const String memoryPath = '/settings/memory';
@@ -369,6 +371,12 @@ abstract final class AppRouter {
         name: 'backup-settings',
         pageBuilder: (context, state) =>
             _instant(state, const BackupSettingsPage()),
+      ),
+      GoRoute(
+        path: notionSettingsPath,
+        name: 'notion-settings',
+        pageBuilder: (context, state) =>
+            _instant(state, const NotionSettingsPage()),
       ),
       GoRoute(
         path: notesPath,
