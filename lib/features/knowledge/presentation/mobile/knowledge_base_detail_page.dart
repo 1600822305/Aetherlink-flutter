@@ -56,17 +56,35 @@ class _KnowledgeBaseDetailPageState
 
   bool get _selectionMode => _selectedIds.isNotEmpty;
 
-  /// 长任务（批量添加 / 整库重建）的 x/y 进度，非空时在列表上方显示进度条。
+  /// 长任务（批量添加 / 整库重建）的 x/y 进度，非空时在列表上方显示进度条；
+  /// `total == 0` 表示不定时长（如网页抓取），只显示流动条不显示 x/y。
   ({String label, int done, int total})? _progress;
 
-  void _setProgress(String label, int done, int total) {
+  /// 当前长任务是否支持取消（逐文件摄取类任务）；用户点了取消后置
+  /// [_cancelRequested]，任务在下一个文件边界停下来。
+  bool _cancellable = false;
+  bool _cancelRequested = false;
+
+  void _setProgress(
+    String label,
+    int done,
+    int total, {
+    bool cancellable = false,
+  }) {
     if (!mounted) return;
-    setState(() => _progress = (label: label, done: done, total: total));
+    setState(() {
+      _progress = (label: label, done: done, total: total);
+      _cancellable = cancellable;
+    });
   }
 
   void _clearProgress() {
+    _cancelRequested = false;
     if (!mounted) return;
-    setState(() => _progress = null);
+    setState(() {
+      _progress = null;
+      _cancellable = false;
+    });
   }
 
   /// 重复添加检测：库里已有 source 或标题相同的条目时返回它，否则 null。
@@ -307,8 +325,18 @@ class _KnowledgeBaseDetailPageState
     var ok = 0;
     String? firstError;
     var done = 0;
+    var cancelled = false;
     for (final picked in files) {
-      _setProgress('正在上传「${picked.name}」', done, files.length);
+      if (_cancelRequested) {
+        cancelled = true;
+        break;
+      }
+      _setProgress(
+        '正在上传「${picked.name}」',
+        done,
+        files.length,
+        cancellable: true,
+      );
       final error = await _ingestPickedFile(picked, processor);
       if (error == null) {
         ok++;
@@ -319,7 +347,9 @@ class _KnowledgeBaseDetailPageState
     }
     _clearProgress();
     if (!mounted) return;
-    if (firstError == null) {
+    if (cancelled) {
+      AppToast.info(context, '已取消，已上传 $ok/${files.length} 个文件');
+    } else if (firstError == null) {
       AppToast.success(context, '已上传 $ok 个文件');
     } else {
       AppToast.error(context, '上传完成 $ok/${files.length}，$firstError');
@@ -440,12 +470,15 @@ class _KnowledgeBaseDetailPageState
       final addAnyway = await _confirmDuplicate('「$url」已在库中，仍要再次抓取并添加吗？');
       if (!addAnyway || !mounted) return;
     }
+    _setProgress('正在抓取「$url」', 0, 0);
     try {
       await ref
           .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
           .addUrl(url: url, title: title.isEmpty ? null : title);
+      _clearProgress();
       if (mounted) AppToast.success(context, '已抓取「$url」');
     } catch (e) {
+      _clearProgress();
       if (mounted) AppToast.error(context, '抓取失败：$e');
     }
   }
@@ -494,12 +527,30 @@ class _KnowledgeBaseDetailPageState
       ),
     );
     if (picked == null) return;
+    _setProgress('正在扫描「${picked.name}」', 0, 0, cancellable: true);
     try {
       final count = await ref
           .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
-          .addWorkspace(workspaceId: picked.id);
-      if (mounted) AppToast.success(context, '已摄取「${picked.name}」（$count 个文件）');
+          .addWorkspace(
+            workspaceId: picked.id,
+            onProgress: (done, total, fileName) => _setProgress(
+              '正在摄取「$fileName」',
+              done,
+              total,
+              cancellable: true,
+            ),
+            shouldCancel: () => _cancelRequested,
+          );
+      final cancelled = _cancelRequested;
+      _clearProgress();
+      if (!mounted) return;
+      if (cancelled) {
+        AppToast.info(context, '已取消，本次已摄取 $count 个文件');
+      } else {
+        AppToast.success(context, '已摄取「${picked.name}」（$count 个文件）');
+      }
     } catch (e) {
+      _clearProgress();
       if (mounted) AppToast.error(context, '摄取工作区失败：$e');
     }
   }
@@ -875,13 +926,32 @@ class _KnowledgeBaseDetailPageState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    '${progress.label}（${progress.done}/${progress.total}）',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          progress.total == 0
+                              ? progress.label
+                              : '${progress.label}（${progress.done}/${progress.total}）',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      if (_cancellable)
+                        TextButton(
+                          onPressed: _cancelRequested
+                              ? null
+                              : () => setState(() => _cancelRequested = true),
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                          ),
+                          child: Text(_cancelRequested ? '正在停止…' : '取消'),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   LinearProgressIndicator(

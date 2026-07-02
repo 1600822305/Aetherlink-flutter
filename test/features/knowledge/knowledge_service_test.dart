@@ -140,6 +140,62 @@ void main() {
         expect(chunks[i].unitIndex, i);
       }
     });
+
+    test('prefers paragraph boundaries over hard cuts', () {
+      const p1 = '第一段的内容，讲知识库摄取。';
+      const p2 = '第二段的内容，讲切块策略。';
+      const text = '$p1\n\n$p2';
+      final chunks = chunkText(text, size: 20, overlap: 0);
+      expect(chunks, hasLength(2));
+      expect(chunks[0].text, '$p1\n\n');
+      expect(chunks[1].text, p2);
+    });
+
+    test('falls back to sentence boundaries when a paragraph is oversized',
+        () {
+      const text = '句子一很短。句子二也不长。句子三稍微长一点点。';
+      final chunks = chunkText(text, size: 12, overlap: 0);
+      // 每个切点都落在句末标点后，不会把句子腰斩。
+      for (final c in chunks.take(chunks.length - 1)) {
+        expect(c.text.endsWith('。'), isTrue, reason: '「${c.text}」');
+      }
+      expect(chunks.map((c) => c.text).join(), text);
+    });
+
+    test('does not treat ASCII decimals as sentence boundaries', () {
+      const text = 'Pi is 3.14 and version v1.2 works well. Next sentence '
+          'goes here.';
+      final chunks = chunkText(text, size: 45, overlap: 0);
+      expect(chunks, hasLength(2));
+      expect(chunks[0].text, 'Pi is 3.14 and version v1.2 works well. ');
+    });
+
+    test('greedily merges small units up to the target length', () {
+      const text = 'a。b。c。d。e。f。';
+      final chunks = chunkText(text, size: 6, overlap: 0);
+      expect(chunks, hasLength(2));
+      expect(chunks[0].text, 'a。b。c。');
+      expect(chunks[1].text, 'd。e。f。');
+    });
+
+    test('drops whitespace-only chunks', () {
+      const text = '内容。\n\n\n\n\n\n\n\n\n\n后续。';
+      final chunks = chunkText(text, size: 8, overlap: 0);
+      for (final c in chunks) {
+        expect(c.text.trim(), isNotEmpty);
+      }
+    });
+
+    test('keeps substring invariant with overlap on structured text', () {
+      const text = '第一句话在这里。第二句话也在这里。\n\n新的段落开始了。它还有第二句。';
+      final chunks = chunkText(text, size: 16, overlap: 4);
+      expect(chunks, isNotEmpty);
+      for (final c in chunks) {
+        expect(text.substring(c.charStart, c.charEnd), c.text);
+        expect(c.text.length, lessThanOrEqualTo(16));
+      }
+      expect(chunks.last.charEnd, text.length);
+    });
   });
 
   group('KnowledgeService', () {

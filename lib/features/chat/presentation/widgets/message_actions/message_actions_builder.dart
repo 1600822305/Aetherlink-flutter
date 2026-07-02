@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
 import 'package:aetherlink_flutter/app/di/tts_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
@@ -12,6 +13,7 @@ import 'package:aetherlink_flutter/features/chat/application/translate_controlle
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/translate/translate_language.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/knowledge_mount_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_action.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_action_sheets.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
@@ -130,6 +132,12 @@ class MessageActionsBuilder {
         icon: LucideIcons.save,
         tooltip: '另存为新话题',
         onInvoke: createBranch,
+      ),
+      MessageAction(
+        id: MessageActionId.saveToKnowledge,
+        icon: LucideIcons.bookOpen,
+        tooltip: '存入知识库',
+        onInvoke: saveToKnowledge,
       ),
       MessageAction(
         id: MessageActionId.delete,
@@ -263,4 +271,32 @@ class MessageActionsBuilder {
 
   void delete() =>
       ref.read(chatControllerProvider.notifier).deleteMessage(view.id);
+
+  /// 把这条消息的正文以笔记形式存进选定的知识库（对比 CS 的
+  /// SaveToKnowledgePopup）：弹单选库面板 → 标准摄取管线（切块 + 惰性嵌入）。
+  /// 标题取正文首行（截断到 40 字），便于在库里辨认来源。
+  Future<void> saveToKnowledge() async {
+    final content = _mainText.trim();
+    if (content.isEmpty) {
+      _toast('没有可存入的内容');
+      return;
+    }
+    final base = await showKnowledgeSavePickerSheet(context);
+    if (base == null || !isMounted()) return;
+    final firstLine = content.split('\n').first.trim();
+    final title = firstLine.length > 40
+        ? firstLine.substring(0, 40)
+        : firstLine;
+    try {
+      await saveChatMessageToKnowledgeBase(
+        ref,
+        baseId: base.id,
+        title: title,
+        text: content,
+      );
+      _toast('已存入「${base.name}」');
+    } catch (e) {
+      _toast('存入失败：$e');
+    }
+  }
 }

@@ -4,6 +4,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/file_editor_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/file_editor_read_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/run_command_block_view.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/knowledge_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/web_search_block_view.dart';
 
 /// Builds a special-purpose widget for a [ToolBlock].
@@ -44,6 +45,16 @@ final Map<String, ToolBlockBuilder> _toolRenderers = {
     t: (b) => FileEditorBlockView(block: b),
   for (final t in _fileEditorReadTools)
     t: (b) => FileEditorReadBlockView(block: b),
+  for (final t in _knowledgeTools) t: (b) => KnowledgeBlockView(block: b),
+};
+
+/// `@aether/knowledge` tools, rendered as compact knowledge cards
+/// (检索命中列表 / 库列表 / 正文预览 / 管理结果).
+const Set<String> _knowledgeTools = {
+  'kb_list',
+  'kb_search',
+  'kb_read',
+  'kb_manage',
 };
 
 /// Returns a custom renderer for [block]'s tool, or `null` to fall back to the
