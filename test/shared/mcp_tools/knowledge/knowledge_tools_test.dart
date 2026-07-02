@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_service.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_url_fetcher.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_workspace_source.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
 
@@ -31,6 +32,35 @@ Map<String, Object?> _data(McpToolResult result) {
   return decoded['data'] as Map<String, Object?>;
 }
 
+/// Fixed two-file workspace source for the `add_workspace` action tests.
+class _StubWorkspaceSource implements KnowledgeWorkspaceSource {
+  @override
+  Future<List<KnowledgeWorkspaceFile>> listTextFiles(
+    String workspaceId,
+  ) async => const [
+    KnowledgeWorkspaceFile(
+      path: '/a.md',
+      name: 'a.md',
+      text: 'alpha content',
+      mtime: 100,
+      size: 13,
+    ),
+    KnowledgeWorkspaceFile(
+      path: '/b.txt',
+      name: 'b.txt',
+      text: 'bravo content',
+      mtime: 200,
+      size: 13,
+    ),
+  ];
+
+  @override
+  Future<KnowledgeWorkspaceStat?> statFile(
+    String workspaceId,
+    String path,
+  ) async => null;
+}
+
 void main() {
   group('knowledgeToolRiskLevel / needsConfirmation', () {
     test('read-only tools never need confirmation', () {
@@ -50,7 +80,13 @@ void main() {
         knowledgeToolRiskLevel(kKnowledgeManageTool, {'action': 'delete'}),
         KnowledgeToolRisk.high,
       );
-      for (final action in ['create', 'add_note', 'add_url', 'refresh']) {
+      for (final action in [
+        'create',
+        'add_note',
+        'add_url',
+        'add_workspace',
+        'refresh',
+      ]) {
         expect(
           knowledgeToolRiskLevel(kKnowledgeManageTool, {'action': action}),
           KnowledgeToolRisk.medium,
@@ -268,6 +304,46 @@ void main() {
       );
       final result = await run(kKnowledgeManageTool, {
         'action': 'add_url',
+        'base_id': base.id,
+      });
+      expect(result.isError, isTrue);
+    });
+
+    test('kb_manage add_workspace ingests workspace text files', () async {
+      final wsService = KnowledgeService(
+        db.knowledgeDao,
+        workspaceSource: _StubWorkspaceSource(),
+      );
+      final wsContainer = ProviderContainer(
+        overrides: [knowledgeServiceProvider.overrideWithValue(wsService)],
+      );
+      addTearDown(wsContainer.dispose);
+      final wsRun = wsContainer.read(_runnerProvider);
+
+      final base = await wsService.createBase(
+        name: 'shared',
+        scope: const KnowledgeScope(chatEnabled: true),
+      );
+      final data = _data(
+        await wsRun(kKnowledgeManageTool, {
+          'action': 'add_workspace',
+          'base_id': base.id,
+          'workspace_id': 'ws-1',
+        }),
+      );
+      expect(data['workspaceId'], 'ws-1');
+      expect(data['ingestedFiles'], 2);
+      expect(await wsService.itemCount(base.id), 2);
+    });
+
+    test('kb_manage add_workspace requires the workspace_id argument',
+        () async {
+      final base = await service.createBase(
+        name: 'shared',
+        scope: const KnowledgeScope(chatEnabled: true),
+      );
+      final result = await run(kKnowledgeManageTool, {
+        'action': 'add_workspace',
         'base_id': base.id,
       });
       expect(result.isError, isTrue);

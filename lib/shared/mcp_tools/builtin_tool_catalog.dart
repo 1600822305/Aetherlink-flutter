@@ -1025,6 +1025,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       description:
           '管理知识库（写操作，需用户确认）。action=create 建库（可选 embedding_model_key/search_mode）；'
           'action=add_note 向库中加入一条文本笔记；action=add_url 抓取网页转 Markdown 后加入；'
+          'action=add_workspace 遍历一个工作区目录，把其中的文本文件逐个加入；'
           'action=delete 删除整个知识库；action=refresh 从已存正文重建整库索引（切块+向量）。',
       inputSchema: {
         'type': 'object',
@@ -1032,7 +1033,14 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           'action': {
             'type': 'string',
             'description': '操作类型。',
-            'enum': ['create', 'add_note', 'add_url', 'delete', 'refresh'],
+            'enum': [
+              'create',
+              'add_note',
+              'add_url',
+              'add_workspace',
+              'delete',
+              'refresh',
+            ],
           },
           'name': {'type': 'string', 'description': 'create 时的知识库名称。'},
           'embedding_model_key': {
@@ -1046,7 +1054,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'base_id': {
             'type': 'string',
-            'description': 'add_note / add_url / delete / refresh 的目标知识库 ID。',
+            'description':
+                'add_note / add_url / add_workspace / delete / refresh 的目标知识库 ID。',
           },
           'title': {
             'type': 'string',
@@ -1054,6 +1063,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'text': {'type': 'string', 'description': 'add_note 的笔记正文。'},
           'url': {'type': 'string', 'description': 'add_url 要抓取的网页地址。'},
+          'workspace_id': {
+            'type': 'string',
+            'description': 'add_workspace 要摄取的工作区 ID（「最近打开」列表里的工作区）。',
+          },
         },
         'required': ['action'],
       },

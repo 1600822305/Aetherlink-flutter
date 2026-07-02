@@ -13,6 +13,8 @@ import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_reference_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/application/knowledge_providers.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 class KnowledgeBaseDetailPage extends ConsumerStatefulWidget {
@@ -204,6 +206,50 @@ class _KnowledgeBaseDetailPageState
     }
   }
 
+  /// 选择一个「最近打开」的工作区，遍历其目录下文本文件摄取为条目（type=workspace）。
+  /// 摄取时记录来源指纹，供检索时的 staleness 检测异步比对（设计文档 §8.1）。
+  Future<void> _addWorkspace() async {
+    final workspaces = await ref.read(workspaceStoreProvider.future);
+    if (!mounted) return;
+    if (workspaces.isEmpty) {
+      AppToast.error(context, '还没有打开过工作区，先在「工作区」里打开一个目录');
+      return;
+    }
+    final picked = await showDialog<Workspace>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('选择工作区目录'),
+        children: [
+          for (final w in workspaces)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(w),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(LucideIcons.folder, size: 20),
+                title: Text(w.name.isEmpty ? '未命名工作区' : w.name),
+                subtitle: w.displayPath == null
+                    ? null
+                    : Text(
+                        w.displayPath!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    try {
+      final count = await ref
+          .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
+          .addWorkspace(workspaceId: picked.id);
+      if (mounted) AppToast.success(context, '已摄取「${picked.name}」（$count 个文件）');
+    } catch (e) {
+      if (mounted) AppToast.error(context, '摄取工作区失败：$e');
+    }
+  }
+
   /// 从已存正文重建整库索引（切块 + 向量）。适用于调整切块/嵌入配置后刷新。
   Future<void> _refresh() async {
     try {
@@ -268,6 +314,12 @@ class _KnowledgeBaseDetailPageState
             color: theme.colorScheme.primary,
             tooltip: '添加网址',
             onPressed: _addUrl,
+          ),
+          IconButton(
+            icon: const Icon(LucideIcons.folder, size: 20),
+            color: theme.colorScheme.primary,
+            tooltip: '摄取工作区目录',
+            onPressed: _addWorkspace,
           ),
           IconButton(
             icon: const Icon(LucideIcons.filePlus, size: 22),

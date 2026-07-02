@@ -13,6 +13,7 @@ import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_ranking.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_url_fetcher.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_workspace_source.dart';
 
 /// 知识库核心服务（设计文档 §5 摄取 + §6 检索）。
 ///
@@ -25,12 +26,15 @@ class KnowledgeService {
     this._dao, {
     KnowledgeEmbedderResolver? embedderResolver,
     KnowledgeUrlFetcher? urlFetcher,
+    KnowledgeWorkspaceSource? workspaceSource,
   })  : _resolveEmbedder = embedderResolver,
-        _fetchUrl = urlFetcher;
+        _fetchUrl = urlFetcher,
+        _workspaceSource = workspaceSource;
 
   final KnowledgeDao _dao;
   final KnowledgeEmbedderResolver? _resolveEmbedder;
   final KnowledgeUrlFetcher? _fetchUrl;
+  final KnowledgeWorkspaceSource? _workspaceSource;
 
   Future<List<KnowledgeBase>> listBases() => _dao.listBases();
 
@@ -166,6 +170,64 @@ class KnowledgeService {
     );
   }
 
+  /// 摄取一个工作区目录（设计文档 §8「workspace 目录源」）。经注入的
+  /// [KnowledgeWorkspaceSource] 递归遍历 [workspaceId] 根目录下的文本文件，逐个当作
+  /// 一条 `type=workspace` 条目落库，并把摄取时的 `{workspaceId, path, mtime, size}`
+  /// 记为来源指纹（[KnowledgeItem.sourceFingerprint]），供 §8.1 的 staleness 检测在
+  /// 检索时异步比对。未配置工作区源时抛错；目录里无可摄取文本时抛错（坏输入）。
+  /// 返回成功摄取的条目列表。
+  Future<List<KnowledgeItem>> addWorkspace({
+    required String baseId,
+    required String workspaceId,
+  }) async {
+    final base = await _requireBase(baseId);
+    final source = _workspaceSource;
+    if (source == null) {
+      throw StateError('未配置工作区源，无法摄取目录');
+    }
+    final files = await source.listTextFiles(workspaceId);
+    final ingestible = [
+      for (final f in files)
+        if (f.text.trim().isNotEmpty) f,
+    ];
+    if (ingestible.isEmpty) {
+      throw StateError('工作区目录里没有可摄取的文本文件: $workspaceId');
+    }
+    final items = <KnowledgeItem>[];
+    for (final file in ingestible) {
+      final item = await _ingest(
+        base: base,
+        type: KnowledgeItemType.workspace,
+        source: file.path,
+        conceptId: file.path,
+        title: file.name,
+        text: file.text,
+        sourceFingerprint: _encodeFingerprint(
+          workspaceId: workspaceId,
+          path: file.path,
+          mtime: file.mtime,
+          size: file.size,
+        ),
+      );
+      items.add(item);
+    }
+    return items;
+  }
+
+  /// 把 workspace 条目的来源快照编成 JSON 存入 [KnowledgeItem.sourceFingerprint]。
+  static String _encodeFingerprint({
+    required String workspaceId,
+    required String path,
+    required int mtime,
+    required int size,
+  }) =>
+      jsonEncode({
+        'workspaceId': workspaceId,
+        'path': path,
+        'mtime': mtime,
+        'size': size,
+      });
+
   /// 通用摄取骨架：切块 → 惰性/去重嵌入 → 单事务落库（条目 + 正文 + 切块 [+ 向量]）
   /// → 首个条目落地时把库状态置 completed。note / file / url 等来源只是传入不同的
   /// `type` / `source` / `title`，管线完全一致。
@@ -176,6 +238,7 @@ class KnowledgeService {
     required String conceptId,
     required String title,
     required String text,
+    String? sourceFingerprint,
   }) async {
     final contentHash = sha256.convert(utf8.encode(text)).toString();
     final chunks = chunkText(
@@ -191,6 +254,7 @@ class KnowledgeService {
       conceptId: conceptId,
       title: title,
       status: KnowledgeItemStatus.completed,
+      sourceFingerprint: sourceFingerprint,
       createdAt: DateTime.now(),
     );
 
@@ -273,18 +337,83 @@ class KnowledgeService {
     if (base == null) return const [];
     final limit = topK ?? base.topK;
 
+    final List<KnowledgeReferenceItem> refs;
     switch (base.searchMode) {
       case KnowledgeSearchMode.keyword:
-        return _keywordSearch(base, query, limit);
+        refs = await _keywordSearch(base, query, limit);
       case KnowledgeSearchMode.vector:
         final scored = await _vectorScored(base, query);
-        if (scored == null) return _keywordSearch(base, query, limit);
-        return _toReferences(base, _applyThreshold(base, scored), limit);
+        refs = scored == null
+            ? await _keywordSearch(base, query, limit)
+            : _toReferences(base, _applyThreshold(base, scored), limit);
       case KnowledgeSearchMode.hybrid:
         final vector = await _vectorScored(base, query);
-        if (vector == null) return _keywordSearch(base, query, limit);
-        final keyword = await _keywordScored(base, query);
-        return _hybridReferences(base, keyword, vector, limit);
+        if (vector == null) {
+          refs = await _keywordSearch(base, query, limit);
+        } else {
+          final keyword = await _keywordScored(base, query);
+          refs = _hybridReferences(base, keyword, vector, limit);
+        }
+    }
+    return _annotateStaleness(refs);
+  }
+
+  /// 为命中结果里的 workspace 条目标记「可能已过期」（设计文档 §8.1）。对结果中出现
+  /// 的每个 workspace 条目，用存好的来源指纹与后端当前 `(mtime, size)` 异步比对：变化
+  /// 或文件失联即置 `possiblyStale=true`。全程 best-effort——未配置工作区源、无
+  /// workspace 条目、或任何比对错误都原样返回，绝不阻断检索。
+  Future<List<KnowledgeReferenceItem>> _annotateStaleness(
+    List<KnowledgeReferenceItem> refs,
+  ) async {
+    final source = _workspaceSource;
+    if (source == null || refs.isEmpty) return refs;
+    final itemIds = <String>{
+      for (final r in refs)
+        if (r.documentId != null) r.documentId!,
+    };
+    final staleIds = <String>{};
+    for (final id in itemIds) {
+      try {
+        final item = await _dao.getItem(id);
+        if (item == null || item.type != KnowledgeItemType.workspace) continue;
+        final fp = _decodeFingerprint(item.sourceFingerprint);
+        if (fp == null) continue;
+        final stat = await source.statFile(fp.workspaceId, fp.path);
+        if (stat == null || stat.mtime != fp.mtime || stat.size != fp.size) {
+          staleIds.add(id);
+        }
+      } catch (_) {
+        // best-effort：任何比对错误都不影响检索结果。
+      }
+    }
+    if (staleIds.isEmpty) return refs;
+    return [
+      for (final r in refs)
+        if (r.documentId != null && staleIds.contains(r.documentId))
+          r.copyWith(possiblyStale: true)
+        else
+          r,
+    ];
+  }
+
+  /// 解析存好的来源指纹 JSON；格式不符 / 缺字段返回 null（→ 跳过该条 staleness 比对）。
+  static ({String workspaceId, String path, int mtime, int size})?
+  _decodeFingerprint(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final workspaceId = decoded['workspaceId'];
+      final path = decoded['path'];
+      if (workspaceId is! String || path is! String) return null;
+      return (
+        workspaceId: workspaceId,
+        path: path,
+        mtime: (decoded['mtime'] as num?)?.toInt() ?? 0,
+        size: (decoded['size'] as num?)?.toInt() ?? 0,
+      );
+    } catch (_) {
+      return null;
     }
   }
 

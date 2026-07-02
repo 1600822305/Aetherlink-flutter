@@ -4334,6 +4334,8 @@ class ChatController extends _$ChatController {
       case 'add_note':
         final title = (args['title'] as String?)?.trim();
         return '向知识库添加笔记${title == null || title.isEmpty ? '' : '「$title」'}';
+      case 'add_workspace':
+        return '把工作区目录摄取进知识库（工作区 ID: ${args['workspace_id'] ?? ''}）';
       case 'delete':
         return '删除知识库（ID: ${args['base_id'] ?? ''}）';
       case 'refresh':
