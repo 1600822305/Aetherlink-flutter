@@ -237,6 +237,20 @@ class KnowledgeBaseController extends _$KnowledgeBaseController {
     await future;
   }
 
+  /// 更换嵌入模型并整库重建向量索引（建库后换模型 / 库级恢复重建）。
+  /// 返回重建覆盖的条目数。
+  Future<int> changeEmbeddingModel(String embeddingModelKey) async {
+    final count = await ref
+        .read(knowledgeServiceProvider)
+        .changeEmbeddingModel(baseId, embeddingModelKey: embeddingModelKey);
+    ref.invalidateSelf();
+    await future;
+    ref.invalidate(knowledgeBasesControllerProvider);
+    ref.invalidate(knowledgeItemsControllerProvider(baseId));
+    ref.invalidate(knowledgePendingEmbeddingCountProvider(baseId));
+    return count;
+  }
+
   /// 更新库的可编辑配置（名称 + RAG 参数）。名称同时显示在列表页，一并刷新。
   Future<void> updateConfig({
     required String name,

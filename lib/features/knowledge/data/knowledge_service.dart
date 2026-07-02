@@ -290,6 +290,33 @@ class KnowledgeService {
     );
   }
 
+  /// 建库后更换嵌入模型（对比 CS 的最后一项，参考其「换嵌入模型 + 库级恢复
+  /// 重建」）：更新模型键、重新探测维度后整库重建向量索引。重建走
+  /// [reindexBase]——旧切块被替换后，旧模型的向量作为孤儿被回收，不会与新
+  /// 维度混存；新模型嵌入失败的切块保持待补状态（可用 [retryPendingEmbeddings]
+  /// 补嵌或再次换模型恢复），关键词检索始终可用。原关键词库选上模型后自动
+  /// 升级为 hybrid（可传 [searchMode] 指定）。空模型键视为坏输入抛错。
+  /// 返回重建覆盖的条目数。
+  Future<int> changeEmbeddingModel(
+    String baseId, {
+    required String embeddingModelKey,
+    KnowledgeSearchMode? searchMode,
+  }) async {
+    final base = await _requireBase(baseId);
+    final key = embeddingModelKey.trim();
+    if (key.isEmpty) throw StateError('嵌入模型不能为空');
+    var mode = searchMode ?? base.searchMode;
+    if (mode == KnowledgeSearchMode.keyword) mode = KnowledgeSearchMode.hybrid;
+    final dimensions = await detectEmbeddingDimensions(key);
+    await _dao.updateBaseEmbeddingModel(
+      baseId,
+      embeddingModelKey: key,
+      dimensions: dimensions,
+      searchMode: mode,
+    );
+    return reindexBase(baseId);
+  }
+
   /// 抓取一个网页并摄取为条目（设计文档 §5「URL 抓取 → Markdown 快照」）。抓取器
   /// 由组合根注入（HTTP + HTML→Markdown），未注入时抛错。抓回的正文当作权威快照
   /// 落库（`type=url`、`source=url`），后续 refresh 直接从这份快照重建索引，不再
