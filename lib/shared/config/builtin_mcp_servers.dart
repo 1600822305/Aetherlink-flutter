@@ -122,7 +122,7 @@ const List<McpServer> kBuiltinMcpServers = [
     name: '@aether/knowledge',
     type: McpServerType.inMemory,
     category: McpServerCategory.assistant,
-    description: 'AI 知识库工具，支持列出知识库、语义/关键词检索、读取条目原文，以及建库、加笔记、删库等管理操作（管理操作会先请用户确认）。只作用于「对聊天开放」的知识库。',
+    description: 'AI 知识库工具，支持列出知识库、语义/关键词检索、读取条目原文，以及建库、加笔记、删库等管理操作（管理操作会先请用户确认）。',
     provider: 'AetherAI',
     tags: ['知识库', '检索', 'RAG', 'AI', '工具'],
   ),

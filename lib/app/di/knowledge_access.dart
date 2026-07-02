@@ -163,14 +163,9 @@ Future<ChatKnowledgeInjection> collectChatKnowledgeInjection(
   );
 }
 
-/// 列出当前所有「对聊天开放」的知识库（供聊天侧的挂载选择面板展示）。
-Future<List<KnowledgeBase>> listChatEnabledKnowledgeBases(WidgetRef ref) async {
-  final bases = await ref.read(knowledgeServiceProvider).listBases();
-  return [
-    for (final base in bases)
-      if (base.scope.chatEnabled) base,
-  ];
-}
+/// 列出当前所有知识库（供聊天侧的挂载选择面板展示）。
+Future<List<KnowledgeBase>> listChatEnabledKnowledgeBases(WidgetRef ref) =>
+    ref.read(knowledgeServiceProvider).listBases();
 
 /// 默认 URL 抓取器（设计文档 §5「URL 抓取 → Markdown 快照」）：走应用统一的
 /// LLM Dio（含代理配置），HTML 用与 `@aether/fetch` 同一套 [htmlToMarkdown] 转成

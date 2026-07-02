@@ -973,13 +973,13 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'kb_list',
       description:
-          '列出对聊天开放的知识库；传入 base_id 时改为列出该库下的条目（文档）。只读操作，无需确认。',
+          '列出所有知识库；传入 base_id 时改为列出该库下的条目（文档）。只读操作，无需确认。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'base_id': {
             'type': 'string',
-            'description': '知识库 ID（可选）。省略时列出所有对聊天开放的知识库；提供时列出该库的条目。',
+            'description': '知识库 ID（可选）。省略时列出所有知识库；提供时列出该库的条目。',
           },
         },
       },
@@ -988,14 +988,14 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       name: 'kb_search',
       description:
           '在知识库中检索与 query 最相关的内容片段（按库的检索模式走语义/关键词/混合，自动关键词兜底）。'
-          '省略 base_id 时跨所有对聊天开放的知识库检索并按相似度融合。返回片段含 documentId，可交给 kb_read 取全文。只读。',
+          '省略 base_id 时跨所有知识库检索并按相似度融合。返回片段含 documentId，可交给 kb_read 取全文。只读。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'query': {'type': 'string', 'description': '检索关键词或问题。'},
           'base_id': {
             'type': 'string',
-            'description': '限定检索的知识库 ID（可选）。省略时检索所有对聊天开放的知识库。',
+            'description': '限定检索的知识库 ID（可选）。省略时检索所有知识库。',
           },
           'top_k': {
             'type': 'number',
