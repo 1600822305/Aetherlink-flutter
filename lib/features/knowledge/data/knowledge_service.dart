@@ -69,9 +69,28 @@ class KnowledgeService {
   Future<String?> readItemContent(String itemId) =>
       _dao.readItemContent(itemId);
 
+  /// 探测嵌入模型的向量维度（功能缺口⑨）：用一段短探针文本真实调一次嵌入
+  /// API，返回向量长度。无解析器 / 模型无效 / 调用失败时返 null（best-effort，
+  /// 不报错不中断建库流程）。
+  Future<int?> detectEmbeddingDimensions(String? embeddingModelKey) async {
+    final key = embeddingModelKey?.trim();
+    final resolver = _resolveEmbedder;
+    if (resolver == null || key == null || key.isEmpty) return null;
+    try {
+      final embedder = await resolver(key);
+      if (embedder == null) return null;
+      final vectors = await embedder.embed(const ['dimension probe']);
+      final vector = vectors.isEmpty ? const <double>[] : vectors.first;
+      return vector.isEmpty ? null : vector.length;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Creates an empty base. [embeddingModelKey] 非空且 [searchMode] 不是 keyword
   /// 时该库启用语义检索（摄取时嵌入切块）；否则纯关键词。[scope] 默认聊天关闭
-  /// （聊天轨道是 P2 的事）。
+  /// （聊天轨道是 P2 的事）。选了嵌入模型时顺带探测并落库向量维度
+  /// （[detectEmbeddingDimensions]，探测失败留空不阻断）。
   Future<KnowledgeBase> createBase({
     required String name,
     KnowledgeScope scope = const KnowledgeScope(),
@@ -82,10 +101,12 @@ class KnowledgeService {
     final hasModel = key != null && key.isNotEmpty;
     // 没有嵌入模型就锁死关键词——避免建出一个「向量库却无从嵌入」的坏状态。
     final mode = hasModel ? searchMode : KnowledgeSearchMode.keyword;
+    final dimensions = hasModel ? await detectEmbeddingDimensions(key) : null;
     final base = KnowledgeBase(
       id: generateId('kb'),
       name: name.trim(),
       embeddingModelKey: hasModel ? key : null,
+      dimensions: dimensions,
       searchMode: mode,
       status: KnowledgeBaseStatus.idle,
       scope: scope,

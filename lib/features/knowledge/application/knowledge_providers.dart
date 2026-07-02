@@ -252,6 +252,12 @@ class KnowledgeBaseController extends _$KnowledgeBaseController {
   }
 }
 
+/// 探测某嵌入模型的向量维度（功能缺口⑨）：真实调一次嵌入 API 取向量长度，
+/// 无效模型 / 调用失败返 null。驱动建库面板的维度提示。
+@riverpod
+Future<int?> knowledgeEmbeddingDimensions(Ref ref, String modelKey) =>
+    ref.watch(knowledgeServiceProvider).detectEmbeddingDimensions(modelKey);
+
 /// 某库回收站里的条目（功能缺口⑩），按删除时间倒序。
 @riverpod
 Future<List<KnowledgeItem>> knowledgeTrash(Ref ref, String baseId) =>

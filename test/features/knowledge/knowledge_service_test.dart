@@ -785,6 +785,32 @@ void main() {
       return base;
     }
 
+    test('createBase auto-detects embedding dimensions (gap ⑨)', () async {
+      final service = buildService();
+      final base = await service.createBase(
+        name: 'KB',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.hybrid,
+      );
+      // _FakeEmbedder 的向量长度 == vocab 长度（5）。
+      expect(base.dimensions, 5);
+      expect((await service.getBase(base.id))!.dimensions, 5);
+
+      // 无效模型 / 空向量：探测失败留空，不阻断建库。
+      expect(await service.detectEmbeddingDimensions('unknown'), isNull);
+      expect(
+        await buildService(returnEmpty: true)
+            .detectEmbeddingDimensions('model-a'),
+        isNull,
+      );
+      final unknownBase = await buildService(known: false).createBase(
+        name: 'KB2',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.hybrid,
+      );
+      expect(unknownBase.dimensions, isNull);
+    });
+
     test('createBase without a model forces keyword mode', () async {
       final service = buildService();
       final base = await service.createBase(
