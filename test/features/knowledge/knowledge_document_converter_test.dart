@@ -35,6 +35,24 @@ void main() {
     });
   });
 
+  group('isCloudOnlyKnowledgeFileName', () {
+    test('matches cloud-only rich-doc extensions regardless of case', () {
+      expect(isCloudOnlyKnowledgeFileName('slides.pptx'), isTrue);
+      expect(isCloudOnlyKnowledgeFileName('SHEET.XLSX '), isTrue);
+      expect(isCloudOnlyKnowledgeFileName('/books/一本书.epub'), isTrue);
+      expect(isCloudOnlyKnowledgeFileName('legacy.doc'), isTrue);
+      expect(isCloudOnlyKnowledgeFileName('old.ppt'), isTrue);
+      expect(isCloudOnlyKnowledgeFileName('old.xls'), isTrue);
+    });
+
+    test('rejects locally-parsed and other extensions', () {
+      expect(isCloudOnlyKnowledgeFileName('report.docx'), isFalse);
+      expect(isCloudOnlyKnowledgeFileName('paper.pdf'), isFalse);
+      expect(isCloudOnlyKnowledgeFileName('note.txt'), isFalse);
+      expect(isCloudOnlyKnowledgeFileName('slides.pptx.zip'), isFalse);
+    });
+  });
+
   group('convertDocxBytesToMarkdown', () {
     test('converts a docx document to markdown off the main isolate',
         () async {

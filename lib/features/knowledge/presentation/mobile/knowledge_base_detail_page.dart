@@ -85,34 +85,42 @@ class _KnowledgeBaseDetailPageState
     if (mounted) AppToast.success(context, '已添加笔记');
   }
 
-  /// 选择一个 txt / md / docx / pdf 文件并摄取为条目。纯文本按 UTF-8 读取；
-  /// DOCX 在 isolate 里、PDF 在 PDFium 原生 worker 里转 Markdown（§5.2 本地解析轨）
-  /// 后走同一条摄取管线；库配置了云端解析器时 PDF / DOCX 改走云端预处理轨。
+  /// 选择一个文件并摄取为条目。纯文本按 UTF-8 读取；DOCX 在 isolate 里、PDF 在
+  /// PDFium 原生 worker 里转 Markdown（§5.2 本地解析轨）后走同一条摄取管线；库
+  /// 配置了云端解析器时富文档改走云端预处理轨，并额外放开 pptx / xlsx / epub 等
+  /// 仅云端轨支持的格式（功能缺口④，本地轨后续再补）。
   Future<void> _addFile() async {
+    final base = await ref.read(
+      knowledgeBaseControllerProvider(widget.baseId).future,
+    );
+    final processor = KnowledgeFileProcessor.fromId(base?.fileProcessorId);
     final picked = await ref
         .read(fileSystemApiProvider)
         .pickFile(
-          allowedExtensions: const [
+          allowedExtensions: [
             'txt',
             'md',
             'markdown',
             'text',
             'docx',
             'pdf',
+            if (processor != null) ...kCloudOnlyKnowledgeExtensions,
           ],
         );
     if (picked == null) return;
     final isPdf = isPdfFileName(picked.name);
-    final isRichDoc = isPdf || isDocxFileName(picked.name);
-    if (isRichDoc) {
-      final base = await ref.read(
-        knowledgeBaseControllerProvider(widget.baseId).future,
-      );
-      final processor = KnowledgeFileProcessor.fromId(base?.fileProcessorId);
-      if (processor != null) {
-        await _addFileViaCloud(picked, processor);
-        return;
+    final isCloudOnly = isCloudOnlyKnowledgeFileName(picked.name);
+    final isRichDoc = isPdf || isDocxFileName(picked.name) || isCloudOnly;
+    if (isRichDoc && processor != null) {
+      await _addFileViaCloud(picked, processor);
+      return;
+    }
+    if (isCloudOnly) {
+      // 兜底：系统选择器可能忽略扩展名过滤（如部分 Android 实现）。
+      if (mounted) {
+        AppToast.error(context, '该格式需要云端解析，请先在「云端解析」里配置解析器');
       }
+      return;
     }
     String text;
     try {
