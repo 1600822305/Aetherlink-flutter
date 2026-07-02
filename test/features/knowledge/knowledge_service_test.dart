@@ -115,6 +115,22 @@ void main() {
       expect(chunks.last.charEnd, text.length);
     });
 
+    test('never splits a surrogate pair across a chunk boundary', () {
+      // 😀 占两个 UTF-16 code unit，size=3 的边界恰好落在对中间。
+      const text = 'ab😀cd😁ef';
+      final chunks = chunkText(text, size: 3, overlap: 0);
+      expect(chunks, isNotEmpty);
+      for (final c in chunks) {
+        expect(text.substring(c.charStart, c.charEnd), c.text);
+        final first = c.text.codeUnitAt(0);
+        final last = c.text.codeUnitAt(c.text.length - 1);
+        // 首位不是孤低代理、末位不是孤高代理。
+        expect(first >= 0xDC00 && first <= 0xDFFF, isFalse);
+        expect(last >= 0xD800 && last <= 0xDBFF, isFalse);
+      }
+      expect(chunks.last.charEnd, text.length);
+    });
+
     test('overlap >= size is clamped so the loop always advances', () {
       final chunks = chunkText('abcdefgh', size: 4, overlap: 99);
       expect(chunks, isNotEmpty);
@@ -277,6 +293,52 @@ void main() {
       // The chunk covering both tokens (similarity 1.0) ranks first.
       expect(hits.first.content, contains('beta'));
       expect(hits.first.similarity, 1.0);
+    });
+
+    test('Chinese sentence query matches via bigram tokens', () async {
+      final base = await service.createBase(name: 'KB');
+      await service.addNote(
+        baseId: base.id,
+        title: '设置',
+        text: '可以在库设置里配置嵌入模型和检索模式。',
+      );
+      await service.addNote(
+        baseId: base.id,
+        title: '无关',
+        text: '今天天气不错，适合户外跑步。',
+      );
+
+      // 自然语言提问不含空格也不是原文子串，bigram 切分后仍能命中。
+      final hits = await service.search(
+        baseId: base.id,
+        query: '怎么配置嵌入模型',
+      );
+      expect(hits, isNotEmpty);
+      expect(hits.first.content, contains('嵌入模型'));
+      // 无关笔记不排第一。
+      expect(hits.first.content, isNot(contains('天气')));
+    });
+
+    test('LIKE wildcards in the query are treated literally', () async {
+      final base = await service.createBase(name: 'KB');
+      await service.addNote(
+        baseId: base.id,
+        title: 'a',
+        text: 'discount of 50% applies to everything.',
+      );
+      await service.addNote(
+        baseId: base.id,
+        title: 'b',
+        text: 'plain note about dart language.',
+      );
+
+      // `%` 作字面子串匹配，不是通配符。
+      final hits = await service.search(baseId: base.id, query: '50%');
+      expect(hits, hasLength(1));
+      expect(hits.single.content, contains('50%'));
+
+      // `_` 也不当单字符通配符：没有字面 `d_rt` 子串→无命中。
+      expect(await service.search(baseId: base.id, query: 'd_rt'), isEmpty);
     });
 
     test('search honours topK', () async {
@@ -867,6 +929,18 @@ void main() {
       final ingestBatches = embedLog.length;
       await service.search(baseId: base.id, query: 'dart');
       // Only the query itself is embedded; chunk vectors come from kb_embedding.
+      expect(embedLog.length, ingestBatches + 1);
+      expect(embedLog.last, ['dart']);
+    });
+
+    test('query embedding is cached across bases sharing a model', () async {
+      final service = buildService();
+      final baseA = await seed(service, KnowledgeSearchMode.vector);
+      final baseB = await seed(service, KnowledgeSearchMode.vector);
+      final ingestBatches = embedLog.length;
+      await service.search(baseId: baseA.id, query: 'dart');
+      await service.search(baseId: baseB.id, query: 'dart');
+      // 同一 query 同模型只嵌一次（多库挂载时不重复调嵌入 API）。
       expect(embedLog.length, ingestBatches + 1);
       expect(embedLog.last, ['dart']);
     });

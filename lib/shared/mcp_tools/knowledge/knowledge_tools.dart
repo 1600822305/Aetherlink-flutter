@@ -133,8 +133,9 @@ Future<McpToolResult> _runList(
   });
 }
 
-/// kb_search：检索。带 `base_id` 时只搜该库；否则跨所有库并按相似度
-/// 融合。只读。
+/// kb_search：检索。带 `base_id` 时只搜该库；否则跨所有库按库内名次融合
+/// （[mergeKnowledgeReferencesByRank]，关键词分与 cosine 量纲不同，不能直接
+/// 按相似度混排）。只读。
 Future<McpToolResult> _runSearch(
   KnowledgeService service,
   Map<String, Object?> args,
@@ -159,9 +160,8 @@ Future<McpToolResult> _runSearch(
       await service.search(baseId: base.id, query: query, topK: topK),
     );
   }
-  merged.sort((a, b) => b.similarity.compareTo(a.similarity));
   final limit = topK ?? KnowledgeBase.kDefaultTopK;
-  final top = merged.take(limit).toList();
+  final top = mergeKnowledgeReferencesByRank(merged).take(limit).toList();
 
   return knowledgeOk({
     'query': query,
@@ -196,11 +196,17 @@ Future<McpToolResult> _runRead(
   }
   final content = await service.readItemContent(itemId) ?? '';
   final truncated = content.length > _kMaxReadChars;
+  // 截断点落在代理对中间时回退一位，避免产出非法 UTF-16 文本。
+  var cut = _kMaxReadChars;
+  if (truncated) {
+    final unit = content.codeUnitAt(cut - 1);
+    if (unit >= 0xD800 && unit <= 0xDBFF) cut -= 1;
+  }
   return knowledgeOk({
     'knowledgeBaseId': base.id,
     'knowledgeBaseName': base.name,
     'document': _itemJson(item),
-    'content': truncated ? content.substring(0, _kMaxReadChars) : content,
+    'content': truncated ? content.substring(0, cut) : content,
     'truncated': truncated,
     if (truncated) 'totalChars': content.length,
   });

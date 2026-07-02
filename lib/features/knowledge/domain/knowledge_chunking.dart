@@ -36,9 +36,8 @@ List<TextChunk> chunkText(
   var start = 0;
   var unitIndex = 0;
   while (start < text.length) {
-    final end = (start + safeSize) < text.length
-        ? start + safeSize
-        : text.length;
+    var end = (start + safeSize) < text.length ? start + safeSize : text.length;
+    end = _snapAfterSurrogatePair(text, end);
     chunks.add(
       TextChunk(
         unitIndex: unitIndex,
@@ -48,8 +47,16 @@ List<TextChunk> chunkText(
       ),
     );
     if (end >= text.length) break;
-    start += step;
+    start = _snapAfterSurrogatePair(text, start + step);
     unitIndex++;
   }
   return chunks;
+}
+
+/// 若 [index] 落在一个 UTF-16 代理对中间（前一位是高代理），后移一位，
+/// 保证切块边界不把 emoji / 增补平面字符切成两个非法半截。
+int _snapAfterSurrogatePair(String text, int index) {
+  if (index <= 0 || index >= text.length) return index;
+  final prev = text.codeUnitAt(index - 1);
+  return (prev >= 0xD800 && prev <= 0xDBFF) ? index + 1 : index;
 }

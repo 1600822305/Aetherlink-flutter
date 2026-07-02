@@ -109,12 +109,29 @@ class ChatKnowledgeInjection {
   bool get isEmpty => section == null || references.isEmpty;
 }
 
-/// 单轮注入的引用上限：多库同时挂载时合并后按相似度截断，避免把上下文塞爆。
+/// 单轮注入的引用上限：多库同时挂载时合并后截断，避免把上下文塞爆。
 const int kChatKnowledgeMaxReferences = 12;
 
+/// 跨库合并排序：按各自库内名次（[KnowledgeReferenceItem.index]）升序、同名次
+/// 再按相似度降序。不能直接按 similarity 混排——关键词库的分是命中比例
+/// （动辄 1.0）、向量库是 cosine（通常 0.3~0.8），量纲不同会让关键词库稳压
+/// 语义库；按库内名次轮控合并对各库公平且不依赖分数可比。
+List<KnowledgeReferenceItem> mergeKnowledgeReferencesByRank(
+  List<KnowledgeReferenceItem> refs,
+) {
+  final merged = [...refs];
+  merged.sort((a, b) {
+    final byRank = a.index.compareTo(b.index);
+    if (byRank != 0) return byRank;
+    return b.similarity.compareTo(a.similarity);
+  });
+  return merged;
+}
+
 /// 检索聊天挂载的知识库（[baseIds]）并汇总成一次注入：逐库调
-/// [KnowledgeService.search]（各库按自己的检索模式 / topK / 阈值），合并后按
-/// 相似度降序、截断到 [kChatKnowledgeMaxReferences] 并重编序号。单库检索失败
+/// [KnowledgeService.search]（各库按自己的检索模式 / topK / 阈值），按库内
+/// 名次合并（[mergeKnowledgeReferencesByRank]）、截断到
+/// [kChatKnowledgeMaxReferences] 并重编序号。单库检索失败
 /// best-effort 跳过，绝不阻断发送；[query] 为空（如纯附件消息）时不检索。
 ///
 /// 住在组合根：chat 不能直接 import `knowledge/data`，与
@@ -136,8 +153,9 @@ Future<ChatKnowledgeInjection> collectChatKnowledgeInjection(
     }
   }
   if (merged.isEmpty) return const ChatKnowledgeInjection();
-  merged.sort((a, b) => b.similarity.compareTo(a.similarity));
-  final top = merged.take(kChatKnowledgeMaxReferences).toList();
+  final top = mergeKnowledgeReferencesByRank(
+    merged,
+  ).take(kChatKnowledgeMaxReferences).toList();
   final references = <KnowledgeReferenceItem>[
     for (var i = 0; i < top.length; i++) top[i].copyWith(index: i + 1),
   ];

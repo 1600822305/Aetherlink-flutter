@@ -934,11 +934,8 @@ class KnowledgeService {
     if (trimmed.isEmpty) return null;
 
     try {
-      final embedder = await resolver(modelKey);
-      if (embedder == null) return null;
-      final embedded = await embedder.embed([trimmed]);
-      if (embedded.isEmpty || embedded.first.isEmpty) return null;
-      final queryVector = embedded.first;
+      final queryVector = await _embedQuery(modelKey, trimmed);
+      if (queryVector == null) return null;
 
       final chunks = await _dao.embeddedChunks(base.id);
       if (chunks.isEmpty) return null;
@@ -971,6 +968,30 @@ class KnowledgeService {
     }
   }
 
+  /// 查询向量的小容量缓存（键：`模型键|查询`）：同一条消息同时检索多个同模型
+  /// 的库时只嵌一次，避免重复调嵌入 API。向量对 (模型, 文本) 确定，无过期问题；
+  /// 容量封顶防内存增长。
+  static const int _kQueryVectorCacheCap = 8;
+  final Map<String, List<double>> _queryVectorCache = {};
+
+  Future<List<double>?> _embedQuery(String modelKey, String query) async {
+    final cacheKey = '$modelKey|$query';
+    final cached = _queryVectorCache[cacheKey];
+    if (cached != null) return cached;
+    final resolver = _resolveEmbedder;
+    if (resolver == null) return null;
+    final embedder = await resolver(modelKey);
+    if (embedder == null) return null;
+    final embedded = await embedder.embed([query]);
+    if (embedded.isEmpty || embedded.first.isEmpty) return null;
+    final vector = embedded.first;
+    if (_queryVectorCache.length >= _kQueryVectorCacheCap) {
+      _queryVectorCache.remove(_queryVectorCache.keys.first);
+    }
+    _queryVectorCache[cacheKey] = vector;
+    return vector;
+  }
+
   /// 阈值过滤（仅向量/hybrid，值域可比）。[KnowledgeBase.threshold] 为空则不裁。
   List<_ScoredChunk> _applyThreshold(
     KnowledgeBase base,
@@ -985,7 +1006,8 @@ class KnowledgeService {
   }
 
   /// hybrid：RRF 融合关键词与向量两路排名，产出引用。融合后的相似度取该切块在向量
-  /// 路的分数（无则取关键词路），阈值过滤后裁 topK。
+  /// 路的分数（无则取关键词路）；阈值只对带向量分的切块生效——关键词分是命中
+  /// 比例，与 cosine 不同量纲，拿向量阈值去卡会误杀/误放。过滤后裁 topK。
   List<KnowledgeReferenceItem> _hybridReferences(
     KnowledgeBase base,
     List<_ScoredChunk> keyword,
@@ -997,18 +1019,25 @@ class KnowledgeService {
       byId[s.chunkId] = s;
     }
     // 向量分数覆盖关键词分数（相似度以向量为准）。
+    final vectorIds = <String>{};
     for (final s in vector) {
       byId[s.chunkId] = s;
+      vectorIds.add(s.chunkId);
     }
     final fused = fuseWithRrf([
       [for (final s in keyword) s.chunkId],
       [for (final s in vector) s.chunkId],
     ]);
+    final threshold = base.threshold;
     final ordered = [
       for (final id in fused)
-        if (byId[id] != null) byId[id]!,
+        if (byId[id] != null &&
+            (threshold == null ||
+                !vectorIds.contains(id) ||
+                byId[id]!.similarity >= threshold))
+          byId[id]!,
     ];
-    return _toReferences(base, _applyThreshold(base, ordered), limit);
+    return _toReferences(base, ordered, limit);
   }
 
   List<KnowledgeReferenceItem> _toReferences(
@@ -1030,15 +1059,40 @@ class KnowledgeService {
     ];
   }
 
+  /// 单次查询的分词上限，防超长查询把 LIKE 预过滤撞大。
+  static const int _kMaxQueryTokens = 64;
+
+  static final RegExp _kCjkRun = RegExp(
+    r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]+',
+  );
+
+  /// 分词：按空白切段后，CJK 连续段再切二字组（bigram，单字段取单字），
+  /// 非 CJK 段整词保留。中文自然提问不带空格，整串子串匹配几乎不可能命中；
+  /// bigram 是无词典场景下中文召回的标准做法（同 SQLite FTS5 trigram 思路）。
   List<String> _tokenize(String query) {
     final trimmed = query.trim().toLowerCase();
     if (trimmed.isEmpty) return const [];
-    final parts = trimmed
-        .split(RegExp(r'\s+'))
-        .where((t) => t.isNotEmpty)
-        .toList();
-    // 无空格（如中文短语）时整串作为单个子串词，天然覆盖 1-2 字中文词。
-    return parts.isEmpty ? [trimmed] : parts;
+    final tokens = <String>{};
+    for (final part in trimmed.split(RegExp(r'\s+'))) {
+      if (part.isEmpty) continue;
+      var cursor = 0;
+      for (final match in _kCjkRun.allMatches(part)) {
+        final before = part.substring(cursor, match.start);
+        if (before.isNotEmpty) tokens.add(before);
+        final run = match.group(0)!;
+        if (run.length == 1) {
+          tokens.add(run);
+        } else {
+          for (var i = 0; i + 1 < run.length; i++) {
+            tokens.add(run.substring(i, i + 2));
+          }
+        }
+        cursor = match.end;
+      }
+      final tail = part.substring(cursor);
+      if (tail.isNotEmpty) tokens.add(tail);
+    }
+    return tokens.take(_kMaxQueryTokens).toList();
   }
 }
 
