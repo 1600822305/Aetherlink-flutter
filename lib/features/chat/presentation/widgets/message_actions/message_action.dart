@@ -18,6 +18,7 @@ enum MessageActionId {
   versionHistory,
   fork,
   branch,
+  saveToKnowledge,
   delete,
 }
 

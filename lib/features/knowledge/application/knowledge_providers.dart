@@ -141,11 +141,20 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
   /// 摄取一个工作区目录（type=workspace）：遍历目录下文本文件逐个建索引，并记录来源
   /// 指纹供 staleness 检测。遍历 + 读文件由服务层注入的工作区源完成；失败抛异常交由
   /// UI 提示。返回成功摄取的条目数。
-  Future<int> addWorkspace({required String workspaceId}) async {
+  Future<int> addWorkspace({
+    required String workspaceId,
+    void Function(int done, int total, String fileName)? onProgress,
+    bool Function()? shouldCancel,
+  }) async {
     if (workspaceId.trim().isEmpty) return 0;
     final items = await ref
         .read(knowledgeServiceProvider)
-        .addWorkspace(baseId: baseId, workspaceId: workspaceId);
+        .addWorkspace(
+          baseId: baseId,
+          workspaceId: workspaceId,
+          onProgress: onProgress,
+          shouldCancel: shouldCancel,
+        );
     ref.invalidateSelf();
     await future;
     ref.invalidate(knowledgeBasesControllerProvider);

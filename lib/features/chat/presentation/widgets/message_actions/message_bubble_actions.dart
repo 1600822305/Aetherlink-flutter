@@ -138,6 +138,7 @@ class _MessageActionMenuState extends ConsumerState<MessageActionMenu> {
     MessageActionId.versionHistory,
     MessageActionId.fork,
     MessageActionId.branch,
+    MessageActionId.saveToKnowledge,
     MessageActionId.delete,
   ];
 
@@ -147,6 +148,7 @@ class _MessageActionMenuState extends ConsumerState<MessageActionMenu> {
     MessageActionId.export,
     MessageActionId.fork,
     MessageActionId.branch,
+    MessageActionId.saveToKnowledge,
   };
 
   @override

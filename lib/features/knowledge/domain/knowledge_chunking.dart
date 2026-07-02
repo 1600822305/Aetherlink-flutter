@@ -15,11 +15,14 @@ class TextChunk {
   final String text;
 }
 
-/// P0 的简单定长切块（设计文档 §5 / §11：P0 先用定长切块，P1 再升级为结构
-/// 感知切块，不阻塞骨架落地）。
+/// 结构感知切块（设计文档 §5 P1）：按「段落 → 行 → 句子 → 定长硬切」逐级
+/// 递归回退寻找切点，把结构单元贪心合并到不超过 [size]，避免定长硬切把
+/// 句子/段落腰斩拉低召回质量。
 ///
-/// 按字符窗口切分，相邻块重叠 [overlap] 个字符以避免把跨边界的句子切断。
-/// 空白正文返回空列表；[overlap] 会被夹在 `[0, size)` 内以保证步进为正。
+/// - 相邻块通过把起点向前回扩 [overlap] 个字符提供上下文重叠（切点本身
+///   连续，不变式仍然成立），单块长度上界为 [size]。
+/// - 纯空白的块会被丢弃；[overlap] 被夹在 `[0, size)` 内以保证步进为正。
+/// - 切点与回扩点都不会落在 UTF-16 代理对中间。
 List<TextChunk> chunkText(
   String text, {
   required int size,
@@ -30,27 +33,113 @@ List<TextChunk> chunkText(
   final safeOverlap = overlap < 0
       ? 0
       : (overlap >= safeSize ? safeSize - 1 : overlap);
-  final step = safeSize - safeOverlap;
+  // 切点按「目标净长度」计算，回扩 overlap 后总长仍 ≤ size（与旧定长切块
+  // 「窗口 size、步进 size-overlap」的语义对齐）。
+  final target = safeSize - safeOverlap;
+
+  final cuts = <int>[];
+  _cutRecursive(text, 0, text.length, target, 0, cuts);
 
   final chunks = <TextChunk>[];
-  var start = 0;
+  var prev = 0;
   var unitIndex = 0;
-  while (start < text.length) {
-    var end = (start + safeSize) < text.length ? start + safeSize : text.length;
-    end = _snapAfterSurrogatePair(text, end);
+  for (final cut in cuts) {
+    final end = cut;
+    var start = prev - safeOverlap;
+    if (start < 0) start = 0;
+    start = _snapAfterSurrogatePair(text, start);
+    final slice = text.substring(start, end);
+    prev = end;
+    if (slice.trim().isEmpty) continue;
     chunks.add(
       TextChunk(
         unitIndex: unitIndex,
         charStart: start,
         charEnd: end,
-        text: text.substring(start, end),
+        text: slice,
       ),
     );
-    if (end >= text.length) break;
-    start = _snapAfterSurrogatePair(text, start + step);
     unitIndex++;
   }
   return chunks;
+}
+
+/// 递归回退的分隔级别：段落边界 → 行边界 → 句子边界。
+/// 每个正则匹配「结构单元的结尾（含分隔符本身）」，切点取匹配结束位置，
+/// 保证切片拼接可还原原文。
+final List<RegExp> _kSeparatorLevels = [
+  RegExp(r'\n{2,}'), // 段落：连续空行
+  RegExp(r'\n'), // 行
+  // 句子：CJK 句末标点直接断；ASCII 句末标点要求后跟空白或文末，
+  // 避免把 "3.14"、"v1.2" 这类小数/版本号误当句界。
+  RegExp(r'[。！？；][」』”’\)）\]】]*\s*|[.!?;]["' "'" r'\)\]]*(?:\s+|$)'),
+];
+
+/// 把 `[start, end)` 切成若干净长度 ≤ [target] 的片段，切点依次追加进
+/// [cuts]（每个切点是片段的结束偏移，彼此连续覆盖整个区间）。
+///
+/// [level] 是当前尝试的分隔级别；本级切不动（单元仍超长）时对该单元递归
+/// 下一级，最后一级退化为定长硬切。
+void _cutRecursive(
+  String text,
+  int start,
+  int end,
+  int target,
+  int level,
+  List<int> cuts,
+) {
+  if (end - start <= target) {
+    cuts.add(end);
+    return;
+  }
+  if (level >= _kSeparatorLevels.length) {
+    // 定长硬切兜底。
+    var pos = start;
+    while (pos < end) {
+      var next = pos + target < end ? pos + target : end;
+      next = _snapAfterSurrogatePair(text, next);
+      cuts.add(next);
+      pos = next;
+    }
+    return;
+  }
+
+  // 本级把区间切成结构单元（单元末尾含分隔符），再贪心合并到 ≤ target。
+  final unitEnds = <int>[];
+  for (final m in _kSeparatorLevels[level].allMatches(
+    text.substring(start, end),
+  )) {
+    final unitEnd = start + m.end;
+    if (unitEnd < end) unitEnds.add(unitEnd);
+  }
+  unitEnds.add(end);
+
+  if (unitEnds.length == 1) {
+    // 本级切不动，整段下沉到下一级。
+    _cutRecursive(text, start, end, target, level + 1, cuts);
+    return;
+  }
+
+  var groupStart = start;
+  var unitStart = start;
+  for (final unitEnd in unitEnds) {
+    if (unitEnd - groupStart <= target) {
+      unitStart = unitEnd;
+      continue;
+    }
+    // 加入当前单元会超长：先落下已累计的组（若有），再处理当前单元。
+    if (unitStart > groupStart) {
+      cuts.add(unitStart);
+      groupStart = unitStart;
+    }
+    if (unitEnd - groupStart > target) {
+      // 单个单元本身超长 → 递归下一级。
+      _cutRecursive(text, groupStart, unitEnd, target, level + 1, cuts);
+      groupStart = unitEnd;
+    }
+    unitStart = unitEnd;
+  }
+  if (groupStart < end) cuts.add(end);
 }
 
 /// 若 [index] 落在一个 UTF-16 代理对中间（前一位是高代理），后移一位，

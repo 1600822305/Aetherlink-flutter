@@ -185,6 +185,20 @@ Future<ChatKnowledgeInjection> collectChatKnowledgeInjection(
 Future<List<KnowledgeBase>> listChatEnabledKnowledgeBases(WidgetRef ref) =>
     ref.read(knowledgeServiceProvider).listBases();
 
+/// 把一段聊天消息文本存入知识库（对比 CS 的 SaveToKnowledgePopup）：以笔记
+/// 形式走标准摄取管线（切块 + 惰性嵌入）。住在组合根：chat 不能直接
+/// import `knowledge/data`。
+Future<void> saveChatMessageToKnowledgeBase(
+  WidgetRef ref, {
+  required String baseId,
+  required String title,
+  required String text,
+}) async {
+  await ref
+      .read(knowledgeServiceProvider)
+      .addNote(baseId: baseId, title: title, text: text);
+}
+
 /// 默认 URL 抓取器（设计文档 §5「URL 抓取 → Markdown 快照」）：走应用统一的
 /// LLM Dio（含代理配置），HTML 用与 `@aether/fetch` 同一套 [htmlToMarkdown] 转成
 /// Markdown，其余内容按纯文本原样返回。标题取转换结果里的首个一级标题（HTML

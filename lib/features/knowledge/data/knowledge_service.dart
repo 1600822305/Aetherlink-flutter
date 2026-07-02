@@ -371,9 +371,15 @@ class KnowledgeService {
   /// 记为来源指纹（[KnowledgeItem.sourceFingerprint]），供 §8.1 的 staleness 检测在
   /// 检索时异步比对。未配置工作区源时抛错；目录里无可摄取文本时抛错（坏输入）。
   /// 返回成功摄取的条目列表。
+  ///
+  /// [onProgress] 每开始摄取一个文件回调一次 `(已完成数, 总数, 文件名)`，供 UI
+  /// 展示进度；[shouldCancel] 在每个文件之间被查询，返回 true 时停止摄取并
+  /// 返回已完成的条目（已落库的部分保留，摄取是逐条事务、随时可停）。
   Future<List<KnowledgeItem>> addWorkspace({
     required String baseId,
     required String workspaceId,
+    void Function(int done, int total, String fileName)? onProgress,
+    bool Function()? shouldCancel,
   }) async {
     final base = await _requireBase(baseId);
     final source = _workspaceSource;
@@ -390,6 +396,8 @@ class KnowledgeService {
     }
     final items = <KnowledgeItem>[];
     for (final file in ingestible) {
+      if (shouldCancel?.call() ?? false) break;
+      onProgress?.call(items.length, ingestible.length, file.name);
       final item = await _ingest(
         base: base,
         type: KnowledgeItemType.workspace,
