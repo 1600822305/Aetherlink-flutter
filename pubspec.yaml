@@ -87,6 +87,10 @@ dependencies:
   # DevTools-style panel host + global log capture. See docs/design/devtools-design.md.
   aetherlink_devtools:
     path: packages/aetherlink_devtools
+  # 知识库 P3e 本地解析轨（docs/知识库功能-设计构想.md §5.2）：纯 Dart
+  # DOCX→Markdown 转换（仅依赖 archive+xml，可在 isolate 跑）。
+  docx_to_markdown:
+    path: packages/docx_to_markdown
   scrollview_observer: ^1.27.0
   # Voice feature: TTS + ASR
   flutter_tts:
