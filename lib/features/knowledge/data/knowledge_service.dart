@@ -77,11 +77,61 @@ class KnowledgeService {
     required String title,
     required String text,
   }) async {
-    final base = await _dao.getBase(baseId);
-    if (base == null) {
-      throw StateError('知识库不存在: $baseId');
-    }
+    final base = await _requireBase(baseId);
     final trimmedTitle = title.trim();
+    final label = trimmedTitle.isEmpty ? '未命名笔记' : trimmedTitle;
+    return _ingest(
+      base: base,
+      type: KnowledgeItemType.note,
+      source: label,
+      conceptId: trimmedTitle.isEmpty ? generateId('note') : trimmedTitle,
+      title: label,
+      text: text,
+    );
+  }
+
+  /// 摄取一个纯文本文件（txt / md，设计文档 §5「文件选择上传」）。调用方（UI /
+  /// 文件选择器）负责把文件读成 UTF-8 文本传进来；本方法复用与 [addNote] 完全一致
+  /// 的切块 + 惰性嵌入骨架，只是把 `type` 记为 [KnowledgeItemType.file]、`source`
+  /// 记为原始路径/文件名，便于后续 refresh 重索引与来源展示。空文件视为坏输入抛错。
+  ///
+  /// PDF / DOCX 等富文档的解析不在此处——它们先被转换层转成纯文本后再走这条路径。
+  Future<KnowledgeItem> addFile({
+    required String baseId,
+    required String fileName,
+    required String text,
+    String? sourcePath,
+  }) async {
+    final base = await _requireBase(baseId);
+    final name = fileName.trim();
+    if (text.trim().isEmpty) {
+      throw StateError('文件内容为空，无法摄取: ${name.isEmpty ? sourcePath : name}');
+    }
+    final label = name.isEmpty ? '未命名文件' : name;
+    final source = (sourcePath == null || sourcePath.trim().isEmpty)
+        ? label
+        : sourcePath.trim();
+    return _ingest(
+      base: base,
+      type: KnowledgeItemType.file,
+      source: source,
+      conceptId: source,
+      title: label,
+      text: text,
+    );
+  }
+
+  /// 通用摄取骨架：切块 → 惰性/去重嵌入 → 单事务落库（条目 + 正文 + 切块 [+ 向量]）
+  /// → 首个条目落地时把库状态置 completed。note / file / url 等来源只是传入不同的
+  /// `type` / `source` / `title`，管线完全一致。
+  Future<KnowledgeItem> _ingest({
+    required KnowledgeBase base,
+    required KnowledgeItemType type,
+    required String source,
+    required String conceptId,
+    required String title,
+    required String text,
+  }) async {
     final contentHash = sha256.convert(utf8.encode(text)).toString();
     final chunks = chunkText(
       text,
@@ -90,11 +140,11 @@ class KnowledgeService {
     );
     final item = KnowledgeItem(
       id: generateId('kbitem'),
-      baseId: baseId,
-      type: KnowledgeItemType.note,
-      source: trimmedTitle.isEmpty ? '未命名笔记' : trimmedTitle,
-      conceptId: trimmedTitle.isEmpty ? generateId('note') : trimmedTitle,
-      title: trimmedTitle.isEmpty ? '未命名笔记' : trimmedTitle,
+      baseId: base.id,
+      type: type,
+      source: source,
+      conceptId: conceptId,
+      title: title,
       status: KnowledgeItemStatus.completed,
       createdAt: DateTime.now(),
     );
@@ -109,9 +159,57 @@ class KnowledgeService {
       embeddings: embedded?.vectors,
     );
     if (base.status != KnowledgeBaseStatus.completed) {
-      await _dao.updateBaseStatus(baseId, KnowledgeBaseStatus.completed);
+      await _dao.updateBaseStatus(base.id, KnowledgeBaseStatus.completed);
     }
     return item;
+  }
+
+  /// 删除单个条目及其派生数据（正文 + 切块 + 孤儿嵌入），见 [KnowledgeDao.deleteItem]。
+  Future<void> deleteItem(String itemId) => _dao.deleteItem(itemId);
+
+  /// 重建整库派生索引（设计文档 §5.1 原子重建）。从每个条目已存的权威正文重新切块，
+  /// 复用与摄取一致的惰性/去重嵌入（未变的内容命中已存向量、不重复调用嵌入 API），
+  /// 再在一个事务里替换 `kb_chunk`、补写新增 `kb_embedding`、回收孤儿嵌入。适用于
+  /// 切块参数或嵌入配置调整后刷新索引。返回重建覆盖的条目数。
+  Future<int> reindexBase(String baseId) async {
+    final base = await _requireBase(baseId);
+    final entries = await _dao.itemsWithContent(baseId);
+    final reindexed = <ReindexItem>[];
+    final embeddings = <String, List<double>>{};
+    for (final entry in entries) {
+      final chunks = chunkText(
+        entry.content,
+        size: base.chunkSize,
+        overlap: base.chunkOverlap,
+      );
+      final embedded = await _embedChunks(base, chunks);
+      if (embedded != null) embeddings.addAll(embedded.vectors);
+      reindexed.add(
+        ReindexItem(
+          itemId: entry.item.id,
+          contentHash: entry.contentHash,
+          chunks: chunks,
+          embeddingKeys: embedded?.keys,
+        ),
+      );
+    }
+    await _dao.reindexBase(
+      baseId: baseId,
+      items: reindexed,
+      embeddings: embeddings,
+    );
+    if (entries.isNotEmpty && base.status != KnowledgeBaseStatus.completed) {
+      await _dao.updateBaseStatus(baseId, KnowledgeBaseStatus.completed);
+    }
+    return entries.length;
+  }
+
+  Future<KnowledgeBase> _requireBase(String baseId) async {
+    final base = await _dao.getBase(baseId);
+    if (base == null) {
+      throw StateError('知识库不存在: $baseId');
+    }
+    return base;
   }
 
   /// 检索一个库（设计文档 §6）。按库的 [KnowledgeBase.searchMode] 分流到关键词 /

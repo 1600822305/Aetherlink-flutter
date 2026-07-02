@@ -9,6 +9,36 @@ import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart
 
 part 'knowledge_dao.g.dart';
 
+/// 一个条目连同其权威正文（[itemsWithContent] 的返回单元）。重索引据此从正文
+/// 无损重建派生切块。
+class KnowledgeItemWithContent {
+  const KnowledgeItemWithContent({
+    required this.item,
+    required this.content,
+    required this.contentHash,
+  });
+
+  final KnowledgeItem item;
+  final String content;
+  final String contentHash;
+}
+
+/// [KnowledgeDao.reindexBase] 的每条目重建单元：服务层已重新切块并把 `unitIndex`
+/// 映射到（可空的）`embeddingKey`，DAO 只负责在事务里落库。
+class ReindexItem {
+  const ReindexItem({
+    required this.itemId,
+    required this.contentHash,
+    required this.chunks,
+    this.embeddingKeys,
+  });
+
+  final String itemId;
+  final String contentHash;
+  final List<TextChunk> chunks;
+  final Map<int, String>? embeddingKeys;
+}
+
 /// Data-access object for the knowledge-base tables (设计文档 §4)。摄取写入走
 /// 单个 Drift 事务（条目 + 正文 + 切块 [+ 向量] 一起提交），删除按 `baseId` /
 /// `itemId` 级联清理派生数据。P1 起额外覆盖 `kb_embedding` 持久向量表。
@@ -138,6 +168,86 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
     )..where((t) => t.itemId.equals(itemId))).getSingleOrNull();
     return row?.content;
   }
+
+  /// 一个库里所有条目连同其正文（供 [reindexBase] 从权威正文重建派生切块）。
+  /// 缺正文的条目（极少见的坏状态）跳过——没有正文就无从重新切块。
+  Future<List<KnowledgeItemWithContent>> itemsWithContent(String baseId) async {
+    final items = await (select(knowledgeItemRows)
+          ..where((t) => t.baseId.equals(baseId))
+          ..orderBy([(t) => OrderingTerm(expression: t.createdAt)]))
+        .get();
+    if (items.isEmpty) return const [];
+    final contents = await (select(knowledgeContentRows)
+          ..where((t) => t.itemId.isIn([for (final i in items) i.id])))
+        .get();
+    final byItem = {for (final c in contents) c.itemId: c};
+    final result = <KnowledgeItemWithContent>[];
+    for (final item in items) {
+      final content = byItem[item.id];
+      if (content == null) continue;
+      result.add(
+        KnowledgeItemWithContent(
+          item: _toItem(item),
+          content: content.content,
+          contentHash: content.contentHash,
+        ),
+      );
+    }
+    return result;
+  }
+
+  /// 删除单个条目及其派生数据（正文 + 切块），并回收随之产生的孤儿嵌入，全在一个
+  /// 事务里。`kb_embedding` 按 `embeddingKey` 全局去重共享，故删完切块后才 GC。
+  Future<void> deleteItem(String itemId) => transaction(() async {
+    await (delete(
+      knowledgeContentRows,
+    )..where((t) => t.itemId.equals(itemId))).go();
+    await (delete(kbChunkRows)..where((t) => t.itemId.equals(itemId))).go();
+    await (delete(knowledgeItemRows)..where((t) => t.id.equals(itemId))).go();
+    await _deleteOrphanEmbeddings();
+  });
+
+  /// 原子重建整库派生索引（设计文档 §5.1）：在一个事务里先删掉本库所有旧切块，
+  /// 再按调用方（服务层）已重新切块 + 惰性嵌入好的结果重建 `kb_chunk`，写入本次
+  /// 新增的 `kb_embedding`（复合键去重，`insertOnConflictUpdate` 幂等），最后回收
+  /// 因重建而不再被任何切块引用的孤儿嵌入。权威表（item / content）不动——切块是
+  /// 纯派生数据，可从正文无损重建。返回重建覆盖的条目数。
+  Future<void> reindexBase({
+    required String baseId,
+    required List<ReindexItem> items,
+    required Map<String, List<double>> embeddings,
+  }) => transaction(() async {
+    await (delete(kbChunkRows)..where((t) => t.baseId.equals(baseId))).go();
+    for (final entry in items) {
+      for (final chunk in entry.chunks) {
+        await into(kbChunkRows).insert(
+          KbChunkRowsCompanion.insert(
+            chunkId: '${entry.itemId}#${chunk.unitIndex}',
+            baseId: baseId,
+            itemId: entry.itemId,
+            unitIndex: chunk.unitIndex,
+            charStart: chunk.charStart,
+            charEnd: chunk.charEnd,
+            content: chunk.text,
+            contentHash: entry.contentHash,
+            embeddingKey: Value(entry.embeddingKeys?[chunk.unitIndex]),
+          ),
+        );
+      }
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final entry in embeddings.entries) {
+      await into(kbEmbeddingRows).insertOnConflictUpdate(
+        KbEmbeddingRowsCompanion.insert(
+          embeddingKey: entry.key,
+          dimensions: entry.value.length,
+          vector: encodeVector(entry.value),
+          createdAt: now,
+        ),
+      );
+    }
+    await _deleteOrphanEmbeddings();
+  });
 
   /// Ingests one item's authoritative rows plus its derived chunks in a single
   /// transaction: `knowledge_item` (status → completed) + `knowledge_content` +

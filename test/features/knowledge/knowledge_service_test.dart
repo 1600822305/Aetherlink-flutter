@@ -218,6 +218,81 @@ void main() {
       expect(await service.listItems(base.id), isEmpty);
       expect(await service.search(baseId: base.id, query: 'deleted'), isEmpty);
     });
+
+    test('addFile ingests a txt/md file as a file-typed, searchable item',
+        () async {
+      final base = await service.createBase(name: 'KB');
+      final item = await service.addFile(
+        baseId: base.id,
+        fileName: 'notes.md',
+        text: 'Flutter widgets compose into a tree.',
+        sourcePath: '/docs/notes.md',
+      );
+
+      expect(item.type, KnowledgeItemType.file);
+      expect(item.title, 'notes.md');
+      expect(item.source, '/docs/notes.md'); // keeps the original path
+      expect(item.status, KnowledgeItemStatus.completed);
+
+      final hits = await service.search(baseId: base.id, query: 'widgets');
+      expect(hits, isNotEmpty);
+      expect(hits.first.content.toLowerCase(), contains('widgets'));
+
+      final reloaded =
+          (await service.listBases()).firstWhere((e) => e.id == base.id);
+      expect(reloaded.status, KnowledgeBaseStatus.completed);
+    });
+
+    test('addFile falls back to a placeholder title and rejects empty content',
+        () async {
+      final base = await service.createBase(name: 'KB');
+      final item =
+          await service.addFile(baseId: base.id, fileName: '   ', text: 'x');
+      expect(item.title, '未命名文件');
+      expect(item.source, '未命名文件'); // no path + blank name → placeholder
+
+      expect(
+        () => service.addFile(baseId: base.id, fileName: 'blank.txt', text: '  '),
+        throwsStateError,
+      );
+    });
+
+    test('deleteItem removes only that item and its derived rows', () async {
+      final base = await service.createBase(name: 'KB');
+      final keep =
+          await service.addNote(baseId: base.id, title: 'keep', text: 'alpha');
+      final drop =
+          await service.addNote(baseId: base.id, title: 'drop', text: 'beta');
+
+      await service.deleteItem(drop.id);
+
+      final items = await service.listItems(base.id);
+      expect(items.map((e) => e.id), [keep.id]);
+      expect(await service.search(baseId: base.id, query: 'beta'), isEmpty);
+      expect(
+        await service.search(baseId: base.id, query: 'alpha'),
+        isNotEmpty,
+      );
+    });
+
+    test('reindexBase rebuilds derived chunks from stored content', () async {
+      final base = await service.createBase(name: 'KB');
+      await service.addNote(baseId: base.id, title: 'a', text: 'gamma delta');
+      await service.addNote(baseId: base.id, title: 'b', text: 'epsilon');
+
+      final count = await service.reindexBase(base.id);
+      expect(count, 2);
+
+      // Content survives the rebuild → keyword search still hits.
+      final hits = await service.search(baseId: base.id, query: 'gamma');
+      expect(hits, isNotEmpty);
+      expect(hits.first.content.toLowerCase(), contains('gamma'));
+    });
+
+    test('reindexBase on an empty base is a no-op returning 0', () async {
+      final base = await service.createBase(name: 'KB');
+      expect(await service.reindexBase(base.id), 0);
+    });
   });
 
   group('embedding domain helpers', () {
@@ -405,6 +480,44 @@ void main() {
       // Deleting the last referencing base GCs the now-orphaned embedding.
       await service.deleteBase(b.id);
       expect(await db.select(db.kbEmbeddingRows).get(), isEmpty);
+    });
+
+    test('reindexBase reuses stored vectors without re-embedding', () async {
+      final service = buildService();
+      final base = await seed(service, KnowledgeSearchMode.vector);
+      final batchesAfterIngest = embedLog.length;
+
+      // Content is unchanged → every chunk's embeddingKey already exists, so
+      // the rebuild issues no new embed batch (dedup, §5.1).
+      final count = await service.reindexBase(base.id);
+      expect(count, 2);
+      expect(embedLog.length, batchesAfterIngest);
+
+      // Vectors survive the rebuild → vector search still ranks by cosine.
+      final hits = await service.search(baseId: base.id, query: 'dart native');
+      expect(hits, isNotEmpty);
+      expect(hits.first.similarity, greaterThan(0));
+    });
+
+    test('deleteItem GCs orphaned embeddings but keeps shared ones', () async {
+      final service = buildService();
+      const text = 'Dart compiles to native code.';
+      final base = await service.createBase(
+        name: 'KB',
+        embeddingModelKey: 'model-a',
+        searchMode: KnowledgeSearchMode.vector,
+      );
+      final shared =
+          await service.addNote(baseId: base.id, title: 'a', text: text);
+      // Same text + model → identical embeddingKey, shared (deduped) row.
+      await service.addNote(baseId: base.id, title: 'b', text: text);
+
+      final before = await db.select(db.kbEmbeddingRows).get();
+      expect(before, isNotEmpty);
+
+      // Deleting one referrer leaves the shared embedding alive.
+      await service.deleteItem(shared.id);
+      expect(await db.select(db.kbEmbeddingRows).get(), before);
     });
 
     test('threshold filters out low-similarity vector hits', () async {

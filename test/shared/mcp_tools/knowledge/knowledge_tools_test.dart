@@ -240,17 +240,33 @@ void main() {
       expect(await service.getBase(base.id), isNull);
     });
 
-    test('kb_manage refresh is reported as not implemented', () async {
+    test('kb_manage refresh rebuilds the index and reports item count',
+        () async {
       final base = await service.createBase(
         name: 'shared',
         scope: const KnowledgeScope(chatEnabled: true),
       );
+      await service.addNote(baseId: base.id, title: 'n', text: 'alpha beta');
+      final result = await run(kKnowledgeManageTool, {
+        'action': 'refresh',
+        'base_id': base.id,
+      });
+      expect(result.isError, isFalse);
+      expect(result.text, contains('"reindexedItems": 1'));
+      // Content survives the rebuild → still searchable.
+      expect(
+        await service.search(baseId: base.id, query: 'alpha'),
+        isNotEmpty,
+      );
+    });
+
+    test('kb_manage refresh rejects a non-chat base', () async {
+      final base = await service.createBase(name: 'private');
       final result = await run(kKnowledgeManageTool, {
         'action': 'refresh',
         'base_id': base.id,
       });
       expect(result.isError, isTrue);
-      expect(result.text, contains('尚未实现'));
     });
 
     test('unknown tool name yields an error result', () async {
