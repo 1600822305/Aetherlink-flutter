@@ -71,56 +71,14 @@ class _KnowledgeBaseDetailPageState
   }
 
   Future<void> _addNote() async {
-    final titleController = TextEditingController();
-    final textController = TextEditingController();
-    final saved = await showDialog<bool>(
+    final result = await showDialog<({String title, String text})>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('添加笔记'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: titleController,
-                decoration: const InputDecoration(labelText: '标题（可选）'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: textController,
-                autofocus: true,
-                minLines: 4,
-                maxLines: 10,
-                decoration: const InputDecoration(
-                  labelText: '内容',
-                  hintText: '粘贴或输入文本（支持 txt / md）',
-                  alignLabelWithHint: true,
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
+      builder: (ctx) => const _AddNoteDialog(),
     );
-    final title = titleController.text.trim();
-    final text = textController.text;
-    titleController.dispose();
-    textController.dispose();
-    if (saved != true || text.trim().isEmpty) return;
+    if (result == null || result.text.trim().isEmpty) return;
     await ref
         .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
-        .addNote(title: title, text: text);
+        .addNote(title: result.title, text: result.text);
     if (mounted) AppToast.success(context, '已添加笔记');
   }
 
@@ -215,53 +173,13 @@ class _KnowledgeBaseDetailPageState
 
   /// 输入一个网址，抓取网页转成 Markdown 快照后摄取为条目（type=url）。
   Future<void> _addUrl() async {
-    final urlController = TextEditingController();
-    final titleController = TextEditingController();
-    final saved = await showDialog<bool>(
+    final result = await showDialog<({String url, String title})>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('添加网址'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: urlController,
-                autofocus: true,
-                keyboardType: TextInputType.url,
-                decoration: const InputDecoration(
-                  labelText: '网址',
-                  hintText: 'https://example.com/article',
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: titleController,
-                decoration: const InputDecoration(
-                  labelText: '标题（可选，留空用网页标题）',
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('抓取'),
-          ),
-        ],
-      ),
+      builder: (ctx) => const _AddUrlDialog(),
     );
-    final url = urlController.text.trim();
-    final title = titleController.text.trim();
-    urlController.dispose();
-    titleController.dispose();
-    if (saved != true || url.isEmpty) return;
+    if (result == null || result.url.isEmpty) return;
+    final url = result.url;
+    final title = result.title;
     try {
       await ref
           .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
@@ -340,89 +258,25 @@ class _KnowledgeBaseDetailPageState
       knowledgeBaseControllerProvider(widget.baseId).future,
     );
     if (!mounted) return;
-    var selected = KnowledgeFileProcessor.fromId(base?.fileProcessorId);
-    final keyControllers = {
-      for (final p in KnowledgeFileProcessor.values)
-        p: TextEditingController(),
-    };
+    final initialKeys = <KnowledgeFileProcessor, String>{};
     for (final p in KnowledgeFileProcessor.values) {
       final saved = await readKnowledgeFileProcessorApiKey(ref, p);
-      keyControllers[p]!.text = saved ?? '';
+      initialKeys[p] = saved ?? '';
     }
-    if (!mounted) {
-      for (final c in keyControllers.values) {
-        c.dispose();
-      }
-      return;
-    }
-    final confirmed = await showDialog<bool>(
+    if (!mounted) return;
+    final result =
+        await showDialog<({KnowledgeFileProcessor? processor, String key})>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('云端解析设置'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                DropdownButtonFormField<KnowledgeFileProcessor?>(
-                  initialValue: selected,
-                  decoration: const InputDecoration(
-                    labelText: 'PDF / DOCX 解析方式',
-                  ),
-                  items: [
-                    const DropdownMenuItem<KnowledgeFileProcessor?>(
-                      value: null,
-                      child: Text('本地解析（默认，不上传）'),
-                    ),
-                    for (final p in KnowledgeFileProcessor.values)
-                      DropdownMenuItem<KnowledgeFileProcessor?>(
-                        value: p,
-                        child: Text(p.label),
-                      ),
-                  ],
-                  onChanged: (value) =>
-                      setDialogState(() => selected = value),
-                ),
-                if (selected != null) ...[
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: keyControllers[selected]!,
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      labelText: '${selected!.label} API Key',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    '启用后本库的 PDF / DOCX 会上传到 ${selected!.label} '
-                    '解析为 Markdown（注意隐私与费用）；解析结果作为权威快照'
-                    '落库，重建索引不会重复调用云端。',
-                    style: Theme.of(ctx).textTheme.bodySmall,
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('保存'),
-            ),
-          ],
-        ),
+      builder: (ctx) => _CloudParsingDialog(
+        initialProcessor: KnowledgeFileProcessor.fromId(base?.fileProcessorId),
+        initialKeys: initialKeys,
       ),
     );
+    if (result == null) return;
     try {
-      if (confirmed != true) return;
-      final processor = selected;
+      final processor = result.processor;
       if (processor != null) {
-        final key = keyControllers[processor]!.text.trim();
+        final key = result.key.trim();
         if (key.isEmpty) {
           if (mounted) {
             AppToast.error(context, '请填写 ${processor.label} 的 API Key');
@@ -444,10 +298,6 @@ class _KnowledgeBaseDetailPageState
       }
     } catch (e) {
       if (mounted) AppToast.error(context, '保存失败：$e');
-    } finally {
-      for (final c in keyControllers.values) {
-        c.dispose();
-      }
     }
   }
 
@@ -810,6 +660,232 @@ class _OutlinedCard extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: child,
+    );
+  }
+}
+
+/// 添加笔记对话框。控制器由本 State 持有，随退出动画结束后统一 dispose，
+/// 避免关闭瞬间「controller used after being disposed」。
+class _AddNoteDialog extends StatefulWidget {
+  const _AddNoteDialog();
+
+  @override
+  State<_AddNoteDialog> createState() => _AddNoteDialogState();
+}
+
+class _AddNoteDialogState extends State<_AddNoteDialog> {
+  final _titleController = TextEditingController();
+  final _textController = TextEditingController();
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _textController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('添加笔记'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(labelText: '标题（可选）'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _textController,
+              autofocus: true,
+              minLines: 4,
+              maxLines: 10,
+              decoration: const InputDecoration(
+                labelText: '内容',
+                hintText: '粘贴或输入文本（支持 txt / md）',
+                alignLabelWithHint: true,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop((
+            title: _titleController.text.trim(),
+            text: _textController.text,
+          )),
+          child: const Text('保存'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 添加网址对话框，同 [_AddNoteDialog] 的控制器生命周期约定。
+class _AddUrlDialog extends StatefulWidget {
+  const _AddUrlDialog();
+
+  @override
+  State<_AddUrlDialog> createState() => _AddUrlDialogState();
+}
+
+class _AddUrlDialogState extends State<_AddUrlDialog> {
+  final _urlController = TextEditingController();
+  final _titleController = TextEditingController();
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    _titleController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('添加网址'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _urlController,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              decoration: const InputDecoration(
+                labelText: '网址',
+                hintText: 'https://example.com/article',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(
+                labelText: '标题（可选，留空用网页标题）',
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop((
+            url: _urlController.text.trim(),
+            title: _titleController.text.trim(),
+          )),
+          child: const Text('抓取'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 云端解析设置对话框（§5.2）：解析方式下拉 + 对应服务的 API Key。
+/// 控制器由本 State 持有，关闭后由框架在合适时机 dispose。
+class _CloudParsingDialog extends StatefulWidget {
+  const _CloudParsingDialog({
+    required this.initialProcessor,
+    required this.initialKeys,
+  });
+
+  final KnowledgeFileProcessor? initialProcessor;
+  final Map<KnowledgeFileProcessor, String> initialKeys;
+
+  @override
+  State<_CloudParsingDialog> createState() => _CloudParsingDialogState();
+}
+
+class _CloudParsingDialogState extends State<_CloudParsingDialog> {
+  late KnowledgeFileProcessor? _selected = widget.initialProcessor;
+  late final Map<KnowledgeFileProcessor, TextEditingController>
+      _keyControllers = {
+    for (final p in KnowledgeFileProcessor.values)
+      p: TextEditingController(text: widget.initialKeys[p] ?? ''),
+  };
+
+  @override
+  void dispose() {
+    for (final c in _keyControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = _selected;
+    return AlertDialog(
+      title: const Text('云端解析设置'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DropdownButtonFormField<KnowledgeFileProcessor?>(
+              initialValue: selected,
+              decoration: const InputDecoration(
+                labelText: 'PDF / DOCX 解析方式',
+              ),
+              items: [
+                const DropdownMenuItem<KnowledgeFileProcessor?>(
+                  value: null,
+                  child: Text('本地解析（默认，不上传）'),
+                ),
+                for (final p in KnowledgeFileProcessor.values)
+                  DropdownMenuItem<KnowledgeFileProcessor?>(
+                    value: p,
+                    child: Text(p.label),
+                  ),
+              ],
+              onChanged: (value) => setState(() => _selected = value),
+            ),
+            if (selected != null) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: _keyControllers[selected]!,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: '${selected.label} API Key',
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '启用后本库的 PDF / DOCX 会上传到 ${selected.label} '
+                '解析为 Markdown（注意隐私与费用）；解析结果作为权威快照'
+                '落库，重建索引不会重复调用云端。',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop((
+            processor: _selected,
+            key: _selected == null ? '' : _keyControllers[_selected]!.text,
+          )),
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }
