@@ -613,8 +613,9 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
   // ── keyword search (设计文档 §6) ──
 
   /// Chunks in [baseId] whose text contains ANY of [tokens] (case-insensitive
-  /// `LIKE`), restricted to items that finished ingesting (`completed`).
-  /// Scoring / topK trimming happens in the service layer.
+  /// substring via `instr(lower(content), token)`——不用 LIKE，避免 token 里的
+  /// `%`/`_` 被当通配符), restricted to items that finished ingesting
+  /// (`completed`). Scoring / topK trimming happens in the service layer.
   Future<List<KbChunkRow>> searchChunks(
     String baseId,
     List<String> tokens,
@@ -627,9 +628,17 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
             knowledgeItemRows.status.equals(KnowledgeItemStatus.completed.name),
       );
 
+    final lowerContent = FunctionCallExpression<String>('lower', [
+      kbChunkRows.content,
+    ]);
     Expression<bool> anyToken = const Constant(false);
     for (final token in tokens) {
-      anyToken = anyToken | kbChunkRows.content.like('%$token%');
+      anyToken =
+          anyToken |
+          FunctionCallExpression<int>('instr', [
+            lowerContent,
+            Variable<String>(token.toLowerCase()),
+          ]).isBiggerThanValue(0);
     }
 
     final query = select(kbChunkRows)
