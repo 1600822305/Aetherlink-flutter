@@ -629,6 +629,26 @@ void main() {
       );
     });
 
+    test('reindexItem rebuilds only that item and leaves siblings intact',
+        () async {
+      final base = await service.createBase(name: 'KB');
+      final target =
+          await service.addNote(baseId: base.id, title: 'a', text: 'gamma');
+      final other =
+          await service.addNote(baseId: base.id, title: 'b', text: 'delta');
+
+      final count = await service.reindexItem(target.id);
+      expect(count, greaterThan(0));
+
+      // 目标条目的切块重建后仍可检索，其它条目不受影响。
+      expect(await service.itemChunks(target.id), hasLength(count));
+      expect(await service.search(baseId: base.id, query: 'gamma'), isNotEmpty);
+      expect(await service.search(baseId: base.id, query: 'delta'), isNotEmpty);
+      expect(await service.itemChunks(other.id), isNotEmpty);
+
+      await expectLater(service.reindexItem('missing'), throwsStateError);
+    });
+
     test('reindexBase rebuilds derived chunks from stored content', () async {
       final base = await service.createBase(name: 'KB');
       await service.addNote(baseId: base.id, title: 'a', text: 'gamma delta');

@@ -447,6 +447,32 @@ class KnowledgeService {
     return entries.length;
   }
 
+  /// 重建单个条目的派生索引（功能缺口⑪）：与 [reindexBase] 同一条重建管线，但
+  /// 只覆盖一个条目——切块参数调整后可逐条验证，或对坏索引条目做点修复，比整库
+  /// 重建轻得多。条目 / 正文缺失抛错。返回重建出的切块数。
+  Future<int> reindexItem(String itemId) async {
+    final entry = await _dao.itemWithContent(itemId);
+    if (entry == null) throw StateError('条目不存在或缺少正文: $itemId');
+    final base = await _requireBase(entry.item.baseId);
+    final chunks = chunkText(
+      entry.content,
+      size: base.chunkSize,
+      overlap: base.chunkOverlap,
+    );
+    final embedded = await _embedChunks(base, chunks);
+    await _dao.reindexItem(
+      baseId: base.id,
+      item: ReindexItem(
+        itemId: itemId,
+        contentHash: entry.contentHash,
+        chunks: chunks,
+        embeddingKeys: embedded?.keys,
+      ),
+      embeddings: embedded?.vectors ?? const {},
+    );
+    return chunks.length;
+  }
+
   /// 失败恢复（设计文档 §11）：只补嵌本库里 `embeddingKey` 为空的切块（摄取时嵌入
   /// 失败/中断留下的待补索引），已嵌入的切块不重算、不重复扣费——比整库
   /// [reindexBase] 轻得多。关键词库 / 无嵌入器 / 无待补切块时直接返回 0；嵌入调用

@@ -160,6 +160,16 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
     return count;
   }
 
+  /// 重建单个条目的派生索引（功能缺口⑪），返回重建出的切块数。
+  Future<int> reindexItem(String itemId) async {
+    final count = await ref
+        .read(knowledgeServiceProvider)
+        .reindexItem(itemId);
+    ref.invalidate(knowledgeItemChunksProvider(itemId));
+    ref.invalidate(knowledgePendingEmbeddingCountProvider(baseId));
+    return count;
+  }
+
   /// 删除单个条目及其派生数据（正文 + 切块 + 孤儿嵌入）。
   Future<void> deleteItem(String itemId) async {
     await ref.read(knowledgeServiceProvider).deleteItem(itemId);
