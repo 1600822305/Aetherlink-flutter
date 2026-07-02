@@ -49,6 +49,88 @@ class _KnowledgeBaseDetailPageState
   List<KnowledgeReferenceItem>? _results;
   bool _searching = false;
 
+  /// 多选模式选中的条目 id（长按进入，清空即退出）。
+  final Set<String> _selectedIds = {};
+
+  bool get _selectionMode => _selectedIds.isNotEmpty;
+
+  void _toggleSelected(KnowledgeItem item) {
+    setState(() {
+      if (!_selectedIds.add(item.id)) _selectedIds.remove(item.id);
+    });
+  }
+
+  void _exitSelection() => setState(_selectedIds.clear);
+
+  /// 批量重建选中条目的索引，逐条执行并汇总结果。
+  Future<void> _reindexSelected() async {
+    final ids = _selectedIds.toList();
+    _exitSelection();
+    var ok = 0;
+    Object? firstError;
+    for (final id in ids) {
+      try {
+        await ref
+            .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
+            .reindexItem(id);
+        ok++;
+      } catch (e) {
+        firstError ??= e;
+      }
+    }
+    if (!mounted) return;
+    if (firstError == null) {
+      AppToast.success(context, '已重建 $ok 个条目的索引');
+    } else {
+      AppToast.error(context, '重建完成 $ok/${ids.length}，首个错误：$firstError');
+    }
+  }
+
+  /// 批量删除选中条目（移入回收站），删除前二次确认。
+  Future<void> _deleteSelected() async {
+    final ids = _selectedIds.toList();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('批量删除'),
+        content: Text('将把选中的 ${ids.length} 个条目移入回收站，可从回收站恢复。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    _exitSelection();
+    var deleted = 0;
+    Object? firstError;
+    for (final id in ids) {
+      try {
+        await ref
+            .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
+            .deleteItem(id);
+        deleted++;
+      } catch (e) {
+        firstError ??= e;
+      }
+    }
+    if (!mounted) return;
+    if (firstError == null) {
+      AppToast.success(context, '已删除 $deleted 个条目');
+    } else {
+      AppToast.error(context, '删除完成 $deleted/${ids.length}，首个错误：$firstError');
+    }
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -109,19 +191,19 @@ class _KnowledgeBaseDetailPageState
     if (mounted) AppToast.success(context, '已添加笔记');
   }
 
-  /// 选择一个文件并摄取为条目。纯文本（含 csv / json）按 UTF-8 读取；HTML 用
-  /// 与 URL 抓取同一套转换器转 Markdown；DOCX / PPTX / XLSX / EPUB 在 isolate
-  /// 里、PDF 在 PDFium 原生 worker 里转 Markdown（§5.2 本地解析轨）后走同一条
-  /// 摄取管线；库配置了云端解析器时富文档改走云端预处理轨，并额外放开
-  /// doc / ppt / xls 等仅云端轨支持的旧版格式（功能缺口④）。
+  /// 选择一个或多个文件并逐个摄取为条目。纯文本（含 csv / json）按 UTF-8
+  /// 读取；HTML 用与 URL 抓取同一套转换器转 Markdown；DOCX / PPTX / XLSX /
+  /// EPUB 在 isolate 里、PDF 在 PDFium 原生 worker 里转 Markdown（§5.2 本地
+  /// 解析轨）后走同一条摄取管线；库配置了云端解析器时富文档改走云端预处理
+  /// 轨，并额外放开 doc / ppt / xls 等仅云端轨支持的旧版格式（功能缺口④）。
   Future<void> _addFile() async {
     final base = await ref.read(
       knowledgeBaseControllerProvider(widget.baseId).future,
     );
     final processor = KnowledgeFileProcessor.fromId(base?.fileProcessorId);
-    final picked = await ref
+    final pickedFiles = await ref
         .read(fileSystemApiProvider)
-        .pickFile(
+        .pickFiles(
           allowedExtensions: [
             ...kPlainTextKnowledgeExtensions,
             'html',
@@ -132,7 +214,40 @@ class _KnowledgeBaseDetailPageState
             if (processor != null) ...kCloudOnlyKnowledgeExtensions,
           ],
         );
-    if (picked == null) return;
+    if (pickedFiles.isEmpty) return;
+    if (pickedFiles.length == 1) {
+      final error = await _ingestPickedFile(pickedFiles.first, processor);
+      if (!mounted) return;
+      if (error == null) {
+        AppToast.success(context, '已上传「${pickedFiles.first.name}」');
+      } else {
+        AppToast.error(context, error);
+      }
+      return;
+    }
+    var ok = 0;
+    String? firstError;
+    for (final picked in pickedFiles) {
+      final error = await _ingestPickedFile(picked, processor);
+      if (error == null) {
+        ok++;
+      } else {
+        firstError ??= '「${picked.name}」$error';
+      }
+    }
+    if (!mounted) return;
+    if (firstError == null) {
+      AppToast.success(context, '已上传 $ok 个文件');
+    } else {
+      AppToast.error(context, '上传完成 $ok/${pickedFiles.length}，$firstError');
+    }
+  }
+
+  /// 摄取单个已选文件；成功返回 null，失败返回面向用户的错误文案。
+  Future<String?> _ingestPickedFile(
+    PickedFile picked,
+    KnowledgeFileProcessor? processor,
+  ) async {
     final isPdf = isPdfFileName(picked.name);
     final isCloudOnly = isCloudOnlyKnowledgeFileName(picked.name);
     final isRichDoc =
@@ -143,15 +258,11 @@ class _KnowledgeBaseDetailPageState
         isEpubFileName(picked.name) ||
         isCloudOnly;
     if (isRichDoc && processor != null) {
-      await _addFileViaCloud(picked, processor);
-      return;
+      return _ingestFileViaCloud(picked, processor);
     }
     if (isCloudOnly) {
       // 兜底：系统选择器可能忽略扩展名过滤（如部分 Android 实现）。
-      if (mounted) {
-        AppToast.error(context, '该格式需要云端解析，请先在「云端解析」里配置解析器');
-      }
-      return;
+      return '该格式需要云端解析，请先在「云端解析」里配置解析器';
     }
     String text;
     try {
@@ -189,28 +300,25 @@ class _KnowledgeBaseDetailPageState
         text = await ref.read(fileSystemApiProvider).readAsString(picked.path);
       }
     } catch (e) {
-      if (mounted) AppToast.error(context, '读取文件失败：$e');
-      return;
+      return '读取文件失败：$e';
     }
     if (text.trim().isEmpty) {
-      if (mounted) {
-        AppToast.error(context, isPdf ? 'PDF 无文本层（可能为扫描件），未摄取' : '文件内容为空，未摄取');
-      }
-      return;
+      return isPdf ? 'PDF 无文本层（可能为扫描件），未摄取' : '文件内容为空，未摄取';
     }
     try {
       await ref
           .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
           .addFile(fileName: picked.name, text: text, sourcePath: picked.path);
-      if (mounted) AppToast.success(context, '已上传「${picked.name}」');
+      return null;
     } catch (e) {
-      if (mounted) AppToast.error(context, '上传失败：$e');
+      return '上传失败：$e';
     }
   }
 
   /// 云端预处理轨（§5.2）：把原始字节交给库配置的云端解析器转 Markdown
   /// 权威快照后摄取。上传 + 轮询可能要几十秒到几分钟，先给提示。
-  Future<void> _addFileViaCloud(
+  /// 成功返回 null，失败返回错误文案。
+  Future<String?> _ingestFileViaCloud(
     PickedFile picked,
     KnowledgeFileProcessor processor,
   ) async {
@@ -228,14 +336,9 @@ class _KnowledgeBaseDetailPageState
             bytes: bytes,
             sourcePath: picked.path,
           );
-      if (mounted) {
-        AppToast.success(
-          context,
-          '已通过 ${processor.label} 解析并上传「${picked.name}」',
-        );
-      }
+      return null;
     } catch (e) {
-      if (mounted) AppToast.error(context, '云端解析失败：$e');
+      return '云端解析失败：$e';
     }
   }
 
@@ -580,45 +683,84 @@ class _KnowledgeBaseDetailPageState
         leadingWidth: 44,
         leading: Padding(
           padding: const EdgeInsets.only(left: 4),
-          child: IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-            icon: const Icon(LucideIcons.arrowLeft, size: 24),
-            color: theme.colorScheme.primary,
-            onPressed: () => context.pop(),
-          ),
+          child: _selectionMode
+              ? IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 40,
+                    height: 40,
+                  ),
+                  icon: const Icon(LucideIcons.x, size: 24),
+                  color: theme.colorScheme.primary,
+                  tooltip: '退出多选',
+                  onPressed: _exitSelection,
+                )
+              : IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 40,
+                    height: 40,
+                  ),
+                  icon: const Icon(LucideIcons.arrowLeft, size: 24),
+                  color: theme.colorScheme.primary,
+                  onPressed: () => context.pop(),
+                ),
         ),
         titleTextStyle: theme.textTheme.titleLarge?.copyWith(
           fontSize: 18,
           fontWeight: FontWeight.w600,
           color: theme.colorScheme.onSurface,
         ),
-        title: Text(baseName.isEmpty ? '知识库' : baseName),
-        actions: [
-          IconButton(
-            icon: const Icon(LucideIcons.plus, size: 22),
-            color: theme.colorScheme.primary,
-            tooltip: '添加数据源',
-            onPressed: _openAddMenu,
-          ),
-          PopupMenuButton<VoidCallback>(
-            icon: Icon(
-              LucideIcons.ellipsisVertical,
-              size: 20,
-              color: theme.colorScheme.primary,
-            ),
-            tooltip: '更多',
-            onSelected: (action) => action(),
-            itemBuilder: (ctx) => [
-              _menuItem(LucideIcons.settings2, '库设置', _openBaseSettings),
-              _menuItem(LucideIcons.cloudCog, '云端解析设置', _configureCloudParsing),
-              _menuItem(LucideIcons.testTube2, '检索测试', _openRecallTest),
-              _menuItem(LucideIcons.refreshCw, '重建索引', _refresh),
-              _menuItem(LucideIcons.trash2, '回收站', _openTrash),
-            ],
-          ),
-          const SizedBox(width: 4),
-        ],
+        title: Text(
+          _selectionMode
+              ? '已选 ${_selectedIds.length} 项'
+              : (baseName.isEmpty ? '知识库' : baseName),
+        ),
+        actions: _selectionMode
+            ? [
+                IconButton(
+                  icon: const Icon(LucideIcons.refreshCw, size: 20),
+                  color: theme.colorScheme.primary,
+                  tooltip: '重建选中条目的索引',
+                  onPressed: _reindexSelected,
+                ),
+                IconButton(
+                  icon: const Icon(LucideIcons.trash2, size: 20),
+                  color: theme.colorScheme.error,
+                  tooltip: '删除选中条目',
+                  onPressed: _deleteSelected,
+                ),
+                const SizedBox(width: 4),
+              ]
+            : [
+                IconButton(
+                  icon: const Icon(LucideIcons.plus, size: 22),
+                  color: theme.colorScheme.primary,
+                  tooltip: '添加数据源',
+                  onPressed: _openAddMenu,
+                ),
+                PopupMenuButton<VoidCallback>(
+                  icon: Icon(
+                    LucideIcons.ellipsisVertical,
+                    size: 20,
+                    color: theme.colorScheme.primary,
+                  ),
+                  tooltip: '更多',
+                  onSelected: (action) => action(),
+                  itemBuilder: (ctx) => [
+                    _menuItem(LucideIcons.settings2, '库设置', _openBaseSettings),
+                    _menuItem(
+                      LucideIcons.cloudCog,
+                      '云端解析设置',
+                      _configureCloudParsing,
+                    ),
+                    _menuItem(LucideIcons.testTube2, '检索测试', _openRecallTest),
+                    _menuItem(LucideIcons.refreshCw, '重建索引', _refresh),
+                    _menuItem(LucideIcons.trash2, '回收站', _openTrash),
+                  ],
+                ),
+                const SizedBox(width: 4),
+              ],
       ),
       body: Column(
         children: [
@@ -682,6 +824,9 @@ class _KnowledgeBaseDetailPageState
                       onUrl: _addUrl,
                       onWorkspace: _addWorkspace,
                       onTapItem: _showItemDetail,
+                      selectedIds: _selectedIds,
+                      selectionMode: _selectionMode,
+                      onToggleSelected: _toggleSelected,
                     ),
                   ),
           ),
@@ -700,6 +845,9 @@ class _ItemList extends StatelessWidget {
     required this.onUrl,
     required this.onWorkspace,
     required this.onTapItem,
+    required this.selectedIds,
+    required this.selectionMode,
+    required this.onToggleSelected,
   });
 
   final List<KnowledgeItem> items;
@@ -709,6 +857,9 @@ class _ItemList extends StatelessWidget {
   final VoidCallback onUrl;
   final VoidCallback onWorkspace;
   final ValueChanged<KnowledgeItem> onTapItem;
+  final Set<String> selectedIds;
+  final bool selectionMode;
+  final ValueChanged<KnowledgeItem> onToggleSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -733,7 +884,12 @@ class _ItemList extends StatelessWidget {
                 _ItemRow(
                   item: items[i],
                   theme: theme,
-                  onTap: () => onTapItem(items[i]),
+                  selectionMode: selectionMode,
+                  selected: selectedIds.contains(items[i].id),
+                  onTap: () => selectionMode
+                      ? onToggleSelected(items[i])
+                      : onTapItem(items[i]),
+                  onLongPress: () => onToggleSelected(items[i]),
                 ),
               ],
             ],
@@ -748,27 +904,47 @@ class _ItemRow extends StatelessWidget {
   const _ItemRow({
     required this.item,
     required this.theme,
+    required this.selectionMode,
+    required this.selected,
     required this.onTap,
+    required this.onLongPress,
   });
 
   final KnowledgeItem item;
   final ThemeData theme;
+  final bool selectionMode;
+  final bool selected;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
     final statusColor = _statusColor(item.status, theme);
     return ListTile(
       onTap: onTap,
-      trailing: Icon(
-        LucideIcons.chevronRight,
-        size: 18,
-        color: theme.colorScheme.onSurfaceVariant,
+      onLongPress: onLongPress,
+      selected: selected,
+      selectedTileColor: theme.colorScheme.primaryContainer.withValues(
+        alpha: 0.35,
       ),
-      leading: Icon(
-        LucideIcons.fileText,
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
+      trailing: selectionMode
+          ? null
+          : Icon(
+              LucideIcons.chevronRight,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+      leading: selectionMode
+          ? Icon(
+              selected ? LucideIcons.squareCheck : LucideIcons.square,
+              color: selected
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.onSurfaceVariant,
+            )
+          : Icon(
+              LucideIcons.fileText,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
       title: Text(
         item.title ?? item.source,
         maxLines: 1,

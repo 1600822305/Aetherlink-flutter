@@ -71,4 +71,23 @@ class PluginFileSystemApi implements FileSystemApi {
       bytes: picked.bytes,
     );
   }
+
+  @override
+  Future<List<PickedFile>> pickFiles({List<String>? allowedExtensions}) async {
+    final result = await FilePicker.pickFiles(
+      type: allowedExtensions == null ? FileType.any : FileType.custom,
+      allowedExtensions: allowedExtensions,
+      allowMultiple: true,
+    );
+    if (result == null) return const [];
+    return [
+      for (final picked in result.files)
+        PickedFile(
+          name: picked.name,
+          path: picked.path ?? '',
+          size: picked.size,
+          bytes: picked.bytes,
+        ),
+    ];
+  }
 }

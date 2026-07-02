@@ -44,4 +44,8 @@ abstract interface class FileSystemApi {
 
   /// Opens the platform picker; returns null when the user cancels.
   Future<PickedFile?> pickFile({List<String>? allowedExtensions});
+
+  /// Opens the platform picker allowing multiple selection; returns an empty
+  /// list when the user cancels.
+  Future<List<PickedFile>> pickFiles({List<String>? allowedExtensions});
 }
