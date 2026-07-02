@@ -96,18 +96,16 @@ class _McpServerSettingsPageState extends ConsumerState<McpServerSettingsPage>
           if (_index == 0)
             Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: ModelTonalButton(
-                label: '添加',
-                icon: LucideIcons.plus,
+              child: _AddFilledButton(
+                accent: theme.colorScheme.primary,
                 onPressed: () => _openAddServer(context, ref),
               ),
             ),
           if (_index == 1)
             Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: ModelTonalButton(
-                label: '添加',
-                icon: LucideIcons.plus,
+              child: _AddFilledButton(
+                accent: const Color(0xFF4CAF50),
                 onPressed: () => _openAddBuiltinPicker(
                   context,
                   ref,
@@ -118,9 +116,8 @@ class _McpServerSettingsPageState extends ConsumerState<McpServerSettingsPage>
           if (_index == 2)
             Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: ModelTonalButton(
-                label: '添加',
-                icon: LucideIcons.plus,
+              child: _AddFilledButton(
+                accent: const Color(0xFF8B5CF6),
                 onPressed: () => _openAddBuiltinPicker(
                   context,
                   ref,
@@ -147,6 +144,45 @@ class _McpServerSettingsPageState extends ConsumerState<McpServerSettingsPage>
 
 void _toast(BuildContext context, String message) {
   AppToast.info(context, message);
+}
+
+/// The AppBar 「添加」 action: a compact filled pill tinted with the active
+/// tab's accent color so it reads as the entry point for adding servers.
+class _AddFilledButton extends StatelessWidget {
+  const _AddFilledButton({required this.accent, required this.onPressed});
+
+  final Color accent;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: accent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(14),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(LucideIcons.plus, size: 14, color: Colors.white),
+              SizedBox(width: 4),
+              Text(
+                '添加',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Opens the 添加内置工具 / 智能助手 bottom-sheet picker, showing only the
