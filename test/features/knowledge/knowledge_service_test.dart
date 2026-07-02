@@ -146,6 +146,39 @@ void main() {
       expect(reloadedB.scope.chatEnabled, isTrue);
     });
 
+    test('setBaseGroup / renameGroup / dissolveGroup manage group membership',
+        () async {
+      final a = await service.createBase(name: 'A');
+      final b = await service.createBase(name: 'B');
+      final c = await service.createBase(name: 'C');
+
+      await service.setBaseGroup(a.id, '  工作  ');
+      await service.setBaseGroup(b.id, '工作');
+      expect((await service.getBase(a.id))!.groupName, '工作'); // trimmed
+      expect((await service.getBase(b.id))!.groupName, '工作');
+      expect((await service.getBase(c.id))!.groupName, isNull);
+
+      await service.renameGroup('工作', '学习');
+      expect((await service.getBase(a.id))!.groupName, '学习');
+      expect((await service.getBase(b.id))!.groupName, '学习');
+
+      await service.setBaseGroup(a.id, '   ');
+      expect((await service.getBase(a.id))!.groupName, isNull); // blank clears
+
+      await service.dissolveGroup('学习');
+      expect((await service.getBase(b.id))!.groupName, isNull);
+      expect(await service.listBases(), hasLength(3)); // bases survive
+
+      await expectLater(
+        service.renameGroup('学习', '  '),
+        throwsStateError,
+      );
+      await expectLater(
+        service.setBaseGroup('missing', 'G'),
+        throwsStateError,
+      );
+    });
+
     test('addNote ingests content and flips base status to completed',
         () async {
       final base = await service.createBase(name: 'KB');

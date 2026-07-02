@@ -49,6 +49,7 @@ class KnowledgeBase {
     this.threshold,
     this.topK = kDefaultTopK,
     this.fileProcessorId,
+    this.groupName,
   });
 
   /// 默认切块参数（设计文档 §5：P0 用简单定长切块，P1 再升级结构感知切块）。
@@ -72,6 +73,9 @@ class KnowledgeBase {
   /// 云端文件预处理器 id（设计文档 §5.2 云端预处理轨）。为空时 PDF / DOCX
   /// 走默认本地解析轨；非空时对应 `KnowledgeFileProcessor.id`。
   final String? fileProcessorId;
+
+  /// 所属分组名（功能缺口⑦）。轻量字符串分组：同名即同组，为空表示未分组。
+  final String? groupName;
 
   KnowledgeBase copyWith({
     String? name,
@@ -97,6 +101,7 @@ class KnowledgeBase {
       status: status ?? this.status,
       createdAt: createdAt,
       fileProcessorId: fileProcessorId,
+      groupName: groupName,
     );
   }
 }

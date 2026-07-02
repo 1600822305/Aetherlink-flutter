@@ -25,6 +25,9 @@ class KnowledgeBaseRows extends Table {
   /// 云端文件预处理器 id（设计文档 §5.2 云端预处理轨，P3e 起）。为空走本地解析轨。
   TextColumn get fileProcessorId => text().nullable()();
 
+  /// 所属分组名（功能缺口⑦）。轻量字符串分组：同名即同组，为空表示未分组。
+  TextColumn get groupName => text().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {id};
 }

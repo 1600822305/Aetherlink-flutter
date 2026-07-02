@@ -98,6 +98,7 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
         status: Value(base.status.name),
         createdAt: base.createdAt.millisecondsSinceEpoch,
         fileProcessorId: Value(base.fileProcessorId),
+        groupName: Value(base.groupName),
       ),
     );
   }
@@ -124,6 +125,31 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
   Future<void> updateBaseStatus(String id, KnowledgeBaseStatus status) {
     return (update(knowledgeBaseRows)..where((t) => t.id.equals(id))).write(
       KnowledgeBaseRowsCompanion(status: Value(status.name)),
+    );
+  }
+
+  /// 更新库的所属分组（功能缺口⑦）；传 null 移出分组。
+  Future<void> updateBaseGroup(String id, String? groupName) {
+    return (update(knowledgeBaseRows)..where((t) => t.id.equals(id))).write(
+      KnowledgeBaseRowsCompanion(groupName: Value(groupName)),
+    );
+  }
+
+  /// 重命名分组：把组内所有库的分组名改为 [to]。返回受影响的库数。
+  Future<int> renameGroup(String from, String to) {
+    return (update(
+      knowledgeBaseRows,
+    )..where((t) => t.groupName.equals(from))).write(
+      KnowledgeBaseRowsCompanion(groupName: Value(to)),
+    );
+  }
+
+  /// 解散分组：把组内所有库移回未分组（库本身保留）。返回受影响的库数。
+  Future<int> dissolveGroup(String name) {
+    return (update(
+      knowledgeBaseRows,
+    )..where((t) => t.groupName.equals(name))).write(
+      const KnowledgeBaseRowsCompanion(groupName: Value(null)),
     );
   }
 
@@ -560,6 +586,7 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
     status: KnowledgeBaseStatus.fromName(row.status),
     createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
     fileProcessorId: row.fileProcessorId,
+    groupName: row.groupName,
   );
 
   KnowledgeItem _toItem(KnowledgeItemRow row) => KnowledgeItem(
