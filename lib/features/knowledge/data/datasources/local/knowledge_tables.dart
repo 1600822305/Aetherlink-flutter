@@ -28,6 +28,10 @@ class KnowledgeBaseRows extends Table {
   /// 所属分组名（功能缺口⑦）。轻量字符串分组：同名即同组，为空表示未分组。
   TextColumn get groupName => text().nullable()();
 
+  /// 重排序模型 key（功能缺口⑥），`providerId\0modelId` 编码同
+  /// [embeddingModelKey]。为空不重排，检索保持原排序。
+  TextColumn get rerankModelKey => text().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {id};
 }
