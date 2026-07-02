@@ -309,6 +309,7 @@ class KnowledgeService {
     String baseId, {
     required String embeddingModelKey,
     KnowledgeSearchMode? searchMode,
+    void Function(int done, int total)? onProgress,
   }) async {
     final base = await _requireBase(baseId);
     final key = embeddingModelKey.trim();
@@ -322,7 +323,7 @@ class KnowledgeService {
       dimensions: dimensions,
       searchMode: mode,
     );
-    return reindexBase(baseId);
+    return reindexBase(baseId, onProgress: onProgress);
   }
 
   /// 抓取一个网页并摄取为条目（设计文档 §5「URL 抓取 → Markdown 快照」）。抓取器
@@ -515,11 +516,16 @@ class KnowledgeService {
   /// 复用与摄取一致的惰性/去重嵌入（未变的内容命中已存向量、不重复调用嵌入 API），
   /// 再在一个事务里替换 `kb_chunk`、补写新增 `kb_embedding`、回收孤儿嵌入。适用于
   /// 切块参数或嵌入配置调整后刷新索引。返回重建覆盖的条目数。
-  Future<int> reindexBase(String baseId) async {
+  /// [onProgress] 每重建完一个条目回调一次 `(已完成数, 总数)`，供 UI 展示进度。
+  Future<int> reindexBase(
+    String baseId, {
+    void Function(int done, int total)? onProgress,
+  }) async {
     final base = await _requireBase(baseId);
     final entries = await _dao.itemsWithContent(baseId);
     final reindexed = <ReindexItem>[];
     final embeddings = <String, List<double>>{};
+    var done = 0;
     for (final entry in entries) {
       final chunks = chunkText(
         entry.content,
@@ -536,6 +542,8 @@ class KnowledgeService {
           embeddingKeys: embedded?.keys,
         ),
       );
+      done++;
+      onProgress?.call(done, entries.length);
     }
     await _dao.reindexBase(
       baseId: baseId,
