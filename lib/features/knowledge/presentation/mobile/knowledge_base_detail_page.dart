@@ -385,8 +385,9 @@ class _KnowledgeBaseDetailPageState
     }
   }
 
-  /// 库设置（重命名 + RAG 参数）。切块参数变化时自动重建索引，让新参数
-  /// 对已有条目生效。
+  /// 库设置（重命名 + RAG 参数 + 嵌入模型）。切块参数变化时自动重建索引，
+  /// 让新参数对已有条目生效；嵌入模型变化时整库重建向量索引（旧模型向量随之
+  /// 清理，避免与新维度混存）。
   Future<void> _openBaseSettings() async {
     final base = await ref.read(
       knowledgeBaseControllerProvider(widget.baseId).future,
@@ -402,6 +403,9 @@ class _KnowledgeBaseDetailPageState
     final chunkingChanged =
         result.chunkSize != base.chunkSize ||
         result.chunkOverlap != base.chunkOverlap;
+    final newModelKey = result.embeddingModelKey;
+    final modelChanged =
+        newModelKey != null && newModelKey != base.embeddingModelKey;
     try {
       await ref
           .read(knowledgeBaseControllerProvider(widget.baseId).notifier)
@@ -422,7 +426,41 @@ class _KnowledgeBaseDetailPageState
       if (mounted) AppToast.error(context, '保存失败：$e');
       return;
     }
-    if (chunkingChanged) await _refresh();
+    if (modelChanged) {
+      // 换模型的重建已覆盖切块参数变化，不再另跑一次 _refresh。
+      await _applyEmbeddingModel(newModelKey);
+    } else if (chunkingChanged) {
+      await _refresh();
+    }
+  }
+
+  /// 执行换嵌入模型 + 整库重建向量索引，并提示结果。
+  Future<void> _applyEmbeddingModel(String modelKey) async {
+    try {
+      final count = await ref
+          .read(knowledgeBaseControllerProvider(widget.baseId).notifier)
+          .changeEmbeddingModel(modelKey);
+      if (mounted) AppToast.success(context, '已更换嵌入模型并重建索引（$count 个条目）');
+    } catch (e) {
+      if (mounted) AppToast.error(context, '更换嵌入模型失败：$e');
+    }
+  }
+
+  /// 换模型重建恢复入口（参考 CS RestoreKnowledgeBaseDialog）：嵌入失败 /
+  /// 模型不可用的库选一个可用的嵌入模型后整库重建向量索引恢复。
+  Future<void> _openRestoreEmbedding() async {
+    final base = await ref.read(
+      knowledgeBaseControllerProvider(widget.baseId).future,
+    );
+    if (base == null || !mounted) return;
+    final modelKey = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => _RestoreEmbeddingSheet(base: base),
+    );
+    if (modelKey == null) return;
+    await _applyEmbeddingModel(modelKey);
   }
 
   /// 条目详情面板：切块列表 + 重新索引 / 删除入口。
@@ -593,6 +631,10 @@ class _KnowledgeBaseDetailPageState
                 TextButton(
                   onPressed: _retryEmbeddings,
                   child: const Text('重试嵌入'),
+                ),
+                TextButton(
+                  onPressed: _openRestoreEmbedding,
+                  child: const Text('换模型重建'),
                 ),
               ],
             ),
@@ -1192,7 +1234,7 @@ class _CloudParsingSheetState extends State<_CloudParsingSheet> {
   }
 }
 
-/// [_BaseSettingsSheet] 的返回值：名称 + RAG 参数 + 重排模型。
+/// [_BaseSettingsSheet] 的返回值：名称 + RAG 参数 + 重排模型 + 嵌入模型。
 class _BaseSettingsResult {
   const _BaseSettingsResult({
     required this.name,
@@ -1201,6 +1243,7 @@ class _BaseSettingsResult {
     required this.topK,
     required this.threshold,
     required this.rerankModelKey,
+    required this.embeddingModelKey,
   });
 
   final String name;
@@ -1209,6 +1252,7 @@ class _BaseSettingsResult {
   final int topK;
   final double? threshold;
   final String? rerankModelKey;
+  final String? embeddingModelKey;
 }
 
 /// 库设置面板：重命名 + RAG 参数（切块大小 / 重叠 / topK / 相似度阈值）+
@@ -1237,6 +1281,7 @@ class _BaseSettingsSheetState extends ConsumerState<_BaseSettingsSheet> {
     text: widget.base.threshold?.toString() ?? '',
   );
   late String? _rerankModelKey = widget.base.rerankModelKey;
+  late String? _embeddingModelKey = widget.base.embeddingModelKey;
 
   @override
   void dispose() {
@@ -1278,7 +1323,23 @@ class _BaseSettingsSheetState extends ConsumerState<_BaseSettingsSheet> {
         topK: topK,
         threshold: threshold,
         rerankModelKey: _rerankModelKey,
+        embeddingModelKey: _embeddingModelKey,
       ),
+    );
+  }
+
+  Future<void> _pickEmbeddingModel() async {
+    final pair = decodeEmbeddingModelKey(_embeddingModelKey);
+    await showModelSelectorDialog(
+      context,
+      selectedProviderId: pair?.$1,
+      selectedModelId: pair?.$2,
+      filter: isEmbeddingModel,
+      onSelect: (provider, model) {
+        setState(() {
+          _embeddingModelKey = encodeEmbeddingModelKey(provider.id, model.id);
+        });
+      },
     );
   }
 
@@ -1385,6 +1446,27 @@ class _BaseSettingsSheetState extends ConsumerState<_BaseSettingsSheet> {
         ),
         const SizedBox(height: 12),
         Text(
+          '嵌入模型',
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 4),
+        _EmbeddingModelField(
+          modelKey: _embeddingModelKey,
+          onTap: _pickEmbeddingModel,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '更换嵌入模型后会自动整库重建向量索引（旧模型的向量随之清理，'
+          '全部内容需重新调用嵌入 API，注意耗时与费用）；'
+          '纯关键词库选上模型后自动升级为混合检索。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
           '重排序模型',
           style: theme.textTheme.labelLarge?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
@@ -1440,6 +1522,180 @@ class _BaseSettingsSheetState extends ConsumerState<_BaseSettingsSheet> {
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// 嵌入模型选择行：展示当前模型（点击弹出模型选择器）+ 维度探测提示
+/// （复用建库时的 knowledgeEmbeddingDimensionsProvider）。
+class _EmbeddingModelField extends ConsumerWidget {
+  const _EmbeddingModelField({required this.modelKey, required this.onTap});
+
+  final String? modelKey;
+  final VoidCallback onTap;
+
+  String _displayName(List<ModelProvider> providers) {
+    final pair = decodeEmbeddingModelKey(modelKey);
+    if (pair == null) return '未选择（纯关键词检索）';
+    for (final p in providers) {
+      if (p.id != pair.$1) continue;
+      for (final m in p.models) {
+        if (m.id == pair.$2) return '${p.name} / ${m.name}';
+      }
+    }
+    return '${pair.$1} / ${pair.$2}';
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final hasModel = modelKey != null;
+    final providers =
+        ref.watch(appModelProvidersProvider).asData?.value ??
+        const <ModelProvider>[];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                Icon(
+                  LucideIcons.boxes,
+                  size: 18,
+                  color: hasModel
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _displayName(providers),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: hasModel
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (hasModel) _DimensionHint(modelKey: modelKey!),
+      ],
+    );
+  }
+}
+
+/// 嵌入模型的维度探测提示（同建库面板）：选中模型后真实调一次嵌入 API 展示
+/// 「向量维度：N」；探测中显示进度、失败提示不阻断保存。
+class _DimensionHint extends ConsumerWidget {
+  const _DimensionHint({required this.modelKey});
+
+  final String modelKey;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final async = ref.watch(knowledgeEmbeddingDimensionsProvider(modelKey));
+    final style = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final Widget child;
+    if (async.isLoading) {
+      child = Row(
+        children: [
+          const SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 6),
+          Text('正在探测向量维度…', style: style),
+        ],
+      );
+    } else {
+      final dimensions = async.asData?.value;
+      child = Text(
+        dimensions == null ? '维度探测失败（模型可能不可用）' : '向量维度：$dimensions',
+        style: dimensions == null
+            ? style
+            : style?.copyWith(color: theme.colorScheme.primary),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, left: 26),
+      child: child,
+    );
+  }
+}
+
+/// 换模型重建面板（参考 CS RestoreKnowledgeBaseDialog）：说明当前库的嵌入
+/// 状况，选一个可用的嵌入模型后 pop 出模型键，由页面执行整库重建恢复。
+class _RestoreEmbeddingSheet extends ConsumerStatefulWidget {
+  const _RestoreEmbeddingSheet({required this.base});
+
+  final KnowledgeBase base;
+
+  @override
+  ConsumerState<_RestoreEmbeddingSheet> createState() =>
+      _RestoreEmbeddingSheetState();
+}
+
+class _RestoreEmbeddingSheetState
+    extends ConsumerState<_RestoreEmbeddingSheet> {
+  late String? _modelKey = widget.base.embeddingModelKey;
+
+  Future<void> _pickModel() async {
+    final pair = decodeEmbeddingModelKey(_modelKey);
+    await showModelSelectorDialog(
+      context,
+      selectedProviderId: pair?.$1,
+      selectedModelId: pair?.$2,
+      filter: isEmbeddingModel,
+      onSelect: (provider, model) {
+        setState(() {
+          _modelKey = encodeEmbeddingModelKey(provider.id, model.id);
+        });
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final modelKey = _modelKey;
+    return _SheetScaffold(
+      title: '换模型重建',
+      confirmLabel: '重建恢复',
+      onConfirm: modelKey == null
+          ? null
+          : () => Navigator.of(context).pop(modelKey),
+      children: [
+        Text(
+          '本库存在嵌入未完成的切块（嵌入失败或模型不可用）。选择一个可用的'
+          '嵌入模型后将整库重建向量索引：旧模型的向量会被清理，全部内容需'
+          '重新调用嵌入 API（注意耗时与费用）。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          '嵌入模型',
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 4),
+        _EmbeddingModelField(modelKey: _modelKey, onTap: _pickModel),
       ],
     );
   }

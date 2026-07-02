@@ -161,6 +161,23 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
     );
   }
 
+  /// 更换库的嵌入模型：一并更新维度与检索模式（建库后换嵌入模型，功能缺口对比
+  /// CS 的最后一项）。向量索引的重建由服务层随后调用 [reindexBase] 完成。
+  Future<void> updateBaseEmbeddingModel(
+    String id, {
+    required String embeddingModelKey,
+    required int? dimensions,
+    required KnowledgeSearchMode searchMode,
+  }) {
+    return (update(knowledgeBaseRows)..where((t) => t.id.equals(id))).write(
+      KnowledgeBaseRowsCompanion(
+        embeddingModelKey: Value(embeddingModelKey),
+        dimensions: Value(dimensions),
+        searchMode: Value(searchMode.name),
+      ),
+    );
+  }
+
   /// 更新库级云端文件预处理器 id（§5.2 云端预处理轨）；传 null 回到本地解析轨。
   Future<void> updateBaseFileProcessor(String id, String? processorId) {
     return (update(knowledgeBaseRows)..where((t) => t.id.equals(id))).write(

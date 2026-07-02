@@ -944,6 +944,106 @@ void main() {
       expect(hits.first.similarity, greaterThan(0));
     });
 
+    KnowledgeService buildTwoModelService() {
+      final embedderA = _FakeEmbedder(const [
+        'dart',
+        'python',
+        'language',
+        'native',
+        'script',
+      ], embedLog);
+      final embedderB = _FakeEmbedder(const ['dart', 'python', 'code'], embedLog);
+      return KnowledgeService(
+        db.knowledgeDao,
+        embedderResolver: (key) async => switch (key) {
+          'model-a' => embedderA,
+          'model-b' => embedderB,
+          _ => null,
+        },
+      );
+    }
+
+    test('changeEmbeddingModel re-embeds with the new model and clears old '
+        'vectors', () async {
+      final service = buildTwoModelService();
+      final base = await seed(service, KnowledgeSearchMode.vector);
+
+      final count = await service.changeEmbeddingModel(
+        base.id,
+        embeddingModelKey: 'model-b',
+      );
+      expect(count, 2);
+
+      final updated = (await service.getBase(base.id))!;
+      expect(updated.embeddingModelKey, 'model-b');
+      // 新模型的维度重新探测（_FakeEmbedder 向量长度 == vocab 长度）。
+      expect(updated.dimensions, 3);
+      expect(updated.searchMode, KnowledgeSearchMode.vector);
+
+      // 旧模型（5 维）的向量已全部回收，只剩新模型（3 维）的向量。
+      final rows = await db.select(db.kbEmbeddingRows).get();
+      expect(rows, isNotEmpty);
+      expect(rows.every((r) => r.dimensions == 3), isTrue);
+
+      final hits = await service.search(baseId: base.id, query: 'dart');
+      expect(hits, isNotEmpty);
+      expect(hits.first.content.toLowerCase(), contains('dart'));
+    });
+
+    test('changeEmbeddingModel upgrades a keyword base to hybrid', () async {
+      final service = buildTwoModelService();
+      final base = await service.createBase(name: 'KB');
+      await service.addNote(
+        baseId: base.id,
+        title: 'Dart',
+        text: 'Dart compiles to native code.',
+      );
+      expect(base.searchMode, KnowledgeSearchMode.keyword);
+
+      await service.changeEmbeddingModel(
+        base.id,
+        embeddingModelKey: 'model-a',
+      );
+      final updated = (await service.getBase(base.id))!;
+      expect(updated.embeddingModelKey, 'model-a');
+      expect(updated.searchMode, KnowledgeSearchMode.hybrid);
+      expect(updated.dimensions, 5);
+      expect(await db.select(db.kbEmbeddingRows).get(), isNotEmpty);
+    });
+
+    test('changeEmbeddingModel rejects a blank model key', () async {
+      final service = buildTwoModelService();
+      final base = await seed(service, KnowledgeSearchMode.vector);
+      expect(
+        () => service.changeEmbeddingModel(base.id, embeddingModelKey: '  '),
+        throwsStateError,
+      );
+    });
+
+    test('changeEmbeddingModel restores a base whose model is unavailable',
+        () async {
+      final service = buildTwoModelService();
+      final base = await seed(service, KnowledgeSearchMode.vector);
+
+      // 换到解析不到的模型：向量清空、切块进入待补状态（库级坏状态）。
+      await service.changeEmbeddingModel(
+        base.id,
+        embeddingModelKey: 'model-gone',
+      );
+      expect(await db.select(db.kbEmbeddingRows).get(), isEmpty);
+      expect(await service.pendingEmbeddingCount(base.id), greaterThan(0));
+      expect((await service.getBase(base.id))!.dimensions, isNull);
+
+      // 换回可用模型即整库重建恢复（对齐 CS 的 RestoreKnowledgeBaseDialog）。
+      await service.changeEmbeddingModel(
+        base.id,
+        embeddingModelKey: 'model-a',
+      );
+      expect(await service.pendingEmbeddingCount(base.id), 0);
+      expect(await db.select(db.kbEmbeddingRows).get(), isNotEmpty);
+      expect((await service.getBase(base.id))!.dimensions, 5);
+    });
+
     test('deleteItem GCs orphaned embeddings but keeps shared ones', () async {
       final service = buildService();
       const text = 'Dart compiles to native code.';
