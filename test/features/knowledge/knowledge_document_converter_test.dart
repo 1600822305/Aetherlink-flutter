@@ -70,6 +70,36 @@ void main() {
     });
   });
 
+  group('isHtmlFileName / kPlainTextKnowledgeExtensions', () {
+    test('matches .html and .htm regardless of case and whitespace', () {
+      expect(isHtmlFileName('page.html'), isTrue);
+      expect(isHtmlFileName('PAGE.HTM '), isTrue);
+      expect(isHtmlFileName('/www/首页.HTML'), isTrue);
+    });
+
+    test('rejects other extensions', () {
+      expect(isHtmlFileName('page.xhtml.zip'), isFalse);
+      expect(isHtmlFileName('note.txt'), isFalse);
+    });
+
+    test('plain-text extensions include csv and json', () {
+      expect(kPlainTextKnowledgeExtensions, contains('csv'));
+      expect(kPlainTextKnowledgeExtensions, contains('json'));
+    });
+  });
+
+  group('convertHtmlTextToMarkdown', () {
+    test('converts html to markdown off the main isolate', () async {
+      final markdown = await convertHtmlTextToMarkdown(
+        '<html><head><title>页面标题</title></head>'
+        '<body><h2>小节</h2><p>正文 <b>加粗</b></p></body></html>',
+      );
+      expect(markdown, contains('# 页面标题'));
+      expect(markdown, contains('## 小节'));
+      expect(markdown, contains('正文 加粗'));
+    });
+  });
+
   group('convertDocxBytesToMarkdown', () {
     test('converts a docx document to markdown off the main isolate',
         () async {

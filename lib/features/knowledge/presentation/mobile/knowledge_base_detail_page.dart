@@ -109,10 +109,11 @@ class _KnowledgeBaseDetailPageState
     if (mounted) AppToast.success(context, '已添加笔记');
   }
 
-  /// 选择一个文件并摄取为条目。纯文本按 UTF-8 读取；DOCX / PPTX / XLSX / EPUB
-  /// 在 isolate 里、PDF 在 PDFium 原生 worker 里转 Markdown（§5.2 本地解析轨）
-  /// 后走同一条摄取管线；库配置了云端解析器时富文档改走云端预处理轨，并额外
-  /// 放开 doc / ppt / xls 等仅云端轨支持的旧版格式（功能缺口④）。
+  /// 选择一个文件并摄取为条目。纯文本（含 csv / json）按 UTF-8 读取；HTML 用
+  /// 与 URL 抓取同一套转换器转 Markdown；DOCX / PPTX / XLSX / EPUB 在 isolate
+  /// 里、PDF 在 PDFium 原生 worker 里转 Markdown（§5.2 本地解析轨）后走同一条
+  /// 摄取管线；库配置了云端解析器时富文档改走云端预处理轨，并额外放开
+  /// doc / ppt / xls 等仅云端轨支持的旧版格式（功能缺口④）。
   Future<void> _addFile() async {
     final base = await ref.read(
       knowledgeBaseControllerProvider(widget.baseId).future,
@@ -122,10 +123,9 @@ class _KnowledgeBaseDetailPageState
         .read(fileSystemApiProvider)
         .pickFile(
           allowedExtensions: [
-            'txt',
-            'md',
-            'markdown',
-            'text',
+            ...kPlainTextKnowledgeExtensions,
+            'html',
+            'htm',
             'docx',
             'pdf',
             ...kLocalOfficeKnowledgeExtensions,
@@ -180,6 +180,11 @@ class _KnowledgeBaseDetailPageState
             .read(fileSystemApiProvider)
             .readAsBytes(picked.path);
         text = await convertEpubBytesToMarkdown(bytes);
+      } else if (isHtmlFileName(picked.name)) {
+        final html = await ref
+            .read(fileSystemApiProvider)
+            .readAsString(picked.path);
+        text = await convertHtmlTextToMarkdown(html);
       } else {
         text = await ref.read(fileSystemApiProvider).readAsString(picked.path);
       }
