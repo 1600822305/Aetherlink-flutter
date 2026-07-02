@@ -54,18 +54,3 @@ int? optionalKnowledgeInt(Map<String, Object?> args, String key) {
   return null;
 }
 
-/// Reads an optional bool [key], defaulting to [fallback].
-bool optionalKnowledgeBool(
-  Map<String, Object?> args,
-  String key, {
-  bool fallback = false,
-}) {
-  final value = args[key];
-  if (value is bool) return value;
-  if (value is String) {
-    final v = value.trim().toLowerCase();
-    if (v == 'true') return true;
-    if (v == 'false') return false;
-  }
-  return fallback;
-}

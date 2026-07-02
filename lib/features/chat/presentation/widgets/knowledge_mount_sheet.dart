@@ -6,7 +6,7 @@ import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 
 /// Opens the 挂载知识库 picker（功能缺口⑫）: a multi-select sheet listing every
-/// 「对聊天开放」的知识库 with checkboxes. Returns the chosen base ids on 确定
+/// 知识库 with checkboxes. Returns the chosen base ids on 确定
 /// (an empty list clears the mount), or `null` if dismissed/cancelled.
 /// [initial] pre-checks the currently-mounted bases so re-opening edits the
 /// selection. Mirrors [showMultiModelSelectorSheet].
@@ -96,7 +96,7 @@ class _KnowledgeMountSheetState extends ConsumerState<_KnowledgeMountSheet> {
                       padding: const EdgeInsets.all(32),
                       child: Center(
                         child: Text(
-                          '暂无「对聊天开放」的知识库\n请先在知识库设置里打开「提供给普通聊天」',
+                          '暂无知识库\n请先在知识库页面创建',
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,

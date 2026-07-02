@@ -15,7 +15,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/knowledge/application/knowledge_providers.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
-import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
 import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/sheets/knowledge_create_base_sheet.dart';
 import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/sheets/knowledge_group_sheets.dart';
 import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/widgets/knowledge_base_list.dart';
@@ -39,9 +38,6 @@ class KnowledgeBasePage extends ConsumerWidget {
           result.name,
           embeddingModelKey: result.embeddingModelKey,
           searchMode: result.searchMode,
-          // 新库默认对聊天开放（可在库设置里关闭），与 CS 的知识库可直接
-          // 在聊天中挂载的体验一致。
-          scope: const KnowledgeScope(chatEnabled: true),
         );
     if (context.mounted) {
       AppToast.success(context, '已创建知识库「${result.name}」');

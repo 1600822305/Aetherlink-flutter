@@ -5,13 +5,13 @@
 // 现成的 HITL 确认门控（与 `fileEditorRiskLevel` 同款分级）。
 //
 // 4 个工具：
-//   kb_list   —— 列出对聊天开放的知识库 / 某库的条目（只读）
+//   kb_list   —— 列出所有知识库 / 某库的条目（只读）
 //   kb_search —— 语义/关键词检索（只读，可跨库）
 //   kb_read   —— 按条目取回完整正文（只读）
 //   kb_manage —— 建库 / 加笔记 / 删库（写，需用户确认）
 //
-// 作用域：所有工具只对 `scope.chatEnabled == true` 的库可见/可操作，这就是
-// 「双轨作用域模型」里的轨道 B 开关（设计文档 §2）；智能体轨道（agentIds）预留。
+// 作用域：所有库对聊天一律可见/可操作（本来就是工具调用，不再设
+// chatEnabled 门控）；智能体轨道（agentIds）预留。
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -20,7 +20,6 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_refer
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_service.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
-import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_support.dart';
 
@@ -67,11 +66,11 @@ bool knowledgeToolNeedsConfirmation(
 ) =>
     knowledgeToolRiskLevel(toolName, args) != null;
 
-/// 当前是否存在「对聊天开放」的知识库——供 chat_controller 决定是否即便 MCP
-/// 总开关关着也注入 `kb_search`（设计文档 §7 的「提供给普通聊天」开关）。
+/// 当前是否存在知识库——供 chat_controller 决定是否即便 MCP 总开关关着
+/// 也注入 `kb_search`。
 Future<bool> hasChatEnabledKnowledgeBase(Ref ref) async {
   final bases = await ref.read(knowledgeServiceProvider).listBases();
-  return bases.any((b) => b.scope.chatEnabled);
+  return bases.isNotEmpty;
 }
 
 /// Dispatches one `@aether/knowledge` tool call. Errors become a clean error
@@ -103,7 +102,7 @@ Future<McpToolResult> runKnowledgeTool(
 
 // ── handlers ──
 
-/// kb_list：不带 `base_id` 时列出所有 chatEnabled 库；带 `base_id` 时列出该库
+/// kb_list：不带 `base_id` 时列出所有库；带 `base_id` 时列出该库
 /// 的条目。只读。
 Future<McpToolResult> _runList(
   KnowledgeService service,
@@ -111,7 +110,7 @@ Future<McpToolResult> _runList(
 ) async {
   final baseId = optionalKnowledgeString(args, 'base_id');
   if (baseId == null) {
-    final bases = await _chatEnabledBases(service);
+    final bases = await _allBases(service);
     final data = <Map<String, Object?>>[];
     for (final base in bases) {
       data.add({
@@ -125,7 +124,7 @@ Future<McpToolResult> _runList(
     return knowledgeOk({'knowledgeBases': data});
   }
 
-  final base = await _requireChatBase(service, baseId);
+  final base = await _requireBase(service, baseId);
   final items = await service.listItems(base.id);
   return knowledgeOk({
     'knowledgeBaseId': base.id,
@@ -134,7 +133,7 @@ Future<McpToolResult> _runList(
   });
 }
 
-/// kb_search：检索。带 `base_id` 时只搜该库；否则跨所有 chatEnabled 库并按相似度
+/// kb_search：检索。带 `base_id` 时只搜该库；否则跨所有库并按相似度
 /// 融合。只读。
 Future<McpToolResult> _runSearch(
   KnowledgeService service,
@@ -146,12 +145,12 @@ Future<McpToolResult> _runSearch(
 
   final List<KnowledgeBase> targets;
   if (baseIdArg != null) {
-    targets = [await _requireChatBase(service, baseIdArg)];
+    targets = [await _requireBase(service, baseIdArg)];
   } else {
-    targets = await _chatEnabledBases(service);
+    targets = await _allBases(service);
   }
   if (targets.isEmpty) {
-    return knowledgeError('当前没有对聊天开放的知识库，请先在知识库页面开启「聊天可用」。');
+    return knowledgeError('当前没有知识库，可用 kb_manage 建库或请用户在知识库页面创建。');
   }
 
   final merged = <KnowledgeReferenceItem>[];
@@ -186,7 +185,7 @@ Future<McpToolResult> _runRead(
   KnowledgeService service,
   Map<String, Object?> args,
 ) async {
-  final base = await _requireChatBase(
+  final base = await _requireBase(
     service,
     requireKnowledgeString(args, 'base_id'),
   );
@@ -221,14 +220,10 @@ Future<McpToolResult> _runManage(
       final searchMode = _parseSearchMode(
         optionalKnowledgeString(args, 'search_mode'),
       );
-      // 模型建的库默认对聊天开放，否则它建完立刻又看不见、无法使用。
-      final chatEnabled =
-          optionalKnowledgeBool(args, 'chat_enabled', fallback: true);
       final base = await service.createBase(
         name: name,
         embeddingModelKey: embeddingModelKey,
         searchMode: searchMode,
-        scope: KnowledgeScope(chatEnabled: chatEnabled),
       );
       return knowledgeOk({
         'action': 'create',
@@ -237,7 +232,7 @@ Future<McpToolResult> _runManage(
         'searchMode': base.searchMode.name,
       });
     case 'add_note':
-      final base = await _requireChatBase(
+      final base = await _requireBase(
         service,
         requireKnowledgeString(args, 'base_id'),
       );
@@ -255,7 +250,7 @@ Future<McpToolResult> _runManage(
         'title': item.title,
       });
     case 'add_url':
-      final base = await _requireChatBase(
+      final base = await _requireBase(
         service,
         requireKnowledgeString(args, 'base_id'),
       );
@@ -276,7 +271,7 @@ Future<McpToolResult> _runManage(
         'source': item.source,
       });
     case 'add_workspace':
-      final base = await _requireChatBase(
+      final base = await _requireBase(
         service,
         requireKnowledgeString(args, 'base_id'),
       );
@@ -298,7 +293,7 @@ Future<McpToolResult> _runManage(
         ],
       });
     case 'delete':
-      final base = await _requireChatBase(
+      final base = await _requireBase(
         service,
         requireKnowledgeString(args, 'base_id'),
       );
@@ -309,7 +304,7 @@ Future<McpToolResult> _runManage(
         'knowledgeBaseName': base.name,
       });
     case 'refresh':
-      final base = await _requireChatBase(
+      final base = await _requireBase(
         service,
         requireKnowledgeString(args, 'base_id'),
       );
@@ -323,7 +318,7 @@ Future<McpToolResult> _runManage(
         'reindexedItems': count,
       });
     case 'retry_embeddings':
-      final base = await _requireChatBase(
+      final base = await _requireBase(
         service,
         requireKnowledgeString(args, 'base_id'),
       );
@@ -347,21 +342,16 @@ Future<McpToolResult> _runManage(
 
 // ── helpers ──
 
-Future<List<KnowledgeBase>> _chatEnabledBases(KnowledgeService service) async {
-  final bases = await service.listBases();
-  return [for (final b in bases) if (b.scope.chatEnabled) b];
-}
+Future<List<KnowledgeBase>> _allBases(KnowledgeService service) =>
+    service.listBases();
 
-Future<KnowledgeBase> _requireChatBase(
+Future<KnowledgeBase> _requireBase(
   KnowledgeService service,
   String baseId,
 ) async {
   final base = await service.getBase(baseId);
   if (base == null) {
     throw KnowledgeToolError('知识库不存在: $baseId');
-  }
-  if (!base.scope.chatEnabled) {
-    throw KnowledgeToolError('知识库「${base.name}」未对聊天开放（chatEnabled=false）');
   }
   return base;
 }

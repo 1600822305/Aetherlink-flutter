@@ -127,29 +127,23 @@ void main() {
       await db.close();
     });
 
-    test('hasChatEnabledKnowledgeBase reflects scope', () async {
+    test('hasChatEnabledKnowledgeBase reflects base existence', () async {
       expect(await hasChatBase(), isFalse);
       await service.createBase(name: 'private');
-      expect(await hasChatBase(), isFalse);
-      await service.createBase(
-        name: 'shared',
-        scope: const KnowledgeScope(chatEnabled: true),
-      );
       expect(await hasChatBase(), isTrue);
     });
 
-    test('kb_list only surfaces chat-enabled bases', () async {
+    test('kb_list surfaces all bases', () async {
       await service.createBase(name: 'private');
-      final shared = await service.createBase(
+      await service.createBase(
         name: 'shared',
         scope: const KnowledgeScope(chatEnabled: true),
       );
 
       final data = _data(await run(kKnowledgeListTool, const {}));
       final bases = (data['knowledgeBases'] as List).cast<Map<String, dynamic>>();
-      expect(bases, hasLength(1));
-      expect(bases.single['id'], shared.id);
-      expect(bases.single['name'], 'shared');
+      expect(bases, hasLength(2));
+      expect({for (final b in bases) b['name']}, {'private', 'shared'});
     });
 
     test('kb_list of a base lists its items', () async {
@@ -163,13 +157,6 @@ void main() {
       final items = (data['items'] as List).cast<Map<String, dynamic>>();
       expect(items, hasLength(1));
       expect(items.single['title'], 'N1');
-    });
-
-    test('kb_list rejects a non-chat base', () async {
-      final base = await service.createBase(name: 'private');
-      final result = await run(kKnowledgeListTool, {'base_id': base.id});
-      expect(result.isError, isTrue);
-      expect(result.text, contains('未对聊天开放'));
     });
 
     test('kb_search finds a note and returns its documentId', () async {
@@ -189,8 +176,7 @@ void main() {
       expect(results.first['documentId'], item.id);
     });
 
-    test('kb_search errors when no chat-enabled base exists', () async {
-      await service.createBase(name: 'private');
+    test('kb_search errors when no base exists', () async {
       final result = await run(kKnowledgeSearchTool, {'query': 'x'});
       expect(result.isError, isTrue);
     });
@@ -234,7 +220,7 @@ void main() {
       expect(result.isError, isTrue);
     });
 
-    test('kb_manage create makes a chat-enabled base', () async {
+    test('kb_manage create makes a base visible to chat', () async {
       final data = _data(
         await run(kKnowledgeManageTool, {
           'action': 'create',
@@ -244,7 +230,6 @@ void main() {
       final id = data['knowledgeBaseId'] as String;
       final base = await service.getBase(id);
       expect(base, isNotNull);
-      expect(base!.scope.chatEnabled, isTrue);
       // Immediately visible to the chat track.
       expect(await hasChatBase(), isTrue);
     });
@@ -382,15 +367,6 @@ void main() {
       );
     });
 
-    test('kb_manage refresh rejects a non-chat base', () async {
-      final base = await service.createBase(name: 'private');
-      final result = await run(kKnowledgeManageTool, {
-        'action': 'refresh',
-        'base_id': base.id,
-      });
-      expect(result.isError, isTrue);
-    });
-
     test('kb_manage retry_embeddings reports embedded and pending counts',
         () async {
       final base = await service.createBase(
@@ -406,15 +382,6 @@ void main() {
       expect(result.isError, isFalse);
       expect(result.text, contains('"embeddedChunks": 0'));
       expect(result.text, contains('"pendingChunks": 0'));
-    });
-
-    test('kb_manage retry_embeddings rejects a non-chat base', () async {
-      final base = await service.createBase(name: 'private');
-      final result = await run(kKnowledgeManageTool, {
-        'action': 'retry_embeddings',
-        'base_id': base.id,
-      });
-      expect(result.isError, isTrue);
     });
 
     test('unknown tool name yields an error result', () async {

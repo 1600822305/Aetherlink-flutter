@@ -3874,9 +3874,9 @@ class ChatController extends _$ChatController {
     routes[kSearchMemoryToolName] = const _MemorySearchToolRoute();
   }
 
-  /// Injects the knowledge `kb_search` tool whenever至少有一个「对聊天开放」的
-  /// 知识库存在——即便 MCP 工具 总开关关着（设计文档 §7 的「提供给普通聊天」开关，
-  /// 与 [_maybeInjectMemorySearch] 同款）。若 `@aether/knowledge` 服务器已激活，
+  /// Injects the knowledge `kb_search` tool whenever至少有一个知识库存在
+  /// ——即便 MCP 工具总开关关着（与 [_maybeInjectMemorySearch] 同款）。
+  /// 若 `@aether/knowledge` 服务器已激活，
   /// 4 个工具已在上面注入，这里靠 [routes] 去重不重复添加。
   Future<void> _maybeInjectKnowledgeSearch(
     List<McpToolDefinition> tools,
