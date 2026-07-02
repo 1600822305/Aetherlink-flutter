@@ -12,6 +12,7 @@ import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
 import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_reference_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/application/knowledge_providers.dart';
+import 'package:aetherlink_flutter/features/knowledge/data/knowledge_document_converter.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
@@ -120,15 +121,22 @@ class _KnowledgeBaseDetailPageState
     if (mounted) AppToast.success(context, '已添加笔记');
   }
 
-  /// 选择一个 txt / md 文件并摄取为条目。读取按 UTF-8；富文档（PDF/DOCX）暂不支持。
+  /// 选择一个 txt / md / docx 文件并摄取为条目。纯文本按 UTF-8 读取；DOCX 先在
+  /// isolate 里转 Markdown（§5.2 本地解析轨）再走同一条摄取管线；PDF 暂不支持。
   Future<void> _addFile() async {
-    final picked = await ref
-        .read(fileSystemApiProvider)
-        .pickFile(allowedExtensions: const ['txt', 'md', 'markdown', 'text']);
+    final picked = await ref.read(fileSystemApiProvider).pickFile(
+      allowedExtensions: const ['txt', 'md', 'markdown', 'text', 'docx'],
+    );
     if (picked == null) return;
     String text;
     try {
-      text = await ref.read(fileSystemApiProvider).readAsString(picked.path);
+      if (isDocxFileName(picked.name)) {
+        final bytes =
+            await ref.read(fileSystemApiProvider).readAsBytes(picked.path);
+        text = await convertDocxBytesToMarkdown(bytes);
+      } else {
+        text = await ref.read(fileSystemApiProvider).readAsString(picked.path);
+      }
     } catch (e) {
       if (mounted) AppToast.error(context, '读取文件失败：$e');
       return;
@@ -328,7 +336,7 @@ class _KnowledgeBaseDetailPageState
           IconButton(
             icon: const Icon(LucideIcons.upload, size: 20),
             color: theme.colorScheme.primary,
-            tooltip: '上传文件（txt / md）',
+            tooltip: '上传文件（txt / md / docx）',
             onPressed: _addFile,
           ),
           IconButton(
