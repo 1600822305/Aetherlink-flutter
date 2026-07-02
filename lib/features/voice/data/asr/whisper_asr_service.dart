@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/features/voice/domain/asr_provider_setting.dart';
+import 'package:aetherlink_flutter/shared/utils/api_host.dart';
 
 /// HTTP-based ASR using OpenAI Whisper (or compatible) endpoint. Records audio,
 /// then POSTs the file to `/audio/transcriptions` for a full transcript.
@@ -21,12 +22,10 @@ class WhisperAsrService {
     String fileName = 'audio.wav',
     CancelToken? cancelToken,
   }) async {
-    final baseUrl = provider.baseUrl.isNotEmpty
-        ? provider.baseUrl
-        : 'https://api.openai.com/v1';
-    final url = baseUrl.endsWith('/')
-        ? '${baseUrl}audio/transcriptions'
-        : '$baseUrl/audio/transcriptions';
+    final baseUrl = formatApiHost(provider.baseUrl);
+    final url =
+        '${baseUrl.isEmpty ? 'https://api.openai.com/v1' : baseUrl}'
+        '/audio/transcriptions';
 
     final format = provider.responseFormat.isNotEmpty
         ? provider.responseFormat

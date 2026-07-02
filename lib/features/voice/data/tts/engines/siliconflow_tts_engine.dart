@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/engines/tts_audio_utils.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/engines/tts_engine.dart';
 import 'package:aetherlink_flutter/features/voice/domain/tts_provider_setting.dart';
+import 'package:aetherlink_flutter/shared/utils/api_host.dart';
 
 /// SiliconFlow TTS — uses OpenAI-compatible `/audio/speech` endpoint.
 /// Builds model-specific request bodies for CosyVoice2 / Fish-Speech /
@@ -19,7 +20,12 @@ class SiliconFlowTtsEngine extends TtsEngine {
     required Dio dio,
     CancelToken? cancelToken,
   }) async {
-    final url = joinUrl(provider.baseUrl, '/audio/speech');
+    final url = joinUrl(
+      formatApiHost(provider.baseUrl.isEmpty
+          ? 'https://api.siliconflow.cn/v1'
+          : provider.baseUrl),
+      '/audio/speech',
+    );
     // SiliconFlow expects voice in `model:voiceName` format.
     var voice = provider.voice;
     if (voice.isNotEmpty && !voice.contains(':')) {
