@@ -219,6 +219,14 @@ class KnowledgeBaseController extends _$KnowledgeBaseController {
   Future<KnowledgeBase?> build(String baseId) =>
       ref.watch(knowledgeServiceProvider).getBase(baseId);
 
+  /// 设置库是否「提供给普通聊天」（§7 轨道 B）。
+  Future<void> setChatEnabled(bool enabled) async {
+    await ref.read(knowledgeServiceProvider).setChatEnabled(baseId, enabled);
+    ref.invalidateSelf();
+    await future;
+    ref.invalidate(knowledgeBasesControllerProvider);
+  }
+
   /// 更新库级云端文件预处理器；传 null 回到本地解析轨。
   Future<void> setFileProcessor(String? processorId) async {
     await ref
