@@ -51,6 +51,10 @@ class KnowledgeItemRows extends Table {
 
   IntColumn get createdAt => integer()();
 
+  /// 软删除时间戳（功能缺口⑩ 回收站）。非空表示在回收站里：列表 / 检索 /
+  /// 重建均排除，正文保留以便恢复。
+  IntColumn get deletedAt => integer().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {id};
 }

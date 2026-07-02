@@ -629,6 +629,36 @@ void main() {
       );
     });
 
+    test('trashItem soft-deletes; restoreItem rebuilds; emptyTrash purges',
+        () async {
+      final base = await service.createBase(name: 'KB');
+      final item =
+          await service.addNote(baseId: base.id, title: 'a', text: 'zeta');
+
+      // 移入回收站：列表 / 检索排除，回收站可见，正文保留。
+      await service.trashItem(item.id);
+      expect(await service.listItems(base.id), isEmpty);
+      expect(await service.search(baseId: base.id, query: 'zeta'), isEmpty);
+      final trash = await service.listTrash(base.id);
+      expect(trash.map((e) => e.id), [item.id]);
+      expect(trash.single.deletedAt, isNotNull);
+
+      // 恢复：条目回列表、索引重建、可再次检索。
+      await service.restoreItem(item.id);
+      expect(await service.listTrash(base.id), isEmpty);
+      expect((await service.listItems(base.id)).map((e) => e.id), [item.id]);
+      expect(await service.search(baseId: base.id, query: 'zeta'), isNotEmpty);
+
+      // 恢复未删除条目抛错。
+      await expectLater(service.restoreItem(item.id), throwsStateError);
+
+      // 清空回收站：彻底删除。
+      await service.trashItem(item.id);
+      expect(await service.emptyTrash(base.id), 1);
+      expect(await service.listTrash(base.id), isEmpty);
+      expect(await service.readItemContent(item.id), isNull);
+    });
+
     test('reindexItem rebuilds only that item and leaves siblings intact',
         () async {
       final base = await service.createBase(name: 'KB');

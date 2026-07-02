@@ -47,6 +47,7 @@ class KnowledgeItem {
     this.title,
     this.error,
     this.sourceFingerprint,
+    this.deletedAt,
   });
 
   final String id;
@@ -71,4 +72,7 @@ class KnowledgeItem {
   final String? sourceFingerprint;
 
   final DateTime createdAt;
+
+  /// 软删除时间（功能缺口⑩ 回收站）。非空表示条目在回收站里。
+  final DateTime? deletedAt;
 }
