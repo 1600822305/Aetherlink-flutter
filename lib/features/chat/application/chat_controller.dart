@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
 import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
 import 'package:aetherlink_flutter/app/di/memory_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
@@ -21,6 +22,7 @@ import 'package:aetherlink_flutter/features/chat/application/parameter_settings_
 import 'package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/mounted_knowledge_bases_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/multi_model_mentions_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/ocr_service.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
@@ -372,12 +374,17 @@ class ChatController extends _$ChatController {
       assistantId: _assistantId,
       query: trimmed,
     );
+    final kbInjection = await collectChatKnowledgeInjection(
+      ref,
+      baseIds: ref.read(mountedKnowledgeBasesProvider),
+      query: trimmed,
+    );
     final request = LlmChatRequest(
       model: effective,
       system: _systemFor(
         mcp,
         await _buildSystemPromptWith(
-          memInjection.section,
+          _joinInjectionSections(memInjection.section, kbInjection.section),
           modelName: effective.name,
           modelId: effective.id,
           providerName: current.provider.name,
@@ -424,12 +431,50 @@ class ChatController extends _$ChatController {
       views: views,
       assistantView: assistantView,
       mcp: mcp,
-      leadingBlocks: _memoryInjectionBlocks(
-        messageId: assistantMessageId,
-        createdAt: assistantTime,
-        injection: memInjection,
-      ),
+      leadingBlocks: [
+        ..._memoryInjectionBlocks(
+          messageId: assistantMessageId,
+          createdAt: assistantTime,
+          injection: memInjection,
+        ),
+        ..._knowledgeReferenceBlocks(
+          messageId: assistantMessageId,
+          createdAt: assistantTime,
+          injection: kbInjection,
+        ),
+      ],
     );
+  }
+
+  /// The leading [KnowledgeReferenceBlock]s for a turn (empty when no 挂载库
+  /// hit), seeded ahead of the assistant content so the chat shows 本轮注入的
+  /// 知识库引用块（功能缺口⑫）.
+  List<MessageBlock> _knowledgeReferenceBlocks({
+    required String messageId,
+    required DateTime createdAt,
+    required ChatKnowledgeInjection injection,
+  }) {
+    if (injection.isEmpty) return const <MessageBlock>[];
+    return <MessageBlock>[
+      for (final reference in injection.references)
+        MessageBlock.knowledgeReference(
+          id: generateId('block'),
+          messageId: messageId,
+          status: MessageBlockStatus.success,
+          createdAt: createdAt,
+          content: reference.content,
+          knowledgeBaseId: reference.knowledgeBaseId ?? '',
+          source: reference.knowledgeBaseName,
+          similarity: reference.similarity,
+        ),
+    ];
+  }
+
+  /// Joins two optional prompt sections (记忆 + 知识库引用) with a blank line.
+  String? _joinInjectionSections(String? a, String? b) {
+    if (a == null || a.isEmpty) return b;
+    if (b == null || b.isEmpty) return a;
+    return '$a\n\n$b';
   }
 
   /// The leading [MemoryInjectionBlock] for a turn (empty when nothing was
@@ -610,6 +655,11 @@ class ChatController extends _$ChatController {
       assistantId: _assistantId,
       query: trimmed,
     );
+    final kbInjection = await collectChatKnowledgeInjection(
+      ref,
+      baseIds: ref.read(mountedKnowledgeBasesProvider),
+      query: trimmed,
+    );
 
     // 5. Stream every sibling in parallel; each keeps the turn alive
     //    (finalizeTurn: false) so the others stay visible until all settle.
@@ -628,7 +678,10 @@ class ChatController extends _$ChatController {
             system: _systemFor(
               mcp,
               await _buildSystemPromptWith(
-                memInjection.section,
+                _joinInjectionSections(
+                  memInjection.section,
+                  kbInjection.section,
+                ),
                 modelName: effective.name,
                 modelId: effective.id,
                 providerName: provider.name,
@@ -674,11 +727,18 @@ class ChatController extends _$ChatController {
             views: views,
             assistantView: sibling.assistantView,
             mcp: mcp,
-            leadingBlocks: _memoryInjectionBlocks(
-              messageId: sibling.assistantMessageId,
-              createdAt: sibling.assistantTime,
-              injection: memInjection,
-            ),
+            leadingBlocks: [
+              ..._memoryInjectionBlocks(
+                messageId: sibling.assistantMessageId,
+                createdAt: sibling.assistantTime,
+                injection: memInjection,
+              ),
+              ..._knowledgeReferenceBlocks(
+                messageId: sibling.assistantMessageId,
+                createdAt: sibling.assistantTime,
+                injection: kbInjection,
+              ),
+            ],
             finalizeTurn: false,
           );
         }(),

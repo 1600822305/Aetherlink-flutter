@@ -1,0 +1,162 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+
+import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
+
+/// Opens the 挂载知识库 picker（功能缺口⑫）: a multi-select sheet listing every
+/// 「对聊天开放」的知识库 with checkboxes. Returns the chosen base ids on 确定
+/// (an empty list clears the mount), or `null` if dismissed/cancelled.
+/// [initial] pre-checks the currently-mounted bases so re-opening edits the
+/// selection. Mirrors [showMultiModelSelectorSheet].
+Future<List<String>?> showKnowledgeMountSheet(
+  BuildContext context, {
+  List<String> initial = const <String>[],
+}) {
+  FocusManager.instance.primaryFocus?.unfocus();
+  return showModalBottomSheet<List<String>>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    backgroundColor: Theme.of(context).colorScheme.surface,
+    builder: (_) => _KnowledgeMountSheet(initial: initial),
+  );
+}
+
+class _KnowledgeMountSheet extends ConsumerStatefulWidget {
+  const _KnowledgeMountSheet({required this.initial});
+
+  final List<String> initial;
+
+  @override
+  ConsumerState<_KnowledgeMountSheet> createState() =>
+      _KnowledgeMountSheetState();
+}
+
+class _KnowledgeMountSheetState extends ConsumerState<_KnowledgeMountSheet> {
+  late final Set<String> _selected = {...widget.initial};
+  late final Future<List<KnowledgeBase>> _bases =
+      listChatEnabledKnowledgeBases(ref);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final mq = MediaQuery.of(context);
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: mq.size.height * 0.8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '挂载知识库',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (_selected.isNotEmpty)
+                    Text(
+                      '已选 ${_selected.length}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                '挂载后，每次发送都会先检索所选库，把命中的资料注入本轮上下文',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            Flexible(
+              child: FutureBuilder<List<KnowledgeBase>>(
+                future: _bases,
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  final bases = snapshot.data!;
+                  if (bases.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Center(
+                        child: Text(
+                          '暂无「对聊天开放」的知识库\n请先在知识库设置里打开「提供给普通聊天」',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  return ListView(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    children: [
+                      for (final base in bases) _baseTile(theme, base),
+                    ],
+                  );
+                },
+              ),
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+              child: Row(
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('取消'),
+                  ),
+                  const Spacer(),
+                  FilledButton(
+                    onPressed: () =>
+                        Navigator.of(context).pop(_selected.toList()),
+                    child: const Text('确定'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _baseTile(ThemeData theme, KnowledgeBase base) {
+    final checked = _selected.contains(base.id);
+    return CheckboxListTile(
+      value: checked,
+      onChanged: (_) => setState(() {
+        if (checked) {
+          _selected.remove(base.id);
+        } else {
+          _selected.add(base.id);
+        }
+      }),
+      controlAffinity: ListTileControlAffinity.trailing,
+      dense: true,
+      secondary: Icon(
+        LucideIcons.bookOpen,
+        size: 20,
+        color: theme.colorScheme.primary,
+      ),
+      title: Text(base.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+    );
+  }
+}
