@@ -91,6 +91,15 @@ abstract interface class ChatRepository {
 
   Future<void> saveMessageBlocks(List<MessageBlock> blocks);
 
+  /// Atomically replaces every block of [messageId] with [blocks] (in order)
+  /// and saves [message] (when given), all in one transaction — a mid-write
+  /// crash can never leave the reply with deleted-but-not-rewritten blocks.
+  Future<void> replaceMessageBlocks({
+    required String messageId,
+    required List<MessageBlock> blocks,
+    Message? message,
+  });
+
   Future<void> deleteMessageBlock(String id);
 
   // --- Assistants -----------------------------------------------------------

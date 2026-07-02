@@ -1429,8 +1429,14 @@ class BackupService {
     final bytes = await zipFile.readAsBytes();
     await Isolate.run(() {
       final archive = ZipDecoder().decodeBytes(bytes);
+      final rootPath = p.canonicalize(extractPath);
       for (final file in archive) {
-        final outPath = p.join(extractPath, file.name);
+        // Zip-slip guard: an entry name like `../../x` (or an absolute path)
+        // must never escape the extraction directory.
+        final outPath = p.canonicalize(p.join(extractPath, file.name));
+        if (outPath != rootPath && !p.isWithin(rootPath, outPath)) {
+          throw FormatException('备份包含非法路径条目: ${file.name}');
+        }
         if (file.isFile) {
           File(outPath)
             ..createSync(recursive: true)

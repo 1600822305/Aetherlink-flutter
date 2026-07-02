@@ -279,6 +279,21 @@ class ChatRepositoryImpl implements ChatRepository {
       _db.messageBlockDao.upsertAll(blocks);
 
   @override
+  Future<void> replaceMessageBlocks({
+    required String messageId,
+    required List<MessageBlock> blocks,
+    Message? message,
+  }) {
+    return _db.transaction(() async {
+      await _db.messageBlockDao.deleteByMessageId(messageId);
+      if (blocks.isNotEmpty) {
+        await _db.messageBlockDao.upsertAll(blocks);
+      }
+      if (message != null) await saveMessage(message);
+    });
+  }
+
+  @override
   Future<void> deleteMessageBlock(String id) =>
       _db.messageBlockDao.deleteById(id);
 
