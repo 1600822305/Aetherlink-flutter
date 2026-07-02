@@ -5,6 +5,7 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
 import 'package:aetherlink_flutter/features/knowledge/application/knowledge_providers.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
+import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/widgets/knowledge_common.dart';
 import 'package:aetherlink_flutter/features/memory/domain/embedding_model_key.dart';
 import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
@@ -217,7 +218,7 @@ class _KnowledgeCreateBaseSheetState
                 ),
               ),
               const SizedBox(height: 8),
-              _ModeSelector(
+              KnowledgeSearchModeSelector(
                 mode: _mode,
                 enableSemantic: hasModel,
                 onChanged: (m) => setState(() => _mode = m),
@@ -258,54 +259,6 @@ class _KnowledgeCreateBaseSheetState
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Segmented selector for the three retrieval modes. 向量 / 混合 are disabled
-/// (greyed out) until an embedding model is chosen.
-class _ModeSelector extends StatelessWidget {
-  const _ModeSelector({
-    required this.mode,
-    required this.enableSemantic,
-    required this.onChanged,
-  });
-
-  final KnowledgeSearchMode mode;
-  final bool enableSemantic;
-  final ValueChanged<KnowledgeSearchMode> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    Widget chip(KnowledgeSearchMode value, String label) {
-      final enabled = value == KnowledgeSearchMode.keyword || enableSemantic;
-      final selected = mode == value;
-      return Padding(
-        padding: const EdgeInsets.only(right: 8),
-        child: ChoiceChip(
-          label: Text(label),
-          selected: selected,
-          onSelected: enabled ? (_) => onChanged(value) : null,
-          selectedColor: theme.colorScheme.primary,
-          disabledColor: theme.colorScheme.onSurface.withValues(alpha: 0.06),
-          labelStyle: TextStyle(
-            color: !enabled
-                ? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5)
-                : selected
-                ? theme.colorScheme.onPrimary
-                : theme.colorScheme.onSurface,
-          ),
-        ),
-      );
-    }
-
-    return Wrap(
-      children: [
-        chip(KnowledgeSearchMode.keyword, '关键词'),
-        chip(KnowledgeSearchMode.vector, '向量'),
-        chip(KnowledgeSearchMode.hybrid, '混合'),
-      ],
     );
   }
 }

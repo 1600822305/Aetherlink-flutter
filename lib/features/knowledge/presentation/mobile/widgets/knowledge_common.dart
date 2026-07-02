@@ -1,5 +1,8 @@
-// 知识库页面通用小部件：分节标题 / 描边卡片 / bottom-sheet 通用外壳。
+// 知识库页面通用小部件：分节标题 / 描边卡片 / bottom-sheet 通用外壳 /
+// 检索模式选择。
 import 'package:flutter/material.dart';
+
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 
 class KnowledgeSectionHeader extends StatelessWidget {
   const KnowledgeSectionHeader({super.key, required this.title});
@@ -38,6 +41,55 @@ class KnowledgeOutlinedCard extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: child,
+    );
+  }
+}
+
+/// Segmented selector for the three retrieval modes. 向量 / 混合 are disabled
+/// (greyed out) until an embedding model is chosen. 建库 / 库设置面板共用。
+class KnowledgeSearchModeSelector extends StatelessWidget {
+  const KnowledgeSearchModeSelector({
+    super.key,
+    required this.mode,
+    required this.enableSemantic,
+    required this.onChanged,
+  });
+
+  final KnowledgeSearchMode mode;
+  final bool enableSemantic;
+  final ValueChanged<KnowledgeSearchMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    Widget chip(KnowledgeSearchMode value, String label) {
+      final enabled = value == KnowledgeSearchMode.keyword || enableSemantic;
+      final selected = mode == value;
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: ChoiceChip(
+          label: Text(label),
+          selected: selected,
+          onSelected: enabled ? (_) => onChanged(value) : null,
+          selectedColor: theme.colorScheme.primary,
+          disabledColor: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+          labelStyle: TextStyle(
+            color: !enabled
+                ? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5)
+                : selected
+                ? theme.colorScheme.onPrimary
+                : theme.colorScheme.onSurface,
+          ),
+        ),
+      );
+    }
+
+    return Wrap(
+      children: [
+        chip(KnowledgeSearchMode.keyword, '关键词'),
+        chip(KnowledgeSearchMode.vector, '向量'),
+        chip(KnowledgeSearchMode.hybrid, '混合'),
+      ],
     );
   }
 }

@@ -138,20 +138,14 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
 
   /// 重命名分组：把组内所有库的分组名改为 [to]。返回受影响的库数。
   Future<int> renameGroup(String from, String to) {
-    return (update(
-      knowledgeBaseRows,
-    )..where((t) => t.groupName.equals(from))).write(
-      KnowledgeBaseRowsCompanion(groupName: Value(to)),
-    );
+    return (update(knowledgeBaseRows)..where((t) => t.groupName.equals(from)))
+        .write(KnowledgeBaseRowsCompanion(groupName: Value(to)));
   }
 
   /// 解散分组：把组内所有库移回未分组（库本身保留）。返回受影响的库数。
   Future<int> dissolveGroup(String name) {
-    return (update(
-      knowledgeBaseRows,
-    )..where((t) => t.groupName.equals(name))).write(
-      const KnowledgeBaseRowsCompanion(groupName: Value(null)),
-    );
+    return (update(knowledgeBaseRows)..where((t) => t.groupName.equals(name)))
+        .write(const KnowledgeBaseRowsCompanion(groupName: Value(null)));
   }
 
   /// 更新库的重排序模型 key（功能缺口⑥）；传 null 关闭重排。
@@ -186,7 +180,7 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
   }
 
   /// 更新库的可编辑配置（名称 + RAG 参数，设计文档 §6）。[threshold] 传 null
-  /// 表示清除相似度阈值。
+  /// 表示清除相似度阈值；[searchMode] 传 null 表示不改检索模式。
   Future<void> updateBaseConfig(
     String id, {
     required String name,
@@ -194,6 +188,7 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
     required int chunkOverlap,
     required int topK,
     required double? threshold,
+    KnowledgeSearchMode? searchMode,
   }) {
     return (update(knowledgeBaseRows)..where((t) => t.id.equals(id))).write(
       KnowledgeBaseRowsCompanion(
@@ -202,6 +197,9 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
         chunkOverlap: Value(chunkOverlap),
         topK: Value(topK),
         threshold: Value(threshold),
+        searchMode: searchMode == null
+            ? const Value.absent()
+            : Value(searchMode.name),
       ),
     );
   }

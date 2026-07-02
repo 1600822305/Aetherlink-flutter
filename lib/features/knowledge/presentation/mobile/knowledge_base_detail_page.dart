@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_reference_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/application/knowledge_providers.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_document_converter.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_file_processor.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/sheets/knowledge_add_sheets.dart';
@@ -519,6 +520,9 @@ class _KnowledgeBaseDetailPageState
             chunkOverlap: result.chunkOverlap,
             topK: result.topK,
             threshold: result.threshold,
+            // 换模型时检索模式交给 changeEmbeddingModel 一并落库（新模型
+            // 尚未写入前按语义模式校验会被拒）。
+            searchMode: modelChanged ? null : result.searchMode,
           );
       if (result.rerankModelKey != base.rerankModelKey) {
         await ref
@@ -532,18 +536,21 @@ class _KnowledgeBaseDetailPageState
     }
     if (modelChanged) {
       // 换模型的重建已覆盖切块参数变化，不再另跑一次 _refresh。
-      await _applyEmbeddingModel(newModelKey);
+      await _applyEmbeddingModel(newModelKey, searchMode: result.searchMode);
     } else if (chunkingChanged) {
       await _refresh();
     }
   }
 
   /// 执行换嵌入模型 + 整库重建向量索引，并提示结果。
-  Future<void> _applyEmbeddingModel(String modelKey) async {
+  Future<void> _applyEmbeddingModel(
+    String modelKey, {
+    KnowledgeSearchMode? searchMode,
+  }) async {
     try {
       final count = await ref
           .read(knowledgeBaseControllerProvider(widget.baseId).notifier)
-          .changeEmbeddingModel(modelKey);
+          .changeEmbeddingModel(modelKey, searchMode: searchMode);
       if (mounted) AppToast.success(context, '已更换嵌入模型并重建索引（$count 个条目）');
     } catch (e) {
       if (mounted) AppToast.error(context, '更换嵌入模型失败：$e');
@@ -812,7 +819,12 @@ class _KnowledgeBaseDetailPageState
             child: _searching
                 ? const Center(child: CircularProgressIndicator())
                 : _results != null
-                ? KnowledgeSearchResultsView(results: _results!, theme: theme)
+                ? KnowledgeSearchResultsView(
+                    results: _results!,
+                    theme: theme,
+                    items: itemsAsync.asData?.value ?? const [],
+                    onTapItem: _showItemDetail,
+                  )
                 : itemsAsync.when(
                     loading: () =>
                         const Center(child: CircularProgressIndicator()),

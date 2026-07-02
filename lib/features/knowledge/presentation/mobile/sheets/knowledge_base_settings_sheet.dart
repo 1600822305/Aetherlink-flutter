@@ -11,7 +11,8 @@ import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.da
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
-/// [KnowledgeBaseSettingsSheet] 的返回值：名称 + RAG 参数 + 重排模型 + 嵌入模型。
+/// [KnowledgeBaseSettingsSheet] 的返回值：名称 + RAG 参数 + 检索模式 +
+/// 重排模型 + 嵌入模型。
 class KnowledgeBaseSettingsResult {
   const KnowledgeBaseSettingsResult({
     required this.name,
@@ -19,6 +20,7 @@ class KnowledgeBaseSettingsResult {
     required this.chunkOverlap,
     required this.topK,
     required this.threshold,
+    required this.searchMode,
     required this.rerankModelKey,
     required this.embeddingModelKey,
   });
@@ -28,12 +30,14 @@ class KnowledgeBaseSettingsResult {
   final int chunkOverlap;
   final int topK;
   final double? threshold;
+  final KnowledgeSearchMode searchMode;
   final String? rerankModelKey;
   final String? embeddingModelKey;
 }
 
 /// 库设置面板：重命名 + RAG 参数（切块大小 / 重叠 / topK / 相似度阈值）+
-/// 重排序模型（功能缺口⑥，可选）。
+/// 检索模式 + 重排序模型（功能缺口⑥，可选）。topK / 阈值用滑杆调节
+/// （对齐 CS 的 Slider 设置项）。
 class KnowledgeBaseSettingsSheet extends ConsumerStatefulWidget {
   const KnowledgeBaseSettingsSheet({super.key, required this.base});
 
@@ -53,12 +57,9 @@ class _KnowledgeBaseSettingsSheetState
   late final _chunkOverlapController = TextEditingController(
     text: '${widget.base.chunkOverlap}',
   );
-  late final _topKController = TextEditingController(
-    text: '${widget.base.topK}',
-  );
-  late final _thresholdController = TextEditingController(
-    text: widget.base.threshold?.toString() ?? '',
-  );
+  late int _topK = widget.base.topK.clamp(1, 50);
+  late double? _threshold = widget.base.threshold;
+  late KnowledgeSearchMode _searchMode = widget.base.searchMode;
   late String? _rerankModelKey = widget.base.rerankModelKey;
   late String? _embeddingModelKey = widget.base.embeddingModelKey;
 
@@ -67,8 +68,6 @@ class _KnowledgeBaseSettingsSheetState
     _nameController.dispose();
     _chunkSizeController.dispose();
     _chunkOverlapController.dispose();
-    _topKController.dispose();
-    _thresholdController.dispose();
     super.dispose();
   }
 
@@ -80,27 +79,18 @@ class _KnowledgeBaseSettingsSheetState
     }
     final chunkSize = int.tryParse(_chunkSizeController.text.trim());
     final chunkOverlap = int.tryParse(_chunkOverlapController.text.trim());
-    final topK = int.tryParse(_topKController.text.trim());
-    if (chunkSize == null || chunkOverlap == null || topK == null) {
-      AppToast.error(context, '切块大小 / 重叠 / topK 需为整数');
+    if (chunkSize == null || chunkOverlap == null) {
+      AppToast.error(context, '切块大小 / 重叠需为整数');
       return;
-    }
-    final thresholdText = _thresholdController.text.trim();
-    double? threshold;
-    if (thresholdText.isNotEmpty) {
-      threshold = double.tryParse(thresholdText);
-      if (threshold == null || threshold < 0 || threshold > 1) {
-        AppToast.error(context, '相似度阈值需为 0–1 的小数');
-        return;
-      }
     }
     Navigator.of(context).pop(
       KnowledgeBaseSettingsResult(
         name: name,
         chunkSize: chunkSize,
         chunkOverlap: chunkOverlap,
-        topK: topK,
-        threshold: threshold,
+        topK: _topK,
+        threshold: _threshold,
+        searchMode: _searchMode,
         rerankModelKey: _rerankModelKey,
         embeddingModelKey: _embeddingModelKey,
       ),
@@ -117,6 +107,11 @@ class _KnowledgeBaseSettingsSheetState
       onSelect: (provider, model) {
         setState(() {
           _embeddingModelKey = encodeEmbeddingModelKey(provider.id, model.id);
+          // 一旦选了嵌入模型，默认切到混合检索（语义 + 关键词兜底），
+          // 与建库面板和服务端 changeEmbeddingModel 的行为一致。
+          if (_searchMode == KnowledgeSearchMode.keyword) {
+            _searchMode = KnowledgeSearchMode.hybrid;
+          }
         });
       },
     );
@@ -157,11 +152,13 @@ class _KnowledgeBaseSettingsSheetState
       confirmLabel: '保存',
       onConfirm: _submit,
       children: [
+        const KnowledgeSectionHeader(title: '基本'),
         TextField(
           controller: _nameController,
           decoration: const InputDecoration(labelText: '名称'),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
+        const KnowledgeSectionHeader(title: '切块'),
         Row(
           children: [
             Expanded(
@@ -187,34 +184,6 @@ class _KnowledgeBaseSettingsSheetState
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _topKController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: '返回条数 topK',
-                  helperText: '1–50',
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: TextField(
-                controller: _thresholdController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: const InputDecoration(
-                  labelText: '相似度阈值',
-                  helperText: '0–1，留空不限',
-                ),
-              ),
-            ),
-          ],
-        ),
         const SizedBox(height: 8),
         Text(
           '修改切块大小 / 重叠后会自动重建整库索引（向量库会按需补嵌，'
@@ -223,7 +192,79 @@ class _KnowledgeBaseSettingsSheetState
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
+        const SizedBox(height: 16),
+        const KnowledgeSectionHeader(title: '检索'),
+        _SliderRow(
+          label: '返回条数 topK',
+          valueLabel: '$_topK',
+          value: _topK.toDouble(),
+          min: 1,
+          max: 50,
+          divisions: 49,
+          onChanged: (v) => setState(() => _topK = v.round()),
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '相似度阈值',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            Text(
+              _threshold == null ? '不限' : _threshold!.toStringAsFixed(2),
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Switch(
+              value: _threshold != null,
+              onChanged: (on) => setState(() => _threshold = on ? 0.7 : null),
+            ),
+          ],
+        ),
+        if (_threshold != null)
+          Slider(
+            value: _threshold!,
+            min: 0,
+            max: 1,
+            divisions: 100,
+            label: _threshold!.toStringAsFixed(2),
+            onChanged: (v) => setState(() => _threshold = v),
+          ),
+        Text(
+          '低于阈值的命中会被过滤；关闭则不限。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
         const SizedBox(height: 12),
+        Text(
+          '检索模式',
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        KnowledgeSearchModeSelector(
+          mode: _searchMode,
+          enableSemantic: _embeddingModelKey != null,
+          onChanged: (m) => setState(() => _searchMode = m),
+        ),
+        if (_embeddingModelKey == null) ...[
+          const SizedBox(height: 6),
+          Text(
+            '未选嵌入模型时仅支持关键词检索',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
+        const KnowledgeSectionHeader(title: '嵌入'),
         Text(
           '嵌入模型',
           style: theme.textTheme.labelLarge?.copyWith(
@@ -300,6 +341,64 @@ class _KnowledgeBaseSettingsSheetState
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 带标签和当前值的滑杆行（topK 等整数参数用）。
+class _SliderRow extends StatelessWidget {
+  const _SliderRow({
+    required this.label,
+    required this.valueLabel,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String valueLabel;
+  final double value;
+  final double min;
+  final double max;
+  final int divisions;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            Text(
+              valueLabel,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        Slider(
+          value: value,
+          min: min,
+          max: max,
+          divisions: divisions,
+          label: valueLabel,
+          onChanged: onChanged,
         ),
       ],
     );
