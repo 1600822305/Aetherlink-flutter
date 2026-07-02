@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/knowledge_reference_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/application/knowledge_providers.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/knowledge_document_converter.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_file_processor.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
@@ -71,9 +72,11 @@ class _KnowledgeBaseDetailPageState
   }
 
   Future<void> _addNote() async {
-    final result = await showDialog<({String title, String text})>(
+    final result = await showModalBottomSheet<({String title, String text})>(
       context: context,
-      builder: (ctx) => const _AddNoteDialog(),
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => const _AddNoteSheet(),
     );
     if (result == null || result.text.trim().isEmpty) return;
     await ref
@@ -86,9 +89,18 @@ class _KnowledgeBaseDetailPageState
   /// DOCX 在 isolate 里、PDF 在 PDFium 原生 worker 里转 Markdown（§5.2 本地解析轨）
   /// 后走同一条摄取管线；库配置了云端解析器时 PDF / DOCX 改走云端预处理轨。
   Future<void> _addFile() async {
-    final picked = await ref.read(fileSystemApiProvider).pickFile(
-      allowedExtensions: const ['txt', 'md', 'markdown', 'text', 'docx', 'pdf'],
-    );
+    final picked = await ref
+        .read(fileSystemApiProvider)
+        .pickFile(
+          allowedExtensions: const [
+            'txt',
+            'md',
+            'markdown',
+            'text',
+            'docx',
+            'pdf',
+          ],
+        );
     if (picked == null) return;
     final isPdf = isPdfFileName(picked.name);
     final isRichDoc = isPdf || isDocxFileName(picked.name);
@@ -105,12 +117,14 @@ class _KnowledgeBaseDetailPageState
     String text;
     try {
       if (isDocxFileName(picked.name)) {
-        final bytes =
-            await ref.read(fileSystemApiProvider).readAsBytes(picked.path);
+        final bytes = await ref
+            .read(fileSystemApiProvider)
+            .readAsBytes(picked.path);
         text = await convertDocxBytesToMarkdown(bytes);
       } else if (isPdf) {
-        final bytes =
-            await ref.read(fileSystemApiProvider).readAsBytes(picked.path);
+        final bytes = await ref
+            .read(fileSystemApiProvider)
+            .readAsBytes(picked.path);
         text = await convertPdfBytesToMarkdown(bytes);
       } else {
         text = await ref.read(fileSystemApiProvider).readAsString(picked.path);
@@ -121,10 +135,7 @@ class _KnowledgeBaseDetailPageState
     }
     if (text.trim().isEmpty) {
       if (mounted) {
-        AppToast.error(
-          context,
-          isPdf ? 'PDF 无文本层（可能为扫描件），未摄取' : '文件内容为空，未摄取',
-        );
+        AppToast.error(context, isPdf ? 'PDF 无文本层（可能为扫描件），未摄取' : '文件内容为空，未摄取');
       }
       return;
     }
@@ -145,13 +156,11 @@ class _KnowledgeBaseDetailPageState
     KnowledgeFileProcessor processor,
   ) async {
     try {
-      final bytes =
-          await ref.read(fileSystemApiProvider).readAsBytes(picked.path);
+      final bytes = await ref
+          .read(fileSystemApiProvider)
+          .readAsBytes(picked.path);
       if (mounted) {
-        AppToast.success(
-          context,
-          '已交给 ${processor.label} 云端解析，完成后自动入库…',
-        );
+        AppToast.success(context, '已交给 ${processor.label} 云端解析，完成后自动入库…');
       }
       await ref
           .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
@@ -173,9 +182,11 @@ class _KnowledgeBaseDetailPageState
 
   /// 输入一个网址，抓取网页转成 Markdown 快照后摄取为条目（type=url）。
   Future<void> _addUrl() async {
-    final result = await showDialog<({String url, String title})>(
+    final result = await showModalBottomSheet<({String url, String title})>(
       context: context,
-      builder: (ctx) => const _AddUrlDialog(),
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => const _AddUrlSheet(),
     );
     if (result == null || result.url.isEmpty) return;
     final url = result.url;
@@ -199,16 +210,26 @@ class _KnowledgeBaseDetailPageState
       AppToast.error(context, '还没有打开过工作区，先在「工作区」里打开一个目录');
       return;
     }
-    final picked = await showDialog<Workspace>(
+    final picked = await showModalBottomSheet<Workspace>(
       context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('选择工作区目录'),
-        children: [
-          for (final w in workspaces)
-            SimpleDialogOption(
-              onPressed: () => Navigator.of(ctx).pop(w),
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8, left: 4),
+              child: Text(
+                '选择工作区目录',
+                style: Theme.of(
+                  ctx,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+            for (final w in workspaces)
+              ListTile(
+                onTap: () => Navigator.of(ctx).pop(w),
                 leading: const Icon(LucideIcons.folder, size: 20),
                 title: Text(w.name.isEmpty ? '未命名工作区' : w.name),
                 subtitle: w.displayPath == null
@@ -219,8 +240,8 @@ class _KnowledgeBaseDetailPageState
                         overflow: TextOverflow.ellipsis,
                       ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
     if (picked == null) return;
@@ -265,13 +286,19 @@ class _KnowledgeBaseDetailPageState
     }
     if (!mounted) return;
     final result =
-        await showDialog<({KnowledgeFileProcessor? processor, String key})>(
-      context: context,
-      builder: (ctx) => _CloudParsingDialog(
-        initialProcessor: KnowledgeFileProcessor.fromId(base?.fileProcessorId),
-        initialKeys: initialKeys,
-      ),
-    );
+        await showModalBottomSheet<
+          ({KnowledgeFileProcessor? processor, String key})
+        >(
+          context: context,
+          showDragHandle: true,
+          isScrollControlled: true,
+          builder: (ctx) => _CloudParsingSheet(
+            initialProcessor: KnowledgeFileProcessor.fromId(
+              base?.fileProcessorId,
+            ),
+            initialKeys: initialKeys,
+          ),
+        );
     if (result == null) return;
     try {
       final processor = result.processor;
@@ -291,13 +318,67 @@ class _KnowledgeBaseDetailPageState
       if (mounted) {
         AppToast.success(
           context,
-          processor == null
-              ? '已切回本地解析'
-              : '已启用 ${processor.label} 云端解析',
+          processor == null ? '已切回本地解析' : '已启用 ${processor.label} 云端解析',
         );
       }
     } catch (e) {
       if (mounted) AppToast.error(context, '保存失败：$e');
+    }
+  }
+
+  /// 库设置（重命名 + RAG 参数）。切块参数变化时自动重建索引，让新参数
+  /// 对已有条目生效。
+  Future<void> _openBaseSettings() async {
+    final base = await ref.read(
+      knowledgeBaseControllerProvider(widget.baseId).future,
+    );
+    if (base == null || !mounted) return;
+    final result = await showModalBottomSheet<_BaseSettingsResult>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => _BaseSettingsSheet(base: base),
+    );
+    if (result == null) return;
+    final chunkingChanged =
+        result.chunkSize != base.chunkSize ||
+        result.chunkOverlap != base.chunkOverlap;
+    try {
+      await ref
+          .read(knowledgeBaseControllerProvider(widget.baseId).notifier)
+          .updateConfig(
+            name: result.name,
+            chunkSize: result.chunkSize,
+            chunkOverlap: result.chunkOverlap,
+            topK: result.topK,
+            threshold: result.threshold,
+          );
+      if (mounted) AppToast.success(context, '已保存库设置');
+    } catch (e) {
+      if (mounted) AppToast.error(context, '保存失败：$e');
+      return;
+    }
+    if (chunkingChanged) await _refresh();
+  }
+
+  /// 条目详情面板：切块列表 + 删除入口。
+  Future<void> _showItemDetail(KnowledgeItem item) async {
+    final deleted = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => _ItemDetailSheet(item: item),
+    );
+    if (deleted != true || !mounted) return;
+    try {
+      await ref
+          .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
+          .deleteItem(item.id);
+      if (mounted) {
+        AppToast.success(context, '已删除「${item.title ?? item.source}」');
+      }
+    } catch (e) {
+      if (mounted) AppToast.error(context, '删除失败：$e');
     }
   }
 
@@ -319,11 +400,19 @@ class _KnowledgeBaseDetailPageState
     final itemsAsync = ref.watch(
       knowledgeItemsControllerProvider(widget.baseId),
     );
-    final pendingEmbeddings = ref
+    final pendingEmbeddings =
+        ref
             .watch(knowledgePendingEmbeddingCountProvider(widget.baseId))
             .asData
             ?.value ??
         0;
+    final baseName =
+        ref
+            .watch(knowledgeBaseControllerProvider(widget.baseId))
+            .asData
+            ?.value
+            ?.name ??
+        widget.baseName;
 
     return Scaffold(
       appBar: AppBar(
@@ -351,8 +440,14 @@ class _KnowledgeBaseDetailPageState
           fontWeight: FontWeight.w600,
           color: theme.colorScheme.onSurface,
         ),
-        title: Text(widget.baseName.isEmpty ? '知识库' : widget.baseName),
+        title: Text(baseName.isEmpty ? '知识库' : baseName),
         actions: [
+          IconButton(
+            icon: const Icon(LucideIcons.settings2, size: 20),
+            color: theme.colorScheme.primary,
+            tooltip: '库设置（重命名 / RAG 参数）',
+            onPressed: _openBaseSettings,
+          ),
           IconButton(
             icon: const Icon(LucideIcons.cloudCog, size: 20),
             color: theme.colorScheme.primary,
@@ -442,8 +537,12 @@ class _KnowledgeBaseDetailPageState
                     loading: () =>
                         const Center(child: CircularProgressIndicator()),
                     error: (err, _) => Center(child: Text('加载失败 · $err')),
-                    data: (items) =>
-                        _ItemList(items: items, theme: theme, onAdd: _addNote),
+                    data: (items) => _ItemList(
+                      items: items,
+                      theme: theme,
+                      onAdd: _addNote,
+                      onTapItem: _showItemDetail,
+                    ),
                   ),
           ),
         ],
@@ -457,11 +556,13 @@ class _ItemList extends StatelessWidget {
     required this.items,
     required this.theme,
     required this.onAdd,
+    required this.onTapItem,
   });
 
   final List<KnowledgeItem> items;
   final ThemeData theme;
   final VoidCallback onAdd;
+  final ValueChanged<KnowledgeItem> onTapItem;
 
   @override
   Widget build(BuildContext context) {
@@ -477,7 +578,11 @@ class _ItemList extends StatelessWidget {
             children: [
               for (var i = 0; i < items.length; i++) ...[
                 if (i > 0) Divider(height: 1, color: theme.dividerColor),
-                _ItemRow(item: items[i], theme: theme),
+                _ItemRow(
+                  item: items[i],
+                  theme: theme,
+                  onTap: () => onTapItem(items[i]),
+                ),
               ],
             ],
           ),
@@ -488,14 +593,25 @@ class _ItemList extends StatelessWidget {
 }
 
 class _ItemRow extends StatelessWidget {
-  const _ItemRow({required this.item, required this.theme});
+  const _ItemRow({
+    required this.item,
+    required this.theme,
+    required this.onTap,
+  });
 
   final KnowledgeItem item;
   final ThemeData theme;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
+      onTap: onTap,
+      trailing: Icon(
+        LucideIcons.chevronRight,
+        size: 18,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
       leading: Icon(
         LucideIcons.fileText,
         color: theme.colorScheme.onSurfaceVariant,
@@ -664,16 +780,76 @@ class _OutlinedCard extends StatelessWidget {
   }
 }
 
-/// 添加笔记对话框。控制器由本 State 持有，随退出动画结束后统一 dispose，
-/// 避免关闭瞬间「controller used after being disposed」。
-class _AddNoteDialog extends StatefulWidget {
-  const _AddNoteDialog();
+/// Bottom-sheet 通用外壳：键盘避让 + 限高 + 标题 + 底部「取消 / 确认」操作行。
+/// 表单控制器由各 State 持有，随退出动画结束后统一 dispose。
+class _SheetScaffold extends StatelessWidget {
+  const _SheetScaffold({
+    required this.title,
+    required this.children,
+    required this.confirmLabel,
+    required this.onConfirm,
+  });
+
+  final String title;
+  final List<Widget> children;
+  final String confirmLabel;
+  final VoidCallback? onConfirm;
 
   @override
-  State<_AddNoteDialog> createState() => _AddNoteDialogState();
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+          ),
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12, left: 4),
+                child: Text(
+                  title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              ...children,
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('取消'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(onPressed: onConfirm, child: Text(confirmLabel)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _AddNoteDialogState extends State<_AddNoteDialog> {
+/// 添加笔记面板。
+class _AddNoteSheet extends StatefulWidget {
+  const _AddNoteSheet();
+
+  @override
+  State<_AddNoteSheet> createState() => _AddNoteSheetState();
+}
+
+class _AddNoteSheetState extends State<_AddNoteSheet> {
   final _titleController = TextEditingController();
   final _textController = TextEditingController();
 
@@ -686,58 +862,43 @@ class _AddNoteDialogState extends State<_AddNoteDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('添加笔记'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _titleController,
-              decoration: const InputDecoration(labelText: '标题（可选）'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _textController,
-              autofocus: true,
-              minLines: 4,
-              maxLines: 10,
-              decoration: const InputDecoration(
-                labelText: '内容',
-                hintText: '粘贴或输入文本（支持 txt / md）',
-                alignLabelWithHint: true,
-              ),
-            ),
-          ],
+    return _SheetScaffold(
+      title: '添加笔记',
+      confirmLabel: '保存',
+      onConfirm: () => Navigator.of(
+        context,
+      ).pop((title: _titleController.text.trim(), text: _textController.text)),
+      children: [
+        TextField(
+          controller: _titleController,
+          decoration: const InputDecoration(labelText: '标题（可选）'),
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop((
-            title: _titleController.text.trim(),
-            text: _textController.text,
-          )),
-          child: const Text('保存'),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _textController,
+          autofocus: true,
+          minLines: 4,
+          maxLines: 10,
+          decoration: const InputDecoration(
+            labelText: '内容',
+            hintText: '粘贴或输入文本（支持 txt / md）',
+            alignLabelWithHint: true,
+          ),
         ),
       ],
     );
   }
 }
 
-/// 添加网址对话框，同 [_AddNoteDialog] 的控制器生命周期约定。
-class _AddUrlDialog extends StatefulWidget {
-  const _AddUrlDialog();
+/// 添加网址面板。
+class _AddUrlSheet extends StatefulWidget {
+  const _AddUrlSheet();
 
   @override
-  State<_AddUrlDialog> createState() => _AddUrlDialogState();
+  State<_AddUrlSheet> createState() => _AddUrlSheetState();
 }
 
-class _AddUrlDialogState extends State<_AddUrlDialog> {
+class _AddUrlSheetState extends State<_AddUrlSheet> {
   final _urlController = TextEditingController();
   final _titleController = TextEditingController();
 
@@ -750,53 +911,36 @@ class _AddUrlDialogState extends State<_AddUrlDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('添加网址'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _urlController,
-              autofocus: true,
-              keyboardType: TextInputType.url,
-              decoration: const InputDecoration(
-                labelText: '网址',
-                hintText: 'https://example.com/article',
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _titleController,
-              decoration: const InputDecoration(
-                labelText: '标题（可选，留空用网页标题）',
-              ),
-            ),
-          ],
+    return _SheetScaffold(
+      title: '添加网址',
+      confirmLabel: '抓取',
+      onConfirm: () => Navigator.of(context).pop((
+        url: _urlController.text.trim(),
+        title: _titleController.text.trim(),
+      )),
+      children: [
+        TextField(
+          controller: _urlController,
+          autofocus: true,
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(
+            labelText: '网址',
+            hintText: 'https://example.com/article',
+          ),
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop((
-            url: _urlController.text.trim(),
-            title: _titleController.text.trim(),
-          )),
-          child: const Text('抓取'),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _titleController,
+          decoration: const InputDecoration(labelText: '标题（可选，留空用网页标题）'),
         ),
       ],
     );
   }
 }
 
-/// 云端解析设置对话框（§5.2）：解析方式下拉 + 对应服务的 API Key。
-/// 控制器由本 State 持有，关闭后由框架在合适时机 dispose。
-class _CloudParsingDialog extends StatefulWidget {
-  const _CloudParsingDialog({
+/// 云端解析设置面板（§5.2）：解析方式下拉 + 对应服务的 API Key。
+class _CloudParsingSheet extends StatefulWidget {
+  const _CloudParsingSheet({
     required this.initialProcessor,
     required this.initialKeys,
   });
@@ -805,13 +949,13 @@ class _CloudParsingDialog extends StatefulWidget {
   final Map<KnowledgeFileProcessor, String> initialKeys;
 
   @override
-  State<_CloudParsingDialog> createState() => _CloudParsingDialogState();
+  State<_CloudParsingSheet> createState() => _CloudParsingSheetState();
 }
 
-class _CloudParsingDialogState extends State<_CloudParsingDialog> {
+class _CloudParsingSheetState extends State<_CloudParsingSheet> {
   late KnowledgeFileProcessor? _selected = widget.initialProcessor;
   late final Map<KnowledgeFileProcessor, TextEditingController>
-      _keyControllers = {
+  _keyControllers = {
     for (final p in KnowledgeFileProcessor.values)
       p: TextEditingController(text: widget.initialKeys[p] ?? ''),
   };
@@ -827,65 +971,346 @@ class _CloudParsingDialogState extends State<_CloudParsingDialog> {
   @override
   Widget build(BuildContext context) {
     final selected = _selected;
-    return AlertDialog(
-      title: const Text('云端解析设置'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DropdownButtonFormField<KnowledgeFileProcessor?>(
-              initialValue: selected,
-              decoration: const InputDecoration(
-                labelText: 'PDF / DOCX 解析方式',
-              ),
-              items: [
-                const DropdownMenuItem<KnowledgeFileProcessor?>(
-                  value: null,
-                  child: Text('本地解析（默认，不上传）'),
-                ),
-                for (final p in KnowledgeFileProcessor.values)
-                  DropdownMenuItem<KnowledgeFileProcessor?>(
-                    value: p,
-                    child: Text(p.label),
-                  ),
-              ],
-              onChanged: (value) => setState(() => _selected = value),
+    return _SheetScaffold(
+      title: '云端解析设置',
+      confirmLabel: '保存',
+      onConfirm: () => Navigator.of(context).pop((
+        processor: _selected,
+        key: _selected == null ? '' : _keyControllers[_selected]!.text,
+      )),
+      children: [
+        DropdownButtonFormField<KnowledgeFileProcessor?>(
+          initialValue: selected,
+          decoration: const InputDecoration(labelText: 'PDF / DOCX 解析方式'),
+          items: [
+            const DropdownMenuItem<KnowledgeFileProcessor?>(
+              value: null,
+              child: Text('本地解析（默认，不上传）'),
             ),
-            if (selected != null) ...[
-              const SizedBox(height: 12),
-              TextField(
-                controller: _keyControllers[selected]!,
-                obscureText: true,
-                decoration: InputDecoration(
-                  labelText: '${selected.label} API Key',
+            for (final p in KnowledgeFileProcessor.values)
+              DropdownMenuItem<KnowledgeFileProcessor?>(
+                value: p,
+                child: Text(p.label),
+              ),
+          ],
+          onChanged: (value) => setState(() => _selected = value),
+        ),
+        if (selected != null) ...[
+          const SizedBox(height: 12),
+          TextField(
+            controller: _keyControllers[selected]!,
+            obscureText: true,
+            decoration: InputDecoration(labelText: '${selected.label} API Key'),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '启用后本库的 PDF / DOCX 会上传到 ${selected.label} '
+            '解析为 Markdown（注意隐私与费用）；解析结果作为权威快照'
+            '落库，重建索引不会重复调用云端。',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// [_BaseSettingsSheet] 的返回值：名称 + RAG 参数。
+class _BaseSettingsResult {
+  const _BaseSettingsResult({
+    required this.name,
+    required this.chunkSize,
+    required this.chunkOverlap,
+    required this.topK,
+    required this.threshold,
+  });
+
+  final String name;
+  final int chunkSize;
+  final int chunkOverlap;
+  final int topK;
+  final double? threshold;
+}
+
+/// 库设置面板：重命名 + RAG 参数（切块大小 / 重叠 / topK / 相似度阈值）。
+class _BaseSettingsSheet extends StatefulWidget {
+  const _BaseSettingsSheet({required this.base});
+
+  final KnowledgeBase base;
+
+  @override
+  State<_BaseSettingsSheet> createState() => _BaseSettingsSheetState();
+}
+
+class _BaseSettingsSheetState extends State<_BaseSettingsSheet> {
+  late final _nameController = TextEditingController(text: widget.base.name);
+  late final _chunkSizeController = TextEditingController(
+    text: '${widget.base.chunkSize}',
+  );
+  late final _chunkOverlapController = TextEditingController(
+    text: '${widget.base.chunkOverlap}',
+  );
+  late final _topKController = TextEditingController(
+    text: '${widget.base.topK}',
+  );
+  late final _thresholdController = TextEditingController(
+    text: widget.base.threshold?.toString() ?? '',
+  );
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _chunkSizeController.dispose();
+    _chunkOverlapController.dispose();
+    _topKController.dispose();
+    _thresholdController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      AppToast.error(context, '名称不能为空');
+      return;
+    }
+    final chunkSize = int.tryParse(_chunkSizeController.text.trim());
+    final chunkOverlap = int.tryParse(_chunkOverlapController.text.trim());
+    final topK = int.tryParse(_topKController.text.trim());
+    if (chunkSize == null || chunkOverlap == null || topK == null) {
+      AppToast.error(context, '切块大小 / 重叠 / topK 需为整数');
+      return;
+    }
+    final thresholdText = _thresholdController.text.trim();
+    double? threshold;
+    if (thresholdText.isNotEmpty) {
+      threshold = double.tryParse(thresholdText);
+      if (threshold == null || threshold < 0 || threshold > 1) {
+        AppToast.error(context, '相似度阈值需为 0–1 的小数');
+        return;
+      }
+    }
+    Navigator.of(context).pop(
+      _BaseSettingsResult(
+        name: name,
+        chunkSize: chunkSize,
+        chunkOverlap: chunkOverlap,
+        topK: topK,
+        threshold: threshold,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return _SheetScaffold(
+      title: '库设置',
+      confirmLabel: '保存',
+      onConfirm: _submit,
+      children: [
+        TextField(
+          controller: _nameController,
+          decoration: const InputDecoration(labelText: '名称'),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _chunkSizeController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: '切块大小',
+                  helperText: '100–10000',
                 ),
               ),
-              const SizedBox(height: 12),
-              Text(
-                '启用后本库的 PDF / DOCX 会上传到 ${selected.label} '
-                '解析为 Markdown（注意隐私与费用）；解析结果作为权威快照'
-                '落库，重建索引不会重复调用云端。',
-                style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextField(
+                controller: _chunkOverlapController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: '切块重叠',
+                  helperText: '需小于切块大小',
+                ),
               ),
-            ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _topKController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: '返回条数 topK',
+                  helperText: '1–50',
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextField(
+                controller: _thresholdController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: '相似度阈值',
+                  helperText: '0–1，留空不限',
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '修改切块大小 / 重叠后会自动重建整库索引（向量库会按需补嵌，'
+          '未变的内容不重复调用嵌入 API）。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 条目详情面板：元信息 + 切块列表 + 删除入口。删除前二次确认，确认后
+/// pop(true) 交由页面执行删除。
+class _ItemDetailSheet extends ConsumerWidget {
+  const _ItemDetailSheet({required this.item});
+
+  final KnowledgeItem item;
+
+  Future<void> _confirmDelete(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除条目'),
+        content: Text('将删除「${item.title ?? item.source}」及其全部切块与索引。此操作不可撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && context.mounted) Navigator.of(context).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final chunksAsync = ref.watch(knowledgeItemChunksProvider(item.id));
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+        ),
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4, left: 4),
+              child: Text(
+                item.title ?? item.source,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12, left: 4),
+              child: Text(
+                item.source,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            chunksAsync.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              error: (err, _) => Padding(
+                padding: const EdgeInsets.all(8),
+                child: Text('切块加载失败 · $err'),
+              ),
+              data: (chunks) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8, left: 4),
+                    child: Text(
+                      '切块 (${chunks.length})',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  for (final chunk in chunks)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: theme.dividerColor),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '#${chunk.unitIndex + 1}'
+                            '${chunk.embedded ? ' · 已嵌入' : ''}',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            chunk.content,
+                            maxLines: 6,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: theme.colorScheme.error,
+              ),
+              onPressed: () => _confirmDelete(context),
+              icon: const Icon(LucideIcons.trash2, size: 18),
+              label: const Text('删除条目'),
+            ),
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop((
-            processor: _selected,
-            key: _selected == null ? '' : _keyControllers[_selected]!.text,
-          )),
-          child: const Text('保存'),
-        ),
-      ],
     );
   }
 }

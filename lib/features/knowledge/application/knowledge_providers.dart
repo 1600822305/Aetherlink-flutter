@@ -5,6 +5,8 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
 import 'package:aetherlink_flutter/features/knowledge/data/datasources/local/knowledge_dao.dart'
     show KnowledgeStorageStats;
+import 'package:aetherlink_flutter/features/knowledge/data/knowledge_service.dart'
+    show KnowledgeChunkPreview;
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_item.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
@@ -26,7 +28,9 @@ class KnowledgeBasesController extends _$KnowledgeBasesController {
   }) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return;
-    await ref.read(knowledgeServiceProvider).createBase(
+    await ref
+        .read(knowledgeServiceProvider)
+        .createBase(
           name: trimmed,
           embeddingModelKey: embeddingModelKey,
           searchMode: searchMode,
@@ -68,7 +72,9 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
     String? sourcePath,
   }) async {
     if (text.trim().isEmpty) return;
-    await ref.read(knowledgeServiceProvider).addFile(
+    await ref
+        .read(knowledgeServiceProvider)
+        .addFile(
           baseId: baseId,
           fileName: fileName,
           text: text,
@@ -86,7 +92,9 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
     required Uint8List bytes,
     String? sourcePath,
   }) async {
-    await ref.read(knowledgeServiceProvider).addProcessedFile(
+    await ref
+        .read(knowledgeServiceProvider)
+        .addProcessedFile(
           baseId: baseId,
           fileName: fileName,
           bytes: bytes,
@@ -101,11 +109,9 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
   /// 抓取器完成；失败会抛异常交由 UI 提示。
   Future<void> addUrl({required String url, String? title}) async {
     if (url.trim().isEmpty) return;
-    await ref.read(knowledgeServiceProvider).addUrl(
-          baseId: baseId,
-          url: url,
-          title: title,
-        );
+    await ref
+        .read(knowledgeServiceProvider)
+        .addUrl(baseId: baseId, url: url, title: title);
     ref.invalidateSelf();
     await future;
     ref.invalidate(knowledgeBasesControllerProvider);
@@ -131,6 +137,14 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
     ref.invalidateSelf();
     await future;
     return count;
+  }
+
+  /// 删除单个条目及其派生数据（正文 + 切块 + 孤儿嵌入）。
+  Future<void> deleteItem(String itemId) async {
+    await ref.read(knowledgeServiceProvider).deleteItem(itemId);
+    ref.invalidateSelf();
+    await future;
+    ref.invalidate(knowledgeBasesControllerProvider);
   }
 
   /// 只补嵌本库里嵌入失败/中断留下的待补切块（失败恢复，§11），已嵌入的不重算。
@@ -159,7 +173,37 @@ class KnowledgeBaseController extends _$KnowledgeBaseController {
     ref.invalidateSelf();
     await future;
   }
+
+  /// 更新库的可编辑配置（名称 + RAG 参数）。名称同时显示在列表页，一并刷新。
+  Future<void> updateConfig({
+    required String name,
+    required int chunkSize,
+    required int chunkOverlap,
+    required int topK,
+    required double? threshold,
+  }) async {
+    await ref
+        .read(knowledgeServiceProvider)
+        .updateBaseConfig(
+          baseId,
+          name: name,
+          chunkSize: chunkSize,
+          chunkOverlap: chunkOverlap,
+          topK: topK,
+          threshold: threshold,
+        );
+    ref.invalidateSelf();
+    await future;
+    ref.invalidate(knowledgeBasesControllerProvider);
+  }
 }
+
+/// 某条目的全部切块（驱动条目切块详情面板）。
+@riverpod
+Future<List<KnowledgeChunkPreview>> knowledgeItemChunks(
+  Ref ref,
+  String itemId,
+) => ref.watch(knowledgeServiceProvider).itemChunks(itemId);
 
 /// 某库当前待补嵌入的切块数（驱动详情页的「重试嵌入」入口，关键词库恒为 0）。
 @riverpod
