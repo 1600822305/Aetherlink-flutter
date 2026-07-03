@@ -322,7 +322,7 @@ Java_com_aetherlink_dexeditor_CppDex_getClassSmali(JNIEnv* env, jclass, jbyteArr
             for (const auto& m : methods) {
                 if (m.class_name == class_name) {
                     dex::CodeItem code;
-                    if (parser.get_method_code(class_name, m.method_name, code)) {
+                    if (parser.get_method_code(class_name, m.method_name, code, m.prototype)) {
                         auto insns = disasm.disassemble_method(code.insns.data(), code.insns.size());
                         
                         smali << ".method public " << m.method_name << m.prototype << "\n";
@@ -423,7 +423,7 @@ Java_com_aetherlink_dexeditor_CppDex_smaliToJava(JNIEnv* env, jclass, jbyteArray
             for (const auto& m : methods) {
                 if (m.class_name == class_name) {
                     dex::CodeItem code;
-                    if (parser.get_method_code(class_name, m.method_name, code)) {
+                    if (parser.get_method_code(class_name, m.method_name, code, m.prototype)) {
                         auto insns = disasm.disassemble_method(code.insns.data(), code.insns.size());
                         smali << ".method public " << m.method_name << m.prototype << "\n";
                         smali << "    .registers " << code.registers_size << "\n";

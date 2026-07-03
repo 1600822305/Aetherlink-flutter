@@ -90,7 +90,8 @@ public:
     std::vector<std::string> get_class_methods(const std::string& class_name) const;
     
     // Get method code for disassembly
-    bool get_method_code(const std::string& class_name, const std::string& method_name, CodeItem& code) const;
+    // prototype 非空时需 name + proto 同时匹配（用于区分重载）；为空则仅按名字匹配（向后兼容）
+    bool get_method_code(const std::string& class_name, const std::string& method_name, CodeItem& code, const std::string& prototype = "") const;
     
     // Get all method codes at once (optimized batch operation)
     std::unordered_map<std::string, CodeItem> get_all_method_codes() const;

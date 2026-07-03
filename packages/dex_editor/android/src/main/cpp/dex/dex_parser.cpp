@@ -225,7 +225,7 @@ std::string DexParser::get_info() const {
     return ss.str();
 }
 
-bool DexParser::get_method_code(const std::string& class_name, const std::string& method_name, CodeItem& code) const {
+bool DexParser::get_method_code(const std::string& class_name, const std::string& method_name, CodeItem& code, const std::string& prototype) const {
     // Find the class
     for (const auto& cls : classes_) {
         std::string cls_name = get_class_name(cls.class_idx);
@@ -260,8 +260,11 @@ bool DexParser::get_method_code(const std::string& class_name, const std::string
             if (method_idx < header_.method_ids_size) {
                 size_t mid_off = header_.method_ids_off + method_idx * 8;
                 if (mid_off + 8 <= data_.size()) {
+                    uint16_t proto_idx = read_le<uint16_t>(&data_[mid_off + 2]);
                     uint32_t name_idx = read_le<uint32_t>(&data_[mid_off + 4]);
-                    if (name_idx < strings_.size() && strings_[name_idx] == method_name) {
+                    bool name_match = name_idx < strings_.size() && strings_[name_idx] == method_name;
+                    bool proto_match = prototype.empty() || get_proto_string(proto_idx) == prototype;
+                    if (name_match && proto_match) {
                         // Found the method
                         if (code_off == 0) return false; // No code (abstract/native)
                         
