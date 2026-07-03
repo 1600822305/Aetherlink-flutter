@@ -101,6 +101,12 @@ public class DexManager {
 
     // 搜索服务（单 DEX 会话内的字符串/代码/方法/字段搜索）
     private final DexSearchService searchService = new DexSearchService(this);
+
+    // 类/方法/字段 CRUD（单 DEX 会话）
+    private final DexEditOps editOps = new DexEditOps(this);
+
+    // APK 内 DEX 只读操作（无需会话）
+    private final ApkDexReader apkDexReader = new ApkDexReader(this);
     
     // APK DEX 缓存 - 用于加速编译（key: apkPath + ":" + dexPath）
     private final Map<String, ApkDexCache> apkDexCaches = new HashMap<>();
@@ -336,531 +342,71 @@ public class DexManager {
         return info;
     }
 
-    // ==================== 类操作 ====================
+    // ==================== 类/方法/字段 CRUD（委派到 DexEditOps）====================
 
-    /**
-     * 获取所有类列表（优先使用 C++ 实现）
-     */
     public JSArray getClasses(String sessionId) throws Exception {
-        DexSession session = getSession(sessionId);
-        
-        // 优先使用 C++ 实现
-        if (CppDex.isAvailable() && session.dexBytes != null) {
-            try {
-                String jsonResult = CppDex.listClasses(session.dexBytes, "", 0, 100000);
-                if (jsonResult != null && !jsonResult.contains("\"error\"")) {
-                    org.json.JSONObject cppResult = new org.json.JSONObject(jsonResult);
-                    org.json.JSONArray cppClasses = cppResult.optJSONArray("classes");
-                    if (cppClasses != null) {
-                        JSArray classes = new JSArray();
-                        for (int i = 0; i < cppClasses.length(); i++) {
-                            String className = cppClasses.getString(i);
-                            if (!session.removedClasses.contains(className)) {
-                                JSObject classInfo = new JSObject();
-                                classInfo.put("type", className);
-                                classes.put(classInfo);
-                            }
-                        }
-                        return classes;
-                    }
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "C++ getClasses failed, fallback to Java", e);
-            }
-        }
-        
-        // Java 回退实现
-        JSArray classes = new JSArray();
-        for (ClassDef classDef : session.originalDexFile.getClasses()) {
-            if (!session.removedClasses.contains(classDef.getType())) {
-                JSObject classInfo = new JSObject();
-                classInfo.put("type", classDef.getType());
-                classInfo.put("accessFlags", classDef.getAccessFlags());
-                classInfo.put("superclass", classDef.getSuperclass());
-                classes.put(classInfo);
-            }
-        }
-        return classes;
+        return editOps.getClasses(sessionId);
     }
 
-    /**
-     * 获取类详细信息
-     */
     public JSObject getClassInfo(String sessionId, String className) throws Exception {
-        DexSession session = getSession(sessionId);
-        ClassDef classDef = findClass(session, className);
-
-        if (classDef == null) {
-            throw new IllegalArgumentException("Class not found: " + className);
-        }
-
-        JSObject info = new JSObject();
-        info.put("type", classDef.getType());
-        info.put("accessFlags", classDef.getAccessFlags());
-        info.put("superclass", classDef.getSuperclass());
-
-        // 接口
-        JSArray interfaces = new JSArray();
-        for (String iface : classDef.getInterfaces()) {
-            interfaces.put(iface);
-        }
-        info.put("interfaces", interfaces);
-
-        // 方法数量
-        int methodCount = 0;
-        for (Method ignored : classDef.getMethods()) {
-            methodCount++;
-        }
-        info.put("methodCount", methodCount);
-
-        // 字段数量
-        int fieldCount = 0;
-        for (Field ignored : classDef.getFields()) {
-            fieldCount++;
-        }
-        info.put("fieldCount", fieldCount);
-
-        return info;
+        return editOps.getClassInfo(sessionId, className);
     }
 
-    /**
-     * 添加类（优先使用 C++ 实现）
-     */
     public void addClass(String sessionId, String smaliCode) throws Exception {
-        DexSession session = getSession(sessionId);
-        
-        // 优先使用 C++ 实现
-        if (CppDex.isAvailable() && session.dexBytes != null) {
-            try {
-                byte[] newDexBytes = CppDex.addClass(session.dexBytes, smaliCode);
-                if (newDexBytes != null) {
-                    session.dexBytes = newDexBytes;
-                    session.modified = true;
-                    Log.d(TAG, "Added class via C++");
-                    return;
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "C++ addClass failed, fallback to Java", e);
-            }
-        }
-        
-        // Java 回退实现
-        ClassDef newClass = compileSmaliToClass(smaliCode, session.originalDexFile.getOpcodes());
-        session.modifiedClasses.add(newClass);
-        session.modified = true;
-        
-        Log.d(TAG, "Added class: " + newClass.getType());
+        editOps.addClass(sessionId, smaliCode);
     }
 
-    /**
-     * 删除类（优先使用 C++ 实现）
-     */
     public void removeClass(String sessionId, String className) throws Exception {
-        DexSession session = getSession(sessionId);
-        
-        // 优先使用 C++ 实现
-        if (CppDex.isAvailable() && session.dexBytes != null) {
-            try {
-                byte[] newDexBytes = CppDex.deleteClass(session.dexBytes, className);
-                if (newDexBytes != null) {
-                    session.dexBytes = newDexBytes;
-                    session.modified = true;
-                    Log.d(TAG, "Removed class via C++: " + className);
-                    return;
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "C++ removeClass failed, fallback to Java", e);
-            }
-        }
-        
-        // Java 回退实现
-        session.removedClasses.add(className);
-        session.modified = true;
-        
-        Log.d(TAG, "Removed class: " + className);
+        editOps.removeClass(sessionId, className);
     }
 
-    /**
-     * 重命名类
-     */
     public void renameClass(String sessionId, String oldName, String newName) throws Exception {
-        DexSession session = getSession(sessionId);
-        ClassDef originalClass = findClass(session, oldName);
-
-        if (originalClass == null) {
-            throw new IllegalArgumentException("Class not found: " + oldName);
-        }
-
-        // 创建重命名后的类
-        ImmutableClassDef renamedClass = new ImmutableClassDef(
-            newName,
-            originalClass.getAccessFlags(),
-            originalClass.getSuperclass(),
-            originalClass.getInterfaces(),
-            originalClass.getSourceFile(),
-            originalClass.getAnnotations(),
-            originalClass.getFields(),
-            originalClass.getMethods()
-        );
-
-        session.removedClasses.add(oldName);
-        session.modifiedClasses.add(renamedClass);
-        session.modified = true;
-        
-        Log.d(TAG, "Renamed class: " + oldName + " -> " + newName);
+        editOps.renameClass(sessionId, oldName, newName);
     }
 
-    // ==================== 方法操作 ====================
-
-    /**
-     * 获取类的所有方法（优先使用 C++ 实现）
-     */
     public JSArray getMethods(String sessionId, String className) throws Exception {
-        DexSession session = getSession(sessionId);
-        
-        // 优先使用 C++ 实现
-        if (CppDex.isAvailable() && session.dexBytes != null) {
-            try {
-                String jsonResult = CppDex.listMethods(session.dexBytes, className);
-                if (jsonResult != null && !jsonResult.contains("\"error\"")) {
-                    org.json.JSONObject cppResult = new org.json.JSONObject(jsonResult);
-                    org.json.JSONArray cppMethods = cppResult.optJSONArray("methods");
-                    if (cppMethods != null) {
-                        JSArray methods = new JSArray();
-                        for (int i = 0; i < cppMethods.length(); i++) {
-                            org.json.JSONObject m = cppMethods.getJSONObject(i);
-                            JSObject methodInfo = new JSObject();
-                            methodInfo.put("name", m.optString("name"));
-                            methodInfo.put("signature", m.optString("prototype"));
-                            methodInfo.put("accessFlags", m.optInt("accessFlags"));
-                            methods.put(methodInfo);
-                        }
-                        return methods;
-                    }
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "C++ getMethods failed, fallback to Java", e);
-            }
-        }
-        
-        // Java 回退实现
-        ClassDef classDef = findClass(session, className);
-        if (classDef == null) {
-            throw new IllegalArgumentException("Class not found: " + className);
-        }
-
-        JSArray methods = new JSArray();
-        for (Method method : classDef.getMethods()) {
-            JSObject methodInfo = new JSObject();
-            methodInfo.put("name", method.getName());
-            methodInfo.put("returnType", method.getReturnType());
-            methodInfo.put("accessFlags", method.getAccessFlags());
-            
-            JSArray params = new JSArray();
-            for (CharSequence param : method.getParameterTypes()) {
-                params.put(param.toString());
-            }
-            methodInfo.put("parameters", params);
-            
-            StringBuilder sig = new StringBuilder("(");
-            for (CharSequence param : method.getParameterTypes()) {
-                sig.append(param);
-            }
-            sig.append(")").append(method.getReturnType());
-            methodInfo.put("signature", sig.toString());
-            
-            methods.put(methodInfo);
-        }
-        return methods;
+        return editOps.getMethods(sessionId, className);
     }
 
-    /**
-     * 获取方法详细信息
-     */
-    public JSObject getMethodInfo(String sessionId, String className, 
-                                   String methodName, String methodSignature) throws Exception {
-        DexSession session = getSession(sessionId);
-        Method method = findMethod(session, className, methodName, methodSignature);
-
-        if (method == null) {
-            throw new IllegalArgumentException("Method not found: " + methodName);
-        }
-
-        JSObject info = new JSObject();
-        info.put("name", method.getName());
-        info.put("returnType", method.getReturnType());
-        info.put("accessFlags", method.getAccessFlags());
-        info.put("definingClass", method.getDefiningClass());
-
-        // 参数
-        JSArray params = new JSArray();
-        for (CharSequence param : method.getParameterTypes()) {
-            params.put(param.toString());
-        }
-        info.put("parameters", params);
-
-        // 实现信息
-        MethodImplementation impl = method.getImplementation();
-        if (impl != null) {
-            info.put("registerCount", impl.getRegisterCount());
-            int instructionCount = 0;
-            for (Instruction ignored : impl.getInstructions()) {
-                instructionCount++;
-            }
-            info.put("instructionCount", instructionCount);
-        }
-
-        return info;
+    public JSObject getMethodInfo(String sessionId, String className,
+                                  String methodName, String methodSignature) throws Exception {
+        return editOps.getMethodInfo(sessionId, className, methodName, methodSignature);
     }
 
-    /**
-     * 获取方法的 Smali 代码（优先使用 C++ 实现）
-     */
     public JSObject getMethodSmali(String sessionId, String className,
-                                    String methodName, String methodSignature) throws Exception {
-        DexSession session = getSession(sessionId);
-        
-        // 优先使用 C++ 实现
-        if (CppDex.isAvailable() && session.dexBytes != null) {
-            try {
-                String jsonResult = CppDex.getMethodSmali(session.dexBytes, className, methodName, methodSignature);
-                if (jsonResult != null && !jsonResult.contains("\"error\"")) {
-                    org.json.JSONObject cppResult = new org.json.JSONObject(jsonResult);
-                    String smali = cppResult.optString("smali", "");
-                    if (!smali.isEmpty()) {
-                        JSObject result = new JSObject();
-                        result.put("className", className);
-                        result.put("methodName", methodName);
-                        result.put("methodSignature", methodSignature);
-                        result.put("smali", smali);
-                        result.put("engine", "cpp");
-                        return result;
-                    }
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "C++ getMethodSmali failed, fallback to Java", e);
-            }
-        }
-        
-        // Java 回退实现
-        String classSmali = classToSmali(sessionId, className).getString("smali");
-        JSObject result = new JSObject();
-        result.put("className", className);
-        result.put("methodName", methodName);
-        result.put("methodSignature", methodSignature);
-        result.put("smali", extractMethodSmali(classSmali, methodName, methodSignature));
-        result.put("engine", "java");
-        return result;
+                                   String methodName, String methodSignature) throws Exception {
+        return editOps.getMethodSmali(sessionId, className, methodName, methodSignature);
     }
 
-    /**
-     * 设置方法的 Smali 代码（优先使用 C++ 实现）
-     */
     public void setMethodSmali(String sessionId, String className,
                                String methodName, String methodSignature,
                                String smaliCode) throws Exception {
-        DexSession session = getSession(sessionId);
-        
-        // 获取原类的 Smali 并替换方法
-        String classSmali = classToSmali(sessionId, className).getString("smali");
-        String modifiedSmali = replaceMethodInSmali(classSmali, methodName, methodSignature, smaliCode);
-        
-        // 优先使用 C++ 实现
-        if (CppDex.isAvailable() && session.dexBytes != null) {
-            try {
-                byte[] newDexBytes = CppDex.modifyClass(session.dexBytes, className, modifiedSmali);
-                if (newDexBytes != null) {
-                    session.dexBytes = newDexBytes;
-                    session.modified = true;
-                    Log.d(TAG, "Modified method via C++: " + className + "->" + methodName);
-                    return;
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "C++ modifyClass failed, fallback to Java", e);
-            }
-        }
-        
-        // Java 回退实现
-        ClassDef classDef = findClass(session, className);
-        if (classDef == null) {
-            throw new IllegalArgumentException("Class not found: " + className);
-        }
-        
-        ClassDef modifiedClass = compileSmaliToClass(modifiedSmali, session.originalDexFile.getOpcodes());
-        session.removedClasses.add(className);
-        session.modifiedClasses.add(modifiedClass);
-        session.modified = true;
-        
-        Log.d(TAG, "Modified method: " + className + "->" + methodName);
+        editOps.setMethodSmali(sessionId, className, methodName, methodSignature, smaliCode);
     }
 
-    /**
-     * 添加方法
-     */
     public void addMethod(String sessionId, String className, String smaliCode) throws Exception {
-        DexSession session = getSession(sessionId);
-        ClassDef classDef = findClass(session, className);
-
-        if (classDef == null) {
-            throw new IllegalArgumentException("Class not found: " + className);
-        }
-
-        // 获取原类 Smali 并添加新方法
-        String classSmali = classToSmali(sessionId, className).getString("smali");
-        String modifiedSmali = insertMethodToSmali(classSmali, smaliCode);
-        
-        // 重新编译
-        ClassDef modifiedClass = compileSmaliToClass(modifiedSmali, session.originalDexFile.getOpcodes());
-        
-        session.removedClasses.add(className);
-        session.modifiedClasses.add(modifiedClass);
-        session.modified = true;
+        editOps.addMethod(sessionId, className, smaliCode);
     }
 
-    /**
-     * 删除方法
-     */
     public void removeMethod(String sessionId, String className,
                              String methodName, String methodSignature) throws Exception {
-        DexSession session = getSession(sessionId);
-        ClassDef classDef = findClass(session, className);
-
-        if (classDef == null) {
-            throw new IllegalArgumentException("Class not found: " + className);
-        }
-
-        // 获取原类 Smali 并删除方法
-        String classSmali = classToSmali(sessionId, className).getString("smali");
-        String modifiedSmali = removeMethodFromSmali(classSmali, methodName, methodSignature);
-        
-        // 重新编译
-        ClassDef modifiedClass = compileSmaliToClass(modifiedSmali, session.originalDexFile.getOpcodes());
-        
-        session.removedClasses.add(className);
-        session.modifiedClasses.add(modifiedClass);
-        session.modified = true;
+        editOps.removeMethod(sessionId, className, methodName, methodSignature);
     }
 
-    // ==================== 字段操作 ====================
-
-    /**
-     * 获取类的所有字段（优先使用 C++ 实现）
-     */
     public JSArray getFields(String sessionId, String className) throws Exception {
-        DexSession session = getSession(sessionId);
-        
-        // 优先使用 C++ 实现
-        if (CppDex.isAvailable() && session.dexBytes != null) {
-            try {
-                String jsonResult = CppDex.listFields(session.dexBytes, className);
-                if (jsonResult != null && !jsonResult.contains("\"error\"")) {
-                    org.json.JSONObject cppResult = new org.json.JSONObject(jsonResult);
-                    org.json.JSONArray cppFields = cppResult.optJSONArray("fields");
-                    if (cppFields != null) {
-                        JSArray fields = new JSArray();
-                        for (int i = 0; i < cppFields.length(); i++) {
-                            org.json.JSONObject f = cppFields.getJSONObject(i);
-                            JSObject fieldInfo = new JSObject();
-                            fieldInfo.put("name", f.optString("name"));
-                            fieldInfo.put("type", f.optString("type"));
-                            fieldInfo.put("accessFlags", f.optInt("accessFlags"));
-                            fields.put(fieldInfo);
-                        }
-                        return fields;
-                    }
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "C++ getFields failed, fallback to Java", e);
-            }
-        }
-        
-        // Java 回退实现
-        ClassDef classDef = findClass(session, className);
-        if (classDef == null) {
-            throw new IllegalArgumentException("Class not found: " + className);
-        }
-
-        JSArray fields = new JSArray();
-        for (Field field : classDef.getFields()) {
-            JSObject fieldInfo = new JSObject();
-            fieldInfo.put("name", field.getName());
-            fieldInfo.put("type", field.getType());
-            fieldInfo.put("accessFlags", field.getAccessFlags());
-            fields.put(fieldInfo);
-        }
-
-        return fields;
+        return editOps.getFields(sessionId, className);
     }
 
-    /**
-     * 获取字段详细信息
-     */
     public JSObject getFieldInfo(String sessionId, String className, String fieldName) throws Exception {
-        DexSession session = getSession(sessionId);
-        ClassDef classDef = findClass(session, className);
-
-        if (classDef == null) {
-            throw new IllegalArgumentException("Class not found: " + className);
-        }
-
-        for (Field field : classDef.getFields()) {
-            if (field.getName().equals(fieldName)) {
-                JSObject info = new JSObject();
-                info.put("name", field.getName());
-                info.put("type", field.getType());
-                info.put("accessFlags", field.getAccessFlags());
-                info.put("definingClass", field.getDefiningClass());
-                return info;
-            }
-        }
-
-        throw new IllegalArgumentException("Field not found: " + fieldName);
+        return editOps.getFieldInfo(sessionId, className, fieldName);
     }
 
-    /**
-     * 添加字段
-     */
     public void addField(String sessionId, String className, String fieldDef) throws Exception {
-        DexSession session = getSession(sessionId);
-        ClassDef classDef = findClass(session, className);
-
-        if (classDef == null) {
-            throw new IllegalArgumentException("Class not found: " + className);
-        }
-
-        // 获取原类 Smali 并添加字段定义
-        String classSmali = classToSmali(sessionId, className).getString("smali");
-        String modifiedSmali = insertFieldToSmali(classSmali, fieldDef);
-        
-        // 重新编译
-        ClassDef modifiedClass = compileSmaliToClass(modifiedSmali, session.originalDexFile.getOpcodes());
-        
-        session.removedClasses.add(className);
-        session.modifiedClasses.add(modifiedClass);
-        session.modified = true;
+        editOps.addField(sessionId, className, fieldDef);
     }
 
-    /**
-     * 删除字段
-     */
     public void removeField(String sessionId, String className, String fieldName) throws Exception {
-        DexSession session = getSession(sessionId);
-        ClassDef classDef = findClass(session, className);
-
-        if (classDef == null) {
-            throw new IllegalArgumentException("Class not found: " + className);
-        }
-
-        // 获取原类 Smali 并删除字段
-        String classSmali = classToSmali(sessionId, className).getString("smali");
-        String modifiedSmali = removeFieldFromSmali(classSmali, fieldName);
-        
-        // 重新编译
-        ClassDef modifiedClass = compileSmaliToClass(modifiedSmali, session.originalDexFile.getOpcodes());
-        
-        session.removedClasses.add(className);
-        session.modifiedClasses.add(modifiedClass);
-        session.modified = true;
+        editOps.removeField(sessionId, className, fieldName);
     }
 
     // ==================== Smali 操作 ====================
@@ -1229,7 +775,7 @@ public class DexManager {
         return sessionManager.getSession(sessionId);
     }
 
-    private ClassDef findClass(DexSession session, String className) {
+    ClassDef findClass(DexSession session, String className) {
         // 先检查修改后的类
         for (ClassDef classDef : session.modifiedClasses) {
             if (classDef.getType().equals(className)) {
@@ -1249,7 +795,7 @@ public class DexManager {
         return null;
     }
 
-    private Method findMethod(DexSession session, String className, 
+    Method findMethod(DexSession session, String className, 
                               String methodName, String methodSignature) {
         ClassDef classDef = findClass(session, className);
         if (classDef == null) return null;
@@ -1271,7 +817,7 @@ public class DexManager {
         return null;
     }
 
-    private ClassDef compileSmaliToClass(String smaliCode, Opcodes opcodes) throws Exception {
+    ClassDef compileSmaliToClass(String smaliCode, Opcodes opcodes) throws Exception {
         // 使用 C++ 实现编译 smali
         if (CppDex.isAvailable()) {
             byte[] dexBytes = CppDex.smaliToDex(smaliCode);
@@ -1287,26 +833,6 @@ public class DexManager {
     }
 
     // ==================== 工具方法委托到 SmaliUtils 和 FileUtils ====================
-
-    private String extractMethodSmali(String classSmali, String methodName, String signature) {
-        return SmaliUtils.extractMethodSmali(classSmali, methodName, signature);
-    }
-
-    private String insertMethodToSmali(String classSmali, String methodCode) {
-        return SmaliUtils.insertMethodToSmali(classSmali, methodCode);
-    }
-
-    private String removeMethodFromSmali(String classSmali, String methodName, String signature) {
-        return SmaliUtils.removeMethodFromSmali(classSmali, methodName, signature);
-    }
-
-    private String insertFieldToSmali(String classSmali, String fieldDef) {
-        return SmaliUtils.insertFieldToSmali(classSmali, fieldDef);
-    }
-
-    private String removeFieldFromSmali(String classSmali, String fieldName) {
-        return SmaliUtils.removeFieldFromSmali(classSmali, fieldName);
-    }
 
     private List<File> collectSmaliFiles(File dir) {
         return FileUtils.collectSmaliFiles(dir);
@@ -1328,287 +854,18 @@ public class DexManager {
         FileUtils.deleteRecursive(file);
     }
 
-    // ==================== APK 内 DEX 操作（无需会话） ====================
+    // ==================== APK 内 DEX 操作（无需会话，委派到 ApkDexReader）====================
 
-    /**
-     * 从 APK 中的 DEX 文件列出所有类
-     * @param apkPath APK 文件路径
-     * @param dexPath DEX 文件在 APK 中的路径（如 "classes.dex"）
-     */
     public JSObject listDexClassesFromApk(String apkPath, String dexPath) throws Exception {
-        JSObject result = new JSObject();
-        JSArray classes = new JSArray();
-        
-        java.util.zip.ZipFile zipFile = null;
-        java.io.InputStream dexInputStream = null;
-        
-        try {
-            zipFile = new java.util.zip.ZipFile(apkPath);
-            java.util.zip.ZipEntry dexEntry = zipFile.getEntry(dexPath);
-            
-            if (dexEntry == null) {
-                throw new IOException("DEX file not found in APK: " + dexPath);
-            }
-            
-            dexInputStream = zipFile.getInputStream(dexEntry);
-            
-            // 读取 DEX 文件到内存
-            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int len;
-            while ((len = dexInputStream.read(buffer)) != -1) {
-                baos.write(buffer, 0, len);
-            }
-            byte[] dexBytes = baos.toByteArray();
-            
-            // 解析 DEX 文件
-            DexBackedDexFile dexFile = new DexBackedDexFile(Opcodes.getDefault(), dexBytes);
-            
-            // 收集所有类名
-            for (ClassDef classDef : dexFile.getClasses()) {
-                String type = classDef.getType();
-                // 转换 Lcom/example/Class; 格式为 com.example.Class
-                String className = convertTypeToClassName(type);
-                classes.put(className);
-            }
-            
-            result.put("classes", classes);
-            result.put("count", classes.length());
-            
-        } finally {
-            if (dexInputStream != null) {
-                try { dexInputStream.close(); } catch (Exception ignored) {}
-            }
-            if (zipFile != null) {
-                try { zipFile.close(); } catch (Exception ignored) {}
-            }
-        }
-        
-        return result;
+        return apkDexReader.listDexClassesFromApk(apkPath, dexPath);
     }
 
-    /**
-     * 从 APK 中的 DEX 文件获取字符串常量池
-     */
     public JSObject getDexStringsFromApk(String apkPath, String dexPath) throws Exception {
-        JSObject result = new JSObject();
-        JSArray strings = new JSArray();
-        
-        java.util.zip.ZipFile zipFile = null;
-        java.io.InputStream dexInputStream = null;
-        
-        try {
-            zipFile = new java.util.zip.ZipFile(apkPath);
-            java.util.zip.ZipEntry dexEntry = zipFile.getEntry(dexPath);
-            
-            if (dexEntry == null) {
-                throw new IOException("DEX file not found in APK: " + dexPath);
-            }
-            
-            dexInputStream = zipFile.getInputStream(dexEntry);
-            
-            // 读取 DEX 文件到内存
-            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int len;
-            while ((len = dexInputStream.read(buffer)) != -1) {
-                baos.write(buffer, 0, len);
-            }
-            byte[] dexBytes = baos.toByteArray();
-            
-            // 解析 DEX 文件
-            DexBackedDexFile dexFile = new DexBackedDexFile(Opcodes.getDefault(), dexBytes);
-            
-            // 从类和方法中提取所有字符串引用
-            Set<String> uniqueStrings = new HashSet<>();
-            int index = 0;
-            
-            for (ClassDef classDef : dexFile.getClasses()) {
-                // 添加类名
-                String className = classDef.getType();
-                if (className != null && !uniqueStrings.contains(className)) {
-                    uniqueStrings.add(className);
-                }
-                
-                // 从字段中提取
-                for (Field field : classDef.getFields()) {
-                    String fieldName = field.getName();
-                    String fieldType = field.getType();
-                    if (fieldName != null && !uniqueStrings.contains(fieldName)) {
-                        uniqueStrings.add(fieldName);
-                    }
-                    if (fieldType != null && !uniqueStrings.contains(fieldType)) {
-                        uniqueStrings.add(fieldType);
-                    }
-                }
-                
-                // 从方法中提取
-                for (Method method : classDef.getMethods()) {
-                    String methodName = method.getName();
-                    if (methodName != null && !uniqueStrings.contains(methodName)) {
-                        uniqueStrings.add(methodName);
-                    }
-                    
-                    // 从方法实现中提取字符串常量
-                    MethodImplementation impl = method.getImplementation();
-                    if (impl != null) {
-                        for (Instruction instruction : impl.getInstructions()) {
-                            // 检查是否是字符串引用指令
-                            if (instruction instanceof com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction) {
-                                com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction refInstr = 
-                                    (com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction) instruction;
-                                com.android.tools.smali.dexlib2.iface.reference.Reference ref = refInstr.getReference();
-                                if (ref instanceof com.android.tools.smali.dexlib2.iface.reference.StringReference) {
-                                    String str = ((com.android.tools.smali.dexlib2.iface.reference.StringReference) ref).getString();
-                                    if (str != null && !uniqueStrings.contains(str)) {
-                                        uniqueStrings.add(str);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // 转换为数组
-            for (String str : uniqueStrings) {
-                JSObject item = new JSObject();
-                item.put("index", index++);
-                item.put("value", str);
-                strings.put(item);
-            }
-            
-            result.put("strings", strings);
-            result.put("count", strings.length());
-            
-        } finally {
-            if (dexInputStream != null) {
-                try { dexInputStream.close(); } catch (Exception ignored) {}
-            }
-            if (zipFile != null) {
-                try { zipFile.close(); } catch (Exception ignored) {}
-            }
-        }
-        
-        return result;
+        return apkDexReader.getDexStringsFromApk(apkPath, dexPath);
     }
 
-    /**
-     * 在 APK 中的 DEX 文件中搜索
-     */
     public JSObject searchInDexFromApk(String apkPath, String dexPath, String query) throws Exception {
-        JSObject result = new JSObject();
-        JSArray results = new JSArray();
-        
-        Log.d(TAG, "searchInDexFromApk: apkPath=" + apkPath + ", dexPath=" + dexPath + ", query=" + query);
-        
-        if (query == null || query.isEmpty()) {
-            result.put("results", results);
-            result.put("count", 0);
-            return result;
-        }
-        
-        String queryLower = query.toLowerCase();
-        
-        java.util.zip.ZipFile zipFile = null;
-        java.io.InputStream dexInputStream = null;
-        
-        try {
-            zipFile = new java.util.zip.ZipFile(apkPath);
-            
-            // 尝试多种可能的 dexPath 格式
-            java.util.zip.ZipEntry dexEntry = zipFile.getEntry(dexPath);
-            if (dexEntry == null && !dexPath.startsWith("/")) {
-                // 如果没有找到，尝试去掉开头的斜杠
-                dexEntry = zipFile.getEntry(dexPath.replaceFirst("^/+", ""));
-            }
-            if (dexEntry == null) {
-                // 如果还是没找到，尝试只用文件名
-                String fileName = dexPath;
-                if (dexPath.contains("/")) {
-                    fileName = dexPath.substring(dexPath.lastIndexOf("/") + 1);
-                }
-                dexEntry = zipFile.getEntry(fileName);
-            }
-            
-            if (dexEntry == null) {
-                Log.e(TAG, "DEX file not found in APK: " + dexPath);
-                throw new IOException("DEX file not found in APK: " + dexPath);
-            }
-            
-            Log.d(TAG, "Found DEX entry: " + dexEntry.getName());
-            
-            dexInputStream = zipFile.getInputStream(dexEntry);
-            
-            // 读取 DEX 文件到内存
-            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int len;
-            while ((len = dexInputStream.read(buffer)) != -1) {
-                baos.write(buffer, 0, len);
-            }
-            byte[] dexBytes = baos.toByteArray();
-            
-            // 解析 DEX 文件
-            DexBackedDexFile dexFile = new DexBackedDexFile(Opcodes.getDefault(), dexBytes);
-            
-            // 搜索类名和方法名
-            for (ClassDef classDef : dexFile.getClasses()) {
-                String className = convertTypeToClassName(classDef.getType());
-                
-                // 搜索类名
-                if (className.toLowerCase().contains(queryLower)) {
-                    JSObject item = new JSObject();
-                    item.put("className", className);
-                    item.put("type", "class");
-                    item.put("content", className);
-                    results.put(item);
-                }
-                
-                // 搜索方法名
-                for (Method method : classDef.getMethods()) {
-                    String methodName = method.getName();
-                    if (methodName.toLowerCase().contains(queryLower)) {
-                        JSObject item = new JSObject();
-                        item.put("className", className);
-                        item.put("methodName", methodName);
-                        item.put("type", "method");
-                        item.put("content", methodName + " in " + className);
-                        results.put(item);
-                    }
-                    
-                    // 搜索方法内的字符串
-                    MethodImplementation impl = method.getImplementation();
-                    if (impl != null) {
-                        for (Instruction instruction : impl.getInstructions()) {
-                            String instrStr = instruction.toString();
-                            if (instrStr.toLowerCase().contains(queryLower)) {
-                                JSObject item = new JSObject();
-                                item.put("className", className);
-                                item.put("methodName", methodName);
-                                item.put("type", "instruction");
-                                item.put("content", instrStr);
-                                results.put(item);
-                                break; // 每个方法只记录一次
-                            }
-                        }
-                    }
-                }
-            }
-            
-            result.put("results", results);
-            result.put("count", results.length());
-            
-        } finally {
-            if (dexInputStream != null) {
-                try { dexInputStream.close(); } catch (Exception ignored) {}
-            }
-            if (zipFile != null) {
-                try { zipFile.close(); } catch (Exception ignored) {}
-            }
-        }
-        
-        return result;
+        return apkDexReader.searchInDexFromApk(apkPath, dexPath, query);
     }
 
     // ==================== MCP 工作流支持方法 ====================
@@ -2804,7 +2061,7 @@ public class DexManager {
      * 将 DEX 类型格式转换为 Java 类名格式
      * 例如: Lcom/example/Class; -> com.example.Class
      */
-    private String convertTypeToClassName(String type) {
+    String convertTypeToClassName(String type) {
         if (type == null) return "";
         String className = type;
         if (className.startsWith("L") && className.endsWith(";")) {
