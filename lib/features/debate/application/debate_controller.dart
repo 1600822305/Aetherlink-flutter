@@ -44,12 +44,15 @@ class DebateController extends _$DebateController {
     );
     _engine = engine;
     state = const DebateRunState(isDebating: true);
+    // 辩论期间接管输入框发送：用户消息作为「场外插话」注入引擎上下文。
+    port.setInterjectionListener(engine.injectUserMessage);
     try {
       final outcome = await engine.run(config);
       if (outcome == DebateOutcome.stopped) {
         await port.announce('🛑 **AI辩论已停止**\n\n辩论被用户手动终止。');
       }
     } finally {
+      port.setInterjectionListener(null);
       _engine = null;
       state = const DebateRunState();
     }

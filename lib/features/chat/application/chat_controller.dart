@@ -20,6 +20,7 @@ import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/parameter_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/chat_send_hooks.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/mounted_knowledge_bases_controller.dart';
@@ -243,6 +244,13 @@ class ChatController extends _$ChatController {
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty && attachments.isEmpty) return;
+
+    // 发送拦截缝（AI 辩论插话等）：拦截器消费后不再触发常规回复，
+    // 且不受 isStreaming 限制（辩论进行中大部分时间在流式）。
+    final interceptor = ref.read(chatSendInterceptorHolderProvider);
+    if (interceptor != null && trimmed.isNotEmpty && attachments.isEmpty) {
+      if (await interceptor(trimmed)) return;
+    }
 
     _truncatedMessageId = null;
     final snapshot = state.value ?? ChatState.initial();
@@ -885,6 +893,80 @@ class ChatController extends _$ChatController {
     );
     ref.read(chatRefreshProvider.notifier).bump();
     unawaited(_refreshTopicPreview(topicId));
+  }
+
+  /// AI 辩论的用户插话：只落一条普通用户消息（带 debate 标记），
+  /// 不触发任何模型回复——发言内容由辩论引擎注入后续上下文。
+  Future<void> sendDebateInterjection(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
+    final topicId = await _ensureTopic();
+    final now = DateTime.now();
+    final messageId = generateId('msg');
+    final blockId = generateId('block');
+    await _repo.saveMessage(
+      Message(
+        id: messageId,
+        role: MessageRole.user,
+        assistantId: _assistantId,
+        topicId: topicId,
+        createdAt: now,
+        status: MessageStatus.success,
+        metadata: const {
+          'debate': {'phase': 'interjection'},
+        },
+        blocks: <String>[blockId],
+      ),
+    );
+    await _repo.saveMessageBlock(
+      MessageBlock.mainText(
+        id: blockId,
+        messageId: messageId,
+        status: MessageBlockStatus.success,
+        createdAt: now,
+        content: trimmed,
+      ),
+    );
+    ref.read(chatRefreshProvider.notifier).bump();
+    unawaited(_refreshTopicPreview(topicId));
+  }
+
+  /// AI 辩论的静默一次性生成（不落聊天消息），用于裁决 JSON 等
+  /// 结构化产出；失败时返回 null。
+  Future<String?> generateDebateText({
+    required CurrentModel current,
+    required String system,
+    required String prompt,
+  }) async {
+    try {
+      final effective = effectiveModelFor(current);
+      final request = LlmChatRequest(
+        model: effective,
+        system: system,
+        messages: <LlmMessage>[
+          LlmMessage(role: MessageRole.user, content: prompt),
+        ],
+        useResponsesAPI: current.provider.useResponsesAPI ?? false,
+        extraHeaders: effective.providerExtraHeaders,
+        extraBody: effective.providerExtraBody,
+      );
+      final gateway = ref.read(llmGatewayFactoryProvider).forModel(effective);
+      final buffer = StringBuffer();
+      await for (final chunk in gateway.streamChat(request)) {
+        switch (chunk) {
+          case LlmTextDelta(:final text):
+            buffer.write(text);
+          case LlmReasoningDelta():
+          case LlmToolCallChunk():
+          case LlmDone():
+            break;
+        }
+      }
+      final text = buffer.toString().trim();
+      return text.isEmpty ? null : text;
+    } on Exception {
+      return null;
+    }
   }
 
   /// The next free sibling-group id for [topicId]: one past the largest existing

@@ -82,6 +82,13 @@ class DebateSettingsPage extends ConsumerWidget {
                   value: settings.summaryEnabled,
                   onChanged: controller.setSummaryEnabled,
                 ),
+                const SizedBox(height: 8),
+                _SwitchRow(
+                  title: '裁决模式',
+                  description: '结束时额外输出裁决卡片：胜方、四维评分与关键交锋点',
+                  value: settings.verdictEnabled,
+                  onChanged: controller.setVerdictEnabled,
+                ),
               ],
             ),
           ),

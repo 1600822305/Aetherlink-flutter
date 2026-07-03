@@ -144,6 +144,7 @@ class DebateSettings {
     this.maxCharsPerTurn = 200,
     this.moderatorEnabled = true,
     this.summaryEnabled = true,
+    this.verdictEnabled = false,
     this.roles = const <DebateRole>[],
     this.scenes = const <DebateScene>[],
   });
@@ -155,6 +156,7 @@ class DebateSettings {
     maxCharsPerTurn: (json['maxCharsPerTurn'] as num?)?.toInt() ?? 200,
     moderatorEnabled: json['moderatorEnabled'] != false,
     summaryEnabled: json['summaryEnabled'] != false,
+    verdictEnabled: json['verdictEnabled'] == true,
     roles: [
       for (final r in (json['roles'] as List? ?? const []))
         DebateRole.fromJson((r as Map).cast<String, dynamic>()),
@@ -178,6 +180,9 @@ class DebateSettings {
 
   final bool moderatorEnabled;
   final bool summaryEnabled;
+
+  /// 裁决模式：总结升级为结构化裁决（胜方 + 四维评分 + 关键交锋点）。
+  final bool verdictEnabled;
   final List<DebateRole> roles;
   final List<DebateScene> scenes;
 
@@ -192,6 +197,7 @@ class DebateSettings {
     'maxCharsPerTurn': maxCharsPerTurn,
     'moderatorEnabled': moderatorEnabled,
     'summaryEnabled': summaryEnabled,
+    'verdictEnabled': verdictEnabled,
     'roles': [for (final r in roles) r.toJson()],
     'scenes': [for (final s in scenes) s.toJson()],
   };
@@ -203,6 +209,7 @@ class DebateSettings {
     int? maxCharsPerTurn,
     bool? moderatorEnabled,
     bool? summaryEnabled,
+    bool? verdictEnabled,
     List<DebateRole>? roles,
     List<DebateScene>? scenes,
   }) => DebateSettings(
@@ -212,6 +219,7 @@ class DebateSettings {
     maxCharsPerTurn: maxCharsPerTurn ?? this.maxCharsPerTurn,
     moderatorEnabled: moderatorEnabled ?? this.moderatorEnabled,
     summaryEnabled: summaryEnabled ?? this.summaryEnabled,
+    verdictEnabled: verdictEnabled ?? this.verdictEnabled,
     roles: roles ?? this.roles,
     scenes: scenes ?? this.scenes,
   );

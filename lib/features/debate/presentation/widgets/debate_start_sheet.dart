@@ -235,6 +235,7 @@ class _DebateStartSheetState extends ConsumerState<DebateStartSheet> {
       maxCharsPerTurn: settings.maxCharsPerTurn,
       moderatorEnabled: settings.moderatorEnabled,
       summaryEnabled: settings.summaryEnabled,
+      verdictEnabled: settings.verdictEnabled,
     );
     Navigator.pop(context);
     ref.read(debateControllerProvider.notifier).start(config);
