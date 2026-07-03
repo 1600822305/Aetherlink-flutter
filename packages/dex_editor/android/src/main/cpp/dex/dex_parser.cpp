@@ -249,6 +249,8 @@ bool DexParser::get_method_code(const std::string& class_name, const std::string
         // Parse methods
         uint32_t method_idx = 0;
         for (uint32_t i = 0; i < direct_methods_size + virtual_methods_size; i++) {
+            // virtual_methods 列表的 method_idx 独立从 0 开始累加（DEX 规范）
+            if (i == direct_methods_size) method_idx = 0;
             uint32_t method_idx_diff = read_uleb128(offset);
             method_idx += method_idx_diff;
             uint32_t access_flags = read_uleb128(offset);
@@ -313,6 +315,8 @@ std::unordered_map<std::string, CodeItem> DexParser::get_all_method_codes() cons
         // Parse all methods
         uint32_t method_idx = 0;
         for (uint32_t i = 0; i < direct_methods_size + virtual_methods_size; i++) {
+            // virtual_methods 列表的 method_idx 独立从 0 开始累加（DEX 规范）
+            if (i == direct_methods_size) method_idx = 0;
             uint32_t method_idx_diff = read_uleb128(offset);
             method_idx += method_idx_diff;
             read_uleb128(offset); // access_flags
@@ -474,6 +478,8 @@ std::vector<DexParser::XRef> DexParser::find_method_xrefs(const std::string& cla
         // Scan methods
         uint32_t method_idx = 0;
         for (uint32_t i = 0; i < direct_methods + virtual_methods; i++) {
+            // virtual_methods 列表的 method_idx 独立从 0 开始累加（DEX 规范）
+            if (i == direct_methods) method_idx = 0;
             method_idx += read_uleb128(offset);
             read_uleb128(offset); // access_flags
             uint32_t code_off = read_uleb128(offset);
@@ -567,6 +573,8 @@ std::vector<DexParser::XRef> DexParser::find_field_xrefs(const std::string& clas
         
         uint32_t method_idx = 0;
         for (uint32_t i = 0; i < direct_methods + virtual_methods; i++) {
+            // virtual_methods 列表的 method_idx 独立从 0 开始累加（DEX 规范）
+            if (i == direct_methods) method_idx = 0;
             method_idx += read_uleb128(offset);
             read_uleb128(offset);
             uint32_t code_off = read_uleb128(offset);
