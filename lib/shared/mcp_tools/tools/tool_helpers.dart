@@ -82,3 +82,39 @@ String decodeHtmlEntities(String text) {
 
 /// Convenience constructor for error results.
 McpToolResult toolError(String message) => McpToolResult(message, isError: true);
+
+/// Opaque pagination cursor shared by the dex/apk tools.
+///
+/// A cursor is `base64url(json(state))` where `state` carries whatever paging
+/// fields a tool needs (`offset`, `limit`, `maxChars`, ...). Tools hand back a
+/// single `nextCursor` token the model echoes into `cursor` to fetch the next
+/// page, so the model never has to compute offsets itself.
+String encodeCursor(Map<String, Object?> state) =>
+    base64Url.encode(utf8.encode(json.encode(state)));
+
+/// Decode an opaque cursor produced by [encodeCursor]. Returns an empty map for
+/// null/blank/malformed input so callers can safely fall back to raw params.
+Map<String, Object?> decodeCursor(Object? cursor) {
+  if (cursor is! String || cursor.trim().isEmpty) return const {};
+  try {
+    final decoded = json.decode(utf8.decode(base64Url.decode(cursor.trim())));
+    if (decoded is Map) return decoded.cast<String, Object?>();
+  } catch (_) {
+    // Malformed cursor -> ignore and let the caller use raw offset/limit.
+  }
+  return const {};
+}
+
+/// Parsed unified locator: scheme + value (e.g. `dex_class:com.foo.Bar`).
+typedef Locator = ({String scheme, String value});
+
+/// Parse a unified locator string like `dex_class:com.foo.Bar`,
+/// `apk_file:res/x.xml`, or `res:0x7f010000`. Returns null when [raw] is blank
+/// or has no `scheme:` prefix, so callers can fall back to explicit params.
+Locator? parseLocator(Object? raw) {
+  if (raw is! String) return null;
+  final s = raw.trim();
+  final idx = s.indexOf(':');
+  if (idx <= 0 || idx == s.length - 1) return null;
+  return (scheme: s.substring(0, idx), value: s.substring(idx + 1).trim());
+}

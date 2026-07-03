@@ -170,17 +170,100 @@ bool _isLowSurrogate(int unit) => unit >= 0xDC00 && unit <= 0xDFFF;
 
 /// Uniform pagination metadata for the char-sliced readers (`dex_get_class`,
 /// `apk_get_resource`, `apk_get_manifest`). Exposes `totalChars`/`hasMore` so
-/// the model can decide whether to page again, and `nextOffset` so it doesn't
-/// have to compute the next window itself.
-Map<String, Object?> _pageMeta(int offset, int returnedLength, int totalChars) {
+/// the model can decide whether to page again, `nextOffset` so it doesn't have
+/// to compute the next window itself, and an opaque `nextCursor` it can echo
+/// straight back into `cursor` to fetch the next page.
+Map<String, Object?> _pageMeta(
+  int offset,
+  int returnedLength,
+  int totalChars, [
+  int maxChars = 0,
+]) {
   final hasMore = offset + returnedLength < totalChars;
+  final nextOffset = offset + returnedLength;
   return {
     'offset': offset,
     'returnedLength': returnedLength,
     'totalChars': totalChars,
     'hasMore': hasMore,
-    if (hasMore) 'nextOffset': offset + returnedLength,
+    if (hasMore) 'nextOffset': nextOffset,
+    if (hasMore)
+      'nextCursor': encodeCursor({
+        'offset': nextOffset,
+        if (maxChars > 0) 'maxChars': maxChars,
+      }),
   };
+}
+
+/// List pagination metadata with an opaque `nextCursor` for the next page.
+/// Mirrors [_pageMeta] but for offset/limit list readers (`dex_list_classes`,
+/// `apk_list_files`).
+Map<String, Object?> _listMeta({
+  required int offset,
+  required int limit,
+  required int returnedCount,
+  required bool hasMore,
+}) {
+  final nextOffset = offset + returnedCount;
+  return {
+    'offset': offset,
+    'limit': limit,
+    'hasMore': hasMore,
+    if (hasMore) 'nextOffset': nextOffset,
+    if (hasMore)
+      'nextCursor': encodeCursor({'offset': nextOffset, 'limit': limit}),
+  };
+}
+
+/// Resolve `(offset, maxChars)` for a char-sliced reader from an opaque
+/// `cursor` (takes precedence) or the explicit `offset`/`maxChars` args, so the
+/// old params keep working while the model can just echo `nextCursor`.
+({int offset, int maxChars}) _textPage(Map<String, Object?> args) {
+  final c = decodeCursor(args['cursor']);
+  return (
+    offset: _int(c['offset'] ?? args['offset']),
+    maxChars: _int(c['maxChars'] ?? args['maxChars']),
+  );
+}
+
+/// Resolve `(offset, limit)` for an offset/limit list reader from an opaque
+/// `cursor` (takes precedence) or the explicit `offset`/`limit` args.
+({int offset, int limit}) _listPage(Map<String, Object?> args, int defLimit) {
+  final c = decodeCursor(args['cursor']);
+  return (
+    offset: _int(c['offset'] ?? args['offset']),
+    limit: _int(c['limit'] ?? args['limit'], defLimit),
+  );
+}
+
+/// Class name from a unified `locator` (`dex_class:` / `class:`) or the
+/// explicit `className` arg (explicit wins only when no matching locator).
+String _classNameArg(Map<String, Object?> args) {
+  final loc = parseLocator(args['locator']);
+  if (loc != null && (loc.scheme == 'dex_class' || loc.scheme == 'class')) {
+    return loc.value;
+  }
+  return _str(args['className']);
+}
+
+/// APK-internal file path from a unified `locator` (`apk_file:` / `file:`) or
+/// the explicit `filePath` arg.
+String _filePathArg(Map<String, Object?> args) {
+  final loc = parseLocator(args['locator']);
+  if (loc != null && (loc.scheme == 'apk_file' || loc.scheme == 'file')) {
+    return loc.value;
+  }
+  return _str(args['filePath']);
+}
+
+/// Resource ID from a unified `locator` (`res:` / `resource:`) or the explicit
+/// `id` arg.
+String _resIdArg(Map<String, Object?> args) {
+  final loc = parseLocator(args['locator']);
+  if (loc != null && (loc.scheme == 'res' || loc.scheme == 'resource')) {
+    return loc.value;
+  }
+  return _str(args['id']);
 }
 
 // ==================== session workflow ====================
@@ -246,24 +329,29 @@ Future<McpToolResult> _listClasses(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
-  final offset = _int(args['offset']);
-  final limit = _int(args['limit'], 100);
+  final page = _listPage(args, 100);
   final result = await dex.execute('listClasses', {
     'sessionId': _str(args['sessionId']),
     'packageFilter': _str(args['packageFilter']),
-    'offset': offset,
-    'limit': limit,
+    'offset': page.offset,
+    'limit': page.limit,
   });
   if (!result.success) {
     return McpToolResult('错误: ${result.error}', isError: true);
   }
   final data = _map(result.data);
+  final classes =
+      data['classes'] is List ? data['classes'] as List : const <Object?>[];
+  final hasMore = data['hasMore'] == true;
   return McpToolResult(encodeJson({
     'total': data['total'] ?? 0,
-    'offset': offset,
-    'limit': limit,
-    'classes': data['classes'] ?? [],
-    'hasMore': data['hasMore'] ?? false,
+    ..._listMeta(
+      offset: page.offset,
+      limit: page.limit,
+      returnedCount: classes.length,
+      hasMore: hasMore,
+    ),
+    'classes': classes,
   }));
 }
 
@@ -293,7 +381,7 @@ Future<McpToolResult> _getClass(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
-  final className = _normalizeClassName(_str(args['className']));
+  final className = _normalizeClassName(_classNameArg(args));
   final result = await dex.execute('getClassSmaliFromSession', {
     'sessionId': _str(args['sessionId']),
     'className': className,
@@ -303,14 +391,15 @@ Future<McpToolResult> _getClass(
   }
   var smali = _str(_map(result.data)['smaliContent']);
   final totalChars = smali.length;
-  final offset = _int(args['offset']);
-  final maxChars = _int(args['maxChars']);
+  final page = _textPage(args);
+  final offset = page.offset;
+  final maxChars = page.maxChars;
   if (offset > 0) smali = _sliceFrom(smali, offset);
   if (maxChars > 0) smali = _sliceMax(smali, maxChars);
   if (maxChars > 0 || offset > 0) {
     return McpToolResult(encodeJson({
       'className': className,
-      ..._pageMeta(offset, smali.length, totalChars),
+      ..._pageMeta(offset, smali.length, totalChars, maxChars),
       'content': smali,
     }));
   }
@@ -321,7 +410,7 @@ Future<McpToolResult> _modifyClass(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
-  final className = _normalizeClassName(_str(args['className']));
+  final className = _normalizeClassName(_classNameArg(args));
   final result = await dex.execute('modifyClass', {
     'sessionId': _str(args['sessionId']),
     'className': className,
@@ -368,7 +457,7 @@ Future<McpToolResult> _getMethod(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
-  final className = _normalizeClassName(_str(args['className']));
+  final className = _normalizeClassName(_classNameArg(args));
   final result = await dex.execute('getMethodFromSession', {
     'sessionId': _str(args['sessionId']),
     'className': className,
@@ -386,7 +475,7 @@ Future<McpToolResult> _modifyMethod(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
-  final className = _normalizeClassName(_str(args['className']));
+  final className = _normalizeClassName(_classNameArg(args));
   final methodName = _str(args['methodName']);
   final result = await dex.execute('modifyMethodInSession', {
     'sessionId': _str(args['sessionId']),
@@ -405,7 +494,7 @@ Future<McpToolResult> _outlineClass(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
-  final className = _normalizeClassName(_str(args['className']));
+  final className = _normalizeClassName(_classNameArg(args));
   final result = await dex.execute('outlineClassFromSession', {
     'sessionId': _str(args['sessionId']),
     'className': className,
@@ -580,13 +669,14 @@ Future<McpToolResult> _getManifest(
   }
   var content = _str(_map(result.data)['manifest']);
   final totalChars = content.length;
-  final offset = _int(args['offset']);
-  final maxChars = _int(args['maxChars']);
+  final page = _textPage(args);
+  final offset = page.offset;
+  final maxChars = page.maxChars;
   if (offset > 0) content = _sliceFrom(content, offset);
   if (maxChars > 0) content = _sliceMax(content, maxChars);
   if (maxChars > 0 || offset > 0) {
     return McpToolResult(encodeJson({
-      ..._pageMeta(offset, content.length, totalChars),
+      ..._pageMeta(offset, content.length, totalChars, maxChars),
       'content': content,
     }));
   }
@@ -681,7 +771,9 @@ Future<McpToolResult> _getResource(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
-  final resourcePath = _str(args['resourcePath']);
+  final resourcePath = _filePathArg(args).isNotEmpty
+      ? _filePathArg(args)
+      : _str(args['resourcePath']);
   final result = await dex.execute('getResource', {
     'apkPath': _str(args['apkPath']),
     'resourcePath': resourcePath,
@@ -693,15 +785,16 @@ Future<McpToolResult> _getResource(
   var content = _str(data['content']);
   final totalChars = content.length;
   final resourceType = data['type'] == null ? 'unknown' : _str(data['type']);
-  final offset = _int(args['offset']);
-  final maxChars = _int(args['maxChars']);
+  final page = _textPage(args);
+  final offset = page.offset;
+  final maxChars = page.maxChars;
   if (offset > 0) content = _sliceFrom(content, offset);
   if (maxChars > 0) content = _sliceMax(content, maxChars);
   if (maxChars > 0 || offset > 0) {
     return McpToolResult(encodeJson({
       'path': resourcePath,
       'type': resourceType,
-      ..._pageMeta(offset, content.length, totalChars),
+      ..._pageMeta(offset, content.length, totalChars, maxChars),
       'content': content,
     }));
   }
@@ -728,7 +821,7 @@ Future<McpToolResult> _getResourceValue(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
-  final id = _str(args['id']);
+  final id = _resIdArg(args);
   final result = await dex.execute('getResourceValue', {
     'apkPath': _str(args['apkPath']),
     'id': id,
@@ -743,7 +836,7 @@ Future<McpToolResult> _setResourceValue(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
-  final id = _str(args['id']);
+  final id = _resIdArg(args);
   final result = await dex.execute('setResourceValue', {
     'apkPath': _str(args['apkPath']),
     'id': id,
@@ -761,16 +854,29 @@ Future<McpToolResult> _listApkFiles(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
+  final page = _listPage(args, 100);
   final result = await dex.execute('listApkFiles', {
     'apkPath': _str(args['apkPath']),
     'filter': _str(args['filter']),
-    'limit': _int(args['limit'], 100),
-    'offset': _int(args['offset']),
+    'limit': page.limit,
+    'offset': page.offset,
   });
   if (!result.success) {
     return McpToolResult('错误: ${result.error}', isError: true);
   }
-  return McpToolResult(encodeJson(result.data));
+  final data = _map(result.data);
+  final files =
+      data['files'] is List ? data['files'] as List : const <Object?>[];
+  final hasMore = data['hasMore'] == true;
+  return McpToolResult(encodeJson({
+    ...data,
+    ..._listMeta(
+      offset: page.offset,
+      limit: page.limit,
+      returnedCount: files.length,
+      hasMore: hasMore,
+    ),
+  }));
 }
 
 Future<McpToolResult> _searchTextInApk(
@@ -821,7 +927,7 @@ Future<McpToolResult> _deleteApkFile(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
-  final filePath = _str(args['filePath']);
+  final filePath = _filePathArg(args);
   final result = await dex.execute('deleteFileFromApk', {
     'apkPath': _str(args['apkPath']),
     'filePath': filePath,
@@ -836,7 +942,7 @@ Future<McpToolResult> _addApkFile(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
-  final filePath = _str(args['filePath']);
+  final filePath = _filePathArg(args);
   final result = await dex.execute('addFileToApk', {
     'apkPath': _str(args['apkPath']),
     'filePath': filePath,

@@ -1119,6 +1119,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'offset': {'type': 'integer', 'description': '偏移量', 'default': 0},
           'limit': {'type': 'integer', 'description': '返回数量', 'default': 100},
+          'cursor': {
+            'type': 'string',
+            'description': '分页游标：把上一页返回的 nextCursor 原样传入即可翻页（优先于 offset/limit）',
+          },
         },
         'required': ['sessionId'],
       },
@@ -1173,7 +1177,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       description:
           '获取指定类的 Smali 代码。支持限制返回的字符数（用于控制 token）。'
           '传入 maxChars/offset 时返回 JSON，含 totalChars(总字符数)、returnedLength、'
-          'hasMore(是否还有后续)、nextOffset(下一页 offset)，据此翻页无需自己计算。',
+          'hasMore(是否还有后续)、nextOffset(下一页 offset)、nextCursor(分页游标)，'
+          '据此翻页无需自己计算；把 nextCursor 原样回传到 cursor 即可取下一页。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1182,6 +1187,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'type': 'string',
             'description':
                 '类名（如 "com.example.MainActivity" 或 "Lcom/example/MainActivity;"）',
+          },
+          'locator': {
+            'type': 'string',
+            'description': '统一定位符，可替代 className，如 "dex_class:com.example.Foo"',
           },
           'maxChars': {
             'type': 'integer',
@@ -1192,6 +1201,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'type': 'integer',
             'description': '字符偏移量（用于分页获取大文件）',
             'default': 0,
+          },
+          'cursor': {
+            'type': 'string',
+            'description': '分页游标：把上一页返回的 nextCursor 原样传入即可翻页（优先于 offset/maxChars）',
           },
         },
         'required': ['sessionId', 'className'],
@@ -1397,7 +1410,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       name: 'apk_get_manifest',
       description:
           '获取 APK 的 AndroidManifest.xml。format=xml（默认）返回解码后的可读 XML（支持分页/限制字符数，'
-          '传入 maxChars/offset 时返回 JSON，含 totalChars、returnedLength、hasMore、nextOffset）；'
+          '传入 maxChars/offset 时返回 JSON，含 totalChars、returnedLength、hasMore、nextOffset、nextCursor）；'
           'format=structured 使用 C++ 高性能解析，返回结构化信息（包名、版本、权限、组件等）。',
       inputSchema: {
         'type': 'object',
@@ -1418,6 +1431,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'type': 'integer',
             'description': '字符偏移量（用于分页获取大文件）',
             'default': 0,
+          },
+          'cursor': {
+            'type': 'string',
+            'description': '分页游标：把上一页返回的 nextCursor 原样传入即可翻页（优先于 offset/maxChars）',
           },
         },
         'required': ['apkPath'],
@@ -1522,7 +1539,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       description:
           '获取 APK 中的资源文件内容（XML 会解码为可读格式）。支持分页和限制返回字符数。'
           '传入 maxChars/offset 时返回 JSON，含 totalChars(总字符数)、returnedLength、'
-          'hasMore(是否还有后续)、nextOffset(下一页 offset)，据此翻页无需自己计算。',
+          'hasMore(是否还有后续)、nextOffset(下一页 offset)、nextCursor(分页游标)，据此翻页无需自己计算。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1530,6 +1547,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           'resourcePath': {
             'type': 'string',
             'description': '资源路径（如 "res/layout/activity_main.xml"）',
+          },
+          'locator': {
+            'type': 'string',
+            'description': '统一定位符，可替代 resourcePath，如 "apk_file:res/layout/activity_main.xml"',
           },
           'maxChars': {
             'type': 'integer',
@@ -1540,6 +1561,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'type': 'integer',
             'description': '字符偏移量（用于分页获取大文件）',
             'default': 0,
+          },
+          'cursor': {
+            'type': 'string',
+            'description': '分页游标：把上一页返回的 nextCursor 原样传入即可翻页（优先于 offset/maxChars）',
           },
         },
         'required': ['apkPath', 'resourcePath'],
@@ -1576,6 +1601,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'type': 'string',
             'description': '完整资源 ID，十六进制（如 "0x7f010000"）或十进制',
           },
+          'locator': {
+            'type': 'string',
+            'description': '统一定位符，可替代 id，如 "res:0x7f010000"',
+          },
         },
         'required': ['apkPath', 'id'],
       },
@@ -1595,6 +1624,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           'id': {
             'type': 'string',
             'description': '完整资源 ID，十六进制（如 "0x7f010000"）或十进制',
+          },
+          'locator': {
+            'type': 'string',
+            'description': '统一定位符，可替代 id，如 "res:0x7f010000"',
           },
           'value': {'type': 'string', 'description': '新值文本（按 valueType 解析）'},
           'valueType': {
@@ -1637,6 +1670,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'limit': {'type': 'integer', 'description': '最大返回数量', 'default': 100},
           'offset': {'type': 'integer', 'description': '偏移量（用于分页）', 'default': 0},
+          'cursor': {
+            'type': 'string',
+            'description': '分页游标：把上一页返回的 nextCursor 原样传入即可翻页（优先于 offset/limit）',
+          },
         },
         'required': ['apkPath'],
       },
@@ -1684,6 +1721,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'description':
                 '文件路径（如 "classes.dex", "lib/arm64-v8a/libnative.so", "assets/config.json"）',
           },
+          'locator': {
+            'type': 'string',
+            'description': '统一定位符，可替代 filePath，如 "apk_file:assets/config.json"',
+          },
           'asBase64': {
             'type': 'boolean',
             'description': '是否以 Base64 编码返回（用于二进制文件）',
@@ -1710,6 +1751,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'type': 'string',
             'description': '要删除的文件路径（如 "lib/arm64-v8a/libad.so", "assets/config.json"）',
           },
+          'locator': {
+            'type': 'string',
+            'description': '统一定位符，可替代 filePath，如 "apk_file:lib/arm64-v8a/libad.so"',
+          },
         },
         'required': ['apkPath', 'filePath'],
       },
@@ -1724,6 +1769,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           'filePath': {
             'type': 'string',
             'description': '目标路径（如 "assets/config.json"）',
+          },
+          'locator': {
+            'type': 'string',
+            'description': '统一定位符，可替代 filePath，如 "apk_file:assets/config.json"',
           },
           'content': {
             'type': 'string',
