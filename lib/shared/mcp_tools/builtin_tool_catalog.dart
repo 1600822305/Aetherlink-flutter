@@ -1108,7 +1108,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'dex_list_classes',
-      description: '列出 DEX 中的所有类，支持包名过滤和分页',
+      description: '列出 DEX 中的所有类，支持包名过滤和分页。'
+          '返回的 className 统一为点分格式（com.example.Foo），可直接传给 dex_get_class 等工具。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1132,7 +1133,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       description:
           '在已打开的 DEX 中搜索。支持搜索：类名(class)、包名(package)、方法名(method)、字段名(field)、'
           '字符串(string)、整数(int)、代码(code)、父类(superclass)、接口(interface)、注解(annotation)。'
-          'superclass/interface/annotation 用于逆向定位子类/实现类/带特定注解的成员。',
+          'superclass/interface/annotation 用于逆向定位子类/实现类/带特定注解的成员。'
+          '返回结果中的 className/superclass/interface/annotation 统一为点分格式'
+          '（com.example.Foo），可直接传给 dex_get_class 等工具。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1217,7 +1220,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'type': 'object',
         'properties': {
           'sessionId': {'type': 'string', 'description': '会话 ID'},
-          'className': {'type': 'string', 'description': '类名'},
+          'className': {
+            'type': 'string',
+            'description': '类名（点分/L描述符/斜杠任意格式均可，内部自动转换）',
+          },
           'methodName': {
             'type': 'string',
             'description': '方法名（如 "onCreate" 或 "<init>"）',
@@ -1237,7 +1243,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'type': 'object',
         'properties': {
           'sessionId': {'type': 'string', 'description': '会话 ID'},
-          'className': {'type': 'string', 'description': '类名'},
+          'className': {
+            'type': 'string',
+            'description': '类名（点分/L描述符/斜杠任意格式均可，内部自动转换）',
+          },
           'smaliContent': {'type': 'string', 'description': '新的 Smali 代码'},
         },
         'required': ['sessionId', 'className', 'smaliContent'],
@@ -1250,7 +1259,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'type': 'object',
         'properties': {
           'sessionId': {'type': 'string', 'description': '会话 ID'},
-          'className': {'type': 'string', 'description': '类名'},
+          'className': {
+            'type': 'string',
+            'description': '类名（点分/L描述符/斜杠任意格式均可，内部自动转换）',
+          },
           'methodName': {'type': 'string', 'description': '方法名'},
           'methodSignature': {
             'type': 'string',
@@ -1302,7 +1314,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'type': 'object',
         'properties': {
           'sessionId': {'type': 'string', 'description': '会话 ID'},
-          'className': {'type': 'string', 'description': '类名'},
+          'className': {
+            'type': 'string',
+            'description': '类名（点分/L描述符/斜杠任意格式均可，内部自动转换）',
+          },
         },
         'required': ['sessionId', 'className'],
       },
@@ -1445,7 +1460,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'type': 'object',
         'properties': {
           'sessionId': {'type': 'string', 'description': '会话 ID'},
-          'className': {'type': 'string', 'description': '类名'},
+          'className': {
+            'type': 'string',
+            'description': '类名（点分/L描述符/斜杠任意格式均可，内部自动转换）',
+          },
         },
         'required': ['sessionId', 'className'],
       },
