@@ -658,7 +658,7 @@ Future<McpToolResult> _smaliToJava(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
-  final className = _str(args['className']);
+  final className = _normalizeClassName(_classNameArg(args));
   final result = await dex.execute('smaliToJava', {
     'sessionId': _str(args['sessionId']),
     'className': className,
