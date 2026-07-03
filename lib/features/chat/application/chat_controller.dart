@@ -4031,7 +4031,6 @@ class ChatController extends _$ChatController {
       addReadSkill();
       _maybeInjectWebSearch(tools, routes);
       _maybeInjectMemorySearch(tools, routes);
-      await _maybeInjectKnowledgeSearch(tools, routes);
       if (tools.isEmpty) return const _McpSetup.disabled();
       return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
     }
@@ -4043,7 +4042,6 @@ class ChatController extends _$ChatController {
       addReadSkill();
       _maybeInjectWebSearch(tools, routes);
       _maybeInjectMemorySearch(tools, routes);
-      await _maybeInjectKnowledgeSearch(tools, routes);
       return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
     }
 
@@ -4107,7 +4105,6 @@ class ChatController extends _$ChatController {
     addReadSkill();
     _maybeInjectWebSearch(tools, routes);
     _maybeInjectMemorySearch(tools, routes);
-    await _maybeInjectKnowledgeSearch(tools, routes);
     return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
   }
 
@@ -4146,27 +4143,6 @@ class ChatController extends _$ChatController {
     if (routes.containsKey(kSearchMemoryToolName)) return;
     tools.add(kSearchMemoryToolDefinition);
     routes[kSearchMemoryToolName] = const _MemorySearchToolRoute();
-  }
-
-  /// Injects the knowledge `kb_search` tool whenever至少有一个知识库存在
-  /// ——即便 MCP 工具总开关关着（与 [_maybeInjectMemorySearch] 同款）。
-  /// 若 `@aether/knowledge` 服务器已激活，
-  /// 4 个工具已在上面注入，这里靠 [routes] 去重不重复添加。
-  Future<void> _maybeInjectKnowledgeSearch(
-    List<McpToolDefinition> tools,
-    Map<String, _ToolRoute> routes,
-  ) async {
-    if (routes.containsKey(kKnowledgeSearchTool)) return;
-    if (!await hasChatEnabledKnowledgeBase(ref)) return;
-    final def = builtinToolsFor(
-      kKnowledgeServerName,
-    ).where((t) => t.name == kKnowledgeSearchTool).firstOrNull;
-    if (def == null) return;
-    if (routes.containsKey(kKnowledgeSearchTool)) return;
-    tools.add(def);
-    routes[kKnowledgeSearchTool] = const _KnowledgeToolRoute(
-      kKnowledgeSearchTool,
-    );
   }
 
   /// Executes one tool call along its [route]: a built-in runs in-process via

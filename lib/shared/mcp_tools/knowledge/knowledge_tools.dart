@@ -66,13 +66,6 @@ bool knowledgeToolNeedsConfirmation(
 ) =>
     knowledgeToolRiskLevel(toolName, args) != null;
 
-/// 当前是否存在知识库——供 chat_controller 决定是否即便 MCP 总开关关着
-/// 也注入 `kb_search`。
-Future<bool> hasChatEnabledKnowledgeBase(Ref ref) async {
-  final bases = await ref.read(knowledgeServiceProvider).listBases();
-  return bases.isNotEmpty;
-}
-
 /// Dispatches one `@aether/knowledge` tool call. Errors become a clean error
 /// [McpToolResult]（与 `runFileEditorTool` 同款兜底）。
 Future<McpToolResult> runKnowledgeTool(
