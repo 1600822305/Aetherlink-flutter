@@ -1126,15 +1126,32 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'dex_search',
       description:
-          '在已打开的 DEX 中搜索。支持搜索：类名(class)、包名(package)、方法名(method)、字段名(field)、字符串(string)、整数(int)、代码(code)',
+          '在已打开的 DEX 中搜索。支持搜索：类名(class)、包名(package)、方法名(method)、字段名(field)、'
+          '字符串(string)、整数(int)、代码(code)、父类(superclass)、接口(interface)、注解(annotation)。'
+          'superclass/interface/annotation 用于逆向定位子类/实现类/带特定注解的成员。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'sessionId': {'type': 'string', 'description': '会话 ID（从 dex_open 获取）'},
-          'query': {'type': 'string', 'description': '搜索内容'},
+          'query': {
+            'type': 'string',
+            'description': '搜索内容。superclass/interface/annotation 搜的是类型名，'
+                '可用完整或部分类名（如 "Activity"、"Landroidx/" 或某注解名）',
+          },
           'searchType': {
             'type': 'string',
-            'enum': ['class', 'package', 'method', 'field', 'string', 'int', 'code'],
+            'enum': [
+              'class',
+              'package',
+              'method',
+              'field',
+              'string',
+              'int',
+              'code',
+              'superclass',
+              'interface',
+              'annotation',
+            ],
             'description': '搜索类型',
           },
           'caseSensitive': {
