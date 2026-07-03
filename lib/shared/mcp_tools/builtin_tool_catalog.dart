@@ -1394,11 +1394,18 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'apk_get_manifest',
       description:
-          '获取 APK 的 AndroidManifest.xml 内容（已解码为可读 XML）。支持分页和限制返回字符数',
+          '获取 APK 的 AndroidManifest.xml。format=xml（默认）返回解码后的可读 XML（支持分页/限制字符数）；'
+          'format=structured 使用 C++ 高性能解析，返回结构化信息（包名、版本、权限、组件等）。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'format': {
+            'type': 'string',
+            'enum': ['xml', 'structured'],
+            'description': 'xml=可读 XML 文本；structured=结构化解析结果',
+            'default': 'xml',
+          },
           'maxChars': {
             'type': 'integer',
             'description': '最大返回字符数（用于限制 token），0 表示不限制',
@@ -1686,17 +1693,6 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           'limit': {'type': 'integer', 'description': '最大返回数量', 'default': 50},
         },
         'required': ['apkPath', 'pattern'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'apk_parse_manifest_cpp',
-      description: '使用 C++ 高性能解析 AndroidManifest.xml，返回结构化信息',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
-        },
-        'required': ['apkPath'],
       },
     ),
     McpToolDefinition(
