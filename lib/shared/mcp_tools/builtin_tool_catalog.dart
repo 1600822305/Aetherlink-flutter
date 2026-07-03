@@ -1170,7 +1170,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'dex_get_class',
-      description: '获取指定类的 Smali 代码。支持限制返回的字符数（用于控制 token）',
+      description:
+          '获取指定类的 Smali 代码。支持限制返回的字符数（用于控制 token）。'
+          '传入 maxChars/offset 时返回 JSON，含 totalChars(总字符数)、returnedLength、'
+          'hasMore(是否还有后续)、nextOffset(下一页 offset)，据此翻页无需自己计算。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1394,7 +1397,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'apk_get_manifest',
       description:
-          '获取 APK 的 AndroidManifest.xml。format=xml（默认）返回解码后的可读 XML（支持分页/限制字符数）；'
+          '获取 APK 的 AndroidManifest.xml。format=xml（默认）返回解码后的可读 XML（支持分页/限制字符数，'
+          '传入 maxChars/offset 时返回 JSON，含 totalChars、returnedLength、hasMore、nextOffset）；'
           'format=structured 使用 C++ 高性能解析，返回结构化信息（包名、版本、权限、组件等）。',
       inputSchema: {
         'type': 'object',
@@ -1517,7 +1521,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'apk_get_resource',
       description:
-          '获取 APK 中的资源文件内容（XML 会解码为可读格式）。支持分页和限制返回字符数',
+          '获取 APK 中的资源文件内容（XML 会解码为可读格式）。支持分页和限制返回字符数。'
+          '传入 maxChars/offset 时返回 JSON，含 totalChars(总字符数)、returnedLength、'
+          'hasMore(是否还有后续)、nextOffset(下一页 offset)，据此翻页无需自己计算。',
       inputSchema: {
         'type': 'object',
         'properties': {
