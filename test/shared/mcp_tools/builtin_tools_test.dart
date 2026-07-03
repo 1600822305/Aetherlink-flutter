@@ -351,6 +351,11 @@ void main() {
       expect(schema['required'], containsAll(['sessionId', 'methodName']));
       expect(schema['required'], isNot(contains('resolution')));
       expect(schema['required'], isNot(contains('methodSignature')));
+      // 置信度分级：返回说明里应同时提及 certainty 两级与 summary 汇总。
+      expect(tool.description, contains('certainty'));
+      expect(tool.description, contains('exact'));
+      expect(tool.description, contains('possible'));
+      expect(tool.description, contains('summary'));
     });
 
     test('dex_find_field_xrefs exposes fieldType + access filtering', () {
