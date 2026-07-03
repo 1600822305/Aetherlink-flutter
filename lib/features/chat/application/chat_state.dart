@@ -56,6 +56,10 @@ abstract class ChatMessageView with _$ChatMessageView {
     /// in display order — drives the `◀ k/n ▶` branch switcher. Length ≤ 1 means
     /// no fork. Computed in `build()`/`_load`, empty on live streaming views.
     @Default(<String>[]) List<String> branchSiblingIds,
+    /// 辩论消息的阶段标记（`metadata['debate']['phase']`：turn / notice /
+    /// summary / verdict / consensus_*），null 表示非辩论消息。导出面板据此
+    /// 提供「过滤辩论流程通告」。
+    String? debatePhase,
     @Default(<MessageVersion>[]) List<MessageVersion> versions,
     String? currentVersionId,
     Usage? usage,

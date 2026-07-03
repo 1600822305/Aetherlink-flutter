@@ -19,13 +19,18 @@ class _FakePort implements DebateChatPort {
   final List<DebateSpeakRequest> speaks = [];
   final List<DebateSpeakRequest> generates = [];
   final List<String> announcements = [];
+  final List<String> readAlouds = [];
   void Function(String text)? interjectionListener;
   int cancelCount = 0;
+  int _speakCount = 0;
 
   @override
   Future<DebateSpeakResult> speak(DebateSpeakRequest request) async {
     speaks.add(request);
-    return _reply(request);
+    final result = _reply(request);
+    if (!result.succeeded) return result;
+    // 真实端口会附上落地消息 id，供 TTS 朗读定位。
+    return DebateSpeakResult(text: result.text, messageId: 'msg-${_speakCount++}');
   }
 
   @override
@@ -42,6 +47,11 @@ class _FakePort implements DebateChatPort {
   @override
   void setInterjectionListener(void Function(String text)? listener) {
     interjectionListener = listener;
+  }
+
+  @override
+  void readAloud(String text, {required String messageId}) {
+    readAlouds.add('$messageId:$text');
   }
 
   @override
@@ -81,6 +91,7 @@ DebateRunConfig _config({
   bool moderatorEnabled = true,
   bool summaryEnabled = true,
   bool verdictEnabled = false,
+  bool ttsEnabled = false,
 }) => DebateRunConfig(
   topic: '测试辩题',
   roles: roles,
@@ -89,6 +100,7 @@ DebateRunConfig _config({
   moderatorEnabled: moderatorEnabled,
   summaryEnabled: summaryEnabled,
   verdictEnabled: verdictEnabled,
+  ttsEnabled: ttsEnabled,
 );
 
 void main() {
@@ -257,6 +269,38 @@ void main() {
     final context = engine.buildContext(config, _pro, 2);
     expect(context, contains('场外观众（用户插话）：请双方结合具体案例论证'));
     expect(context, contains('适当回应'));
+  });
+
+  test('事实核查角色：toolsEnabled 随发言请求传递', () async {
+    const factChecker = DebateRole(
+      id: 'r-fact',
+      name: '事实核查员',
+      modelKey: 'p/m5',
+      stance: DebateStance.neutral,
+      toolsEnabled: true,
+    );
+    final port = _FakePort();
+    final engine = DebateEngine(port: port);
+
+    await engine.run(_config(roles: const [_pro, _con, factChecker], maxRounds: 1));
+
+    for (final s in port.speaks) {
+      expect(s.toolsEnabled, s.role.id == 'r-fact');
+    }
+  });
+
+  test('ttsEnabled：每条成功发言都被朗读；关闭时不朗读', () async {
+    final port = _FakePort();
+    final engine = DebateEngine(port: port);
+
+    await engine.run(_config(maxRounds: 1, ttsEnabled: true));
+
+    // 3 发言角色 + 1 总结。
+    expect(port.readAlouds, hasLength(4));
+
+    final silentPort = _FakePort();
+    await DebateEngine(port: silentPort).run(_config(maxRounds: 1));
+    expect(silentPort.readAlouds, isEmpty);
   });
 
   test('空插话被忽略', () {

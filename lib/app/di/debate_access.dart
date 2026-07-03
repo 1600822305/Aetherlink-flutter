@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/app/di/tts_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_send_hooks.dart';
 import 'package:aetherlink_flutter/features/debate/domain/debate_chat_port.dart';
@@ -25,17 +28,18 @@ class _ChatDebatePort implements DebateChatPort {
   Future<DebateSpeakResult> speak(DebateSpeakRequest request) async {
     final current = await _resolveModel(request.role.modelKey);
     if (current == null) return DebateSpeakResult.noModel;
-    final text = await _chat.sendDebateTurn(
+    final turn = await _chat.sendDebateTurn(
       current: current,
       system: request.system,
       prompt: request.prompt,
       header: request.header,
       metadata: request.metadata,
+      toolsEnabled: request.toolsEnabled,
     );
-    if (text == null || text.trim().isEmpty) {
+    if (turn == null || turn.text.trim().isEmpty) {
       return const DebateSpeakResult(failed: true);
     }
-    return DebateSpeakResult(text: text);
+    return DebateSpeakResult(text: turn.text, messageId: turn.messageId);
   }
 
   @override
@@ -55,7 +59,16 @@ class _ChatDebatePort implements DebateChatPort {
 
   @override
   Future<void> announce(String markdown, {Map<String, dynamic>? metadata}) =>
-      _chat.sendDebateNotice(markdown, metadata: metadata);
+      _chat.sendDebateNotice(
+        markdown,
+        // 默认标记为流程通告（notice），导出时可被过滤；裁决卡片等
+        // 自带 metadata 的通告保留原标记。
+        metadata:
+            metadata ??
+            const {
+              'debate': {'phase': 'notice'},
+            },
+      );
 
   @override
   void setInterjectionListener(void Function(String text)? listener) {
@@ -71,6 +84,11 @@ class _ChatDebatePort implements DebateChatPort {
                 },
         );
   }
+
+  @override
+  void readAloud(String text, {required String messageId}) => unawaited(
+    _ref.read(ttsActionsProvider).speak(text, messageId: messageId),
+  );
 
   @override
   void cancelActiveStream() => _chat.stopStreaming();

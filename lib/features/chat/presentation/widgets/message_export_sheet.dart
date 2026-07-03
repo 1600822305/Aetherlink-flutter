@@ -59,9 +59,22 @@ class _ExportSheet extends ConsumerStatefulWidget {
 class _ExportSheetState extends ConsumerState<_ExportSheet> {
   bool _showThinkingAndTools = false;
   bool _expandThinking = false;
+  bool _includeDebateNotices = false;
   bool _exporting = false;
 
   bool get _isSingle => widget.messages.length == 1;
+
+  bool get _hasDebateNotices =>
+      widget.messages.any((m) => m.debatePhase == 'notice');
+
+  /// 实际参与导出的消息：辩论流程通告（开场/结束/错误提示）默认过滤，
+  /// 发言、总结与裁决卡片保留。
+  List<ChatMessageView> get _exportMessages => _includeDebateNotices
+      ? widget.messages
+      : [
+          for (final m in widget.messages)
+            if (m.debatePhase != 'notice') m,
+        ];
 
   @override
   Widget build(BuildContext context) {
@@ -159,6 +172,24 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
                 ),
               ],
             ),
+            if (_hasDebateNotices) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: _ToggleChip(
+                      icon: LucideIcons.megaphone,
+                      label: '含辩论流程通告',
+                      selected: _includeDebateNotices,
+                      onTap: () => setState(
+                        () => _includeDebateNotices = !_includeDebateNotices,
+                      ),
+                    ),
+                  ),
+                  const Expanded(child: SizedBox()),
+                ],
+              ),
+            ],
             const SizedBox(height: 8),
             // Quick actions row (copy & share)
             Row(
@@ -208,7 +239,7 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
     if (title != null && title.isNotEmpty) {
       buf.writeln('# $title\n');
     }
-    for (final msg in widget.messages) {
+    for (final msg in _exportMessages) {
       final isUser = msg.role == MessageRole.user;
       final roleName = isUser ? '用户' : (msg.modelName ?? 'AI助手');
       final time = _formatTimeFull(msg.createdAt);
@@ -246,7 +277,7 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
     if (title != null && title.isNotEmpty) {
       buf.writeln('$title\n');
     }
-    for (final msg in widget.messages) {
+    for (final msg in _exportMessages) {
       final isUser = msg.role == MessageRole.user;
       final roleName = isUser ? '用户' : (msg.modelName ?? 'AI助手');
       final time = _formatTimeFull(msg.createdAt);
@@ -314,7 +345,7 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
     try {
       final file = await _renderMessagesAsImage(
         context,
-        messages: widget.messages,
+        messages: _exportMessages,
         topicTitle: widget.topicTitle,
         showThinking: _showThinkingAndTools && _expandThinking,
         showTools: _showThinkingAndTools,
