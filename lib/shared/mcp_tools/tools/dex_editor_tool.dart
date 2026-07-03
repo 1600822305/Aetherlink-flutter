@@ -154,6 +154,21 @@ bool _isHighSurrogate(int unit) => unit >= 0xD800 && unit <= 0xDBFF;
 
 bool _isLowSurrogate(int unit) => unit >= 0xDC00 && unit <= 0xDFFF;
 
+/// Uniform pagination metadata for the char-sliced readers (`dex_get_class`,
+/// `apk_get_resource`, `apk_get_manifest`). Exposes `totalChars`/`hasMore` so
+/// the model can decide whether to page again, and `nextOffset` so it doesn't
+/// have to compute the next window itself.
+Map<String, Object?> _pageMeta(int offset, int returnedLength, int totalChars) {
+  final hasMore = offset + returnedLength < totalChars;
+  return {
+    'offset': offset,
+    'returnedLength': returnedLength,
+    'totalChars': totalChars,
+    'hasMore': hasMore,
+    if (hasMore) 'nextOffset': offset + returnedLength,
+  };
+}
+
 // ==================== session workflow ====================
 
 Future<McpToolResult> _openApk(DexEditor dex, Map<String, Object?> args) async {
@@ -250,7 +265,7 @@ Future<McpToolResult> _getClass(
     return McpToolResult('错误: ${result.error}', isError: true);
   }
   var smali = _str(_map(result.data)['smaliContent']);
-  final totalLength = smali.length;
+  final totalChars = smali.length;
   final offset = _int(args['offset']);
   final maxChars = _int(args['maxChars']);
   if (offset > 0) smali = _sliceFrom(smali, offset);
@@ -258,10 +273,7 @@ Future<McpToolResult> _getClass(
   if (maxChars > 0 || offset > 0) {
     return McpToolResult(encodeJson({
       'className': className,
-      'totalLength': totalLength,
-      'offset': offset,
-      'returnedLength': smali.length,
-      'hasMore': offset + smali.length < totalLength,
+      ..._pageMeta(offset, smali.length, totalChars),
       'content': smali,
     }));
   }
@@ -525,17 +537,14 @@ Future<McpToolResult> _getManifest(
     return McpToolResult('错误: ${result.error}', isError: true);
   }
   var content = _str(_map(result.data)['manifest']);
-  final totalLength = content.length;
+  final totalChars = content.length;
   final offset = _int(args['offset']);
   final maxChars = _int(args['maxChars']);
   if (offset > 0) content = _sliceFrom(content, offset);
   if (maxChars > 0) content = _sliceMax(content, maxChars);
   if (maxChars > 0 || offset > 0) {
     return McpToolResult(encodeJson({
-      'totalLength': totalLength,
-      'offset': offset,
-      'returnedLength': content.length,
-      'hasMore': offset + content.length < totalLength,
+      ..._pageMeta(offset, content.length, totalChars),
       'content': content,
     }));
   }
@@ -640,7 +649,7 @@ Future<McpToolResult> _getResource(
   }
   final data = _map(result.data);
   var content = _str(data['content']);
-  final totalLength = content.length;
+  final totalChars = content.length;
   final resourceType = data['type'] == null ? 'unknown' : _str(data['type']);
   final offset = _int(args['offset']);
   final maxChars = _int(args['maxChars']);
@@ -650,10 +659,7 @@ Future<McpToolResult> _getResource(
     return McpToolResult(encodeJson({
       'path': resourcePath,
       'type': resourceType,
-      'totalLength': totalLength,
-      'offset': offset,
-      'returnedLength': content.length,
-      'hasMore': offset + content.length < totalLength,
+      ..._pageMeta(offset, content.length, totalChars),
       'content': content,
     }));
   }
