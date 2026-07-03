@@ -2021,22 +2021,30 @@ public class DexManager {
      * 将 Smali 代码转换为 Java 伪代码
      */
     public JSObject smaliToJava(String sessionId, String className) throws Exception {
-        DexSession session = getSession(sessionId);
-        
-        if (!CppDex.isAvailable() || session.dexBytes == null) {
+        // dex_open 创建的是多 DEX 会话，需在 multiDexSessions 中查找并逐个 DEX 定位类。
+        MultiDexSession session = multiDexSessions.get(sessionId);
+        if (session == null) {
+            throw new IllegalArgumentException("Session not found: " + sessionId);
+        }
+        if (!CppDex.isAvailable()) {
             throw new UnsupportedOperationException("C++ library not available for smali to java conversion");
         }
-        
-        String jsonResult = CppDex.smaliToJava(session.dexBytes, className);
-        if (jsonResult == null || jsonResult.contains("\"error\"")) {
-            throw new Exception("Failed to convert smali to java");
+
+        // C++ 侧按类型描述符（La/b/C;）匹配，统一转换后再查询。
+        String targetType = convertClassNameToType(className);
+        for (Map.Entry<String, byte[]> entry : session.dexBytes.entrySet()) {
+            String jsonResult = CppDex.smaliToJava(entry.getValue(), targetType);
+            if (jsonResult != null && !jsonResult.contains("\"error\"")) {
+                org.json.JSONObject cppResult = new org.json.JSONObject(jsonResult);
+                JSObject result = new JSObject();
+                result.put("className", className);
+                result.put("dexFile", entry.getKey());
+                result.put("java", cppResult.optString("java", ""));
+                return result;
+            }
         }
-        
-        org.json.JSONObject cppResult = new org.json.JSONObject(jsonResult);
-        JSObject result = new JSObject();
-        result.put("className", className);
-        result.put("java", cppResult.optString("java", ""));
-        return result;
+
+        throw new IllegalArgumentException("Class not found: " + className);
     }
 
     // ==================== 工具操作 ====================
@@ -2979,12 +2987,14 @@ public class DexManager {
             throw new RuntimeException("C++ DEX library not available");
         }
         
+        // C++ 侧按类型描述符（La/b/C;）匹配，统一转换后再查询。
+        String targetType = convertClassNameToType(className);
         // 使用 Rust 获取 Smali
         for (Map.Entry<String, byte[]> entry : session.dexBytes.entrySet()) {
             String dexName = entry.getKey();
             byte[] dexData = entry.getValue();
             
-            String jsonResult = CppDex.getClassSmali(dexData, className);
+            String jsonResult = CppDex.getClassSmali(dexData, targetType);
             if (jsonResult != null && !jsonResult.contains("\"error\"")) {
                 org.json.JSONObject rustResult = new org.json.JSONObject(jsonResult);
                 JSObject result = new JSObject();
@@ -3012,10 +3022,12 @@ public class DexManager {
             throw new RuntimeException("C++ DEX library not available");
         }
         
+        // C++ 侧按类型描述符（La/b/C;）匹配，统一转换。
+        String targetType = convertClassNameToType(className);
         // 找到类所在的 DEX
         String targetDex = null;
         for (Map.Entry<String, byte[]> entry : session.dexBytes.entrySet()) {
-            String jsonResult = CppDex.getClassSmali(entry.getValue(), className);
+            String jsonResult = CppDex.getClassSmali(entry.getValue(), targetType);
             if (jsonResult != null && !jsonResult.contains("\"error\"")) {
                 targetDex = entry.getKey();
                 break;
@@ -3028,7 +3040,7 @@ public class DexManager {
         
         // 使用 Rust 修改类
         byte[] originalDex = session.dexBytes.get(targetDex);
-        byte[] modifiedDex = CppDex.modifyClass(originalDex, className, smaliContent);
+        byte[] modifiedDex = CppDex.modifyClass(originalDex, targetType, smaliContent);
         
         if (modifiedDex == null) {
             throw new RuntimeException("Failed to modify class: " + className);
@@ -3088,10 +3100,12 @@ public class DexManager {
             throw new RuntimeException("C++ DEX library not available");
         }
         
+        // C++ 侧按类型描述符（La/b/C;）匹配，统一转换。
+        String targetType = convertClassNameToType(className);
         // 找到类所在的 DEX
         String targetDex = null;
         for (Map.Entry<String, byte[]> entry : session.dexBytes.entrySet()) {
-            String jsonResult = CppDex.getClassSmali(entry.getValue(), className);
+            String jsonResult = CppDex.getClassSmali(entry.getValue(), targetType);
             if (jsonResult != null && !jsonResult.contains("\"error\"")) {
                 targetDex = entry.getKey();
                 break;
@@ -3104,7 +3118,7 @@ public class DexManager {
         
         // 使用 Rust 删除类
         byte[] originalDex = session.dexBytes.get(targetDex);
-        byte[] modifiedDex = CppDex.deleteClass(originalDex, className);
+        byte[] modifiedDex = CppDex.deleteClass(originalDex, targetType);
         
         if (modifiedDex == null) {
             throw new RuntimeException("Failed to delete class: " + className);
@@ -3816,6 +3830,10 @@ public class DexManager {
      */
     private String convertClassNameToType(String className) {
         if (className == null) return "";
+        // 幂等：已是描述符（La/b/C;）直接返回，避免二次包装成 LLa/b/C;;。
+        if (className.startsWith("L") && className.endsWith(";")) {
+            return className;
+        }
         return "L" + className.replace(".", "/") + ";";
     }
 
