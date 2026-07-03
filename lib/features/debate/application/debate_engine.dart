@@ -4,6 +4,10 @@ import 'package:aetherlink_flutter/features/debate/domain/debate_chat_port.dart'
 import 'package:aetherlink_flutter/features/debate/domain/debate_models.dart';
 import 'package:aetherlink_flutter/features/debate/domain/debate_verdict.dart';
 
+/// 运行模式：经典轮次制辩论，或 Jury 式共识决策（各模型独立作答 →
+/// 互评一轮 → 汇总投票出最终答案）。
+enum DebateMode { debate, consensus }
+
 /// 一次辩论的运行参数（保存的设置 + 开始面板的快速覆写合成）。
 class DebateRunConfig {
   const DebateRunConfig({
@@ -16,6 +20,7 @@ class DebateRunConfig {
     this.moderatorEnabled = true,
     this.summaryEnabled = true,
     this.verdictEnabled = false,
+    this.mode = DebateMode.debate,
   });
 
   final String topic;
@@ -30,11 +35,21 @@ class DebateRunConfig {
   /// 裁决模式：总结阶段额外产出结构化裁决卡片（胜方 + 四维评分）。
   final bool verdictEnabled;
 
+  final DebateMode mode;
+
   /// 参与轮流发言的角色：总结角色只在总结阶段出场；主持人可被覆写关掉。
   List<DebateRole> get speakingRoles => [
     for (final r in roles)
       if (r.stance != DebateStance.summary &&
           (moderatorEnabled || r.stance != DebateStance.moderator))
+        r,
+  ];
+
+  /// 共识模式的陈述人（jurors）：立场无关，主持人/总结角色不参与作答。
+  List<DebateRole> get jurorRoles => [
+    for (final r in roles)
+      if (r.stance != DebateStance.summary &&
+          r.stance != DebateStance.moderator)
         r,
   ];
 }
@@ -113,6 +128,7 @@ class DebateEngine {
   }
 
   Future<DebateOutcome> run(DebateRunConfig config) async {
+    if (config.mode == DebateMode.consensus) return _runConsensus(config);
     final roles = config.speakingRoles;
     if (roles.isEmpty) {
       await port.announce('⚠️ **无法开始辩论**\n\n没有可发言的辩论角色。');
@@ -172,6 +188,208 @@ class DebateEngine {
     if (_stopped) return DebateOutcome.stopped;
     await _conclude(config);
     return DebateOutcome.completed;
+  }
+
+  /// Jury 式共识流程：独立作答（互不可见）→ 互评一轮 → 主持/总结
+  /// 模型汇总投票给出最终答案。
+  Future<DebateOutcome> _runConsensus(DebateRunConfig config) async {
+    final jurors = config.jurorRoles;
+    if (jurors.length < 2) {
+      await port.announce('⚠️ **无法开始共识决策**\n\n至少需要 2 个非主持/总结角色独立作答。');
+      return DebateOutcome.completed;
+    }
+
+    await port.announce(
+      '🗳️ **共识决策开始**\n\n'
+      '**问题：** ${config.topic}\n\n'
+      '**陈述人：**\n${[for (final r in jurors) '• **${r.name}**'].join('\n')}\n\n'
+      '流程：各陈述人独立作答 → 互评一轮 → 汇总投票出最终答案。',
+    );
+    await _wait(const Duration(seconds: 1));
+    if (_stopped) return DebateOutcome.stopped;
+
+    // 阶段 1：独立作答（不携带彼此的回答，避免跑题/从众）。
+    _currentRound = 1;
+    final answers = <DebateTurnRecord>[];
+    for (final juror in jurors) {
+      if (_stopped) return DebateOutcome.stopped;
+      onProgress?.call(1, juror);
+      final result = await port.speak(
+        DebateSpeakRequest(
+          role: juror,
+          round: 1,
+          system: juror.systemPrompt,
+          prompt: _consensusAnswerPrompt(config, juror),
+          header: '**独立作答 - ${juror.name}**',
+          metadata: _turnMetadata(juror, 1, phase: 'consensus_answer'),
+        ),
+      );
+      if (_stopped) return DebateOutcome.stopped;
+      if (result.succeeded) {
+        final record = DebateTurnRecord(
+          round: 1,
+          role: juror,
+          content: result.text!,
+        );
+        _history.add(record);
+        answers.add(record);
+      } else if (result.failed) {
+        await port.announce(
+          '⚠️ **${juror.name}** 作答失败'
+          '${juror.hasModel ? '' : '（未配置模型）'}，已跳过。',
+        );
+      }
+      await _wait(Duration(seconds: config.turnGapSeconds));
+    }
+    if (_stopped) return DebateOutcome.stopped;
+    if (answers.length < 2) {
+      await port.announce('⚠️ **共识决策终止**\n\n有效回答不足 2 份，无法互评与投票。');
+      return DebateOutcome.completed;
+    }
+
+    // 阶段 2：互评——每位陈述人看到全部回答，点评优劣并投票。
+    _currentRound = 2;
+    final reviews = <DebateTurnRecord>[];
+    for (final juror in jurors) {
+      if (_stopped) return DebateOutcome.stopped;
+      // 作答失败（多半是没配模型）的陈述人不参与互评。
+      if (!answers.any((a) => a.role.id == juror.id)) continue;
+      onProgress?.call(2, juror);
+      final result = await port.speak(
+        DebateSpeakRequest(
+          role: juror,
+          round: 2,
+          system: juror.systemPrompt,
+          prompt: _consensusReviewPrompt(config, juror, answers),
+          header: '**互评 - ${juror.name}**',
+          metadata: _turnMetadata(juror, 2, phase: 'consensus_review'),
+        ),
+      );
+      if (_stopped) return DebateOutcome.stopped;
+      if (result.succeeded) {
+        final record = DebateTurnRecord(
+          round: 2,
+          role: juror,
+          content: result.text!,
+        );
+        _history.add(record);
+        reviews.add(record);
+      }
+      await _wait(Duration(seconds: config.turnGapSeconds));
+    }
+    if (_stopped) return DebateOutcome.stopped;
+
+    // 阶段 3：汇总投票，产出最终答案。
+    onProgress?.call(0, null);
+    final aggregator = _pickAggregator(config);
+    if (aggregator == null) {
+      await port.announce('⚠️ 未找到可汇总的模型，请参考上方各方回答与互评自行判断。');
+      return DebateOutcome.completed;
+    }
+    final finalResult = await port.speak(
+      DebateSpeakRequest(
+        role: aggregator,
+        round: 0,
+        system: '你是一位中立的决策主持人，擅长汇总多方意见并给出明确结论。',
+        prompt: _consensusFinalPrompt(config, answers, reviews),
+        header: '🗳️ **共识结论**',
+        metadata: _turnMetadata(aggregator, 0, phase: 'consensus_final'),
+      ),
+    );
+    if (_stopped) return DebateOutcome.stopped;
+    if (!finalResult.succeeded) {
+      await port.announce('⚠️ 共识结论生成失败，请参考上方各方回答与互评自行判断。');
+      return DebateOutcome.completed;
+    }
+    await port.announce('🏁 **共识决策结束**\n\n以上共识结论由各模型独立作答与互评后汇总得出。');
+    return DebateOutcome.completed;
+  }
+
+  /// 共识汇总人：优先主持人，其次总结角色，再次任意配模型的陈述人。
+  DebateRole? _pickAggregator(DebateRunConfig config) {
+    for (final r in config.roles) {
+      if (r.stance == DebateStance.moderator && r.hasModel) return r;
+    }
+    for (final r in config.roles) {
+      if (r.stance == DebateStance.summary && r.hasModel) return r;
+    }
+    for (final r in config.roles) {
+      if (r.hasModel) return r;
+    }
+    return null;
+  }
+
+  String _consensusAnswerPrompt(DebateRunConfig config, DebateRole juror) {
+    final buffer = StringBuffer()
+      ..writeln('你是${juror.name}，${juror.description}')
+      ..writeln()
+      ..writeln('请独立回答下面的问题，给出你认为最可靠的答案与关键理由：')
+      ..writeln()
+      ..writeln('问题：${config.topic}')
+      ..writeln();
+    final audience = [
+      for (final t in _history)
+        if (identical(t.role, audienceRole)) t,
+    ];
+    if (audience.isNotEmpty) {
+      buffer.writeln('提问者补充：');
+      for (final t in audience) {
+        buffer.writeln('- ${t.content}');
+      }
+      buffer.writeln();
+    }
+    buffer.write('直接给出答案和理由，不要罗列多种可能性敷衍，不超过${config.maxCharsPerTurn}字。');
+    return buffer.toString();
+  }
+
+  String _consensusReviewPrompt(
+    DebateRunConfig config,
+    DebateRole juror,
+    List<DebateTurnRecord> answers,
+  ) {
+    final buffer = StringBuffer()
+      ..writeln('问题：${config.topic}')
+      ..writeln()
+      ..writeln('各陈述人的独立回答：');
+    for (final a in answers) {
+      buffer.writeln('【${a.role.name}】${a.content}');
+    }
+    buffer
+      ..writeln()
+      ..write(
+        '你是${juror.name}。请逐一点评以上回答的优劣（包括你自己的），'
+        '最后明确写出「我投票支持：某陈述人」——可以不是你自己。'
+        '不超过${config.maxCharsPerTurn}字。',
+      );
+    return buffer.toString();
+  }
+
+  String _consensusFinalPrompt(
+    DebateRunConfig config,
+    List<DebateTurnRecord> answers,
+    List<DebateTurnRecord> reviews,
+  ) {
+    final buffer = StringBuffer()
+      ..writeln('问题：${config.topic}')
+      ..writeln()
+      ..writeln('各陈述人的独立回答：');
+    for (final a in answers) {
+      buffer.writeln('【${a.role.name}】${a.content}');
+    }
+    buffer
+      ..writeln()
+      ..writeln('互评与投票：');
+    for (final r in reviews) {
+      buffer.writeln('【${r.role.name}】${r.content}');
+    }
+    buffer
+      ..writeln()
+      ..write('''请汇总以上内容，输出结构化的共识结论：
+1. **投票统计**：各回答获得的支持情况
+2. **最终答案**：综合得票与互评质量，给出对提问者最有用的单一答案
+3. **保留意见**：少数派观点中值得注意的部分（如有）
+保持简洁，重点是让提问者拿到可直接使用的答案。''');
+    return buffer.toString();
   }
 
   /// 构建某角色本次发言的完整上下文（迁移 web `buildDebateContext`，

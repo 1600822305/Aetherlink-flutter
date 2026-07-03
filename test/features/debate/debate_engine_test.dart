@@ -308,4 +308,78 @@ void main() {
     );
     expect(port.announcements.last, contains('AI辩论结束'));
   });
+
+  group('共识模式', () {
+    DebateRunConfig consensusConfig({
+      List<DebateRole> roles = const [_pro, _con, _moderator, _summary],
+    }) => DebateRunConfig(
+      topic: '选哪个数据库？',
+      roles: roles,
+      turnGapSeconds: 0,
+      mode: DebateMode.consensus,
+    );
+
+    test('独立作答 → 互评 → 主持人汇总投票', () async {
+      final port = _FakePort();
+      final engine = DebateEngine(port: port);
+
+      final outcome = await engine.run(consensusConfig());
+
+      expect(outcome, DebateOutcome.completed);
+      // 2 陈述人 × (作答 + 互评) + 1 汇总；主持/总结角色不作答。
+      expect(
+        [for (final s in port.speaks) '${s.role.id}@${s.round}'],
+        ['r-pro@1', 'r-con@1', 'r-pro@2', 'r-con@2', 'r-mod@0'],
+      );
+      // 作答阶段互不可见：作答 prompt 不含他人回答。
+      expect(port.speaks[1].prompt, isNot(contains('【正方辩手】')));
+      expect(port.speaks.first.prompt, contains('选哪个数据库？'));
+      // 互评阶段能看到全部回答并被要求投票。
+      expect(port.speaks[2].prompt, contains('【正方辩手】'));
+      expect(port.speaks[2].prompt, contains('【反方辩手】'));
+      expect(port.speaks[2].prompt, contains('我投票支持'));
+      // 汇总 prompt 含互评与投票要求。
+      expect(port.speaks.last.prompt, contains('投票统计'));
+      expect(port.announcements.first, contains('共识决策开始'));
+      expect(port.announcements.last, contains('共识决策结束'));
+    });
+
+    test('陈述人不足 2 个时拒绝开始', () async {
+      final port = _FakePort();
+      final engine = DebateEngine(port: port);
+
+      await engine.run(consensusConfig(roles: const [_pro, _moderator]));
+
+      expect(port.speaks, isEmpty);
+      expect(port.announcements.single, contains('无法开始共识决策'));
+    });
+
+    test('作答失败的陈述人不参与互评；有效回答不足 2 份时终止', () async {
+      final port = _FakePort(
+        reply: (r) => r.role.id == 'r-con'
+            ? DebateSpeakResult.noModel
+            : DebateSpeakResult(text: '${r.role.name}的发言'),
+      );
+      final engine = DebateEngine(port: port);
+
+      await engine.run(consensusConfig());
+
+      expect(
+        port.announcements.where((a) => a.contains('有效回答不足')),
+        hasLength(1),
+      );
+      // 只有作答阶段的 2 次调用，无互评/汇总。
+      expect(port.speaks.map((s) => s.round), [1, 1]);
+    });
+
+    test('无主持人时由总结角色汇总', () async {
+      final port = _FakePort();
+      final engine = DebateEngine(port: port);
+
+      await engine.run(consensusConfig(roles: const [_pro, _con, _summary]));
+
+      expect(port.speaks.last.role.id, 'r-sum');
+      expect(port.speaks.last.round, 0);
+    });
+  });
 }
