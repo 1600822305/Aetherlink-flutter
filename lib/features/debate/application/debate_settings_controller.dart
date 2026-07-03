@@ -50,6 +50,9 @@ class DebateSettingsController extends _$DebateSettingsController
   void setSummaryEnabled(bool value) =>
       persist(state.copyWith(summaryEnabled: value));
 
+  void setVerdictEnabled(bool value) =>
+      persist(state.copyWith(verdictEnabled: value));
+
   void upsertRole(DebateRole role) {
     final roles = [...state.roles];
     final index = roles.indexWhere((r) => r.id == role.id);

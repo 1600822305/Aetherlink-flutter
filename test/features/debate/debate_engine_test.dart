@@ -4,14 +4,22 @@ import 'package:aetherlink_flutter/features/debate/application/debate_engine.dar
 import 'package:aetherlink_flutter/features/debate/domain/debate_chat_port.dart';
 import 'package:aetherlink_flutter/features/debate/domain/debate_models.dart';
 
-/// 录制引擎调用序列的假端口；[reply] 决定每次 speak 的返回。
+/// 录制引擎调用序列的假端口；[reply] 决定每次 speak 的返回，
+/// [generateReply] 决定静默生成（裁决 JSON）的返回。
 class _FakePort implements DebateChatPort {
-  _FakePort({DebateSpeakResult Function(DebateSpeakRequest request)? reply})
-    : _reply = reply ?? ((r) => DebateSpeakResult(text: '${r.role.name}的发言'));
+  _FakePort({
+    DebateSpeakResult Function(DebateSpeakRequest request)? reply,
+    DebateSpeakResult Function(DebateSpeakRequest request)? generateReply,
+  }) : _reply = reply ?? ((r) => DebateSpeakResult(text: '${r.role.name}的发言')),
+       _generateReply =
+           generateReply ?? ((_) => const DebateSpeakResult(failed: true));
 
   final DebateSpeakResult Function(DebateSpeakRequest request) _reply;
+  final DebateSpeakResult Function(DebateSpeakRequest request) _generateReply;
   final List<DebateSpeakRequest> speaks = [];
+  final List<DebateSpeakRequest> generates = [];
   final List<String> announcements = [];
+  void Function(String text)? interjectionListener;
   int cancelCount = 0;
 
   @override
@@ -21,8 +29,19 @@ class _FakePort implements DebateChatPort {
   }
 
   @override
-  Future<void> announce(String markdown) async {
+  Future<DebateSpeakResult> generate(DebateSpeakRequest request) async {
+    generates.add(request);
+    return _generateReply(request);
+  }
+
+  @override
+  Future<void> announce(String markdown, {Map<String, dynamic>? metadata}) async {
     announcements.add(markdown);
+  }
+
+  @override
+  void setInterjectionListener(void Function(String text)? listener) {
+    interjectionListener = listener;
   }
 
   @override
@@ -61,6 +80,7 @@ DebateRunConfig _config({
   int maxRounds = 3,
   bool moderatorEnabled = true,
   bool summaryEnabled = true,
+  bool verdictEnabled = false,
 }) => DebateRunConfig(
   topic: '测试辩题',
   roles: roles,
@@ -68,6 +88,7 @@ DebateRunConfig _config({
   turnGapSeconds: 0,
   moderatorEnabled: moderatorEnabled,
   summaryEnabled: summaryEnabled,
+  verdictEnabled: verdictEnabled,
 );
 
 void main() {
@@ -223,5 +244,68 @@ void main() {
 
     final moderatorContext = engine.buildContext(config, _moderator, 2);
     expect(moderatorContext, contains(DebateEngine.endDirective));
+  });
+
+  test('用户插话：进入历史并出现在后续上下文，带回应提示', () async {
+    final engine = DebateEngine(port: _FakePort());
+    final config = _config();
+
+    engine.injectUserMessage('  请双方结合具体案例论证  ');
+
+    expect(engine.history, hasLength(1));
+    expect(engine.history.single.role.id, DebateEngine.audienceRole.id);
+    final context = engine.buildContext(config, _pro, 2);
+    expect(context, contains('场外观众（用户插话）：请双方结合具体案例论证'));
+    expect(context, contains('适当回应'));
+  });
+
+  test('空插话被忽略', () {
+    final engine = DebateEngine(port: _FakePort());
+    engine.injectUserMessage('   ');
+    expect(engine.history, isEmpty);
+  });
+
+  test('裁决模式：静默生成 JSON 并以卡片通告呈现', () async {
+    const verdictJson = '''
+```json
+{
+  "winner": "正方辩手",
+  "rationale": "论证更严密",
+  "scores": [
+    {"name": "正方辩手", "logic": 9, "evidence": 8, "rebuttal": 8, "expression": 9},
+    {"name": "反方辩手", "logic": 7, "evidence": 7, "rebuttal": 8, "expression": 8}
+  ],
+  "clashPoints": ["效率与公平的取舍"]
+}
+```''';
+    final port = _FakePort(
+      generateReply: (_) => const DebateSpeakResult(text: verdictJson),
+    );
+    final engine = DebateEngine(port: port);
+
+    await engine.run(_config(maxRounds: 1, verdictEnabled: true));
+
+    expect(port.generates, hasLength(1));
+    expect(port.generates.single.role.id, 'r-sum');
+    final card = port.announcements.firstWhere((a) => a.contains('辩论裁决'));
+    expect(card, contains('胜方：正方辩手'));
+    expect(card, contains('| 正方辩手 | 9 | 8 | 8 | 9 | **34** |'));
+    expect(card, contains('效率与公平的取舍'));
+  });
+
+  test('裁决 JSON 无效时降级提示，不阻断收尾', () async {
+    final port = _FakePort(
+      generateReply: (_) => const DebateSpeakResult(text: '我无法裁决'),
+    );
+    final engine = DebateEngine(port: port);
+
+    final outcome = await engine.run(_config(maxRounds: 1, verdictEnabled: true));
+
+    expect(outcome, DebateOutcome.completed);
+    expect(
+      port.announcements.where((a) => a.contains('裁决生成失败')),
+      hasLength(1),
+    );
+    expect(port.announcements.last, contains('AI辩论结束'));
   });
 }

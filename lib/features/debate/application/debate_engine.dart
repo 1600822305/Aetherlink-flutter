@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:aetherlink_flutter/features/debate/domain/debate_chat_port.dart';
 import 'package:aetherlink_flutter/features/debate/domain/debate_models.dart';
+import 'package:aetherlink_flutter/features/debate/domain/debate_verdict.dart';
 
 /// 一次辩论的运行参数（保存的设置 + 开始面板的快速覆写合成）。
 class DebateRunConfig {
@@ -14,6 +15,7 @@ class DebateRunConfig {
     this.maxCharsPerTurn = 200,
     this.moderatorEnabled = true,
     this.summaryEnabled = true,
+    this.verdictEnabled = false,
   });
 
   final String topic;
@@ -24,6 +26,9 @@ class DebateRunConfig {
   final int maxCharsPerTurn;
   final bool moderatorEnabled;
   final bool summaryEnabled;
+
+  /// 裁决模式：总结阶段额外产出结构化裁决卡片（胜方 + 四维评分）。
+  final bool verdictEnabled;
 
   /// 参与轮流发言的角色：总结角色只在总结阶段出场；主持人可被覆写关掉。
   List<DebateRole> get speakingRoles => [
@@ -64,15 +69,39 @@ class DebateEngine {
   /// 主持人用于收束辩论的专属指令。
   static const String endDirective = '[DEBATE_END]';
 
+  /// 用户插话在历史里的伪角色（不参与排班，只进上下文）。
+  static const DebateRole audienceRole = DebateRole(
+    id: 'debate-audience',
+    name: '场外观众（用户插话）',
+    description: '旁听辩论的用户',
+    systemPrompt: '',
+    stance: DebateStance.neutral,
+  );
+
   final DebateChatPort port;
   final DebateProgressCallback? onProgress;
 
   final List<DebateTurnRecord> _history = [];
   bool _stopped = false;
+  int _currentRound = 0;
   Completer<void>? _waiter;
 
   bool get isStopped => _stopped;
   List<DebateTurnRecord> get history => List.unmodifiable(_history);
+
+  /// 用户插话：作为「场外发言」追加进历史，后续角色的上下文会包含它；
+  /// 不改变发言排班。
+  void injectUserMessage(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty || _stopped) return;
+    _history.add(
+      DebateTurnRecord(
+        round: _currentRound,
+        role: audienceRole,
+        content: trimmed,
+      ),
+    );
+  }
 
   /// 停止辩论：中断正在进行的流式请求与轮间等待。
   void stop() {
@@ -96,6 +125,7 @@ class DebateEngine {
 
     var round = 1;
     while (round <= config.maxRounds && !_stopped) {
+      _currentRound = round;
       for (final role in roles) {
         if (_stopped) break;
         onProgress?.call(round, role);
@@ -162,10 +192,17 @@ class DebateEngine {
       final start = _history.length > config.historyWindow
           ? _history.length - config.historyWindow
           : 0;
+      var hasAudience = false;
       for (final turn in _history.sublist(start)) {
         buffer.writeln('${turn.role.name}：${turn.content}');
+        if (identical(turn.role, audienceRole)) hasAudience = true;
       }
       buffer.writeln();
+      if (hasAudience) {
+        buffer
+          ..writeln('💬 以上发言中包含「场外观众（用户插话）」的提问或引导，请在保持自身立场的前提下适当回应。')
+          ..writeln();
+      }
     }
 
     if (role.stance == DebateStance.moderator) {
@@ -197,22 +234,16 @@ class DebateEngine {
   Future<void> _conclude(DebateRunConfig config) async {
     onProgress?.call(0, null);
     if (!config.summaryEnabled) {
+      if (config.verdictEnabled) {
+        await _announceVerdict(config);
+        return;
+      }
       await port.announce('🏁 **AI辩论结束**\n\n感谢各位AI角色的精彩辩论！');
       return;
     }
 
     // 优先专门的总结角色，其次任意配置了模型的角色。
-    DebateRole? summaryRole;
-    for (final r in config.roles) {
-      if (r.stance == DebateStance.summary && r.hasModel) {
-        summaryRole = r;
-        break;
-      }
-    }
-    summaryRole ??= config.roles
-        .where((r) => r.hasModel)
-        .cast<DebateRole?>()
-        .firstWhere((_) => true, orElse: () => null);
+    final summaryRole = _pickSummaryRole(config);
 
     if (summaryRole == null) {
       await port.announce(_fallbackSummary(config, '未找到任何配置了模型的角色，无法调用 AI 生成总结。'));
@@ -234,7 +265,89 @@ class DebateEngine {
       await port.announce(_fallbackSummary(config, 'AI 总结生成失败。'));
       return;
     }
+    if (config.verdictEnabled) {
+      await _announceVerdict(config, judge: summaryRole);
+      if (_stopped) return;
+    }
     await port.announce('🏁 **AI辩论结束**\n\n感谢各位AI角色的精彩辩论！');
+  }
+
+  /// 裁决模式：静默让裁判模型输出 JSON，解析后以卡片通告呈现；
+  /// 生成或解析失败时只提示，不阻断收尾。
+  Future<void> _announceVerdict(
+    DebateRunConfig config, {
+    DebateRole? judge,
+  }) async {
+    judge ??= _pickSummaryRole(config);
+    if (judge == null) {
+      await port.announce('⚖️ 裁决生成失败：未找到配置了模型的角色。');
+      return;
+    }
+    final result = await port.generate(
+      DebateSpeakRequest(
+        role: judge,
+        round: 0,
+        system: '你是一位专业的辩论评判，只输出 JSON，不输出任何其它文字。',
+        prompt: _verdictPrompt(config),
+        header: '',
+        metadata: _turnMetadata(judge, 0, phase: 'verdict'),
+      ),
+    );
+    if (_stopped) return;
+    final verdict = result.succeeded
+        ? DebateVerdict.tryParse(result.text!)
+        : null;
+    if (verdict == null) {
+      await port.announce('⚖️ 裁决生成失败（模型未返回有效的裁决 JSON）。');
+      return;
+    }
+    await port.announce(
+      verdict.toMarkdown(config.topic),
+      metadata: _turnMetadata(judge, 0, phase: 'verdict'),
+    );
+  }
+
+  String _verdictPrompt(DebateRunConfig config) {
+    final record = StringBuffer();
+    for (final turn in _history) {
+      record.write('\n${turn.role.name}：${turn.content}\n');
+    }
+    final sides = [
+      for (final r in config.speakingRoles)
+        if (r.stance == DebateStance.pro ||
+            r.stance == DebateStance.con ||
+            r.stance == DebateStance.neutral)
+          '"${r.name}"',
+    ].join('、');
+    return '''请作为中立评判，对以下辩论做出结构化裁决。
+
+辩论主题：${config.topic}
+
+完整辩论记录：
+$record
+
+参评角色：$sides
+
+严格只输出一个 JSON 对象（不要代码围栏之外的文字），结构如下：
+{
+  "winner": "获胜角色名，无法分出胜负时填「平局」",
+  "rationale": "一段简短的裁决理由（100字以内）",
+  "scores": [
+    {"name": "角色名", "logic": 1-10, "evidence": 1-10, "rebuttal": 1-10, "expression": 1-10}
+  ],
+  "clashPoints": ["关键交锋点1", "关键交锋点2"]
+}
+评分维度：logic=逻辑严密度、evidence=证据充分度、rebuttal=反驳有效性、expression=表达清晰度。''';
+  }
+
+  DebateRole? _pickSummaryRole(DebateRunConfig config) {
+    for (final r in config.roles) {
+      if (r.stance == DebateStance.summary && r.hasModel) return r;
+    }
+    for (final r in config.roles) {
+      if (r.hasModel) return r;
+    }
+    return null;
   }
 
   String _summaryPrompt(DebateRunConfig config) {

@@ -55,8 +55,15 @@ abstract class DebateChatPort {
   /// 返回最终文本。
   Future<DebateSpeakResult> speak(DebateSpeakRequest request);
 
-  /// 写一条无模型的系统通告消息（开场、结束、错误提示）。
-  Future<void> announce(String markdown);
+  /// 静默一次性生成（不落聊天消息），用于裁决 JSON 等结构化产出。
+  Future<DebateSpeakResult> generate(DebateSpeakRequest request);
+
+  /// 写一条无模型的系统通告消息（开场、结束、裁决卡片、错误提示）。
+  Future<void> announce(String markdown, {Map<String, dynamic>? metadata});
+
+  /// 注册/清除用户插话监听：辩论进行中用户从输入框发送的消息会被拦截成
+  /// 「场外发言」——落一条普通用户消息后回调 [listener]，不触发常规模型回复。
+  void setInterjectionListener(void Function(String text)? listener);
 
   /// 中断当前话题正在进行的流式请求（用户停止辩论时）。
   void cancelActiveStream();
