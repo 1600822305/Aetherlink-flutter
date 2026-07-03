@@ -48,10 +48,8 @@ Future<McpToolResult> runDexEditorTool(
         return await _getMethod(dex, args);
       case 'dex_modify_method':
         return await _modifyMethod(dex, args);
-      case 'dex_list_methods':
-        return await _listMethods(dex, args);
-      case 'dex_list_fields':
-        return await _listFields(dex, args);
+      case 'dex_outline_class':
+        return await _outlineClass(dex, args);
       case 'dex_rename_class':
         return await _renameClass(dex, args);
       case 'dex_list_strings':
@@ -366,32 +364,17 @@ Future<McpToolResult> _modifyMethod(
   return McpToolResult('✅ 方法 $methodName 已修改（内存中）。请使用 dex_save 保存到 APK。');
 }
 
-Future<McpToolResult> _listMethods(
+Future<McpToolResult> _outlineClass(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
   final className = _normalizeClassName(_str(args['className']));
-  final result = await dex.execute('listMethodsFromSession', {
+  final result = await dex.execute('outlineClassFromSession', {
     'sessionId': _str(args['sessionId']),
     'className': className,
   });
   if (!result.success) {
-    return McpToolResult('获取方法列表失败: ${result.error}', isError: true);
-  }
-  return McpToolResult(encodeJson(result.data));
-}
-
-Future<McpToolResult> _listFields(
-  DexEditor dex,
-  Map<String, Object?> args,
-) async {
-  final className = _normalizeClassName(_str(args['className']));
-  final result = await dex.execute('listFieldsFromSession', {
-    'sessionId': _str(args['sessionId']),
-    'className': className,
-  });
-  if (!result.success) {
-    return McpToolResult('获取字段列表失败: ${result.error}', isError: true);
+    return McpToolResult('获取类轮廓失败: ${result.error}', isError: true);
   }
   return McpToolResult(encodeJson(result.data));
 }
