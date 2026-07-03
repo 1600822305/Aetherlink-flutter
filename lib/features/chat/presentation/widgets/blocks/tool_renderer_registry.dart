@@ -4,6 +4,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/file_editor_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/file_editor_read_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/run_command_block_view.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/dex_editor_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/knowledge_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/web_search_block_view.dart';
 
@@ -46,6 +47,47 @@ final Map<String, ToolBlockBuilder> _toolRenderers = {
   for (final t in _fileEditorReadTools)
     t: (b) => FileEditorReadBlockView(block: b),
   for (final t in _knowledgeTools) t: (b) => KnowledgeBlockView(block: b),
+  for (final t in _dexEditorTools) t: (b) => DexEditorBlockView(block: b),
+};
+
+/// `@aether/dex-editor` built-in tools (会话工作流 / 类·方法反汇编 / 搜索 /
+/// 交叉引用 / 反编译 / 清单与资源 / APK 文件 / 任务完成)，渲染为紧凑的 DEX 卡片。
+const Set<String> _dexEditorTools = {
+  'dex_open_apk',
+  'dex_open',
+  'dex_list_classes',
+  'dex_search',
+  'dex_get_class',
+  'dex_modify_class',
+  'dex_save',
+  'dex_save_all',
+  'dex_close',
+  'dex_list_sessions',
+  'dex_add_class',
+  'dex_delete_class',
+  'dex_get_method',
+  'dex_modify_method',
+  'dex_outline_class',
+  'dex_rename_class',
+  'dex_find_method_xrefs',
+  'dex_find_field_xrefs',
+  'dex_find_class_xrefs',
+  'dex_smali_to_java',
+  'apk_get_manifest',
+  'apk_modify_manifest',
+  'apk_patch_manifest',
+  'apk_replace_in_manifest',
+  'apk_list_resources',
+  'apk_get_resource',
+  'apk_modify_resource',
+  'apk_get_resource_value',
+  'apk_set_resource_value',
+  'apk_list_files',
+  'apk_read_file',
+  'apk_delete_file',
+  'apk_add_file',
+  'apk_parse_arsc_cpp',
+  'attempt_completion',
 };
 
 /// `@aether/knowledge` tools, rendered as compact knowledge cards
