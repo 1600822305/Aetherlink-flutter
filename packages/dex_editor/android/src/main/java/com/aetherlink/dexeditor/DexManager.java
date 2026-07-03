@@ -2819,6 +2819,61 @@ public class DexManager {
     }
 
     /**
+     * 保存所有已修改的多 DEX 会话到各自 APK。
+     * 逐个会话调用 {@link #saveMultiDexSessionToApk(String)}，单个失败不影响其余，
+     * 返回逐会话结果 + 汇总（saved/skipped/failed）。
+     */
+    public JSObject saveAllSessionsToApk() {
+        JSArray sessionResults = new JSArray();
+        int saved = 0;
+        int skipped = 0;
+        int failed = 0;
+
+        // 复制 key 集合，避免保存过程修改 map 时并发遍历
+        for (String sessionId : new ArrayList<>(multiDexSessions.keySet())) {
+            MultiDexSession session = multiDexSessions.get(sessionId);
+            JSObject item = new JSObject();
+            item.put("sessionId", sessionId);
+            if (session == null) {
+                item.put("status", "skipped");
+                item.put("message", "会话不存在");
+                skipped++;
+                sessionResults.put(item);
+                continue;
+            }
+            if (session.apkPath != null) {
+                item.put("apkPath", session.apkPath);
+            }
+            if (!session.modified || session.modifiedClasses.isEmpty()) {
+                item.put("status", "skipped");
+                item.put("message", "没有需要保存的修改");
+                skipped++;
+                sessionResults.put(item);
+                continue;
+            }
+            try {
+                saveMultiDexSessionToApk(sessionId);
+                item.put("status", "saved");
+                saved++;
+            } catch (Exception e) {
+                item.put("status", "failed");
+                item.put("error", e.getMessage() != null ? e.getMessage() : e.toString());
+                failed++;
+            }
+            sessionResults.put(item);
+        }
+
+        JSObject result = new JSObject();
+        result.put("success", failed == 0);
+        result.put("saved", saved);
+        result.put("skipped", skipped);
+        result.put("failed", failed);
+        result.put("sessions", sessionResults);
+        result.put("needSign", saved > 0);
+        return result;
+    }
+
+    /**
      * 将 DEX 类型格式转换为 Java 类名格式
      * 例如: Lcom/example/Class; -> com.example.Class
      */
