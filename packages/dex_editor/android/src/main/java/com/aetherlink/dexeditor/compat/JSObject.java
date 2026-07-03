@@ -47,7 +47,7 @@ public class JSObject extends JSONObject {
     }
 
     /** Deep-converts an arbitrary decoded value into shim-friendly types. */
-    static Object wrap(Object value) {
+    public static Object wrap(Object value) {
         if (value instanceof Map) {
             return new JSObject((Map<?, ?>) value);
         }

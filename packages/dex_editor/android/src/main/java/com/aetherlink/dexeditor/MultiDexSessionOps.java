@@ -4,6 +4,7 @@ import android.util.Log;
 
 import com.aetherlink.dexeditor.compat.JSArray;
 import com.aetherlink.dexeditor.compat.JSObject;
+import com.aetherlink.dexeditor.utils.SmaliUtils;
 
 import com.android.tools.smali.dexlib2.dexbacked.DexBackedDexFile;
 import com.android.tools.smali.dexlib2.iface.Annotation;
