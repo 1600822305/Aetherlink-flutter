@@ -368,6 +368,17 @@ void main() {
       expect(schema['required'], isNot(contains('fieldType')));
     });
 
+    test('dex_find_class_xrefs exposes a class-level xref query', () {
+      final tool = kBuiltinMcpTools['@aether/dex-editor']!
+          .firstWhere((t) => t.name == 'dex_find_class_xrefs');
+      final schema = tool.inputSchema;
+      final props = schema['properties'] as Map<String, Object?>;
+      expect(props.keys, containsAll(['className', 'locator', 'limit']));
+      // 向后兼容：className 可选（可用 locator 替代），仅 sessionId 必填。
+      expect(schema['required'], contains('sessionId'));
+      expect(schema['required'], isNot(contains('className')));
+    });
+
     test('file-editor exposes run_command requiring a command (SSH-3)', () {
       final tool = kBuiltinMcpTools['@aether/file-editor']!
           .firstWhere((t) => t.name == 'run_command');

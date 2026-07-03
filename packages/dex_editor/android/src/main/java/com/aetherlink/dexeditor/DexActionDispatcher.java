@@ -267,6 +267,14 @@ public class DexActionDispatcher {
                 ));
                 break;
 
+            case "findClassXrefs":
+                result.put("data", dexManager.findClassXrefsCHA(
+                    params.getString("sessionId"),
+                    params.getString("className"),
+                    params.optInt("limit", 50)
+                ));
+                break;
+
             // ============ Smali 转 Java（C++ 实现）============
             case "smaliToJava":
                 result.put("data", dexManager.smaliToJava(
