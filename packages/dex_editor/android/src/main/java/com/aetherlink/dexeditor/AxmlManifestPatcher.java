@@ -42,6 +42,8 @@ public class AxmlManifestPatcher {
     private final byte[] data;
     private boolean valid;
 
+    private static final int SORTED_FLAG = 0x1;
+
     private int poolStart = -1;
     private int poolEnd = -1;
     private int styleCount;
@@ -49,6 +51,14 @@ public class AxmlManifestPatcher {
     private boolean isUtf8;
     private final List<String> strings = new ArrayList<>();
     private boolean poolDirty;
+
+    // Original string-data region, preserved verbatim on rebuild so that
+    // appending a value can never corrupt existing (possibly non-round-trippable)
+    // strings.
+    private int origStringCount;
+    private int origStringsStart = -1;   // absolute offset of first string's bytes
+    private int origStringDataEnd = -1;  // absolute end of string data (before styles)
+    private int[] origOffsets = new int[0];
 
     /** One editable attribute located in the binary. */
     private static final class Attr {
@@ -243,12 +253,21 @@ public class AxmlManifestPatcher {
         styleCount = u32(chunkStart + 12);
         flags = u32(chunkStart + 16);
         int stringsOffset = u32(chunkStart + 20);
+        int stylesOffset = u32(chunkStart + 24);
         isUtf8 = (flags & 0x100) != 0;
 
         int offsetTable = chunkStart + 28;
         int stringsStart = chunkStart + stringsOffset;
+        origStringCount = stringCount;
+        origStringsStart = stringsStart;
+        // String data ends where style data begins (if any), else at chunk end.
+        origStringDataEnd = (styleCount > 0 && stylesOffset > 0)
+            ? chunkStart + stylesOffset
+            : poolEnd;
+        origOffsets = new int[stringCount];
         for (int i = 0; i < stringCount; i++) {
             int rel = u32(offsetTable + i * 4);
+            origOffsets[i] = rel;
             int at = stringsStart + rel;
             strings.add(at < data.length ? readStringAt(at) : "");
         }
@@ -331,64 +350,46 @@ public class AxmlManifestPatcher {
 
     private byte[] buildStringPool() {
         try {
-            ByteArrayOutputStream stringData = new ByteArrayOutputStream();
-            int[] offsets = new int[strings.size()];
-            for (int i = 0; i < strings.size(); i++) {
-                offsets[i] = stringData.size();
-                String str = strings.get(i);
-                if (str == null) {
-                    str = "";
-                }
-                if (isUtf8) {
-                    byte[] bytes = str.getBytes(StandardCharsets.UTF_8);
-                    writeUtf8Len(stringData, str.length());
-                    writeUtf8Len(stringData, bytes.length);
-                    stringData.write(bytes, 0, bytes.length);
-                    stringData.write(0);
-                } else {
-                    int charLen = str.length();
-                    if (charLen > 0x7FFF) {
-                        stringData.write(((charLen >> 16) & 0x7FFF) | 0x80);
-                        stringData.write((charLen >> 24) & 0xFF);
-                    }
-                    stringData.write(charLen & 0xFF);
-                    stringData.write((charLen >> 8) & 0xFF);
-                    for (int j = 0; j < str.length(); j++) {
-                        char ch = str.charAt(j);
-                        stringData.write(ch & 0xFF);
-                        stringData.write((ch >> 8) & 0xFF);
-                    }
-                    stringData.write(0);
-                    stringData.write(0);
-                }
+            // Preserve the original string-data region verbatim; only encode the
+            // strings appended after parsing. This guarantees existing strings are
+            // byte-identical and cannot be mangled by a decode/re-encode cycle.
+            int origRegionLen = origStringDataEnd - origStringsStart;
+            int totalCount = strings.size();
+
+            ByteArrayOutputStream appended = new ByteArrayOutputStream();
+            int[] offsets = new int[totalCount];
+            for (int i = 0; i < origStringCount && i < origOffsets.length; i++) {
+                offsets[i] = origOffsets[i];
+            }
+            for (int i = origStringCount; i < totalCount; i++) {
+                offsets[i] = origRegionLen + appended.size();
+                encodeString(appended, strings.get(i));
             }
 
-            int headerSize = 28;
-            int offsetTableSize = strings.size() * 4;
-            int styleOffsetTableSize = styleCount * 4;
-            byte[] stringBytes = stringData.toByteArray();
-            int padding = (4 - (stringBytes.length % 4)) % 4;
-            int stringsDataSize = stringBytes.length + padding;
+            byte[] appendedBytes = appended.toByteArray();
+            int stringDataLen = origRegionLen + appendedBytes.length;
+            int padding = (4 - (stringDataLen % 4)) % 4;
 
-            int newStringsOffset = headerSize + offsetTableSize + styleOffsetTableSize;
-            int totalSize = newStringsOffset + stringsDataSize;
+            int headerSize = 28;
+            // Styles are dropped on rebuild, so no style offset table is emitted.
+            int newStringsOffset = headerSize + totalCount * 4;
+            int totalSize = newStringsOffset + stringDataLen + padding;
+            int newFlags = flags & ~SORTED_FLAG;
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             writeLE16(out, STRING_POOL_TYPE);
             writeLE16(out, headerSize);
             writeLE32(out, totalSize);
-            writeLE32(out, strings.size());
-            writeLE32(out, styleCount);
-            writeLE32(out, flags);
+            writeLE32(out, totalCount);
+            writeLE32(out, 0);              // styleCount (styles dropped)
+            writeLE32(out, newFlags);
             writeLE32(out, newStringsOffset);
-            writeLE32(out, 0); // styles offset (styles are not preserved)
+            writeLE32(out, 0);              // stylesOffset
             for (int off : offsets) {
                 writeLE32(out, off);
             }
-            for (int i = 0; i < styleCount; i++) {
-                writeLE32(out, 0);
-            }
-            out.write(stringBytes, 0, stringBytes.length);
+            out.write(data, origStringsStart, origRegionLen);
+            out.write(appendedBytes, 0, appendedBytes.length);
             for (int i = 0; i < padding; i++) {
                 out.write(0);
             }
@@ -398,6 +399,32 @@ public class AxmlManifestPatcher {
             byte[] orig = new byte[poolEnd - poolStart];
             System.arraycopy(data, poolStart, orig, 0, orig.length);
             return orig;
+        }
+    }
+
+    private void encodeString(ByteArrayOutputStream out, String value) {
+        String str = value == null ? "" : value;
+        if (isUtf8) {
+            byte[] bytes = str.getBytes(StandardCharsets.UTF_8);
+            writeUtf8Len(out, str.length());
+            writeUtf8Len(out, bytes.length);
+            out.write(bytes, 0, bytes.length);
+            out.write(0);
+        } else {
+            int charLen = str.length();
+            if (charLen > 0x7FFF) {
+                out.write(((charLen >> 16) & 0x7FFF) | 0x80);
+                out.write((charLen >> 24) & 0xFF);
+            }
+            out.write(charLen & 0xFF);
+            out.write((charLen >> 8) & 0xFF);
+            for (int j = 0; j < str.length(); j++) {
+                char ch = str.charAt(j);
+                out.write(ch & 0xFF);
+                out.write((ch >> 8) & 0xFF);
+            }
+            out.write(0);
+            out.write(0);
         }
     }
 

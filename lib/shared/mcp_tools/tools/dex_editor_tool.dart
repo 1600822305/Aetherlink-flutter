@@ -544,7 +544,9 @@ Future<McpToolResult> _patchManifest(
     'patches': patchList,
   });
   final data = _map(result.data);
-  if (!result.success) {
+  // `result.success` is the transport-level envelope flag; the business result
+  // (whether any patch was actually applied) lives in `data['success']`.
+  if (!result.success || data['success'] == false) {
     return McpToolResult(
       encodeJson({
         'success': false,
