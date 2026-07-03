@@ -15,6 +15,7 @@ import com.android.tools.smali.dexlib2.dexbacked.DexBackedClassDef;
 import com.android.tools.smali.dexlib2.dexbacked.DexBackedDexFile;
 import com.android.tools.smali.dexlib2.dexbacked.DexBackedField;
 import com.android.tools.smali.dexlib2.dexbacked.DexBackedMethod;
+import com.android.tools.smali.dexlib2.iface.Annotation;
 import com.android.tools.smali.dexlib2.iface.ClassDef;
 import com.android.tools.smali.dexlib2.iface.DexFile;
 import com.android.tools.smali.dexlib2.iface.Field;
@@ -2028,7 +2029,13 @@ public class DexManager {
         if (session == null) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
-        
+
+        // 结构性搜索（父类/接口/注解）由 dexlib2 在 Java 层完成，C++ 引擎不支持这些类型
+        if ("superclass".equals(searchType) || "interface".equals(searchType)
+                || "annotation".equals(searchType)) {
+            return searchStructuralInSession(session, query, searchType, caseSensitive, maxResults);
+        }
+
         if (!CppDex.isAvailable()) {
             throw new RuntimeException("C++ DEX library not available");
         }
@@ -2078,6 +2085,110 @@ public class DexManager {
         result.put("engine", "rust");
         
         return result;
+    }
+
+    /**
+     * 结构性搜索：按父类(superclass)、接口(interface)、注解(annotation) 匹配。
+     * 由 dexlib2 在 Java 层遍历完成，C++ 搜索引擎不覆盖这些类型。
+     */
+    private JSObject searchStructuralInSession(MultiDexSession session, String query,
+                                               String searchType, boolean caseSensitive,
+                                               int maxResults) {
+        JSObject result = new JSObject();
+        JSArray allResults = new JSArray();
+        String needle = caseSensitive ? query : query.toLowerCase();
+
+        outer:
+        for (Map.Entry<String, DexBackedDexFile> entry : session.dexFiles.entrySet()) {
+            String dexName = entry.getKey();
+            DexBackedDexFile dexFile = entry.getValue();
+            if (dexFile == null) {
+                continue;
+            }
+            for (ClassDef classDef : dexFile.getClasses()) {
+                if ("superclass".equals(searchType)) {
+                    String sup = classDef.getSuperclass();
+                    if (sup != null && matches(sup, needle, caseSensitive)) {
+                        JSObject item = new JSObject();
+                        item.put("type", "superclass");
+                        item.put("className", classDef.getType());
+                        item.put("superclass", sup);
+                        item.put("dexFile", dexName);
+                        allResults.put(item);
+                    }
+                } else if ("interface".equals(searchType)) {
+                    for (String iface : classDef.getInterfaces()) {
+                        if (matches(iface, needle, caseSensitive)) {
+                            JSObject item = new JSObject();
+                            item.put("type", "interface");
+                            item.put("className", classDef.getType());
+                            item.put("interface", iface);
+                            item.put("dexFile", dexName);
+                            allResults.put(item);
+                            break;
+                        }
+                    }
+                } else { // annotation
+                    for (Annotation ann : classDef.getAnnotations()) {
+                        if (matches(ann.getType(), needle, caseSensitive)) {
+                            JSObject item = new JSObject();
+                            item.put("type", "annotation");
+                            item.put("className", classDef.getType());
+                            item.put("annotation", ann.getType());
+                            item.put("target", "class");
+                            item.put("dexFile", dexName);
+                            allResults.put(item);
+                            if (allResults.length() >= maxResults) break outer;
+                        }
+                    }
+                    for (Method m : classDef.getMethods()) {
+                        for (Annotation ann : m.getAnnotations()) {
+                            if (matches(ann.getType(), needle, caseSensitive)) {
+                                JSObject item = new JSObject();
+                                item.put("type", "annotation");
+                                item.put("className", classDef.getType());
+                                item.put("methodName", m.getName());
+                                item.put("annotation", ann.getType());
+                                item.put("target", "method");
+                                item.put("dexFile", dexName);
+                                allResults.put(item);
+                                if (allResults.length() >= maxResults) break outer;
+                            }
+                        }
+                    }
+                    for (Field f : classDef.getFields()) {
+                        for (Annotation ann : f.getAnnotations()) {
+                            if (matches(ann.getType(), needle, caseSensitive)) {
+                                JSObject item = new JSObject();
+                                item.put("type", "annotation");
+                                item.put("className", classDef.getType());
+                                item.put("fieldName", f.getName());
+                                item.put("annotation", ann.getType());
+                                item.put("target", "field");
+                                item.put("dexFile", dexName);
+                                allResults.put(item);
+                                if (allResults.length() >= maxResults) break outer;
+                            }
+                        }
+                    }
+                }
+                if (allResults.length() >= maxResults) break outer;
+            }
+        }
+
+        result.put("query", query);
+        result.put("searchType", searchType);
+        result.put("total", allResults.length());
+        result.put("results", allResults);
+        result.put("engine", "java-dexlib2");
+        return result;
+    }
+
+    private static boolean matches(String value, String needle, boolean caseSensitive) {
+        if (value == null) {
+            return false;
+        }
+        return caseSensitive ? value.contains(needle) : value.toLowerCase().contains(needle);
     }
 
     /**
