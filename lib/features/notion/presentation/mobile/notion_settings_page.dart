@@ -69,14 +69,14 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const ModelSectionTitle('连接配置'),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 _SwitchRow(
                   title: '启用 Notion 导出',
                   description: '开启后可将话题或选中的消息导出为 Notion 页面',
                   value: settings.enabled,
                   onChanged: controller.setEnabled,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 ModelFormField(
                   label: 'API 密钥',
                   hint: 'ntn_xxx / secret_xxx',
@@ -88,7 +88,7 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
                     _resetConnectState();
                   },
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 ModelFormField(
                   label: '数据库 ID 或链接',
                   hint: '粘贴数据库链接或 32 位 ID',
@@ -98,7 +98,7 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
                     _resetConnectState();
                   },
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 Align(
                   alignment: Alignment.centerRight,
                   child: ModelTonalButton(
@@ -108,7 +108,7 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
                   ),
                 ),
                 if (_sourceChoices != null) ...[
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   AppSelectField<String>(
                     label: '选择数据源',
                     value: '',
@@ -126,10 +126,10 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
                   ),
                 ],
                 if (_connectError != null) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   _StatusLine(success: false, text: _connectError!),
                 ] else if (connected) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   _StatusLine(
                     success: true,
                     text:
@@ -140,13 +140,13 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           ModelSettingsCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const ModelSectionTitle('导出选项'),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 if (connected && _dateChoices.isNotEmpty) ...[
                   AppSelectField<String>(
                     label: '日期属性（可选）',
@@ -160,7 +160,7 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
                     ],
                     onChanged: controller.setDateProperty,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                 ],
                 _SwitchRow(
                   title: '导出思考过程',
@@ -171,13 +171,13 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           const ModelSettingsCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ModelSectionTitle('配置步骤'),
-                SizedBox(height: 12),
+                SizedBox(height: 8),
                 _Note(
                   text:
                       '1. 访问 notion.so/profile/integrations 创建内部集成，复制 API 密钥\n'
@@ -321,7 +321,7 @@ class _SwitchRow extends StatelessWidget {
                   color: theme.colorScheme.onSurface,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 description,
                 style: theme.textTheme.bodySmall?.copyWith(
@@ -385,7 +385,7 @@ class _Note extends StatelessWidget {
       text,
       style: theme.textTheme.bodySmall?.copyWith(
         fontSize: 12,
-        height: 1.6,
+        height: 1.5,
         color: theme.colorScheme.onSurfaceVariant,
       ),
     );
