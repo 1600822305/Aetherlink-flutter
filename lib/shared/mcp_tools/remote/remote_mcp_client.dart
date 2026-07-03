@@ -46,11 +46,18 @@ class RemoteMcpClient {
       _onMessage,
       onError: _onStreamError,
     );
-    await _request('initialize', {
+    final initResult = await _request('initialize', {
       'protocolVersion': kMcpProtocolVersion,
       'capabilities': <String, Object?>{},
       'clientInfo': {'name': 'AetherLink', 'version': '1.0.0'},
     });
+    // 后续请求的 MCP-Protocol-Version 头必须携带服务端协商出的版本。
+    final negotiated = initResult['protocolVersion'];
+    _transport.setProtocolVersion(
+      negotiated is String && negotiated.isNotEmpty
+          ? negotiated
+          : kMcpProtocolVersion,
+    );
     await _transport.send({
       'jsonrpc': '2.0',
       'method': 'notifications/initialized',

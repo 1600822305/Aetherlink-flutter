@@ -17,6 +17,7 @@ class _ScriptedTransport implements McpTransport {
   final sent = <Map<String, Object?>>[];
   bool started = false;
   bool closed = false;
+  String? protocolVersion;
 
   @override
   Stream<Map<String, Object?>> get messages => _controller.stream;
@@ -34,6 +35,9 @@ class _ScriptedTransport implements McpTransport {
       _controller.add({'jsonrpc': '2.0', 'id': id, ...fragment});
     }
   }
+
+  @override
+  void setProtocolVersion(String version) => protocolVersion = version;
 
   @override
   Future<void> close() async {
@@ -89,6 +93,24 @@ void main() {
       expect(transport.started, isTrue);
       final methods = transport.sent.map((m) => m['method']).toList();
       expect(methods, ['initialize', 'notifications/initialized']);
+      // 握手后把服务端协商出的版本回写给传输层。
+      expect(transport.protocolVersion, kMcpProtocolVersion);
+    });
+
+    test('connect 采用服务端协商出的旧版本', () async {
+      final transport = _ScriptedTransport((request) {
+        if (request['method'] == 'initialize') {
+          return {
+            'result': {'protocolVersion': '2024-11-05'},
+          };
+        }
+        return {'result': <String, Object?>{}};
+      });
+      final client = RemoteMcpClient(transport: transport);
+
+      await client.connect();
+
+      expect(transport.protocolVersion, '2024-11-05');
     });
 
     test(
