@@ -185,6 +185,11 @@ class ChatController extends _$ChatController {
       );
     }
 
+    // 崩溃恢复（对齐 Cherry Studio 启动时的 reconcile）：走到这里说明该话题没有
+    // 活跃流，凡是仍停在 streaming 状态的消息都是上次运行（闪退/被杀）遗留的，
+    // 把它们连同检查点已落盘的内容一起落定，避免对话丢失或永远转圈。
+    await _settleInterruptedMessages(topic.id);
+
     // Display order now comes from the message tree (active path + inlined
     // multi-model siblings); getBranchMessages falls back to a chronological
     // sort when the tree can't project faithfully, so the set never changes.
@@ -1923,6 +1928,11 @@ class ChatController extends _$ChatController {
   /// 流式回复 UI 刷新的最小间隔（节流窗口）。
   static const Duration _kStreamEmitInterval = Duration(milliseconds: 100);
 
+  /// 流式过程中把已生成内容检查点写入数据库的最小间隔。对齐 Cherry Studio 的
+  /// 崩溃安全策略：闪退/被系统杀死时最多丢最后几秒的增量，而不是整轮回复
+  /// （MCP 工具执行可能耗时数分钟，期间尤其需要落盘）。
+  static const Duration _kCheckpointInterval = Duration(seconds: 2);
+
   /// Subscribes to the gateway stream for [request] and drives the MCP tool-call
   /// loop. Each round accumulates assistant text into a `main_text` block and
   /// reasoning into a single `thinking` card; if the model asks for a tool
@@ -2109,6 +2119,57 @@ class ChatController extends _$ChatController {
       });
     }
 
+    // 崩溃安全检查点（对齐 Cherry Studio）：把目前已生成的块（完成块 + 进行中的
+    // thinking / 正文）以 streaming 状态写入数据库，让闪退/杀进程只丢最后一个
+    // 节流窗口内的增量。写入串行排队（chained future），保证与终态落盘不交错；
+    // 终态落盘前先 await [checkpointChain] 再整体覆盖。检查点失败只记录不打断
+    // 流式（落盘是尽力而为的兜底，不能影响正常回复）。
+    var checkpointChain = Future<void>.value();
+    var lastCheckpointAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+    List<MessageBlock> checkpointBlocks() {
+      final current = roundDisplay();
+      return <MessageBlock>[
+        ...completed,
+        if (thinking.isNotEmpty)
+          MessageBlock.thinking(
+            id: thinkingBlockId,
+            messageId: assistantMessageId,
+            status: MessageBlockStatus.streaming,
+            createdAt: thinkingStartAt ?? assistantTime,
+            content: thinking.toString(),
+          ),
+        if (current.isNotEmpty)
+          MessageBlock.mainText(
+            id: roundBlockId,
+            messageId: assistantMessageId,
+            status: MessageBlockStatus.streaming,
+            createdAt: assistantTime,
+            content: current,
+          ),
+      ];
+    }
+
+    void checkpoint({bool force = false}) {
+      if (!force &&
+          DateTime.now().difference(lastCheckpointAt) < _kCheckpointInterval) {
+        return;
+      }
+      lastCheckpointAt = DateTime.now();
+      final blocks = checkpointBlocks();
+      checkpointChain = checkpointChain.then((_) async {
+        try {
+          await _persistMessageBlocks(
+            messageId: assistantMessageId,
+            status: MessageStatus.streaming,
+            blocks: blocks,
+          );
+        } on Object catch (_) {
+          // Best-effort durability; never disrupt the live stream.
+        }
+      });
+    }
+
     // Finalize an aborted turn: keep whatever streamed so far (flush the live
     // thinking + prose into [completed]) and persist as a normal success, then
     // drop the streaming state. Mirrors Cherry Studio — Stop preserves output.
@@ -2140,6 +2201,7 @@ class ChatController extends _$ChatController {
       }
       ref.read(toolConfirmationProvider.notifier).rejectAll();
       ref.read(runningCommandsProvider.notifier).cancelAll();
+      await checkpointChain;
       await _persistMessageBlocks(
         messageId: assistantMessageId,
         status: MessageStatus.success,
@@ -2232,12 +2294,14 @@ class ChatController extends _$ChatController {
                 if (thinking.isNotEmpty) thinkingEndAt ??= DateTime.now();
                 buffer.write(text);
                 scheduleUpdate();
+                checkpoint();
               case LlmReasoningDelta(:final text):
                 committed = true;
                 firstTokenMs ??= stopwatch.elapsedMilliseconds;
                 thinkingStartAt ??= DateTime.now();
                 thinking.write(text);
                 scheduleUpdate();
+                checkpoint();
               case LlmToolCallChunk(:final call):
                 committed = true;
                 if (thinking.isNotEmpty) thinkingEndAt ??= DateTime.now();
@@ -2447,6 +2511,9 @@ class ChatController extends _$ChatController {
               ),
             );
             update();
+            // MCP 工具可能跑很久：执行前强制落盘一次，保证前面各轮的正文/思考/
+            // 工具结果在执行期间闪退也不丢。
+            checkpoint(force: true);
 
             McpToolResult result;
             if (needsConfirm) {
@@ -2493,6 +2560,7 @@ class ChatController extends _$ChatController {
               ),
             );
             update();
+            checkpoint(force: true);
           }
 
           // Feed the assistant turn + tool results back so the model can
@@ -2542,6 +2610,7 @@ class ChatController extends _$ChatController {
 
         cancelPendingEmit();
         stopwatch.stop();
+        await checkpointChain;
         await _persistMessageBlocks(
           messageId: assistantMessageId,
           status: MessageStatus.success,
@@ -2598,6 +2667,7 @@ class ChatController extends _$ChatController {
     cancelPendingEmit();
     ref.read(toolConfirmationProvider.notifier).rejectAll();
     ref.read(runningCommandsProvider.notifier).cancelAll();
+    await checkpointChain;
     await persistKeyUpdates();
     final messageText = _errorMessage(
       lastError ?? const _NoUsableApiKeyException(),
@@ -2707,6 +2777,67 @@ class ChatController extends _$ChatController {
         metrics: metrics ?? message.metrics,
       ),
     );
+  }
+
+  /// 崩溃恢复：把 [topicId] 里上次运行遗留在 streaming 状态的消息落定（对齐
+  /// Cherry Studio 启动时的 `reconcileStalePendingMessages`）。检查点持久化让
+  /// 闪退前的正文/思考/工具块都已在库里：有内容就按 success 保留（对话不丢），
+  /// 一点内容都没有才标记 error；块级的 streaming/processing 状态一并落定，
+  /// 其中未完成的工具块标记为 error（结果已随进程一起丢失），避免重启后出现
+  /// 永远转圈的气泡。仅在该话题没有活跃流时调用。
+  Future<void> _settleInterruptedMessages(String topicId) async {
+    try {
+      final messages = await _repo.getMessagesByTopicId(topicId);
+      for (final message in messages) {
+        if (message.status != MessageStatus.streaming) continue;
+        final blocks = await _repo.getMessageBlocksByMessageId(message.id);
+        final settled = <MessageBlock>[
+          for (final block in blocks)
+            switch (block) {
+              ToolBlock(status: MessageBlockStatus.processing) =>
+                block.copyWith(
+                  status: MessageBlockStatus.error,
+                  updatedAt: DateTime.now(),
+                  content: '应用在工具执行期间退出，本次调用的结果已丢失',
+                ),
+              _
+                  when block.status == MessageBlockStatus.streaming ||
+                      block.status == MessageBlockStatus.processing ||
+                      block.status == MessageBlockStatus.pending =>
+                block.copyWith(
+                  status: MessageBlockStatus.success,
+                  updatedAt: DateTime.now(),
+                ),
+              _ => block,
+            },
+        ];
+        final hasContent = settled.any(
+          (b) =>
+              (b is MainTextBlock && b.content.trim().isNotEmpty) ||
+              (b is ThinkingBlock && b.content.trim().isNotEmpty) ||
+              b is ToolBlock,
+        );
+        await _persistMessageBlocks(
+          messageId: message.id,
+          status: hasContent ? MessageStatus.success : MessageStatus.error,
+          blocks: [
+            for (final b in settled)
+              if (b is! MainTextBlock || b.content.trim().isNotEmpty) b,
+            if (!hasContent)
+              MessageBlock.error(
+                id: generateId('block'),
+                messageId: message.id,
+                status: MessageBlockStatus.error,
+                createdAt: DateTime.now(),
+                content: '',
+                message: '回复在应用退出时被中断',
+              ),
+          ],
+        );
+      }
+    } on Object catch (_) {
+      // Recovery is best-effort; never block loading the conversation.
+    }
   }
 
   /// Recomputes and persists the topic's `lastMessagePreview`, `lastMessageTime`
