@@ -5,8 +5,9 @@ import 'package:dio/dio.dart';
 
 import 'package:aetherlink_flutter/core/network/sse_decoder.dart';
 
-/// The MCP protocol version this client speaks (web `MCP_PROTOCOL_VERSION`).
-const String kMcpProtocolVersion = '2025-03-26';
+/// The latest MCP protocol version this client supports, offered in the
+/// `initialize` request body; the server may negotiate down.
+const String kMcpProtocolVersion = '2025-06-18';
 
 /// A bidirectional channel that carries JSON-RPC messages to and from one MCP
 /// server — the Dart port of the SDK `Transport` interface
@@ -38,6 +39,13 @@ abstract class McpTransport {
   /// Sends one JSON-RPC [message] (request or notification) to the server.
   Future<void> send(Map<String, Object?> message);
 
+  /// Records the protocol version negotiated during `initialize`. Per spec,
+  /// the `MCP-Protocol-Version` header carries the **negotiated** version and
+  /// is only sent on requests **after** initialization — sending it up front
+  /// makes strict servers reject the handshake with HTTP 400
+  /// “Invalid MCP-Protocol-Version”.
+  void setProtocolVersion(String version);
+
   /// Tears down the channel and releases the socket.
   Future<void> close();
 }
@@ -53,10 +61,13 @@ class McpTransportException implements Exception {
   String toString() => 'McpTransportException: $message';
 }
 
-/// Merges [headers] with the MCP protocol-version header the spec requires on
-/// every request (web `prepareHeaders`). Caller-supplied values win.
-Map<String, String> _withProtocol(Map<String, String>? headers) => {
-  'mcp-protocol-version': kMcpProtocolVersion,
+/// Merges [headers] with the negotiated MCP protocol-version header (absent
+/// until `initialize` completes). Caller-supplied values win.
+Map<String, String> _withProtocol(
+  Map<String, String>? headers,
+  String? protocolVersion,
+) => {
+  if (protocolVersion != null) 'mcp-protocol-version': protocolVersion,
   ...?headers,
 };
 
@@ -80,9 +91,13 @@ class StreamableHttpTransport implements McpTransport {
 
   final _controller = StreamController<Map<String, Object?>>.broadcast();
   String? _sessionId;
+  String? _protocolVersion;
 
   @override
   Stream<Map<String, Object?>> get messages => _controller.stream;
+
+  @override
+  void setProtocolVersion(String version) => _protocolVersion = version;
 
   @override
   Future<void> start() async {}
@@ -98,7 +113,7 @@ class StreamableHttpTransport implements McpTransport {
           responseType: ResponseType.stream,
           validateStatus: (_) => true,
           headers: {
-            ..._withProtocol(_headers),
+            ..._withProtocol(_headers, _protocolVersion),
             'Content-Type': 'application/json',
             'Accept': 'application/json, text/event-stream',
             if (_sessionId != null) 'Mcp-Session-Id': _sessionId,
@@ -199,9 +214,13 @@ class SseClientTransport implements McpTransport {
   final _cancel = CancelToken();
   StreamSubscription<SseEvent>? _subscription;
   Uri? _endpoint;
+  String? _protocolVersion;
 
   @override
   Stream<Map<String, Object?>> get messages => _controller.stream;
+
+  @override
+  void setProtocolVersion(String version) => _protocolVersion = version;
 
   @override
   Future<void> start() async {
@@ -213,7 +232,10 @@ class SseClientTransport implements McpTransport {
           responseType: ResponseType.stream,
           // The SSE stream is long-lived; no idle-receive timeout.
           receiveTimeout: Duration.zero,
-          headers: {..._withProtocol(_headers), 'Accept': 'text/event-stream'},
+          headers: {
+            ..._withProtocol(_headers, _protocolVersion),
+            'Accept': 'text/event-stream',
+          },
         ),
         cancelToken: _cancel,
       );
@@ -260,7 +282,7 @@ class SseClientTransport implements McpTransport {
         options: Options(
           validateStatus: (status) => status != null && status < 400,
           headers: {
-            ..._withProtocol(_headers),
+            ..._withProtocol(_headers, _protocolVersion),
             'Content-Type': 'application/json',
           },
         ),
