@@ -16,6 +16,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/knowledge_
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/mcp_quick_panel_dialog.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/multi_model_selector_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/quick_phrase_sheet.dart';
+import 'package:aetherlink_flutter/features/debate/presentation/widgets/debate_start_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/reasoning_effort_picker.dart';
 import 'package:aetherlink_flutter/shared/domain/input_box_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
@@ -123,7 +124,7 @@ class ChatInputActions implements InputBoxActions {
       case InputBoxAction.knowledge:
         _openKnowledgeMount(context);
       case InputBoxAction.aiDebate:
-        _comingSoon(context);
+        openDebateEntry(context, _ref);
     }
   }
 
@@ -274,9 +275,5 @@ class ChatInputActions implements InputBoxActions {
     } else {
       invoke(selected, context);
     }
-  }
-
-  void _comingSoon(BuildContext context) {
-    AppToast.info(context, '即将支持');
   }
 }

@@ -98,6 +98,7 @@ const List<SettingGroupData> kSettingsGroups = <SettingGroupData>[
         icon: LucideIcons.messageSquare,
         title: 'AI辩论设置',
         description: '配置AI互相辩论讨论功能',
+        route: AppRouter.debateSettingsPath,
       ),
       SettingItemData(
         icon: LucideIcons.gitBranch,

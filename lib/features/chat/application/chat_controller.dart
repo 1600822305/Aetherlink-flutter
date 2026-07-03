@@ -752,6 +752,141 @@ class ChatController extends _$ChatController {
     unawaited(_maybeExtractMemory(topicId));
   }
 
+  /// AI 辩论的一次角色发言：以 [current] 指定的模型发起一条**不携带话题历史**
+  /// 的助手流式消息（辩论上下文由引擎在 [prompt] 里自建）。[header] 作为消息
+  /// 顶部的成功块渲染（角色/轮次徽章），[metadata] 原样存进消息（`debate` 标记）。
+  /// 返回流式完成后的正文（不含 header）；话题已有流式请求时返回 null。
+  Future<String?> sendDebateTurn({
+    required CurrentModel current,
+    required String system,
+    required String prompt,
+    String header = '',
+    Map<String, dynamic>? metadata,
+  }) async {
+    final snapshot = state.value ?? ChatState.initial();
+    if (snapshot.isStreaming) return null;
+
+    _truncatedMessageId = null;
+    final topicId = await _ensureTopic();
+    final now = DateTime.now();
+    final effective = effectiveModelFor(current);
+
+    final assistantMessageId = generateId('msg');
+    final assistantBlockId = generateId('block');
+    final headerBlock = header.isEmpty
+        ? null
+        : MessageBlock.mainText(
+            id: generateId('block'),
+            messageId: assistantMessageId,
+            status: MessageBlockStatus.success,
+            createdAt: now,
+            content: header,
+          );
+    final assistantMessage = Message(
+      id: assistantMessageId,
+      role: MessageRole.assistant,
+      assistantId: _assistantId,
+      topicId: topicId,
+      createdAt: now,
+      status: MessageStatus.streaming,
+      model: effective,
+      metadata: metadata,
+      blocks: <String>[assistantBlockId],
+    );
+    await _repo.saveMessage(assistantMessage);
+    await _repo.saveMessageBlock(
+      MessageBlock.mainText(
+        id: assistantBlockId,
+        messageId: assistantMessageId,
+        status: MessageBlockStatus.streaming,
+        createdAt: now,
+        content: '',
+      ),
+    );
+    final assistantView = ChatMessageView(
+      id: assistantMessageId,
+      role: MessageRole.assistant,
+      status: MessageStatus.streaming,
+      createdAt: now,
+      modelName: effective.name,
+      providerName: current.provider.name,
+      modelId: effective.id,
+      providerId: current.provider.id,
+    );
+    final views = <ChatMessageView>[...snapshot.messages, assistantView];
+    _emitTurn(topicId, views, streaming: true);
+
+    final ctx = _contextSettings();
+    final request = LlmChatRequest(
+      model: effective,
+      system: system,
+      messages: <LlmMessage>[
+        LlmMessage(role: MessageRole.user, content: prompt),
+      ],
+      maxTokens: ctx.maxTokens,
+      useResponsesAPI: current.provider.useResponsesAPI ?? false,
+      extraHeaders: effective.providerExtraHeaders,
+      extraBody: effective.providerExtraBody,
+    );
+    await _streamInto(
+      request: request,
+      effective: effective,
+      provider: current.provider,
+      turnTopicId: topicId,
+      assistantMessageId: assistantMessageId,
+      assistantBlockId: assistantBlockId,
+      assistantTime: now,
+      views: views,
+      assistantView: assistantView,
+      mcp: const _McpSetup.disabled(),
+      leadingBlocks: [if (headerBlock != null) headerBlock],
+    );
+
+    final blocks = await _repo.getMessageBlocksByMessageId(assistantMessageId);
+    return <String>[
+      for (final b in blocks)
+        if (b is MainTextBlock &&
+            b.id != headerBlock?.id &&
+            b.content.trim().isNotEmpty)
+          b.content,
+    ].join('\n\n');
+  }
+
+  /// AI 辩论的系统通告（开场/结束/错误提示）：直接落一条无模型的成功
+  /// 助手消息并刷新会话视图。
+  Future<void> sendDebateNotice(
+    String content, {
+    Map<String, dynamic>? metadata,
+  }) async {
+    final topicId = await _ensureTopic();
+    final now = DateTime.now();
+    final messageId = generateId('msg');
+    final blockId = generateId('block');
+    await _repo.saveMessage(
+      Message(
+        id: messageId,
+        role: MessageRole.assistant,
+        assistantId: _assistantId,
+        topicId: topicId,
+        createdAt: now,
+        status: MessageStatus.success,
+        metadata: metadata,
+        blocks: <String>[blockId],
+      ),
+    );
+    await _repo.saveMessageBlock(
+      MessageBlock.mainText(
+        id: blockId,
+        messageId: messageId,
+        status: MessageBlockStatus.success,
+        createdAt: now,
+        content: content,
+      ),
+    );
+    ref.read(chatRefreshProvider.notifier).bump();
+    unawaited(_refreshTopicPreview(topicId));
+  }
+
   /// The next free sibling-group id for [topicId]: one past the largest existing
   /// `siblingsGroupId`, so a fresh multi-model group never collides with prior
   /// groups in the same topic.
