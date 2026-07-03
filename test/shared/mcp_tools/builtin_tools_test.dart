@@ -336,6 +336,21 @@ void main() {
       });
     });
 
+    test('dex_find_method_xrefs exposes CHA resolution modes + methodSignature', () {
+      final tool = kBuiltinMcpTools['@aether/dex-editor']!
+          .firstWhere((t) => t.name == 'dex_find_method_xrefs');
+      final schema = tool.inputSchema;
+      final props = schema['properties'] as Map<String, Object?>;
+      // 新增可选参数：区分重载 + 三种解析模式。
+      expect(props.keys, containsAll(['methodSignature', 'resolution']));
+      final resolution = props['resolution'] as Map<String, Object?>;
+      expect(resolution['enum'], containsAll(['exact', 'slot', 'dispatch']));
+      // 向后兼容：className 仍可选、methodName 必填（sessionId 也必填）。
+      expect(schema['required'], containsAll(['sessionId', 'methodName']));
+      expect(schema['required'], isNot(contains('resolution')));
+      expect(schema['required'], isNot(contains('methodSignature')));
+    });
+
     test('file-editor exposes run_command requiring a command (SSH-3)', () {
       final tool = kBuiltinMcpTools['@aether/file-editor']!
           .firstWhere((t) => t.name == 'run_command');

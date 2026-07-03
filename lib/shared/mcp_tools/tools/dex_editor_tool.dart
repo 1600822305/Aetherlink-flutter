@@ -601,8 +601,11 @@ Future<McpToolResult> _findMethodXrefs(
 ) async {
   final result = await dex.execute('findMethodXrefs', {
     'sessionId': _str(args['sessionId']),
-    'className': _str(args['className']),
+    'className': _classNameArg(args),
     'methodName': _str(args['methodName']),
+    'methodSignature': _str(args['methodSignature']),
+    'resolution': _str(args['resolution']),
+    'limit': _int(args['limit'], 50),
   });
   if (!result.success) {
     return McpToolResult('错误: ${result.error}', isError: true);
