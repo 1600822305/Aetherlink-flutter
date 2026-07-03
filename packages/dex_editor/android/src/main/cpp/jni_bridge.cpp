@@ -1162,4 +1162,50 @@ Java_com_aetherlink_dexeditor_CppDex_searchArscResources(JNIEnv* env, jclass, jb
     return string_to_jstring(env, result.dump());
 }
 
+JNIEXPORT jstring JNICALL
+Java_com_aetherlink_dexeditor_CppDex_getArscResourceValue(JNIEnv* env, jclass, jbyteArray arscBytes,
+                                                          jlong resId) {
+    auto data = jbyteArray_to_vector(env, arscBytes);
+    arsc::ArscParser parser;
+    if (!parser.parse(data)) {
+        json error = {{"error", "Failed to parse ARSC"}};
+        return string_to_jstring(env, error.dump());
+    }
+    std::string out = parser.get_resource_value_json(static_cast<uint32_t>(resId));
+    return string_to_jstring(env, out);
+}
+
+// Returns the modified arsc bytes on success; throws RuntimeException (message = failure reason)
+// on failure so the Java side sees it as an exception.
+JNIEXPORT jbyteArray JNICALL
+Java_com_aetherlink_dexeditor_CppDex_setArscResourceValue(JNIEnv* env, jclass, jbyteArray arscBytes,
+                                                          jlong resId, jstring config, jstring valueType,
+                                                          jstring newValue) {
+    auto data = jbyteArray_to_vector(env, arscBytes);
+    std::string config_str = jstring_to_string(env, config);
+    std::string vtype_str = jstring_to_string(env, valueType);
+    std::string value_str = jstring_to_string(env, newValue);
+
+    arsc::ArscParser parser;
+    if (!parser.parse(data)) {
+        jclass ex = env->FindClass("java/lang/RuntimeException");
+        env->ThrowNew(ex, "Failed to parse ARSC");
+        return nullptr;
+    }
+
+    std::vector<uint8_t> out;
+    std::string error;
+    if (!parser.set_resource_value(static_cast<uint32_t>(resId), config_str, vtype_str,
+                                   value_str, out, error)) {
+        jclass ex = env->FindClass("java/lang/RuntimeException");
+        env->ThrowNew(ex, error.c_str());
+        return nullptr;
+    }
+
+    jbyteArray result = env->NewByteArray(static_cast<jsize>(out.size()));
+    env->SetByteArrayRegion(result, 0, static_cast<jsize>(out.size()),
+                            reinterpret_cast<const jbyte*>(out.data()));
+    return result;
+}
+
 } // extern "C"

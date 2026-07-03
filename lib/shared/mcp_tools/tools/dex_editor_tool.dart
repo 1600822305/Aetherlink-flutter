@@ -74,6 +74,10 @@ Future<McpToolResult> runDexEditorTool(
         return await _getResource(dex, args);
       case 'apk_modify_resource':
         return await _modifyResource(dex, args);
+      case 'apk_get_resource_value':
+        return await _getResourceValue(dex, args);
+      case 'apk_set_resource_value':
+        return await _setResourceValue(dex, args);
       case 'apk_list_files':
         return await _listApkFiles(dex, args);
       case 'apk_search_text':
@@ -685,6 +689,39 @@ Future<McpToolResult> _modifyResource(
     return McpToolResult('修改资源失败: ${result.error}', isError: true);
   }
   return McpToolResult('✅ 资源文件 $resourcePath 已修改。APK 需要重新签名。');
+}
+
+Future<McpToolResult> _getResourceValue(
+  DexEditor dex,
+  Map<String, Object?> args,
+) async {
+  final id = _str(args['id']);
+  final result = await dex.execute('getResourceValue', {
+    'apkPath': _str(args['apkPath']),
+    'id': id,
+  });
+  if (!result.success) {
+    return McpToolResult('读取资源值失败: ${result.error}', isError: true);
+  }
+  return McpToolResult(encodeJson(result.data));
+}
+
+Future<McpToolResult> _setResourceValue(
+  DexEditor dex,
+  Map<String, Object?> args,
+) async {
+  final id = _str(args['id']);
+  final result = await dex.execute('setResourceValue', {
+    'apkPath': _str(args['apkPath']),
+    'id': id,
+    'config': _str(args['config']),
+    'valueType': args['valueType'] == null ? 'auto' : _str(args['valueType']),
+    'value': _str(args['value']),
+  });
+  if (!result.success) {
+    return McpToolResult('修改资源值失败: ${result.error}', isError: true);
+  }
+  return McpToolResult('✅ 资源 $id 的值已修改并写回 resources.arsc。APK 需要重新签名。');
 }
 
 Future<McpToolResult> _listApkFiles(
