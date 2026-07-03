@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/tools/tool_helpers.dart';
 import 'package:dex_editor/dex_editor.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 /// `@aether/dex-editor` tool execution — the Dart port of the web
 /// `DexEditorServer.ts` (`src/shared/services/mcp/servers/`).
@@ -19,6 +22,13 @@ Future<McpToolResult> runDexEditorTool(
 }) async {
   final dex = editor ?? DexEditor.instance;
   try {
+    // dex 工具直接按绝对路径读写 APK（如 /storage/emulated/0/...）。Android 11+
+    // 需要「所有文件访问」权限，否则原生层会报权限错误。凡是带 apkPath/filePath
+    // 的工具，先确保拿到存储权限。
+    if (args.containsKey('apkPath') || args.containsKey('filePath')) {
+      final denied = await _ensureStoragePermission();
+      if (denied != null) return denied;
+    }
     switch (toolName) {
       case 'dex_open_apk':
         return await _openApk(dex, args);
@@ -174,6 +184,29 @@ Map<String, Object?> _pageMeta(int offset, int returnedLength, int totalChars) {
 }
 
 // ==================== session workflow ====================
+
+/// 确保拿到读取任意路径文件的存储权限。已授权返回 null；否则尝试申请，
+/// 仍未授权则返回一个面向模型/用户的错误结果（不抛异常）。非 Android 平台直接放行。
+Future<McpToolResult?> _ensureStoragePermission() async {
+  if (!Platform.isAndroid) return null;
+
+  // Android 11+：「所有文件访问」。permission_handler 在低版本上该权限不可用，
+  // 会走下面的传统存储权限兜底。
+  if (await Permission.manageExternalStorage.isGranted) return null;
+  final manage = await Permission.manageExternalStorage.request();
+  if (manage.isGranted) return null;
+
+  // Android 10 及以下：传统外部存储读写权限。
+  final legacy = await Permission.storage.request();
+  if (legacy.isGranted) return null;
+
+  return const McpToolResult(
+    '缺少存储权限：无法读取该路径下的文件。请在「系统设置 → 应用 → 本应用 → 权限」'
+    '中授予「所有文件访问权限」(All files access / MANAGE_EXTERNAL_STORAGE)，'
+    '授权后重新调用即可。',
+    isError: true,
+  );
+}
 
 Future<McpToolResult> _openApk(DexEditor dex, Map<String, Object?> args) async {
   final apkPath = _str(args['apkPath']);
