@@ -305,7 +305,7 @@ class MultiDexSessionOps {
                 JSObject result = new JSObject();
                 result.put("className", className);
                 result.put("dexFile", dexName);
-                result.put("smaliContent", rustResult.optString("smaliContent", ""));
+                result.put("smaliContent", rustResult.optString("smali", ""));
                 result.put("engine", "rust");
                 return result;
             }
