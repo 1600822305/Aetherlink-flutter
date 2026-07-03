@@ -226,7 +226,17 @@ class AppDatabase extends _$AppDatabase {
     return LazyDatabase(() async {
       final dir = await getApplicationDocumentsDirectory();
       final file = File(p.join(dir.path, 'aetherlink.sqlite'));
-      return NativeDatabase.createInBackground(file);
+      return NativeDatabase.createInBackground(
+        file,
+        setup: (db) {
+          // 目前多个功能各自 open() 同一个库文件（见 model_providers.dart 的
+          // single-DB seam 注释），两个连接并发写会抛 "database is locked (code 5)"。
+          // busy_timeout 让获取锁失败时等待重试而非立即报错；WAL 允许读写并发、
+          // 进一步降低锁竞争。两者都通过本方法作用到每个连接。
+          db.execute('PRAGMA busy_timeout = 5000;');
+          db.execute('PRAGMA journal_mode = WAL;');
+        },
+      );
     });
   }
 }
