@@ -1075,6 +1075,670 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
   ],
+  // DEX/APK 编辑（迁移自 web `DexEditorServer.ts`）。会话式工作流：
+  // dex_open_apk → dex_open → 搜索/查看/修改 → dex_save；外加无状态的
+  // APK/资源/清单工具。执行见 `tools/dex_editor_tool.dart`（原生 Android 桥）。
+  '@aether/dex-editor': [
+    McpToolDefinition(
+      name: 'dex_open_apk',
+      description: '打开 APK 文件，查看其中包含的所有 DEX 文件列表。这是第一步操作。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件的完整路径'},
+        },
+        'required': ['apkPath'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_open',
+      description: '打开指定的 DEX 文件进行编辑。可以同时打开多个 DEX。返回会话 ID 用于后续操作。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'dexFiles': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'DEX 文件名列表，如 ["classes.dex", "classes2.dex"]',
+          },
+        },
+        'required': ['apkPath', 'dexFiles'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_list_classes',
+      description: '列出 DEX 中的所有类，支持包名过滤和分页',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'packageFilter': {
+            'type': 'string',
+            'description': '包名过滤（如 "com.example"）',
+          },
+          'offset': {'type': 'integer', 'description': '偏移量', 'default': 0},
+          'limit': {'type': 'integer', 'description': '返回数量', 'default': 100},
+        },
+        'required': ['sessionId'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_search',
+      description:
+          '在已打开的 DEX 中搜索。支持搜索：类名(class)、包名(package)、方法名(method)、字段名(field)、字符串(string)、整数(int)、代码(code)',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID（从 dex_open 获取）'},
+          'query': {'type': 'string', 'description': '搜索内容'},
+          'searchType': {
+            'type': 'string',
+            'enum': ['class', 'package', 'method', 'field', 'string', 'int', 'code'],
+            'description': '搜索类型',
+          },
+          'caseSensitive': {
+            'type': 'boolean',
+            'description': '是否区分大小写',
+            'default': false,
+          },
+          'maxResults': {
+            'type': 'integer',
+            'description': '最大返回结果数',
+            'default': 50,
+          },
+        },
+        'required': ['sessionId', 'query', 'searchType'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_get_class',
+      description: '获取指定类的 Smali 代码。支持限制返回的字符数（用于控制 token）',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'className': {
+            'type': 'string',
+            'description':
+                '类名（如 "com.example.MainActivity" 或 "Lcom/example/MainActivity;"）',
+          },
+          'maxChars': {
+            'type': 'integer',
+            'description': '最大返回字符数（用于限制 token），0 表示不限制',
+            'default': 0,
+          },
+          'offset': {
+            'type': 'integer',
+            'description': '字符偏移量（用于分页获取大文件）',
+            'default': 0,
+          },
+        },
+        'required': ['sessionId', 'className'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_get_method',
+      description: '获取类中单个方法的 Smali 代码。适用于大类只看特定方法的场景',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'className': {'type': 'string', 'description': '类名'},
+          'methodName': {
+            'type': 'string',
+            'description': '方法名（如 "onCreate" 或 "<init>"）',
+          },
+          'methodSignature': {
+            'type': 'string',
+            'description': '方法签名（可选，用于区分重载方法，如 "(Landroid/os/Bundle;)V"）',
+          },
+        },
+        'required': ['sessionId', 'className', 'methodName'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_modify_class',
+      description: '修改类的 Smali 代码（仅修改内存中的内容，需要调用 dex_save 保存到 APK）',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'className': {'type': 'string', 'description': '类名'},
+          'smaliContent': {'type': 'string', 'description': '新的 Smali 代码'},
+        },
+        'required': ['sessionId', 'className', 'smaliContent'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_modify_method',
+      description: '修改类中单个方法的 Smali 代码。只需提供方法代码，自动替换原方法',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'className': {'type': 'string', 'description': '类名'},
+          'methodName': {'type': 'string', 'description': '方法名'},
+          'methodSignature': {
+            'type': 'string',
+            'description': '方法签名（可选，用于区分重载方法）',
+          },
+          'newMethodCode': {
+            'type': 'string',
+            'description': '新的方法 Smali 代码（从 .method 到 .end method）',
+          },
+        },
+        'required': ['sessionId', 'className', 'methodName', 'newMethodCode'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_add_class',
+      description: '向 DEX 中添加一个新类。提供完整的 Smali 代码',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'className': {
+            'type': 'string',
+            'description': '新类名（如 "com.example.NewClass"）',
+          },
+          'smaliContent': {'type': 'string', 'description': '完整的 Smali 代码'},
+        },
+        'required': ['sessionId', 'className', 'smaliContent'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_delete_class',
+      description: '从 DEX 中删除一个类',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'className': {'type': 'string', 'description': '要删除的类名'},
+        },
+        'required': ['sessionId', 'className'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_list_methods',
+      description: '列出类的所有方法，返回方法名、签名、访问修饰符等信息',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'className': {'type': 'string', 'description': '类名'},
+        },
+        'required': ['sessionId', 'className'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_list_fields',
+      description: '列出类的所有字段，返回字段名、类型、访问修饰符等信息',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'className': {'type': 'string', 'description': '类名'},
+        },
+        'required': ['sessionId', 'className'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_rename_class',
+      description: '重命名类（修改类名和所有引用）',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'oldClassName': {'type': 'string', 'description': '原类名'},
+          'newClassName': {'type': 'string', 'description': '新类名'},
+        },
+        'required': ['sessionId', 'oldClassName', 'newClassName'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_list_strings',
+      description: '列出 DEX 中的字符串池，支持过滤和限制数量',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'filter': {'type': 'string', 'description': '过滤字符串（包含匹配）'},
+          'limit': {'type': 'integer', 'description': '最大返回数量', 'default': 100},
+        },
+        'required': ['sessionId'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_find_method_xrefs',
+      description: '查找方法的交叉引用（哪些地方调用了这个方法）',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'className': {'type': 'string', 'description': '类名'},
+          'methodName': {'type': 'string', 'description': '方法名'},
+        },
+        'required': ['sessionId', 'className', 'methodName'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_find_field_xrefs',
+      description: '查找字段的交叉引用（哪些地方访问了这个字段）',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'className': {'type': 'string', 'description': '类名'},
+          'fieldName': {'type': 'string', 'description': '字段名'},
+        },
+        'required': ['sessionId', 'className', 'fieldName'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_smali_to_java',
+      description: '将类的 Smali 代码转换为 Java 伪代码（便于理解）',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'className': {'type': 'string', 'description': '类名'},
+        },
+        'required': ['sessionId', 'className'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_save',
+      description: '编译修改后的 Smali 代码并保存 DEX 到 APK。用户需要自行签名 APK。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID'},
+        },
+        'required': ['sessionId'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_close',
+      description: '关闭 DEX 编辑会话，释放资源',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID'},
+        },
+        'required': ['sessionId'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_list_sessions',
+      description: '列出当前所有打开的 DEX 编辑会话',
+      inputSchema: {'type': 'object', 'properties': {}},
+    ),
+    McpToolDefinition(
+      name: 'apk_get_manifest',
+      description:
+          '获取 APK 的 AndroidManifest.xml 内容（已解码为可读 XML）。支持分页和限制返回字符数',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'maxChars': {
+            'type': 'integer',
+            'description': '最大返回字符数（用于限制 token），0 表示不限制',
+            'default': 0,
+          },
+          'offset': {
+            'type': 'integer',
+            'description': '字符偏移量（用于分页获取大文件）',
+            'default': 0,
+          },
+        },
+        'required': ['apkPath'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apk_modify_manifest',
+      description: '修改 AndroidManifest.xml 并保存到 APK。支持修改包名、版本、权限、组件等',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'newManifest': {
+            'type': 'string',
+            'description': '新的 AndroidManifest.xml 内容',
+          },
+        },
+        'required': ['apkPath', 'newManifest'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apk_patch_manifest',
+      description: '快速修改 AndroidManifest.xml 的特定属性，无需提供完整 XML',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'patches': {
+            'type': 'array',
+            'items': {
+              'type': 'object',
+              'properties': {
+                'type': {
+                  'type': 'string',
+                  'enum': [
+                    'package',
+                    'versionCode',
+                    'versionName',
+                    'minSdk',
+                    'targetSdk',
+                    'application',
+                    'permission',
+                    'activity',
+                    'service',
+                    'receiver',
+                    'provider',
+                    'debuggable',
+                  ],
+                  'description': '修改类型',
+                },
+                'action': {
+                  'type': 'string',
+                  'enum': ['set', 'add', 'remove'],
+                  'description': '操作类型',
+                },
+                'value': {'type': 'string', 'description': '新值'},
+                'attributes': {
+                  'type': 'object',
+                  'description': '额外属性（用于组件修改）',
+                },
+              },
+            },
+            'description': '修改列表',
+          },
+        },
+        'required': ['apkPath', 'patches'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apk_replace_in_manifest',
+      description: '在 AndroidManifest.xml 中精准替换字符串（直接修改二进制 AXML）',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'replacements': {
+            'type': 'array',
+            'items': {
+              'type': 'object',
+              'properties': {
+                'oldValue': {'type': 'string', 'description': '要替换的原字符串'},
+                'newValue': {'type': 'string', 'description': '新字符串'},
+              },
+              'required': ['oldValue', 'newValue'],
+            },
+            'description': '替换列表',
+          },
+        },
+        'required': ['apkPath', 'replacements'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apk_list_resources',
+      description: '列出 APK 中的资源文件（res 目录）',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'filter': {
+            'type': 'string',
+            'description': '过滤路径（如 "layout", "values", "drawable"）',
+          },
+        },
+        'required': ['apkPath'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apk_get_resource',
+      description:
+          '获取 APK 中的资源文件内容（XML 会解码为可读格式）。支持分页和限制返回字符数',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'resourcePath': {
+            'type': 'string',
+            'description': '资源路径（如 "res/layout/activity_main.xml"）',
+          },
+          'maxChars': {
+            'type': 'integer',
+            'description': '最大返回字符数（用于限制 token），0 表示不限制',
+            'default': 0,
+          },
+          'offset': {
+            'type': 'integer',
+            'description': '字符偏移量（用于分页获取大文件）',
+            'default': 0,
+          },
+        },
+        'required': ['apkPath', 'resourcePath'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apk_modify_resource',
+      description: '修改 APK 中的资源 XML 文件（如 layout、values 等）',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'resourcePath': {
+            'type': 'string',
+            'description': '资源路径（如 "res/layout/activity_main.xml"）',
+          },
+          'newContent': {'type': 'string', 'description': '新的 XML 内容'},
+        },
+        'required': ['apkPath', 'resourcePath', 'newContent'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apk_list_files',
+      description: '列出 APK 中的所有文件（支持过滤和分页）',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'filter': {
+            'type': 'string',
+            'description': '过滤路径（如 "lib/", "assets/", ".dex", ".so"）',
+            'default': '',
+          },
+          'limit': {'type': 'integer', 'description': '最大返回数量', 'default': 100},
+          'offset': {'type': 'integer', 'description': '偏移量（用于分页）', 'default': 0},
+        },
+        'required': ['apkPath'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apk_search_text',
+      description: '在 APK 内的文件中搜索文本内容（不需要解压）。\n'
+          '支持搜索 XML、JSON、TXT、SMALI 等文本文件。\n'
+          '自动跳过二进制文件（.dex, .so, .png 等）。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'pattern': {'type': 'string', 'description': '搜索模式（文本或正则表达式）'},
+          'fileExtensions': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': '文件扩展名过滤(如 [".xml", ".json"])，不指定则搜索所有文本文件',
+          },
+          'caseSensitive': {
+            'type': 'boolean',
+            'description': '是否区分大小写',
+            'default': false,
+          },
+          'isRegex': {
+            'type': 'boolean',
+            'description': '是否使用正则表达式',
+            'default': false,
+          },
+          'maxResults': {'type': 'integer', 'description': '最大结果数', 'default': 50},
+          'contextLines': {'type': 'integer', 'description': '上下文行数', 'default': 2},
+        },
+        'required': ['apkPath', 'pattern'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apk_read_file',
+      description: '读取 APK 中的任意文件内容（文本或 Base64 编码）',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'filePath': {
+            'type': 'string',
+            'description':
+                '文件路径（如 "classes.dex", "lib/arm64-v8a/libnative.so", "assets/config.json"）',
+          },
+          'asBase64': {
+            'type': 'boolean',
+            'description': '是否以 Base64 编码返回（用于二进制文件）',
+            'default': false,
+          },
+          'maxBytes': {
+            'type': 'integer',
+            'description': '最大读取字节数（0 表示不限制）',
+            'default': 0,
+          },
+          'offset': {'type': 'integer', 'description': '字节偏移量', 'default': 0},
+        },
+        'required': ['apkPath', 'filePath'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apk_delete_file',
+      description: '从 APK 中删除指定的文件（如广告资源、无用 so 库等）',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'filePath': {
+            'type': 'string',
+            'description': '要删除的文件路径（如 "lib/arm64-v8a/libad.so", "assets/config.json"）',
+          },
+        },
+        'required': ['apkPath', 'filePath'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apk_add_file',
+      description: '向 APK 中添加或替换文件（如注入 assets、so 库等）',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'filePath': {
+            'type': 'string',
+            'description': '目标路径（如 "assets/config.json"）',
+          },
+          'content': {
+            'type': 'string',
+            'description': '文件内容（文本文件直接传内容，二进制文件传 Base64 编码）',
+          },
+          'isBase64': {
+            'type': 'boolean',
+            'description': '内容是否为 Base64 编码',
+            'default': false,
+          },
+        },
+        'required': ['apkPath', 'filePath', 'content'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apk_search_arsc_strings',
+      description: '搜索 APK 资源文件 (resources.arsc) 中的字符串',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'pattern': {'type': 'string', 'description': '搜索模式'},
+          'limit': {'type': 'integer', 'description': '最大返回数量', 'default': 50},
+        },
+        'required': ['apkPath', 'pattern'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apk_search_arsc_resources',
+      description: '搜索 APK 资源文件 (resources.arsc) 中的资源',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'pattern': {'type': 'string', 'description': '搜索模式'},
+          'type': {
+            'type': 'string',
+            'description': '资源类型（如 string, drawable, layout）',
+          },
+          'limit': {'type': 'integer', 'description': '最大返回数量', 'default': 50},
+        },
+        'required': ['apkPath', 'pattern'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apk_parse_manifest_cpp',
+      description: '使用 C++ 高性能解析 AndroidManifest.xml，返回结构化信息',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+        },
+        'required': ['apkPath'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apk_search_manifest_cpp',
+      description: '使用 C++ 高性能搜索 AndroidManifest.xml 中的属性和值',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'attrName': {'type': 'string', 'description': '属性名（可选）'},
+          'value': {'type': 'string', 'description': '值（可选）'},
+          'limit': {'type': 'integer', 'description': '最大返回数量', 'default': 50},
+        },
+        'required': ['apkPath'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apk_parse_arsc_cpp',
+      description: '使用 C++ 高性能解析 resources.arsc，返回资源概要信息',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+        },
+        'required': ['apkPath'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'attempt_completion',
+      description: '结束任务并展示结果摘要。所有 DEX 操作完成后调用。如有 APK 修改，提醒用户重新签名。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'result': {
+            'type': 'string',
+            'description': '任务完成的结果摘要。向用户解释你做了什么，以及任何相关的后续建议。',
+          },
+          'command': {
+            'type': 'string',
+            'description': '（可选）建议用户执行的操作，例如重新签名 APK 的步骤',
+          },
+        },
+        'required': ['result'],
+      },
+    ),
+  ],
 };
 
 /// Whether [serverName] is a built-in server whose tools can be executed
@@ -1086,6 +1750,9 @@ const Set<String> kLocallyRunnableBuiltins = {
   '@aether/fetch',
   '@aether/metaso-search',
   '@aether/grok-search',
+  // 原生 Android 插件（dex_editor），无需 Riverpod [Ref]；在非 Android 平台
+  // 调用会返回错误而非崩溃。
+  '@aether/dex-editor',
 };
 
 /// Servers that run in-process but need Riverpod [Ref] (settings assistant,

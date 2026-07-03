@@ -302,6 +302,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.0.3"
+  dex_editor:
+    dependency: "direct main"
+    description:
+      path: "packages/dex_editor"
+      relative: true
+    source: path
+    version: "0.0.1"
   diff_match_patch:
     dependency: "direct main"
     description:
