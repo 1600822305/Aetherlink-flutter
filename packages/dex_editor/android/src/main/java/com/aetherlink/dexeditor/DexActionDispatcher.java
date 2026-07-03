@@ -604,6 +604,13 @@ public class DexActionDispatcher {
                 ));
                 break;
 
+            case "outlineClassFromSession":
+                result.put("data", dexManager.outlineClassFromSession(
+                    params.getString("sessionId"),
+                    params.getString("className")
+                ));
+                break;
+
             case "renameClassInSession":
                 dexManager.renameClassInSession(
                     params.getString("sessionId"),

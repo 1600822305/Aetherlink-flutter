@@ -1280,20 +1280,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
-      name: 'dex_list_methods',
-      description: '列出类的所有方法，返回方法名、签名、访问修饰符等信息',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID'},
-          'className': {'type': 'string', 'description': '类名'},
-        },
-        'required': ['sessionId', 'className'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'dex_list_fields',
-      description: '列出类的所有字段，返回字段名、类型、访问修饰符等信息',
+      name: 'dex_outline_class',
+      description:
+          '获取类的轮廓：一次返回父类(superclass)、接口(interfaces)、字段列表(name/type/'
+          'accessFlags)和方法列表(name/signature/returnType/accessFlags)。'
+          '适合在读取全量 Smali(dex_get_class) 前先了解类结构，省 token。',
       inputSchema: {
         'type': 'object',
         'properties': {

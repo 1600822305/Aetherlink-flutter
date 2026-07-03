@@ -2495,6 +2495,78 @@ public class DexManager {
     }
 
     /**
+     * 类轮廓：一次遍历返回类的父类、接口、字段与方法列表，
+     * 便于在读取全量 Smali 前先了解类结构。
+     */
+    public JSObject outlineClassFromSession(String sessionId, String className) throws Exception {
+        MultiDexSession session = multiDexSessions.get(sessionId);
+        if (session == null) {
+            throw new IllegalArgumentException("Session not found: " + sessionId);
+        }
+
+        String targetType = convertClassNameToType(className);
+        JSObject result = new JSObject();
+        JSArray fields = new JSArray();
+        JSArray methods = new JSArray();
+        boolean found = false;
+
+        for (DexBackedDexFile dexFile : session.dexFiles.values()) {
+            for (ClassDef classDef : dexFile.getClasses()) {
+                if (!classDef.getType().equals(targetType)) {
+                    continue;
+                }
+                found = true;
+                result.put("accessFlags", classDef.getAccessFlags());
+                if (classDef.getSuperclass() != null) {
+                    result.put("superclass", convertTypeToClassName(classDef.getSuperclass()));
+                }
+                JSArray interfaces = new JSArray();
+                for (String iface : classDef.getInterfaces()) {
+                    interfaces.put(convertTypeToClassName(iface));
+                }
+                result.put("interfaces", interfaces);
+
+                for (com.android.tools.smali.dexlib2.iface.Field field : classDef.getFields()) {
+                    JSObject fieldInfo = new JSObject();
+                    fieldInfo.put("name", field.getName());
+                    fieldInfo.put("type", field.getType());
+                    fieldInfo.put("accessFlags", field.getAccessFlags());
+                    fields.put(fieldInfo);
+                }
+
+                for (com.android.tools.smali.dexlib2.iface.Method method : classDef.getMethods()) {
+                    JSObject methodInfo = new JSObject();
+                    methodInfo.put("name", method.getName());
+                    methodInfo.put("returnType", method.getReturnType());
+                    methodInfo.put("accessFlags", method.getAccessFlags());
+                    StringBuilder params = new StringBuilder("(");
+                    for (CharSequence param : method.getParameterTypes()) {
+                        params.append(param);
+                    }
+                    params.append(")").append(method.getReturnType());
+                    methodInfo.put("signature", params.toString());
+                    methods.put(methodInfo);
+                }
+                break;
+            }
+            if (found) {
+                break;
+            }
+        }
+
+        if (!found) {
+            throw new IllegalArgumentException("Class not found: " + className);
+        }
+
+        result.put("className", className);
+        result.put("fields", fields);
+        result.put("fieldCount", fields.length());
+        result.put("methods", methods);
+        result.put("methodCount", methods.length());
+        return result;
+    }
+
+    /**
      * 重命名会话中的类
      */
     public void renameClassInSession(String sessionId, String oldClassName, String newClassName) throws Exception {
