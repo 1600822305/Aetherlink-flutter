@@ -156,6 +156,7 @@ public class DexManager {
         Map<String, byte[]> dexBytes;  // DEX 字节数据，用于 Rust 搜索
         Map<String, ClassDef> modifiedClasses;
         boolean modified = false;
+        Map<String, ChaNode> chaGraph;  // 会话级缓存的 CHA 类型图（懒构建）
 
         MultiDexSession(String sessionId, String apkPath) {
             this.sessionId = sessionId;
@@ -1247,6 +1248,378 @@ public class DexManager {
         result.put("xrefs", xrefArray);
         result.put("count", xrefArray.length());
         return result;
+    }
+
+    // ==================== 交叉引用分析（dexlib2 CHA 实现）====================
+
+    /**
+     * CHA（类继承分析）节点：跨会话内全部 DEX 构建的类型图。
+     * 找不到定义的 framework 类（Landroid/、Ljava/…）作为叶子/根存在，defined=false。
+     */
+    private static class ChaNode {
+        String type;
+        String superclass;                       // 可空
+        final List<String> interfaces = new ArrayList<>();
+        final List<String> subtypes = new ArrayList<>();  // 反向边：直接子类 + 实现者
+        final Set<String> methodKeys = new HashSet<>();   // 本类声明的 name+proto
+        boolean isInterface = false;
+        boolean defined = false;
+        String dexName;
+    }
+
+    /** 方法唯一键：name + "(" + 参数类型 + ")" + 返回类型。 */
+    private static String methodKey(CharSequence name, List<? extends CharSequence> params,
+                                    CharSequence returnType) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(name).append('(');
+        if (params != null) {
+            for (CharSequence p : params) sb.append(p);
+        }
+        sb.append(')').append(returnType);
+        return sb.toString();
+    }
+
+    /** 把 Java 类名或已是描述符的类型归一化为 DEX 描述符 Lcom/foo/Bar;。 */
+    private String normalizeType(String s) {
+        if (s == null || s.isEmpty()) return s;
+        if (s.startsWith("L") && s.endsWith(";")) return s;
+        if (s.startsWith("[")) return s;
+        return convertClassNameToType(s);
+    }
+
+    private ChaNode chaGetOrCreate(Map<String, ChaNode> g, String type) {
+        ChaNode n = g.get(type);
+        if (n == null) {
+            n = new ChaNode();
+            n.type = type;
+            g.put(type, n);
+        }
+        return n;
+    }
+
+    /** 跨会话内全部 DEX 构建类型图并缓存到会话级，避免每次 xref 全量扫描。 */
+    private Map<String, ChaNode> buildChaGraph(MultiDexSession session) {
+        if (session.chaGraph != null) return session.chaGraph;
+        Map<String, ChaNode> g = new HashMap<>();
+        for (Map.Entry<String, DexBackedDexFile> entry : session.dexFiles.entrySet()) {
+            DexBackedDexFile dexFile = entry.getValue();
+            if (dexFile == null) continue;
+            for (ClassDef cd : dexFile.getClasses()) {
+                ChaNode n = chaGetOrCreate(g, cd.getType());
+                n.defined = true;
+                n.dexName = entry.getKey();
+                n.superclass = cd.getSuperclass();
+                n.isInterface = (cd.getAccessFlags()
+                        & com.android.tools.smali.dexlib2.AccessFlags.INTERFACE.getValue()) != 0;
+                n.interfaces.clear();
+                for (String iface : cd.getInterfaces()) n.interfaces.add(iface);
+                for (Method m : cd.getMethods()) {
+                    n.methodKeys.add(methodKey(m.getName(), m.getParameterTypes(), m.getReturnType()));
+                }
+            }
+        }
+        // 建立反向边（子类型），并为缺失的父类型补占位节点
+        for (ChaNode n : new ArrayList<>(g.values())) {
+            if (n.superclass != null) chaGetOrCreate(g, n.superclass).subtypes.add(n.type);
+            for (String iface : n.interfaces) chaGetOrCreate(g, iface).subtypes.add(n.type);
+        }
+        session.chaGraph = g;
+        return g;
+    }
+
+    /** C 的全部严格父类型（superclass + interfaces 传递闭包）。 */
+    private Set<String> chaSupertypes(Map<String, ChaNode> g, String c) {
+        Set<String> out = new HashSet<>();
+        ArrayList<String> stack = new ArrayList<>();
+        stack.add(c);
+        Set<String> seen = new HashSet<>();
+        seen.add(c);
+        while (!stack.isEmpty()) {
+            String cur = stack.remove(stack.size() - 1);
+            ChaNode n = g.get(cur);
+            if (n == null) continue;
+            if (n.superclass != null && seen.add(n.superclass)) {
+                out.add(n.superclass);
+                stack.add(n.superclass);
+            }
+            for (String iface : n.interfaces) {
+                if (seen.add(iface)) {
+                    out.add(iface);
+                    stack.add(iface);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** C 的全部严格子类型（反向边传递闭包）。 */
+    private Set<String> chaSubtypes(Map<String, ChaNode> g, String c) {
+        Set<String> out = new HashSet<>();
+        ArrayList<String> stack = new ArrayList<>();
+        ChaNode root = g.get(c);
+        if (root != null) stack.addAll(root.subtypes);
+        while (!stack.isEmpty()) {
+            String cur = stack.remove(stack.size() - 1);
+            if (!out.add(cur)) continue;
+            ChaNode n = g.get(cur);
+            if (n != null) stack.addAll(n.subtypes);
+        }
+        out.remove(c);
+        return out;
+    }
+
+    /** 从 X 沿类（superclass）链向上，返回第一个声明了 key 的类；无则返回 null。 */
+    private String chaFirstClassDeclarer(Map<String, ChaNode> g, String x, String key) {
+        String cur = x;
+        Set<String> seen = new HashSet<>();
+        while (cur != null && seen.add(cur)) {
+            ChaNode n = g.get(cur);
+            if (n == null) return null;
+            if (n.methodKeys.contains(key)) return cur;
+            cur = n.superclass;
+        }
+        return null;
+    }
+
+    private static final int INV_VIRTUAL = 1, INV_SUPER = 2, INV_DIRECT = 3,
+            INV_STATIC = 4, INV_INTERFACE = 5;
+
+    /** 判断 invoke 类别；非方法调用返回 0。 */
+    private static int invokeCategory(com.android.tools.smali.dexlib2.Opcode op) {
+        switch (op) {
+            case INVOKE_VIRTUAL:
+            case INVOKE_VIRTUAL_RANGE:
+                return INV_VIRTUAL;
+            case INVOKE_SUPER:
+            case INVOKE_SUPER_RANGE:
+                return INV_SUPER;
+            case INVOKE_DIRECT:
+            case INVOKE_DIRECT_RANGE:
+                return INV_DIRECT;
+            case INVOKE_STATIC:
+            case INVOKE_STATIC_RANGE:
+                return INV_STATIC;
+            case INVOKE_INTERFACE:
+            case INVOKE_INTERFACE_RANGE:
+                return INV_INTERFACE;
+            default:
+                return 0;
+        }
+    }
+
+    private static String invokeTypeName(int cat) {
+        switch (cat) {
+            case INV_VIRTUAL: return "invoke-virtual";
+            case INV_SUPER: return "invoke-super";
+            case INV_DIRECT: return "invoke-direct";
+            case INV_STATIC: return "invoke-static";
+            case INV_INTERFACE: return "invoke-interface";
+            default: return "invoke";
+        }
+    }
+
+    /**
+     * 方法交叉引用（CHA），运行在多 DEX 会话上。
+     *
+     * @param resolution exact（精确引用）| slot（override 家族）| dispatch（可达分发，默认）
+     * @param methodSignature 可空，形如 "(Landroid/os/Bundle;)V"，用于区分重载
+     */
+    public JSObject findMethodXrefsCHA(String sessionId, String className, String methodName,
+                                       String methodSignature, String resolution, int limit)
+            throws Exception {
+        MultiDexSession session = multiDexSessions.get(sessionId);
+        if (session == null) {
+            throw new IllegalArgumentException("Session not found: " + sessionId);
+        }
+        String mode = (resolution == null || resolution.isEmpty()) ? "dispatch" : resolution;
+        int cap = limit > 0 ? limit : 50;
+        String targetType = normalizeType(className);
+        Map<String, ChaNode> g = buildChaGraph(session);
+
+        String sig = (methodSignature == null) ? "" : methodSignature.trim();
+        boolean sigGiven = !sig.isEmpty();
+
+        // 解析目标方法键（name+proto）。exact 下缺签名可退化为按 name 匹配。
+        String targetKey = null;
+        if (sigGiven) {
+            targetKey = methodName + sig;
+        } else {
+            // 缺签名时在类链上按方法名唯一解析 proto（重载则要求显式签名）
+            targetKey = resolveKeyByName(g, targetType, methodName);
+            if (targetKey == null && !"exact".equals(mode)) {
+                throw new IllegalArgumentException(
+                    "方法 " + className + "->" + methodName
+                    + " 存在重载或未找到，slot/dispatch 模式需提供 methodSignature 区分");
+            }
+        }
+
+        // 计算目标所有者集合
+        Set<String> owners = new HashSet<>();
+        Map<String, String> reason = new HashMap<>();
+        if ("exact".equals(mode)) {
+            owners.add(targetType);
+            reason.put(targetType, "exact");
+        } else if ("slot".equals(mode)) {
+            owners.add(targetType);
+            reason.put(targetType, "slot: self");
+            for (String x : chaSupertypes(g, targetType)) {
+                ChaNode n = g.get(x);
+                if (n != null && n.methodKeys.contains(targetKey)) {
+                    owners.add(x);
+                    reason.put(x, "slot: ancestor declares");
+                }
+            }
+            for (String x : chaSubtypes(g, targetType)) {
+                ChaNode n = g.get(x);
+                if (n != null && n.methodKeys.contains(targetKey)) {
+                    owners.add(x);
+                    reason.put(x, "slot: override");
+                }
+            }
+        } else { // dispatch（默认）
+            owners.add(targetType);
+            reason.put(targetType, "dispatch: self");
+            for (String x : chaSupertypes(g, targetType)) {
+                owners.add(x);
+                reason.put(x, "dispatch: super-call reaches impl");
+            }
+            ChaNode targetNode = g.get(targetType);
+            boolean targetIsInterface = targetNode != null && targetNode.isInterface;
+            for (String x : chaSubtypes(g, targetType)) {
+                String decl = chaFirstClassDeclarer(g, x, targetKey);
+                if (targetType.equals(decl) || (decl == null && targetIsInterface)) {
+                    owners.add(x);
+                    reason.put(x, "dispatch: " + shortType(x) + "<:" + shortType(targetType));
+                }
+            }
+        }
+
+        JSArray xrefArray = new JSArray();
+        int count = 0;
+        boolean truncated = false;
+        outer:
+        for (Map.Entry<String, DexBackedDexFile> entry : session.dexFiles.entrySet()) {
+            String dexName = entry.getKey();
+            DexBackedDexFile dexFile = entry.getValue();
+            if (dexFile == null) continue;
+            for (ClassDef cd : dexFile.getClasses()) {
+                for (Method m : cd.getMethods()) {
+                    MethodImplementation impl = m.getImplementation();
+                    if (impl == null) continue;
+                    int addr = 0;
+                    for (Instruction insn : impl.getInstructions()) {
+                        int units = insn.getCodeUnits();
+                        int at = addr;
+                        addr += units;
+                        int cat = invokeCategory(insn.getOpcode());
+                        if (cat == 0) continue;
+                        if (!(insn instanceof com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction)) {
+                            continue;
+                        }
+                        com.android.tools.smali.dexlib2.iface.reference.Reference ref =
+                            ((com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction) insn).getReference();
+                        if (!(ref instanceof com.android.tools.smali.dexlib2.iface.reference.MethodReference)) {
+                            continue;
+                        }
+                        com.android.tools.smali.dexlib2.iface.reference.MethodReference mref =
+                            (com.android.tools.smali.dexlib2.iface.reference.MethodReference) ref;
+                        String owner = mref.getDefiningClass();
+                        String callKey = methodKey(mref.getName(), mref.getParameterTypes(),
+                                mref.getReturnType());
+
+                        boolean hit;
+                        if ("exact".equals(mode)) {
+                            hit = owner.equals(targetType)
+                                    && (sigGiven ? callKey.equals(targetKey)
+                                                 : mref.getName().equals(methodName));
+                        } else {
+                            if (!callKey.equals(targetKey)) continue;
+                            if (cat == INV_DIRECT || cat == INV_STATIC) {
+                                // 静态绑定：仅当所有者恰为目标类才计入
+                                hit = owner.equals(targetType);
+                            } else {
+                                hit = owners.contains(owner);
+                            }
+                        }
+                        if (!hit) continue;
+
+                        if (count >= cap) {
+                            truncated = true;
+                            break outer;
+                        }
+                        String invType = invokeTypeName(cat);
+                        JSObject xref = new JSObject();
+                        xref.put("sourceClass", convertTypeToClassName(cd.getType()));
+                        xref.put("sourceMethod", m.getName());
+                        xref.put("sourceMethodSignature",
+                                "(" + joinParams(m.getParameterTypes()) + ")" + m.getReturnType());
+                        xref.put("invokeType", invType);
+                        xref.put("targetOwner", convertTypeToClassName(owner));
+                        xref.put("instruction", invType + " " + owner + "->" + mref.getName()
+                                + "(" + joinParams(mref.getParameterTypes()) + ")" + mref.getReturnType());
+                        xref.put("codeAddress", at);
+                        xref.put("dexFile", dexName);
+                        String rs = reason.get(owner);
+                        xref.put("matchReason", rs != null ? rs : mode);
+                        xrefArray.put(xref);
+                        count++;
+                    }
+                }
+            }
+        }
+
+        JSObject result = new JSObject();
+        result.put("className", convertTypeToClassName(targetType));
+        result.put("methodName", methodName);
+        if (targetKey != null) result.put("resolvedKey", targetKey);
+        result.put("resolution", mode);
+        result.put("count", xrefArray.length());
+        result.put("hasMore", truncated);
+        result.put("xrefs", xrefArray);
+        result.put("engine", "java-dexlib2-cha");
+        ChaNode tn = g.get(targetType);
+        if (tn == null || !tn.defined) {
+            result.put("note", "目标类未在会话 DEX 中定义，slot/dispatch 家族可能不完整");
+        }
+        return result;
+    }
+
+    /** 在 X 的类链上按方法名唯一解析 proto 键；重载/未找到返回 null。 */
+    private String resolveKeyByName(Map<String, ChaNode> g, String type, String methodName) {
+        String cur = type;
+        Set<String> seen = new HashSet<>();
+        while (cur != null && seen.add(cur)) {
+            ChaNode n = g.get(cur);
+            if (n == null) break;
+            String found = null;
+            int hits = 0;
+            for (String key : n.methodKeys) {
+                int paren = key.indexOf('(');
+                if (paren > 0 && key.substring(0, paren).equals(methodName)) {
+                    found = key;
+                    hits++;
+                }
+            }
+            if (hits == 1) return found;
+            if (hits > 1) return null; // 重载，需签名
+            cur = n.superclass;
+        }
+        return null;
+    }
+
+    private static String joinParams(List<? extends CharSequence> params) {
+        if (params == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (CharSequence p : params) sb.append(p);
+        return sb.toString();
+    }
+
+    private static String shortType(String type) {
+        if (type == null) return "?";
+        int slash = type.lastIndexOf('/');
+        String s = slash >= 0 ? type.substring(slash + 1) : type;
+        if (s.endsWith(";")) s = s.substring(0, s.length() - 1);
+        return s;
     }
 
     // ==================== Smali 转 Java（C++ 实现）====================

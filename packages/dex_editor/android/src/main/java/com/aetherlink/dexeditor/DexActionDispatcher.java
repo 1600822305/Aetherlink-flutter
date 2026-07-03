@@ -244,12 +244,15 @@ public class DexActionDispatcher {
                 ));
                 break;
 
-            // ============ 交叉引用分析（C++ 实现）============
+            // ============ 交叉引用分析（dexlib2 CHA / C++ 实现）============
             case "findMethodXrefs":
-                result.put("data", dexManager.findMethodXrefs(
+                result.put("data", dexManager.findMethodXrefsCHA(
                     params.getString("sessionId"),
                     params.getString("className"),
-                    params.getString("methodName")
+                    params.getString("methodName"),
+                    params.optString("methodSignature", ""),
+                    params.optString("resolution", "dispatch"),
+                    params.optInt("limit", 50)
                 ));
                 break;
 

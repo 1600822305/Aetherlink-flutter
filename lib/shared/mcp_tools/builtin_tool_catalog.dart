@@ -1335,15 +1335,41 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'dex_find_method_xrefs',
-      description: '查找方法的交叉引用（哪些地方调用了这个方法）',
+      description:
+          '查找方法的交叉引用（哪些地方调用了这个方法），基于类继承分析(CHA)、跨全部 DEX。'
+          '返回每条引用含 sourceClass/sourceMethod/sourceMethodSignature、invokeType'
+          '(invoke-virtual/super/direct/static/interface)、targetOwner、instruction、'
+          'codeAddress、matchReason（命中原因，便于人工判读）。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'sessionId': {'type': 'string', 'description': '会话 ID'},
-          'className': {'type': 'string', 'description': '类名'},
+          'className': {'type': 'string', 'description': '类名，如 com.example.Foo'},
           'methodName': {'type': 'string', 'description': '方法名'},
+          'methodSignature': {
+            'type': 'string',
+            'description': '可选，方法签名(参数+返回)，如 "(Landroid/os/Bundle;)V"，用于区分重载；'
+                'slot/dispatch 模式在方法有重载时必须提供',
+          },
+          'resolution': {
+            'type': 'string',
+            'enum': ['exact', 'slot', 'dispatch'],
+            'description': '方法解析模式（默认 dispatch）：'
+                'exact=只匹配完全相等的方法引用；'
+                'slot=同一 vtable 槽位的整个 override 家族（父/子覆写）；'
+                'dispatch=运行时可能分发到该实现的所有多态调用点（找 hook 点最有用，'
+                '可命中通过父类/接口类型调用的点）',
+          },
+          'locator': {
+            'type': 'string',
+            'description': '统一定位符，可替代 className，如 "dex_class:com.example.Foo"',
+          },
+          'limit': {
+            'type': 'integer',
+            'description': '最多返回多少条引用（默认 50）；截断时 hasMore=true',
+          },
         },
-        'required': ['sessionId', 'className', 'methodName'],
+        'required': ['sessionId', 'methodName'],
       },
     ),
     McpToolDefinition(
