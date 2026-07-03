@@ -125,17 +125,34 @@ String _normalizeClassName(String className) {
   return className;
 }
 
-/// Slices [text] by UTF-16 code units, matching JS `String.slice`.
+/// Slices [text] by UTF-16 code units, but never splits a surrogate pair.
+///
+/// Cutting a UTF-16 string at an arbitrary code-unit index can orphan a
+/// surrogate (e.g. inside an emoji or non-BMP CJK char). The resulting string
+/// is not well-formed UTF-16 and crashes Flutter's text layout with
+/// "string is not well-formed UTF-16". We nudge the boundary by one code unit
+/// so the pair stays intact.
 String _sliceFrom(String text, int offset) {
   if (offset <= 0) return text;
+  if (offset >= text.length) return '';
+  // If the boundary lands on a trailing (low) surrogate, its leading half was
+  // already consumed — advance past it so we don't emit an orphan.
+  if (_isLowSurrogate(text.codeUnitAt(offset))) offset++;
   if (offset >= text.length) return '';
   return text.substring(offset);
 }
 
 String _sliceMax(String text, int maxChars) {
   if (maxChars <= 0 || text.length <= maxChars) return text;
+  // If the last kept code unit is a leading (high) surrogate, its trailing half
+  // is cut off — drop it so we don't emit an orphan.
+  if (_isHighSurrogate(text.codeUnitAt(maxChars - 1))) maxChars--;
   return text.substring(0, maxChars);
 }
+
+bool _isHighSurrogate(int unit) => unit >= 0xD800 && unit <= 0xDBFF;
+
+bool _isLowSurrogate(int unit) => unit >= 0xDC00 && unit <= 0xDFFF;
 
 // ==================== session workflow ====================
 
