@@ -89,6 +89,13 @@ class DebateSettingsPage extends ConsumerWidget {
                   value: settings.verdictEnabled,
                   onChanged: controller.setVerdictEnabled,
                 ),
+                const SizedBox(height: 8),
+                _SwitchRow(
+                  title: '发言语音朗读',
+                  description: '每条发言完成后自动朗读（使用语音设置中的 TTS 配置）',
+                  value: settings.ttsEnabled,
+                  onChanged: controller.setTtsEnabled,
+                ),
               ],
             ),
           ),
@@ -609,6 +616,7 @@ class _RoleEditSheetState extends ConsumerState<_RoleEditSheet> {
   late final TextEditingController _promptController;
   late DebateStance _stance;
   late String _modelKey;
+  late bool _toolsEnabled;
 
   @override
   void initState() {
@@ -621,6 +629,7 @@ class _RoleEditSheetState extends ConsumerState<_RoleEditSheet> {
     _promptController = TextEditingController(text: role?.systemPrompt ?? '');
     _stance = role?.stance ?? DebateStance.neutral;
     _modelKey = role?.modelKey ?? '';
+    _toolsEnabled = role?.toolsEnabled ?? false;
   }
 
   @override
@@ -687,6 +696,7 @@ class _RoleEditSheetState extends ConsumerState<_RoleEditSheet> {
                       _descriptionController.text = template.description;
                       _promptController.text = template.systemPrompt;
                       _stance = template.stance;
+                      _toolsEnabled = template.toolsEnabled;
                     }),
                   ),
               ],
@@ -755,6 +765,13 @@ class _RoleEditSheetState extends ConsumerState<_RoleEditSheet> {
                     setState(() => _modelKey = '${p.id}/${m.id}'),
               ),
             ),
+            const SizedBox(height: 12),
+            _SwitchRow(
+              title: '允许调用工具',
+              description: '发言时可使用已启用的 MCP / 搜索工具（适合事实核查员）',
+              value: _toolsEnabled,
+              onChanged: (v) => setState(() => _toolsEnabled = v),
+            ),
             const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -777,6 +794,7 @@ class _RoleEditSheetState extends ConsumerState<_RoleEditSheet> {
                         systemPrompt: _promptController.text.trim(),
                         modelKey: _modelKey,
                         stance: _stance,
+                        toolsEnabled: _toolsEnabled,
                       ),
                     );
                   },

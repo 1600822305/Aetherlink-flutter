@@ -38,6 +38,7 @@ class DebateRole {
     this.systemPrompt = '',
     this.modelKey = '',
     this.stance = DebateStance.neutral,
+    this.toolsEnabled = false,
   });
 
   factory DebateRole.fromJson(Map<String, dynamic> json) => DebateRole(
@@ -47,6 +48,7 @@ class DebateRole {
     systemPrompt: json['systemPrompt']?.toString() ?? '',
     modelKey: json['modelKey']?.toString() ?? '',
     stance: DebateStance.fromStorage(json['stance']?.toString()),
+    toolsEnabled: json['toolsEnabled'] == true,
   );
 
   final String id;
@@ -58,6 +60,9 @@ class DebateRole {
   final String modelKey;
   final DebateStance stance;
 
+  /// 发言时允许调用工具（联网搜索 / MCP），供事实核查类角色使用。
+  final bool toolsEnabled;
+
   bool get hasModel => modelKey.trim().isNotEmpty;
 
   Map<String, dynamic> toJson() => {
@@ -67,6 +72,7 @@ class DebateRole {
     'systemPrompt': systemPrompt,
     'modelKey': modelKey,
     'stance': stance.storageValue,
+    'toolsEnabled': toolsEnabled,
   };
 
   DebateRole copyWith({
@@ -76,6 +82,7 @@ class DebateRole {
     String? systemPrompt,
     String? modelKey,
     DebateStance? stance,
+    bool? toolsEnabled,
   }) => DebateRole(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -83,6 +90,7 @@ class DebateRole {
     systemPrompt: systemPrompt ?? this.systemPrompt,
     modelKey: modelKey ?? this.modelKey,
     stance: stance ?? this.stance,
+    toolsEnabled: toolsEnabled ?? this.toolsEnabled,
   );
 }
 
@@ -145,6 +153,7 @@ class DebateSettings {
     this.moderatorEnabled = true,
     this.summaryEnabled = true,
     this.verdictEnabled = false,
+    this.ttsEnabled = false,
     this.roles = const <DebateRole>[],
     this.scenes = const <DebateScene>[],
   });
@@ -157,6 +166,7 @@ class DebateSettings {
     moderatorEnabled: json['moderatorEnabled'] != false,
     summaryEnabled: json['summaryEnabled'] != false,
     verdictEnabled: json['verdictEnabled'] == true,
+    ttsEnabled: json['ttsEnabled'] == true,
     roles: [
       for (final r in (json['roles'] as List? ?? const []))
         DebateRole.fromJson((r as Map).cast<String, dynamic>()),
@@ -183,6 +193,9 @@ class DebateSettings {
 
   /// 裁决模式：总结升级为结构化裁决（胜方 + 四维评分 + 关键交锋点）。
   final bool verdictEnabled;
+
+  /// 发言语音朗读：每条辩论发言完成后自动 TTS 朗读。
+  final bool ttsEnabled;
   final List<DebateRole> roles;
   final List<DebateScene> scenes;
 
@@ -198,6 +211,7 @@ class DebateSettings {
     'moderatorEnabled': moderatorEnabled,
     'summaryEnabled': summaryEnabled,
     'verdictEnabled': verdictEnabled,
+    'ttsEnabled': ttsEnabled,
     'roles': [for (final r in roles) r.toJson()],
     'scenes': [for (final s in scenes) s.toJson()],
   };
@@ -210,6 +224,7 @@ class DebateSettings {
     bool? moderatorEnabled,
     bool? summaryEnabled,
     bool? verdictEnabled,
+    bool? ttsEnabled,
     List<DebateRole>? roles,
     List<DebateScene>? scenes,
   }) => DebateSettings(
@@ -220,6 +235,7 @@ class DebateSettings {
     moderatorEnabled: moderatorEnabled ?? this.moderatorEnabled,
     summaryEnabled: summaryEnabled ?? this.summaryEnabled,
     verdictEnabled: verdictEnabled ?? this.verdictEnabled,
+    ttsEnabled: ttsEnabled ?? this.ttsEnabled,
     roles: roles ?? this.roles,
     scenes: scenes ?? this.scenes,
   );

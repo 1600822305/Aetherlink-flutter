@@ -763,13 +763,15 @@ class ChatController extends _$ChatController {
   /// AI 辩论的一次角色发言：以 [current] 指定的模型发起一条**不携带话题历史**
   /// 的助手流式消息（辩论上下文由引擎在 [prompt] 里自建）。[header] 作为消息
   /// 顶部的成功块渲染（角色/轮次徽章），[metadata] 原样存进消息（`debate` 标记）。
-  /// 返回流式完成后的正文（不含 header）；话题已有流式请求时返回 null。
-  Future<String?> sendDebateTurn({
+  /// [toolsEnabled] 为 true 时按当前 MCP/搜索开关注入工具（事实核查角色）。
+  /// 返回消息 id 与流式完成后的正文（不含 header）；话题已有流式请求时返回 null。
+  Future<({String messageId, String text})?> sendDebateTurn({
     required CurrentModel current,
     required String system,
     required String prompt,
     String header = '',
     Map<String, dynamic>? metadata,
+    bool toolsEnabled = false,
   }) async {
     final snapshot = state.value ?? ChatState.initial();
     if (snapshot.isStreaming) return null;
@@ -820,10 +822,12 @@ class ChatController extends _$ChatController {
       providerName: current.provider.name,
       modelId: effective.id,
       providerId: current.provider.id,
+      debatePhase: _debatePhaseOf(metadata),
     );
     final views = <ChatMessageView>[...snapshot.messages, assistantView];
     _emitTurn(topicId, views, streaming: true);
 
+    final mcp = toolsEnabled ? await _mcpSetup() : const _McpSetup.disabled();
     final ctx = _contextSettings();
     final request = LlmChatRequest(
       model: effective,
@@ -832,6 +836,7 @@ class ChatController extends _$ChatController {
         LlmMessage(role: MessageRole.user, content: prompt),
       ],
       maxTokens: ctx.maxTokens,
+      tools: mcp.useFunctionTools ? mcp.tools : null,
       useResponsesAPI: current.provider.useResponsesAPI ?? false,
       extraHeaders: effective.providerExtraHeaders,
       extraBody: effective.providerExtraBody,
@@ -846,18 +851,26 @@ class ChatController extends _$ChatController {
       assistantTime: now,
       views: views,
       assistantView: assistantView,
-      mcp: const _McpSetup.disabled(),
+      mcp: mcp,
       leadingBlocks: [if (headerBlock != null) headerBlock],
     );
 
     final blocks = await _repo.getMessageBlocksByMessageId(assistantMessageId);
-    return <String>[
+    final text = <String>[
       for (final b in blocks)
         if (b is MainTextBlock &&
             b.id != headerBlock?.id &&
             b.content.trim().isNotEmpty)
           b.content,
     ].join('\n\n');
+    return (messageId: assistantMessageId, text: text);
+  }
+
+  /// 从消息 metadata 里取辩论阶段标记（`metadata['debate']['phase']`）。
+  static String? _debatePhaseOf(Map<String, dynamic>? metadata) {
+    final debate = metadata?['debate'];
+    if (debate is! Map) return null;
+    return debate['phase']?.toString();
   }
 
   /// AI 辩论的系统通告（开场/结束/错误提示）：直接落一条无模型的成功
@@ -4557,6 +4570,7 @@ class ChatController extends _$ChatController {
       modelId: model?.id ?? message.modelId,
       providerId: model?.provider,
       askId: message.askId,
+      debatePhase: _debatePhaseOf(message.metadata),
       siblingsGroupId: message.siblingsGroupId,
       multiModelMessageStyle: message.multiModelMessageStyle,
       foldSelected: message.foldSelected ?? false,

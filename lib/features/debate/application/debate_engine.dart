@@ -20,6 +20,7 @@ class DebateRunConfig {
     this.moderatorEnabled = true,
     this.summaryEnabled = true,
     this.verdictEnabled = false,
+    this.ttsEnabled = false,
     this.mode = DebateMode.debate,
   });
 
@@ -34,6 +35,9 @@ class DebateRunConfig {
 
   /// 裁决模式：总结阶段额外产出结构化裁决卡片（胜方 + 四维评分）。
   final bool verdictEnabled;
+
+  /// 每条发言完成后自动 TTS 朗读。
+  final bool ttsEnabled;
 
   final DebateMode mode;
 
@@ -154,6 +158,7 @@ class DebateEngine {
             prompt: buildContext(config, role, round),
             header: '**第$round轮 - ${role.name}** (${role.stance.label})',
             metadata: _turnMetadata(role, round),
+            toolsEnabled: role.toolsEnabled,
           ),
         );
         if (_stopped) break;
@@ -162,6 +167,7 @@ class DebateEngine {
           _history.add(
             DebateTurnRecord(round: round, role: role, content: result.text!),
           );
+          _maybeReadAloud(config, result);
         } else if (result.failed) {
           await port.announce(
             '⚠️ **${role.name}** 本轮发言失败'
@@ -222,6 +228,7 @@ class DebateEngine {
           prompt: _consensusAnswerPrompt(config, juror),
           header: '**独立作答 - ${juror.name}**',
           metadata: _turnMetadata(juror, 1, phase: 'consensus_answer'),
+          toolsEnabled: juror.toolsEnabled,
         ),
       );
       if (_stopped) return DebateOutcome.stopped;
@@ -233,6 +240,7 @@ class DebateEngine {
         );
         _history.add(record);
         answers.add(record);
+        _maybeReadAloud(config, result);
       } else if (result.failed) {
         await port.announce(
           '⚠️ **${juror.name}** 作答失败'
@@ -263,6 +271,7 @@ class DebateEngine {
           prompt: _consensusReviewPrompt(config, juror, answers),
           header: '**互评 - ${juror.name}**',
           metadata: _turnMetadata(juror, 2, phase: 'consensus_review'),
+          toolsEnabled: juror.toolsEnabled,
         ),
       );
       if (_stopped) return DebateOutcome.stopped;
@@ -274,6 +283,7 @@ class DebateEngine {
         );
         _history.add(record);
         reviews.add(record);
+        _maybeReadAloud(config, result);
       }
       await _wait(Duration(seconds: config.turnGapSeconds));
     }
@@ -301,6 +311,7 @@ class DebateEngine {
       await port.announce('⚠️ 共识结论生成失败，请参考上方各方回答与互评自行判断。');
       return DebateOutcome.completed;
     }
+    _maybeReadAloud(config, finalResult);
     await port.announce('🏁 **共识决策结束**\n\n以上共识结论由各模型独立作答与互评后汇总得出。');
     return DebateOutcome.completed;
   }
@@ -483,6 +494,7 @@ class DebateEngine {
       await port.announce(_fallbackSummary(config, 'AI 总结生成失败。'));
       return;
     }
+    _maybeReadAloud(config, result);
     if (config.verdictEnabled) {
       await _announceVerdict(config, judge: summaryRole);
       if (_stopped) return;
@@ -623,6 +635,14 @@ $record
         '**辩论主题：** ${config.topic}\n\n'
         '**参与角色：**\n$roleLines\n\n'
         '**最大轮数：** ${config.maxRounds}\n\n---\n\n让我们开始辩论！';
+  }
+
+  /// 开启朗读时把成功的发言交给 TTS（不阻塞后续流程）。
+  void _maybeReadAloud(DebateRunConfig config, DebateSpeakResult result) {
+    if (!config.ttsEnabled) return;
+    final messageId = result.messageId;
+    if (messageId == null || !result.succeeded) return;
+    port.readAloud(result.text!, messageId: messageId);
   }
 
   Map<String, dynamic> _turnMetadata(

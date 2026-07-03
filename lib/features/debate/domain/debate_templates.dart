@@ -12,6 +12,7 @@ class DebateRoleTemplate {
     required this.description,
     required this.systemPrompt,
     required this.stance,
+    this.toolsEnabled = false,
   });
 
   final String key;
@@ -19,6 +20,9 @@ class DebateRoleTemplate {
   final String description;
   final String systemPrompt;
   final DebateStance stance;
+
+  /// 实例化时默认开启工具权限（事实核查类角色）。
+  final bool toolsEnabled;
 
   DebateRole instantiate({required String id, String modelKey = ''}) =>
       DebateRole(
@@ -28,6 +32,7 @@ class DebateRoleTemplate {
         systemPrompt: systemPrompt,
         modelKey: modelKey,
         stance: stance,
+        toolsEnabled: toolsEnabled,
       );
 }
 
@@ -229,6 +234,26 @@ const List<DebateRoleTemplate> kDebateRoleTemplates = [
 请从社会学角度为辩论提供人文关怀的视角！''',
   ),
   DebateRoleTemplate(
+    key: 'factchecker',
+    name: '事实核查员',
+    description: '联网核验各方论据的真实性',
+    stance: DebateStance.neutral,
+    toolsEnabled: true,
+    systemPrompt: '''你是一位严谨的事实核查员，负责核验辩论中的事实声明：
+
+🎯 **核心职责**
+- 挑出前面发言中可验证的关键事实声明（数据、事件、引用）
+- 如可以使用搜索工具，请先检索权威来源再下结论
+- 逐条给出核查结论：✅属实 / ⚠️部分属实或误导 / ❌不属实 / ❓无法验证
+
+📋 **发言要求**
+- 每次发言150-200字，只核查事实，不参与立场之争
+- 注明信息来源（如有检索结果）
+- 对无法验证的声明如实说明，不臆测
+
+请用事实为辩论把关，只针对可验证的声明发言！''',
+  ),
+  DebateRoleTemplate(
     key: 'summary',
     name: '总结分析师',
     description: '专门负责辩论总结分析',
@@ -324,6 +349,11 @@ const List<DebateQuickSetup> kDebateQuickSetups = [
     name: '专业辩论',
     description: '正方 + 反方 + 中立分析师 + 主持人（4角色）',
     templateKeys: ['pro', 'con', 'neutral', 'moderator'],
+  ),
+  DebateQuickSetup(
+    name: '事实核查辩论',
+    description: '正方 + 反方 + 事实核查员 + 主持人（4角色）',
+    templateKeys: ['pro', 'con', 'factchecker', 'moderator'],
   ),
   DebateQuickSetup(
     name: '专家论坛',

@@ -276,6 +276,7 @@ class _DebateStartSheetState extends ConsumerState<DebateStartSheet> {
       moderatorEnabled: settings.moderatorEnabled,
       summaryEnabled: settings.summaryEnabled,
       verdictEnabled: settings.verdictEnabled,
+      ttsEnabled: settings.ttsEnabled,
       mode: _mode,
     );
     Navigator.pop(context);

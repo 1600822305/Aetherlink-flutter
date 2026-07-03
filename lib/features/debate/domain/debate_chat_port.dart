@@ -16,6 +16,7 @@ class DebateSpeakRequest {
     required this.prompt,
     required this.header,
     this.metadata,
+    this.toolsEnabled = false,
   });
 
   final DebateRole role;
@@ -34,10 +35,13 @@ class DebateSpeakRequest {
 
   /// 写入消息 `metadata['debate']` 的结构化标记。
   final Map<String, dynamic>? metadata;
+
+  /// 允许本次发言调用工具（联网搜索 / MCP），供事实核查类角色使用。
+  final bool toolsEnabled;
 }
 
 class DebateSpeakResult {
-  const DebateSpeakResult({this.text, this.failed = false});
+  const DebateSpeakResult({this.text, this.failed = false, this.messageId});
 
   /// 未配置/无法解析模型时的结果——引擎会明确提示并跳过，
   /// 不产出假的模拟回复（web 的降级模拟响应不迁移）。
@@ -46,6 +50,9 @@ class DebateSpeakResult {
   /// 流式完成后的最终文本；null/空 表示失败或被中断。
   final String? text;
   final bool failed;
+
+  /// 落地的助手消息 id（仅 [DebateChatPort.speak] 产出），供 TTS 朗读定位。
+  final String? messageId;
 
   bool get succeeded => !failed && (text?.trim().isNotEmpty ?? false);
 }
@@ -64,6 +71,9 @@ abstract class DebateChatPort {
   /// 注册/清除用户插话监听：辩论进行中用户从输入框发送的消息会被拦截成
   /// 「场外发言」——落一条普通用户消息后回调 [listener]，不触发常规模型回复。
   void setInterjectionListener(void Function(String text)? listener);
+
+  /// 朗读一条发言（复用 voice 的 TTS，不阻塞引擎流程）。
+  void readAloud(String text, {required String messageId});
 
   /// 中断当前话题正在进行的流式请求（用户停止辩论时）。
   void cancelActiveStream();
