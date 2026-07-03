@@ -84,10 +84,8 @@ Future<McpToolResult> runDexEditorTool(
         return await _deleteApkFile(dex, args);
       case 'apk_add_file':
         return await _addApkFile(dex, args);
-      case 'apk_search_arsc_strings':
-        return await _searchArscStrings(dex, args);
-      case 'apk_search_arsc_resources':
-        return await _searchArscResources(dex, args);
+      case 'apk_search_arsc':
+        return await _searchArsc(dex, args);
       case 'apk_parse_manifest_cpp':
         return await _parseManifestCpp(dex, args);
       case 'apk_search_manifest_cpp':
@@ -745,31 +743,26 @@ Future<McpToolResult> _addApkFile(
   return McpToolResult('✅ 已添加/替换文件: $filePath\n⚠️ APK 需要重新签名');
 }
 
-Future<McpToolResult> _searchArscStrings(
+Future<McpToolResult> _searchArsc(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
-  final result = await dex.execute('searchArscStrings', {
-    'apkPath': _str(args['apkPath']),
-    'pattern': _str(args['pattern']),
-    'limit': _int(args['limit'], 50),
-  });
-  if (!result.success) {
-    return McpToolResult('错误: ${result.error}', isError: true);
+  final target = _str(args['target']).isEmpty ? 'strings' : _str(args['target']);
+  final DexResult result;
+  if (target == 'resources') {
+    result = await dex.execute('searchArscResources', {
+      'apkPath': _str(args['apkPath']),
+      'pattern': _str(args['pattern']),
+      'type': _str(args['type']),
+      'limit': _int(args['limit'], 50),
+    });
+  } else {
+    result = await dex.execute('searchArscStrings', {
+      'apkPath': _str(args['apkPath']),
+      'pattern': _str(args['pattern']),
+      'limit': _int(args['limit'], 50),
+    });
   }
-  return McpToolResult(encodeJson(result.data));
-}
-
-Future<McpToolResult> _searchArscResources(
-  DexEditor dex,
-  Map<String, Object?> args,
-) async {
-  final result = await dex.execute('searchArscResources', {
-    'apkPath': _str(args['apkPath']),
-    'pattern': _str(args['pattern']),
-    'type': _str(args['type']),
-    'limit': _int(args['limit'], 50),
-  });
   if (!result.success) {
     return McpToolResult('错误: ${result.error}', isError: true);
   }
