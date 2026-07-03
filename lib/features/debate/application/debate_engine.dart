@@ -88,6 +88,11 @@ class DebateEngine {
   /// 主持人用于收束辩论的专属指令。
   static const String endDirective = '[DEBATE_END]';
 
+  /// 主持人指定下一轮首位发言人的指令：`[NEXT: 角色名]`。
+  static final RegExp nextDirectivePattern = RegExp(
+    r'\[NEXT[:：]\s*([^\]]+)\]',
+  );
+
   /// 用户插话在历史里的伪角色（不参与排班，只进上下文）。
   static const DebateRole audienceRole = DebateRole(
     id: 'debate-audience',
@@ -103,6 +108,7 @@ class DebateEngine {
   final List<DebateTurnRecord> _history = [];
   bool _stopped = false;
   int _currentRound = 0;
+  String? _nextSpeakerId;
   Completer<void>? _waiter;
 
   bool get isStopped => _stopped;
@@ -146,7 +152,7 @@ class DebateEngine {
     var round = 1;
     while (round <= config.maxRounds && !_stopped) {
       _currentRound = round;
-      for (final role in roles) {
+      for (final role in _roundOrder(roles)) {
         if (_stopped) break;
         onProgress?.call(round, role);
 
@@ -175,6 +181,11 @@ class DebateEngine {
           );
         }
 
+        // 主持人点名：解析 [NEXT: 角色名]，下一轮由该角色首先发言。
+        if (result.succeeded && role.stance == DebateStance.moderator) {
+          _applyNextDirective(config, round, result.text!);
+        }
+
         // 主持人收束：回复含专属指令且至少已进行 2 轮。
         if (result.succeeded &&
             role.stance == DebateStance.moderator &&
@@ -194,6 +205,32 @@ class DebateEngine {
     if (_stopped) return DebateOutcome.stopped;
     await _conclude(config);
     return DebateOutcome.completed;
+  }
+
+  /// 本轮发言顺序：主持人上轮点名的角色提到首位，其余保持原顺序。
+  List<DebateRole> _roundOrder(List<DebateRole> roles) {
+    final id = _nextSpeakerId;
+    _nextSpeakerId = null;
+    if (id == null) return roles;
+    final idx = roles.indexWhere((r) => r.id == id);
+    if (idx <= 0) return roles;
+    return [roles[idx], ...roles.sublist(0, idx), ...roles.sublist(idx + 1)];
+  }
+
+  /// 解析主持人发言里的 [NEXT: 角色名]：命中发言角色（非主持人）时
+  /// 记下来，下一轮由其首先发言；最后一轮不再生效。
+  void _applyNextDirective(DebateRunConfig config, int round, String text) {
+    if (round >= config.maxRounds) return;
+    final match = nextDirectivePattern.firstMatch(text);
+    if (match == null) return;
+    final name = match.group(1)!.trim();
+    for (final r in config.speakingRoles) {
+      if (r.stance == DebateStance.moderator) continue;
+      if (r.name == name) {
+        _nextSpeakerId = r.id;
+        return;
+      }
+    }
   }
 
   /// Jury 式共识流程：独立作答（互不可见）→ 互评一轮 → 主持/总结
@@ -349,7 +386,10 @@ class DebateEngine {
       }
       buffer.writeln();
     }
-    buffer.write('直接给出答案和理由，不要罗列多种可能性敷衍，不超过${config.maxCharsPerTurn}字。');
+    buffer.write(
+      '直接给出答案和理由，不要罗列多种可能性敷衍。'
+      '【硬性要求】严格控制在${config.maxCharsPerTurn}字以内，宁短勿长。',
+    );
     return buffer.toString();
   }
 
@@ -370,7 +410,7 @@ class DebateEngine {
       ..write(
         '你是${juror.name}。请逐一点评以上回答的优劣（包括你自己的），'
         '最后明确写出「我投票支持：某陈述人」——可以不是你自己。'
-        '不超过${config.maxCharsPerTurn}字。',
+        '【硬性要求】严格控制在${config.maxCharsPerTurn}字以内，宁短勿长。',
       );
     return buffer.toString();
   }
@@ -411,7 +451,7 @@ class DebateEngine {
       ..writeln()
       ..writeln(role.systemPrompt)
       ..writeln()
-      ..writeln('当前是第$round轮辩论。')
+      ..writeln('当前是第$round轮辩论（本场最多${config.maxRounds}轮）。')
       ..writeln()
       ..writeln('辩论主题：${config.topic}')
       ..writeln();
@@ -435,27 +475,41 @@ class DebateEngine {
     }
 
     if (role.stance == DebateStance.moderator) {
+      final isFinalRound = round >= config.maxRounds;
       buffer
         ..writeln('📊 **辩论进度提醒**：')
-        ..writeln('- 当前轮数：第$round轮')
+        ..writeln('- 当前轮数：第$round轮 / 共${config.maxRounds}轮')
         ..writeln('- 总发言数：${_history.length}条');
-      if (round < 2) {
+      if (isFinalRound) {
+        buffer.writeln('- 状态：这是最后一轮，辩论结束后将自动进入总结阶段。请做收尾点评，不要再布置新的讨论任务或要求任何一方继续发言');
+      } else if (round < 2) {
         buffer.writeln('- 状态：辩论刚开始，请推动讨论深入，不要急于结束');
       } else if (round < 3) {
         buffer.writeln('- 状态：辩论进行中，继续引导各方深入交流');
       } else {
         buffer.writeln('- 状态：可以考虑是否已充分讨论，必要时可建议结束');
       }
-      buffer
-        ..writeln()
-        ..writeln('🔚 **重要提醒**：如果你认为辩论已经充分进行，各方观点都得到了充分表达，可以在回应的最后添加专属停止指令：')
-        ..writeln('**$endDirective** - 这是系统识别的结束指令，添加此指令后辩论将立即结束并进入总结阶段。')
-        ..writeln();
+      buffer.writeln();
+      if (!isFinalRound) {
+        final candidates = [
+          for (final r in config.speakingRoles)
+            if (r.stance != DebateStance.moderator) '「${r.name}」',
+        ].join('、');
+        buffer
+          ..writeln('🎙️ **发言顺序**：顺序由系统控制，自然语言的指挥（如「请某方先发言」）不会被执行。'
+              '如需指定下一轮首位发言人，请在回应末尾添加指令：[NEXT: 角色名]，'
+              '角色名必须是 $candidates 之一，不需要指定时不要输出此指令。')
+          ..writeln()
+          ..writeln('🔚 **重要提醒**：如果你认为辩论已经充分进行，各方观点都得到了充分表达，可以在回应的最后添加专属停止指令：')
+          ..writeln('**$endDirective** - 这是系统识别的结束指令，添加此指令后辩论将立即结束并进入总结阶段。')
+          ..writeln();
+      }
     }
 
     buffer.write(
       '请基于你的角色立场和以上内容进行回应，保持专业和理性。'
-      '回应应该简洁明了，不超过${config.maxCharsPerTurn}字。',
+      '【硬性要求】回应必须严格控制在${config.maxCharsPerTurn}字以内，'
+      '宁短勿长，只保留最有力的论点。',
     );
     return buffer.toString();
   }
@@ -601,7 +655,8 @@ $record
 5. **深度思考**：对辩论主题的进一步思考和启发
 6. **结论建议**：基于辩论内容的平衡性建议
 
-请保持客观中立，避免偏向任何一方，重点分析论证过程和思维逻辑。''';
+请保持客观中立，避免偏向任何一方，重点分析论证过程和思维逻辑。
+直接输出总结正文，不要任何开场白或客套话（如「好的」「以下是」）。''';
   }
 
   String _fallbackSummary(DebateRunConfig config, String reason) {

@@ -251,11 +251,62 @@ void main() {
 
     expect(context, contains('辩论主题：测试辩题'));
     expect(context, contains('第1轮'));
-    expect(context, contains('不超过200字'));
+    expect(context, contains('200字以内'));
     expect(context, isNot(contains('之前的发言')));
 
     final moderatorContext = engine.buildContext(config, _moderator, 2);
     expect(moderatorContext, contains(DebateEngine.endDirective));
+    // 非最后一轮：可用 [NEXT: 角色名] 点名，候选不含主持人。
+    expect(moderatorContext, contains('[NEXT: 角色名]'));
+    expect(moderatorContext, contains('「正方辩手」'));
+    expect(moderatorContext, isNot(contains('「主持人」')));
+  });
+
+  test('主持人最后一轮：提示收尾，不再给 [DEBATE_END] / [NEXT] 指令', () {
+    final engine = DebateEngine(port: _FakePort());
+    final config = _config(maxRounds: 3);
+
+    final context = engine.buildContext(config, _moderator, 3);
+
+    expect(context, contains('最后一轮'));
+    expect(context, isNot(contains(DebateEngine.endDirective)));
+    expect(context, isNot(contains('[NEXT: 角色名]')));
+  });
+
+  test('主持人点名 [NEXT: 角色名]：下一轮由该角色首先发言', () async {
+    final port = _FakePort(
+      reply: (r) => DebateSpeakResult(
+        text: r.role.stance == DebateStance.moderator && r.round == 1
+            ? '请反方回应。[NEXT: 反方辩手]'
+            : '${r.role.name}的发言',
+      ),
+    );
+    final engine = DebateEngine(port: port);
+
+    await engine.run(_config(maxRounds: 2));
+
+    expect(
+      [for (final s in port.speaks.take(6)) s.role.id],
+      ['r-pro', 'r-con', 'r-mod', 'r-con', 'r-pro', 'r-mod'],
+    );
+  });
+
+  test('[NEXT] 点名无效角色或在最后一轮时忽略', () async {
+    final port = _FakePort(
+      reply: (r) => DebateSpeakResult(
+        text: r.role.stance == DebateStance.moderator
+            ? '[NEXT: 不存在的角色]'
+            : '${r.role.name}的发言',
+      ),
+    );
+    final engine = DebateEngine(port: port);
+
+    await engine.run(_config(maxRounds: 2));
+
+    expect(
+      [for (final s in port.speaks.take(6)) s.role.id],
+      ['r-pro', 'r-con', 'r-mod', 'r-pro', 'r-con', 'r-mod'],
+    );
   });
 
   test('用户插话：进入历史并出现在后续上下文，带回应提示', () async {
