@@ -82,8 +82,8 @@ class KnowledgeAddSourceSheet extends StatelessWidget {
             ),
             entry(
               icon: LucideIcons.folder,
-              title: '工作区目录',
-              subtitle: '摄取工作区里的文本文件',
+              title: '文件夹 / 目录',
+              subtitle: '选择文件夹或工作区，批量摄取其中的文本文件',
               action: onWorkspace,
             ),
           ],

@@ -29,6 +29,7 @@ import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/sheets
 import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/sheets/knowledge_trash_sheet.dart';
 import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/sheets/pdfium_engine_setup_sheet.dart';
 import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/widgets/knowledge_item_list.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
@@ -514,16 +515,15 @@ class _KnowledgeBaseDetailPageState
     }
   }
 
-  /// 选择一个「最近打开」的工作区，遍历其目录下文本文件摄取为条目（type=workspace）。
-  /// 摄取时记录来源指纹，供检索时的 staleness 检测异步比对（设计文档 §8.1）。
+  /// 选择一个目录批量摄取（功能缺口⑧）：系统文件夹选择器新授权一个本地文件夹，
+  /// 或复用「最近打开」的工作区；随后遍历其目录下文本文件逐个摄取为条目
+  /// （type=workspace）。摄取时记录来源指纹，供检索时的 staleness 检测异步比对
+  /// （设计文档 §8.1）。
   Future<void> _addWorkspace() async {
     final workspaces = await ref.read(workspaceStoreProvider.future);
     if (!mounted) return;
-    if (workspaces.isEmpty) {
-      AppToast.error(context, '还没有打开过工作区，先在「工作区」里打开一个目录');
-      return;
-    }
-    final picked = await showModalBottomSheet<Workspace>(
+    const pickNewFolder = '_pick_new_folder_';
+    final selected = await showModalBottomSheet<Object>(
       context: context,
       showDragHandle: true,
       builder: (ctx) => SafeArea(
@@ -534,29 +534,50 @@ class _KnowledgeBaseDetailPageState
             Padding(
               padding: const EdgeInsets.only(bottom: 8, left: 4),
               child: Text(
-                '选择工作区目录',
+                '选择要导入的目录',
                 style: Theme.of(
                   ctx,
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
             ),
-            for (final w in workspaces)
-              ListTile(
-                onTap: () => Navigator.of(ctx).pop(w),
-                leading: const Icon(LucideIcons.folder, size: 20),
-                title: Text(w.name.isEmpty ? '未命名工作区' : w.name),
-                subtitle: w.displayPath == null
-                    ? null
-                    : Text(
-                        w.displayPath!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+            ListTile(
+              onTap: () => Navigator.of(ctx).pop(pickNewFolder),
+              leading: const Icon(LucideIcons.folderSearch, size: 20),
+              title: const Text('选择文件夹…'),
+              subtitle: const Text('用系统选择器授权一个本地文件夹'),
+            ),
+            if (workspaces.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 4, left: 4),
+                child: Text(
+                  '最近打开的工作区',
+                  style: Theme.of(ctx).textTheme.labelMedium?.copyWith(
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                       ),
+                ),
               ),
+              for (final w in workspaces)
+                ListTile(
+                  onTap: () => Navigator.of(ctx).pop(w),
+                  leading: const Icon(LucideIcons.folder, size: 20),
+                  title: Text(w.name.isEmpty ? '未命名工作区' : w.name),
+                  subtitle: w.displayPath == null
+                      ? null
+                      : Text(
+                          w.displayPath!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                ),
+            ],
           ],
         ),
       ),
     );
+    if (selected == null) return;
+    final picked = selected == pickNewFolder
+        ? await _pickSystemFolder()
+        : selected as Workspace;
     if (picked == null) return;
     _setProgress('正在扫描「${picked.name}」', 0, 0, cancellable: true);
     try {
@@ -582,7 +603,27 @@ class _KnowledgeBaseDetailPageState
       }
     } catch (e) {
       _clearProgress();
-      if (mounted) AppToast.error(context, '摄取工作区失败：$e');
+      if (mounted) AppToast.error(context, '摄取目录失败：$e');
+    }
+  }
+
+  /// 系统文件夹选择入口（功能缺口⑧）：SAF 选目录并持久化授权，登记进「最近
+  /// 打开」工作区列表后走同一条 workspace 摄取管线。用户取消返回 null。
+  Future<Workspace?> _pickSystemFolder() async {
+    try {
+      final picked = await ref.read(localSafBackendProvider).pickDirectory();
+      if (picked == null) return null;
+      return await ref
+          .read(workspaceStoreProvider.notifier)
+          .open(
+            name: picked.name,
+            backendType: WorkspaceBackendType.localSaf,
+            root: picked.root,
+            displayPath: picked.displayPath,
+          );
+    } catch (e) {
+      if (mounted) AppToast.error(context, '选择文件夹失败：$e');
+      return null;
     }
   }
 
