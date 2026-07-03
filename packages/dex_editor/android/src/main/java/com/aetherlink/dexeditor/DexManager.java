@@ -93,14 +93,14 @@ public class DexManager {
         }
     }
     
-    // 存储活跃的 DEX 会话
-    private final Map<String, DexSession> sessions = new HashMap<>();
-    
-    // 存储多 DEX 会话（MCP 工作流）
-    private final Map<String, MultiDexSession> multiDexSessions = new HashMap<>();
+    // 会话存储与生命周期（已抽出到 DexSessionManager，持有单/多 DEX 两套会话表）
+    private final DexSessionManager sessionManager = new DexSessionManager();
 
     // 交叉引用分析（已抽出到独立类，本类仅负责会话查找 + 委派）
     private final DexXrefAnalyzer xrefAnalyzer = new DexXrefAnalyzer();
+
+    // 搜索服务（单 DEX 会话内的字符串/代码/方法/字段搜索）
+    private final DexSearchService searchService = new DexSearchService(this);
     
     // APK DEX 缓存 - 用于加速编译（key: apkPath + ":" + dexPath）
     private final Map<String, ApkDexCache> apkDexCaches = new HashMap<>();
@@ -206,7 +206,7 @@ public class DexManager {
 
         // 创建会话
         DexSession session = new DexSession(sid, path, dexFile, dexBytes);
-        sessions.put(sid, session);
+        sessionManager.sessions.put(sid, session);
 
         Log.d(TAG, "Loaded DEX: " + path + " with session: " + sid);
 
@@ -274,7 +274,7 @@ public class DexManager {
      * 关闭 DEX 会话
      */
     public void closeDex(String sessionId) {
-        sessions.remove(sessionId);
+        sessionManager.closeSession(sessionId);
         Log.d(TAG, "Closed session: " + sessionId);
     }
 
@@ -282,7 +282,7 @@ public class DexManager {
      * 获取会话的 DEX 字节数据（用于 C++ 操作）
      */
     public byte[] getSessionDexBytes(String sessionId) {
-        DexSession session = sessions.get(sessionId);
+        DexSession session = sessionManager.sessions.get(sessionId);
         return session != null ? session.dexBytes : null;
     }
 
@@ -1000,181 +1000,25 @@ public class DexManager {
 
     // ==================== 搜索操作 ====================
 
-    /**
-     * 搜索字符串（优先使用 C++ 实现）
-     */
-    public JSArray searchString(String sessionId, String query, 
+    /** 搜索字符串（委派到 DexSearchService）。 */
+    public JSArray searchString(String sessionId, String query,
                                 boolean regex, boolean caseSensitive) throws Exception {
-        DexSession session = getSession(sessionId);
-        
-        // 优先使用 C++ 实现
-        if (CppDex.isAvailable() && session.dexBytes != null && !regex) {
-            try {
-                String jsonResult = CppDex.searchInDex(session.dexBytes, query, "string", caseSensitive, 1000);
-                if (jsonResult != null && !jsonResult.contains("\"error\"")) {
-                    org.json.JSONObject cppResult = new org.json.JSONObject(jsonResult);
-                    org.json.JSONArray cppResults = cppResult.optJSONArray("results");
-                    if (cppResults != null) {
-                        JSArray results = new JSArray();
-                        for (int i = 0; i < cppResults.length(); i++) {
-                            org.json.JSONObject r = cppResults.getJSONObject(i);
-                            JSObject item = new JSObject();
-                            item.put("value", r.optString("value"));
-                            item.put("index", r.optInt("index"));
-                            results.put(item);
-                        }
-                        return results;
-                    }
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "C++ searchString failed, fallback to Java", e);
-            }
-        }
-        
-        // Java 回退实现
-        JSArray results = new JSArray();
-        Pattern pattern = null;
-        if (regex) {
-            int flags = caseSensitive ? 0 : Pattern.CASE_INSENSITIVE;
-            pattern = Pattern.compile(query, flags);
-        }
-
-        Set<String> searchedStrings = new HashSet<>();
-        for (ClassDef classDef : session.originalDexFile.getClasses()) {
-            checkAndAddString(classDef.getType(), query, regex, caseSensitive, pattern, searchedStrings, results);
-            if (classDef.getSuperclass() != null) {
-                checkAndAddString(classDef.getSuperclass(), query, regex, caseSensitive, pattern, searchedStrings, results);
-            }
-        }
-        return results;
+        return searchService.searchString(sessionId, query, regex, caseSensitive);
     }
 
-    /**
-     * 搜索代码
-     */
+    /** 搜索代码（委派到 DexSearchService）。 */
     public JSArray searchCode(String sessionId, String query, boolean regex) throws Exception {
-        DexSession session = getSession(sessionId);
-        JSArray results = new JSArray();
-
-        Pattern pattern = regex ? Pattern.compile(query) : null;
-
-        for (ClassDef classDef : session.originalDexFile.getClasses()) {
-            if (session.removedClasses.contains(classDef.getType())) continue;
-
-            try {
-                String smali = classToSmali(sessionId, classDef.getType()).getString("smali");
-                boolean match = regex ? pattern.matcher(smali).find() : smali.contains(query);
-                
-                if (match) {
-                    JSObject item = new JSObject();
-                    item.put("className", classDef.getType());
-                    item.put("matchCount", countMatches(smali, query, regex));
-                    results.put(item);
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "Failed to search class: " + classDef.getType(), e);
-            }
-        }
-
-        return results;
+        return searchService.searchCode(sessionId, query, regex);
     }
 
-    /**
-     * 搜索方法（优先使用 C++ 实现）
-     */
+    /** 搜索方法（委派到 DexSearchService）。 */
     public JSArray searchMethod(String sessionId, String query) throws Exception {
-        DexSession session = getSession(sessionId);
-        
-        // 优先使用 C++ 实现
-        if (CppDex.isAvailable() && session.dexBytes != null) {
-            try {
-                String jsonResult = CppDex.searchInDex(session.dexBytes, query, "method", false, 1000);
-                if (jsonResult != null && !jsonResult.contains("\"error\"")) {
-                    org.json.JSONObject cppResult = new org.json.JSONObject(jsonResult);
-                    org.json.JSONArray cppResults = cppResult.optJSONArray("results");
-                    if (cppResults != null) {
-                        JSArray results = new JSArray();
-                        for (int i = 0; i < cppResults.length(); i++) {
-                            org.json.JSONObject r = cppResults.getJSONObject(i);
-                            JSObject item = new JSObject();
-                            item.put("className", r.optString("className"));
-                            item.put("methodName", r.optString("name"));
-                            item.put("returnType", r.optString("returnType", ""));
-                            results.put(item);
-                        }
-                        return results;
-                    }
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "C++ searchMethod failed, fallback to Java", e);
-            }
-        }
-        
-        // Java 回退实现
-        JSArray results = new JSArray();
-        String queryLower = query.toLowerCase();
-        for (ClassDef classDef : session.originalDexFile.getClasses()) {
-            if (session.removedClasses.contains(classDef.getType())) continue;
-            for (Method method : classDef.getMethods()) {
-                if (method.getName().toLowerCase().contains(queryLower)) {
-                    JSObject item = new JSObject();
-                    item.put("className", classDef.getType());
-                    item.put("methodName", method.getName());
-                    item.put("returnType", method.getReturnType());
-                    results.put(item);
-                }
-            }
-        }
-        return results;
+        return searchService.searchMethod(sessionId, query);
     }
 
-    /**
-     * 搜索字段（优先使用 C++ 实现）
-     */
+    /** 搜索字段（委派到 DexSearchService）。 */
     public JSArray searchField(String sessionId, String query) throws Exception {
-        DexSession session = getSession(sessionId);
-        
-        // 优先使用 C++ 实现
-        if (CppDex.isAvailable() && session.dexBytes != null) {
-            try {
-                String jsonResult = CppDex.searchInDex(session.dexBytes, query, "field", false, 1000);
-                if (jsonResult != null && !jsonResult.contains("\"error\"")) {
-                    org.json.JSONObject cppResult = new org.json.JSONObject(jsonResult);
-                    org.json.JSONArray cppResults = cppResult.optJSONArray("results");
-                    if (cppResults != null) {
-                        JSArray results = new JSArray();
-                        for (int i = 0; i < cppResults.length(); i++) {
-                            org.json.JSONObject r = cppResults.getJSONObject(i);
-                            JSObject item = new JSObject();
-                            item.put("className", r.optString("className"));
-                            item.put("fieldName", r.optString("name"));
-                            item.put("fieldType", r.optString("type", ""));
-                            results.put(item);
-                        }
-                        return results;
-                    }
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "C++ searchField failed, fallback to Java", e);
-            }
-        }
-        
-        // Java 回退实现
-        JSArray results = new JSArray();
-        String queryLower = query.toLowerCase();
-        for (ClassDef classDef : session.originalDexFile.getClasses()) {
-            if (session.removedClasses.contains(classDef.getType())) continue;
-            for (Field field : classDef.getFields()) {
-                if (field.getName().toLowerCase().contains(queryLower)) {
-                    JSObject item = new JSObject();
-                    item.put("className", classDef.getType());
-                    item.put("fieldName", field.getName());
-                    item.put("fieldType", field.getType());
-                    results.put(item);
-                }
-            }
-        }
-        return results;
+        return searchService.searchField(sessionId, query);
     }
 
     // ==================== 交叉引用分析（委派到 DexXrefAnalyzer）====================
@@ -1212,11 +1056,7 @@ public class DexManager {
     }
 
     private MultiDexSession requireMultiDexSession(String sessionId) {
-        MultiDexSession session = multiDexSessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
-        return session;
+        return sessionManager.requireMultiDexSession(sessionId);
     }
 
     // ==================== Smali 转 Java（C++ 实现）====================
@@ -1226,7 +1066,7 @@ public class DexManager {
      */
     public JSObject smaliToJava(String sessionId, String className) throws Exception {
         // dex_open 创建的是多 DEX 会话，需在 multiDexSessions 中查找并逐个 DEX 定位类。
-        MultiDexSession session = multiDexSessions.get(sessionId);
+        MultiDexSession session = sessionManager.multiDexSessions.get(sessionId);
         if (session == null) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -1385,35 +1225,8 @@ public class DexManager {
 
     // ==================== 辅助方法 ====================
 
-    private DexSession getSession(String sessionId) throws Exception {
-        DexSession session = sessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
-        return session;
-    }
-
-    private void checkAndAddString(String str, String query, boolean regex, 
-                                     boolean caseSensitive, Pattern pattern,
-                                     Set<String> searchedStrings, JSArray results) {
-        if (str == null || searchedStrings.contains(str)) return;
-        searchedStrings.add(str);
-        
-        boolean match;
-        if (regex) {
-            match = pattern.matcher(str).find();
-        } else if (caseSensitive) {
-            match = str.contains(query);
-        } else {
-            match = str.toLowerCase().contains(query.toLowerCase());
-        }
-        
-        if (match) {
-            JSObject item = new JSObject();
-            item.put("index", searchedStrings.size() - 1);
-            item.put("value", str);
-            results.put(item);
-        }
+    DexSession getSession(String sessionId) throws Exception {
+        return sessionManager.getSession(sessionId);
     }
 
     private ClassDef findClass(DexSession session, String className) {
@@ -1513,10 +1326,6 @@ public class DexManager {
 
     private void deleteRecursive(File file) {
         FileUtils.deleteRecursive(file);
-    }
-
-    private int countMatches(String text, String query, boolean regex) {
-        return SmaliUtils.countMatches(text, query, regex);
     }
 
     // ==================== APK 内 DEX 操作（无需会话） ====================
@@ -1890,7 +1699,7 @@ public class DexManager {
             }
         }
         
-        multiDexSessions.put(sessionId, multiSession);
+        sessionManager.multiDexSessions.put(sessionId, multiSession);
         
         result.put("sessionId", sessionId);
         result.put("apkPath", apkPath);
@@ -1904,45 +1713,21 @@ public class DexManager {
      * 列出所有打开的会话
      */
     public JSArray listAllSessions() {
-        JSArray result = new JSArray();
-        
-        // 单 DEX 会话
-        for (Map.Entry<String, DexSession> entry : sessions.entrySet()) {
-            JSObject session = new JSObject();
-            session.put("sessionId", entry.getKey());
-            session.put("type", "single");
-            session.put("filePath", entry.getValue().filePath);
-            session.put("modified", entry.getValue().modified);
-            result.put(session);
-        }
-        
-        // 多 DEX 会话
-        for (Map.Entry<String, MultiDexSession> entry : multiDexSessions.entrySet()) {
-            JSObject session = new JSObject();
-            session.put("sessionId", entry.getKey());
-            session.put("type", "multi");
-            session.put("apkPath", entry.getValue().apkPath);
-            session.put("dexCount", entry.getValue().dexFiles.size());
-            session.put("modified", entry.getValue().modified);
-            result.put(session);
-        }
-        
-        return result;
+        return sessionManager.listAllSessions();
     }
 
     /**
      * 关闭多 DEX 会话
      */
     public void closeMultiDexSession(String sessionId) {
-        multiDexSessions.remove(sessionId);
-        Log.d(TAG, "Closed multi-dex session: " + sessionId);
+        sessionManager.closeMultiDexSession(sessionId);
     }
 
     /**
      * 获取多 DEX 会话中的类列表（Rust 实现）
      */
     public JSObject getClassesFromMultiSession(String sessionId, String packageFilter, int offset, int limit) throws Exception {
-        MultiDexSession session = multiDexSessions.get(sessionId);
+        MultiDexSession session = sessionManager.multiDexSessions.get(sessionId);
         if (session == null) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -2003,7 +1788,7 @@ public class DexManager {
      */
     public JSObject searchInMultiSession(String sessionId, String query, String searchType, 
                                           boolean caseSensitive, int maxResults) throws Exception {
-        MultiDexSession session = multiDexSessions.get(sessionId);
+        MultiDexSession session = sessionManager.multiDexSessions.get(sessionId);
         if (session == null) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -2182,7 +1967,7 @@ public class DexManager {
      * 从多 DEX 会话获取类的 Smali 代码（Rust 实现）
      */
     public JSObject getClassSmaliFromSession(String sessionId, String className) throws Exception {
-        MultiDexSession session = multiDexSessions.get(sessionId);
+        MultiDexSession session = sessionManager.multiDexSessions.get(sessionId);
         if (session == null) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -2217,7 +2002,7 @@ public class DexManager {
      * 修改类并保存到多 DEX 会话（Rust 实现）
      */
     public void modifyClassInSession(String sessionId, String className, String smaliContent) throws Exception {
-        MultiDexSession session = multiDexSessions.get(sessionId);
+        MultiDexSession session = sessionManager.multiDexSessions.get(sessionId);
         if (session == null) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -2261,7 +2046,7 @@ public class DexManager {
      * 添加新类到会话（Rust 实现）
      */
     public void addClassToSession(String sessionId, String className, String smaliContent) throws Exception {
-        MultiDexSession session = multiDexSessions.get(sessionId);
+        MultiDexSession session = sessionManager.multiDexSessions.get(sessionId);
         if (session == null) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -2295,7 +2080,7 @@ public class DexManager {
      * 从会话中删除类（Rust 实现）
      */
     public void deleteClassFromSession(String sessionId, String className) throws Exception {
-        MultiDexSession session = multiDexSessions.get(sessionId);
+        MultiDexSession session = sessionManager.multiDexSessions.get(sessionId);
         if (session == null) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -2341,7 +2126,7 @@ public class DexManager {
     public JSObject getMethodFromSession(String sessionId, String className, String methodName, String methodSignature) throws Exception {
         JSObject result = new JSObject();
         
-        MultiDexSession session = multiDexSessions.get(sessionId);
+        MultiDexSession session = sessionManager.multiDexSessions.get(sessionId);
         if (session == null) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -2368,7 +2153,7 @@ public class DexManager {
      * 修改会话中的单个方法
      */
     public void modifyMethodInSession(String sessionId, String className, String methodName, String methodSignature, String newMethodCode) throws Exception {
-        MultiDexSession session = multiDexSessions.get(sessionId);
+        MultiDexSession session = sessionManager.multiDexSessions.get(sessionId);
         if (session == null) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -2405,7 +2190,7 @@ public class DexManager {
      * 列出会话中类的所有方法
      */
     public JSObject listMethodsFromSession(String sessionId, String className) throws Exception {
-        MultiDexSession session = multiDexSessions.get(sessionId);
+        MultiDexSession session = sessionManager.multiDexSessions.get(sessionId);
         if (session == null) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -2448,7 +2233,7 @@ public class DexManager {
      * 列出会话中类的所有字段
      */
     public JSObject listFieldsFromSession(String sessionId, String className) throws Exception {
-        MultiDexSession session = multiDexSessions.get(sessionId);
+        MultiDexSession session = sessionManager.multiDexSessions.get(sessionId);
         if (session == null) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -2483,7 +2268,7 @@ public class DexManager {
      * 便于在读取全量 Smali 前先了解类结构。
      */
     public JSObject outlineClassFromSession(String sessionId, String className) throws Exception {
-        MultiDexSession session = multiDexSessions.get(sessionId);
+        MultiDexSession session = sessionManager.multiDexSessions.get(sessionId);
         if (session == null) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -2554,7 +2339,7 @@ public class DexManager {
      * 重命名会话中的类
      */
     public void renameClassInSession(String sessionId, String oldClassName, String newClassName) throws Exception {
-        MultiDexSession session = multiDexSessions.get(sessionId);
+        MultiDexSession session = sessionManager.multiDexSessions.get(sessionId);
         if (session == null) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -2827,7 +2612,7 @@ public class DexManager {
      * 保存多 DEX 会话的修改到 APK
      */
     public JSObject saveMultiDexSessionToApk(String sessionId) throws Exception {
-        MultiDexSession session = multiDexSessions.get(sessionId);
+        MultiDexSession session = sessionManager.multiDexSessions.get(sessionId);
         if (session == null) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -2972,8 +2757,8 @@ public class DexManager {
         int failed = 0;
 
         // 复制 key 集合，避免保存过程修改 map 时并发遍历
-        for (String sessionId : new ArrayList<>(multiDexSessions.keySet())) {
-            MultiDexSession session = multiDexSessions.get(sessionId);
+        for (String sessionId : new ArrayList<>(sessionManager.multiDexSessions.keySet())) {
+            MultiDexSession session = sessionManager.multiDexSessions.get(sessionId);
             JSObject item = new JSObject();
             item.put("sessionId", sessionId);
             if (session == null) {
