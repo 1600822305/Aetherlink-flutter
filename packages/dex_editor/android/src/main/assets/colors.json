@@ -1,0 +1,21 @@
+{
+  "default":   { "day": "#000000", "night": "#D4D4D4" },
+  "string":    { "day": "#067D17", "night": "#CE9178" },
+  "strEscape": { "day": "#0037A6", "night": "#D7BA7D" },
+  "comment":   { "day": "#8C8C8C", "night": "#6A9955" },
+  "meta":      { "day": "#9E880D", "night": "#DCDCAA" },
+  "number":    { "day": "#1750EB", "night": "#B5CEA8" },
+  "keyword":   { "day": "#0033B3", "night": "#569CD6" },
+  "keyword2":  { "day": "#800000", "night": "#C586C0" },
+  "constant":  { "day": "#871094", "night": "#9CDCFE" },
+  "type":      { "day": "#808000", "night": "#4EC9B0" },
+  "label":     { "day": "#7050E0", "night": "#DCDCAA" },
+  "variable":  { "day": "#1750EB", "night": "#9CDCFE" },
+  "operator":  { "day": "#205060", "night": "#D4D4D4" },
+  "propKey":   { "day": "#083080", "night": "#9CDCFE" },
+  "propVal":   { "day": "#067D17", "night": "#CE9178" },
+  "tagName":   { "day": "#0030B3", "night": "#569CD6" },
+  "attrName":  { "day": "#174AD4", "night": "#9CDCFE" },
+  "namespace": { "day": "#871094", "night": "#4EC9B0" },
+  "error":     { "day": "#F50000", "night": "#F44747" }
+}
