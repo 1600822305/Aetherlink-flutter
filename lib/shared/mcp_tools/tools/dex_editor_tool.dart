@@ -543,13 +543,23 @@ Future<McpToolResult> _patchManifest(
     'apkPath': _str(args['apkPath']),
     'patches': patchList,
   });
-  if (!result.success) {
-    return McpToolResult('修改失败: ${result.error}', isError: true);
-  }
   final data = _map(result.data);
+  // `result.success` is the transport-level envelope flag; the business result
+  // (whether any patch was actually applied) lives in `data['success']`.
+  if (!result.success || data['success'] == false) {
+    return McpToolResult(
+      encodeJson({
+        'success': false,
+        'error': result.error ?? data['error'] ?? '修改失败',
+        'details': data['details'],
+      }),
+      isError: true,
+    );
+  }
   return McpToolResult(encodeJson({
     'success': true,
-    'appliedPatches': data['appliedPatches'] ?? patchList.length,
+    'appliedCount': data['appliedCount'] ?? patchList.length,
+    'details': data['details'],
     'message': 'AndroidManifest.xml 已修改，APK 需要重新签名',
   }));
 }

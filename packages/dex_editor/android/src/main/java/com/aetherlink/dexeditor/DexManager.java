@@ -3074,6 +3074,10 @@ public class DexManager {
         return ApkResourceOperations.replaceInManifest(apkPath, replacements);
     }
 
+    public JSObject patchManifest(String apkPath, org.json.JSONArray patches) throws Exception {
+        return ApkResourceOperations.patchManifest(apkPath, patches);
+    }
+
     /**
      * 列出 APK 中的所有文件
      */
