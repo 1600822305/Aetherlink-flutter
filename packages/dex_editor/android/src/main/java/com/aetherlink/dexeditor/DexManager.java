@@ -1622,6 +1622,185 @@ public class DexManager {
         return s;
     }
 
+    /** 剥离数组前缀 '['，返回基础类型描述符（如 "[[Lp/A;" -> "Lp/A;"）。 */
+    private static String arrayBase(String t) {
+        if (t == null) return null;
+        int i = 0;
+        while (i < t.length() && t.charAt(i) == '[') i++;
+        return t.substring(i);
+    }
+
+    /** 数组维度（'[' 个数）；非数组为 0。 */
+    private static int arrayDepth(String t) {
+        if (t == null) return 0;
+        int i = 0;
+        while (i < t.length() && t.charAt(i) == '[') i++;
+        return i;
+    }
+
+    /**
+     * 类级交叉引用（dexlib2），运行在多 DEX 会话上。
+     * 覆盖对目标类型的各类引用形式（含数组包装）：
+     *   指令级：new-instance、check-cast、instance-of、const-class、new-array/
+     *          filled-new-array、字段访问的字段类型、方法调用的参数/返回类型；
+     *   声明级：extends（父类）、implements（接口）、字段声明类型、
+     *          方法声明的参数/返回类型。
+     * 每条引用含 sourceClass、sourceMethod?/sourceMethodSignature?、refKind、
+     * detail（指令或位置描述）、codeAddress?（指令级）、arrayDepth、dexFile。
+     */
+    public JSObject findClassXrefsCHA(String sessionId, String className, int limit)
+            throws Exception {
+        MultiDexSession session = multiDexSessions.get(sessionId);
+        if (session == null) {
+            throw new IllegalArgumentException("Session not found: " + sessionId);
+        }
+        int cap = limit > 0 ? limit : 50;
+        String targetType = normalizeType(className);
+
+        JSArray xrefArray = new JSArray();
+        boolean truncated = false;
+
+        outer:
+        for (Map.Entry<String, DexBackedDexFile> entry : session.dexFiles.entrySet()) {
+            String dexName = entry.getKey();
+            DexBackedDexFile dexFile = entry.getValue();
+            if (dexFile == null) continue;
+            for (ClassDef cd : dexFile.getClasses()) {
+                String srcClass = cd.getType();
+                // ---- 声明级：extends / implements ----
+                if (targetType.equals(cd.getSuperclass())) {
+                    if (xrefArray.length() >= cap) { truncated = true; break outer; }
+                    xrefArray.put(classXref(srcClass, null, null, "extends",
+                            shortType(srcClass) + " extends " + shortType(targetType), -1, 0, dexName));
+                }
+                for (String iface : cd.getInterfaces()) {
+                    if (targetType.equals(iface)) {
+                        if (xrefArray.length() >= cap) { truncated = true; break outer; }
+                        xrefArray.put(classXref(srcClass, null, null, "implements",
+                                shortType(srcClass) + " implements " + shortType(targetType), -1, 0, dexName));
+                    }
+                }
+                // ---- 声明级：字段声明类型 ----
+                for (Field f : cd.getFields()) {
+                    if (targetType.equals(arrayBase(f.getType()))) {
+                        if (xrefArray.length() >= cap) { truncated = true; break outer; }
+                        xrefArray.put(classXref(srcClass, null, null, "field-decl-type",
+                                f.getName() + ":" + f.getType(), -1, arrayDepth(f.getType()), dexName));
+                    }
+                }
+                // ---- 声明级：方法参数/返回类型 + 指令级 ----
+                for (Method m : cd.getMethods()) {
+                    String msig = "(" + joinParams(m.getParameterTypes()) + ")" + m.getReturnType();
+                    if (targetType.equals(arrayBase(m.getReturnType()))) {
+                        if (xrefArray.length() >= cap) { truncated = true; break outer; }
+                        xrefArray.put(classXref(srcClass, m.getName(), msig, "method-decl-return-type",
+                                m.getName() + msig, -1, arrayDepth(m.getReturnType()), dexName));
+                    }
+                    for (CharSequence p : m.getParameterTypes()) {
+                        if (targetType.equals(arrayBase(p.toString()))) {
+                            if (xrefArray.length() >= cap) { truncated = true; break outer; }
+                            xrefArray.put(classXref(srcClass, m.getName(), msig, "method-decl-param-type",
+                                    m.getName() + msig, -1, arrayDepth(p.toString()), dexName));
+                        }
+                    }
+
+                    MethodImplementation impl = m.getImplementation();
+                    if (impl == null) continue;
+                    int addr = 0;
+                    for (Instruction insn : impl.getInstructions()) {
+                        int at = addr;
+                        addr += insn.getCodeUnits();
+                        if (!(insn instanceof com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction)) {
+                            continue;
+                        }
+                        com.android.tools.smali.dexlib2.iface.reference.Reference ref =
+                            ((com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction) insn).getReference();
+                        com.android.tools.smali.dexlib2.Opcode op = insn.getOpcode();
+
+                        if (ref instanceof com.android.tools.smali.dexlib2.iface.reference.TypeReference) {
+                            String t = ((com.android.tools.smali.dexlib2.iface.reference.TypeReference) ref).getType();
+                            if (!targetType.equals(arrayBase(t))) continue;
+                            String kind = typeRefKind(op);
+                            if (kind == null) continue;
+                            if (xrefArray.length() >= cap) { truncated = true; break outer; }
+                            xrefArray.put(classXref(srcClass, m.getName(), msig, kind,
+                                    op.name + " " + t, at, arrayDepth(t), dexName));
+                        } else if (ref instanceof com.android.tools.smali.dexlib2.iface.reference.FieldReference) {
+                            com.android.tools.smali.dexlib2.iface.reference.FieldReference fr =
+                                (com.android.tools.smali.dexlib2.iface.reference.FieldReference) ref;
+                            if (targetType.equals(arrayBase(fr.getType()))) {
+                                if (xrefArray.length() >= cap) { truncated = true; break outer; }
+                                xrefArray.put(classXref(srcClass, m.getName(), msig, "field-access-type",
+                                        op.name + " " + fr.getDefiningClass() + "->" + fr.getName()
+                                        + ":" + fr.getType(), at, arrayDepth(fr.getType()), dexName));
+                            }
+                        } else if (ref instanceof com.android.tools.smali.dexlib2.iface.reference.MethodReference) {
+                            com.android.tools.smali.dexlib2.iface.reference.MethodReference mr =
+                                (com.android.tools.smali.dexlib2.iface.reference.MethodReference) ref;
+                            String callSig = mr.getDefiningClass() + "->" + mr.getName()
+                                    + "(" + joinParams(mr.getParameterTypes()) + ")" + mr.getReturnType();
+                            if (targetType.equals(arrayBase(mr.getReturnType()))) {
+                                if (xrefArray.length() >= cap) { truncated = true; break outer; }
+                                xrefArray.put(classXref(srcClass, m.getName(), msig, "method-call-return-type",
+                                        op.name + " " + callSig, at, arrayDepth(mr.getReturnType()), dexName));
+                            }
+                            for (CharSequence p : mr.getParameterTypes()) {
+                                if (targetType.equals(arrayBase(p.toString()))) {
+                                    if (xrefArray.length() >= cap) { truncated = true; break outer; }
+                                    xrefArray.put(classXref(srcClass, m.getName(), msig, "method-call-param-type",
+                                            op.name + " " + callSig, at, arrayDepth(p.toString()), dexName));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        JSObject result = new JSObject();
+        result.put("className", convertTypeToClassName(targetType));
+        result.put("count", xrefArray.length());
+        result.put("hasMore", truncated);
+        result.put("xrefs", xrefArray);
+        result.put("engine", "java-dexlib2");
+        buildChaGraph(session);
+        ChaNode tn = session.chaGraph.get(targetType);
+        if (tn == null || !tn.defined) {
+            result.put("note", "目标类未在会话 DEX 中定义（可能是 framework 类）；仍会列出对它的引用");
+        }
+        return result;
+    }
+
+    /** 组装一条类级 xref 记录。codeAddress<0 表示声明级（无指令地址）。 */
+    private JSObject classXref(String srcClass, String srcMethod, String srcMethodSig,
+                               String refKind, String detail, int codeAddress,
+                               int arrayDepth, String dexName) {
+        JSObject o = new JSObject();
+        o.put("sourceClass", convertTypeToClassName(srcClass));
+        if (srcMethod != null) o.put("sourceMethod", srcMethod);
+        if (srcMethodSig != null) o.put("sourceMethodSignature", srcMethodSig);
+        o.put("refKind", refKind);
+        o.put("detail", detail);
+        if (codeAddress >= 0) o.put("codeAddress", codeAddress);
+        o.put("arrayDepth", arrayDepth);
+        o.put("dexFile", dexName);
+        return o;
+    }
+
+    /** 携带 TypeReference 的指令 → refKind；非目标指令返回 null。 */
+    private static String typeRefKind(com.android.tools.smali.dexlib2.Opcode op) {
+        switch (op) {
+            case NEW_INSTANCE: return "new-instance";
+            case CHECK_CAST: return "check-cast";
+            case INSTANCE_OF: return "instance-of";
+            case CONST_CLASS: return "const-class";
+            case NEW_ARRAY: return "new-array";
+            case FILLED_NEW_ARRAY:
+            case FILLED_NEW_ARRAY_RANGE: return "filled-new-array";
+            default: return null;
+        }
+    }
+
     // ==================== Smali 转 Java（C++ 实现）====================
 
     /**

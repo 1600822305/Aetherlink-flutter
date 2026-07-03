@@ -1386,6 +1386,33 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
+      name: 'dex_find_class_xrefs',
+      description:
+          '查找类（类型）的交叉引用（哪些地方引用了这个类），基于 dexlib2、跨全部 DEX。'
+          '覆盖各种引用形式（含数组包装 [Type）：指令级 new-instance/check-cast/'
+          'instance-of/const-class/new-array/filled-new-array、字段访问的字段类型、'
+          '方法调用的参数/返回类型；声明级 extends(父类)/implements(接口)、字段声明类型、'
+          '方法声明的参数/返回类型。每条引用含 sourceClass、sourceMethod?/'
+          'sourceMethodSignature?、refKind（引用种类）、detail（指令或位置描述）、'
+          'codeAddress?（指令级才有）、arrayDepth（数组维度，0=非数组）、dexFile。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'className': {'type': 'string', 'description': '类名，如 com.example.Foo'},
+          'locator': {
+            'type': 'string',
+            'description': '统一定位符，可替代 className，如 "dex_class:com.example.Foo"',
+          },
+          'limit': {
+            'type': 'integer',
+            'description': '最多返回多少条引用（默认 50）；截断时 hasMore=true',
+          },
+        },
+        'required': ['sessionId'],
+      },
+    ),
+    McpToolDefinition(
       name: 'dex_smali_to_java',
       description: '将类的 Smali 代码转换为 Java 伪代码（便于理解）',
       inputSchema: {

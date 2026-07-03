@@ -68,6 +68,8 @@ Future<McpToolResult> runDexEditorTool(
         return await _findMethodXrefs(dex, args);
       case 'dex_find_field_xrefs':
         return await _findFieldXrefs(dex, args);
+      case 'dex_find_class_xrefs':
+        return await _findClassXrefs(dex, args);
       case 'dex_smali_to_java':
         return await _smaliToJava(dex, args);
       case 'apk_get_manifest':
@@ -630,6 +632,23 @@ Future<McpToolResult> _findFieldXrefs(
   final xrefs = _map(result.data)['xrefs'];
   final count = xrefs is List ? xrefs.length : 0;
   return McpToolResult('找到 $count 个交叉引用:\n${encodeJson(result.data)}');
+}
+
+Future<McpToolResult> _findClassXrefs(
+  DexEditor dex,
+  Map<String, Object?> args,
+) async {
+  final result = await dex.execute('findClassXrefs', {
+    'sessionId': _str(args['sessionId']),
+    'className': _classNameArg(args),
+    'limit': _int(args['limit'], 50),
+  });
+  if (!result.success) {
+    return McpToolResult('错误: ${result.error}', isError: true);
+  }
+  final xrefs = _map(result.data)['xrefs'];
+  final count = xrefs is List ? xrefs.length : 0;
+  return McpToolResult('找到 $count 个类级交叉引用:\n${encodeJson(result.data)}');
 }
 
 Future<McpToolResult> _smaliToJava(

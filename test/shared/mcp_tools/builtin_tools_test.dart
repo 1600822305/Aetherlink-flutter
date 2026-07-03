@@ -333,6 +333,8 @@ void main() {
         '@aether/fetch',
         '@aether/metaso-search',
         '@aether/grok-search',
+        // 原生 dex_editor 插件也在进程内运行（无需 Riverpod Ref）。
+        '@aether/dex-editor',
       });
     });
 
@@ -349,6 +351,17 @@ void main() {
       expect(schema['required'], containsAll(['sessionId', 'methodName']));
       expect(schema['required'], isNot(contains('resolution')));
       expect(schema['required'], isNot(contains('methodSignature')));
+    });
+
+    test('dex_find_class_xrefs exposes a class-level xref query', () {
+      final tool = kBuiltinMcpTools['@aether/dex-editor']!
+          .firstWhere((t) => t.name == 'dex_find_class_xrefs');
+      final schema = tool.inputSchema;
+      final props = schema['properties'] as Map<String, Object?>;
+      expect(props.keys, containsAll(['className', 'locator', 'limit']));
+      // 向后兼容：className 可选（可用 locator 替代），仅 sessionId 必填。
+      expect(schema['required'], contains('sessionId'));
+      expect(schema['required'], isNot(contains('className')));
     });
 
     test('file-editor exposes run_command requiring a command (SSH-3)', () {
