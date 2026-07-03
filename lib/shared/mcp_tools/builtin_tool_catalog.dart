@@ -1339,7 +1339,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '查找方法的交叉引用（哪些地方调用了这个方法），基于类继承分析(CHA)、跨全部 DEX。'
           '返回每条引用含 sourceClass/sourceMethod/sourceMethodSignature、invokeType'
           '(invoke-virtual/super/direct/static/interface)、targetOwner、instruction、'
-          'codeAddress、matchReason（命中原因，便于人工判读）。',
+          'codeAddress、matchReason（命中原因，便于人工判读）、certainty（置信度：'
+          'exact=字节码确切引用目标本身/静态绑定，改动必生效；possible=虚/接口分发才可能'
+          '落到目标，需确认运行时是否走到）。顶层 summary 汇总 total/exact/possible 计数。',
       inputSchema: {
         'type': 'object',
         'properties': {

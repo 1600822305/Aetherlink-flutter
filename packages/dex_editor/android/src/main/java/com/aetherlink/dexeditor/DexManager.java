@@ -1500,6 +1500,8 @@ public class DexManager {
 
         JSArray xrefArray = new JSArray();
         int count = 0;
+        int exactCount = 0;
+        int possibleCount = 0;
         boolean truncated = false;
         outer:
         for (Map.Entry<String, DexBackedDexFile> entry : session.dexFiles.entrySet()) {
@@ -1565,6 +1567,21 @@ public class DexManager {
                         xref.put("dexFile", dexName);
                         String rs = reason.get(owner);
                         xref.put("matchReason", rs != null ? rs : mode);
+                        // 置信度分级（叠加层，不改变命中集合）：
+                        //  - 指令 owner 恰为目标类 → exact（100% 引用目标本身）
+                        //  - invoke-super/direct/static 静态绑定 → exact（无运行时多态）
+                        //  - invoke-virtual/interface 且 owner 是目标的父/子类型 → possible
+                        //    （真实分发目标由运行时接收者类型决定）
+                        String certainty;
+                        if (owner.equals(targetType)
+                                || cat == INV_SUPER || cat == INV_DIRECT || cat == INV_STATIC) {
+                            certainty = "exact";
+                        } else {
+                            certainty = "possible";
+                        }
+                        xref.put("certainty", certainty);
+                        if ("exact".equals(certainty)) exactCount++;
+                        else possibleCount++;
                         xrefArray.put(xref);
                         count++;
                     }
@@ -1579,6 +1596,11 @@ public class DexManager {
         result.put("resolution", mode);
         result.put("count", xrefArray.length());
         result.put("hasMore", truncated);
+        JSObject summary = new JSObject();
+        summary.put("total", xrefArray.length());
+        summary.put("exact", exactCount);
+        summary.put("possible", possibleCount);
+        result.put("summary", summary);
         result.put("xrefs", xrefArray);
         result.put("engine", "java-dexlib2-cha");
         ChaNode tn = g.get(targetType);
