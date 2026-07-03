@@ -292,4 +292,30 @@ public class CppDex {
         String type,
         int limit
     );
+
+    /**
+     * 按资源 ID 读取 resources.arsc 里的值（逐 config）。
+     * @param arscBytes ARSC 字节数组
+     * @param resId 完整资源 ID（如 0x7f010000）
+     * @return JSON：{id,name,type,package,found,configs:[{config,valueType,valueTypeName,value}]}
+     */
+    public static native String getArscResourceValue(byte[] arscBytes, long resId);
+
+    /**
+     * 按资源 ID 修改 resources.arsc 里的值，返回修改后的完整 ARSC 字节。
+     * 标量原地改写；字符串复用/追加字符串池并重建。失败时抛 RuntimeException。
+     * @param arscBytes 原 ARSC 字节数组
+     * @param resId 完整资源 ID（如 0x7f010000）
+     * @param config 目标 config（空串表示唯一 config；多 config 时必须指定）
+     * @param valueType auto|string|int|hex|bool|color|reference|float
+     * @param newValue 新值文本
+     * @return 修改后的 ARSC 字节数组
+     */
+    public static native byte[] setArscResourceValue(
+        byte[] arscBytes,
+        long resId,
+        String config,
+        String valueType,
+        String newValue
+    );
 }

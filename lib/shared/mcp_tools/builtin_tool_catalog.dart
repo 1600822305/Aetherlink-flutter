@@ -1562,6 +1562,68 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
+      name: 'apk_get_resource_value',
+      description:
+          '按资源 ID 读取 resources.arsc 里的值（对齐 MT 的 read_resource）。'
+          '与 apk_get_resource（按文件路径读资源文件）不同，本工具直接读 arsc 中的值，'
+          '并按 config 限定符（default/zh/xxhdpi/v21…）逐条返回。'
+          '返回 JSON：{id,name,type,package,found,configs:[{config,valueType,valueTypeName,value}]}。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'id': {
+            'type': 'string',
+            'description': '完整资源 ID，十六进制（如 "0x7f010000"）或十进制',
+          },
+        },
+        'required': ['apkPath', 'id'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'apk_set_resource_value',
+      description:
+          '按资源 ID 修改 resources.arsc 里的值并写回 APK（对齐 MT 的 edit_resource）。'
+          '标量（int/hex/bool/color/reference/float）原地改写；string 复用或追加字符串池后重建。'
+          '仅支持修改已存在条目的值，不支持新增/删除资源条目。'
+          '资源存在多个 config 时必须用 config 指定目标（否则报错并列出可选 config）。'
+          '修改后 APK 需重新签名。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'id': {
+            'type': 'string',
+            'description': '完整资源 ID，十六进制（如 "0x7f010000"）或十进制',
+          },
+          'value': {'type': 'string', 'description': '新值文本（按 valueType 解析）'},
+          'valueType': {
+            'type': 'string',
+            'description':
+                '值类型：auto（保持原类型）| string | int | hex | bool | color | reference | float',
+            'enum': [
+              'auto',
+              'string',
+              'int',
+              'hex',
+              'bool',
+              'color',
+              'reference',
+              'float',
+            ],
+            'default': 'auto',
+          },
+          'config': {
+            'type': 'string',
+            'description':
+                '目标 config 限定符（如 "default"、"zh"、"xxhdpi"）。资源仅单一 config 时可留空。',
+            'default': '',
+          },
+        },
+        'required': ['apkPath', 'id', 'value'],
+      },
+    ),
+    McpToolDefinition(
       name: 'apk_list_files',
       description: '列出 APK 中的所有文件（支持过滤和分页）',
       inputSchema: {

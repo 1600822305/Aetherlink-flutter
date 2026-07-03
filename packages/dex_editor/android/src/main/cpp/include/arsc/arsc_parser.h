@@ -65,11 +65,48 @@ public:
     
     // Get resource by ID
     const ResourceEntry* get_resource(uint32_t id) const;
-    
+
+    // Read a resource's value(s) by full ID, one entry per config qualifier.
+    // Returns a JSON string: {id,type,name,package,configs:[{config,valueType,valueTypeName,value}]}
+    std::string get_resource_value_json(uint32_t id) const;
+
+    // Set a resource's value by full ID.
+    //  - config_filter: only apply to matching config ("" requires a unique config)
+    //  - value_type: one of "auto"|"string"|"int"|"hex"|"bool"|"color"|"reference"|"float"
+    //  - new_value: textual value, parsed per value_type
+    // On success fills `out` with new arsc bytes and returns true; else sets `error`.
+    bool set_resource_value(uint32_t id, const std::string& config_filter,
+                            const std::string& value_type, const std::string& new_value,
+                            std::vector<uint8_t>& out, std::string& error) const;
+
     // Get summary info
     std::string get_info() const;
 
 private:
+    // One resolved simple entry occurrence (per config) for a given resource id.
+    struct ConfigEntry {
+        std::string config;   // human-readable qualifier ("default", "zh", "xxhdpi"...)
+        size_t value_pos;     // absolute offset of the Res_value within data_
+        uint8_t value_type;   // Res_value dataType
+        uint32_t value_data;  // Res_value data
+        bool complex;         // bag/map entry (not settable)
+    };
+
+    // Collect all simple entry occurrences of `id` across configs.
+    std::vector<ConfigEntry> collect_config_entries(uint32_t id) const;
+
+    // Decode a ResTable_config at `off` into a readable qualifier string.
+    std::string config_to_string(size_t off) const;
+
+    // Global string pool location (first string pool chunk after table header).
+    bool locate_global_pool(size_t& pool_off, size_t& pool_size, bool& is_utf8) const;
+
+    // Rebuild the global string pool with `value` appended (or reuse existing),
+    // returning the new pool bytes and the string index to reference.
+    bool build_pool_with_string(const std::string& value, std::vector<uint8_t>& new_pool,
+                                uint32_t& index, std::string& error) const;
+
+    std::string decode_value(uint8_t type, uint32_t data) const;
     std::vector<uint8_t> data_;
     std::vector<std::string> strings_;
     std::vector<ResourceEntry> resources_;

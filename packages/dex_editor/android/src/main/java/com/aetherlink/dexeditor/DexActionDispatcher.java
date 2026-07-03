@@ -631,6 +631,23 @@ public class DexActionDispatcher {
                 ));
                 break;
 
+            case "getResourceValue":
+                result.put("data", dexManager.getResourceValueInApk(
+                    params.getString("apkPath"),
+                    parseResourceId(params.getString("id"))
+                ));
+                break;
+
+            case "setResourceValue":
+                result.put("data", dexManager.setResourceValueInApk(
+                    params.getString("apkPath"),
+                    parseResourceId(params.getString("id")),
+                    params.optString("config", ""),
+                    params.optString("valueType", "auto"),
+                    params.getString("value")
+                ));
+                break;
+
             case "deleteFileFromApk":
                 result.put("data", dexManager.deleteFileFromApk(
                     params.getString("apkPath"),
@@ -730,5 +747,20 @@ public class DexActionDispatcher {
         }
 
         return result;
+    }
+
+    /** 把资源 ID 文本（如 "0x7f010000" 或十进制）解析为 long。 */
+    private static long parseResourceId(String id) {
+        String s = id == null ? "" : id.trim();
+        if (s.startsWith("0x") || s.startsWith("0X")) {
+            return Long.parseLong(s.substring(2), 16);
+        }
+        if (s.startsWith("@")) {
+            s = s.substring(1);
+            if (s.startsWith("0x") || s.startsWith("0X")) {
+                return Long.parseLong(s.substring(2), 16);
+            }
+        }
+        return Long.parseLong(s);
     }
 }
