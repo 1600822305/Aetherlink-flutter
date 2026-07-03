@@ -1413,7 +1413,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'apk_patch_manifest',
-      description: '快速修改 AndroidManifest.xml 的特定属性，无需提供完整 XML',
+      description: '快速修改 AndroidManifest.xml 的现有标量属性，无需提供完整 XML（直接改二进制 AXML）。'
+          '仅支持对已存在属性的 set；新增/删除元素或权限等结构性改动请用 apk_modify_manifest（整体替换）。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1431,27 +1432,19 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
                     'versionName',
                     'minSdk',
                     'targetSdk',
-                    'application',
-                    'permission',
-                    'activity',
-                    'service',
-                    'receiver',
-                    'provider',
                     'debuggable',
                   ],
-                  'description': '修改类型',
+                  'description': '要修改的属性（均为 manifest 中已存在的标量属性）',
                 },
                 'action': {
                   'type': 'string',
-                  'enum': ['set', 'add', 'remove'],
-                  'description': '操作类型',
+                  'enum': ['set'],
+                  'description': '操作类型（仅支持 set）',
+                  'default': 'set',
                 },
                 'value': {'type': 'string', 'description': '新值'},
-                'attributes': {
-                  'type': 'object',
-                  'description': '额外属性（用于组件修改）',
-                },
               },
+              'required': ['type', 'value'],
             },
             'description': '修改列表',
           },
@@ -1655,29 +1648,23 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
-      name: 'apk_search_arsc_strings',
-      description: '搜索 APK 资源文件 (resources.arsc) 中的字符串',
+      name: 'apk_search_arsc',
+      description: '搜索 APK 资源文件 (resources.arsc)。'
+          'target=strings 搜索字符串池；target=resources 搜索资源条目（可按 type 过滤）',
       inputSchema: {
         'type': 'object',
         'properties': {
           'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
           'pattern': {'type': 'string', 'description': '搜索模式'},
-          'limit': {'type': 'integer', 'description': '最大返回数量', 'default': 50},
-        },
-        'required': ['apkPath', 'pattern'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'apk_search_arsc_resources',
-      description: '搜索 APK 资源文件 (resources.arsc) 中的资源',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
-          'pattern': {'type': 'string', 'description': '搜索模式'},
+          'target': {
+            'type': 'string',
+            'enum': ['strings', 'resources'],
+            'description': '搜索目标：strings=字符串池，resources=资源条目',
+            'default': 'strings',
+          },
           'type': {
             'type': 'string',
-            'description': '资源类型（如 string, drawable, layout）',
+            'description': '资源类型过滤（仅 target=resources 时有效，如 string, drawable, layout）',
           },
           'limit': {'type': 'integer', 'description': '最大返回数量', 'default': 50},
         },
