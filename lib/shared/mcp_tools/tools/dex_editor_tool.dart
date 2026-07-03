@@ -62,8 +62,6 @@ Future<McpToolResult> runDexEditorTool(
         return await _outlineClass(dex, args);
       case 'dex_rename_class':
         return await _renameClass(dex, args);
-      case 'dex_list_strings':
-        return await _listStrings(dex, args);
       case 'dex_find_method_xrefs':
         return await _findMethodXrefs(dex, args);
       case 'dex_find_field_xrefs':
@@ -92,18 +90,12 @@ Future<McpToolResult> runDexEditorTool(
         return await _setResourceValue(dex, args);
       case 'apk_list_files':
         return await _listApkFiles(dex, args);
-      case 'apk_search_text':
-        return await _searchTextInApk(dex, args);
       case 'apk_read_file':
         return await _readApkFile(dex, args);
       case 'apk_delete_file':
         return await _deleteApkFile(dex, args);
       case 'apk_add_file':
         return await _addApkFile(dex, args);
-      case 'apk_search_arsc':
-        return await _searchArsc(dex, args);
-      case 'apk_search_manifest_cpp':
-        return await _searchManifestCpp(dex, args);
       case 'apk_parse_arsc_cpp':
         return await _parseArscCpp(dex, args);
       case 'attempt_completion':
