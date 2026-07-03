@@ -1,5 +1,6 @@
 package com.aetherlink.dexeditor;
 
+import android.content.Context;
 import android.util.Log;
 
 import com.aetherlink.dexeditor.compat.JSArray;
@@ -128,6 +129,25 @@ public class DexManager {
 
     // 从 APK 枚举/打开多 DEX 会话（MCP 工作流入口）
     private final ApkMultiDexOpener apkMultiDexOpener = new ApkMultiDexOpener(this);
+
+    // 应用 Context（用于会话元数据落盘目录等）
+    private Context appContext;
+
+    public DexManager() {
+        // 注入惰性重建回调：会话查找失败时用 apkPath 从磁盘 APK 重新打开
+        sessionManager.setRebuilder(apkMultiDexOpener::rebuildSession);
+    }
+
+    /**
+     * 注入应用 Context，初始化会话元数据落盘（进程重启后可按 apkPath 惰性重建会话）。
+     * 由 {@link DexActionDispatcher} 在构造时调用。
+     */
+    public void setContext(Context context) {
+        this.appContext = context;
+        if (context != null) {
+            sessionManager.initPersistence(context.getFilesDir());
+        }
+    }
 
     /**
      * DEX 会话 - 存储加载的 DEX 文件及其修改状态

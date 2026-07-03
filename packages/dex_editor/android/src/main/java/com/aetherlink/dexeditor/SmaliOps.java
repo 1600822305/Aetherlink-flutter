@@ -172,11 +172,8 @@ class SmaliOps {
      * 将 Smali 代码转换为 Java 伪代码
      */
     JSObject smaliToJava(String sessionId, String className) throws Exception {
-        // dex_open 创建的是多 DEX 会话，需在 multiDexSessions 中查找并逐个 DEX 定位类。
-        DexManager.MultiDexSession session = dex.sessionManager.multiDexSessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
+        // dex_open 创建的是多 DEX 会话，查不到时按 apkPath 落盘元数据惰性重建。
+        DexManager.MultiDexSession session = dex.sessionManager.requireOrRebuild(sessionId);
         if (!CppDex.isAvailable()) {
             throw new UnsupportedOperationException("C++ library not available for smali to java conversion");
         }

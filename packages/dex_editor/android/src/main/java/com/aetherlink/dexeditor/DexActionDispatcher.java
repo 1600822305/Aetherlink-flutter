@@ -4,6 +4,10 @@ import android.content.Context;
 
 import com.aetherlink.dexeditor.compat.JSObject;
 
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+
 /**
  * Transport-agnostic action dispatcher for all DEX/APK operations.
  *
@@ -19,8 +23,15 @@ public class DexActionDispatcher {
     private final DexManager dexManager = new DexManager();
     private final ApkManager apkManager = new ApkManager();
 
+    /** 写入多 DEX 会话的动作：成功后标记该会话「有未保存改动」，用于会话失效时明确提示。 */
+    private static final Set<String> SESSION_WRITE_ACTIONS = new HashSet<>(Arrays.asList(
+        "modifyClass", "addClassToSession", "deleteClassFromSession",
+        "modifyMethodInSession", "renameClassInSession"
+    ));
+
     public DexActionDispatcher(Context context) {
         apkManager.setContext(context);
+        dexManager.setContext(context);
     }
 
     public DexManager dexManager() {
@@ -760,7 +771,27 @@ public class DexActionDispatcher {
                 result.put("error", "Unknown action: " + action);
         }
 
+        // 会话元数据「未保存改动」跟踪：只在动作成功时同步落盘标志
+        if (result.optBoolean("success", false)) {
+            syncSessionMeta(action, params);
+        }
+
         return result;
+    }
+
+    /** 依据动作类型同步多 DEX 会话的「未保存改动」标志（供会话失效时明确提示 / 判定可重建）。 */
+    private void syncSessionMeta(String action, JSObject params) {
+        try {
+            if (SESSION_WRITE_ACTIONS.contains(action)) {
+                dexManager.sessionManager.markModified(params.optString("sessionId", null));
+            } else if ("saveDexToApk".equals(action)) {
+                dexManager.sessionManager.markSaved(params.optString("sessionId", null));
+            } else if ("saveAllDexToApk".equals(action)) {
+                dexManager.sessionManager.markAllSaved();
+            }
+        } catch (Exception ignored) {
+            // 元数据同步失败不应影响主流程结果
+        }
     }
 
     /** 把资源 ID 文本（如 "0x7f010000" 或十进制）解析为 long。 */

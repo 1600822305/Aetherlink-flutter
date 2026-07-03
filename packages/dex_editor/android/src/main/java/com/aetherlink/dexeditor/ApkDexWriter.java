@@ -71,10 +71,7 @@ class ApkDexWriter {
      * 保存多 DEX 会话的修改到 APK
      */
     JSObject saveMultiDexSessionToApk(String sessionId) throws Exception {
-        DexManager.MultiDexSession session = dex.sessionManager.multiDexSessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
+        DexManager.MultiDexSession session = dex.sessionManager.requireOrRebuild(sessionId);
         
         if (!session.modified || session.modifiedClasses.isEmpty()) {
             JSObject result = new JSObject();
