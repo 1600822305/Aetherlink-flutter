@@ -49,6 +49,7 @@ class DebateStartSheet extends ConsumerStatefulWidget {
 
 class _DebateStartSheetState extends ConsumerState<DebateStartSheet> {
   late final TextEditingController _topicController;
+  DebateMode _mode = DebateMode.debate;
 
   @override
   void initState() {
@@ -114,7 +115,7 @@ class _DebateStartSheetState extends ConsumerState<DebateStartSheet> {
               children: [
                 Expanded(
                   child: Text(
-                    '开始 AI 辩论',
+                    _mode == DebateMode.debate ? '开始 AI 辩论' : '开始共识决策',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -132,13 +133,49 @@ class _DebateStartSheetState extends ConsumerState<DebateStartSheet> {
               ],
             ),
             const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<DebateMode>(
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12.5)),
+                ),
+                segments: const [
+                  ButtonSegment(
+                    value: DebateMode.debate,
+                    icon: Icon(LucideIcons.swords, size: 14),
+                    label: Text('辩论模式'),
+                  ),
+                  ButtonSegment(
+                    value: DebateMode.consensus,
+                    icon: Icon(LucideIcons.vote, size: 14),
+                    label: Text('共识模式'),
+                  ),
+                ],
+                selected: {_mode},
+                onSelectionChanged: (s) => setState(() => _mode = s.first),
+              ),
+            ),
+            if (_mode == DebateMode.consensus) ...[
+              const SizedBox(height: 6),
+              Text(
+                '各角色先独立回答你的问题，再互评投票，最后汇总出一个最终答案。',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 12,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
             TextField(
               controller: _topicController,
               maxLines: 2,
               minLines: 1,
               decoration: InputDecoration(
-                labelText: '辩论主题',
-                hintText: '输入或从下方预设辩题中选择',
+                labelText: _mode == DebateMode.debate ? '辩论主题' : '你的问题',
+                hintText: _mode == DebateMode.debate
+                    ? '输入或从下方预设辩题中选择'
+                    : '输入想让多个模型共同决策的问题',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -146,10 +183,11 @@ class _DebateStartSheetState extends ConsumerState<DebateStartSheet> {
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 8),
-            _PresetTopicPicker(
-              onPick: (topic) =>
-                  setState(() => _topicController.text = topic),
-            ),
+            if (_mode == DebateMode.debate)
+              _PresetTopicPicker(
+                onPick: (topic) =>
+                    setState(() => _topicController.text = topic),
+              ),
             const SizedBox(height: 12),
             Text(
               '参与角色（${settings.roles.length}）',
@@ -184,9 +222,11 @@ class _DebateStartSheetState extends ConsumerState<DebateStartSheet> {
             ],
             const SizedBox(height: 12),
             Text(
-              '最多 ${settings.maxRounds} 轮 · '
-              '${settings.moderatorEnabled ? '主持人可提前收束' : '主持人不参与'} · '
-              '${settings.summaryEnabled ? '结束后生成 AI 总结' : '不生成总结'}',
+              _mode == DebateMode.consensus
+                  ? '独立作答 → 互评投票 → 汇总结论 · 主持/总结角色担任汇总'
+                  : '最多 ${settings.maxRounds} 轮 · '
+                        '${settings.moderatorEnabled ? '主持人可提前收束' : '主持人不参与'} · '
+                        '${settings.summaryEnabled ? '结束后生成 AI 总结' : '不生成总结'}',
               style: theme.textTheme.bodySmall?.copyWith(
                 fontSize: 12,
                 color: theme.colorScheme.onSurfaceVariant,
@@ -197,7 +237,7 @@ class _DebateStartSheetState extends ConsumerState<DebateStartSheet> {
               width: double.infinity,
               child: FilledButton.icon(
                 icon: const Icon(LucideIcons.play, size: 16),
-                label: const Text('开始辩论'),
+                label: Text(_mode == DebateMode.debate ? '开始辩论' : '开始共识决策'),
                 onPressed:
                     canStart && _topicController.text.trim().isNotEmpty
                     ? _start
@@ -236,6 +276,7 @@ class _DebateStartSheetState extends ConsumerState<DebateStartSheet> {
       moderatorEnabled: settings.moderatorEnabled,
       summaryEnabled: settings.summaryEnabled,
       verdictEnabled: settings.verdictEnabled,
+      mode: _mode,
     );
     Navigator.pop(context);
     ref.read(debateControllerProvider.notifier).start(config);
