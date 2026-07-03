@@ -21,11 +21,6 @@ final _runnerProvider =
   (ref) => (name, args) => runKnowledgeTool(ref, name, args),
 );
 
-/// Same trick for the `Ref`-dependent [hasChatEnabledKnowledgeBase] probe.
-final _hasChatProvider = Provider<Future<bool> Function()>(
-  (ref) => () => hasChatEnabledKnowledgeBase(ref),
-);
-
 Map<String, Object?> _data(McpToolResult result) {
   final decoded = jsonDecode(result.text) as Map<String, Object?>;
   expect(decoded['success'], isTrue, reason: result.text);
@@ -110,7 +105,6 @@ void main() {
     late KnowledgeService service;
     late ProviderContainer container;
     late Future<McpToolResult> Function(String, Map<String, Object?>) run;
-    late Future<bool> Function() hasChatBase;
 
     setUp(() {
       db = AppDatabase(NativeDatabase.memory());
@@ -119,18 +113,11 @@ void main() {
         overrides: [knowledgeServiceProvider.overrideWithValue(service)],
       );
       run = container.read(_runnerProvider);
-      hasChatBase = container.read(_hasChatProvider);
     });
 
     tearDown(() async {
       container.dispose();
       await db.close();
-    });
-
-    test('hasChatEnabledKnowledgeBase reflects base existence', () async {
-      expect(await hasChatBase(), isFalse);
-      await service.createBase(name: 'private');
-      expect(await hasChatBase(), isTrue);
     });
 
     test('kb_list surfaces all bases', () async {
@@ -230,8 +217,11 @@ void main() {
       final id = data['knowledgeBaseId'] as String;
       final base = await service.getBase(id);
       expect(base, isNotNull);
-      // Immediately visible to the chat track.
-      expect(await hasChatBase(), isTrue);
+      // Immediately persisted and listable.
+      expect(
+        (await service.listBases()).map((b) => b.id),
+        contains(id),
+      );
     });
 
     test('kb_manage add_note ingests into a chat base', () async {
