@@ -1140,23 +1140,38 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'dex_search',
       description:
-          '在已打开的 DEX 中搜索。支持搜索：类名(class)、包名(package)、方法名(method)、字段名(field)、'
-          '字符串(string)、整数(int)、代码(code)、父类(superclass)、接口(interface)、注解(annotation)。'
-          'superclass/interface/annotation 用于逆向定位子类/实现类/带特定注解的成员。'
-          '返回结果中的 className/superclass/interface/annotation 统一为点分格式'
-          '（com.example.Foo），可直接传给 dex_get_class 等工具。',
+          '统一搜索入口（一个工具搜遍 5 个面，用 target 区分，无需记忆多个工具）：\n'
+          '- target=dex（默认）：已打开会话内的 DEX 搜索，用 searchType 选类名(class)/包名(package)/'
+          '方法名(method)/字段名(field)/字符串(string)/整数(int)/代码(code)/父类(superclass)/'
+          '接口(interface)/注解(annotation)；\n'
+          '- target=strings：DEX 字符串池（=旧 dex_list_strings，用 filter 过滤）；\n'
+          '- target=files：APK 内文本文件搜索（=旧 apk_search_text，用 query 作为 pattern）；\n'
+          '- target=arsc：resources.arsc 搜索（=旧 apk_search_arsc，arscTarget=strings/resources）；\n'
+          '- target=manifest：AndroidManifest 属性/值搜索（=旧 apk_search_manifest_cpp，用 attrName/value）。\n'
+          'dex/strings 走会话（sessionId，也可填 apkPath）；files/arsc/manifest 走 apkPath。'
+          'dex 结果中的 className/superclass/interface/annotation 统一为点分格式（com.example.Foo）。',
       inputSchema: {
         'type': 'object',
         'properties': {
+          'target': {
+            'type': 'string',
+            'enum': ['dex', 'strings', 'files', 'arsc', 'manifest'],
+            'description': '搜索面，默认 dex。dex/strings 需 sessionId；files/arsc/manifest 需 apkPath',
+            'default': 'dex',
+          },
           'sessionId': {
             'type': 'string',
-            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+            'description': '会话 ID（dex_open 返回，target=dex/strings 用）。也可直接填 APK 路径，'
                 '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
+          'apkPath': {
+            'type': 'string',
+            'description': 'APK 文件路径（target=files/arsc/manifest 用）',
           },
           'query': {
             'type': 'string',
-            'description': '搜索内容。superclass/interface/annotation 搜的是类型名，'
-                '可用完整或部分类名（如 "Activity"、"Landroidx/" 或某注解名）',
+            'description': '搜索内容。target=dex 时是搜索词（superclass/interface/annotation 搜类型名，'
+                '可用完整或部分类名如 "Activity"、"Landroidx/"）；target=files/arsc 时用作 pattern',
           },
           'searchType': {
             'type': 'string',
@@ -1172,11 +1187,48 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
               'interface',
               'annotation',
             ],
-            'description': '搜索类型',
+            'description': '搜索类型（仅 target=dex 必填）',
+          },
+          'filter': {
+            'type': 'string',
+            'description': '过滤字符串（仅 target=strings，包含匹配）',
+          },
+          'arscTarget': {
+            'type': 'string',
+            'enum': ['strings', 'resources'],
+            'description': 'arsc 子目标（仅 target=arsc）：strings=字符串池，resources=资源条目',
+            'default': 'strings',
+          },
+          'type': {
+            'type': 'string',
+            'description': '资源类型过滤（仅 target=arsc 且 arscTarget=resources，如 string/drawable/layout）',
+          },
+          'fileExtensions': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': '文件扩展名过滤（仅 target=files，如 [".xml", ".json"]）',
+          },
+          'isRegex': {
+            'type': 'boolean',
+            'description': '是否使用正则表达式（仅 target=files）',
+            'default': false,
+          },
+          'contextLines': {
+            'type': 'integer',
+            'description': '上下文行数（仅 target=files）',
+            'default': 2,
+          },
+          'attrName': {
+            'type': 'string',
+            'description': '属性名（仅 target=manifest，可选）',
+          },
+          'value': {
+            'type': 'string',
+            'description': '属性值（仅 target=manifest，可选）',
           },
           'caseSensitive': {
             'type': 'boolean',
-            'description': '是否区分大小写',
+            'description': '是否区分大小写（target=dex/files）',
             'default': false,
           },
           'maxResults': {
@@ -1184,8 +1236,13 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'description': '最大返回结果数',
             'default': 50,
           },
+          'limit': {
+            'type': 'integer',
+            'description': '最大返回数量（target=strings/arsc/manifest）',
+            'default': 50,
+          },
         },
-        'required': ['sessionId', 'query', 'searchType'],
+        'required': ['query'],
       },
     ),
     McpToolDefinition(
@@ -1382,7 +1439,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'dex_list_strings',
-      description: '列出 DEX 中的字符串池，支持过滤和限制数量',
+      description: '列出 DEX 中的字符串池，支持过滤和限制数量。'
+          '（等价于统一入口 dex_search target=strings，二选一即可）',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1856,7 +1914,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       name: 'apk_search_text',
       description: '在 APK 内的文件中搜索文本内容（不需要解压）。\n'
           '支持搜索 XML、JSON、TXT、SMALI 等文本文件。\n'
-          '自动跳过二进制文件（.dex, .so, .png 等）。',
+          '自动跳过二进制文件（.dex, .so, .png 等）。\n'
+          '（等价于统一入口 dex_search target=files，二选一即可）',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1964,7 +2023,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'apk_search_arsc',
       description: '搜索 APK 资源文件 (resources.arsc)。'
-          'target=strings 搜索字符串池；target=resources 搜索资源条目（可按 type 过滤）',
+          'target=strings 搜索字符串池；target=resources 搜索资源条目（可按 type 过滤）。'
+          '（等价于统一入口 dex_search target=arsc + arscTarget，二选一即可）',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1987,7 +2047,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'apk_search_manifest_cpp',
-      description: '使用 C++ 高性能搜索 AndroidManifest.xml 中的属性和值',
+      description: '使用 C++ 高性能搜索 AndroidManifest.xml 中的属性和值。'
+          '（等价于统一入口 dex_search target=manifest，二选一即可）',
       inputSchema: {
         'type': 'object',
         'properties': {

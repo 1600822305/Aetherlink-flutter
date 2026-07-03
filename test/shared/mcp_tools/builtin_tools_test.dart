@@ -422,6 +422,20 @@ void main() {
       expect(tool.description, contains('alive'));
     });
 
+    test('dex_search is the unified search entry with a target enum', () {
+      final tool = kBuiltinMcpTools['@aether/dex-editor']!
+          .firstWhere((t) => t.name == 'dex_search');
+      final props = tool.inputSchema['properties'] as Map<String, Object?>;
+      final target = props['target'] as Map<String, Object?>;
+      expect(
+        target['enum'],
+        containsAll(['dex', 'strings', 'files', 'arsc', 'manifest']),
+      );
+      // 统一入口只强制 query；searchType 按 target=dex 在 handler 内校验。
+      expect(tool.inputSchema['required'], contains('query'));
+      expect(tool.inputSchema['required'], isNot(contains('searchType')));
+    });
+
     test('session tools document that sessionId also accepts an apkPath', () {
       final tool = kBuiltinMcpTools['@aether/dex-editor']!
           .firstWhere((t) => t.name == 'dex_list_classes');
@@ -500,6 +514,100 @@ void main() {
       );
       expect(result.isError, isTrue);
       expect(result.text, contains('未保存'));
+    });
+  });
+
+  group('dex_search unified target dispatch', () {
+    test('default target=dex hits searchInDexSession', () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(success: true, data: {});
+      await runDexEditorTool(
+        'dex_search',
+        {'sessionId': 'S-1', 'query': 'Foo', 'searchType': 'class'},
+        editor: dex,
+      );
+      expect(dex.lastAction, 'searchInDexSession');
+      expect(dex.lastParams!['searchType'], 'class');
+    });
+
+    test('target=strings routes to listStrings (session)', () async {
+      final dex = _RecordingDexEditor();
+      await runDexEditorTool(
+        'dex_search',
+        {'target': 'strings', 'sessionId': 'S-1', 'query': 'http', 'filter': 'http'},
+        editor: dex,
+      );
+      expect(dex.lastAction, 'listStrings');
+      expect(dex.lastParams!['filter'], 'http');
+    });
+
+    test('target=files routes to searchTextInApk with query as pattern',
+        () async {
+      final dex = _RecordingDexEditor();
+      await runDexEditorTool(
+        'dex_search',
+        {'target': 'files', 'apkPath': '/sd/app.apk', 'query': 'AdView'},
+        editor: dex,
+      );
+      expect(dex.lastAction, 'searchTextInApk');
+      expect(dex.lastParams!['pattern'], 'AdView');
+    });
+
+    test('target=arsc maps arscTarget to native target', () async {
+      final dex = _RecordingDexEditor();
+      await runDexEditorTool(
+        'dex_search',
+        {
+          'target': 'arsc',
+          'apkPath': '/sd/app.apk',
+          'query': 'app_name',
+          'arscTarget': 'resources',
+          'type': 'string',
+        },
+        editor: dex,
+      );
+      expect(dex.lastAction, 'searchArscResources');
+      expect(dex.lastParams!['type'], 'string');
+    });
+
+    test('target=manifest routes to searchManifestCpp', () async {
+      final dex = _RecordingDexEditor();
+      await runDexEditorTool(
+        'dex_search',
+        {
+          'target': 'manifest',
+          'apkPath': '/sd/app.apk',
+          'query': 'ignored',
+          'attrName': 'android:exported',
+        },
+        editor: dex,
+      );
+      expect(dex.lastAction, 'searchManifestCpp');
+      expect(dex.lastParams!['attrName'], 'android:exported');
+    });
+
+    test('target=dex without searchType is a clear error', () async {
+      final dex = _RecordingDexEditor();
+      final result = await runDexEditorTool(
+        'dex_search',
+        {'sessionId': 'S-1', 'query': 'Foo'},
+        editor: dex,
+      );
+      expect(result.isError, isTrue);
+      expect(result.text, contains('searchType'));
+      expect(dex.lastAction, isNull);
+    });
+
+    test('unknown target is a clear error', () async {
+      final dex = _RecordingDexEditor();
+      final result = await runDexEditorTool(
+        'dex_search',
+        {'target': 'bogus', 'query': 'x'},
+        editor: dex,
+      );
+      expect(result.isError, isTrue);
+      expect(result.text, contains('target'));
+      expect(dex.lastAction, isNull);
     });
   });
 
