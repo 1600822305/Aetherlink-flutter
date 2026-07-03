@@ -39,11 +39,14 @@ class DexXrefAnalyzer {
         }
 
         String jsonResult = CppDex.findMethodXrefs(session.dexBytes, className, methodName);
-        if (jsonResult == null || jsonResult.contains("\"error\"")) {
+        if (jsonResult == null) {
             throw new Exception("Failed to find method xrefs");
         }
-
         org.json.JSONObject cppResult = new org.json.JSONObject(jsonResult);
+        if (cppResult.has("error")) {
+            throw new Exception("Failed to find method xrefs: " + cppResult.optString("error"));
+        }
+
         JSObject result = new JSObject();
         result.put("className", className);
         result.put("methodName", methodName);
@@ -74,11 +77,14 @@ class DexXrefAnalyzer {
         }
 
         String jsonResult = CppDex.findFieldXrefs(session.dexBytes, className, fieldName);
-        if (jsonResult == null || jsonResult.contains("\"error\"")) {
+        if (jsonResult == null) {
             throw new Exception("Failed to find field xrefs");
         }
-
         org.json.JSONObject cppResult = new org.json.JSONObject(jsonResult);
+        if (cppResult.has("error")) {
+            throw new Exception("Failed to find field xrefs: " + cppResult.optString("error"));
+        }
+
         JSObject result = new JSObject();
         result.put("className", className);
         result.put("fieldName", fieldName);
@@ -135,6 +141,8 @@ class DexXrefAnalyzer {
         if (s == null || s.isEmpty()) return s;
         if (s.startsWith("L") && s.endsWith(";")) return s;
         if (s.startsWith("[")) return s;
+        // 原始类型描述符（I/Z/B/S/C/J/F/D/V）本身即为合法类型，不能当作类名再包一层 L...;
+        if (s.length() == 1 && "VZBSCIJFD".indexOf(s.charAt(0)) >= 0) return s;
         return convertClassNameToType(s);
     }
 
@@ -875,7 +883,8 @@ class DexXrefAnalyzer {
     private static String convertClassNameToType(String className) {
         if (className == null) return "";
         // 幂等：已是描述符（La/b/C;）直接返回，避免二次包装成 LLa/b/C;;。
-        if (className.startsWith("L") && className.endsWith(";")) {
+        // 含 '.' 说明是 Java 包名分隔（如 Lcom.example.Foo），仍需转换，不能当描述符。
+        if (className.startsWith("L") && className.endsWith(";") && className.indexOf('.') < 0) {
             return className;
         }
         return "L" + className.replace(".", "/") + ";";
