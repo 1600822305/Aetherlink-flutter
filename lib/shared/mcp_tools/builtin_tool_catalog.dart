@@ -1078,6 +1078,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
   // DEX/APK 编辑（迁移自 web `DexEditorServer.ts`）。会话式工作流：
   // dex_open_apk → dex_open → 搜索/查看/修改 → dex_save；外加无状态的
   // APK/资源/清单工具。执行见 `tools/dex_editor_tool.dart`（原生 Android 桥）。
+  // 会话管理：dex_open 对同一 apkPath 幂等（复用会话）；后续工具的 sessionId
+  // 可直接填 apkPath；会话丢失（进程回收/引擎重建）时按 apkPath 落盘元数据惰性
+  // 重建，只读操作全程无感，仅当上次有未保存(dex_save)改动时才明确报错提示重做。
   '@aether/dex-editor': [
     McpToolDefinition(
       name: 'dex_open_apk',
@@ -1092,7 +1095,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'dex_open',
-      description: '打开指定的 DEX 文件进行编辑。可以同时打开多个 DEX。返回会话 ID 用于后续操作。',
+      description: '打开指定的 DEX 文件进行编辑，可同时打开多个 DEX，返回会话 ID。'
+          '幂等：同一 apkPath 重复调用会复用已有会话（返回同一 sessionId，reused=true），'
+          '不会产生重复会话。后续工具的 sessionId 也可直接填该 apkPath，无需记忆 sessionId。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1113,7 +1118,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
           'packageFilter': {
             'type': 'string',
             'description': '包名过滤（如 "com.example"）',
@@ -1139,7 +1148,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID（从 dex_open 获取）'},
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
           'query': {
             'type': 'string',
             'description': '搜索内容。superclass/interface/annotation 搜的是类型名，'
@@ -1185,7 +1198,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
           'className': {
             'type': 'string',
             'description':
@@ -1219,7 +1236,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
           'className': {
             'type': 'string',
             'description': '类名（点分/L描述符/斜杠任意格式均可，内部自动转换）',
@@ -1242,7 +1263,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
           'className': {
             'type': 'string',
             'description': '类名（点分/L描述符/斜杠任意格式均可，内部自动转换）',
@@ -1258,7 +1283,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
           'className': {
             'type': 'string',
             'description': '类名（点分/L描述符/斜杠任意格式均可，内部自动转换）',
@@ -1282,7 +1311,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
           'className': {
             'type': 'string',
             'description': '新类名（如 "com.example.NewClass"）',
@@ -1298,7 +1331,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
           'className': {'type': 'string', 'description': '要删除的类名'},
         },
         'required': ['sessionId', 'className'],
@@ -1313,7 +1350,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
           'className': {
             'type': 'string',
             'description': '类名（点分/L描述符/斜杠任意格式均可，内部自动转换）',
@@ -1328,7 +1369,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
           'oldClassName': {'type': 'string', 'description': '原类名'},
           'newClassName': {'type': 'string', 'description': '新类名'},
         },
@@ -1341,7 +1386,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
           'filter': {'type': 'string', 'description': '过滤字符串（包含匹配）'},
           'limit': {'type': 'integer', 'description': '最大返回数量', 'default': 100},
         },
@@ -1360,7 +1409,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
           'className': {'type': 'string', 'description': '类名，如 com.example.Foo'},
           'methodName': {'type': 'string', 'description': '方法名'},
           'methodSignature': {
@@ -1400,7 +1453,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
           'className': {'type': 'string', 'description': '类名，如 com.example.Foo'},
           'fieldName': {'type': 'string', 'description': '字段名'},
           'fieldType': {
@@ -1439,7 +1496,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
           'className': {'type': 'string', 'description': '类名，如 com.example.Foo'},
           'locator': {
             'type': 'string',
@@ -1459,7 +1520,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
           'className': {
             'type': 'string',
             'description': '类名（点分/L描述符/斜杠任意格式均可，内部自动转换）',
@@ -1474,7 +1539,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
         },
         'required': ['sessionId'],
       },
@@ -1489,18 +1558,26 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'dex_close',
-      description: '关闭 DEX 编辑会话，释放资源',
+      description: '关闭 DEX 编辑会话，释放资源（可选）。'
+          '现在会话查不到时会按 apkPath 自动重建，通常无需手动 close；'
+          '只有想主动释放大 APK 占用的内存时才需要调用。sessionId 也可填 apkPath。',
       inputSchema: {
         'type': 'object',
         'properties': {
-          'sessionId': {'type': 'string', 'description': '会话 ID'},
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
         },
         'required': ['sessionId'],
       },
     ),
     McpToolDefinition(
       name: 'dex_list_sessions',
-      description: '列出当前所有打开的 DEX 编辑会话',
+      description: '列出 DEX 编辑会话：既包含当前内存中活跃的会话（alive=true），'
+          '也包含进程重启后可按 apkPath 惰性重建的历史会话（alive=false，restorable=true）。'
+          '有未保存改动的历史会话 restorable=false（那些改动已随进程丢失，需重做）。',
       inputSchema: {'type': 'object', 'properties': {}},
     ),
     McpToolDefinition(

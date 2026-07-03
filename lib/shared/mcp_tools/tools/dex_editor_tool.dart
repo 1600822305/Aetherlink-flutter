@@ -275,6 +275,23 @@ String _classNameArg(Map<String, Object?> args) {
   return _str(args['className']);
 }
 
+/// Session key for the multi-DEX workflow, accepting any of:
+///  - `sessionId`（旧参数，仍完全兼容）；
+///  - `locator: dex_session:<apkPath>`（统一寻址）；
+///  - `apkPath`（无需记 sessionId，原生按 apkPath 复用/惰性重建会话）。
+///
+/// 原生 `requireOrRebuild` 同时接受 sessionId 与 apkPath，故这里只需返回其一：
+/// sessionId 优先（保持既有行为），否则回退到 apkPath。
+String _sessionArg(Map<String, Object?> args) {
+  final sessionId = _str(args['sessionId']);
+  if (sessionId.isNotEmpty) return sessionId;
+  final loc = parseLocator(args['locator']);
+  if (loc != null && loc.scheme == 'dex_session') {
+    return loc.value;
+  }
+  return _str(args['apkPath']);
+}
+
 /// APK-internal file path from a unified `locator` (`apk_file:` / `file:`) or
 /// the explicit `filePath` arg.
 String _filePathArg(Map<String, Object?> args) {
@@ -360,7 +377,7 @@ Future<McpToolResult> _listClasses(
 ) async {
   final page = _listPage(args, 100);
   final result = await dex.execute('listClasses', {
-    'sessionId': _str(args['sessionId']),
+    'sessionId': _sessionArg(args),
     'packageFilter': _str(args['packageFilter']),
     'offset': page.offset,
     'limit': page.limit,
@@ -389,7 +406,7 @@ Future<McpToolResult> _search(DexEditor dex, Map<String, Object?> args) async {
   final query = _str(args['query']);
   final searchType = _str(args['searchType']);
   final result = await dex.execute('searchInDexSession', {
-    'sessionId': _str(args['sessionId']),
+    'sessionId': _sessionArg(args),
     'query': query,
     'searchType': searchType,
     'caseSensitive': _bool(args['caseSensitive']),
@@ -419,7 +436,7 @@ Future<McpToolResult> _getClass(
 ) async {
   final className = _normalizeClassName(_classNameArg(args));
   final result = await dex.execute('getClassSmaliFromSession', {
-    'sessionId': _str(args['sessionId']),
+    'sessionId': _sessionArg(args),
     'className': className,
   });
   if (!result.success) {
@@ -448,7 +465,7 @@ Future<McpToolResult> _modifyClass(
 ) async {
   final className = _normalizeClassName(_classNameArg(args));
   final result = await dex.execute('modifyClass', {
-    'sessionId': _str(args['sessionId']),
+    'sessionId': _sessionArg(args),
     'className': className,
     'smaliContent': _str(args['smaliContent']),
   });
@@ -464,7 +481,7 @@ Future<McpToolResult> _addClass(
 ) async {
   final className = _normalizeClassName(_str(args['className']));
   final result = await dex.execute('addClassToSession', {
-    'sessionId': _str(args['sessionId']),
+    'sessionId': _sessionArg(args),
     'className': className,
     'smaliContent': _str(args['smaliContent']),
   });
@@ -480,7 +497,7 @@ Future<McpToolResult> _deleteClass(
 ) async {
   final className = _normalizeClassName(_str(args['className']));
   final result = await dex.execute('deleteClassFromSession', {
-    'sessionId': _str(args['sessionId']),
+    'sessionId': _sessionArg(args),
     'className': className,
   });
   if (!result.success) {
@@ -495,7 +512,7 @@ Future<McpToolResult> _getMethod(
 ) async {
   final className = _normalizeClassName(_classNameArg(args));
   final result = await dex.execute('getMethodFromSession', {
-    'sessionId': _str(args['sessionId']),
+    'sessionId': _sessionArg(args),
     'className': className,
     'methodName': _str(args['methodName']),
     'methodSignature': _str(args['methodSignature']),
@@ -514,7 +531,7 @@ Future<McpToolResult> _modifyMethod(
   final className = _normalizeClassName(_classNameArg(args));
   final methodName = _str(args['methodName']);
   final result = await dex.execute('modifyMethodInSession', {
-    'sessionId': _str(args['sessionId']),
+    'sessionId': _sessionArg(args),
     'className': className,
     'methodName': methodName,
     'methodSignature': _str(args['methodSignature']),
@@ -532,7 +549,7 @@ Future<McpToolResult> _outlineClass(
 ) async {
   final className = _normalizeClassName(_classNameArg(args));
   final result = await dex.execute('outlineClassFromSession', {
-    'sessionId': _str(args['sessionId']),
+    'sessionId': _sessionArg(args),
     'className': className,
   });
   if (!result.success) {
@@ -548,7 +565,7 @@ Future<McpToolResult> _renameClass(
   final oldClassName = _normalizeClassName(_str(args['oldClassName']));
   final newClassName = _normalizeClassName(_str(args['newClassName']));
   final result = await dex.execute('renameClassInSession', {
-    'sessionId': _str(args['sessionId']),
+    'sessionId': _sessionArg(args),
     'oldClassName': oldClassName,
     'newClassName': newClassName,
   });
@@ -562,7 +579,7 @@ Future<McpToolResult> _renameClass(
 
 Future<McpToolResult> _save(DexEditor dex, Map<String, Object?> args) async {
   final result = await dex.execute('saveDexToApk', {
-    'sessionId': _str(args['sessionId']),
+    'sessionId': _sessionArg(args),
   });
   if (!result.success) {
     return McpToolResult('保存失败: ${result.error}', isError: true);
@@ -591,7 +608,7 @@ Future<McpToolResult> _saveAll(DexEditor dex) async {
 }
 
 Future<McpToolResult> _close(DexEditor dex, Map<String, Object?> args) async {
-  final sessionId = _str(args['sessionId']);
+  final sessionId = _sessionArg(args);
   final result = await dex.execute('closeMultiDexSession', {
     'sessionId': sessionId,
   });
@@ -621,7 +638,7 @@ Future<McpToolResult> _listStrings(
   Map<String, Object?> args,
 ) async {
   final result = await dex.execute('listStrings', {
-    'sessionId': _str(args['sessionId']),
+    'sessionId': _sessionArg(args),
     'filter': _str(args['filter']),
     'limit': _int(args['limit'], 100),
   });
@@ -636,7 +653,7 @@ Future<McpToolResult> _findMethodXrefs(
   Map<String, Object?> args,
 ) async {
   final result = await dex.execute('findMethodXrefs', {
-    'sessionId': _str(args['sessionId']),
+    'sessionId': _sessionArg(args),
     'className': _classNameArg(args),
     'methodName': _str(args['methodName']),
     'methodSignature': _str(args['methodSignature']),
@@ -656,7 +673,7 @@ Future<McpToolResult> _findFieldXrefs(
   Map<String, Object?> args,
 ) async {
   final result = await dex.execute('findFieldXrefs', {
-    'sessionId': _str(args['sessionId']),
+    'sessionId': _sessionArg(args),
     'className': _classNameArg(args),
     'fieldName': _str(args['fieldName']),
     'fieldType': _str(args['fieldType']),
@@ -676,7 +693,7 @@ Future<McpToolResult> _findClassXrefs(
   Map<String, Object?> args,
 ) async {
   final result = await dex.execute('findClassXrefs', {
-    'sessionId': _str(args['sessionId']),
+    'sessionId': _sessionArg(args),
     'className': _classNameArg(args),
     'limit': _int(args['limit'], 50),
   });
@@ -694,7 +711,7 @@ Future<McpToolResult> _smaliToJava(
 ) async {
   final className = _normalizeClassName(_classNameArg(args));
   final result = await dex.execute('smaliToJava', {
-    'sessionId': _str(args['sessionId']),
+    'sessionId': _sessionArg(args),
     'className': className,
   });
   if (!result.success) {

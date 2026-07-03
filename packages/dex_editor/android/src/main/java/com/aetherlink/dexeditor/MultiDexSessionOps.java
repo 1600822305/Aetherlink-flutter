@@ -43,10 +43,7 @@ class MultiDexSessionOps {
      * 获取多 DEX 会话中的类列表（Rust 实现）
      */
     public JSObject getClassesFromMultiSession(String sessionId, String packageFilter, int offset, int limit) throws Exception {
-        DexManager.MultiDexSession session = dex.sessionManager.multiDexSessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
+        DexManager.MultiDexSession session = dex.sessionManager.requireOrRebuild(sessionId);
         
         if (!CppDex.isAvailable() || session.dexBytes.isEmpty()) {
             throw new RuntimeException("C++ DEX library not available");
@@ -104,10 +101,7 @@ class MultiDexSessionOps {
      */
     public JSObject searchInMultiSession(String sessionId, String query, String searchType, 
                                           boolean caseSensitive, int maxResults) throws Exception {
-        DexManager.MultiDexSession session = dex.sessionManager.multiDexSessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
+        DexManager.MultiDexSession session = dex.sessionManager.requireOrRebuild(sessionId);
 
         // 结构性搜索（父类/接口/注解）由 dexlib2 在 Java 层完成，C++ 引擎不支持这些类型
         if ("superclass".equals(searchType) || "interface".equals(searchType)
@@ -283,10 +277,7 @@ class MultiDexSessionOps {
      * 从多 DEX 会话获取类的 Smali 代码（Rust 实现）
      */
     public JSObject getClassSmaliFromSession(String sessionId, String className) throws Exception {
-        DexManager.MultiDexSession session = dex.sessionManager.multiDexSessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
+        DexManager.MultiDexSession session = dex.sessionManager.requireOrRebuild(sessionId);
         
         if (!CppDex.isAvailable()) {
             throw new RuntimeException("C++ DEX library not available");
@@ -318,10 +309,7 @@ class MultiDexSessionOps {
      * 修改类并保存到多 DEX 会话（Rust 实现）
      */
     public void modifyClassInSession(String sessionId, String className, String smaliContent) throws Exception {
-        DexManager.MultiDexSession session = dex.sessionManager.multiDexSessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
+        DexManager.MultiDexSession session = dex.sessionManager.requireOrRebuild(sessionId);
         
         if (!CppDex.isAvailable()) {
             throw new RuntimeException("C++ DEX library not available");
@@ -362,10 +350,7 @@ class MultiDexSessionOps {
      * 添加新类到会话（Rust 实现）
      */
     public void addClassToSession(String sessionId, String className, String smaliContent) throws Exception {
-        DexManager.MultiDexSession session = dex.sessionManager.multiDexSessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
+        DexManager.MultiDexSession session = dex.sessionManager.requireOrRebuild(sessionId);
         
         if (!CppDex.isAvailable()) {
             throw new RuntimeException("C++ DEX library not available");
@@ -396,10 +381,7 @@ class MultiDexSessionOps {
      * 从会话中删除类（Rust 实现）
      */
     public void deleteClassFromSession(String sessionId, String className) throws Exception {
-        DexManager.MultiDexSession session = dex.sessionManager.multiDexSessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
+        DexManager.MultiDexSession session = dex.sessionManager.requireOrRebuild(sessionId);
         
         if (!CppDex.isAvailable()) {
             throw new RuntimeException("C++ DEX library not available");
@@ -442,10 +424,7 @@ class MultiDexSessionOps {
     public JSObject getMethodFromSession(String sessionId, String className, String methodName, String methodSignature) throws Exception {
         JSObject result = new JSObject();
         
-        DexManager.MultiDexSession session = dex.sessionManager.multiDexSessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
+        DexManager.MultiDexSession session = dex.sessionManager.requireOrRebuild(sessionId);
         
         // 先获取整个类的 Smali
         JSObject classResult = getClassSmaliFromSession(sessionId, className);
@@ -469,10 +448,7 @@ class MultiDexSessionOps {
      * 修改会话中的单个方法
      */
     public void modifyMethodInSession(String sessionId, String className, String methodName, String methodSignature, String newMethodCode) throws Exception {
-        DexManager.MultiDexSession session = dex.sessionManager.multiDexSessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
+        DexManager.MultiDexSession session = dex.sessionManager.requireOrRebuild(sessionId);
         
         // 获取整个类的 Smali
         JSObject classResult = getClassSmaliFromSession(sessionId, className);
@@ -506,10 +482,7 @@ class MultiDexSessionOps {
      * 列出会话中类的所有方法
      */
     public JSObject listMethodsFromSession(String sessionId, String className) throws Exception {
-        DexManager.MultiDexSession session = dex.sessionManager.multiDexSessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
+        DexManager.MultiDexSession session = dex.sessionManager.requireOrRebuild(sessionId);
         
         String targetType = dex.convertClassNameToType(className);
         JSObject result = new JSObject();
@@ -549,10 +522,7 @@ class MultiDexSessionOps {
      * 列出会话中类的所有字段
      */
     public JSObject listFieldsFromSession(String sessionId, String className) throws Exception {
-        DexManager.MultiDexSession session = dex.sessionManager.multiDexSessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
+        DexManager.MultiDexSession session = dex.sessionManager.requireOrRebuild(sessionId);
         
         String targetType = dex.convertClassNameToType(className);
         JSObject result = new JSObject();
@@ -584,10 +554,7 @@ class MultiDexSessionOps {
      * 便于在读取全量 Smali 前先了解类结构。
      */
     public JSObject outlineClassFromSession(String sessionId, String className) throws Exception {
-        DexManager.MultiDexSession session = dex.sessionManager.multiDexSessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
+        DexManager.MultiDexSession session = dex.sessionManager.requireOrRebuild(sessionId);
 
         String targetType = dex.convertClassNameToType(className);
         JSObject result = new JSObject();
@@ -655,10 +622,7 @@ class MultiDexSessionOps {
      * 重命名会话中的类
      */
     public void renameClassInSession(String sessionId, String oldClassName, String newClassName) throws Exception {
-        DexManager.MultiDexSession session = dex.sessionManager.multiDexSessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
+        DexManager.MultiDexSession session = dex.sessionManager.requireOrRebuild(sessionId);
         
         // 获取原类的 Smali
         JSObject classResult = getClassSmaliFromSession(sessionId, oldClassName);

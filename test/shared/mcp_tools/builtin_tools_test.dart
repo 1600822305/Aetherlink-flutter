@@ -9,9 +9,33 @@ import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tool
 // runCalculatorTool / runTimeTool live in this barrel; the dispatch tests below
 // call them directly.
 import 'package:aetherlink_flutter/shared/mcp_tools/tools/tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/tools/dex_editor_tool.dart';
+import 'package:dex_editor/dex_editor.dart';
 
 Map<String, Object?> _json(McpToolResult result) =>
     jsonDecode(result.text) as Map<String, Object?>;
+
+/// 记录最近一次 native 调用的 action/params，并可自定义返回结果，
+/// 用于验证 Dart 层把 sessionId / apkPath / locator 归一到同一 sessionId 入参。
+class _RecordingDexEditor implements DexEditor {
+  String? lastAction;
+  Map<String, Object?>? lastParams;
+  DexResult Function(String action, Map<String, Object?> params)? onExecute;
+
+  @override
+  Future<DexResult> execute(
+    String action, [
+    Map<String, Object?> params = const {},
+  ]) async {
+    lastAction = action;
+    lastParams = params;
+    return onExecute?.call(action, params) ?? const DexResult(success: true);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      super.noSuchMethod(invocation);
+}
 
 void main() {
   group('runBuiltinTool dispatch', () {
@@ -384,6 +408,28 @@ void main() {
       expect(schema['required'], isNot(contains('className')));
     });
 
+    test('dex_open advertises idempotent (apkPath 复用) session semantics', () {
+      final tool = kBuiltinMcpTools['@aether/dex-editor']!
+          .firstWhere((t) => t.name == 'dex_open');
+      expect(tool.description, contains('幂等'));
+      expect(tool.description, contains('复用'));
+    });
+
+    test('dex_list_sessions surfaces restorable (rebuildable) sessions', () {
+      final tool = kBuiltinMcpTools['@aether/dex-editor']!
+          .firstWhere((t) => t.name == 'dex_list_sessions');
+      expect(tool.description, contains('restorable'));
+      expect(tool.description, contains('alive'));
+    });
+
+    test('session tools document that sessionId also accepts an apkPath', () {
+      final tool = kBuiltinMcpTools['@aether/dex-editor']!
+          .firstWhere((t) => t.name == 'dex_list_classes');
+      final props = tool.inputSchema['properties'] as Map<String, Object?>;
+      final sessionId = props['sessionId'] as Map<String, Object?>;
+      expect(sessionId['description'], contains('APK 路径'));
+    });
+
     test('file-editor exposes run_command requiring a command (SSH-3)', () {
       final tool = kBuiltinMcpTools['@aether/file-editor']!
           .firstWhere((t) => t.name == 'run_command');
@@ -391,6 +437,69 @@ void main() {
       expect(schema['required'], contains('command'));
       final props = schema['properties'] as Map<String, Object?>;
       expect(props.keys, containsAll(['command', 'workspace', 'cwd', 'timeout_ms']));
+    });
+  });
+
+  group('dex session arg normalization (sessionId / apkPath / locator)', () {
+    test('explicit sessionId is forwarded as-is', () async {
+      final dex = _RecordingDexEditor();
+      await runDexEditorTool(
+        'dex_close',
+        {'sessionId': 'S-123'},
+        editor: dex,
+      );
+      expect(dex.lastAction, 'closeMultiDexSession');
+      expect(dex.lastParams!['sessionId'], 'S-123');
+    });
+
+    test('apkPath is accepted in place of sessionId (no manual id needed)',
+        () async {
+      final dex = _RecordingDexEditor();
+      await runDexEditorTool(
+        'dex_list_classes',
+        {'apkPath': '/sd/app.apk'},
+        editor: dex,
+      );
+      expect(dex.lastAction, 'listClasses');
+      // 无 sessionId 时回退到 apkPath；原生 requireOrRebuild 同时接受二者。
+      expect(dex.lastParams!['sessionId'], '/sd/app.apk');
+    });
+
+    test('locator dex_session:<apkPath> resolves to that apkPath', () async {
+      final dex = _RecordingDexEditor();
+      await runDexEditorTool(
+        'dex_close',
+        {'locator': 'dex_session:/sd/app.apk'},
+        editor: dex,
+      );
+      expect(dex.lastParams!['sessionId'], '/sd/app.apk');
+    });
+
+    test('sessionId wins over apkPath when both are supplied', () async {
+      final dex = _RecordingDexEditor();
+      await runDexEditorTool(
+        'dex_close',
+        {'sessionId': 'S-9', 'apkPath': '/sd/app.apk'},
+        editor: dex,
+      );
+      expect(dex.lastParams!['sessionId'], 'S-9');
+    });
+
+    test('unsaved-edits-lost error from native is surfaced to the model',
+        () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(
+              success: false,
+              error: '会话已失效，且上次有未保存的改动（未 dex_save），'
+                  '这些改动已随会话丢失，请重新打开并重做修改。',
+            );
+      final result = await runDexEditorTool(
+        'dex_list_classes',
+        {'sessionId': 'S-dead'},
+        editor: dex,
+      );
+      expect(result.isError, isTrue);
+      expect(result.text, contains('未保存'));
     });
   });
 
