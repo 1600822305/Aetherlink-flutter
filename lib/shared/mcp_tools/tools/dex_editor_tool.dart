@@ -86,8 +86,6 @@ Future<McpToolResult> runDexEditorTool(
         return await _addApkFile(dex, args);
       case 'apk_search_arsc':
         return await _searchArsc(dex, args);
-      case 'apk_parse_manifest_cpp':
-        return await _parseManifestCpp(dex, args);
       case 'apk_search_manifest_cpp':
         return await _searchManifestCpp(dex, args);
       case 'apk_parse_arsc_cpp':
@@ -493,6 +491,16 @@ Future<McpToolResult> _getManifest(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
+  // format=structured 走 C++ 高性能解析，返回结构化信息；默认 xml 返回可读文本
+  if (_str(args['format']) == 'structured') {
+    final result = await dex.execute('parseManifestCpp', {
+      'apkPath': _str(args['apkPath']),
+    });
+    if (!result.success) {
+      return McpToolResult('错误: ${result.error}', isError: true);
+    }
+    return McpToolResult(encodeJson(result.data));
+  }
   final result = await dex.execute('getManifest', {
     'apkPath': _str(args['apkPath']),
   });
@@ -763,19 +771,6 @@ Future<McpToolResult> _searchArsc(
       'limit': _int(args['limit'], 50),
     });
   }
-  if (!result.success) {
-    return McpToolResult('错误: ${result.error}', isError: true);
-  }
-  return McpToolResult(encodeJson(result.data));
-}
-
-Future<McpToolResult> _parseManifestCpp(
-  DexEditor dex,
-  Map<String, Object?> args,
-) async {
-  final result = await dex.execute('parseManifestCpp', {
-    'apkPath': _str(args['apkPath']),
-  });
   if (!result.success) {
     return McpToolResult('错误: ${result.error}', isError: true);
   }
