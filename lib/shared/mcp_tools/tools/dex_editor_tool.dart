@@ -623,8 +623,11 @@ Future<McpToolResult> _findFieldXrefs(
 ) async {
   final result = await dex.execute('findFieldXrefs', {
     'sessionId': _str(args['sessionId']),
-    'className': _str(args['className']),
+    'className': _classNameArg(args),
     'fieldName': _str(args['fieldName']),
+    'fieldType': _str(args['fieldType']),
+    'access': _str(args['access']),
+    'limit': _int(args['limit'], 50),
   });
   if (!result.success) {
     return McpToolResult('错误: ${result.error}', isError: true);

@@ -1262,6 +1262,7 @@ public class DexManager {
         final List<String> interfaces = new ArrayList<>();
         final List<String> subtypes = new ArrayList<>();  // 反向边：直接子类 + 实现者
         final Set<String> methodKeys = new HashSet<>();   // 本类声明的 name+proto
+        final Set<String> fieldKeys = new HashSet<>();    // 本类声明的 name:type
         boolean isInterface = false;
         boolean defined = false;
         String dexName;
@@ -1315,6 +1316,9 @@ public class DexManager {
                 for (String iface : cd.getInterfaces()) n.interfaces.add(iface);
                 for (Method m : cd.getMethods()) {
                     n.methodKeys.add(methodKey(m.getName(), m.getParameterTypes(), m.getReturnType()));
+                }
+                for (Field f : cd.getFields()) {
+                    n.fieldKeys.add(f.getName() + ":" + f.getType());
                 }
             }
         }
@@ -1580,6 +1584,194 @@ public class DexManager {
         ChaNode tn = g.get(targetType);
         if (tn == null || !tn.defined) {
             result.put("note", "目标类未在会话 DEX 中定义，slot/dispatch 家族可能不完整");
+        }
+        return result;
+    }
+
+    /** 从 X 沿类（superclass）链向上，返回第一个声明了字段 key(name:type) 的类；无则返回 null。 */
+    private String chaFirstFieldDeclarer(Map<String, ChaNode> g, String x, String key) {
+        String cur = x;
+        Set<String> seen = new HashSet<>();
+        while (cur != null && seen.add(cur)) {
+            ChaNode n = g.get(cur);
+            if (n == null) return null;
+            if (n.fieldKeys.contains(key)) return cur;
+            cur = n.superclass;
+        }
+        return null;
+    }
+
+    /** 在 X 的类链上按字段名唯一解析 name:type 键；同名多字段/未找到返回 null。 */
+    private String resolveFieldKeyByName(Map<String, ChaNode> g, String type, String fieldName) {
+        String cur = type;
+        Set<String> seen = new HashSet<>();
+        while (cur != null && seen.add(cur)) {
+            ChaNode n = g.get(cur);
+            if (n == null) break;
+            String found = null;
+            int hits = 0;
+            for (String key : n.fieldKeys) {
+                int colon = key.lastIndexOf(':');
+                if (colon > 0 && key.substring(0, colon).equals(fieldName)) {
+                    found = key;
+                    hits++;
+                }
+            }
+            if (hits == 1) return found;
+            if (hits > 1) return null; // 同名多字段，需显式 fieldType
+            cur = n.superclass;
+        }
+        return null;
+    }
+
+    /** 字段访问类别：1=读(get) 2=写(put)；非字段访问返回 0。基于 opcode smali 名前缀。 */
+    private static int fieldAccessCategory(com.android.tools.smali.dexlib2.Opcode op) {
+        String nm = op.name;
+        if (nm == null) return 0;
+        // iget/sget（含 -wide/-object/-boolean 等，及 -volatile/-quick 变体）为读，iput/sput 为写
+        if (nm.startsWith("iget") || nm.startsWith("sget")) return 1;
+        if (nm.startsWith("iput") || nm.startsWith("sput")) return 2;
+        return 0;
+    }
+
+    private static boolean isStaticFieldOp(com.android.tools.smali.dexlib2.Opcode op) {
+        return op.name != null && op.name.startsWith("s");
+    }
+
+    /**
+     * 字段交叉引用（dexlib2），运行在多 DEX 会话上。
+     *
+     * @param fieldType 可空，形如 "I"/"Ljava/lang/String;"，用于区分同名字段
+     * @param access    read（iget/sget）| write（iput/sput）| all（默认）
+     */
+    public JSObject findFieldXrefsCHA(String sessionId, String className, String fieldName,
+                                      String fieldType, String access, int limit)
+            throws Exception {
+        MultiDexSession session = multiDexSessions.get(sessionId);
+        if (session == null) {
+            throw new IllegalArgumentException("Session not found: " + sessionId);
+        }
+        String acc = (access == null || access.isEmpty()) ? "all" : access;
+        boolean wantRead = "all".equals(acc) || "read".equals(acc);
+        boolean wantWrite = "all".equals(acc) || "write".equals(acc);
+        if (!wantRead && !wantWrite) {
+            throw new IllegalArgumentException("access 只能是 read | write | all");
+        }
+        int cap = limit > 0 ? limit : 50;
+        String targetType = normalizeType(className);
+        Map<String, ChaNode> g = buildChaGraph(session);
+
+        String ft = (fieldType == null) ? "" : fieldType.trim();
+        boolean typeGiven = !ft.isEmpty();
+        String targetKey;
+        if (typeGiven) {
+            targetKey = fieldName + ":" + normalizeType(ft);
+        } else {
+            targetKey = resolveFieldKeyByName(g, targetType, fieldName);
+            if (targetKey == null) {
+                throw new IllegalArgumentException(
+                    "字段 " + className + "->" + fieldName
+                    + " 同名多字段或未找到，请提供 fieldType 区分");
+            }
+        }
+
+        // owners：声明该字段的类 + 继承它（不遮蔽）的子类 + 声明它的祖先，覆盖以父/子类型书写的访问。
+        String declClass = chaFirstFieldDeclarer(g, targetType, targetKey);
+        Set<String> owners = new HashSet<>();
+        Map<String, String> reason = new HashMap<>();
+        owners.add(targetType);
+        reason.put(targetType, "field: self");
+        for (String x : chaSupertypes(g, targetType)) {
+            ChaNode n = g.get(x);
+            if (n != null && n.fieldKeys.contains(targetKey)) {
+                owners.add(x);
+                reason.put(x, "field: ancestor declares");
+            }
+        }
+        for (String x : chaSubtypes(g, targetType)) {
+            String decl = chaFirstFieldDeclarer(g, x, targetKey);
+            if (decl != null && (decl.equals(declClass) || decl.equals(targetType))) {
+                owners.add(x);
+                reason.put(x, "field: " + shortType(x) + " inherits");
+            }
+        }
+
+        JSArray xrefArray = new JSArray();
+        int count = 0;
+        boolean truncated = false;
+        outer:
+        for (Map.Entry<String, DexBackedDexFile> entry : session.dexFiles.entrySet()) {
+            String dexName = entry.getKey();
+            DexBackedDexFile dexFile = entry.getValue();
+            if (dexFile == null) continue;
+            for (ClassDef cd : dexFile.getClasses()) {
+                for (Method m : cd.getMethods()) {
+                    MethodImplementation impl = m.getImplementation();
+                    if (impl == null) continue;
+                    int addr = 0;
+                    for (Instruction insn : impl.getInstructions()) {
+                        int units = insn.getCodeUnits();
+                        int at = addr;
+                        addr += units;
+                        int fac = fieldAccessCategory(insn.getOpcode());
+                        if (fac == 0) continue;
+                        if ((fac == 1 && !wantRead) || (fac == 2 && !wantWrite)) continue;
+                        if (!(insn instanceof com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction)) {
+                            continue;
+                        }
+                        com.android.tools.smali.dexlib2.iface.reference.Reference ref =
+                            ((com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction) insn).getReference();
+                        if (!(ref instanceof com.android.tools.smali.dexlib2.iface.reference.FieldReference)) {
+                            continue;
+                        }
+                        com.android.tools.smali.dexlib2.iface.reference.FieldReference fref =
+                            (com.android.tools.smali.dexlib2.iface.reference.FieldReference) ref;
+                        if (!fref.getName().equals(fieldName)) continue;
+                        String callKey = fref.getName() + ":" + fref.getType();
+                        if (!callKey.equals(targetKey)) continue;
+                        String owner = fref.getDefiningClass();
+                        if (!owners.contains(owner)) continue;
+
+                        if (count >= cap) {
+                            truncated = true;
+                            break outer;
+                        }
+                        String accType = insn.getOpcode().name;
+                        JSObject xref = new JSObject();
+                        xref.put("sourceClass", convertTypeToClassName(cd.getType()));
+                        xref.put("sourceMethod", m.getName());
+                        xref.put("sourceMethodSignature",
+                                "(" + joinParams(m.getParameterTypes()) + ")" + m.getReturnType());
+                        xref.put("accessType", accType);
+                        xref.put("access", fac == 1 ? "read" : "write");
+                        xref.put("isStatic", isStaticFieldOp(insn.getOpcode()));
+                        xref.put("fieldOwner", convertTypeToClassName(owner));
+                        xref.put("fieldType", fref.getType());
+                        xref.put("instruction", accType + " " + owner + "->" + fref.getName()
+                                + ":" + fref.getType());
+                        xref.put("codeAddress", at);
+                        xref.put("dexFile", dexName);
+                        String rs = reason.get(owner);
+                        xref.put("matchReason", rs != null ? rs : "field");
+                        xrefArray.put(xref);
+                        count++;
+                    }
+                }
+            }
+        }
+
+        JSObject result = new JSObject();
+        result.put("className", convertTypeToClassName(targetType));
+        result.put("fieldName", fieldName);
+        result.put("resolvedKey", targetKey);
+        result.put("access", acc);
+        result.put("count", xrefArray.length());
+        result.put("hasMore", truncated);
+        result.put("xrefs", xrefArray);
+        result.put("engine", "java-dexlib2-cha");
+        ChaNode tn = g.get(targetType);
+        if (tn == null || !tn.defined) {
+            result.put("note", "目标类未在会话 DEX 中定义，字段家族可能不完整");
         }
         return result;
     }

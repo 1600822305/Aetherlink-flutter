@@ -1374,15 +1374,39 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'dex_find_field_xrefs',
-      description: '查找字段的交叉引用（哪些地方访问了这个字段）',
+      description:
+          '查找字段的交叉引用（哪些地方访问了这个字段），基于 dexlib2、跨全部 DEX、'
+          '理解类继承（以父/子类型书写的访问也能命中）。每条引用含 sourceClass/'
+          'sourceMethod/sourceMethodSignature、accessType(iget/iput/sget/sput 及'
+          ' -wide/-object 等变体)、access(read|write)、isStatic、fieldOwner、'
+          'fieldType、instruction、codeAddress、matchReason。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'sessionId': {'type': 'string', 'description': '会话 ID'},
-          'className': {'type': 'string', 'description': '类名'},
+          'className': {'type': 'string', 'description': '类名，如 com.example.Foo'},
           'fieldName': {'type': 'string', 'description': '字段名'},
+          'fieldType': {
+            'type': 'string',
+            'description': '可选，字段类型描述符（如 "I"、"Ljava/lang/String;"），'
+                '用于区分同名字段；同名多字段时必须提供',
+          },
+          'access': {
+            'type': 'string',
+            'enum': ['read', 'write', 'all'],
+            'description': '访问过滤（默认 all）：read=只读(iget/sget)；'
+                'write=只写(iput/sput)；all=全部',
+          },
+          'locator': {
+            'type': 'string',
+            'description': '统一定位符，可替代 className，如 "dex_class:com.example.Foo"',
+          },
+          'limit': {
+            'type': 'integer',
+            'description': '最多返回多少条引用（默认 50）；截断时 hasMore=true',
+          },
         },
-        'required': ['sessionId', 'className', 'fieldName'],
+        'required': ['sessionId', 'fieldName'],
       },
     ),
     McpToolDefinition(

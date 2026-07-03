@@ -257,10 +257,13 @@ public class DexActionDispatcher {
                 break;
 
             case "findFieldXrefs":
-                result.put("data", dexManager.findFieldXrefs(
+                result.put("data", dexManager.findFieldXrefsCHA(
                     params.getString("sessionId"),
                     params.getString("className"),
-                    params.getString("fieldName")
+                    params.getString("fieldName"),
+                    params.optString("fieldType", ""),
+                    params.optString("access", "all"),
+                    params.optInt("limit", 50)
                 ));
                 break;
 
