@@ -675,6 +675,13 @@ public class DexActionDispatcher {
                 ));
                 break;
 
+            case "patchManifest":
+                result.put("data", dexManager.patchManifest(
+                    params.getString("apkPath"),
+                    params.getJSONArray("patches")
+                ));
+                break;
+
             case "listApkFiles":
                 result.put("data", dexManager.listApkFiles(
                     params.getString("apkPath"),

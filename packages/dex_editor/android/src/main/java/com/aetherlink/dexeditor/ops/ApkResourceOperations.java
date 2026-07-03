@@ -4,6 +4,7 @@ import android.util.Base64;
 import android.util.Log;
 
 import com.aetherlink.dexeditor.AxmlEditor;
+import com.aetherlink.dexeditor.AxmlManifestPatcher;
 import com.aetherlink.dexeditor.AxmlParser;
 import com.aetherlink.dexeditor.compat.JSArray;
 import com.aetherlink.dexeditor.compat.JSObject;
@@ -488,6 +489,227 @@ public class ApkResourceOperations {
         }
         
         return result;
+    }
+
+    /**
+     * 结构化修改 AndroidManifest.xml 的常见标量属性（无需提供完整 XML）。
+     *
+     * <p>直接在二进制 AXML 上编辑：int/bool 属性原地改写，string 属性复用或追加
+     * 字符串池条目。仅支持对 <b>已存在</b> 属性执行 {@code set}；新增/删除元素或
+     * 组件（application/permission/activity/...）属于结构性改动，返回失败明细而
+     * 不会破坏 manifest。
+     *
+     * @param patches 每项形如 {@code {type, action, value?, attributes?}}
+     */
+    public static JSObject patchManifest(String apkPath, JSONArray patches) throws Exception {
+        JSObject result = new JSObject();
+        JSArray details = new JSArray();
+
+        if (patches == null || patches.length() == 0) {
+            result.put("success", true);
+            result.put("appliedCount", 0);
+            result.put("details", details);
+            result.put("message", "未提供任何补丁");
+            return result;
+        }
+
+        byte[] axmlData = readManifestBytes(apkPath);
+        AxmlManifestPatcher patcher = new AxmlManifestPatcher(axmlData);
+        if (!patcher.valid()) {
+            result.put("success", false);
+            result.put("error", "无法解析 AndroidManifest.xml（不是有效的二进制 AXML）");
+            return result;
+        }
+
+        int applied = 0;
+        for (int i = 0; i < patches.length(); i++) {
+            JSONObject patch = patches.optJSONObject(i);
+            JSObject detail = new JSObject();
+            if (patch == null) {
+                detail.put("applied", false);
+                detail.put("error", "补丁项不是对象");
+                details.put(detail);
+                continue;
+            }
+            String type = patch.optString("type", "");
+            String action = patch.optString("action", "set");
+            String value = patch.has("value") ? patch.optString("value", "") : "";
+            detail.put("type", type);
+            detail.put("action", action);
+            detail.put("value", value);
+
+            if (!"set".equals(action)) {
+                detail.put("applied", false);
+                detail.put("error", "暂不支持的 action=" + action + "（仅支持 set；新增/删除元素需使用反编译工具）");
+                details.put(detail);
+                continue;
+            }
+
+            boolean ok;
+            String err = null;
+            switch (type) {
+                case "package":
+                    ok = patcher.setStringAttr("manifest", "package", false, value);
+                    break;
+                case "versionName":
+                    ok = patcher.setStringAttr("manifest", "versionName", true, value);
+                    break;
+                case "versionCode":
+                    ok = patcher.setIntAttr("manifest", "versionCode", true, parseIntSafe(value));
+                    break;
+                case "minSdk":
+                    ok = patcher.setIntAttr("uses-sdk", "minSdkVersion", true, parseIntSafe(value));
+                    if (!ok) {
+                        err = "manifest 中不存在 uses-sdk/minSdkVersion 属性，二进制补丁无法新增";
+                    }
+                    break;
+                case "targetSdk":
+                    ok = patcher.setIntAttr("uses-sdk", "targetSdkVersion", true, parseIntSafe(value));
+                    if (!ok) {
+                        err = "manifest 中不存在 uses-sdk/targetSdkVersion 属性，二进制补丁无法新增";
+                    }
+                    break;
+                case "debuggable":
+                    ok = patcher.setBoolAttr("application", "debuggable", true, parseBoolSafe(value));
+                    if (!ok) {
+                        err = "manifest 中不存在 application/debuggable 属性，二进制补丁无法新增";
+                    }
+                    break;
+                case "application":
+                case "permission":
+                case "activity":
+                case "service":
+                case "receiver":
+                case "provider":
+                    ok = false;
+                    err = "type=" + type + " 属于结构性改动，二进制补丁不支持（请使用反编译工具修改后回写）";
+                    break;
+                default:
+                    ok = false;
+                    err = "未知的 type=" + type;
+            }
+
+            detail.put("applied", ok);
+            if (ok) {
+                applied++;
+            } else if (err != null) {
+                detail.put("error", err);
+            } else {
+                detail.put("error", "未找到对应属性: " + type);
+            }
+            details.put(detail);
+        }
+
+        if (applied == 0) {
+            result.put("success", false);
+            result.put("appliedCount", 0);
+            result.put("details", details);
+            result.put("error", "没有任何补丁被应用");
+            return result;
+        }
+
+        byte[] modified = patcher.build();
+        writeManifestBytes(apkPath, modified);
+
+        result.put("success", true);
+        result.put("appliedCount", applied);
+        result.put("details", details);
+        result.put("message", "已应用 " + applied + "/" + patches.length() + " 条补丁");
+        return result;
+    }
+
+    private static int parseIntSafe(String value) {
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private static boolean parseBoolSafe(String value) {
+        String v = value == null ? "" : value.trim().toLowerCase();
+        return v.equals("true") || v.equals("1") || v.equals("yes");
+    }
+
+    /** Reads the raw (binary AXML) AndroidManifest.xml bytes from an APK. */
+    private static byte[] readManifestBytes(String apkPath) throws Exception {
+        ZipFile zipFile = null;
+        try {
+            zipFile = new ZipFile(apkPath);
+            ZipEntry manifestEntry = zipFile.getEntry("AndroidManifest.xml");
+            if (manifestEntry == null) {
+                throw new Exception("AndroidManifest.xml not found in APK");
+            }
+            InputStream is = zipFile.getInputStream(manifestEntry);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int len;
+            while ((len = is.read(buffer)) != -1) {
+                baos.write(buffer, 0, len);
+            }
+            is.close();
+            return baos.toByteArray();
+        } finally {
+            if (zipFile != null) {
+                try { zipFile.close(); } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    /** Writes new AndroidManifest.xml bytes back into the APK, preserving all
+     * other entries. Shared by {@link #patchManifest} and manifest editing. */
+    private static void writeManifestBytes(String apkPath, byte[] newAxmlData) throws Exception {
+        File apkFile = new File(apkPath);
+        File tempApk = new File(apkPath + ".tmp");
+
+        ZipInputStream zis = new ZipInputStream(
+            new BufferedInputStream(new FileInputStream(apkFile)));
+        ZipOutputStream zos = new ZipOutputStream(
+            new BufferedOutputStream(new FileOutputStream(tempApk)));
+
+        try {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (entry.getName().equals("AndroidManifest.xml")) {
+                    ZipEntry newEntry = new ZipEntry("AndroidManifest.xml");
+                    newEntry.setMethod(ZipEntry.DEFLATED);
+                    zos.putNextEntry(newEntry);
+                    zos.write(newAxmlData);
+                    zos.closeEntry();
+                } else {
+                    ZipEntry newEntry = new ZipEntry(entry.getName());
+                    newEntry.setTime(entry.getTime());
+                    if (entry.getMethod() == ZipEntry.STORED) {
+                        newEntry.setMethod(ZipEntry.STORED);
+                        newEntry.setSize(entry.getSize());
+                        newEntry.setCrc(entry.getCrc());
+                    } else {
+                        newEntry.setMethod(ZipEntry.DEFLATED);
+                    }
+                    zos.putNextEntry(newEntry);
+                    if (!entry.isDirectory()) {
+                        byte[] buf = new byte[8192];
+                        int n;
+                        while ((n = zis.read(buf)) != -1) {
+                            zos.write(buf, 0, n);
+                        }
+                    }
+                    zos.closeEntry();
+                }
+                zis.closeEntry();
+            }
+        } finally {
+            try { zis.close(); } catch (Exception ignored) {}
+            try { zos.close(); } catch (Exception ignored) {}
+        }
+
+        if (!apkFile.delete()) {
+            Log.e(TAG, "Failed to delete original APK");
+        }
+        if (!tempApk.renameTo(apkFile)) {
+            copyFile(tempApk, apkFile);
+            tempApk.delete();
+        }
     }
 
     /**
