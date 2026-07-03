@@ -1690,6 +1690,9 @@ class ChatController extends _$ChatController {
   /// multi-key pool. Mirrors the web `EnhancedApiProvider` `maxRetries = 3`.
   static const int _kMaxKeyAttempts = 3;
 
+  /// 流式回复 UI 刷新的最小间隔（节流窗口）。
+  static const Duration _kStreamEmitInterval = Duration(milliseconds: 100);
+
   /// Subscribes to the gateway stream for [request] and drives the MCP tool-call
   /// loop. Each round accumulates assistant text into a `main_text` block and
   /// reasoning into a single `thinking` card; if the model asks for a tool
@@ -1811,7 +1814,23 @@ class ChatController extends _$ChatController {
       if (thinking.isNotEmpty) thinking.toString(),
     ].join('\n\n');
 
+    // 流式 UI 刷新节流（对齐 Cherry Studio 的 ~100ms 合帧）：SSE delta 一秒可达
+    // 数十次，而每次刷新都要全量聚合文本并触发整段 Markdown 重建，成本随回复
+    // 长度线性上涨；合并到至多每 100ms 一次后，单个 delta 不再放大为全文重排。
+    // [update] 立即发射并取消尾随定时器（块边界/工具状态等需要即时呈现的时刻
+    // 使用）；delta 走 [scheduleUpdate]，间隔不足时挂一个尾随定时器，保证最后
+    // 一段文字不会丢帧。
+    Timer? pendingEmit;
+    var lastEmitAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+    void cancelPendingEmit() {
+      pendingEmit?.cancel();
+      pendingEmit = null;
+    }
+
     void update() {
+      cancelPendingEmit();
+      lastEmitAt = DateTime.now();
       final current = roundDisplay();
       final liveBlocks = <MessageBlock>[
         ...completed,
@@ -1847,10 +1866,24 @@ class ChatController extends _$ChatController {
       _emitTurn(turnTopicId, views, streaming: true);
     }
 
+    void scheduleUpdate() {
+      if (pendingEmit != null) return;
+      final wait = _kStreamEmitInterval - DateTime.now().difference(lastEmitAt);
+      if (wait <= Duration.zero) {
+        update();
+        return;
+      }
+      pendingEmit = Timer(wait, () {
+        pendingEmit = null;
+        update();
+      });
+    }
+
     // Finalize an aborted turn: keep whatever streamed so far (flush the live
     // thinking + prose into [completed]) and persist as a normal success, then
     // drop the streaming state. Mirrors Cherry Studio — Stop preserves output.
     Future<void> persistStopped() async {
+      cancelPendingEmit();
       stopwatch.stop();
       if (thinking.isNotEmpty) {
         completed.add(
@@ -1922,6 +1955,7 @@ class ChatController extends _$ChatController {
 
       // Reset the per-attempt accumulators so a failover retry starts clean,
       // re-seeding the leading memory-injection block so it survives retries.
+      cancelPendingEmit();
       thinking.clear();
       thinkingBlockId = '$assistantMessageId::thinking';
       thinkingStartAt = null;
@@ -1945,8 +1979,16 @@ class ChatController extends _$ChatController {
 
       try {
         var autoContinueCount = 0;
+        // Index in [messages] of the assistant partial fed back for auto-
+        // continue, so consecutive continuations replace it (one assistant
+        // message holding the full accumulated prose) instead of stacking
+        // overlapping copies.
+        var continuationIndex = -1;
         for (var round = 0; ; round++) {
-          buffer.clear();
+          // NB: [buffer] is NOT cleared here — an auto-continue round resumes
+          // into the same buffer/block so the reply stays one seamless
+          // MainText. Tool rounds clear it below after flushing prose, and
+          // each failover attempt resets it before the loop.
           String? lastFinishReason;
           final structuredCalls = <LlmToolCall>[];
           await for (final chunk in gateway.streamChat(
@@ -1959,13 +2001,13 @@ class ChatController extends _$ChatController {
                 firstTokenMs ??= stopwatch.elapsedMilliseconds;
                 if (thinking.isNotEmpty) thinkingEndAt ??= DateTime.now();
                 buffer.write(text);
-                update();
+                scheduleUpdate();
               case LlmReasoningDelta(:final text):
                 committed = true;
                 firstTokenMs ??= stopwatch.elapsedMilliseconds;
                 thinkingStartAt ??= DateTime.now();
                 thinking.write(text);
-                update();
+                scheduleUpdate();
               case LlmToolCallChunk(:final call):
                 committed = true;
                 if (thinking.isNotEmpty) thinkingEndAt ??= DateTime.now();
@@ -2005,17 +2047,10 @@ class ChatController extends _$ChatController {
             // re-request so the model resumes from the truncation point.
             if (truncated && autoContinueCount < _kMaxAutoContinues) {
               autoContinueCount++;
+              // The partial prose stays in [buffer] (same block id): the
+              // continuation appends to it seamlessly, so no '\n\n' seam is
+              // introduced mid-sentence by aggregateText's join.
               final partial = roundDisplay();
-              if (partial.isNotEmpty) {
-                completed.add(
-                  _mainTextBlock(
-                    id: roundBlockId,
-                    messageId: assistantMessageId,
-                    createdAt: assistantTime,
-                    content: partial,
-                  ),
-                );
-              }
               if (thinking.isNotEmpty) {
                 completed.add(
                   _thinkingBlock(
@@ -2032,12 +2067,19 @@ class ChatController extends _$ChatController {
                 thinkingEndAt = null;
               }
               // Feed partial output back so the model continues from where it
-              // was cut off.
-              messages = <LlmMessage>[
-                ...messages,
-                LlmMessage(role: MessageRole.assistant, content: partial),
-              ];
-              roundBlockId = generateId('block');
+              // was cut off; replace the previous continuation partial (if
+              // any) since [partial] already contains it.
+              final partialMessage = LlmMessage(
+                role: MessageRole.assistant,
+                content: partial,
+              );
+              if (continuationIndex >= 0) {
+                messages = List<LlmMessage>.of(messages)
+                  ..[continuationIndex] = partialMessage;
+              } else {
+                continuationIndex = messages.length;
+                messages = <LlmMessage>[...messages, partialMessage];
+              }
               update();
               continue; // next round = continuation
             }
@@ -2223,7 +2265,14 @@ class ChatController extends _$ChatController {
             update();
           }
 
-          // Feed the assistant turn + tool results back so the model can continue.
+          // Feed the assistant turn + tool results back so the model can
+          // continue. [roundText] already contains any auto-continued partial
+          // of this prose block, so drop the placeholder fed back earlier.
+          if (continuationIndex >= 0) {
+            messages = List<LlmMessage>.of(messages)
+              ..removeAt(continuationIndex);
+            continuationIndex = -1;
+          }
           if (mcp.usePromptInjection) {
             messages = <LlmMessage>[
               ...messages,
@@ -2261,6 +2310,7 @@ class ChatController extends _$ChatController {
           update();
         }
 
+        cancelPendingEmit();
         stopwatch.stop();
         await _persistMessageBlocks(
           messageId: assistantMessageId,
@@ -2315,6 +2365,7 @@ class ChatController extends _$ChatController {
 
     // Terminal failure: reject any pending confirmations, persist any key stat
     // changes, then mark the message errored.
+    cancelPendingEmit();
     ref.read(toolConfirmationProvider.notifier).rejectAll();
     ref.read(runningCommandsProvider.notifier).cancelAll();
     await persistKeyUpdates();
@@ -2414,25 +2465,18 @@ class ChatController extends _$ChatController {
     Metrics? metrics,
   }) async {
     final now = DateTime.now();
-    final existing = await _repo.getMessageBlocksByMessageId(messageId);
-    for (final block in existing) {
-      await _repo.deleteMessageBlock(block.id);
-    }
-    for (final block in blocks) {
-      await _repo.saveMessageBlock(block);
-    }
     final message = await _repo.getMessage(messageId);
-    if (message != null) {
-      await _repo.saveMessage(
-        message.copyWith(
-          status: status,
-          updatedAt: now,
-          blocks: [for (final block in blocks) block.id],
-          usage: usage ?? message.usage,
-          metrics: metrics ?? message.metrics,
-        ),
-      );
-    }
+    await _repo.replaceMessageBlocks(
+      messageId: messageId,
+      blocks: blocks,
+      message: message?.copyWith(
+        status: status,
+        updatedAt: now,
+        blocks: [for (final block in blocks) block.id],
+        usage: usage ?? message.usage,
+        metrics: metrics ?? message.metrics,
+      ),
+    );
   }
 
   /// Recomputes and persists the topic's `lastMessagePreview`, `lastMessageTime`
@@ -3874,9 +3918,9 @@ class ChatController extends _$ChatController {
     routes[kSearchMemoryToolName] = const _MemorySearchToolRoute();
   }
 
-  /// Injects the knowledge `kb_search` tool whenever至少有一个「对聊天开放」的
-  /// 知识库存在——即便 MCP 工具 总开关关着（设计文档 §7 的「提供给普通聊天」开关，
-  /// 与 [_maybeInjectMemorySearch] 同款）。若 `@aether/knowledge` 服务器已激活，
+  /// Injects the knowledge `kb_search` tool whenever至少有一个知识库存在
+  /// ——即便 MCP 工具总开关关着（与 [_maybeInjectMemorySearch] 同款）。
+  /// 若 `@aether/knowledge` 服务器已激活，
   /// 4 个工具已在上面注入，这里靠 [routes] 去重不重复添加。
   Future<void> _maybeInjectKnowledgeSearch(
     List<McpToolDefinition> tools,
@@ -4394,8 +4438,12 @@ class ChatController extends _$ChatController {
       case 'add_note':
         final title = (args['title'] as String?)?.trim();
         return '向知识库添加笔记${title == null || title.isEmpty ? '' : '「$title」'}';
+      case 'add_url':
+        return '抓取网页并摄取进知识库（${args['url'] ?? ''}）';
       case 'add_workspace':
         return '把工作区目录摄取进知识库（工作区 ID: ${args['workspace_id'] ?? ''}）';
+      case 'retry_embeddings':
+        return '补嵌知识库中嵌入失败的切块（ID: ${args['base_id'] ?? ''}）';
       case 'delete':
         return '删除知识库（ID: ${args['base_id'] ?? ''}）';
       case 'refresh':

@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_version
 import 'package:aetherlink_flutter/features/chat/domain/message_ordering.dart';
 import 'package:aetherlink_flutter/features/chat/domain/message_tree_builder.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
+import 'package:aetherlink_flutter/features/chat/domain/search/chat_search.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
@@ -258,8 +259,8 @@ class ChatRepositoryImpl implements ChatRepository {
       _db.messageBlockDao.getById(id);
 
   @override
-  Future<List<MessageBlock>> getAllMessageBlocks() =>
-      _db.messageBlockDao.getAll();
+  Future<List<ChatSearchableText>> getAllMainTexts() =>
+      _db.messageBlockDao.getAllMainTexts();
 
   @override
   Future<List<MessageBlock>> getMessageBlocksByIds(List<String> ids) =>
@@ -276,6 +277,21 @@ class ChatRepositoryImpl implements ChatRepository {
   @override
   Future<void> saveMessageBlocks(List<MessageBlock> blocks) =>
       _db.messageBlockDao.upsertAll(blocks);
+
+  @override
+  Future<void> replaceMessageBlocks({
+    required String messageId,
+    required List<MessageBlock> blocks,
+    Message? message,
+  }) {
+    return _db.transaction(() async {
+      await _db.messageBlockDao.deleteByMessageId(messageId);
+      if (blocks.isNotEmpty) {
+        await _db.messageBlockDao.upsertAll(blocks);
+      }
+      if (message != null) await saveMessage(message);
+    });
+  }
 
   @override
   Future<void> deleteMessageBlock(String id) =>

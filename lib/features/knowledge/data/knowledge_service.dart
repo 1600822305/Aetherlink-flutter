@@ -257,8 +257,9 @@ class KnowledgeService {
     );
   }
 
-  /// 更新库的可编辑配置（名称 + RAG 参数）。参数非法（空名 / 切块参数越界）视为
-  /// 坏输入抛错。切块参数变化后需调用方另行 [reindexBase] 才会对已有条目生效。
+  /// 更新库的可编辑配置（名称 + RAG 参数 + 可选 [searchMode]）。参数非法
+  /// （空名 / 切块参数越界 / 无嵌入模型却选语义检索）视为坏输入抛错。
+  /// 切块参数变化后需调用方另行 [reindexBase] 才会对已有条目生效。
   Future<void> updateBaseConfig(
     String baseId, {
     required String name,
@@ -266,8 +267,9 @@ class KnowledgeService {
     required int chunkOverlap,
     required int topK,
     required double? threshold,
+    KnowledgeSearchMode? searchMode,
   }) async {
-    await _requireBase(baseId);
+    final base = await _requireBase(baseId);
     final trimmed = name.trim();
     if (trimmed.isEmpty) throw StateError('名称不能为空');
     if (chunkSize < 100 || chunkSize > 10000) {
@@ -280,6 +282,11 @@ class KnowledgeService {
     if (threshold != null && (threshold < 0 || threshold > 1)) {
       throw StateError('相似度阈值需在 0–1 之间');
     }
+    if (searchMode != null &&
+        searchMode != KnowledgeSearchMode.keyword &&
+        (base.embeddingModelKey == null || base.embeddingModelKey!.isEmpty)) {
+      throw StateError('未选嵌入模型时仅支持关键词检索');
+    }
     await _dao.updateBaseConfig(
       baseId,
       name: trimmed,
@@ -287,7 +294,36 @@ class KnowledgeService {
       chunkOverlap: chunkOverlap,
       topK: topK,
       threshold: threshold,
+      searchMode: searchMode,
     );
+  }
+
+  /// 建库后更换嵌入模型（对比 CS 的最后一项，参考其「换嵌入模型 + 库级恢复
+  /// 重建」）：更新模型键、重新探测维度后整库重建向量索引。重建走
+  /// [reindexBase]——旧切块被替换后，旧模型的向量作为孤儿被回收，不会与新
+  /// 维度混存；新模型嵌入失败的切块保持待补状态（可用 [retryPendingEmbeddings]
+  /// 补嵌或再次换模型恢复），关键词检索始终可用。原关键词库选上模型后自动
+  /// 升级为 hybrid（可传 [searchMode] 指定）。空模型键视为坏输入抛错。
+  /// 返回重建覆盖的条目数。
+  Future<int> changeEmbeddingModel(
+    String baseId, {
+    required String embeddingModelKey,
+    KnowledgeSearchMode? searchMode,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final base = await _requireBase(baseId);
+    final key = embeddingModelKey.trim();
+    if (key.isEmpty) throw StateError('嵌入模型不能为空');
+    var mode = searchMode ?? base.searchMode;
+    if (mode == KnowledgeSearchMode.keyword) mode = KnowledgeSearchMode.hybrid;
+    final dimensions = await detectEmbeddingDimensions(key);
+    await _dao.updateBaseEmbeddingModel(
+      baseId,
+      embeddingModelKey: key,
+      dimensions: dimensions,
+      searchMode: mode,
+    );
+    return reindexBase(baseId, onProgress: onProgress);
   }
 
   /// 抓取一个网页并摄取为条目（设计文档 §5「URL 抓取 → Markdown 快照」）。抓取器
@@ -335,9 +371,15 @@ class KnowledgeService {
   /// 记为来源指纹（[KnowledgeItem.sourceFingerprint]），供 §8.1 的 staleness 检测在
   /// 检索时异步比对。未配置工作区源时抛错；目录里无可摄取文本时抛错（坏输入）。
   /// 返回成功摄取的条目列表。
+  ///
+  /// [onProgress] 每开始摄取一个文件回调一次 `(已完成数, 总数, 文件名)`，供 UI
+  /// 展示进度；[shouldCancel] 在每个文件之间被查询，返回 true 时停止摄取并
+  /// 返回已完成的条目（已落库的部分保留，摄取是逐条事务、随时可停）。
   Future<List<KnowledgeItem>> addWorkspace({
     required String baseId,
     required String workspaceId,
+    void Function(int done, int total, String fileName)? onProgress,
+    bool Function()? shouldCancel,
   }) async {
     final base = await _requireBase(baseId);
     final source = _workspaceSource;
@@ -354,6 +396,8 @@ class KnowledgeService {
     }
     final items = <KnowledgeItem>[];
     for (final file in ingestible) {
+      if (shouldCancel?.call() ?? false) break;
+      onProgress?.call(items.length, ingestible.length, file.name);
       final item = await _ingest(
         base: base,
         type: KnowledgeItemType.workspace,
@@ -480,11 +524,16 @@ class KnowledgeService {
   /// 复用与摄取一致的惰性/去重嵌入（未变的内容命中已存向量、不重复调用嵌入 API），
   /// 再在一个事务里替换 `kb_chunk`、补写新增 `kb_embedding`、回收孤儿嵌入。适用于
   /// 切块参数或嵌入配置调整后刷新索引。返回重建覆盖的条目数。
-  Future<int> reindexBase(String baseId) async {
+  /// [onProgress] 每重建完一个条目回调一次 `(已完成数, 总数)`，供 UI 展示进度。
+  Future<int> reindexBase(
+    String baseId, {
+    void Function(int done, int total)? onProgress,
+  }) async {
     final base = await _requireBase(baseId);
     final entries = await _dao.itemsWithContent(baseId);
     final reindexed = <ReindexItem>[];
     final embeddings = <String, List<double>>{};
+    var done = 0;
     for (final entry in entries) {
       final chunks = chunkText(
         entry.content,
@@ -501,6 +550,8 @@ class KnowledgeService {
           embeddingKeys: embedded?.keys,
         ),
       );
+      done++;
+      onProgress?.call(done, entries.length);
     }
     await _dao.reindexBase(
       baseId: baseId,
@@ -891,11 +942,8 @@ class KnowledgeService {
     if (trimmed.isEmpty) return null;
 
     try {
-      final embedder = await resolver(modelKey);
-      if (embedder == null) return null;
-      final embedded = await embedder.embed([trimmed]);
-      if (embedded.isEmpty || embedded.first.isEmpty) return null;
-      final queryVector = embedded.first;
+      final queryVector = await _embedQuery(modelKey, trimmed);
+      if (queryVector == null) return null;
 
       final chunks = await _dao.embeddedChunks(base.id);
       if (chunks.isEmpty) return null;
@@ -928,6 +976,30 @@ class KnowledgeService {
     }
   }
 
+  /// 查询向量的小容量缓存（键：`模型键|查询`）：同一条消息同时检索多个同模型
+  /// 的库时只嵌一次，避免重复调嵌入 API。向量对 (模型, 文本) 确定，无过期问题；
+  /// 容量封顶防内存增长。
+  static const int _kQueryVectorCacheCap = 8;
+  final Map<String, List<double>> _queryVectorCache = {};
+
+  Future<List<double>?> _embedQuery(String modelKey, String query) async {
+    final cacheKey = '$modelKey|$query';
+    final cached = _queryVectorCache[cacheKey];
+    if (cached != null) return cached;
+    final resolver = _resolveEmbedder;
+    if (resolver == null) return null;
+    final embedder = await resolver(modelKey);
+    if (embedder == null) return null;
+    final embedded = await embedder.embed([query]);
+    if (embedded.isEmpty || embedded.first.isEmpty) return null;
+    final vector = embedded.first;
+    if (_queryVectorCache.length >= _kQueryVectorCacheCap) {
+      _queryVectorCache.remove(_queryVectorCache.keys.first);
+    }
+    _queryVectorCache[cacheKey] = vector;
+    return vector;
+  }
+
   /// 阈值过滤（仅向量/hybrid，值域可比）。[KnowledgeBase.threshold] 为空则不裁。
   List<_ScoredChunk> _applyThreshold(
     KnowledgeBase base,
@@ -942,7 +1014,8 @@ class KnowledgeService {
   }
 
   /// hybrid：RRF 融合关键词与向量两路排名，产出引用。融合后的相似度取该切块在向量
-  /// 路的分数（无则取关键词路），阈值过滤后裁 topK。
+  /// 路的分数（无则取关键词路）；阈值只对带向量分的切块生效——关键词分是命中
+  /// 比例，与 cosine 不同量纲，拿向量阈值去卡会误杀/误放。过滤后裁 topK。
   List<KnowledgeReferenceItem> _hybridReferences(
     KnowledgeBase base,
     List<_ScoredChunk> keyword,
@@ -954,18 +1027,25 @@ class KnowledgeService {
       byId[s.chunkId] = s;
     }
     // 向量分数覆盖关键词分数（相似度以向量为准）。
+    final vectorIds = <String>{};
     for (final s in vector) {
       byId[s.chunkId] = s;
+      vectorIds.add(s.chunkId);
     }
     final fused = fuseWithRrf([
       [for (final s in keyword) s.chunkId],
       [for (final s in vector) s.chunkId],
     ]);
+    final threshold = base.threshold;
     final ordered = [
       for (final id in fused)
-        if (byId[id] != null) byId[id]!,
+        if (byId[id] != null &&
+            (threshold == null ||
+                !vectorIds.contains(id) ||
+                byId[id]!.similarity >= threshold))
+          byId[id]!,
     ];
-    return _toReferences(base, _applyThreshold(base, ordered), limit);
+    return _toReferences(base, ordered, limit);
   }
 
   List<KnowledgeReferenceItem> _toReferences(
@@ -987,15 +1067,40 @@ class KnowledgeService {
     ];
   }
 
+  /// 单次查询的分词上限，防超长查询把 LIKE 预过滤撞大。
+  static const int _kMaxQueryTokens = 64;
+
+  static final RegExp _kCjkRun = RegExp(
+    r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]+',
+  );
+
+  /// 分词：按空白切段后，CJK 连续段再切二字组（bigram，单字段取单字），
+  /// 非 CJK 段整词保留。中文自然提问不带空格，整串子串匹配几乎不可能命中；
+  /// bigram 是无词典场景下中文召回的标准做法（同 SQLite FTS5 trigram 思路）。
   List<String> _tokenize(String query) {
     final trimmed = query.trim().toLowerCase();
     if (trimmed.isEmpty) return const [];
-    final parts = trimmed
-        .split(RegExp(r'\s+'))
-        .where((t) => t.isNotEmpty)
-        .toList();
-    // 无空格（如中文短语）时整串作为单个子串词，天然覆盖 1-2 字中文词。
-    return parts.isEmpty ? [trimmed] : parts;
+    final tokens = <String>{};
+    for (final part in trimmed.split(RegExp(r'\s+'))) {
+      if (part.isEmpty) continue;
+      var cursor = 0;
+      for (final match in _kCjkRun.allMatches(part)) {
+        final before = part.substring(cursor, match.start);
+        if (before.isNotEmpty) tokens.add(before);
+        final run = match.group(0)!;
+        if (run.length == 1) {
+          tokens.add(run);
+        } else {
+          for (var i = 0; i + 1 < run.length; i++) {
+            tokens.add(run.substring(i, i + 2));
+          }
+        }
+        cursor = match.end;
+      }
+      final tail = part.substring(cursor);
+      if (tail.isNotEmpty) tokens.add(tail);
+    }
+    return tokens.take(_kMaxQueryTokens).toList();
   }
 }
 

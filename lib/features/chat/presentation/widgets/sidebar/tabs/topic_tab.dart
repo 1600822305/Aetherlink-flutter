@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/notion_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/streaming_registry.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/dialogs/sidebar_dialogs.dart';
@@ -17,6 +18,7 @@ import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 class TopicTab extends ConsumerStatefulWidget {
   const TopicTab({super.key});
@@ -208,7 +210,15 @@ class _TopicTabState extends ConsumerState<TopicTab> {
   }
 }
 
-enum _TopicMenu { addToGroup, rename, togglePin, clearMessages, move, delete }
+enum _TopicMenu {
+  addToGroup,
+  rename,
+  togglePin,
+  clearMessages,
+  move,
+  exportNotion,
+  delete,
+}
 
 class _TopicItem extends ConsumerWidget {
   const _TopicItem({
@@ -258,8 +268,23 @@ class _TopicItem extends ConsumerWidget {
         if (ok) await notifier.clearMessages(topic.id);
       case _TopicMenu.move:
         await showMoveTopicDialog(context, ref, topic: topic);
+      case _TopicMenu.exportNotion:
+        await _exportToNotion(context, ref);
       case _TopicMenu.delete:
         await _deleteTopic(context, ref);
+    }
+  }
+
+  Future<void> _exportToNotion(BuildContext context, WidgetRef ref) async {
+    final settings = ref.read(notionSettingsProvider);
+    AppToast.info(context, '正在导出到 Notion...');
+    try {
+      await ref.read(notionExportServiceProvider).exportTopic(topic, settings);
+      if (!context.mounted) return;
+      AppToast.success(context, '已导出到 Notion：${topic.name}');
+    } catch (e) {
+      if (!context.mounted) return;
+      AppToast.error(context, '导出失败：$e');
     }
   }
 
@@ -410,6 +435,16 @@ class _TopicItem extends ConsumerWidget {
                                 _TopicMenu.move,
                                 LucideIcons.arrowRight,
                                 '移动到...',
+                              ),
+                            if (ref.watch(
+                              notionSettingsProvider.select(
+                                (s) => s.isConfigured,
+                              ),
+                            ))
+                              const SidebarSheetAction(
+                                _TopicMenu.exportNotion,
+                                LucideIcons.databaseZap,
+                                '导出到 Notion',
                               ),
                             const SidebarSheetAction(
                               _TopicMenu.delete,

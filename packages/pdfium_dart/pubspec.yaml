@@ -1,0 +1,13 @@
+# Vendored copy of pub.dev pdfium_dart 0.2.5（BSD-3-Clause，见 LICENSE），
+# 唯一改动是移除 hook/build.dart 构建钩子：上游钩子会在构建期下载 PDFium
+# 并作为 native asset 打进安装包（arm64 约 6MB）。本应用改为运行时按需
+# 下载/导入 libpdfium.so（见 lib/features/knowledge/data/pdfium_engine_manager.dart），
+# 由 `Pdfrx.pdfiumModulePath` 显式指定路径加载，因此不需要打包内置。
+# 通过根 pubspec 的 dependency_overrides 覆盖 pdfrx_engine 的传递依赖。
+name: pdfium_dart
+description: Dart FFI bindings for PDFium library (vendored, build hook removed).
+version: 0.2.5
+publish_to: 'none'
+
+environment:
+  sdk: ^3.9.2

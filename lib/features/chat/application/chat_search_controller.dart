@@ -9,8 +9,9 @@ part 'chat_search_controller.g.dart';
 
 /// Application layer for 聊天搜索 (port of the web `useChatSearch` hook +
 /// `ChatSearchService` wiring). The pure search logic lives in the domain
-/// ([runChatSearch]); here we fetch the full topic / message / block sets
-/// through [ChatRepository] and persist the recent-search list.
+/// ([runChatSearch]); here we fetch the topic / message sets plus the
+/// SQL-projected `main_text` contents through [ChatRepository] and persist the
+/// recent-search list.
 
 /// The key/value setting key holding the recent-search history (port of the
 /// web `localStorage` key `chat-search-recent`).
@@ -45,12 +46,12 @@ Future<ChatSearchResultSet> chatSearchResults(
   final repo = ref.watch(chatRepositoryProvider);
   final topics = await repo.getAllTopics();
   final messages = await repo.getAllMessages();
-  final blocks = await repo.getAllMessageBlocks();
+  final mainTexts = await repo.getAllMainTexts();
   return runChatSearch(
     rawQuery: request.query,
     topics: topics,
     messages: messages,
-    blocks: blocks,
+    mainTexts: mainTexts,
     mode: request.mode,
   );
 }

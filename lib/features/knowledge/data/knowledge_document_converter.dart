@@ -1,10 +1,16 @@
 import 'package:docx_to_markdown/docx_to_markdown.dart';
 import 'package:flutter/foundation.dart';
-import 'package:pdf_to_markdown/pdf_to_markdown.dart';
-import 'package:pdfrx/pdfrx.dart' show pdfrxFlutterInitialize;
 
-/// 富文档 → 纯文本的转换层（设计文档 §5.2 本地解析轨）：把 DOCX / PDF 等格式
-/// 转成 Markdown 后再交给 `KnowledgeService.addFile` 走通用摄取管线。
+import 'package:aetherlink_flutter/shared/mcp_tools/tools/fetch_tool.dart'
+    show htmlToMarkdown;
+import 'package:office_to_markdown/office_to_markdown.dart';
+import 'package:pdf_to_markdown/pdf_to_markdown.dart';
+
+import 'package:aetherlink_flutter/features/knowledge/data/pdfium_engine_manager.dart';
+
+/// 富文档 → 纯文本的转换层（设计文档 §5.2 本地解析轨）：把 DOCX / PDF / PPTX /
+/// XLSX / EPUB 等格式转成 Markdown 后再交给 `KnowledgeService.addFile` 走通用
+/// 摄取管线。
 
 /// 文件名（或路径）是否为 DOCX。
 bool isDocxFileName(String name) => name.trim().toLowerCase().endsWith('.docx');
@@ -12,16 +18,39 @@ bool isDocxFileName(String name) => name.trim().toLowerCase().endsWith('.docx');
 /// 文件名（或路径）是否为 PDF。
 bool isPdfFileName(String name) => name.trim().toLowerCase().endsWith('.pdf');
 
-/// 仅云端预处理轨支持的富文档扩展名（功能缺口④）：本地解析轨暂无对应转换器，
-/// 只有库配置了云端解析器（MinerU / Doc2X 等）时才放开选择。
-const List<String> kCloudOnlyKnowledgeExtensions = [
-  'doc',
-  'ppt',
-  'pptx',
-  'xls',
-  'xlsx',
-  'epub',
+/// 文件名（或路径）是否为 PPTX。
+bool isPptxFileName(String name) => name.trim().toLowerCase().endsWith('.pptx');
+
+/// 文件名（或路径）是否为 XLSX。
+bool isXlsxFileName(String name) => name.trim().toLowerCase().endsWith('.xlsx');
+
+/// 文件名（或路径）是否为 EPUB。
+bool isEpubFileName(String name) => name.trim().toLowerCase().endsWith('.epub');
+
+/// 文件名（或路径）是否为 HTML。
+bool isHtmlFileName(String name) {
+  final lower = name.trim().toLowerCase();
+  return lower.endsWith('.html') || lower.endsWith('.htm');
+}
+
+/// 直接按 UTF-8 文本摄取的扩展名：csv / json 本身就是结构化文本，
+/// 切块与检索直接可用，无需额外转换。
+const List<String> kPlainTextKnowledgeExtensions = [
+  'txt',
+  'md',
+  'markdown',
+  'text',
+  'csv',
+  'json',
 ];
+
+/// 本地解析轨支持的 Office / 电子书扩展名（功能缺口④）：无需云端解析器即可
+/// 摄取，库配置了云端解析器时仍优先走云端轨。
+const List<String> kLocalOfficeKnowledgeExtensions = ['pptx', 'xlsx', 'epub'];
+
+/// 仅云端预处理轨支持的富文档扩展名（功能缺口④）：本地解析轨暂无对应转换器
+/// （旧版二进制格式），只有库配置了云端解析器（MinerU / Doc2X 等）时才放开选择。
+const List<String> kCloudOnlyKnowledgeExtensions = ['doc', 'ppt', 'xls'];
 
 /// 文件名（或路径）是否为「仅云端轨」富文档（见 [kCloudOnlyKnowledgeExtensions]）。
 bool isCloudOnlyKnowledgeFileName(String name) {
@@ -39,8 +68,34 @@ Future<String> convertDocxBytesToMarkdown(Uint8List bytes) =>
 /// 抽取 PDF 字节的文本层并重排为段落文本。
 ///
 /// PDFium 解析在引擎的原生 worker 中执行，不阻塞 UI isolate。扫描件（无文本层）
-/// 返回空字符串，由调用方提示；打开失败抛 [PdfParseException]。
+/// 返回空字符串，由调用方提示；打开失败抛 [PdfParseException]；PDFium
+/// 引擎未安装时抛 [PdfiumEngineMissingException]（引擎按需下载/导入，不随
+/// 安装包内置，见 [PdfiumEngineManager]）。
 Future<String> convertPdfBytesToMarkdown(Uint8List bytes) async {
-  await pdfrxFlutterInitialize();
+  await PdfiumEngineManager.instance.ensureInitialized();
   return PdfToMarkdown.convert(bytes);
 }
+
+/// 在后台 isolate 中把 PPTX 字节转成 Markdown（每页幻灯片一节）。
+///
+/// 无效包或解析失败抛 [OfficeParseException]，内容为空（如纯图片幻灯片）由
+/// 调用方按空文本处理。
+Future<String> convertPptxBytesToMarkdown(Uint8List bytes) =>
+    compute(PptxToMarkdown.convert, bytes);
+
+/// 在后台 isolate 中把 XLSX 字节转成 Markdown（每个工作表一张表格）。
+///
+/// 无效包或解析失败抛 [OfficeParseException]，空表格由调用方按空文本处理。
+Future<String> convertXlsxBytesToMarkdown(Uint8List bytes) =>
+    compute(XlsxToMarkdown.convert, bytes);
+
+/// 在后台 isolate 中把 EPUB 字节转成 Markdown（按 spine 顺序拼接各章节）。
+///
+/// 无效包或解析失败抛 [OfficeParseException]。
+Future<String> convertEpubBytesToMarkdown(Uint8List bytes) =>
+    compute(EpubToMarkdown.convert, bytes);
+
+/// 在后台 isolate 中把 HTML 源码转成 Markdown，用与 `@aether/fetch` /
+/// URL 抓取同一套 [htmlToMarkdown]（页面 `<title>` 会放到正文最前的 `# ` 行）。
+Future<String> convertHtmlTextToMarkdown(String html) =>
+    compute(htmlToMarkdown, html);

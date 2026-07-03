@@ -6,7 +6,7 @@ import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 
 /// Opens the 挂载知识库 picker（功能缺口⑫）: a multi-select sheet listing every
-/// 「对聊天开放」的知识库 with checkboxes. Returns the chosen base ids on 确定
+/// 知识库 with checkboxes. Returns the chosen base ids on 确定
 /// (an empty list clears the mount), or `null` if dismissed/cancelled.
 /// [initial] pre-checks the currently-mounted bases so re-opening edits the
 /// selection. Mirrors [showMultiModelSelectorSheet].
@@ -22,6 +22,122 @@ Future<List<String>?> showKnowledgeMountSheet(
     backgroundColor: Theme.of(context).colorScheme.surface,
     builder: (_) => _KnowledgeMountSheet(initial: initial),
   );
+}
+
+/// Opens the 存入知识库 single-select picker（对比 CS 的 SaveToKnowledgePopup）:
+/// lists every 知识库, tapping one returns it. Returns `null` if
+/// dismissed/cancelled.
+Future<KnowledgeBase?> showKnowledgeSavePickerSheet(BuildContext context) {
+  FocusManager.instance.primaryFocus?.unfocus();
+  return showModalBottomSheet<KnowledgeBase>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    backgroundColor: Theme.of(context).colorScheme.surface,
+    builder: (_) => const _KnowledgeSavePickerSheet(),
+  );
+}
+
+class _KnowledgeSavePickerSheet extends ConsumerStatefulWidget {
+  const _KnowledgeSavePickerSheet();
+
+  @override
+  ConsumerState<_KnowledgeSavePickerSheet> createState() =>
+      _KnowledgeSavePickerSheetState();
+}
+
+class _KnowledgeSavePickerSheetState
+    extends ConsumerState<_KnowledgeSavePickerSheet> {
+  late final Future<List<KnowledgeBase>> _bases =
+      listChatEnabledKnowledgeBases(ref);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final mq = MediaQuery.of(context);
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: mq.size.height * 0.8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '存入知识库',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '选择一个知识库，把这条消息以笔记形式摄取进去',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+            Flexible(
+              child: FutureBuilder<List<KnowledgeBase>>(
+                future: _bases,
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  final bases = snapshot.data!;
+                  if (bases.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Center(
+                        child: Text(
+                          '暂无知识库\n请先在知识库页面创建',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  return ListView(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    children: [
+                      for (final base in bases)
+                        ListTile(
+                          onTap: () => Navigator.of(context).pop(base),
+                          dense: true,
+                          leading: Icon(
+                            LucideIcons.bookOpen,
+                            size: 20,
+                            color: theme.colorScheme.primary,
+                          ),
+                          title: Text(
+                            base.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _KnowledgeMountSheet extends ConsumerStatefulWidget {
@@ -96,7 +212,7 @@ class _KnowledgeMountSheetState extends ConsumerState<_KnowledgeMountSheet> {
                       padding: const EdgeInsets.all(32),
                       child: Center(
                         child: Text(
-                          '暂无「对聊天开放」的知识库\n请先在知识库设置里打开「提供给普通聊天」',
+                          '暂无知识库\n请先在知识库页面创建',
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,

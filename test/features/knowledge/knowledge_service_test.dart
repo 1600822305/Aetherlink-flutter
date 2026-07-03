@@ -115,6 +115,22 @@ void main() {
       expect(chunks.last.charEnd, text.length);
     });
 
+    test('never splits a surrogate pair across a chunk boundary', () {
+      // 😀 占两个 UTF-16 code unit，size=3 的边界恰好落在对中间。
+      const text = 'ab😀cd😁ef';
+      final chunks = chunkText(text, size: 3, overlap: 0);
+      expect(chunks, isNotEmpty);
+      for (final c in chunks) {
+        expect(text.substring(c.charStart, c.charEnd), c.text);
+        final first = c.text.codeUnitAt(0);
+        final last = c.text.codeUnitAt(c.text.length - 1);
+        // 首位不是孤低代理、末位不是孤高代理。
+        expect(first >= 0xDC00 && first <= 0xDFFF, isFalse);
+        expect(last >= 0xD800 && last <= 0xDBFF, isFalse);
+      }
+      expect(chunks.last.charEnd, text.length);
+    });
+
     test('overlap >= size is clamped so the loop always advances', () {
       final chunks = chunkText('abcdefgh', size: 4, overlap: 99);
       expect(chunks, isNotEmpty);
@@ -123,6 +139,62 @@ void main() {
       for (var i = 0; i < chunks.length; i++) {
         expect(chunks[i].unitIndex, i);
       }
+    });
+
+    test('prefers paragraph boundaries over hard cuts', () {
+      const p1 = '第一段的内容，讲知识库摄取。';
+      const p2 = '第二段的内容，讲切块策略。';
+      const text = '$p1\n\n$p2';
+      final chunks = chunkText(text, size: 20, overlap: 0);
+      expect(chunks, hasLength(2));
+      expect(chunks[0].text, '$p1\n\n');
+      expect(chunks[1].text, p2);
+    });
+
+    test('falls back to sentence boundaries when a paragraph is oversized',
+        () {
+      const text = '句子一很短。句子二也不长。句子三稍微长一点点。';
+      final chunks = chunkText(text, size: 12, overlap: 0);
+      // 每个切点都落在句末标点后，不会把句子腰斩。
+      for (final c in chunks.take(chunks.length - 1)) {
+        expect(c.text.endsWith('。'), isTrue, reason: '「${c.text}」');
+      }
+      expect(chunks.map((c) => c.text).join(), text);
+    });
+
+    test('does not treat ASCII decimals as sentence boundaries', () {
+      const text = 'Pi is 3.14 and version v1.2 works well. Next sentence '
+          'goes here.';
+      final chunks = chunkText(text, size: 45, overlap: 0);
+      expect(chunks, hasLength(2));
+      expect(chunks[0].text, 'Pi is 3.14 and version v1.2 works well. ');
+    });
+
+    test('greedily merges small units up to the target length', () {
+      const text = 'a。b。c。d。e。f。';
+      final chunks = chunkText(text, size: 6, overlap: 0);
+      expect(chunks, hasLength(2));
+      expect(chunks[0].text, 'a。b。c。');
+      expect(chunks[1].text, 'd。e。f。');
+    });
+
+    test('drops whitespace-only chunks', () {
+      const text = '内容。\n\n\n\n\n\n\n\n\n\n后续。';
+      final chunks = chunkText(text, size: 8, overlap: 0);
+      for (final c in chunks) {
+        expect(c.text.trim(), isNotEmpty);
+      }
+    });
+
+    test('keeps substring invariant with overlap on structured text', () {
+      const text = '第一句话在这里。第二句话也在这里。\n\n新的段落开始了。它还有第二句。';
+      final chunks = chunkText(text, size: 16, overlap: 4);
+      expect(chunks, isNotEmpty);
+      for (final c in chunks) {
+        expect(text.substring(c.charStart, c.charEnd), c.text);
+        expect(c.text.length, lessThanOrEqualTo(16));
+      }
+      expect(chunks.last.charEnd, text.length);
     });
   });
 
@@ -277,6 +349,52 @@ void main() {
       // The chunk covering both tokens (similarity 1.0) ranks first.
       expect(hits.first.content, contains('beta'));
       expect(hits.first.similarity, 1.0);
+    });
+
+    test('Chinese sentence query matches via bigram tokens', () async {
+      final base = await service.createBase(name: 'KB');
+      await service.addNote(
+        baseId: base.id,
+        title: '设置',
+        text: '可以在库设置里配置嵌入模型和检索模式。',
+      );
+      await service.addNote(
+        baseId: base.id,
+        title: '无关',
+        text: '今天天气不错，适合户外跑步。',
+      );
+
+      // 自然语言提问不含空格也不是原文子串，bigram 切分后仍能命中。
+      final hits = await service.search(
+        baseId: base.id,
+        query: '怎么配置嵌入模型',
+      );
+      expect(hits, isNotEmpty);
+      expect(hits.first.content, contains('嵌入模型'));
+      // 无关笔记不排第一。
+      expect(hits.first.content, isNot(contains('天气')));
+    });
+
+    test('LIKE wildcards in the query are treated literally', () async {
+      final base = await service.createBase(name: 'KB');
+      await service.addNote(
+        baseId: base.id,
+        title: 'a',
+        text: 'discount of 50% applies to everything.',
+      );
+      await service.addNote(
+        baseId: base.id,
+        title: 'b',
+        text: 'plain note about dart language.',
+      );
+
+      // `%` 作字面子串匹配，不是通配符。
+      final hits = await service.search(baseId: base.id, query: '50%');
+      expect(hits, hasLength(1));
+      expect(hits.single.content, contains('50%'));
+
+      // `_` 也不当单字符通配符：没有字面 `d_rt` 子串→无命中。
+      expect(await service.search(baseId: base.id, query: 'd_rt'), isEmpty);
     });
 
     test('search honours topK', () async {
@@ -871,6 +989,18 @@ void main() {
       expect(embedLog.last, ['dart']);
     });
 
+    test('query embedding is cached across bases sharing a model', () async {
+      final service = buildService();
+      final baseA = await seed(service, KnowledgeSearchMode.vector);
+      final baseB = await seed(service, KnowledgeSearchMode.vector);
+      final ingestBatches = embedLog.length;
+      await service.search(baseId: baseA.id, query: 'dart');
+      await service.search(baseId: baseB.id, query: 'dart');
+      // 同一 query 同模型只嵌一次（多库挂载时不重复调嵌入 API）。
+      expect(embedLog.length, ingestBatches + 1);
+      expect(embedLog.last, ['dart']);
+    });
+
     test('hybrid fuses keyword + vector rankings', () async {
       final service = buildService();
       final base = await seed(service, KnowledgeSearchMode.hybrid);
@@ -942,6 +1072,106 @@ void main() {
       final hits = await service.search(baseId: base.id, query: 'dart native');
       expect(hits, isNotEmpty);
       expect(hits.first.similarity, greaterThan(0));
+    });
+
+    KnowledgeService buildTwoModelService() {
+      final embedderA = _FakeEmbedder(const [
+        'dart',
+        'python',
+        'language',
+        'native',
+        'script',
+      ], embedLog);
+      final embedderB = _FakeEmbedder(const ['dart', 'python', 'code'], embedLog);
+      return KnowledgeService(
+        db.knowledgeDao,
+        embedderResolver: (key) async => switch (key) {
+          'model-a' => embedderA,
+          'model-b' => embedderB,
+          _ => null,
+        },
+      );
+    }
+
+    test('changeEmbeddingModel re-embeds with the new model and clears old '
+        'vectors', () async {
+      final service = buildTwoModelService();
+      final base = await seed(service, KnowledgeSearchMode.vector);
+
+      final count = await service.changeEmbeddingModel(
+        base.id,
+        embeddingModelKey: 'model-b',
+      );
+      expect(count, 2);
+
+      final updated = (await service.getBase(base.id))!;
+      expect(updated.embeddingModelKey, 'model-b');
+      // 新模型的维度重新探测（_FakeEmbedder 向量长度 == vocab 长度）。
+      expect(updated.dimensions, 3);
+      expect(updated.searchMode, KnowledgeSearchMode.vector);
+
+      // 旧模型（5 维）的向量已全部回收，只剩新模型（3 维）的向量。
+      final rows = await db.select(db.kbEmbeddingRows).get();
+      expect(rows, isNotEmpty);
+      expect(rows.every((r) => r.dimensions == 3), isTrue);
+
+      final hits = await service.search(baseId: base.id, query: 'dart');
+      expect(hits, isNotEmpty);
+      expect(hits.first.content.toLowerCase(), contains('dart'));
+    });
+
+    test('changeEmbeddingModel upgrades a keyword base to hybrid', () async {
+      final service = buildTwoModelService();
+      final base = await service.createBase(name: 'KB');
+      await service.addNote(
+        baseId: base.id,
+        title: 'Dart',
+        text: 'Dart compiles to native code.',
+      );
+      expect(base.searchMode, KnowledgeSearchMode.keyword);
+
+      await service.changeEmbeddingModel(
+        base.id,
+        embeddingModelKey: 'model-a',
+      );
+      final updated = (await service.getBase(base.id))!;
+      expect(updated.embeddingModelKey, 'model-a');
+      expect(updated.searchMode, KnowledgeSearchMode.hybrid);
+      expect(updated.dimensions, 5);
+      expect(await db.select(db.kbEmbeddingRows).get(), isNotEmpty);
+    });
+
+    test('changeEmbeddingModel rejects a blank model key', () async {
+      final service = buildTwoModelService();
+      final base = await seed(service, KnowledgeSearchMode.vector);
+      expect(
+        () => service.changeEmbeddingModel(base.id, embeddingModelKey: '  '),
+        throwsStateError,
+      );
+    });
+
+    test('changeEmbeddingModel restores a base whose model is unavailable',
+        () async {
+      final service = buildTwoModelService();
+      final base = await seed(service, KnowledgeSearchMode.vector);
+
+      // 换到解析不到的模型：向量清空、切块进入待补状态（库级坏状态）。
+      await service.changeEmbeddingModel(
+        base.id,
+        embeddingModelKey: 'model-gone',
+      );
+      expect(await db.select(db.kbEmbeddingRows).get(), isEmpty);
+      expect(await service.pendingEmbeddingCount(base.id), greaterThan(0));
+      expect((await service.getBase(base.id))!.dimensions, isNull);
+
+      // 换回可用模型即整库重建恢复（对齐 CS 的 RestoreKnowledgeBaseDialog）。
+      await service.changeEmbeddingModel(
+        base.id,
+        embeddingModelKey: 'model-a',
+      );
+      expect(await service.pendingEmbeddingCount(base.id), 0);
+      expect(await db.select(db.kbEmbeddingRows).get(), isNotEmpty);
+      expect((await service.getBase(base.id))!.dimensions, 5);
     });
 
     test('deleteItem GCs orphaned embeddings but keeps shared ones', () async {

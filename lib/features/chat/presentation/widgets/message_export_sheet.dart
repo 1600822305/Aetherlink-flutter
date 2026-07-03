@@ -7,10 +7,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import 'package:aetherlink_flutter/app/di/notion_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
@@ -44,17 +46,17 @@ Future<void> showMessageExportSheet(
 // Export sheet widget
 // ---------------------------------------------------------------------------
 
-class _ExportSheet extends StatefulWidget {
+class _ExportSheet extends ConsumerStatefulWidget {
   const _ExportSheet({required this.messages, this.topicTitle});
 
   final List<ChatMessageView> messages;
   final String? topicTitle;
 
   @override
-  State<_ExportSheet> createState() => _ExportSheetState();
+  ConsumerState<_ExportSheet> createState() => _ExportSheetState();
 }
 
-class _ExportSheetState extends State<_ExportSheet> {
+class _ExportSheetState extends ConsumerState<_ExportSheet> {
   bool _showThinkingAndTools = false;
   bool _expandThinking = false;
   bool _exporting = false;
@@ -178,6 +180,16 @@ class _ExportSheetState extends State<_ExportSheet> {
                   label: '分享',
                   onTap: _shareText,
                 ),
+                if (ref.watch(
+                  notionSettingsProvider.select((s) => s.isConfigured),
+                )) ...[
+                  const SizedBox(width: 8),
+                  _QuickActionChip(
+                    icon: LucideIcons.databaseZap,
+                    label: 'Notion',
+                    onTap: _exportToNotion,
+                  ),
+                ],
               ],
             ),
           ],
@@ -347,6 +359,36 @@ class _ExportSheetState extends State<_ExportSheet> {
     } catch (_) {
       await Clipboard.setData(ClipboardData(text: content));
       _toast('已复制到剪贴板');
+    }
+  }
+
+  Future<void> _exportToNotion() async {
+    if (_exporting) return;
+    final content = _buildMarkdown().trim();
+    if (content.isEmpty) {
+      _toast('没有可导出的内容');
+      return;
+    }
+    setState(() => _exporting = true);
+    try {
+      final settings = ref.read(notionSettingsProvider);
+      final title = widget.topicTitle?.trim();
+      await ref
+          .read(notionExportServiceProvider)
+          .exportMarkdown(
+            settings: settings,
+            title: title == null || title.isEmpty ? '对话导出' : title,
+            markdown: content,
+            date: DateTime.now(),
+          );
+      if (mounted) {
+        Navigator.of(context).pop();
+        _toast('已导出到 Notion');
+      }
+    } catch (e) {
+      _toast('导出失败：$e');
+    } finally {
+      if (mounted) setState(() => _exporting = false);
     }
   }
 

@@ -904,6 +904,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "9.4.1"
+  office_to_markdown:
+    dependency: "direct main"
+    description:
+      path: "packages/office_to_markdown"
+      relative: true
+    source: path
+    version: "0.1.0"
   package_config:
     dependency: transitive
     description:
@@ -984,31 +991,14 @@ packages:
     source: path
     version: "0.1.0"
   pdfium_dart:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: pdfium_dart
-      sha256: "86e95c66b09f3245b95c4924f2edce8d4f7c9786876e5c5ee8e36b104a94bbb0"
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/pdfium_dart"
+      relative: true
+    source: path
     version: "0.2.5"
-  pdfium_flutter:
-    dependency: transitive
-    description:
-      name: pdfium_flutter
-      sha256: "420ba8e7673b54da387ceeeb18a72c8bc6e4452128dbb391dca900c748f9e9ba"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.2"
-  pdfrx:
-    dependency: "direct main"
-    description:
-      name: pdfrx
-      sha256: e0ca318004c3f32144db8e74fa612abb80ebe79004677293af74ed9af119f47f
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.4.4"
   pdfrx_engine:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: pdfrx_engine
       sha256: "89865e158ced818690ab207a13a34a65803cd67ee1bec9f5f87838eb5a79600b"

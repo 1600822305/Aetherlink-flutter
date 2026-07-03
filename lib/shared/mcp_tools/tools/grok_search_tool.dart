@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/tools/tool_helpers.dart';
+import 'package:aetherlink_flutter/shared/utils/api_host.dart';
 
 /// `@aether/grok-search` tool execution (`web_search`) — uses xAI's native
 /// `search_parameters` in `/v1/chat/completions` for real-time web search.
@@ -61,12 +62,10 @@ Future<McpToolResult> runGrokSearchTool(
   try {
     // Build endpoint
     var endpoint = apiUrl;
-    if (!endpoint.endsWith('/v1/chat/completions')) {
-      if (endpoint.endsWith('/')) {
-        endpoint += 'v1/chat/completions';
-      } else {
-        endpoint += '/v1/chat/completions';
-      }
+    if (!endpoint.endsWith('/chat/completions')) {
+      final base = formatApiHost(endpoint);
+      endpoint = '${base.isEmpty ? 'https://api.x.ai/v1' : base}'
+          '/chat/completions';
     }
 
     final requestBody = jsonEncode({

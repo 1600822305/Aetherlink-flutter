@@ -141,11 +141,20 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
   /// 摄取一个工作区目录（type=workspace）：遍历目录下文本文件逐个建索引，并记录来源
   /// 指纹供 staleness 检测。遍历 + 读文件由服务层注入的工作区源完成；失败抛异常交由
   /// UI 提示。返回成功摄取的条目数。
-  Future<int> addWorkspace({required String workspaceId}) async {
+  Future<int> addWorkspace({
+    required String workspaceId,
+    void Function(int done, int total, String fileName)? onProgress,
+    bool Function()? shouldCancel,
+  }) async {
     if (workspaceId.trim().isEmpty) return 0;
     final items = await ref
         .read(knowledgeServiceProvider)
-        .addWorkspace(baseId: baseId, workspaceId: workspaceId);
+        .addWorkspace(
+          baseId: baseId,
+          workspaceId: workspaceId,
+          onProgress: onProgress,
+          shouldCancel: shouldCancel,
+        );
     ref.invalidateSelf();
     await future;
     ref.invalidate(knowledgeBasesControllerProvider);
@@ -153,8 +162,10 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
   }
 
   /// 从已存正文原子重建整库派生索引（切块 + 向量），返回重建覆盖的条目数。
-  Future<int> refresh() async {
-    final count = await ref.read(knowledgeServiceProvider).reindexBase(baseId);
+  Future<int> refresh({void Function(int done, int total)? onProgress}) async {
+    final count = await ref
+        .read(knowledgeServiceProvider)
+        .reindexBase(baseId, onProgress: onProgress);
     ref.invalidateSelf();
     await future;
     return count;
@@ -162,9 +173,7 @@ class KnowledgeItemsController extends _$KnowledgeItemsController {
 
   /// 重建单个条目的派生索引（功能缺口⑪），返回重建出的切块数。
   Future<int> reindexItem(String itemId) async {
-    final count = await ref
-        .read(knowledgeServiceProvider)
-        .reindexItem(itemId);
+    final count = await ref.read(knowledgeServiceProvider).reindexItem(itemId);
     ref.invalidate(knowledgeItemChunksProvider(itemId));
     ref.invalidate(knowledgePendingEmbeddingCountProvider(baseId));
     return count;
@@ -237,13 +246,38 @@ class KnowledgeBaseController extends _$KnowledgeBaseController {
     await future;
   }
 
-  /// 更新库的可编辑配置（名称 + RAG 参数）。名称同时显示在列表页，一并刷新。
+  /// 更换嵌入模型并整库重建向量索引（建库后换模型 / 库级恢复重建）。
+  /// 返回重建覆盖的条目数。
+  Future<int> changeEmbeddingModel(
+    String embeddingModelKey, {
+    KnowledgeSearchMode? searchMode,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final count = await ref
+        .read(knowledgeServiceProvider)
+        .changeEmbeddingModel(
+          baseId,
+          embeddingModelKey: embeddingModelKey,
+          searchMode: searchMode,
+          onProgress: onProgress,
+        );
+    ref.invalidateSelf();
+    await future;
+    ref.invalidate(knowledgeBasesControllerProvider);
+    ref.invalidate(knowledgeItemsControllerProvider(baseId));
+    ref.invalidate(knowledgePendingEmbeddingCountProvider(baseId));
+    return count;
+  }
+
+  /// 更新库的可编辑配置（名称 + RAG 参数 + 可选检索模式）。名称同时显示在
+  /// 列表页，一并刷新。
   Future<void> updateConfig({
     required String name,
     required int chunkSize,
     required int chunkOverlap,
     required int topK,
     required double? threshold,
+    KnowledgeSearchMode? searchMode,
   }) async {
     await ref
         .read(knowledgeServiceProvider)
@@ -254,6 +288,7 @@ class KnowledgeBaseController extends _$KnowledgeBaseController {
           chunkOverlap: chunkOverlap,
           topK: topK,
           threshold: threshold,
+          searchMode: searchMode,
         );
     ref.invalidateSelf();
     await future;

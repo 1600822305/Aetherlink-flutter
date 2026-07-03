@@ -95,7 +95,14 @@ dependencies:
   # 基于 pdfrx_engine（PDFium，BSD-3）；pdfrx 插件负责各平台打包 PDFium 原生库。
   pdf_to_markdown:
     path: packages/pdf_to_markdown
-  pdfrx: ^2.4.4
+  # 知识库本地解析轨（同上 §5.2，功能缺口④）：纯 Dart PPTX / XLSX / EPUB →
+  # Markdown 转换（仅依赖 archive+xml，可在 isolate 跑）。
+  office_to_markdown:
+    path: packages/office_to_markdown
+  # 知识库 PDF 本地解析的纯 Dart 引擎层（FFI 绑定 + 文本提取）。注意：不再依赖
+  # pdfrx 插件，libpdfium.so 不打进安装包，而是首次使用时云端下载或手动
+  # 导入（见 pdfium_engine_manager.dart 与 packages/pdfium_dart 的说明）。
+  pdfrx_engine: ^0.4.3
   scrollview_observer: ^1.27.0
   # Voice feature: TTS + ASR
   flutter_tts:
@@ -125,6 +132,12 @@ dependencies:
   # transitive dep), so generated keys are byte-compatible with SSHKeyPair.fromPem.
   # Pinned to the resolved transitive version.
   pinenacl: 0.6.0
+
+dependency_overrides:
+  # 用 vendored 副本覆盖 pdfrx_engine 的传递依赖：去掉了上游的 native-asset
+  # 构建钩子，避免 PDFium 原生库（arm64 约 6MB）被打进安装包。
+  pdfium_dart:
+    path: packages/pdfium_dart
 
 dev_dependencies:
   flutter_test:

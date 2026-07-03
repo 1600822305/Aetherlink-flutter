@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/engines/tts_audio_utils.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/engines/tts_engine.dart';
 import 'package:aetherlink_flutter/features/voice/domain/tts_provider_setting.dart';
+import 'package:aetherlink_flutter/shared/utils/api_host.dart';
 
 /// OpenAI-compatible TTS (`/audio/speech`).
 class OpenAiTtsEngine extends TtsEngine {
@@ -17,7 +18,12 @@ class OpenAiTtsEngine extends TtsEngine {
     required Dio dio,
     CancelToken? cancelToken,
   }) async {
-    final url = joinUrl(provider.baseUrl, '/audio/speech');
+    final url = joinUrl(
+      formatApiHost(provider.baseUrl.isEmpty
+          ? 'https://api.openai.com/v1'
+          : provider.baseUrl),
+      '/audio/speech',
+    );
     final format = provider.outputFormat.isNotEmpty
         ? provider.outputFormat
         : 'mp3';

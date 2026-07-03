@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/engines/tts_audio_utils.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/engines/tts_engine.dart';
 import 'package:aetherlink_flutter/features/voice/domain/tts_provider_setting.dart';
+import 'package:aetherlink_flutter/shared/utils/api_host.dart';
 
 /// Groq PlayAI TTS — OpenAI-compatible endpoint.
 class GroqTtsEngine extends TtsEngine {
@@ -17,7 +18,12 @@ class GroqTtsEngine extends TtsEngine {
     required Dio dio,
     CancelToken? cancelToken,
   }) async {
-    final url = joinUrl(provider.baseUrl, '/audio/speech');
+    final url = joinUrl(
+      formatApiHost(provider.baseUrl.isEmpty
+          ? 'https://api.groq.com/openai/v1'
+          : provider.baseUrl),
+      '/audio/speech',
+    );
     final format = provider.audioFormat.isNotEmpty
         ? provider.audioFormat
         : 'wav';
