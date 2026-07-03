@@ -62,8 +62,6 @@ Future<McpToolResult> runDexEditorTool(
         return await _outlineClass(dex, args);
       case 'dex_rename_class':
         return await _renameClass(dex, args);
-      case 'dex_list_strings':
-        return await _listStrings(dex, args);
       case 'dex_find_method_xrefs':
         return await _findMethodXrefs(dex, args);
       case 'dex_find_field_xrefs':
@@ -92,18 +90,12 @@ Future<McpToolResult> runDexEditorTool(
         return await _setResourceValue(dex, args);
       case 'apk_list_files':
         return await _listApkFiles(dex, args);
-      case 'apk_search_text':
-        return await _searchTextInApk(dex, args);
       case 'apk_read_file':
         return await _readApkFile(dex, args);
       case 'apk_delete_file':
         return await _deleteApkFile(dex, args);
       case 'apk_add_file':
         return await _addApkFile(dex, args);
-      case 'apk_search_arsc':
-        return await _searchArsc(dex, args);
-      case 'apk_search_manifest_cpp':
-        return await _searchManifestCpp(dex, args);
       case 'apk_parse_arsc_cpp':
         return await _parseArscCpp(dex, args);
       case 'attempt_completion':
@@ -402,9 +394,45 @@ Future<McpToolResult> _listClasses(
   }));
 }
 
+/// Unified search entry. `target` selects the backend so callers no longer need
+/// to remember a separate tool per search surface:
+///  - `dex`（默认）：已打开会话内的 DEX 搜索（按 searchType 区分类/方法/字符串…）；
+///  - `strings`：DEX 字符串池（等价旧 dex_list_strings）；
+///  - `files`：APK 内文本文件搜索（等价旧 apk_search_text）；
+///  - `arsc`：resources.arsc 搜索（等价旧 apk_search_arsc，arscTarget 区分 strings/resources）；
+///  - `manifest`：AndroidManifest 属性/值搜索（等价旧 apk_search_manifest_cpp）。
+///
+/// dex/strings 走会话（sessionId，也接受 apkPath）；files/arsc/manifest 走 apkPath。
+/// 各 target 复用既有专用 handler，行为与旧工具一致；旧工具仍保留向后兼容。
 Future<McpToolResult> _search(DexEditor dex, Map<String, Object?> args) async {
+  final target = _str(args['target']).isEmpty ? 'dex' : _str(args['target']);
+  switch (target) {
+    case 'strings':
+      return _listStrings(dex, args);
+    case 'files':
+      return _searchTextInApk(dex, _withPattern(args));
+    case 'arsc':
+      return _searchArsc(dex, _withArscTarget(_withPattern(args)));
+    case 'manifest':
+      return _searchManifestCpp(dex, args);
+    case 'dex':
+      break;
+    default:
+      return McpToolResult(
+        '错误: 未知的 target "$target"（可选 dex/strings/files/arsc/manifest）',
+        isError: true,
+      );
+  }
+
   final query = _str(args['query']);
   final searchType = _str(args['searchType']);
+  if (searchType.isEmpty) {
+    return const McpToolResult(
+      '错误: target=dex 时需要 searchType（class/package/method/field/string/int/code/'
+      'superclass/interface/annotation）',
+      isError: true,
+    );
+  }
   final result = await dex.execute('searchInDexSession', {
     'sessionId': _sessionArg(args),
     'query': query,
@@ -428,6 +456,23 @@ Future<McpToolResult> _search(DexEditor dex, Map<String, Object?> args) async {
     'total': data['total'] ?? 0,
     'results': results,
   }));
+}
+
+/// 统一入口用 `query` 表达搜索词；apk 系列专用 handler 读的是 `pattern`。
+/// 当只给了 query 时补一个 pattern，二者都在时不覆盖，保持旧工具直连兼容。
+Map<String, Object?> _withPattern(Map<String, Object?> args) {
+  if (_str(args['pattern']).isNotEmpty || _str(args['query']).isEmpty) {
+    return args;
+  }
+  return {...args, 'pattern': args['query']};
+}
+
+/// arsc target 的子目标参数：统一入口用 `arscTarget`（避免与顶层 target 冲突），
+/// _searchArsc 读的是 `target`；这里把 arscTarget 映射过去。
+Map<String, Object?> _withArscTarget(Map<String, Object?> args) {
+  final arscTarget = _str(args['arscTarget']);
+  if (arscTarget.isEmpty) return args;
+  return {...args, 'target': arscTarget};
 }
 
 Future<McpToolResult> _getClass(
