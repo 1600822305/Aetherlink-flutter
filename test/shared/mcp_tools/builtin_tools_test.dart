@@ -333,6 +333,8 @@ void main() {
         '@aether/fetch',
         '@aether/metaso-search',
         '@aether/grok-search',
+        // 原生 dex_editor 插件也在进程内运行（无需 Riverpod Ref）。
+        '@aether/dex-editor',
       });
     });
 
@@ -349,6 +351,21 @@ void main() {
       expect(schema['required'], containsAll(['sessionId', 'methodName']));
       expect(schema['required'], isNot(contains('resolution')));
       expect(schema['required'], isNot(contains('methodSignature')));
+    });
+
+    test('dex_find_field_xrefs exposes fieldType + access filtering', () {
+      final tool = kBuiltinMcpTools['@aether/dex-editor']!
+          .firstWhere((t) => t.name == 'dex_find_field_xrefs');
+      final schema = tool.inputSchema;
+      final props = schema['properties'] as Map<String, Object?>;
+      // 新增可选参数：区分同名字段 + 读/写过滤。
+      expect(props.keys, containsAll(['fieldType', 'access']));
+      final access = props['access'] as Map<String, Object?>;
+      expect(access['enum'], containsAll(['read', 'write', 'all']));
+      // 向后兼容：className 仍可选、fieldName 必填（sessionId 也必填）。
+      expect(schema['required'], containsAll(['sessionId', 'fieldName']));
+      expect(schema['required'], isNot(contains('access')));
+      expect(schema['required'], isNot(contains('fieldType')));
     });
 
     test('file-editor exposes run_command requiring a command (SSH-3)', () {
