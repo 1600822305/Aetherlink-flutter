@@ -1379,6 +1379,14 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
+      name: 'dex_save_all',
+      description:
+          '一次性编译并保存所有有改动的 DEX 编辑会话到各自 APK（逆向常同时改多个会话时用）。'
+          '无需传 sessionId；逐会话保存，单个失败不影响其余，返回每个会话的 saved/skipped/failed 结果。'
+          '保存后的 APK 仍需用户自行签名。',
+      inputSchema: {'type': 'object', 'properties': <String, Object?>{}},
+    ),
+    McpToolDefinition(
       name: 'dex_close',
       description: '关闭 DEX 编辑会话，释放资源',
       inputSchema: {

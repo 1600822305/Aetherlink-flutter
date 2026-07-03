@@ -552,6 +552,10 @@ public class DexActionDispatcher {
                 ));
                 break;
 
+            case "saveAllDexToApk":
+                result.put("data", dexManager.saveAllSessionsToApk());
+                break;
+
             case "closeMultiDexSession":
                 dexManager.closeMultiDexSession(params.getString("sessionId"));
                 break;

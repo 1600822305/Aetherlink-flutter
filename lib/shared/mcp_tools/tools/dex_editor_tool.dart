@@ -34,6 +34,8 @@ Future<McpToolResult> runDexEditorTool(
         return await _modifyClass(dex, args);
       case 'dex_save':
         return await _save(dex, args);
+      case 'dex_save_all':
+        return await _saveAll(dex);
       case 'dex_close':
         return await _close(dex, args);
       case 'dex_list_sessions':
@@ -421,6 +423,26 @@ Future<McpToolResult> _save(DexEditor dex, Map<String, Object?> args) async {
     return McpToolResult('保存失败: ${result.error}', isError: true);
   }
   return const McpToolResult('✅ DEX 已编译并保存到 APK。\n\n⚠️ APK 需要重新签名才能安装。请用户自行签名。');
+}
+
+Future<McpToolResult> _saveAll(DexEditor dex) async {
+  final result = await dex.execute('saveAllDexToApk', const {});
+  if (!result.success) {
+    return McpToolResult('保存失败: ${result.error}', isError: true);
+  }
+  final data = _map(result.data);
+  final saved = _int(data['saved']);
+  final skipped = _int(data['skipped']);
+  final failed = _int(data['failed']);
+  final summary =
+      '批量保存完成：已保存 $saved 个，跳过 $skipped 个，失败 $failed 个。\n${encodeJson(data)}';
+  if (failed > 0) {
+    return McpToolResult(summary, isError: true);
+  }
+  if (saved == 0) {
+    return McpToolResult('没有需要保存的会话（$skipped 个无改动）。\n${encodeJson(data)}');
+  }
+  return McpToolResult('✅ $summary\n\n⚠️ 修改后的 APK 需要重新签名才能安装。');
 }
 
 Future<McpToolResult> _close(DexEditor dex, Map<String, Object?> args) async {
