@@ -133,12 +133,39 @@ int _int(Object? value, [int fallback = 0]) => asIntOr(value, fallback);
 
 bool _bool(Object? value) => value == true;
 
-/// Normalizes `Lcom/example/Foo;` → `com.example.Foo`; leaves dotted names.
+/// Normalizes a class name to dotted form (`com.example.Foo`), accepting every
+/// format the tools might see or the model might pass:
+///  - type descriptor `Lcom/example/Foo;` → `com.example.Foo`
+///  - slash form `com/example/Foo` → `com.example.Foo`
+///  - already-dotted `com.example.Foo` → unchanged
+/// Array/primitive descriptors (e.g. `[Lcom/x/Y;`) are left untouched.
 String _normalizeClassName(String className) {
   if (className.startsWith('L') && className.endsWith(';')) {
     return className.substring(1, className.length - 1).replaceAll('/', '.');
   }
+  // Bare slash form → dotted; dotted names have nothing to convert.
+  if (!className.contains('.') && className.contains('/')) {
+    return className.replaceAll('/', '.');
+  }
   return className;
+}
+
+/// Returns a copy of [items] (a list of native result maps) with the given
+/// class-name [keys] normalized to dotted form via [_normalizeClassName], so
+/// `dex_search` / `dex_list_classes` output matches what the other tools echo
+/// and accept. Non-map entries and missing/empty keys are passed through.
+List<Object?> _normalizeClassFields(List<Object?> items, List<String> keys) {
+  return items.map((item) {
+    if (item is! Map) return item;
+    final normalized = _map(item);
+    for (final key in keys) {
+      final value = normalized[key];
+      if (value is String && value.isNotEmpty) {
+        normalized[key] = _normalizeClassName(value);
+      }
+    }
+    return normalized;
+  }).toList();
 }
 
 /// Slices [text] by UTF-16 code units, but never splits a surrogate pair.
@@ -342,8 +369,9 @@ Future<McpToolResult> _listClasses(
     return McpToolResult('错误: ${result.error}', isError: true);
   }
   final data = _map(result.data);
-  final classes =
-      data['classes'] is List ? data['classes'] as List : const <Object?>[];
+  final classes = data['classes'] is List
+      ? _normalizeClassFields(data['classes'] as List, const ['className'])
+      : const <Object?>[];
   final hasMore = data['hasMore'] == true;
   return McpToolResult(encodeJson({
     'total': data['total'] ?? 0,
@@ -371,11 +399,17 @@ Future<McpToolResult> _search(DexEditor dex, Map<String, Object?> args) async {
     return McpToolResult('错误: ${result.error}', isError: true);
   }
   final data = _map(result.data);
+  final results = data['results'] is List
+      ? _normalizeClassFields(
+          data['results'] as List,
+          const ['className', 'superclass', 'interface', 'annotation'],
+        )
+      : const <Object?>[];
   return McpToolResult(encodeJson({
     'query': query,
     'searchType': searchType,
     'total': data['total'] ?? 0,
-    'results': data['results'] ?? [],
+    'results': results,
   }));
 }
 
