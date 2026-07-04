@@ -118,6 +118,17 @@ const List<McpServer> kBuiltinMcpServers = [
     tags: ['设置', '管理', 'AI', '工具'],
   ),
   McpServer(
+    id: 'builtin-terminal',
+    name: '@aether/terminal',
+    type: McpServerType.inMemory,
+    category: McpServerCategory.builtin,
+    description:
+        '内置终端工具，让 AI 在应用内置的 Alpine Linux 沙箱（PRoot，免 Root 零依赖）里执行命令：'
+        '一次性执行、长驻会话管理（新建/列出/回看/关闭）。命令执行前会请用户确认。',
+    provider: 'AetherAI',
+    tags: ['终端', 'Linux', '命令', '沙箱', 'AI', '工具'],
+  ),
+  McpServer(
     id: 'builtin-knowledge',
     name: '@aether/knowledge',
     type: McpServerType.inMemory,

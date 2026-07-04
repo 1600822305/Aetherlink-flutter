@@ -69,6 +69,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_bridge_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_prompt.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
@@ -2469,7 +2470,9 @@ class ChatController extends _$ChatController {
                 (route is _FileEditorToolRoute &&
                     fileEditorNeedsConfirmation(call.name)) ||
                 (route is _KnowledgeToolRoute &&
-                    knowledgeToolNeedsConfirmation(call.name, args));
+                    knowledgeToolNeedsConfirmation(call.name, args)) ||
+                (route is _TerminalToolRoute &&
+                    terminalToolNeedsConfirmation(call.name));
 
             // `run_command` can be aborted mid-flight: register a cancel signal
             // (keyed by this block) before running so the block's 中断 button
@@ -4247,6 +4250,9 @@ class ChatController extends _$ChatController {
     if (serverName == kKnowledgeServerName) {
       return _KnowledgeToolRoute(toolName);
     }
+    if (serverName == kTerminalServerName) {
+      return _TerminalToolRoute(toolName);
+    }
     return _SettingsToolRoute(toolName);
   }
 
@@ -4327,6 +4333,13 @@ class ChatController extends _$ChatController {
         return _runMemorySearch(args);
       case _KnowledgeToolRoute():
         return await runKnowledgeTool(ref, route.toolName, args);
+      case _TerminalToolRoute():
+        return await runTerminalTool(
+          ref,
+          route.toolName,
+          args,
+          cancelSignal: cancelSignal,
+        );
     }
   }
 
@@ -4471,9 +4484,16 @@ class ChatController extends _$ChatController {
       );
     }
     if (kRefDependentBuiltins.contains(server.name)) {
-      return server.name == kFileEditorServerName
-          ? await runFileEditorTool(ref, toolName, toolArgs)
-          : await runSettingsTool(ref, toolName, toolArgs);
+      if (server.name == kFileEditorServerName) {
+        return await runFileEditorTool(ref, toolName, toolArgs);
+      }
+      if (server.name == kKnowledgeServerName) {
+        return await runKnowledgeTool(ref, toolName, toolArgs);
+      }
+      if (server.name == kTerminalServerName) {
+        return await runTerminalTool(ref, toolName, toolArgs);
+      }
+      return await runSettingsTool(ref, toolName, toolArgs);
     }
     if (kLocallyRunnableBuiltins.contains(server.name)) {
       return await runBuiltinTool(
@@ -4924,6 +4944,12 @@ class _FileEditorToolRoute extends _ToolRoute {
 /// in-process with [Ref] access. Write ops (kb_manage) go through HITL.
 class _KnowledgeToolRoute extends _ToolRoute {
   const _KnowledgeToolRoute(super.toolName);
+}
+
+/// A `@aether/terminal` tool (terminal_execute / terminal_session_*), run
+/// in-process with [Ref] access. Command execution goes through HITL.
+class _TerminalToolRoute extends _ToolRoute {
+  const _TerminalToolRoute(super.toolName);
 }
 
 /// A tool run in-process by [runBuiltinTool] (calculator / time / searxng).

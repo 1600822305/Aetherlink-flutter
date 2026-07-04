@@ -1,3 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
   package="com.example.aetherlink.aetherlink_terminal">
+
+  <!-- 前台服务保活：PTY 会话运行期间保持进程（含 proot ptrace 子进程链）存活。
+       Android 14+ 要求声明 foregroundServiceType 及对应权限（设计文档 §2.3）。 -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+  <application>
+    <service
+      android:name=".TerminalForegroundService"
+      android:exported="false"
+      android:foregroundServiceType="dataSync" />
+  </application>
 </manifest>
