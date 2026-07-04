@@ -153,7 +153,7 @@ class _AssistantTabState extends ConsumerState<AssistantTab> {
                     SidebarPillButton(
                       icon: LucideIcons.plus,
                       label: '添加助手',
-                      onPressed: () => showAddAssistantDialog(context, ref),
+                      onPressed: () => showCreateAssistantDialog(context),
                     ),
                   ],
                 ),
