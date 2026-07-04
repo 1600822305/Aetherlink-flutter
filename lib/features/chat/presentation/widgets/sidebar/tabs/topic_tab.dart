@@ -182,7 +182,14 @@ class _TopicTabState extends ConsumerState<TopicTab> {
                                   ),
                                   if (g.expanded)
                                     for (final id in g.items)
-                                      if (byId[id] != null) item(byId[id]!),
+                                      if (byId[id] != null)
+                                        _TopicItem(
+                                          topic: byId[id]!,
+                                          selected: selectedTopicId == id,
+                                          canMove: multipleAssistants,
+                                          onSelect: () => _selectTopic(id),
+                                          groupId: g.id,
+                                        ),
                                 ],
                               ),
                           ],
@@ -212,6 +219,7 @@ class _TopicTabState extends ConsumerState<TopicTab> {
 
 enum _TopicMenu {
   addToGroup,
+  removeFromGroup,
   rename,
   togglePin,
   clearMessages,
@@ -226,12 +234,14 @@ class _TopicItem extends ConsumerWidget {
     required this.selected,
     required this.canMove,
     required this.onSelect,
+    this.groupId,
   });
 
   final Topic topic;
   final bool selected;
   final bool canMove;
   final VoidCallback onSelect;
+  final String? groupId;
 
   Future<void> _onMenu(
     BuildContext context,
@@ -249,6 +259,12 @@ class _TopicItem extends ConsumerWidget {
           assistantId: assistantId,
           itemId: topic.id,
         );
+      case _TopicMenu.removeFromGroup:
+        if (groupId != null) {
+          await ref
+              .read(groupsProvider.notifier)
+              .removeItemFromGroup(groupId!, topic.id);
+        }
       case _TopicMenu.rename:
         final name = await promptText(
           context,
@@ -413,6 +429,12 @@ class _TopicItem extends ConsumerWidget {
                               LucideIcons.folderPlus,
                               '添加到分组',
                             ),
+                            if (groupId != null)
+                              const SidebarSheetAction(
+                                _TopicMenu.removeFromGroup,
+                                LucideIcons.folderMinus,
+                                '移出分组',
+                              ),
                             const SidebarSheetAction(
                               _TopicMenu.rename,
                               LucideIcons.edit3,
