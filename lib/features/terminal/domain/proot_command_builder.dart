@@ -36,6 +36,7 @@ class ProotCommandBuilder {
     this.loader32Path,
     required this.rootfsPath,
     required this.tmpDirPath,
+    this.extraBinds = const [],
   });
 
   /// jniLibs 里的 libproot.so 绝对路径。
@@ -52,6 +53,10 @@ class ProotCommandBuilder {
 
   /// PRoot 的临时目录（SELinux 禁止用 /tmp，必须是应用私有目录）。
   final String tmpDirPath;
+
+  /// 附加绑定挂载（`宿主路径:guest路径`），如手机存储
+  /// `/storage/emulated/0:/sdcard`。
+  final List<String> extraBinds;
 
   /// 组装在 rootfs 里执行 [command] 的完整调用。[workingDirectory] 是 guest
   /// 侧路径（缺省 /root）。
@@ -73,6 +78,7 @@ class ProotCommandBuilder {
         '-b', '/dev',
         '-b', '/proc',
         '-b', '/sys',
+        for (final bind in extraBinds) ...['-b', bind],
         '/usr/bin/env', '-i',
         ...kProotGuestEnv,
         ...command,

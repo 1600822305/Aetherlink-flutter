@@ -71,6 +71,22 @@ void main() {
       ]);
     });
 
+    test('extraBinds 追加绑定挂载（手机存储 /sdcard）', () {
+      const withSdcard = ProotCommandBuilder(
+        prootPath: '/lib/libproot.so',
+        loaderPath: '/lib/libproot_loader.so',
+        rootfsPath: '/rootfs',
+        tmpDirPath: '/tmp-dir',
+        extraBinds: ['/storage/emulated/0:/sdcard'],
+      );
+      final cmd = withSdcard.build();
+      expect(
+        cmd.arguments,
+        containsAllInOrder(['-b', '/storage/emulated/0:/sdcard']),
+      );
+      expect(cmd.arguments.where((a) => a == '-b').length, 4);
+    });
+
     test('空工作目录回退到 /root', () {
       final cmd = builder.build(workingDirectory: '');
       expect(cmd.arguments, containsAllInOrder(['-w', '/root']));
