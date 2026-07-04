@@ -48,6 +48,20 @@ class _WorkspaceTerminalPageState
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    // 内置终端是本地进程，进页面直接启动；SSH/Termux 保持显式点按，
+    // 避免一进工作区就悄悄开远程通道。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _connected || _connecting) return;
+      final workspace = ref.read(currentWorkspaceProvider);
+      if (workspace?.backendType == WorkspaceBackendType.prootLocal) {
+        _connect();
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _outSub?.cancel();
     _session?.close();
