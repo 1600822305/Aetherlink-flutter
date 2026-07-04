@@ -76,7 +76,8 @@ class SidebarSettingsController extends _$SidebarSettingsController
   void setCopyableCodeBlocks(bool value) =>
       persist(state.copyWith(copyableCodeBlocks: value));
 
-  /// Toggles 渲染用户输入 (persisted; chat-view effect 即将支持).
+  /// Toggles 渲染用户输入 (wired: [MainTextBlockView] falls back to plain
+  /// selectable text for user messages when off).
   void setRenderUserInputAsMarkdown(bool value) =>
       persist(state.copyWith(renderUserInputAsMarkdown: value));
 

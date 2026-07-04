@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/context_condense_service.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
@@ -25,9 +26,10 @@ String cleanMainText(String content) =>
 
 /// Renders a `MAIN_TEXT` block as Markdown, mirroring `MainTextBlock.tsx`.
 ///
-/// `renderUserInputAsMarkdown` defaults to true in the original, so user and
-/// assistant text both render as Markdown. Returns nothing when the content is
-/// empty after trimming.
+/// User messages honor the 「渲染用户输入」 setting
+/// (`renderUserInputAsMarkdown`): when off they are shown as plain selectable
+/// text; assistant text always renders as Markdown. Returns nothing when the
+/// content is empty after trimming.
 ///
 /// Before rendering, the current assistant's 正则规则 are applied for display
 /// (all rules, including `visualOnly`), scoped by [role] — the port of the web
@@ -65,12 +67,25 @@ class MainTextBlockView extends ConsumerWidget {
     }
 
     final theme = Theme.of(context);
+    final textStyle = theme.textTheme.bodyMedium?.copyWith(
+      color: textColor,
+      height: 1.6,
+    );
+
+    if (role == MessageRole.user) {
+      final renderAsMarkdown = ref.watch(
+        sidebarSettingsControllerProvider.select(
+          (s) => s.renderUserInputAsMarkdown,
+        ),
+      );
+      if (!renderAsMarkdown) {
+        return SelectableText(cleaned, style: textStyle);
+      }
+    }
+
     return AppMarkdown(
       content: cleaned,
-      style: theme.textTheme.bodyMedium?.copyWith(
-        color: textColor,
-        height: 1.6,
-      ),
+      style: textStyle,
     );
   }
 }
