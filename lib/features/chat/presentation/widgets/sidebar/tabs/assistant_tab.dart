@@ -263,6 +263,7 @@ class _AssistantTabState extends ConsumerState<AssistantTab> {
             selected: current?.id == a.id,
             topicCount: counts[a.id] ?? 0,
             onSelect: () => _selectAssistant(a.id),
+            groupId: group.id,
           ),
         SidebarCountFooter(
           text: '共 ${members.length} 个助手',
@@ -276,6 +277,7 @@ class _AssistantTabState extends ConsumerState<AssistantTab> {
 enum _AssistantMenu {
   edit,
   addToGroup,
+  removeFromGroup,
   copy,
   clearTopics,
   sortAsc,
@@ -289,12 +291,14 @@ class _AssistantItem extends ConsumerWidget {
     required this.selected,
     required this.topicCount,
     required this.onSelect,
+    this.groupId,
   });
 
   final Assistant assistant;
   final bool selected;
   final int topicCount;
   final VoidCallback onSelect;
+  final String? groupId;
 
   Future<void> _onMenu(
     BuildContext context,
@@ -312,6 +316,12 @@ class _AssistantItem extends ConsumerWidget {
           type: GroupType.assistant,
           itemId: assistant.id,
         );
+      case _AssistantMenu.removeFromGroup:
+        if (groupId != null) {
+          await ref
+              .read(groupsProvider.notifier)
+              .removeItemFromGroup(groupId!, assistant.id);
+        }
       case _AssistantMenu.copy:
         await notifier.copy(assistant);
       case _AssistantMenu.clearTopics:
@@ -412,38 +422,44 @@ class _AssistantItem extends ConsumerWidget {
                   size: 16,
                   box: 26,
                   title: assistant.name,
-                  actions: const [
-                    SidebarSheetAction(
+                  actions: [
+                    const SidebarSheetAction(
                       _AssistantMenu.edit,
                       LucideIcons.squarePen,
                       '编辑助手',
                     ),
-                    SidebarSheetAction(
+                    const SidebarSheetAction(
                       _AssistantMenu.addToGroup,
                       LucideIcons.folderPlus,
                       '添加到分组',
                     ),
-                    SidebarSheetAction(
+                    if (groupId != null)
+                      const SidebarSheetAction(
+                        _AssistantMenu.removeFromGroup,
+                        LucideIcons.folderMinus,
+                        '移出分组',
+                      ),
+                    const SidebarSheetAction(
                       _AssistantMenu.copy,
                       LucideIcons.copy,
                       '复制助手',
                     ),
-                    SidebarSheetAction(
+                    const SidebarSheetAction(
                       _AssistantMenu.clearTopics,
                       LucideIcons.trash2,
                       '清空话题',
                     ),
-                    SidebarSheetAction(
+                    const SidebarSheetAction(
                       _AssistantMenu.sortAsc,
                       LucideIcons.arrowUpAZ,
                       '按拼音升序排列',
                     ),
-                    SidebarSheetAction(
+                    const SidebarSheetAction(
                       _AssistantMenu.sortDesc,
                       LucideIcons.arrowDownAZ,
                       '按拼音降序排列',
                     ),
-                    SidebarSheetAction(
+                    const SidebarSheetAction(
                       _AssistantMenu.delete,
                       LucideIcons.trash,
                       '删除助手',
