@@ -349,6 +349,8 @@ class _FileEditorState extends ConsumerState<FileEditor> {
               onFontSize: (v) => setState(() => _fontSize = v),
               onRetry: () => setState(() => _ready = _load()),
               placeholderBuilder: _placeholder,
+              findMatches: _showFind ? _find.matches : const [],
+              findIndex: _showFind ? _find.index : -1,
             ),
           ),
           if (_hasTextBody) EditorStatusBar(controller: _controller),

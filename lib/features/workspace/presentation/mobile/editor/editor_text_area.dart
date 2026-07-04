@@ -245,7 +245,7 @@ class _EditorTextAreaState extends State<EditorTextArea> {
           Positioned(
             right: 12,
             bottom: 12,
-            child: _ZoomPill(
+            child: EditorZoomPill(
               fontSize: widget.fontSize,
               onChange: widget.onFontSize,
             ),
@@ -267,7 +267,7 @@ class _EditorTextAreaState extends State<EditorTextArea> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _LineNumberGutter(
+        EditorLineNumberGutter(
           controller: _gutterScroll,
           lineCount: lineCount,
           lineHeight: lineHeight,
@@ -455,8 +455,12 @@ class _AutoIndentFormatter extends TextInputFormatter {
   }
 }
 
-class _LineNumberGutter extends StatelessWidget {
-  const _LineNumberGutter({
+/// The fixed line-number gutter, virtualized and vertically synced to the
+/// text's scroll position. Shared by the editable area and the read-only
+/// viewer.
+class EditorLineNumberGutter extends StatelessWidget {
+  const EditorLineNumberGutter({
+    super.key,
     required this.controller,
     required this.lineCount,
     required this.lineHeight,
@@ -507,8 +511,10 @@ class _LineNumberGutter extends StatelessWidget {
   }
 }
 
-class _ZoomPill extends StatelessWidget {
-  const _ZoomPill({required this.fontSize, required this.onChange});
+/// The floating font-size pill (− / size / +). Tapping the number resets to
+/// the default size. Shared by the editable area and the read-only viewer.
+class EditorZoomPill extends StatelessWidget {
+  const EditorZoomPill({super.key, required this.fontSize, required this.onChange});
 
   final double fontSize;
   final ValueChanged<double> onChange;
