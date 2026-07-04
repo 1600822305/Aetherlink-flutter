@@ -214,7 +214,52 @@ class _FileEditorReadBlockViewState extends State<FileEditorReadBlockView> {
 
   Widget _fileContent(String name, String content) {
     final lang = languageForFileName(name) ?? 'text';
+    // read_file output is prefixed `N | ` per line; strip it and let the code
+    // block's own gutter show the numbers, otherwise they appear twice.
+    final stripped = _stripLineNumberPrefixes(content);
+    if (stripped != null) {
+      return CodeBlockView(
+        language: lang,
+        code: stripped.code,
+        gutterStartLine: stripped.startAt,
+      );
+    }
     return CodeBlockView(language: lang, code: content);
+  }
+
+  static final RegExp _numberedLine = RegExp(r'^\s*(\d+) \|(?: (.*))?$');
+
+  /// Detects the `N | 内容` prefixes produced by the read tools' `numberLines`
+  /// and strips them. Returns null (leave content untouched) unless every line
+  /// carries the prefix with strictly consecutive numbers.
+  static ({String code, int startAt})? _stripLineNumberPrefixes(
+    String content,
+  ) {
+    if (content.isEmpty) return null;
+    final hasTrailingNewline = content.endsWith('\n');
+    final lines = (hasTrailingNewline
+            ? content.substring(0, content.length - 1)
+            : content)
+        .split('\n');
+    int? startAt;
+    var expected = 0;
+    final out = <String>[];
+    for (final line in lines) {
+      final m = _numberedLine.firstMatch(line);
+      if (m == null) return null;
+      final n = int.parse(m.group(1)!);
+      if (startAt == null) {
+        startAt = n;
+        expected = n;
+      }
+      if (n != expected) return null;
+      expected++;
+      out.add(m.group(2) ?? '');
+    }
+    return (
+      code: out.join('\n') + (hasTrailingNewline ? '\n' : ''),
+      startAt: startAt!,
+    );
   }
 
   Widget _entryListBody(Object? files) {

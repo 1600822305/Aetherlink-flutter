@@ -20,6 +20,7 @@ class CodeBlockBody extends StatelessWidget {
     required this.isStreaming,
     this.searchQuery,
     this.currentMatchIndex,
+    this.gutterStartLine = 1,
     super.key,
   });
 
@@ -34,6 +35,10 @@ class CodeBlockBody extends StatelessWidget {
   final bool isStreaming;
   final String? searchQuery;
   final int? currentMatchIndex;
+
+  /// First line number shown in the gutter (used when the code is an excerpt,
+  /// e.g. a read_file with an offset).
+  final int gutterStartLine;
 
   @override
   Widget build(BuildContext context) {
@@ -67,6 +72,7 @@ class CodeBlockBody extends StatelessWidget {
           isStreaming: isStreaming,
           searchQuery: searchQuery,
           currentMatchIndex: currentMatchIndex,
+          gutterStartLine: gutterStartLine,
         ),
       );
     }
@@ -86,6 +92,7 @@ class CodeBlockBody extends StatelessWidget {
           lineNumberStyle: lineNumberStyle,
           gutterBorderColor: gutterBorderColor,
           isStreaming: isStreaming,
+          gutterStartLine: gutterStartLine,
         ),
       ),
     );
@@ -104,6 +111,7 @@ class SingleBlockCodeView extends StatelessWidget {
     required this.lineNumberStyle,
     required this.gutterBorderColor,
     this.isStreaming = false,
+    this.gutterStartLine = 1,
     super.key,
   });
 
@@ -116,6 +124,7 @@ class SingleBlockCodeView extends StatelessWidget {
   final TextStyle lineNumberStyle;
   final Color gutterBorderColor;
   final bool isStreaming;
+  final int gutterStartLine;
 
   @override
   Widget build(BuildContext context) {
@@ -126,6 +135,7 @@ class SingleBlockCodeView extends StatelessWidget {
         if (showLineNumbers) ...[
           LineNumberGutter(
             lineCount: lineCount,
+            startAt: gutterStartLine,
             style: lineNumberStyle,
             borderColor: gutterBorderColor,
           ),
@@ -157,6 +167,7 @@ class PerLineCodeView extends StatefulWidget {
     this.isStreaming = false,
     this.searchQuery,
     this.currentMatchIndex,
+    this.gutterStartLine = 1,
     super.key,
   });
 
@@ -170,6 +181,7 @@ class PerLineCodeView extends StatefulWidget {
   final bool isStreaming;
   final String? searchQuery;
   final int? currentMatchIndex;
+  final int gutterStartLine;
 
   @override
   State<PerLineCodeView> createState() => _PerLineCodeViewState();
@@ -238,8 +250,9 @@ class _PerLineCodeViewState extends State<PerLineCodeView> {
 
   @override
   Widget build(BuildContext context) {
+    final lastLine = widget.gutterStartLine + widget.lines.length - 1;
     final gutterWidth = widget.showLineNumbers
-        ? math.max(34.0, 18.0 + widget.lines.length.toString().length * 8.0)
+        ? math.max(34.0, 18.0 + lastLine.toString().length * 8.0)
         : 0.0;
 
     // During streaming debounce, reuse the last highlighted spans (they'll be
@@ -282,7 +295,7 @@ class _PerLineCodeViewState extends State<PerLineCodeView> {
                     ),
                   ),
                   child: Text(
-                    '${i + 1}',
+                    '${widget.gutterStartLine + i}',
                     textAlign: TextAlign.right,
                     style: widget.lineNumberStyle,
                   ),
@@ -413,16 +426,19 @@ class LineNumberGutter extends StatelessWidget {
     required this.lineCount,
     required this.style,
     required this.borderColor,
+    this.startAt = 1,
     super.key,
   });
 
   final int lineCount;
   final TextStyle style;
   final Color borderColor;
+  final int startAt;
 
   @override
   Widget build(BuildContext context) {
-    final width = math.max(34.0, 18.0 + lineCount.toString().length * 8.0);
+    final lastLine = startAt + lineCount - 1;
+    final width = math.max(34.0, 18.0 + lastLine.toString().length * 8.0);
     return Container(
       width: width,
       padding: const EdgeInsets.only(right: 10),
@@ -431,8 +447,8 @@ class LineNumberGutter extends StatelessWidget {
       ),
       child: Text(
         _gutterTextCache.putIfAbsent(
-          lineCount,
-          () => List.generate(lineCount, (i) => '${i + 1}').join('\n'),
+          '$startAt:$lineCount',
+          () => List.generate(lineCount, (i) => '${startAt + i}').join('\n'),
         ),
         textAlign: TextAlign.right,
         style: style,
@@ -441,9 +457,9 @@ class LineNumberGutter extends StatelessWidget {
   }
 }
 
-/// LRU-ish cache for gutter text strings, keyed by line count.
+/// LRU-ish cache for gutter text strings, keyed by `startAt:lineCount`.
 /// Keeps at most 32 entries to bound memory.
-final Map<int, String> _gutterTextCache = {};
+final Map<String, String> _gutterTextCache = {};
 
 /// Apply search highlight to spans, coloring matches yellow / current orange.
 List<TextSpan> applySearchHighlight(
