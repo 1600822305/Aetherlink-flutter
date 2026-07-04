@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/features/terminal/application/proot_session_pool.dart';
 import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
+import 'package:aetherlink_flutter/features/terminal/domain/terminal_command_guard.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
@@ -66,12 +67,24 @@ Future<McpToolResult> runTerminalTool(
   }
 }
 
+/// 命中黑名单的命令统一拦截（设计文档 §3）；只管 AI 通道，用户在交互式
+/// 终端里手动执行不受限。
+McpToolResult? _guardCommand(String command) {
+  final reason = blockedCommandReason(command);
+  if (reason == null) return null;
+  return fileEditorError(
+    '命令被安全黑名单拦截（$reason），未执行。如确需执行，请让用户在内置终端里手动运行。',
+  );
+}
+
 Future<McpToolResult> _execute(
   Ref ref,
   Map<String, Object?> args, {
   Future<void>? cancelSignal,
 }) async {
   final command = requireString(args, 'command');
+  final blocked = _guardCommand(command);
+  if (blocked != null) return blocked;
   final cwd = optionalString(args, 'cwd');
   final timeoutMs = optionalInt(args, 'timeout_ms') ?? _kDefaultTimeoutMs;
   final result = await ref.read(prootLocalBackendProvider).exec(
@@ -128,6 +141,8 @@ Future<McpToolResult> _sessionExec(
   Map<String, Object?> args,
 ) async {
   final command = requireString(args, 'command');
+  final blocked = _guardCommand(command);
+  if (blocked != null) return blocked;
   final pool = ref.read(prootSessionPoolProvider);
   final sessionId = optionalString(args, 'session_id');
   final session = sessionId == null

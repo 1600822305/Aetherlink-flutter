@@ -1,11 +1,13 @@
-// 内置终端「环境」面板（P2）：apk 源切换（国内镜像）+ 常用环境一键装
-// （python / node / git / 构建工具）。命令直接回放进当前交互式终端会话，
-// 用户在终端里实时看到安装过程。
+// 内置终端「环境」面板（P2）：软件源切换（国内镜像）+ 常用环境一键装
+// （python / node / git / 构建工具），按已装发行版（Alpine/Ubuntu）适配
+// apk/apt 命令。命令直接回放进当前交互式终端会话，用户在终端里实时
+// 看到安装过程。
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
+import 'package:aetherlink_flutter/features/terminal/domain/terminal_distro.dart';
 import 'package:aetherlink_flutter/features/terminal/domain/terminal_mirrors.dart';
 
 /// 弹出环境面板。[onRunCommand] 把一条命令送进当前终端会话（自动补 `\n`）。
@@ -31,6 +33,15 @@ class _TerminalEnvSheet extends StatefulWidget {
 
 class _TerminalEnvSheetState extends State<_TerminalEnvSheet> {
   bool _switchingMirror = false;
+  TerminalDistro _distro = TerminalDistro.alpine;
+
+  @override
+  void initState() {
+    super.initState();
+    TerminalEngineManager.instance.installedDistro().then((distro) {
+      if (mounted && distro != null) setState(() => _distro = distro);
+    });
+  }
 
   void _run(String command) {
     widget.onRunCommand(command);
@@ -40,10 +51,10 @@ class _TerminalEnvSheetState extends State<_TerminalEnvSheet> {
   Future<void> _switchMirror(TerminalMirror mirror) async {
     setState(() => _switchingMirror = true);
     try {
-      await TerminalEngineManager.instance.setApkMirror(mirror);
+      await TerminalEngineManager.instance.setPackageMirror(mirror);
       if (!mounted) return;
       // 切完源立刻刷新索引，让用户在终端里看到生效。
-      _run('apk update');
+      _run(refreshIndexCommandFor(_distro));
     } catch (e) {
       if (!mounted) return;
       setState(() => _switchingMirror = false);
@@ -70,7 +81,7 @@ class _TerminalEnvSheetState extends State<_TerminalEnvSheet> {
               ),
             ),
             const SizedBox(height: 8),
-            for (final preset in kTerminalQuickInstalls)
+            for (final preset in quickInstallsFor(_distro))
               ListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
@@ -86,14 +97,16 @@ class _TerminalEnvSheetState extends State<_TerminalEnvSheet> {
               ),
             const Divider(height: 24),
             Text(
-              'apk 软件源',
+              _distro == TerminalDistro.ubuntu ? 'apt 软件源' : 'apk 软件源',
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 4),
             Text(
-              '国内网络建议切换到镜像源，apk add 会快很多。',
+              _distro == TerminalDistro.ubuntu
+                  ? '国内网络建议切换到镜像源，apt-get install 会快很多。'
+                  : '国内网络建议切换到镜像源，apk add 会快很多。',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),

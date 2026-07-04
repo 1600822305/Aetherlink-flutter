@@ -69,7 +69,11 @@ class _WorkspaceTerminalPageState
       // Wire xterm <-> session: keystrokes out, remote bytes in, size changes.
       _terminal.onOutput = (data) => session.write(utf8.encode(data));
       _terminal.onResize = (w, h, _, __) => session.resize(w, h);
+      // cast 到 List<int>：Utf8Decoder 的 StreamTransformer 反化是
+      // <List<int>, String>，Stream<Uint8List>.transform 在运行时泛型检查下
+      // 会直接抛 type error。
       _outSub = session.output
+          .cast<List<int>>()
           .transform(const Utf8Decoder(allowMalformed: true))
           .listen(_terminal.write);
       session.done.whenComplete(() {
