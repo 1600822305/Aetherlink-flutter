@@ -1,0 +1,119 @@
+import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/settings_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart';
+
+/// Whether this tool call must pause for user approval (HITL) before running:
+/// settings tools with `confirm` permission, file-editor / knowledge /
+/// terminal write-or-execute tools.
+bool toolNeedsConfirmation(
+  ToolRoute route,
+  String toolName,
+  Map<String, Object?> args,
+) {
+  return (route is SettingsToolRoute &&
+          inferSettingsPermission(toolName) ==
+              SettingsToolPermission.confirm) ||
+      (route is FileEditorToolRoute &&
+          fileEditorNeedsConfirmation(toolName)) ||
+      (route is KnowledgeToolRoute &&
+          knowledgeToolNeedsConfirmation(toolName, args)) ||
+      (route is TerminalToolRoute && terminalToolNeedsConfirmation(toolName));
+}
+
+/// Whether this tool call is a one-shot command that can be aborted
+/// mid-flight through the tool block's 中断 button (`run_command` /
+/// `terminal_execute`), so the caller registers a cancel signal before
+/// running it.
+bool isCancelableCommandCall(ToolRoute route, String toolName) {
+  return (route is FileEditorToolRoute && toolName == 'run_command') ||
+      (route is TerminalToolRoute && toolName == 'terminal_execute');
+}
+
+/// Human-readable summary for a confirmation dialog.
+String toolConfirmSummary(String toolName, Map<String, Object?> args) {
+  switch (toolName) {
+    case 'create_provider':
+      return '创建模型供应商「${args['name'] ?? '未命名'}」';
+    case 'delete_provider':
+      return '删除模型供应商（ID: ${args['id']})';
+    case 'add_model':
+      return '向供应商添加模型「${args['name'] ?? '未命名'}」';
+    case 'delete_model':
+      return '从供应商删除模型「${args['modelId'] ?? ''}」';
+    // @aether/file-editor write tools.
+    case 'write_to_file':
+      return '覆盖写入文件「${_pathTail(args['path'])}」的全部内容';
+    case 'create_file':
+      return '在「${_pathTail(args['parent_path'])}」下新建文件「${args['name'] ?? ''}」';
+    case 'rename_file':
+      return '将「${_pathTail(args['path'])}」重命名为「${args['new_name'] ?? ''}」';
+    case 'move_file':
+      return '移动「${_pathTail(args['source_path'])}」到「${_pathTail(args['destination_path'])}」';
+    case 'copy_file':
+      return '复制「${_pathTail(args['source_path'])}」到「${_pathTail(args['destination_path'])}」';
+    case 'delete_file':
+      return '删除「${_pathTail(args['path'])}」';
+    case 'insert_content':
+      return '在「${_pathTail(args['path'])}」第 ${args['line'] ?? '?'} 行插入内容';
+    case 'apply_diff':
+      return '对「${_pathTail(args['path'])}」应用 diff 修改';
+    case 'replace_in_file':
+      return '在「${_pathTail(args['path'])}」中替换「${args['search'] ?? ''}」';
+    case 'run_command':
+      return '在工作区执行命令：${args['command'] ?? ''}';
+    // @aether/knowledge 写操作（kb_manage）。
+    case 'kb_manage':
+      return _knowledgeManageSummary(args);
+    default:
+      return '执行操作: $toolName';
+  }
+}
+
+/// Confirmation summary for a `kb_manage` call, keyed by its `action`.
+String _knowledgeManageSummary(Map<String, Object?> args) {
+  final action = (args['action'] as String?)?.toLowerCase();
+  switch (action) {
+    case 'create':
+      return '创建知识库「${args['name'] ?? '未命名'}」';
+    case 'add_note':
+      final title = (args['title'] as String?)?.trim();
+      return '向知识库添加笔记${title == null || title.isEmpty ? '' : '「$title」'}';
+    case 'add_url':
+      return '抓取网页并摄取进知识库（${args['url'] ?? ''}）';
+    case 'add_workspace':
+      return '把工作区目录摄取进知识库（工作区 ID: ${args['workspace_id'] ?? ''}）';
+    case 'retry_embeddings':
+      return '补嵌知识库中嵌入失败的切块（ID: ${args['base_id'] ?? ''}）';
+    case 'delete':
+      return '删除知识库（ID: ${args['base_id'] ?? ''}）';
+    case 'refresh':
+      return '重建知识库索引（ID: ${args['base_id'] ?? ''}）';
+    default:
+      return '管理知识库: ${action ?? '未知操作'}';
+  }
+}
+
+/// A short, human-readable tail for an opaque SAF `content://` path, used in
+/// confirmation summaries. Falls back to the raw value when it can't decode.
+String _pathTail(Object? path) {
+  if (path == null) return '?';
+  final raw = path.toString();
+  if (raw.isEmpty) return '?';
+  try {
+    final decoded = Uri.decodeComponent(raw);
+    final normalized = decoded.replaceAll('\\', '/');
+    final segments = normalized
+        .split('/')
+        .where((s) => s.trim().isNotEmpty)
+        .toList();
+    if (segments.isEmpty) return raw;
+    var tail = segments.last;
+    final colon = tail.lastIndexOf(':');
+    if (colon >= 0 && colon < tail.length - 1) tail = tail.substring(colon + 1);
+    return tail;
+  } catch (_) {
+    return raw;
+  }
+}
