@@ -373,6 +373,7 @@ class _AssistantItem extends ConsumerWidget {
                           : _avatarUnselectedBg,
                       size: 32,
                       fontSize: 19.2,
+                      image: assistantAvatarImage(assistant),
                     ),
                   ),
                 ),

@@ -325,8 +325,8 @@ class Assistants extends _$Assistants {
   }
 
   /// Persists the fields edited in 编辑助手 (`EditAssistantDialog`):
-  /// 名称 / 系统提示词 / 记忆开关 / 技能绑定 / 模型参数 — the port of the web
-  /// `handleSave` (`dexieStorage.saveAssistant` + the `assistantUpdated`
+  /// 名称 / 系统提示词 / 记忆开关 / 技能绑定 / 头像 / 模型参数 — the port of the
+  /// web `handleSave` (`dexieStorage.saveAssistant` + the `assistantUpdated`
   /// event). [_reload] refreshes [currentAssistant] so dependents re-render.
   Future<void> applyEdits(
     String id, {
@@ -334,6 +334,8 @@ class Assistants extends _$Assistants {
     required String systemPrompt,
     required bool memoryEnabled,
     required List<String> skillIds,
+    String? emoji,
+    String? avatar,
     ParameterSettings? paramSettings,
     AssistantChatBackground? chatBackground,
     List<AssistantRegex>? regexRules,
@@ -347,6 +349,8 @@ class Assistants extends _$Assistants {
       systemPrompt: systemPrompt,
       memoryEnabled: memoryEnabled,
       skillIds: skillIds,
+      emoji: emoji,
+      avatar: avatar,
       chatBackground: chatBackground,
       regexRules: regexRules,
       updatedAt: DateTime.now(),
