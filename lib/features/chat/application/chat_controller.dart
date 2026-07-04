@@ -68,6 +68,7 @@ import 'package:aetherlink_flutter/shared/domain/topic.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/workspace_context.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_bridge_tool.dart';
@@ -4239,7 +4240,19 @@ class ChatController extends _$ChatController {
     addReadSkill();
     _maybeInjectWebSearch(tools, routes);
     _maybeInjectMemorySearch(tools, routes);
-    return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
+
+    // 文件工具在列时把当前工作区上下文直接送进系统提示，免得模型每轮先调
+    // list_workspaces 探路。
+    String? workspaceContext;
+    if (routes.values.any((r) => r is _FileEditorToolRoute)) {
+      workspaceContext = await buildWorkspaceContextSection(ref);
+    }
+    return _McpSetup(
+      mode: toolsState.mode,
+      tools: tools,
+      routes: routes,
+      workspaceContext: workspaceContext,
+    );
   }
 
   /// Picks the in-process route for a ref-dependent built-in tool by server.
@@ -4629,6 +4642,10 @@ class ChatController extends _$ChatController {
           '当用户的问题可能依赖其知识库内容时，请主动检索，并在回答中引用来源。';
       prompt = (prompt ?? '') + hint;
     }
+    final workspaceContext = mcp.workspaceContext;
+    if (workspaceContext != null && workspaceContext.isNotEmpty) {
+      prompt = '${prompt ?? ''}\n\n$workspaceContext';
+    }
     return prompt;
   }
 
@@ -4900,16 +4917,22 @@ class _McpSetup {
     required this.mode,
     required this.tools,
     required this.routes,
+    this.workspaceContext,
   });
 
   const _McpSetup.disabled()
     : mode = McpMode.function,
       tools = const <McpToolDefinition>[],
-      routes = const <String, _ToolRoute>{};
+      routes = const <String, _ToolRoute>{},
+      workspaceContext = null;
 
   final McpMode mode;
   final List<McpToolDefinition> tools;
   final Map<String, _ToolRoute> routes;
+
+  /// The `[工作区上下文]` system-prompt section, present when the
+  /// file-editor tools ride this turn and a workspace is opened.
+  final String? workspaceContext;
 
   bool get hasTools => tools.isNotEmpty;
 
