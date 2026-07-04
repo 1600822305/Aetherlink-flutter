@@ -74,18 +74,7 @@ import 'package:aetherlink_flutter/shared/utils/system_prompt_variables.dart';
 
 part 'chat_controller.g.dart';
 part 'chat_controller_debate.dart';
-
-/// One assistant sibling of a multi-model turn: the chosen model and the
-/// streaming message/block/view created for it. Used by [sendMultiModel] to
-/// stream all siblings in parallel.
-typedef _MultiModelSibling = ({
-  CurrentModel current,
-  Model effective,
-  String assistantMessageId,
-  String assistantBlockId,
-  DateTime assistantTime,
-  ChatMessageView assistantView,
-});
+part 'chat_controller_multi_model.dart';
 
 /// Orchestrates the chat send/stream loop (application layer).
 ///
@@ -103,9 +92,10 @@ typedef _MultiModelSibling = ({
 /// state per chunk → on [LlmDone] finalize and persist the blocks; on a stream
 /// error mark the message errored and persist an `error` block.
 @riverpod
-class ChatController extends _$ChatController with _ChatDebate {
+class ChatController extends _$ChatController with _ChatDebate, _ChatMultiModel {
   static const String _defaultAssistantId = 'default-assistant';
 
+  @override
   String? _topicId;
   @override
   String _assistantId = _defaultAssistantId;
@@ -113,6 +103,7 @@ class ChatController extends _$ChatController with _ChatDebate {
   /// The id of the last assistant message that was truncated due to
   /// `finishReason == 'length'` after exhausting auto-continues. Cleared on
   /// the next send / regenerate. The UI reads this to show a "继续生成" button.
+  @override
   String? _truncatedMessageId;
 
   @override
@@ -469,6 +460,7 @@ class ChatController extends _$ChatController with _ChatDebate {
   /// The leading [KnowledgeReferenceBlock]s for a turn (empty when no 挂载库
   /// hit), seeded ahead of the assistant content so the chat shows 本轮注入的
   /// 知识库引用块（功能缺口⑫）.
+  @override
   List<MessageBlock> _knowledgeReferenceBlocks({
     required String messageId,
     required DateTime createdAt,
@@ -491,6 +483,7 @@ class ChatController extends _$ChatController with _ChatDebate {
   }
 
   /// Joins two optional prompt sections (记忆 + 知识库引用) with a blank line.
+  @override
   String? _joinInjectionSections(String? a, String? b) {
     if (a == null || a.isEmpty) return b;
     if (b == null || b.isEmpty) return a;
@@ -500,6 +493,7 @@ class ChatController extends _$ChatController with _ChatDebate {
   /// The leading [MemoryInjectionBlock] for a turn (empty when nothing was
   /// injected), seeded into the assistant message ahead of its content so the
   /// chat shows the 对话内「本轮注入 N 条记忆」可展开块.
+  @override
   List<MessageBlock> _memoryInjectionBlocks({
     required String messageId,
     required DateTime createdAt,
@@ -518,643 +512,7 @@ class ChatController extends _$ChatController with _ChatDebate {
     ];
   }
 
-  /// Sends [text] to several models at once (port of the web `useMultiModelSend`
-  /// + Cherry's multi-model turn): one user message, then one streaming
-  /// assistant **sibling per model** — all sharing the user message's `askId`
-  /// and one `siblingsGroupId (>0)` — streamed in parallel. `saveMessage`
-  /// attaches the first sibling to the active path; the display projection
-  /// (`orderBranchMessages`) inlines the whole group so the 对比 group widget can
-  /// lay them out. A blank message, no models, or an in-flight stream are no-ops.
-  Future<void> sendMultiModel(
-    String text,
-    List<CurrentModel> models, {
-    List<ComposerAttachment> attachments = const <ComposerAttachment>[],
-  }) async {
-    final trimmed = text.trim();
-    if ((trimmed.isEmpty && attachments.isEmpty) || models.isEmpty) return;
-    final snapshot = state.value ?? ChatState.initial();
-    if (snapshot.isStreaming) return;
-
-    _truncatedMessageId = null;
-    final topicId = await _ensureTopic();
-    final now = DateTime.now();
-
-    // 1. User message (records the chosen models in `mentions`), persisted and
-    //    attached to the tree by saveMessage.
-    final userMessageId = generateId('msg');
-    final hasText = trimmed.isNotEmpty;
-    final userBlocks = <MessageBlock>[
-      if (hasText)
-        MessageBlock.mainText(
-          id: generateId('block'),
-          messageId: userMessageId,
-          status: MessageBlockStatus.success,
-          createdAt: now,
-          content: trimmed,
-        ),
-      for (final attachment in attachments)
-        _attachmentBlock(
-          messageId: userMessageId,
-          createdAt: now,
-          attachment: attachment,
-        ),
-    ];
-    final userMessage = Message(
-      id: userMessageId,
-      role: MessageRole.user,
-      assistantId: _assistantId,
-      topicId: topicId,
-      createdAt: now,
-      status: MessageStatus.success,
-      mentions: <Model>[for (final m in models) m.model],
-      blocks: <String>[for (final block in userBlocks) block.id],
-    );
-    await _repo.saveMessage(userMessage);
-    for (final block in userBlocks) {
-      await _repo.saveMessageBlock(block);
-    }
-
-    // 2. One sibling-group id for this turn — unique within the topic so the
-    //    projection groups exactly these replies.
-    final siblingsGroupId = await _nextSiblingsGroupId(topicId);
-
-    final userView = ChatMessageView(
-      id: userMessageId,
-      role: MessageRole.user,
-      status: MessageStatus.success,
-      text: trimmed,
-      blocks: userBlocks,
-      createdAt: now,
-    );
-
-    // 3. One streaming assistant sibling per model. The first sibling becomes the
-    //    active leaf (saveMessage advances activeNodeId to it because its parent
-    //    == the active leaf); the rest share its parent + group id, so they sit
-    //    off the active path but are inlined for display. The default layout is
-    //    horizontal when there are 2+ models, fold for one.
-    final defaultStyle = models.length > 1
-        ? MultiModelMessageStyle.horizontal
-        : MultiModelMessageStyle.fold;
-    final siblings = <_MultiModelSibling>[];
-    final assistantViews = <ChatMessageView>[];
-    for (var i = 0; i < models.length; i++) {
-      final current = models[i];
-      final effective = effectiveModelFor(current);
-      // Staggered by index so the display order (chronological within the group)
-      // is deterministic and matches the selection order.
-      final assistantTime = now.add(Duration(microseconds: 1 + i));
-      final assistantMessageId = generateId('msg');
-      final assistantBlockId = generateId('block');
-      final assistantMessage = Message(
-        id: assistantMessageId,
-        role: MessageRole.assistant,
-        assistantId: _assistantId,
-        topicId: topicId,
-        createdAt: assistantTime,
-        status: MessageStatus.streaming,
-        model: effective,
-        askId: userMessageId,
-        siblingsGroupId: siblingsGroupId,
-        multiModelMessageStyle: defaultStyle,
-        foldSelected: i == 0,
-        blocks: <String>[assistantBlockId],
-      );
-      await _repo.saveMessage(assistantMessage);
-      await _repo.saveMessageBlock(
-        MessageBlock.mainText(
-          id: assistantBlockId,
-          messageId: assistantMessageId,
-          status: MessageBlockStatus.streaming,
-          createdAt: assistantTime,
-          content: '',
-        ),
-      );
-      final assistantView = ChatMessageView(
-        id: assistantMessageId,
-        role: MessageRole.assistant,
-        status: MessageStatus.streaming,
-        createdAt: assistantTime,
-        modelName: effective.name,
-        providerName: current.provider.name,
-        modelId: effective.id,
-        providerId: current.provider.id,
-        askId: userMessageId,
-        siblingsGroupId: siblingsGroupId,
-        multiModelMessageStyle: defaultStyle,
-        foldSelected: i == 0,
-      );
-      assistantViews.add(assistantView);
-      siblings.add((
-        current: current,
-        effective: effective,
-        assistantMessageId: assistantMessageId,
-        assistantBlockId: assistantBlockId,
-        assistantTime: assistantTime,
-        assistantView: assistantView,
-      ));
-    }
-
-    final views = <ChatMessageView>[
-      ...snapshot.messages,
-      userView,
-      ...assistantViews,
-    ];
-    _emitTurn(topicId, views, streaming: true);
-
-    // 4. Shared request context: the history up to and including the user turn.
-    //    The sibling placeholders are excluded so every model answers the same
-    //    conversation independently.
-    final mcp = await _mcpSetup();
-    final ctx = _contextSettings();
-    final params = _parameterFields();
-    final regexRules = await _sendingRegexRules();
-    final baseViews = <ChatMessageView>[...snapshot.messages, userView];
-    final contextViews = _trimViews(baseViews, ctx.contextCount);
-    final memInjection = await collectChatMemoryInjection(
-      ref,
-      assistantId: _assistantId,
-      query: trimmed,
-    );
-    final kbInjection = await collectChatKnowledgeInjection(
-      ref,
-      baseIds: ref.read(mountedKnowledgeBasesProvider),
-      query: trimmed,
-    );
-
-    // 5. Stream every sibling in parallel; each keeps the turn alive
-    //    (finalizeTurn: false) so the others stay visible until all settle.
-    await Future.wait(<Future<void>>[
-      for (final sibling in siblings)
-        () async {
-          final effective = sibling.effective;
-          final provider = sibling.current.provider;
-          final messages = await _buildLlmMessages(
-            contextViews,
-            chatModel: effective,
-            regexRules: regexRules,
-          );
-          final request = LlmChatRequest(
-            model: effective,
-            system: _systemFor(
-              mcp,
-              await _buildSystemPromptWith(
-                _joinInjectionSections(
-                  memInjection.section,
-                  kbInjection.section,
-                ),
-                modelName: effective.name,
-                modelId: effective.id,
-                providerName: provider.name,
-              ),
-            ),
-            messages: messages,
-            maxTokens: ctx.maxTokens,
-            temperature: params.temperature,
-            topP: params.topP,
-            topK: params.topK,
-            frequencyPenalty: params.frequencyPenalty,
-            presencePenalty: params.presencePenalty,
-            seed: params.seed,
-            stopSequences: params.stopSequences,
-            responseFormat: params.responseFormat,
-            parallelToolCalls: params.parallelToolCalls,
-            logprobs: params.logprobs,
-            user: params.user,
-            reasoningEffort: params.reasoningEffort,
-            thinkingBudget: params.thinkingBudget,
-            includeThoughts: params.includeThoughts,
-            cacheControl: params.cacheControl,
-            structuredOutputMode: params.structuredOutputMode,
-            webSearchEnabled: params.webSearchEnabled,
-            codeExecutionEnabled: params.codeExecutionEnabled,
-            useSearchGrounding: params.useSearchGrounding,
-            safetyLevel: params.safetyLevel,
-            stream: params.streamOutput,
-            customParameters: params.customParameters,
-            tools: mcp.useFunctionTools ? mcp.tools : null,
-            useResponsesAPI: provider.useResponsesAPI ?? false,
-            extraHeaders: effective.providerExtraHeaders,
-            extraBody: effective.providerExtraBody,
-          );
-          await _streamInto(
-            request: request,
-            effective: effective,
-            provider: provider,
-            turnTopicId: topicId,
-            assistantMessageId: sibling.assistantMessageId,
-            assistantBlockId: sibling.assistantBlockId,
-            assistantTime: sibling.assistantTime,
-            views: views,
-            assistantView: sibling.assistantView,
-            mcp: mcp,
-            leadingBlocks: [
-              ..._memoryInjectionBlocks(
-                messageId: sibling.assistantMessageId,
-                createdAt: sibling.assistantTime,
-                injection: memInjection,
-              ),
-              ..._knowledgeReferenceBlocks(
-                messageId: sibling.assistantMessageId,
-                createdAt: sibling.assistantTime,
-                injection: kbInjection,
-              ),
-            ],
-            finalizeTurn: false,
-          );
-        }(),
-    ]);
-
-    // 6. Whole turn done: end streaming and run the once-per-turn side effects.
-    _emitTurn(topicId, views, streaming: false);
-    unawaited(_refreshTopicPreview(topicId));
-    unawaited(_generateTitle(topicId));
-    unawaited(_maybeGenerateSuggestions(topicId, List.of(views)));
-    unawaited(_maybeExtractMemory(topicId));
-  }
-
-  /// The next free sibling-group id for [topicId]: one past the largest existing
-  /// `siblingsGroupId`, so a fresh multi-model group never collides with prior
-  /// groups in the same topic.
-  Future<int> _nextSiblingsGroupId(String topicId) async {
-    final messages = await _repo.getMessagesByTopicId(topicId);
-    var max = 0;
-    for (final m in messages) {
-      if (m.siblingsGroupId > max) max = m.siblingsGroupId;
-    }
-    return max + 1;
-  }
-
-  /// Selects sibling [messageId] as the one the conversation continues from:
-  /// moves the topic's active leaf onto it and marks it `foldSelected` (clearing
-  /// the flag on its group peers). The next user message will hang off it. A
-  /// no-op while streaming or when the message isn't a grouped sibling.
-  Future<void> selectSibling(String messageId) async {
-    final snapshot = state.value;
-    if (snapshot == null || snapshot.isStreaming) return;
-    final topicId = _topicId;
-    if (topicId == null) return;
-    final message = await _repo.getMessage(messageId);
-    if (message == null || message.siblingsGroupId <= 0) return;
-    if (message.foldSelected == true) return;
-
-    await _syncFoldSelectedForGroup(topicId, messageId);
-    await _repo.setActiveNode(topicId, messageId);
-    ref.read(chatRefreshProvider.notifier).bump();
-  }
-
-  /// Makes [nodeId] the `foldSelected` member of its multi-model group (clearing
-  /// the flag on its peers), so the 对比 group's 折叠 selection stays in sync with
-  /// whatever made [nodeId] the active branch — whether that was the in-group
-  /// model chip ([selectSibling]) or the 分支管理 canvas ([switchToBranch]). A
-  /// no-op when [nodeId] isn't a grouped sibling or is already selected.
-  Future<void> _syncFoldSelectedForGroup(String topicId, String nodeId) async {
-    final message = await _repo.getMessage(nodeId);
-    if (message == null || message.siblingsGroupId <= 0) return;
-    if (message.foldSelected == true) return;
-    final all = await _repo.getMessagesByTopicId(topicId);
-    for (final m in all) {
-      if (m.parentId == message.parentId &&
-          m.siblingsGroupId == message.siblingsGroupId) {
-        final selected = m.id == nodeId;
-        if ((m.foldSelected ?? false) != selected) {
-          await _repo.saveMessage(m.copyWith(foldSelected: selected));
-        }
-      }
-    }
-  }
-
-  /// Persists the multi-model 对比 layout [style] onto every member of a group
-  /// (port of the web `handleStyleChange`, which writes `multiModelMessageStyle`
-  /// to all grouped assistant messages). The 对比 group widget keeps its own
-  /// immediate UI state, so this only persists the choice for the next load — no
-  /// list refresh is bumped, avoiding a rebuild flicker mid-toggle.
-  Future<void> setMultiModelStyle(
-    List<String> memberIds,
-    MultiModelMessageStyle style,
-  ) async {
-    for (final id in memberIds) {
-      final message = await _repo.getMessage(id);
-      if (message == null || message.multiModelMessageStyle == style) continue;
-      await _repo.saveMessage(message.copyWith(multiModelMessageStyle: style));
-    }
-  }
-
-  /// Re-runs every errored sibling of a multi-model group (port of the web
-  /// `handleRetryFailed`, which calls `onRegenerate` for each failed message).
-  /// No-op while streaming.
-  Future<void> retryFailedSiblings(List<String> memberIds) async {
-    final snapshot = state.value;
-    if (snapshot == null || snapshot.isStreaming) return;
-    for (final id in memberIds) {
-      final failed = snapshot.messages.any(
-        (v) => v.id == id && v.status == MessageStatus.error,
-      );
-      if (failed) await regenerate(id);
-    }
-  }
-
-  /// Deletes a whole multi-model 对比 group — the asked user message and all its
-  /// sibling replies — by cascade-removing the subtree rooted at [askId] (port
-  /// of the web `handleDeleteGroup`). No-op while streaming.
-  Future<void> deleteMultiModelGroup(String askId) async {
-    final snapshot = state.value;
-    if (snapshot == null || snapshot.isStreaming) return;
-    await deleteMessage(askId, cascade: true);
-  }
-
-  /// Sends a user message and streams the combo (sequential) response.
-  /// Phase 1: streams the thinking model's reasoning into a thinking block.
-  /// Phase 2: streams the generating model's answer into the main text block.
-  Future<void> _sendCombo(
-    String text,
-    ComboResolution resolution, {
-    List<ComposerAttachment> attachments = const <ComposerAttachment>[],
-  }) async {
-    final snapshot = state.value ?? ChatState.initial();
-    final topicId = await _ensureTopic();
-    final now = DateTime.now();
-    final thinking = resolution.thinkingModel;
-    final generating = resolution.generatingModel;
-    if (thinking == null || generating == null) return;
-
-    // 1. Persist user message.
-    final userMessageId = generateId('msg');
-    final hasText = text.isNotEmpty;
-    final userBlocks = <MessageBlock>[
-      if (hasText)
-        MessageBlock.mainText(
-          id: generateId('block'),
-          messageId: userMessageId,
-          status: MessageBlockStatus.success,
-          createdAt: now,
-          content: text,
-        ),
-      for (final attachment in attachments)
-        _attachmentBlock(
-          messageId: userMessageId,
-          createdAt: now,
-          attachment: attachment,
-        ),
-    ];
-    final userMessage = Message(
-      id: userMessageId,
-      role: MessageRole.user,
-      assistantId: _assistantId,
-      topicId: topicId,
-      createdAt: now,
-      status: MessageStatus.success,
-      blocks: <String>[for (final block in userBlocks) block.id],
-    );
-    await _repo.saveMessage(userMessage);
-    for (final block in userBlocks) {
-      await _repo.saveMessageBlock(block);
-    }
-
-    // 2. Assistant message with a thinking block + main text block.
-    final assistantTime = now.add(const Duration(microseconds: 1));
-    final assistantMessageId = generateId('msg');
-    final thinkingBlockId = generateId('block');
-    final mainBlockId = generateId('block');
-
-    // Synthetic model carrying the combo display label so _viewOf reads the
-    // correct name when reconstructing from DB.
-    final comboLabel = '${thinking.model.name} → ${generating.model.name}';
-    final comboModel = Model(
-      id: resolution.combo.id,
-      name: comboLabel,
-      provider: kModelComboProviderId,
-    );
-
-    final assistantMessage = Message(
-      id: assistantMessageId,
-      role: MessageRole.assistant,
-      assistantId: _assistantId,
-      topicId: topicId,
-      createdAt: assistantTime,
-      status: MessageStatus.streaming,
-      model: comboModel,
-      askId: userMessageId,
-      blocks: <String>[thinkingBlockId, mainBlockId],
-    );
-    await _repo.saveMessage(assistantMessage);
-    await _repo.saveMessageBlock(
-      MessageBlock.thinking(
-        id: thinkingBlockId,
-        messageId: assistantMessageId,
-        status: MessageBlockStatus.streaming,
-        createdAt: assistantTime,
-        content: '',
-      ),
-    );
-    await _repo.saveMessageBlock(
-      MessageBlock.mainText(
-        id: mainBlockId,
-        messageId: assistantMessageId,
-        status: MessageBlockStatus.streaming,
-        createdAt: assistantTime,
-        content: '',
-      ),
-    );
-
-    final userView = ChatMessageView(
-      id: userMessageId,
-      role: MessageRole.user,
-      status: MessageStatus.success,
-      text: text,
-      blocks: userBlocks,
-      createdAt: now,
-    );
-    var assistantView = ChatMessageView(
-      id: assistantMessageId,
-      role: MessageRole.assistant,
-      status: MessageStatus.streaming,
-      createdAt: assistantTime,
-      modelName: comboLabel,
-      providerName: '模型组合',
-    );
-    var views = [...snapshot.messages, userView, assistantView];
-    _emitTurn(topicId, views, streaming: true);
-
-    // 3. Build messages for the thinking model request.
-    final ctx = _contextSettings();
-    final contextViews = _trimViews(views, ctx.contextCount);
-    final regexRules = await _sendingRegexRules();
-    final llmMessages = [
-      for (final view in contextViews)
-        if (view.role != MessageRole.assistant || view.text.isNotEmpty)
-          LlmMessage(
-            role: view.role,
-            content: _requestContent(view, regexRules: regexRules),
-          ),
-    ];
-
-    final gatewayFactory = ref.read(llmGatewayFactoryProvider);
-    final thinkingGateway = gatewayFactory.forModel(thinking.model);
-    final generatingGateway = gatewayFactory.forModel(generating.model);
-
-    final system = _systemFor(
-      await _mcpSetup(),
-      await _buildSystemPrompt(
-        modelName: comboLabel,
-        modelId: comboModel.id,
-        providerName: '模型组合',
-      ),
-    );
-
-    try {
-      final reasoningBuf = StringBuffer();
-      final mainBuf = StringBuffer();
-
-      final comboStream = executeSequentialCombo(
-        resolution: resolution,
-        thinkingGateway: thinkingGateway,
-        generatingGateway: generatingGateway,
-        messages: llmMessages,
-        system: system,
-        maxTokens: ctx.maxTokens,
-      );
-
-      // Helper to rebuild live blocks for the view so the bubble renderer
-      // always has non-empty blocks (empty blocks + non-streaming = invisible).
-      List<MessageBlock> liveBlocks() => [
-        MessageBlock.thinking(
-          id: thinkingBlockId,
-          messageId: assistantMessageId,
-          status: MessageBlockStatus.streaming,
-          createdAt: assistantTime,
-          content: reasoningBuf.toString(),
-        ),
-        MessageBlock.mainText(
-          id: mainBlockId,
-          messageId: assistantMessageId,
-          status: MessageBlockStatus.streaming,
-          createdAt: assistantTime,
-          content: mainBuf.toString(),
-        ),
-      ];
-
-      await for (final event in comboStream) {
-        switch (event) {
-          case ComboReasoningDelta(:final text):
-            reasoningBuf.write(text);
-            assistantView = assistantView.copyWith(
-              thinking: reasoningBuf.toString(),
-              blocks: liveBlocks(),
-            );
-            views = [...views.take(views.length - 1), assistantView];
-            _emitTurn(topicId, views, streaming: true);
-          case ComboTextDelta(:final text):
-            mainBuf.write(text);
-            assistantView = assistantView.copyWith(
-              text: mainBuf.toString(),
-              blocks: liveBlocks(),
-            );
-            views = [...views.take(views.length - 1), assistantView];
-            _emitTurn(topicId, views, streaming: true);
-          case ComboPhaseStart() || ComboPhaseDone() || ComboDone():
-            break;
-        }
-      }
-
-      // 4. Finalize — keep blocks so the bubble stays visible after streaming.
-      final finalBlocks = [
-        MessageBlock.thinking(
-          id: thinkingBlockId,
-          messageId: assistantMessageId,
-          status: MessageBlockStatus.success,
-          createdAt: assistantTime,
-          content: reasoningBuf.toString(),
-        ),
-        MessageBlock.mainText(
-          id: mainBlockId,
-          messageId: assistantMessageId,
-          status: MessageBlockStatus.success,
-          createdAt: assistantTime,
-          content: mainBuf.toString(),
-        ),
-      ];
-      assistantView = assistantView.copyWith(
-        status: MessageStatus.success,
-        blocks: finalBlocks,
-      );
-      views = [...views.take(views.length - 1), assistantView];
-      _emitTurn(topicId, views, streaming: false);
-
-      await _repo.saveMessageBlock(
-        MessageBlock.thinking(
-          id: thinkingBlockId,
-          messageId: assistantMessageId,
-          status: MessageBlockStatus.success,
-          createdAt: assistantTime,
-          content: reasoningBuf.toString(),
-        ),
-      );
-      await _repo.saveMessageBlock(
-        MessageBlock.mainText(
-          id: mainBlockId,
-          messageId: assistantMessageId,
-          status: MessageBlockStatus.success,
-          createdAt: assistantTime,
-          content: mainBuf.toString(),
-        ),
-      );
-      await _repo.saveMessage(
-        assistantMessage.copyWith(status: MessageStatus.success),
-      );
-    } on Object catch (e) {
-      final errorText = e is Failure ? e.message : e.toString();
-      assistantView = assistantView.copyWith(
-        status: MessageStatus.error,
-        text: errorText,
-      );
-      views = [...views.take(views.length - 1), assistantView];
-      _emitTurn(topicId, views, streaming: false);
-
-      await _repo.saveMessageBlock(
-        MessageBlock.mainText(
-          id: mainBlockId,
-          messageId: assistantMessageId,
-          status: MessageBlockStatus.error,
-          createdAt: assistantTime,
-          content: errorText,
-        ),
-      );
-      await _repo.saveMessage(
-        assistantMessage.copyWith(status: MessageStatus.error),
-      );
-    }
-  }
-
-  /// Regenerates the assistant reply [messageId] in place.
-  ///
-  /// Port of the toolbar 重新生成 action (`regenerateResponse` with
-  /// `source: 'assistant'`): the message keeps its id but its old blocks are
-  /// dropped, it is reset to a streaming state re-pointed at the current model,
-  /// and a fresh reply is streamed from the conversation that preceded it.
-  /// Before overwriting, the currently displayed content is archived as a
-  /// version via [_prepareForRegenerate] (mirroring `prepareForRegenerate`), so
-  /// the previous reply can be restored from 版本历史. A no-op while a reply is
-  /// streaming, when the conversation has not loaded, when no model is selected,
-  /// or when [messageId] is not a loaded assistant message.
-  /// Resolves the [CurrentModel] for an assistant reply's own [model]: the
-  /// listed provider that owns `model.provider` paired with its live copy of
-  /// the model (so fresh apiKey/baseUrl apply), falling back to the stored model
-  /// when it is no longer listed. Returns null when [model] is null or its
-  /// provider is gone, so callers can fall back to the current model.
-  Future<CurrentModel?> _currentModelForOwnModel(Model? model) async {
-    if (model == null) return null;
-    final providers = await ref.read(appModelProvidersProvider.future);
-    for (final provider in providers) {
-      if (provider.id != model.provider) continue;
-      final live = provider.models.firstWhere(
-        (m) => m.id == model.id,
-        orElse: () => model,
-      );
-      return CurrentModel(provider: provider, model: live);
-    }
-    return null;
-  }
-
+  @override
   Future<void> regenerate(String messageId) async {
     _truncatedMessageId = null;
     final snapshot = state.value;
@@ -1583,6 +941,7 @@ class ChatController extends _$ChatController with _ChatDebate {
   /// Reads the parameter settings and returns a record of fields suitable for
   /// spreading into an [LlmChatRequest] constructor. Only enabled parameters
   /// are returned; disabled ones stay `null`.
+  @override
   ({
     double? temperature,
     double? topP,
@@ -2684,6 +2043,7 @@ class ChatController extends _$ChatController with _ChatDebate {
   /// builds a summary, sends the title prompt to the title model (falling back
   /// to the current chat model), and saves the result as the topic name.
   /// Non-critical: failures are silently swallowed.
+  @override
   Future<void> _generateTitle([String? forTopicId]) async {
     final topicId = forTopicId ?? _topicId;
     if (topicId == null) return;
@@ -2797,6 +2157,7 @@ class ChatController extends _$ChatController with _ChatDebate {
   /// being viewed. A no-op unless the 建议 feature is enabled and a suggestion
   /// model is configured (footnote: "未设置时不生成后续问题建议"). Best-effort:
   /// any failure is swallowed, like title generation.
+  @override
   Future<void> _maybeGenerateSuggestions(
     String turnTopicId,
     List<ChatMessageView> views,
@@ -2851,6 +2212,7 @@ class ChatController extends _$ChatController with _ChatDebate {
   /// unless 记忆 is enabled and at least one 自动写入 toggle is on. The extraction
   /// itself runs on the 快速/标题 auxiliary model (falling back to the current
   /// chat model). Best-effort: any failure is swallowed, like title generation.
+  @override
   Future<void> _maybeExtractMemory(String turnTopicId) async {
     try {
       final flags = readMemoryAutoWriteFlags(ref);
@@ -2945,6 +2307,7 @@ class ChatController extends _$ChatController with _ChatDebate {
   /// → `onDelete`). The two-click confirmation lives in the UI; this performs
   /// the actual removal once confirmed. A no-op while a reply is streaming or
   /// when the conversation has not loaded.
+  @override
   Future<void> deleteMessage(String messageId, {bool cascade = false}) async {
     final snapshot = state.value;
     if (snapshot == null || snapshot.isStreaming) return;
@@ -3262,6 +2625,7 @@ class ChatController extends _$ChatController with _ChatDebate {
   /// block (raw base64 for inline rendering), a text/file attachment a `FILE`
   /// block (a base64 data URI; text attachments stay `text/plain` so
   /// [_decodeFileText] feeds them to the model).
+  @override
   MessageBlock _attachmentBlock({
     required String messageId,
     required DateTime createdAt,
@@ -3323,6 +2687,7 @@ class ChatController extends _$ChatController with _ChatDebate {
   /// [dropEmptyAssistant] mirrors the existing
   /// `role != assistant || text.isNotEmpty` filter; pass `false` for paths that
   /// build raw history (e.g. continue-generating) and append their own turns.
+  @override
   Future<List<LlmMessage>> _buildLlmMessages(
     Iterable<ChatMessageView> views, {
     required Model chatModel,
@@ -3416,6 +2781,7 @@ class ChatController extends _$ChatController with _ChatDebate {
   /// When [regexRules] are supplied, the assistant's non-`visualOnly` 正则规则
   /// are applied (scoped by `view.role`) before sending — the port of the web
   /// `applyRegexRulesForSending` step in `apiPreparation.ts`.
+  @override
   String _requestContent(
     ChatMessageView view, {
     List<AssistantRegex>? regexRules,
@@ -3445,6 +2811,7 @@ class ChatController extends _$ChatController with _ChatDebate {
       };
 
   /// The current assistant's 正则规则, used to process outgoing message content.
+  @override
   Future<List<AssistantRegex>?> _sendingRegexRules() async =>
       (await _repo.getAssistant(_assistantId))?.regexRules;
 
@@ -3498,6 +2865,7 @@ class ChatController extends _$ChatController with _ChatDebate {
   /// is empty, so requests with no system prompt stay system-less (the
   /// append-only variables are never injected into an empty prompt, matching the
   /// web `injectSystemPromptVariables`).
+  @override
   Future<String?> _buildSystemPrompt({
     required String modelName,
     required String modelId,
@@ -3557,6 +2925,7 @@ class ChatController extends _$ChatController with _ChatDebate {
 
   /// Like [_buildSystemPrompt] but reuses a pre-resolved [memorySection] (from
   /// [collectChatMemoryInjection]) so the memory store is read once per turn.
+  @override
   Future<String?> _buildSystemPromptWith(
     String? memorySection, {
     required String modelName,
@@ -3624,6 +2993,7 @@ class ChatController extends _$ChatController with _ChatDebate {
   /// into [base] (web `buildSystemPrompt`); otherwise [base] is used as-is and
   /// tools ride the native `tools` field. When 网络搜索 is active, a hint is
   /// appended encouraging the model to use the search tool.
+  @override
   String? _systemFor(McpSetup mcp, String? base) {
     var prompt = mcp.usePromptInjection
         ? buildMcpSystemPrompt(base, mcp.tools)
