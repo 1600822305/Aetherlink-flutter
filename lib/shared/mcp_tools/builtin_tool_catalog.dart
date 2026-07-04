@@ -793,6 +793,21 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
+      name: 'create_directory',
+      description: '在指定父目录下新建目录。会触发用户确认。同名目录已存在时直接返回其路径（不报错）。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'parent_path': {
+            'type': 'string',
+            'description': '父目录的完整路径（不透明句柄，来自 list_files / get_workspace_files）',
+          },
+          'name': {'type': 'string', 'description': '新目录名'},
+        },
+        'required': ['parent_path', 'name'],
+      },
+    ),
+    McpToolDefinition(
       name: 'rename_file',
       description: '重命名文件或目录（仅改名，不移动）。会触发用户确认。',
       inputSchema: {
@@ -891,6 +906,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       name: 'apply_diff',
       description:
           '对文件应用 SEARCH/REPLACE（或 unified）diff，做增量精确修改。会触发用户确认。'
+          '一个 diff 可包含多个 SEARCH/REPLACE 块，按顺序应用且原子生效：'
+          '任一块定位失败则整个 diff 不写入——同一文件的多处修改优先合并到一次调用。'
           '传入由 read_file 行范围读取得到的 start_line/end_line 与 expected_range_hash 可启用乐观锁，'
           '在应用前校验该范围未被并发改动。',
       inputSchema: {
@@ -928,27 +945,42 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'replace_in_file',
-      description: '在文件中查找并替换文本，支持字面量或正则。会触发用户确认。',
+      description: '在文件中查找并替换文本，支持字面量或正则。会触发用户确认。'
+          '默认只替换一处：search 命中多处时报错不修改（防改错位置），需在 search 中加上下文使其唯一，'
+          '或传 replace_all=true 全部替换；命中 0 处也报错。'
+          '支持 edits 数组对同一文件做多处替换，整体原子生效：任一 edit 失败则文件不会被修改。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'path': {'type': 'string', 'description': '目标文件的完整路径'},
-          'search': {'type': 'string', 'description': '要查找的文本或正则表达式'},
-          'replace': {'type': 'string', 'description': '替换后的文本'},
+          'search': {'type': 'string', 'description': '要查找的文本或正则表达式（与 edits 二选一）'},
+          'replace': {'type': 'string', 'description': '替换后的文本（与 edits 二选一）'},
+          'edits': {
+            'type': 'array',
+            'items': {
+              'type': 'object',
+              'properties': {
+                'search': {'type': 'string', 'description': '要查找的文本或正则'},
+                'replace': {'type': 'string', 'description': '替换后的文本'},
+              },
+              'required': ['search', 'replace'],
+            },
+            'description': '多处替换列表（与 search/replace 二选一），按顺序应用，全成或全不改',
+          },
           'is_regex': {
             'type': 'boolean',
             'description': 'search 是否按正则解释，默认 false',
           },
           'replace_all': {
             'type': 'boolean',
-            'description': '是否替换所有匹配，默认 true',
+            'description': '是否替换所有匹配，默认 false（命中多处会报错）',
           },
           'case_sensitive': {
             'type': 'boolean',
             'description': '是否区分大小写，默认 true',
           },
         },
-        'required': ['path', 'search', 'replace'],
+        'required': ['path'],
       },
     ),
     McpToolDefinition(
