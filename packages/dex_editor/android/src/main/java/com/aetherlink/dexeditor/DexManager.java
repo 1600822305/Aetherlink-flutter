@@ -885,38 +885,77 @@ public class DexManager {
     }
 
     /**
-     * 读取 APK 中的任意文件
+     * 读取活跃编辑会话内存中的某个条目字节（反映未保存的改动，目前主要是 .dex）。
+     * 命中返回内存字节，否则返回 null 让调用方回退读磁盘 APK。
      */
-    public JSObject readApkFile(String apkPath, String filePath, boolean asBase64, int maxBytes, int offset) throws Exception {
+    private byte[] getSessionEntryBytes(String sessionId, String filePath) {
+        if (sessionId == null || sessionId.isEmpty()) return null;
+        try {
+            MultiDexSession session = sessionManager.requireOrRebuild(sessionId);
+            if (session != null && session.dexBytes != null) {
+                return session.dexBytes.get(filePath);
+            }
+        } catch (Exception ignored) {
+            // 会话不存在/无法重建 → 回退磁盘读
+        }
+        return null;
+    }
+
+    /**
+     * 读取 APK 中的任意文件。
+     *
+     * @param sessionId 可选：传入活跃编辑会话时，优先返回该会话内存中未保存的条目字节
+     *                  （目前主要是 .dex），否则读磁盘 APK。
+     * @param decodeXml 为 true 且内容为二进制 AXML 时，解码为可读 XML 文本返回。
+     */
+    public JSObject readApkFile(String apkPath, String filePath, boolean asBase64, int maxBytes,
+                                int offset, String sessionId, boolean decodeXml) throws Exception {
         JSObject result = new JSObject();
-        
+
+        // 优先读编辑会话内存字节（未保存改动），未命中则读磁盘 APK。
+        byte[] sessionBytes = getSessionEntryBytes(sessionId, filePath);
+
         java.util.zip.ZipFile zipFile = null;
         try {
-            zipFile = new java.util.zip.ZipFile(apkPath);
-            java.util.zip.ZipEntry entry = zipFile.getEntry(filePath);
-            
-            if (entry == null) {
-                result.put("error", "File not found: " + filePath);
-                return result;
+            long totalSize;
+            java.io.InputStream is;
+            if (sessionBytes != null) {
+                totalSize = sessionBytes.length;
+                is = new java.io.ByteArrayInputStream(sessionBytes);
+                result.put("source", "session");
+            } else {
+                zipFile = new java.util.zip.ZipFile(apkPath);
+                java.util.zip.ZipEntry entry = zipFile.getEntry(filePath);
+                if (entry == null) {
+                    result.put("error", "File not found: " + filePath);
+                    return result;
+                }
+                totalSize = entry.getSize();
+                result.put("compressedSize", entry.getCompressedSize());
+                is = zipFile.getInputStream(entry);
+                result.put("source", "apk");
             }
-            
+
             result.put("path", filePath);
-            result.put("size", entry.getSize());
-            result.put("compressedSize", entry.getCompressedSize());
-            
-            java.io.InputStream is = zipFile.getInputStream(entry);
-            
+            result.put("size", totalSize);
+
             // 跳过偏移量
             if (offset > 0) {
-                is.skip(offset);
+                long skipped = 0;
+                while (skipped < offset) {
+                    long s = is.skip(offset - skipped);
+                    if (s <= 0) break;
+                    skipped += s;
+                }
             }
-            
-            // 读取数据
-            int readSize = maxBytes > 0 ? maxBytes : (int) entry.getSize();
-            if (readSize > 1024 * 1024) { // 限制最大 1MB
+
+            // 读取数据（单次最多 1MB）
+            int readSize = maxBytes > 0 ? maxBytes : (int) totalSize;
+            if (readSize > 1024 * 1024) {
                 readSize = 1024 * 1024;
             }
-            
+            if (readSize < 0) readSize = 0;
+
             byte[] buffer = new byte[readSize];
             int totalRead = 0;
             int read;
@@ -924,19 +963,25 @@ public class DexManager {
                 totalRead += read;
             }
             is.close();
-            
+
             byte[] data = new byte[totalRead];
             System.arraycopy(buffer, 0, data, 0, totalRead);
-            
+
+            // 是否为二进制 AXML（magic 0x00080003）。
+            boolean isAxml = data.length > 4 &&
+                ((data[0] & 0xFF) | ((data[1] & 0xFF) << 8)
+                    | ((data[2] & 0xFF) << 16) | ((data[3] & 0xFF) << 24)) == 0x00080003;
+
             if (asBase64) {
-                // Base64 编码返回
                 result.put("content", android.util.Base64.encodeToString(data, android.util.Base64.NO_WRAP));
                 result.put("encoding", "base64");
+            } else if (decodeXml && isAxml) {
+                // 显式请求解码 AXML → 可读 XML。
+                result.put("content", AxmlParser.decode(data));
+                result.put("encoding", "xml");
+                result.put("decoded", true);
             } else {
-                // 尝试作为文本返回
-                String content = new String(data, java.nio.charset.StandardCharsets.UTF_8);
-                
-                // 检查是否是二进制文件
+                // 二进制检测（前 100 字节含 NUL 视为二进制）。
                 boolean isBinary = false;
                 for (int i = 0; i < Math.min(100, data.length); i++) {
                     if (data[i] == 0) {
@@ -944,37 +989,34 @@ public class DexManager {
                         break;
                     }
                 }
-                
-                if (isBinary && !filePath.endsWith(".xml")) {
-                    // 二进制文件自动使用 Base64
+                if (isBinary) {
                     result.put("content", android.util.Base64.encodeToString(data, android.util.Base64.NO_WRAP));
                     result.put("encoding", "base64");
-                    result.put("note", "Binary file, auto-encoded as base64");
+                    result.put("note", isAxml
+                        ? "二进制 AXML，传 decodeXml=true 可解码为可读 XML"
+                        : "Binary file, auto-encoded as base64");
                 } else {
-                    // 如果是 XML 文件，尝试解码 AXML
-                    if (filePath.endsWith(".xml") && data.length > 4) {
-                        int magic = (data[0] & 0xFF) | ((data[1] & 0xFF) << 8) | 
-                                   ((data[2] & 0xFF) << 16) | ((data[3] & 0xFF) << 24);
-                        if (magic == 0x00080003) {
-                            // 是 AXML 格式，解码
-                            content = AxmlParser.decode(data);
-                        }
-                    }
-                    result.put("content", content);
+                    result.put("content", new String(data, java.nio.charset.StandardCharsets.UTF_8));
                     result.put("encoding", "text");
                 }
             }
-            
+
+            long end = (long) offset + totalRead;
+            boolean hasMore = end < totalSize;
             result.put("offset", offset);
             result.put("bytesRead", totalRead);
-            result.put("hasMore", offset + totalRead < entry.getSize());
-            
+            result.put("hasMore", hasMore);
+            if (hasMore) {
+                // 字节级续读游标（Dart 层会包成不透明 nextCursor 回传）。
+                result.put("nextOffset", end);
+            }
+
         } finally {
             if (zipFile != null) {
                 try { zipFile.close(); } catch (Exception ignored) {}
             }
         }
-        
+
         return result;
     }
 

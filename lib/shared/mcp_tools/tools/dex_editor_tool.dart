@@ -1094,17 +1094,32 @@ Future<McpToolResult> _readApkFile(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
+  // 字节级分页：cursor 优先（回传 nextCursor），否则用显式 offset/maxBytes。
+  final c = decodeCursor(args['cursor']);
+  final offset = _int(c['offset'] ?? args['offset']);
+  final maxBytes = _int(c['maxBytes'] ?? args['maxBytes']);
   final result = await dex.execute('readApkFile', {
     'apkPath': _str(args['apkPath']),
-    'filePath': _str(args['filePath']),
+    'filePath': _filePathArg(args),
     'asBase64': _bool(args['asBase64']),
-    'maxBytes': _int(args['maxBytes']),
-    'offset': _int(args['offset']),
+    'maxBytes': maxBytes,
+    'offset': offset,
+    'sessionId': _str(args['sessionId']),
+    'decodeXml': _bool(args['decodeXml']),
   });
   if (!result.success) {
     return McpToolResult('错误: ${result.error}', isError: true);
   }
-  return McpToolResult(encodeJson(result.data));
+  // 把后端的字节续读位置包成不透明 nextCursor，模型原样回传 cursor 即可翻页。
+  final data = Map<String, Object?>.of(_map(result.data));
+  if (data['hasMore'] == true) {
+    final next = _int(data['nextOffset'], offset + _int(data['bytesRead']));
+    data['nextCursor'] = encodeCursor({
+      'offset': next,
+      if (maxBytes > 0) 'maxBytes': maxBytes,
+    });
+  }
+  return McpToolResult(encodeJson(data));
 }
 
 Future<McpToolResult> _deleteApkFile(

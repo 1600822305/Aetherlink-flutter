@@ -619,11 +619,17 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
       case 'apk_get_manifest':
       case 'apk_get_resource':
         lang = 'xml';
+      case 'apk_file':
+        // 仅 read 且非 Base64 时按代码块渲染；语言据 encoding/扩展名推断。
+        if (_strArg('op') == 'add' || _strArg('op') == 'delete') return null;
+        lang = _apkFileLang();
       default:
         return null;
     }
     final data = _dataMap();
     if (data != null && data['content'] is String) {
+      // Base64 二进制内容不当作代码块渲染。
+      if (_tool == 'apk_file' && data['encoding'] == 'base64') return null;
       return (lang, data['content'] as String);
     }
     // 无 offset/maxChars 时 dex 工具直接返回纯文本正文。
@@ -635,6 +641,17 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
   }
 
   String _apkName() => _shortName(_strArg('apkPath'));
+
+  /// Code-block language for an `apk_file` read: prefer the backend `encoding`
+  /// (xml when AXML was decoded), else infer from the file extension.
+  String _apkFileLang() {
+    if (_dataMap()?['encoding'] == 'xml') return 'xml';
+    final path = _strArg('filePath').toLowerCase();
+    if (path.endsWith('.xml')) return 'xml';
+    if (path.endsWith('.json')) return 'json';
+    if (path.endsWith('.smali')) return 'smali';
+    return 'text';
+  }
 
   String _resourceName() =>
       _strArg('resourcePath').isNotEmpty ? _strArg('resourcePath') : _strArg('id');

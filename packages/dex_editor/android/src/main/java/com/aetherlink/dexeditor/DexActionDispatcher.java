@@ -762,7 +762,9 @@ public class DexActionDispatcher {
                     params.getString("filePath"),
                     params.optBoolean("asBase64", false),
                     params.optInt("maxBytes", 0),
-                    params.optInt("offset", 0)
+                    params.optInt("offset", 0),
+                    params.optString("sessionId", ""),
+                    params.optBoolean("decodeXml", false)
                 ));
                 break;
 

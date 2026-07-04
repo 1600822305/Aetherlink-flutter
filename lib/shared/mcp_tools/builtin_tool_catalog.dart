@@ -1823,10 +1823,15 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       name: 'apk_file',
       description:
           '对 APK 内文件的读/增/删（统一入口）。用 op 选择动作，filePath 始终必填：\n'
-          '- op=read（默认）：读取文件内容（文本或 Base64）；\n'
+          '- op=read（默认）：读取文件内容。默认返回原始内容（文本或 Base64）；'
+          '大文件用 maxBytes 限制单次字节数，返回 hasMore/nextOffset/nextCursor，'
+          '把 nextCursor 原样回传到 cursor 即可续读，无需自己算 offset。'
+          '传 decodeXml=true 可把二进制 AXML 自动解码为可读 XML；'
+          '传 sessionId 则优先读该编辑会话中未保存的改动（目前主要是 .dex），否则读磁盘 APK。\n'
           '- op=add：添加或替换文件（如注入 assets、so 库），必填 content；\n'
           '- op=delete：删除文件（如广告资源、无用 so 库）。\n'
-          'add/delete 后 APK 需要重新签名。',
+          'add/delete 后 APK 需要重新签名。'
+          '（读 res/ 下资源、需按资源语义定位时可改用 apk_get_resource。）',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1859,15 +1864,28 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'description': 'op=read 时：是否以 Base64 编码返回（用于二进制文件）',
             'default': false,
           },
+          'decodeXml': {
+            'type': 'boolean',
+            'description': 'op=read 时：内容为二进制 AXML 则解码为可读 XML（默认 false 返回原始字节）',
+            'default': false,
+          },
+          'sessionId': {
+            'type': 'string',
+            'description': 'op=read 时可选：传入活跃编辑会话，优先读其中未保存的改动（目前主要是 .dex），不传则读磁盘 APK',
+          },
           'maxBytes': {
             'type': 'integer',
-            'description': 'op=read 时：最大读取字节数（0 表示不限制）',
+            'description': 'op=read 时：单次最大读取字节数（0 表示不限制，上限 1MB）',
             'default': 0,
           },
           'offset': {
             'type': 'integer',
-            'description': 'op=read 时：字节偏移量',
+            'description': 'op=read 时：字节偏移量（一般用 cursor 翻页，无需手填）',
             'default': 0,
+          },
+          'cursor': {
+            'type': 'string',
+            'description': 'op=read 时：分页游标，回传上一次返回的 nextCursor 即可续读下一段',
           },
         },
         'required': ['apkPath', 'op', 'filePath'],
