@@ -8,6 +8,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/core/platform/file_system_api.dart';
 import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
+import 'package:aetherlink_flutter/features/terminal/domain/terminal_mirrors.dart';
 
 /// 弹出内置终端环境安装面板；装好返回 `true`，取消/失败关闭返回 `false`。
 Future<bool> showTerminalSetupSheet(
@@ -34,6 +35,7 @@ class TerminalSetupSheet extends StatefulWidget {
 
 class _TerminalSetupSheetState extends State<TerminalSetupSheet> {
   late final TextEditingController _urlController;
+  TerminalMirror _mirror = kTerminalMirrors.first;
   CancelToken? _cancelToken;
   double? _progress;
   bool _busy = false;
@@ -46,6 +48,14 @@ class _TerminalSetupSheetState extends State<TerminalSetupSheet> {
     _urlController = TextEditingController(
       text: TerminalEngineManager.defaultRootfsUrl?.toString() ?? '',
     );
+  }
+
+  void _selectMirror(TerminalMirror mirror) {
+    setState(() {
+      _mirror = mirror;
+      _urlController.text =
+          TerminalEngineManager.rootfsUrlForMirror(mirror)?.toString() ?? '';
+    });
   }
 
   @override
@@ -82,6 +92,9 @@ class _TerminalSetupSheetState extends State<TerminalSetupSheet> {
           });
         },
       );
+      // apk 源跟随下载镜像：选了国内镜像就把 rootfs 内 /etc/apk/repositories
+      // 一并切过去（并启用 community 仓），apk add 才不会卡在官方源。
+      await TerminalEngineManager.instance.setApkMirror(_mirror);
       if (mounted) Navigator.of(context).pop(true);
     } on DioException catch (e) {
       if (!mounted) return;
@@ -151,6 +164,19 @@ class _TerminalSetupSheetState extends State<TerminalSetupSheet> {
               ),
             ),
             const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                for (final mirror in kTerminalMirrors)
+                  ChoiceChip(
+                    label: Text(mirror.name),
+                    selected: _mirror.id == mirror.id,
+                    onSelected: _busy ? null : (_) => _selectMirror(mirror),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
             TextField(
               controller: _urlController,
               enabled: !_busy,

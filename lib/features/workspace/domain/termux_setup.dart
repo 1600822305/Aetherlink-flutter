@@ -22,6 +22,13 @@ abstract final class TermuxSetup {
   /// Suggested filename when sharing the script as a file.
   static const String scriptFileName = 'aetherlink-termux-setup.sh';
 
+  /// 开启 allow-external-apps（Termux-B / RUN_COMMAND 的前提）的一条命令：
+  /// 用户在 Termux 里跑一次，之后本 App 才能通过 intent 代跑脚本。
+  static const String allowExternalAppsCommand =
+      'mkdir -p ~/.termux && '
+      'printf "\\nallow-external-apps=true\\n" >> ~/.termux/termux.properties'
+      ' && termux-reload-settings';
+
   /// Android shared storage root (相册/下载/文档 etc.). Termux can only reach it
   /// after `termux-setup-storage` has granted the storage permission; the app
   /// offers this as an alternate workspace root so users can browse `/sdcard`.

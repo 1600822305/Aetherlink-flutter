@@ -16,6 +16,9 @@
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
+    <!-- Termux-B（设计文档 §10.5 方式 B）：RUN_COMMAND intent 代跑一键接入脚本。
+         还需 Termux 端 allow-external-apps=true（UI 引导用户开启）。 -->
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
     <application
         android:label="aetherlink_flutter"
         android:name="${applicationName}"
