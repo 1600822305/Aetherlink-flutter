@@ -338,9 +338,7 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
             _simpleRow(
               theme,
               icon: LucideIcons.fileCode,
-              title: c['className']?.toString() ??
-                  c['name']?.toString() ??
-                  c.toString(),
+              title: _pick(c, ['className', 'name']) ?? c.toString(),
             )
           else
             _simpleRow(theme, icon: LucideIcons.fileCode, title: c.toString()),
@@ -360,16 +358,30 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
             _simpleRow(
               theme,
               icon: LucideIcons.search,
-              title: r['className']?.toString() ??
-                  r['name']?.toString() ??
-                  r['value']?.toString() ??
-                  r.toString(),
-              trailing: r['methodName']?.toString() ?? r['type']?.toString(),
+              title: _searchTitle(r),
+              trailing: _pick(r, ['type']),
             )
           else
             _simpleRow(theme, icon: LucideIcons.search, title: r.toString()),
       ],
     );
+  }
+
+  /// 搜索命中的展示名：类名 +（方法/字段/父类/接口/注解等）成员，缺失字段在
+  /// 原生结果里是空字符串而非缺键，故用 `_pick` 取第一个非空值再拼接。
+  String _searchTitle(Map<Object?, Object?> r) {
+    final cls = _pick(r, ['className']);
+    final member = _pick(r, [
+      'methodName',
+      'fieldName',
+      'name',
+      'superclass',
+      'interface',
+      'annotation',
+      'value',
+    ]);
+    if (cls != null && member != null) return '${_shortName(cls)} · $member';
+    return cls ?? member ?? r.toString();
   }
 
   Widget _sessionsBody(ThemeData theme, Object? sessions) {
@@ -383,9 +395,7 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
             _simpleRow(
               theme,
               icon: LucideIcons.folderOpen,
-              title: s['apkPath']?.toString() ??
-                  s['sessionId']?.toString() ??
-                  s.toString(),
+              title: _pick(s, ['apkPath', 'sessionId']) ?? s.toString(),
               trailing: s['classCount'] != null ? '${s['classCount']} 类' : null,
             ),
       ],
@@ -403,10 +413,8 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
             _simpleRow(
               theme,
               icon: LucideIcons.gitFork,
-              title: x['className']?.toString() ??
-                  x['caller']?.toString() ??
-                  x.toString(),
-              trailing: x['methodName']?.toString() ?? x['line']?.toString(),
+              title: _pick(x, ['className', 'caller']) ?? x.toString(),
+              trailing: _pick(x, ['methodName', 'line']),
             )
           else
             _simpleRow(theme, icon: LucideIcons.gitFork, title: x.toString()),
@@ -425,10 +433,8 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
             _simpleRow(
               theme,
               icon: LucideIcons.image,
-              title: r['path']?.toString() ??
-                  r['name']?.toString() ??
-                  r.toString(),
-              trailing: r['type']?.toString(),
+              title: _pick(r, ['path', 'name']) ?? r.toString(),
+              trailing: _pick(r, ['type']),
             )
           else
             _simpleRow(theme, icon: LucideIcons.image, title: r.toString()),
@@ -447,9 +453,7 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
             _simpleRow(
               theme,
               icon: LucideIcons.file,
-              title: f['path']?.toString() ??
-                  f['name']?.toString() ??
-                  f.toString(),
+              title: _pick(f, ['path', 'name']) ?? f.toString(),
               trailing: f['size'] != null ? '${f['size']} B' : null,
             )
           else
@@ -546,6 +550,16 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
         ],
       ),
     );
+  }
+
+  /// First non-empty value among [keys] of [m], or null. dex 原生结果里缺失字段
+  /// 常返回空字符串（而非缺键），直接 `?? ` 会被空串截断，用它统一取第一个非空值。
+  String? _pick(Map<Object?, Object?> m, List<String> keys) {
+    for (final k in keys) {
+      final v = m[k];
+      if (v != null && v.toString().trim().isNotEmpty) return v.toString();
+    }
+    return null;
   }
 
   Widget _emptyBody(ThemeData theme, String message) => Padding(
