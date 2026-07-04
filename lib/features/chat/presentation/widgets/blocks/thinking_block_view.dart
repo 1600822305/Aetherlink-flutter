@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/thinking_settings_access.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/inline_tool_chip.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/tool_renderer_registry.dart';
@@ -189,8 +190,16 @@ class _ThinkingBlockViewState extends ConsumerState<ThinkingBlockView> {
       onCopy: _copy,
       previewContent: _previewContent(),
       inlineTools: inlineTools,
-      markdownBuilder: (context, content, style) =>
-          AppMarkdown(content: content, style: style),
+      markdownBuilder: (context, content, style) {
+        final body = AppMarkdown(content: content, style: style);
+        // 消息可选中复制 (侧边栏常规设置)：思考过程正文也支持长按选中/复制。
+        final selectable = ref.watch(
+          sidebarSettingsControllerProvider.select(
+            (s) => s.selectableMessageText,
+          ),
+        );
+        return selectable ? SelectionArea(child: body) : body;
+      },
     );
   }
 }

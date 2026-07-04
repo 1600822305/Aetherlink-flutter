@@ -122,6 +122,9 @@ abstract class SidebarSettings with _$SidebarSettings {
     @Default(MessageStyle.bubble) MessageStyle messageStyle,
     @Default(MessageNavigation.none) MessageNavigation messageNavigation,
     @Default(true) bool showMessageTokenUsage,
+    // 消息正文可选中复制：开启后聊天消息的正文支持长按选中/复制（Flutter
+    // SelectionArea）。默认开启。
+    @Default(true) bool selectableMessageText,
     // ── 侧边栏宽度 (px) ───────────────────────────────────────────────────────
     // Flutter mobile drawer default 350 (`AppSidebar.solid.tsx`); clamped to
     // [kSidebarWidthMin, getSafeMaxSidebarWidth] when applied.

@@ -103,6 +103,12 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       value: s.showMessageTokenUsage,
       onChanged: c.setShowMessageTokenUsage,
     ),
+    _SwitchSettingRow(
+      title: '消息可选中复制',
+      description: '允许长按选中/复制聊天消息的正文内容',
+      value: s.selectableMessageText,
+      onChanged: c.setSelectableMessageText,
+    ),
   ];
 
   List<Widget> _contextChildren(
@@ -289,7 +295,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
   ];
 
   String _groupSubtitle(String id, SidebarSettings s) => switch (id) {
-    'general' => '7 个基础功能设置',
+    'general' => '8 个基础功能设置',
     'context' =>
       '窗口: ${s.contextWindowSize > 0 ? _formatInt(s.contextWindowSize) : '自动'}'
           ' | 输出: ${s.enableMaxOutputTokens ? _formatInt(s.maxOutputTokens) : '默认'}',
@@ -345,7 +351,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
         const _SettingsDivider(),
         _SettingsGroup(
           title: '常规设置',
-          subtitle: '7 个基础功能设置',
+          subtitle: '8 个基础功能设置',
           children: _generalChildren(s, c),
         ),
         const _SettingsDivider(),
