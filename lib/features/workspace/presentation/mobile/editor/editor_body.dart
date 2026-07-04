@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_text_area.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_replace_engine.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/read_only_code_view.dart';
 
 /// Outcome of the unsaved-changes prompt shown when leaving a dirty file.
 enum LeaveAction { save, discard, cancel }
@@ -45,6 +47,8 @@ class EditorContent extends StatelessWidget {
     required this.onFontSize,
     required this.onRetry,
     this.placeholderBuilder,
+    this.findMatches = const <TextMatch>[],
+    this.findIndex = -1,
   });
 
   final Future<void> ready;
@@ -54,6 +58,12 @@ class EditorContent extends StatelessWidget {
   final double fontSize;
   final ValueChanged<double> onFontSize;
   final VoidCallback onRetry;
+
+  /// Live find state, forwarded to the read-only viewer for match
+  /// highlighting and scroll-to-match (the editable field highlights via its
+  /// own selection instead).
+  final List<TextMatch> findMatches;
+  final int findIndex;
 
   /// Returns a non-null widget (binary / too-large placeholder) to show instead
   /// of the text area once the load completes; null means "show the editor".
@@ -78,6 +88,18 @@ class EditorContent extends StatelessWidget {
         }
         final placeholder = placeholderBuilder?.call();
         if (placeholder != null) return placeholder;
+        // View mode renders through the virtualized per-line viewer, so large
+        // files scroll smoothly; the whole-document TextField is only paid
+        // for when actually editing.
+        if (!editing) {
+          return ReadOnlyCodeView(
+            controller: controller,
+            fontSize: fontSize,
+            onFontSize: onFontSize,
+            findMatches: findMatches,
+            findIndex: findIndex,
+          );
+        }
         return EditorTextArea(
           controller: controller,
           focusNode: focusNode,
