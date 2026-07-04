@@ -1,7 +1,8 @@
-// 内置终端长驻会话池（设计文档 §2.3 P1）。
+// 工作区长驻会话池 — 内置终端的会话池抽象（exec 超时后台继续跑 +
+// tailOutput 回看）上移到 WorkspaceBackend 层：任何 canExec 的后端（内置
+// 终端 / SSH / Termux）都能开长驻 shell 会话，AI 工具（@aether/terminal 的
+// terminal_session_*）据此在远端也能跑后台长任务。
 //
-// 给 AI 工具（@aether/terminal 的 terminal_session_*）提供可复用的长驻
-// Alpine shell：毫秒级复用避免每条命令重开 proot；空闲超时自动释放进程。
 // 交互式终端页不走这里（那是用户自己的会话，生命周期由页面管理）。
 
 import 'dart:async';
@@ -9,25 +10,31 @@ import 'dart:convert';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import 'package:aetherlink_flutter/features/terminal/domain/terminal_session_protocol.dart';
-import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
-import 'package:aetherlink_flutter/features/workspace/data/proot_local_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace_session_protocol.dart';
 
-part 'proot_session_pool.g.dart';
+part 'workspace_session_pool.g.dart';
 
-/// 会话空闲多久后自动释放进程（设计文档：无任务 N 分钟后自动释放）。
+/// 会话空闲多久后自动释放进程（无任务 N 分钟后自动释放）。
 const Duration kSessionIdleTimeout = Duration(minutes: 10);
 
-/// 池内并发会话上限（Agent 并发时按需扩容的上限）。
+/// 单个后端的并发会话上限（Agent 并发时按需扩容的上限）。
 const int kMaxPooledSessions = 4;
 
 /// 单个会话保留的输出回看缓冲上限（字符）。
 const int kSessionBufferLimit = 200 * 1024;
 
+/// Thrown by session operations with a user-facing message.
+class WorkspaceSessionException implements Exception {
+  const WorkspaceSessionException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
 /// 在长驻会话里跑一条命令的结果。输出为 PTY 合并流（stdout+stderr+回显）。
-class TerminalSessionExecResult {
-  const TerminalSessionExecResult({
+class WorkspaceSessionExecResult {
+  const WorkspaceSessionExecResult({
     required this.output,
     required this.exitCode,
     this.timedOut = false,
@@ -41,10 +48,11 @@ class TerminalSessionExecResult {
 }
 
 /// 池内一个长驻 shell 会话。
-class PooledTerminalSession {
-  PooledTerminalSession._({
+class PooledWorkspaceSession {
+  PooledWorkspaceSession._({
     required this.id,
     required this.name,
+    required this.workspaceLabel,
     required WorkspaceShellSession shell,
   })  : _shell = shell,
         createdAt = DateTime.now(),
@@ -61,6 +69,10 @@ class PooledTerminalSession {
 
   final String id;
   final String name;
+
+  /// 会话所属工作区的展示名（内置终端会话为「内置终端」）。
+  final String workspaceLabel;
+
   final DateTime createdAt;
   DateTime lastUsedAt;
 
@@ -93,15 +105,17 @@ class PooledTerminalSession {
 
   /// 在本会话里跑 [command]，等哨兵回来或超时。超时不杀会话——命令继续在
   /// 后台跑，之后可用 [tailOutput] 回看。
-  Future<TerminalSessionExecResult> exec(
+  Future<WorkspaceSessionExecResult> exec(
     String command, {
     Duration timeout = const Duration(seconds: 120),
   }) async {
     if (!_alive) {
-      throw const ProotBackendException('会话已结束，请新建会话');
+      throw const WorkspaceSessionException('会话已结束，请新建会话');
     }
     if (_busy) {
-      throw const ProotBackendException('会话正忙（上一条命令还没结束），可换一个会话或稍后再试');
+      throw const WorkspaceSessionException(
+        '会话正忙（上一条命令还没结束），可换一个会话或稍后再试',
+      );
     }
     _busy = true;
     lastUsedAt = DateTime.now();
@@ -116,12 +130,12 @@ class PooledTerminalSession {
     try {
       _shell.write(utf8.encode(buildSentinelInput(command, nonce)));
       final match = await done.future.timeout(timeout);
-      return TerminalSessionExecResult(
+      return WorkspaceSessionExecResult(
         output: match.output,
         exitCode: match.exitCode,
       );
     } on TimeoutException {
-      return TerminalSessionExecResult(
+      return WorkspaceSessionExecResult(
         output: collected.toString(),
         exitCode: null,
         timedOut: true,
@@ -142,32 +156,40 @@ class PooledTerminalSession {
   }
 }
 
-/// 长驻会话池：新建 / 列出 / 关闭 / 复用默认会话，空闲超时自动回收。
-class ProotSessionPool {
-  ProotSessionPool(this._backend);
+/// 单个后端的长驻会话池：新建 / 列出 / 关闭 / 复用默认会话，空闲超时自动回收。
+class WorkspaceSessionPool {
+  WorkspaceSessionPool(
+    this._backend, {
+    required String Function() nextId,
+    this.workspaceLabel = '',
+  }) : _nextId = nextId;
 
-  final ProotLocalBackend _backend;
-  final Map<String, PooledTerminalSession> _sessions = {};
+  final WorkspaceBackend _backend;
+  final String Function() _nextId;
+
+  /// 池所属工作区的展示名，赋给新建的会话。
+  final String workspaceLabel;
+
+  final Map<String, PooledWorkspaceSession> _sessions = {};
   Timer? _reaper;
-  int _nextId = 1;
 
-  List<PooledTerminalSession> list() {
+  List<PooledWorkspaceSession> list() {
     _prune();
     return _sessions.values.toList();
   }
 
-  PooledTerminalSession? find(String id) {
+  PooledWorkspaceSession? find(String id) {
     _prune();
     return _sessions[id];
   }
 
-  Future<PooledTerminalSession> create({
+  Future<PooledWorkspaceSession> create({
     String? name,
     String? workingDirectory,
   }) async {
     _prune();
     if (_sessions.length >= kMaxPooledSessions) {
-      throw const ProotBackendException(
+      throw const WorkspaceSessionException(
         '会话数已达上限（$kMaxPooledSessions 个），请先关闭不用的会话',
       );
     }
@@ -176,10 +198,11 @@ class ProotSessionPool {
       rows: 50,
       workingDirectory: workingDirectory,
     );
-    final id = 's${_nextId++}';
-    final session = PooledTerminalSession._(
+    final id = _nextId();
+    final session = PooledWorkspaceSession._(
       id: id,
       name: (name == null || name.trim().isEmpty) ? id : name.trim(),
+      workspaceLabel: workspaceLabel,
       shell: shell,
     );
     _sessions[id] = session;
@@ -189,12 +212,14 @@ class ProotSessionPool {
 
   /// 取默认长驻会话（第一个空闲的），没有就新建——「默认保留 1 个长驻 shell，
   /// 毫秒级复用」。
-  Future<PooledTerminalSession> acquireDefault() async {
+  Future<PooledWorkspaceSession> acquireDefault({
+    String? workingDirectory,
+  }) async {
     _prune();
     for (final session in _sessions.values) {
       if (session.alive && !session.busy) return session;
     }
-    return create();
+    return create(workingDirectory: workingDirectory);
   }
 
   Future<bool> close(String id) async {
@@ -241,6 +266,49 @@ class ProotSessionPool {
   }
 }
 
+/// 会话池管理器：每个后端实例一个池（内置终端 / 各 SSH 连接各自独立），
+/// 会话 ID 全局唯一，查找 / 关闭可跨池按 ID 直达。
+class WorkspaceSessionPoolManager {
+  final Map<WorkspaceBackend, WorkspaceSessionPool> _pools = {};
+  int _nextId = 1;
+
+  /// [backend] 的会话池；首次访问时创建，[workspaceLabel] 赋给其新会话。
+  WorkspaceSessionPool poolFor(
+    WorkspaceBackend backend, {
+    String workspaceLabel = '',
+  }) =>
+      _pools.putIfAbsent(
+        backend,
+        () => WorkspaceSessionPool(
+          backend,
+          nextId: () => 's${_nextId++}',
+          workspaceLabel: workspaceLabel,
+        ),
+      );
+
+  /// 所有池里的所有会话。
+  List<PooledWorkspaceSession> allSessions() => [
+        for (final pool in _pools.values) ...pool.list(),
+      ];
+
+  /// 跨池按 ID 查会话。
+  PooledWorkspaceSession? find(String id) {
+    for (final pool in _pools.values) {
+      final session = pool.find(id);
+      if (session != null) return session;
+    }
+    return null;
+  }
+
+  /// 跨池按 ID 关会话；找不到返回 false。
+  Future<bool> close(String id) async {
+    for (final pool in _pools.values) {
+      if (await pool.close(id)) return true;
+    }
+    return false;
+  }
+}
+
 @Riverpod(keepAlive: true)
-ProotSessionPool prootSessionPool(Ref ref) =>
-    ProotSessionPool(ref.watch(prootLocalBackendProvider));
+WorkspaceSessionPoolManager workspaceSessionPoolManager(Ref ref) =>
+    WorkspaceSessionPoolManager();
