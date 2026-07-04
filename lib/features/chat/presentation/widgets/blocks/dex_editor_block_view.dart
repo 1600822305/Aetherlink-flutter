@@ -25,6 +25,9 @@ class DexEditorBlockView extends StatefulWidget {
   State<DexEditorBlockView> createState() => _DexEditorBlockViewState();
 }
 
+/// 展开区最大高度：超出则内部滚动，防止长反汇编/长列表把气泡撑得过长。
+const double _kBodyMaxHeight = 320;
+
 class _DexEditorBlockViewState extends State<DexEditorBlockView> {
   bool _expanded = false;
 
@@ -124,7 +127,17 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
                 decoration: BoxDecoration(
                   border: Border(top: BorderSide(color: theme.dividerColor)),
                 ),
-                child: body,
+                // 超长内容（反汇编正文、类/搜索/文件长列表）固定最大高度并内部
+                // 滚动，避免把整个气泡撑得过长。短内容按需收缩、不会留白。
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: _kBodyMaxHeight),
+                  child: Scrollbar(
+                    child: SingleChildScrollView(
+                      primary: false,
+                      child: body,
+                    ),
+                  ),
+                ),
               ),
               crossFadeState: _expanded
                   ? CrossFadeState.showSecond
