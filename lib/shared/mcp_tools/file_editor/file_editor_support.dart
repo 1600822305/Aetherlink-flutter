@@ -124,7 +124,7 @@ Future<ResolvedWorkspace> resolveWorkspace(
   for (final w in workspaces) {
     if (w.name == raw) return _resolve(ref, w);
   }
-  throw FileEditorError('找不到工作区: "$raw"。可用 list_workspaces 查看编号/ID/名称。');
+  throw FileEditorError('找不到工作区: "$raw"。可用编号/ID/名称见系统提示的 [工作区上下文]。');
 }
 
 ResolvedWorkspace _resolve(Ref ref, Workspace workspace) =>

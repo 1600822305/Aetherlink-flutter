@@ -7,29 +7,10 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_search.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
-
-/// `list_workspaces` — all opened workspaces, numbered (1-based) for use as the
-/// `workspace` argument of the other tools.
-Future<McpToolResult> listWorkspaces(Ref ref) async {
-  final workspaces = await loadWorkspaces(ref);
-  final items = <Map<String, Object?>>[];
-  for (var i = 0; i < workspaces.length; i++) {
-    final Workspace w = workspaces[i];
-    items.add({
-      'index': i + 1,
-      'id': w.id,
-      'name': w.name,
-      'backend': w.backendType.name,
-      'path': w.displayPath ?? w.name,
-    });
-  }
-  return fileEditorOk({'count': items.length, 'workspaces': items});
-}
 
 /// `get_workspace_files` — list a workspace's files, resolving `sub_path` by
 /// name and optionally recursing up to `max_depth` levels.
