@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/knowledge_access.dart';
-import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
 import 'package:aetherlink_flutter/app/di/memory_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
@@ -19,16 +18,18 @@ import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/parameter_settings_controller.dart';
-import 'package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_send_hooks.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
-import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/mounted_knowledge_bases_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/multi_model_mentions_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/ocr_service.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/streaming_registry.dart';
+import 'package:aetherlink_flutter/features/chat/application/tools/tool_confirmation.dart';
+import 'package:aetherlink_flutter/features/chat/application/tools/tool_executor.dart';
+import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
+import 'package:aetherlink_flutter/features/chat/application/tools/tool_setup.dart';
 import 'package:aetherlink_flutter/features/chat/application/suggestion_service.dart';
 import 'package:aetherlink_flutter/features/chat/application/translate_controller.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/api_key_manager.dart';
@@ -58,27 +59,15 @@ import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/config/skill_prompt_builder.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
-import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tools.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/workspace_context.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/mcp_bridge_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_prompt.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/settings/settings_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/running_commands_service.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
-import 'package:aetherlink_flutter/shared/services/web_search_service.dart';
 import 'package:aetherlink_flutter/shared/utils/regex_replacement.dart';
 import 'package:aetherlink_flutter/shared/utils/system_prompt_variables.dart';
 
@@ -124,6 +113,13 @@ class ChatController extends _$ChatController {
   String? _truncatedMessageId;
 
   ChatRepository get _repo => ref.read(chatRepositoryProvider);
+
+  /// Runs each tool call along its [ToolRoute] (in-process built-in / remote
+  /// MCP / bridge / web search / memory search).
+  late final ChatToolExecutor _toolExecutor = ChatToolExecutor(
+    ref,
+    assistantId: () => _assistantId,
+  );
 
   StreamingRegistry get _registry =>
       ref.read(streamingRegistryProvider.notifier);
@@ -834,7 +830,7 @@ class ChatController extends _$ChatController {
     final views = <ChatMessageView>[...snapshot.messages, assistantView];
     _emitTurn(topicId, views, streaming: true);
 
-    final mcp = toolsEnabled ? await _mcpSetup() : const _McpSetup.disabled();
+    final mcp = toolsEnabled ? await _mcpSetup() : const McpSetup.disabled();
     final ctx = _contextSettings();
     final request = LlmChatRequest(
       model: effective,
@@ -1955,7 +1951,7 @@ class ChatController extends _$ChatController {
     required DateTime assistantTime,
     required List<ChatMessageView> views,
     required ChatMessageView assistantView,
-    required _McpSetup mcp,
+    required McpSetup mcp,
     List<MessageBlock> leadingBlocks = const <MessageBlock>[],
     // When false this stream is one sibling of a multi-model turn: it persists
     // its own message and updates its own view but does NOT end the topic's
@@ -2464,33 +2460,24 @@ class ChatController extends _$ChatController {
             final blockId = generateId('block');
             final toolId = call.id.isEmpty ? call.name : call.id;
 
-            final needsConfirm =
-                (route is _SettingsToolRoute &&
-                    inferSettingsPermission(call.name) ==
-                        SettingsToolPermission.confirm) ||
-                (route is _FileEditorToolRoute &&
-                    fileEditorNeedsConfirmation(call.name)) ||
-                (route is _KnowledgeToolRoute &&
-                    knowledgeToolNeedsConfirmation(call.name, args)) ||
-                (route is _TerminalToolRoute &&
-                    terminalToolNeedsConfirmation(call.name));
+            final needsConfirm = toolNeedsConfirmation(route, call.name, args);
 
             // `run_command` / `terminal_execute` can be aborted mid-flight:
             // register a cancel signal
             // (keyed by this block) before running so the block's 中断 button
             // can kill the remote session, then deregister once it settles.
-            final isCancelableCommand =
-                (route is _FileEditorToolRoute && call.name == 'run_command') ||
-                    (route is _TerminalToolRoute &&
-                        call.name == 'terminal_execute');
+            final isCancelableCommand = isCancelableCommandCall(
+              route,
+              call.name,
+            );
             Future<McpToolResult> runRoute() async {
               if (!isCancelableCommand) {
-                return _runTool(route, call.name, args);
+                return _toolExecutor.runTool(route, call.name, args);
               }
               final running = ref.read(runningCommandsProvider.notifier);
               final cancelSignal = running.start(blockId);
               try {
-                return await _runTool(
+                return await _toolExecutor.runTool(
                   route,
                   call.name,
                   args,
@@ -2534,7 +2521,7 @@ class ChatController extends _$ChatController {
                         id: blockId,
                         conversationId: turnTopicId,
                         toolName: call.name,
-                        summary: _confirmSummary(call.name, args),
+                        summary: toolConfirmSummary(call.name, args),
                         args: args,
                       ),
                     );
@@ -4129,497 +4116,22 @@ class ChatController extends _$ChatController {
     ];
   }
 
-  /// Assembles the [_McpSetup] for the current turn — the port of the web
-  /// `fetchMcpTools(toolsEnabled, hasSkills)`. Three switches drive it
-  /// ([McpToolsController]): the 工具 总开关, 桥梁模式, and the 技能 独立开关.
-  ///
-  /// `read_skill` is injected (and only it) whenever 技能开关 is on AND the
-  /// assistant has bound, enabled skills — independent of the 工具 总开关 and 桥梁
-  /// 模式, exactly like the web. With the 工具 总开关 on: 桥梁模式 replaces every
-  /// server's tools with the single `mcp_bridge` tool; otherwise built-in
-  /// (locally-runnable) + remote (discovered live) server tools are injected as
-  /// before, each minus its `disabledTools`. A remote server that is unreachable
-  /// degrades gracefully — it simply contributes no tools this turn.
-  ///
-  /// When the 网络搜索 session mode is active ([InputMode.webSearch]), the
-  /// `builtin_web_search` tool is always injected — independent of the MCP 工具
-  /// 总开关 — so the model can request web searches even if MCP tools are off.
-  Future<_McpSetup> _mcpSetup() async {
-    // Ensure persisted toggles have been loaded from DB before reading — fixes
-    // a cold-start race where the default (enabled=false) was used for the
-    // first message sent before _hydrate() completed.
-    await ref.read(mcpToolsControllerProvider.notifier).hydrated;
-    final toolsState = ref.read(mcpToolsControllerProvider);
-
-    final assistant = await _repo.getAssistant(_assistantId);
-    final boundSkills = await _enabledSkillsFor(assistant?.skillIds);
-    final injectReadSkill = toolsState.skillsEnabled && boundSkills.isNotEmpty;
-
-    final tools = <McpToolDefinition>[];
-    final routes = <String, _ToolRoute>{};
-
-    void addReadSkill() {
-      if (!injectReadSkill) return;
-      tools.add(kReadSkillToolDefinition);
-      routes[kReadSkillToolName] = const _SkillReadToolRoute();
-    }
-
-    // 工具 总开关 off: only read_skill and web search may ride along.
-    if (!toolsState.enabled) {
-      addReadSkill();
-      _maybeInjectWebSearch(tools, routes);
-      _maybeInjectMemorySearch(tools, routes);
-      if (tools.isEmpty) return const _McpSetup.disabled();
-      return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
-    }
-
-    // 桥梁模式: 1 个 mcp_bridge 工具替代注入全部服务器工具。
-    if (toolsState.bridgeMode) {
-      tools.add(kMcpBridgeToolDefinition);
-      routes[kMcpBridgeToolName] = const _BridgeToolRoute();
-      addReadSkill();
-      _maybeInjectWebSearch(tools, routes);
-      _maybeInjectMemorySearch(tools, routes);
-      return _McpSetup(mode: toolsState.mode, tools: tools, routes: routes);
-    }
-
-    final servers = await ref.read(mcpServersProvider.future);
-    for (final server in servers) {
-      if (!server.isActive) continue;
-
-      // Ref-dependent built-ins (@aether/settings, @aether/file-editor,
-      // @aether/knowledge): run in-process with Riverpod [Ref] access to app
-      // state.
-      if (kRefDependentBuiltins.contains(server.name)) {
-        final disabled = server.disabledTools?.toSet() ?? const <String>{};
-        for (final tool in builtinToolsFor(server.name)) {
-          if (disabled.contains(tool.name)) continue;
-          if (routes.containsKey(tool.name)) continue;
-          tools.add(tool);
-          routes[tool.name] = _routeForRefDependentBuiltin(
-            server.name,
-            tool.name,
-          );
-        }
-        continue;
-      }
-
-      // Built-in (locally-runnable) servers: static catalogue, run in-process.
-      if (kLocallyRunnableBuiltins.contains(server.name)) {
-        final disabled = server.disabledTools?.toSet() ?? const <String>{};
-        for (final tool in builtinToolsFor(server.name)) {
-          if (disabled.contains(tool.name)) continue;
-          if (routes.containsKey(tool.name)) continue;
-          tools.add(tool);
-          routes[tool.name] = _BuiltinToolRoute(
-            server.name,
-            tool.name,
-            env: server.env,
-          );
-        }
-        continue;
-      }
-
-      // Remote (sse / streamableHttp) servers: discover tools live; the manager
-      // already filters out `disabledTools` and prefixes names for collision
-      // safety. First-wins on duplicate exposed names.
-      if (RemoteMcpConnectionManager.isRemote(server)) {
-        try {
-          final discovered = await ref
-              .read(remoteMcpConnectionManagerProvider)
-              .listTools(server);
-          for (final tool in discovered) {
-            final exposed = tool.definition.name;
-            if (routes.containsKey(exposed)) continue;
-            tools.add(tool.definition);
-            routes[exposed] = _RemoteToolRoute(server, tool.toolName);
-          }
-        } on Object {
-          // Unreachable / failing server: skip it for this turn.
-        }
-      }
-    }
-
-    addReadSkill();
-    _maybeInjectWebSearch(tools, routes);
-    _maybeInjectMemorySearch(tools, routes);
-
-    // 文件工具在列时把当前工作区上下文直接送进系统提示，模型开局即知可用
-    // 工作区（编号/ID/名称），无需专门的列表工具。
-    String? workspaceContext;
-    if (routes.values.any((r) => r is _FileEditorToolRoute)) {
-      workspaceContext = await buildWorkspaceContextSection(ref);
-    }
-    return _McpSetup(
-      mode: toolsState.mode,
-      tools: tools,
-      routes: routes,
-      workspaceContext: workspaceContext,
-    );
-  }
-
-  /// Picks the in-process route for a ref-dependent built-in tool by server.
-  _ToolRoute _routeForRefDependentBuiltin(String serverName, String toolName) {
-    if (serverName == kFileEditorServerName) {
-      return _FileEditorToolRoute(toolName);
-    }
-    if (serverName == kKnowledgeServerName) {
-      return _KnowledgeToolRoute(toolName);
-    }
-    if (serverName == kTerminalServerName) {
-      return _TerminalToolRoute(toolName);
-    }
-    return _SettingsToolRoute(toolName);
-  }
-
-  /// Injects the `builtin_web_search` tool when [InputMode.webSearch] is active.
-  /// Uses the existing SearXNG builtin server's `searxng_search` under the hood.
-  void _maybeInjectWebSearch(
-    List<McpToolDefinition> tools,
-    Map<String, _ToolRoute> routes,
-  ) {
-    if (ref.read(inputModeControllerProvider) != InputMode.webSearch) return;
-    // Avoid duplicating if SearXNG tools are already injected via MCP 总开关.
-    if (routes.containsKey(_kWebSearchToolName)) return;
-    tools.add(_kWebSearchToolDefinition);
-    routes[_kWebSearchToolName] = const _WebSearchToolRoute();
-  }
-
-  /// Injects the `search_memory` tool when 记忆 is on and its 注入方式 is `tool`
-  /// (the model fetches memories on demand instead of having them dumped into
-  /// the prompt) — independent of the MCP 工具 总开关, mirroring web search.
-  void _maybeInjectMemorySearch(
-    List<McpToolDefinition> tools,
-    Map<String, _ToolRoute> routes,
-  ) {
-    if (!shouldExposeMemorySearchTool(ref)) return;
-    if (routes.containsKey(kSearchMemoryToolName)) return;
-    tools.add(kSearchMemoryToolDefinition);
-    routes[kSearchMemoryToolName] = const _MemorySearchToolRoute();
-  }
-
-  /// Executes one tool call along its [route]: a built-in runs in-process via
-  /// [runBuiltinTool]; a remote tool is dispatched to its server through
-  /// [RemoteMcpConnectionManager]. A remote failure becomes an error result (fed
-  /// back to the model) rather than aborting the whole turn. [exposedName] is the
-  /// model-facing name, used only for messages.
-  Future<McpToolResult> _runTool(
-    _ToolRoute route,
-    String exposedName,
-    Map<String, Object?> args, {
-    Future<void>? cancelSignal,
-  }) async {
-    switch (route) {
-      case _SettingsToolRoute():
-        return await runSettingsTool(ref, route.toolName, args);
-      case _FileEditorToolRoute():
-        return await runFileEditorTool(
-          ref,
-          route.toolName,
-          args,
-          cancelSignal: cancelSignal,
-        );
-      case _BuiltinToolRoute(:final serverName, :final env):
-        return await runBuiltinTool(
-              serverName,
-              route.toolName,
-              args,
-              env: env,
-            ) ??
-            McpToolResult('工具 $exposedName 无法在本地执行', isError: true);
-      case _RemoteToolRoute(:final server):
-        try {
-          return await ref
-              .read(remoteMcpConnectionManagerProvider)
-              .callTool(server, route.toolName, args);
-        } on Object catch (error) {
-          return McpToolResult(
-            '工具 $exposedName 调用失败: ${_errorMessage(error)}',
-            isError: true,
-          );
-        }
-      case _SkillReadToolRoute():
-        final skills = await ref.read(skillsProvider.future);
-        return executeReadSkill(skills, args);
-      case _BridgeToolRoute():
-        return _runBridgeTool(args);
-      case _WebSearchToolRoute():
-        return _runWebSearch(args);
-      case _MemorySearchToolRoute():
-        return _runMemorySearch(args);
-      case _KnowledgeToolRoute():
-        return await runKnowledgeTool(ref, route.toolName, args);
-      case _TerminalToolRoute():
-        return await runTerminalTool(
-          ref,
-          route.toolName,
-          args,
-          cancelSignal: cancelSignal,
-        );
-    }
-  }
-
-  /// Executes one `mcp_bridge` call — the port of `executeBridgeToolCall`.
-  /// Dispatches by `action`: list every configured server, list one server's
-  /// tools, or call a tool on a server (built-in run in-process, remote over a
-  /// live connection). Errors become error results fed back to the model.
-  Future<McpToolResult> _runBridgeTool(Map<String, Object?> args) async {
-    final action = args['action'] as String?;
-    final server = args['server'] as String?;
-    final tool = args['tool'] as String?;
-    final toolArgs =
-        (args['arguments'] as Map?)?.cast<String, Object?>() ??
-        const <String, Object?>{};
-    try {
-      switch (action) {
-        case 'list_servers':
-          return _bridgeListServers();
-        case 'list_tools':
-          return _bridgeListTools(server);
-        case 'call':
-          return _bridgeCallTool(server, tool, toolArgs);
-        default:
-          return McpToolResult(
-            '未知操作: $action。支持的操作: list_servers, list_tools, call',
-            isError: true,
-          );
-      }
-    } on Object catch (error) {
-      return McpToolResult(
-        'Bridge 执行失败: ${_errorMessage(error)}',
-        isError: true,
-      );
-    }
-  }
-
-  Future<McpToolResult> _bridgeListServers() async {
-    final servers = await ref.read(mcpServersProvider.future);
-    if (servers.isEmpty) {
-      return const McpToolResult('当前没有配置任何 MCP 服务器。请在设置中添加 MCP 服务器。');
-    }
-    final summary = servers
-        .map(
-          (s) =>
-              '- ${s.name} [${s.isActive ? '✅ 已启用' : '⬚ 未启用'}] ${s.description ?? ''}',
-        )
-        .join('\n');
-    final detail = const JsonEncoder.withIndent('  ').convert([
-      for (final s in servers)
-        {
-          'name': s.name,
-          'id': s.id,
-          'type': s.type.name,
-          'isActive': s.isActive,
-          'description': s.description ?? '',
-        },
-    ]);
-    return McpToolResult(
-      '可用的 MCP 服务器（${servers.length} 个）：\n$summary\n\n'
-      '提示：使用 list_tools 查看具体服务器的工具列表，使用 call 调用工具。\n'
-      '注意：仅已启用（✅）的服务器可以调用，未启用的服务器需先在设置中手动启用。\n\n'
-      '详细数据：\n$detail',
-    );
-  }
-
-  Future<McpToolResult> _bridgeListTools(String? serverName) async {
-    if (serverName == null || serverName.isEmpty) {
-      return const McpToolResult(
-        'list_tools 需要提供 server 参数（服务器名称）',
-        isError: true,
-      );
-    }
-    final servers = await ref.read(mcpServersProvider.future);
-    final server = _findServerByName(servers, serverName);
-    if (server == null) {
-      final available = servers.map((s) => s.name).join(', ');
-      return McpToolResult(
-        '未找到服务器: "$serverName"。可用的服务器: ${available.isEmpty ? '无' : available}',
-        isError: true,
-      );
-    }
-    if (!server.isActive) {
-      return McpToolResult(
-        '服务器 "${server.name}" 未启用，请先在设置中启用该服务器',
-        isError: true,
-      );
-    }
-    try {
-      final tools = await _bridgeServerTools(server);
-      if (tools.isEmpty) {
-        return McpToolResult('服务器 "${server.name}" 没有提供任何工具。');
-      }
-      final summary = tools
-          .map(
-            (t) =>
-                '- ${t.name}: ${t.description.isEmpty ? '无描述' : t.description}',
-          )
-          .join('\n');
-      final detail = const JsonEncoder.withIndent('  ').convert([
-        for (final t in tools)
-          {
-            'name': t.name,
-            'description': t.description,
-            'parameters': t.inputSchema,
-          },
-      ]);
-      return McpToolResult(
-        '服务器 "${server.name}" 提供 ${tools.length} 个工具：\n$summary\n\n详细参数：\n$detail',
-      );
-    } on Object catch (error) {
-      return McpToolResult(
-        '获取服务器 "${server.name}" 的工具列表失败: ${_errorMessage(error)}',
-        isError: true,
-      );
-    }
-  }
-
-  Future<McpToolResult> _bridgeCallTool(
-    String? serverName,
-    String? toolName,
-    Map<String, Object?> toolArgs,
-  ) async {
-    if (serverName == null || serverName.isEmpty) {
-      return const McpToolResult('call 需要提供 server 参数（服务器名称）', isError: true);
-    }
-    if (toolName == null || toolName.isEmpty) {
-      return const McpToolResult('call 需要提供 tool 参数（工具名称）', isError: true);
-    }
-    final servers = await ref.read(mcpServersProvider.future);
-    final server = _findServerByName(servers, serverName);
-    if (server == null) {
-      final available = servers.map((s) => s.name).join(', ');
-      return McpToolResult(
-        '未找到服务器: "$serverName"。可用的服务器: ${available.isEmpty ? '无' : available}',
-        isError: true,
-      );
-    }
-    if (!server.isActive) {
-      return McpToolResult(
-        '服务器 "${server.name}" 未启用，请先在设置中启用该服务器',
-        isError: true,
-      );
-    }
-    if (kRefDependentBuiltins.contains(server.name)) {
-      if (server.name == kFileEditorServerName) {
-        return await runFileEditorTool(ref, toolName, toolArgs);
-      }
-      if (server.name == kKnowledgeServerName) {
-        return await runKnowledgeTool(ref, toolName, toolArgs);
-      }
-      if (server.name == kTerminalServerName) {
-        return await runTerminalTool(ref, toolName, toolArgs);
-      }
-      return await runSettingsTool(ref, toolName, toolArgs);
-    }
-    if (kLocallyRunnableBuiltins.contains(server.name)) {
-      return await runBuiltinTool(
-            server.name,
-            toolName,
-            toolArgs,
-            env: server.env,
-          ) ??
-          McpToolResult('工具 $toolName 无法在本地执行', isError: true);
-    }
-    return ref
-        .read(remoteMcpConnectionManagerProvider)
-        .callTool(server, toolName, toolArgs);
-  }
-
-  /// The tools a server exposes for the bridge: built-ins use the static
-  /// catalogue (minus `disabledTools`); remote servers are discovered live.
-  /// For remote servers the original wire names are returned (not the
-  /// function-call-safe exposed names) so `_bridgeCallTool` can pass them
-  /// directly to the server.
-  Future<List<McpToolDefinition>> _bridgeServerTools(McpServer server) async {
-    if (kBuiltinMcpTools.containsKey(server.name)) {
-      final disabled = server.disabledTools?.toSet() ?? const <String>{};
-      return builtinToolsFor(
-        server.name,
-      ).where((t) => !disabled.contains(t.name)).toList();
-    }
-    if (RemoteMcpConnectionManager.isRemote(server)) {
-      final discovered = await ref
-          .read(remoteMcpConnectionManagerProvider)
-          .listTools(server);
-      // Use original wire names (toolName) — not the function-call-safe
-      // definition.name — so the bridge can dispatch them directly to the
-      // server without a reverse mapping.
-      return [
-        for (final t in discovered)
-          McpToolDefinition(
-            name: t.toolName,
-            description: t.definition.description,
-            inputSchema: t.definition.inputSchema,
-          ),
-      ];
-    }
-    return const <McpToolDefinition>[];
-  }
-
-  /// Finds a server by name — exact → case-insensitive → substring, the port of
-  /// the bridge's `findServerByName`.
-  McpServer? _findServerByName(List<McpServer> servers, String name) {
-    final lower = name.toLowerCase();
-    return servers.where((s) => s.name == name).firstOrNull ??
-        servers.where((s) => s.name.toLowerCase() == lower).firstOrNull ??
-        servers.where((s) => s.name.toLowerCase().contains(lower)).firstOrNull;
-  }
-
-  /// Executes a `builtin_web_search` call by dispatching to the active search
-  /// provider via [WebSearchService]. Reads persisted [WebSearchSettings] for
-  /// provider config and defaults; per-call args can override maxResults etc.
-  Future<McpToolResult> _runWebSearch(Map<String, Object?> args) async {
-    final query = (args['query'] as String?)?.trim() ?? '';
-    if (query.isEmpty) {
-      return const McpToolResult('搜索关键词不能为空', isError: true);
-    }
-    final ws = ref.read(webSearchSettingsControllerProvider);
-
-    // Find the active provider config
-    final config = ws.providers
-        .where((p) => p.id == ws.activeProviderId && p.isEnabled)
-        .firstOrNull;
-    if (config == null) {
-      return McpToolResult(
-        '未找到活跃的搜索提供商 (${ws.activeProviderId})，请在设置中添加并启用一个搜索提供商',
-        isError: true,
-      );
-    }
-
-    return WebSearchService.search(
-      config: config,
-      query: query,
-      maxResults: (args['maxResults'] as int?) ?? ws.maxResults,
-      timeout: ws.timeout,
-      language: (args['language'] as String?) ?? ws.language,
-      categories: (args['categories'] as String?) ?? ws.categories,
-    );
-  }
-
-  /// Executes one `search_memory` call: retrieves the user's long-term memories
-  /// most relevant to `query` (across global + this assistant's private bucket)
-  /// via the memory seam. Best-effort — the seam returns a notice string rather
-  /// than throwing when memory is off or nothing matches.
-  Future<McpToolResult> _runMemorySearch(Map<String, Object?> args) async {
-    final query = (args['query'] as String?)?.trim() ?? '';
-    if (query.isEmpty) {
-      return const McpToolResult('检索关键词不能为空', isError: true);
-    }
-    final limit = (args['limit'] as num?)?.toInt();
-    final text = await searchChatMemories(
-      ref,
-      assistantId: _assistantId,
-      query: query,
-      limit: limit,
-    );
-    return McpToolResult(text);
-  }
+  /// Assembles the [McpSetup] for the current turn (see [buildMcpSetup]);
+  /// the bound-skills lookup stays here because it needs the repository and
+  /// the controller's active assistant.
+  Future<McpSetup> _mcpSetup() => buildMcpSetup(
+    ref,
+    loadBoundSkills: () async {
+      final assistant = await _repo.getAssistant(_assistantId);
+      return _enabledSkillsFor(assistant?.skillIds);
+    },
+  );
 
   /// The system prompt for a turn: in 提示词注入 mode the tool catalogue is woven
   /// into [base] (web `buildSystemPrompt`); otherwise [base] is used as-is and
   /// tools ride the native `tools` field. When 网络搜索 is active, a hint is
   /// appended encouraging the model to use the search tool.
-  String? _systemFor(_McpSetup mcp, String? base) {
+  String? _systemFor(McpSetup mcp, String? base) {
     var prompt = mcp.usePromptInjection
         ? buildMcpSystemPrompt(base, mcp.tools)
         : base;
@@ -4638,7 +4150,7 @@ class ChatController extends _$ChatController {
           '当回答可能依赖用户的个人偏好或既往信息时，请先调用该工具确认。';
       prompt = (prompt ?? '') + hint;
     }
-    if (mcp.routes.values.any((r) => r is _KnowledgeToolRoute)) {
+    if (mcp.routes.values.any((r) => r is KnowledgeToolRoute)) {
       const hint =
           '\n\n[知识库已启用] '
           '你可以使用 kb_search 工具在用户的知识库中检索资料，用 kb_read 取回条目全文。'
@@ -4767,93 +4279,6 @@ class ChatController extends _$ChatController {
     return error.toString();
   }
 
-  /// Human-readable summary for a confirmation dialog.
-  static String _confirmSummary(String toolName, Map<String, Object?> args) {
-    switch (toolName) {
-      case 'create_provider':
-        return '创建模型供应商「${args['name'] ?? '未命名'}」';
-      case 'delete_provider':
-        return '删除模型供应商（ID: ${args['id']})';
-      case 'add_model':
-        return '向供应商添加模型「${args['name'] ?? '未命名'}」';
-      case 'delete_model':
-        return '从供应商删除模型「${args['modelId'] ?? ''}」';
-      // @aether/file-editor write tools.
-      case 'write_to_file':
-        return '覆盖写入文件「${_pathTail(args['path'])}」的全部内容';
-      case 'create_file':
-        return '在「${_pathTail(args['parent_path'])}」下新建文件「${args['name'] ?? ''}」';
-      case 'rename_file':
-        return '将「${_pathTail(args['path'])}」重命名为「${args['new_name'] ?? ''}」';
-      case 'move_file':
-        return '移动「${_pathTail(args['source_path'])}」到「${_pathTail(args['destination_path'])}」';
-      case 'copy_file':
-        return '复制「${_pathTail(args['source_path'])}」到「${_pathTail(args['destination_path'])}」';
-      case 'delete_file':
-        return '删除「${_pathTail(args['path'])}」';
-      case 'insert_content':
-        return '在「${_pathTail(args['path'])}」第 ${args['line'] ?? '?'} 行插入内容';
-      case 'apply_diff':
-        return '对「${_pathTail(args['path'])}」应用 diff 修改';
-      case 'replace_in_file':
-        return '在「${_pathTail(args['path'])}」中替换「${args['search'] ?? ''}」';
-      case 'run_command':
-        return '在工作区执行命令：${args['command'] ?? ''}';
-      // @aether/knowledge 写操作（kb_manage）。
-      case 'kb_manage':
-        return _knowledgeManageSummary(args);
-      default:
-        return '执行操作: $toolName';
-    }
-  }
-
-  /// Confirmation summary for a `kb_manage` call, keyed by its `action`.
-  static String _knowledgeManageSummary(Map<String, Object?> args) {
-    final action = (args['action'] as String?)?.toLowerCase();
-    switch (action) {
-      case 'create':
-        return '创建知识库「${args['name'] ?? '未命名'}」';
-      case 'add_note':
-        final title = (args['title'] as String?)?.trim();
-        return '向知识库添加笔记${title == null || title.isEmpty ? '' : '「$title」'}';
-      case 'add_url':
-        return '抓取网页并摄取进知识库（${args['url'] ?? ''}）';
-      case 'add_workspace':
-        return '把工作区目录摄取进知识库（工作区 ID: ${args['workspace_id'] ?? ''}）';
-      case 'retry_embeddings':
-        return '补嵌知识库中嵌入失败的切块（ID: ${args['base_id'] ?? ''}）';
-      case 'delete':
-        return '删除知识库（ID: ${args['base_id'] ?? ''}）';
-      case 'refresh':
-        return '重建知识库索引（ID: ${args['base_id'] ?? ''}）';
-      default:
-        return '管理知识库: ${action ?? '未知操作'}';
-    }
-  }
-
-  /// A short, human-readable tail for an opaque SAF `content://` path, used in
-  /// confirmation summaries. Falls back to the raw value when it can't decode.
-  static String _pathTail(Object? path) {
-    if (path == null) return '?';
-    final raw = path.toString();
-    if (raw.isEmpty) return '?';
-    try {
-      final decoded = Uri.decodeComponent(raw);
-      final normalized = decoded.replaceAll('\\', '/');
-      final segments = normalized
-          .split('/')
-          .where((s) => s.trim().isNotEmpty)
-          .toList();
-      if (segments.isEmpty) return raw;
-      var tail = segments.last;
-      final colon = tail.lastIndexOf(':');
-      if (colon >= 0 && colon < tail.length - 1)
-        tail = tail.substring(colon + 1);
-      return tail;
-    } catch (_) {
-      return raw;
-    }
-  }
 }
 
 /// The latest (live) content stashed in [Message.metadata] while a historical
@@ -4874,146 +4299,6 @@ class _NoUsableApiKeyException implements Exception {
 
   @override
   String toString() => '没有可用的 API Key：所有 Key 已禁用、失败或处于冷却中。';
-}
-
-// ── Web Search tool definition ──────────────────────────────────────────────
-
-const String _kWebSearchToolName = 'builtin_web_search';
-
-const McpToolDefinition _kWebSearchToolDefinition = McpToolDefinition(
-  name: _kWebSearchToolName,
-  description:
-      '网络搜索工具，用于查找实时信息、新闻和最新数据。\n\n'
-      '使用场景：\n'
-      '- 用户询问实时信息（天气、新闻、股票等）\n'
-      '- 用户询问你不确定的事实\n'
-      '- 用户明确要求搜索网络\n'
-      '- 需要最新数据来回答问题',
-  inputSchema: {
-    'type': 'object',
-    'properties': {
-      'query': {'type': 'string', 'description': '搜索查询关键词'},
-      'maxResults': {'type': 'number', 'description': '最大结果数', 'default': 5},
-      'language': {
-        'type': 'string',
-        'description': '语言代码，如 zh-CN, en',
-        'default': 'zh-CN',
-      },
-      'categories': {
-        'type': 'string',
-        'description': '搜索类别：general, news, science, it, videos, images',
-        'default': 'general',
-      },
-    },
-    'required': ['query'],
-  },
-);
-
-/// The MCP tool context assembled for one chat turn: the resolved [mode], the
-/// [tools] to expose (启用 built-ins + 启用 remote servers' discovered tools) and
-/// the [routes] map that dispatches each exposed tool name back to its source —
-/// a locally-runnable built-in ([_BuiltinToolRoute]) or a remote server
-/// ([_RemoteToolRoute]). [tools] is empty when MCP 工具 is off or no eligible
-/// server is active, in which case the turn streams plain text exactly as before.
-class _McpSetup {
-  const _McpSetup({
-    required this.mode,
-    required this.tools,
-    required this.routes,
-    this.workspaceContext,
-  });
-
-  const _McpSetup.disabled()
-    : mode = McpMode.function,
-      tools = const <McpToolDefinition>[],
-      routes = const <String, _ToolRoute>{},
-      workspaceContext = null;
-
-  final McpMode mode;
-  final List<McpToolDefinition> tools;
-  final Map<String, _ToolRoute> routes;
-
-  /// The `[工作区上下文]` system-prompt section, present when the
-  /// file-editor tools ride this turn and a workspace is opened.
-  final String? workspaceContext;
-
-  bool get hasTools => tools.isNotEmpty;
-
-  /// Expose tools via the model's native function-calling API (`tools` field).
-  bool get useFunctionTools => hasTools && mode == McpMode.function;
-
-  /// Describe tools in the system prompt and parse XML `<tool_use>` locally.
-  bool get usePromptInjection => hasTools && mode == McpMode.prompt;
-}
-
-/// How an exposed tool name dispatches back to its source. [toolName] is the
-/// original (un-prefixed) wire name; the map key it is stored under is the
-/// model-facing exposed name (identical for built-ins, function-call-safe for
-/// remote — see `buildFunctionCallToolName`).
-sealed class _ToolRoute {
-  const _ToolRoute(this.toolName);
-
-  final String toolName;
-}
-
-/// A settings assistant tool, run in-process with [Ref] access.
-class _SettingsToolRoute extends _ToolRoute {
-  const _SettingsToolRoute(super.toolName);
-}
-
-/// A `@aether/file-editor` workspace tool, run in-process with [Ref] access.
-class _FileEditorToolRoute extends _ToolRoute {
-  const _FileEditorToolRoute(super.toolName);
-}
-
-/// A `@aether/knowledge` tool (kb_list/kb_search/kb_read/kb_manage), run
-/// in-process with [Ref] access. Write ops (kb_manage) go through HITL.
-class _KnowledgeToolRoute extends _ToolRoute {
-  const _KnowledgeToolRoute(super.toolName);
-}
-
-/// A `@aether/terminal` tool (terminal_execute / terminal_session_*), run
-/// in-process with [Ref] access. Command execution goes through HITL.
-class _TerminalToolRoute extends _ToolRoute {
-  const _TerminalToolRoute(super.toolName);
-}
-
-/// A tool run in-process by [runBuiltinTool] (calculator / time / searxng).
-class _BuiltinToolRoute extends _ToolRoute {
-  const _BuiltinToolRoute(this.serverName, super.toolName, {this.env});
-
-  final String serverName;
-  final Map<String, String>? env;
-}
-
-/// The synthetic `read_skill` tool, run in-process against the skills store.
-class _SkillReadToolRoute extends _ToolRoute {
-  const _SkillReadToolRoute() : super(kReadSkillToolName);
-}
-
-/// The synthetic `mcp_bridge` tool, dispatched in-process to the configured
-/// servers (built-in or remote) on demand.
-class _BridgeToolRoute extends _ToolRoute {
-  const _BridgeToolRoute() : super(kMcpBridgeToolName);
-}
-
-/// The `builtin_web_search` tool injected when the 网络搜索 session mode is on.
-class _WebSearchToolRoute extends _ToolRoute {
-  const _WebSearchToolRoute() : super(_kWebSearchToolName);
-}
-
-/// The `search_memory` tool injected when 记忆 注入方式 is `tool`, letting the
-/// model retrieve the user's long-term memories on demand.
-class _MemorySearchToolRoute extends _ToolRoute {
-  const _MemorySearchToolRoute() : super(kSearchMemoryToolName);
-}
-
-/// A tool executed over a live connection to [server] via
-/// [RemoteMcpConnectionManager].
-class _RemoteToolRoute extends _ToolRoute {
-  const _RemoteToolRoute(this.server, super.toolName);
-
-  final McpServer server;
 }
 
 /// Single-message lookup over the chat controller's async state.
