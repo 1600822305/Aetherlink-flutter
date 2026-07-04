@@ -1,0 +1,25 @@
+name: aetherlink_terminal
+description: "Aetherlink built-in PRoot terminal plugin: bundles the PRoot binaries (jniLibs), a JNI forkpty bridge for interactive shells, and a tar.gz rootfs extractor. See docs/内置终端PRoot-设计文档.md."
+version: 0.0.1
+homepage:
+publish_to: none
+
+environment:
+  sdk: ^3.9.2
+  flutter: '>=3.3.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.example.aetherlink.aetherlink_terminal
+        pluginClass: AetherlinkTerminalPlugin

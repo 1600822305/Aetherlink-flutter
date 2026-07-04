@@ -11,6 +11,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
+import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
+import 'package:aetherlink_flutter/features/terminal/presentation/mobile/terminal_setup_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
@@ -117,6 +120,26 @@ class _OpenWorkspaceSheet extends ConsumerWidget {
                 },
               ),
             ),
+            const SizedBox(height: 4),
+            Material(
+              color: theme.colorScheme.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+              child: ListTile(
+                leading: Icon(
+                  LucideIcons.squareTerminal,
+                  color: theme.colorScheme.primary,
+                ),
+                title: const Text('内置终端'),
+                subtitle: const Text('应用内置 Alpine Linux，免 Root 零依赖（PRoot）'),
+                onTap: () async {
+                  // Capture the navigator before popping — this sheet's context
+                  // is defunct afterwards but navigator.context stays valid.
+                  final navigator = Navigator.of(context);
+                  navigator.pop();
+                  await openProotWorkspace(navigator.context, parentRef);
+                },
+              ),
+            ),
             if (recent.asData?.value.isNotEmpty ?? false) ...[
               const SizedBox(height: 16),
               Padding(
@@ -186,6 +209,33 @@ Future<void> openLocalFolder(BuildContext context, WidgetRef ref) async {
   } on PlatformException catch (e) {
     if (!context.mounted) return;
     AppToast.error(context, '打开失败 · ${e.code}: ${e.message ?? ''}');
+  } catch (e) {
+    if (!context.mounted) return;
+    AppToast.error(context, '打开失败 · $e');
+  }
+}
+
+/// Opens the 内置终端 (PRoot Alpine) workspace, installing the rootfs via the
+/// setup sheet on first use.
+Future<void> openProotWorkspace(BuildContext context, WidgetRef ref) async {
+  try {
+    if (!await TerminalEngineManager.instance.isInstalled()) {
+      if (!context.mounted) return;
+      final installed = await showTerminalSetupSheet(
+        context,
+        ref.read(fileSystemApiProvider),
+      );
+      if (!installed) return;
+    }
+    final workspace = await ref
+        .read(workspaceStoreProvider.notifier)
+        .open(
+          name: '内置终端',
+          backendType: WorkspaceBackendType.prootLocal,
+          root: '/root',
+          displayPath: 'Alpine Linux · 内置 (PRoot)',
+        );
+    _switchTo(ref, workspace);
   } catch (e) {
     if (!context.mounted) return;
     AppToast.error(context, '打开失败 · $e');

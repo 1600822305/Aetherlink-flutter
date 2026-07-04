@@ -5,12 +5,13 @@
 /// - [localSaf]   : 手机本地目录,经 Android SAF (`content://`) 授权;无终端。
 /// - [termux]     : 同机 Termux 里的路径,文件 + 终端都在 Termux。
 /// - [ssh]        : 远程机器的路径,文件 + 终端都在远程 (Remote-SSH)。
-///
-/// P0 只点亮 [localSaf];另外两个先作为「敬请期待」入口占位。
+/// - [prootLocal] : 内置终端——应用私有目录里的 PRoot + Alpine rootfs，
+///                  零依赖，文件 + 终端都在本机（内置终端PRoot-设计文档）。
 enum WorkspaceBackendType {
   localSaf,
   termux,
-  ssh;
+  ssh,
+  prootLocal;
 
   static WorkspaceBackendType fromName(String? name) {
     for (final type in WorkspaceBackendType.values) {

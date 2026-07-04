@@ -86,6 +86,8 @@ class _WorkspaceManagementPageState
       switch (w.backendType) {
         case WorkspaceBackendType.localSaf:
           backend = saf;
+        case WorkspaceBackendType.prootLocal:
+          backend = ref.read(prootLocalBackendProvider);
         case WorkspaceBackendType.ssh:
         case WorkspaceBackendType.termux:
           final cid = w.connectionId;
@@ -178,6 +180,8 @@ class _WorkspaceManagementPageState
     switch (w.backendType) {
       case WorkspaceBackendType.localSaf:
         await _reauthorizeSaf(w);
+      case WorkspaceBackendType.prootLocal:
+        _snack('内置终端无需授权；环境损坏时在打开面板里重新安装即可');
       case WorkspaceBackendType.ssh:
       case WorkspaceBackendType.termux:
         await _editConnection(w);
@@ -515,6 +519,7 @@ class _WorkspaceRow extends StatelessWidget {
         WorkspaceBackendType.localSaf => '本地',
         WorkspaceBackendType.termux => 'Termux',
         WorkspaceBackendType.ssh => 'SSH',
+        WorkspaceBackendType.prootLocal => '内置终端',
       };
 
   static String _relativeTime(DateTime t) {

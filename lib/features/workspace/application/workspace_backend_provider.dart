@@ -2,6 +2,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/features/workspace/application/ssh_connection_pool.dart';
 import 'package:aetherlink_flutter/features/workspace/data/local_saf_backend.dart';
+import 'package:aetherlink_flutter/features/workspace/data/proot_local_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 
@@ -14,6 +15,12 @@ part 'workspace_backend_provider.g.dart';
 @Riverpod(keepAlive: true)
 LocalSafBackend localSafBackend(Ref ref) => LocalSafBackend();
 
+/// Single ProotLocalBackend kept alive for the app's lifetime. The rootfs
+/// lives in the app's private dir, so one instance serves every 内置终端
+/// workspace (there is effectively only one).
+@Riverpod(keepAlive: true)
+ProotLocalBackend prootLocalBackend(Ref ref) => ProotLocalBackend();
+
 /// Returns the [WorkspaceBackend] for an opened [workspace].
 ///
 /// SAF returns the app-lifetime singleton. SSH (and Termux, which is just SSH
@@ -25,6 +32,8 @@ WorkspaceBackend workspaceBackend(Ref ref, Workspace workspace) {
   switch (workspace.backendType) {
     case WorkspaceBackendType.localSaf:
       return ref.watch(localSafBackendProvider);
+    case WorkspaceBackendType.prootLocal:
+      return ref.watch(prootLocalBackendProvider);
     case WorkspaceBackendType.termux:
     case WorkspaceBackendType.ssh:
       final connectionId = workspace.connectionId;
