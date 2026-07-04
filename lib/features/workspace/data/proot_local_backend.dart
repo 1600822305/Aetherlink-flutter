@@ -55,10 +55,15 @@ class ProotLocalBackend extends WorkspaceBackend {
 
   // ===== guest / host 路径映射 =====
 
-  /// guest posix 路径 → rootfs 下的宿主路径。拒绝 `..` 越出 rootfs。
+  /// guest posix 路径 → 宿主路径。拒绝 `..` 越出 rootfs。/sdcard 与 shell 里的
+  /// proot 绑定保持一致，映射到手机存储，让文件区也能看到。
   Future<String> _hostPath(String guestPath) async {
-    final rootfs = await _engine.rootfsPath();
     final normalized = _normalizeGuest(guestPath);
+    if (normalized == '/sdcard' || normalized.startsWith('/sdcard/')) {
+      return TerminalEngineManager.sdcardHostPath +
+          normalized.substring('/sdcard'.length);
+    }
+    final rootfs = await _engine.rootfsPath();
     return normalized == '/' ? rootfs : '$rootfs$normalized';
   }
 
@@ -101,6 +106,13 @@ class ProotLocalBackend extends WorkspaceBackend {
     await for (final entity in host.list(followLinks: false)) {
       final name = _basename(entity.path);
       out.add(await _toEntry(_joinGuest(guestDir, name), entity.path, name));
+    }
+    if (guestDir == '/') {
+      // 手机存储的挂载点不在 rootfs 目录里，根目录单独注入。
+      final sdcard = Directory(TerminalEngineManager.sdcardHostPath);
+      if (sdcard.existsSync()) {
+        out.add(await _toEntry('/sdcard', sdcard.path, 'sdcard'));
+      }
     }
     return out;
   }
@@ -500,8 +512,8 @@ class ProotLocalBackend extends WorkspaceBackend {
   // ===== command execution =====
 
   Future<ProotCommandBuilder> _commandBuilder() async {
-    // 手机存储开关随时可切，缓存按当前挂载状态失效重建（新会话生效）。
-    final mountSdcard = await _engine.sdcardMountEnabled() &&
+    // 手机存储默认自动挂载（存在即绑）；权限变化后缓存按状态重建。
+    final mountSdcard =
         Directory(TerminalEngineManager.sdcardHostPath).existsSync();
     final cached = _builder;
     if (cached != null && cached.extraBinds.isNotEmpty == mountSdcard) {

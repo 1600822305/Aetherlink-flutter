@@ -8,12 +8,15 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:xterm/xterm.dart';
 
+import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
 import 'package:aetherlink_flutter/features/terminal/presentation/mobile/terminal_env_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
@@ -51,10 +54,27 @@ class _WorkspaceTerminalPageState
     super.dispose();
   }
 
+  /// 内置终端自动挂载 /sdcard：首次连接时自动申请「所有文件访问」
+  /// （低版本走传统存储权限），拒绝后不再反复打扰，终端照常可用。
+  Future<void> _ensureStoragePermissionOnce() async {
+    if (!Platform.isAndroid) return;
+    if (await Permission.manageExternalStorage.isGranted) return;
+    if (await Permission.storage.isGranted) return;
+    final engine = TerminalEngineManager.instance;
+    if (await engine.storagePermissionAsked()) return;
+    await engine.markStoragePermissionAsked();
+    if (!(await Permission.manageExternalStorage.request()).isGranted) {
+      await Permission.storage.request();
+    }
+  }
+
   Future<void> _connect() async {
     final backend = ref.read(workspacePreviewBackendProvider);
     final workspace = ref.read(currentWorkspaceProvider);
     if (backend == null || workspace == null) return;
+    if (workspace.backendType == WorkspaceBackendType.prootLocal) {
+      await _ensureStoragePermissionOnce();
+    }
 
     setState(() {
       _connecting = true;

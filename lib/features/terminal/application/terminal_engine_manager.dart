@@ -107,21 +107,17 @@ class TerminalEngineManager {
   /// 手机存储的宿主路径（proot 绑定挂载到 guest 的 /sdcard）。
   static const String sdcardHostPath = '/storage/emulated/0';
 
-  Future<String> _sdcardFlagPath() async =>
-      p.join(await baseDirPath(), '.mount_sdcard');
+  Future<String> _permAskedFlagPath() async =>
+      p.join(await baseDirPath(), '.storage_perm_asked');
 
-  /// 是否把手机存储挂进终端（/sdcard）。开关持久化在引擎目录，新会话生效。
-  Future<bool> sdcardMountEnabled() async =>
-      File(await _sdcardFlagPath()).exists();
+  /// 是否已经自动弹过「所有文件访问」授权（只打扰一次，拒绝后不再弹）。
+  Future<bool> storagePermissionAsked() async =>
+      File(await _permAskedFlagPath()).exists();
 
-  Future<void> setSdcardMountEnabled(bool enabled) async {
-    final flag = File(await _sdcardFlagPath());
-    if (enabled) {
-      await flag.parent.create(recursive: true);
-      await flag.writeAsString('');
-    } else if (await flag.exists()) {
-      await flag.delete();
-    }
+  Future<void> markStoragePermissionAsked() async {
+    final flag = File(await _permAskedFlagPath());
+    await flag.parent.create(recursive: true);
+    await flag.writeAsString('');
   }
 
   /// 未安装时抛 [TerminalEngineMissingException]。
