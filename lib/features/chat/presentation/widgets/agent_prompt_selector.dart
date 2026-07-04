@@ -322,10 +322,10 @@ class _AgentPromptSelectorDialogState
                   ),
                 ),
                 if (prompt.tags.isNotEmpty) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   Wrap(
-                    spacing: 2.4,
-                    runSpacing: 2.4,
+                    spacing: 6,
+                    runSpacing: 4,
                     children: [for (final tag in prompt.tags) _tag(theme, tag)],
                   ),
                 ],
@@ -339,9 +339,7 @@ class _AgentPromptSelectorDialogState
 
   Widget _tag(ThemeData theme, String label) {
     return Container(
-      height: 16,
-      padding: const EdgeInsets.symmetric(horizontal: 3.2),
-      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         border: Border.all(color: theme.dividerColor),
         borderRadius: BorderRadius.circular(8),
@@ -349,7 +347,7 @@ class _AgentPromptSelectorDialogState
       child: Text(
         label,
         style: TextStyle(
-          fontSize: 9.6,
+          fontSize: 11,
           height: 1,
           color: theme.colorScheme.onSurface,
         ),
