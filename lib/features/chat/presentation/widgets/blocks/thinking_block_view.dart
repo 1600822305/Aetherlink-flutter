@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/app/di/thinking_settings_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/inline_tool_chip.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_selection_area.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/tool_renderer_registry.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
@@ -198,7 +199,7 @@ class _ThinkingBlockViewState extends ConsumerState<ThinkingBlockView> {
             (s) => s.selectableMessageText,
           ),
         );
-        return selectable ? SelectionArea(child: body) : body;
+        return selectable ? MessageSelectionArea(child: body) : body;
       },
     );
   }

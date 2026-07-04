@@ -16,6 +16,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/controllers/chat_a
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_selection_area.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_message_bubble.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_selection_bar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/multi_model_message_group.dart';
@@ -813,7 +814,15 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     // monitor, so scroll jank can be attributed to "/chat scrolling". Both are
     // no-ops while the monitor is stopped.
     PerfMonitor.instance.setMessages(rows.length);
-    return NotificationListener<ScrollNotification>(
+    // 消息可选中复制: a tap anywhere in the list clears a lingering text
+    // selection held by a message's [MessageSelectionArea] (each message wraps
+    // its own small SelectionArea, so a tap on another bubble / blank space
+    // never reaches the area holding the selection).
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (event) =>
+          MessageSelectionArea.clearOutside(event.position),
+      child: NotificationListener<ScrollNotification>(
       onNotification: (n) {
         if (n is ScrollStartNotification) {
           PerfMonitor.instance.setScrolling(true);
@@ -878,6 +887,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
             ],
           );
         },
+          ),
         ),
       ),
     );
