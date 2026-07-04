@@ -9,13 +9,13 @@
 /// into a single scroll.
 ///
 /// Wired fields (persisted on 保存 via [Assistants.update]): 名称, 系统提示词
-/// (+ 预设提示词 picker), 记忆开关, 技能绑定. The heavier surfaces — 头像/聊天壁纸
-/// 上传, 模型参数编辑, 正则规则管理, 记忆条目 CRUD — show 「即将支持」 rather than
-/// acting (no fake buttons), matching the UI-only milestone.
+/// (+ 预设提示词 picker), 记忆开关, 技能绑定, 头像 (emoji / 图片), 聊天壁纸.
 library;
 
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:crop_your_image/crop_your_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -77,6 +77,8 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
     text: widget.assistant.systemPrompt ?? '',
   );
   late bool _memoryEnabled = widget.assistant.memoryEnabled ?? false;
+  late String? _emoji = widget.assistant.emoji;
+  late String? _avatar = widget.assistant.avatar;
   late AssistantChatBackground _chatBackground =
       widget.assistant.chatBackground ??
       const AssistantChatBackground(
@@ -138,6 +140,79 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
   }
 
   bool _saving = false;
+
+  // ---- Avatar editing -------------------------------------------------------
+
+  /// Shows a bottom sheet with avatar source options (image, emoji, URL, reset).
+  Future<void> _editAvatar() async {
+    final result = await showModalBottomSheet<_AvatarResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _AssistantAvatarSheet(
+        parentContext: context,
+        pickImage: () => _pickAvatarImage(ctx),
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _emoji = result.emoji;
+      _avatar = result.avatar;
+    });
+  }
+
+  /// Picks a gallery image, crops it, and returns a base64 data URL stored in
+  /// [Assistant.avatar] (same encoding as the wallpaper picker).
+  Future<_AvatarResult?> _pickAvatarImage(BuildContext sheetContext) async {
+    final navigator = Navigator.of(sheetContext);
+    final picked = await ref.read(imagePickerApiProvider).pickFromGallery();
+    if (picked == null) return null;
+
+    if (!sheetContext.mounted) return null;
+    final croppedBytes = await _AvatarCropPage.push(
+      sheetContext,
+      picked.bytes,
+    );
+    if (croppedBytes == null) return null;
+
+    final dataUrl = 'data:image/png;base64,${base64Encode(croppedBytes)}';
+    final result = _AvatarResult(avatar: dataUrl, emoji: null);
+    if (navigator.mounted) navigator.pop(result);
+    return result;
+  }
+
+  /// The display text shown on the avatar circle: current emoji, image
+  /// indicator, or the first character of the name.
+  String get _avatarDisplayText {
+    if (_emoji != null && _emoji!.isNotEmpty) return _emoji!;
+    final name = _nameController.text;
+    if (name.isEmpty) return '助';
+    return String.fromCharCodes(name.runes.take(1));
+  }
+
+  /// Whether the current avatar state has an image (base64 data URL).
+  bool get _hasAvatarImage =>
+      _avatar != null &&
+      _avatar!.isNotEmpty &&
+      _avatar!.startsWith('data:');
+
+  /// Decodes the base64 avatar image for preview.
+  MemoryImage? get _avatarImage {
+    final url = _avatar;
+    if (url == null) return null;
+    final marker = url.indexOf('base64,');
+    if (marker < 0) return null;
+    try {
+      return MemoryImage(base64Decode(url.substring(marker + 7)));
+    } on FormatException {
+      return null;
+    }
+  }
+
+  // ---- Wallpaper picking ----------------------------------------------------
 
   /// Picks a gallery image and stores it as a base64 data URL on the assistant
   /// wallpaper draft (mirrors the global 聊天背景设置 picker), enabling the
@@ -219,6 +294,8 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
             systemPrompt: _promptController.text.trim(),
             memoryEnabled: _memoryEnabled,
             skillIds: _skillIds,
+            emoji: _emoji,
+            avatar: _avatar,
             paramSettings: _paramSettings,
             chatBackground: _chatBackground.imageUrl.isEmpty
                 ? null
@@ -272,6 +349,10 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
                 _BasicTab(
                   assistant: widget.assistant,
                   nameController: _nameController,
+                  avatarDisplayText: _avatarDisplayText,
+                  hasAvatarImage: _hasAvatarImage,
+                  avatarImage: _avatarImage,
+                  onEditAvatar: _editAvatar,
                   chatBackground: _chatBackground,
                   onChatBackgroundChanged: (bg) =>
                       setState(() => _chatBackground = bg),
@@ -467,48 +548,78 @@ class _BasicTab extends StatelessWidget {
   const _BasicTab({
     required this.assistant,
     required this.nameController,
+    required this.avatarDisplayText,
+    required this.hasAvatarImage,
+    required this.onEditAvatar,
     required this.chatBackground,
     required this.onChatBackgroundChanged,
     required this.onPickWallpaper,
+    this.avatarImage,
   });
 
   final Assistant assistant;
   final TextEditingController nameController;
+  final String avatarDisplayText;
+  final bool hasAvatarImage;
+  final MemoryImage? avatarImage;
+  final VoidCallback onEditAvatar;
   final AssistantChatBackground chatBackground;
   final ValueChanged<AssistantChatBackground> onChatBackgroundChanged;
   final Future<void> Function() onPickWallpaper;
-
-  String get _avatarText {
-    final emoji = assistant.emoji;
-    if (emoji != null && emoji.isNotEmpty) return emoji;
-    final name = nameController.text;
-    if (name.isEmpty) return '助';
-    return String.fromCharCodes(name.runes.take(1));
-  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isMobile = MediaQuery.of(context).size.width < 600;
+    final image = avatarImage;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         Row(
           children: [
-            _ComingSoonTooltip(
-              message: '即将支持：修改头像',
-              child: CircleAvatar(
-                radius: 30,
-                backgroundColor: theme.colorScheme.primary.withValues(
-                  alpha: 0.12,
-                ),
-                child: Text(
-                  _avatarText,
-                  style: TextStyle(
-                    fontSize: 22,
-                    color: theme.colorScheme.primary,
+            GestureDetector(
+              onTap: onEditAvatar,
+              child: Stack(
+                children: [
+                  CircleAvatar(
+                    radius: 30,
+                    backgroundColor: theme.colorScheme.primary.withValues(
+                      alpha: 0.12,
+                    ),
+                    backgroundImage:
+                        hasAvatarImage && image != null ? image : null,
+                    child: hasAvatarImage && image != null
+                        ? null
+                        : Text(
+                            avatarDisplayText,
+                            style: TextStyle(
+                              fontSize: 22,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
                   ),
-                ),
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: theme.colorScheme.surface,
+                          width: 2,
+                        ),
+                      ),
+                      child: const Icon(
+                        LucideIcons.pencil,
+                        size: 10,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(width: 16),
@@ -1178,21 +1289,340 @@ class _AssistantParamDelegate implements ParameterDelegate {
   }
 }
 
-/// Wraps a not-yet-wired affordance so tapping/long-pressing explains it's
-/// 「即将支持」 rather than silently doing nothing.
-class _ComingSoonTooltip extends StatelessWidget {
-  const _ComingSoonTooltip({required this.message, required this.child});
+// ── Avatar editing types & widgets ───────────────────────────────────────────
 
-  final String message;
-  final Widget child;
+/// The result of the assistant avatar edit sheet: exactly one of [emoji] or
+/// [avatar] (base64 data URL) is set; both `null` means "reset to default".
+class _AvatarResult {
+  const _AvatarResult({this.emoji, this.avatar});
+
+  final String? emoji;
+  final String? avatar;
+}
+
+/// Bottom sheet with avatar source options for the assistant.
+class _AssistantAvatarSheet extends StatelessWidget {
+  const _AssistantAvatarSheet({
+    required this.parentContext,
+    required this.pickImage,
+  });
+
+  final BuildContext parentContext;
+  final Future<_AvatarResult?> Function() pickImage;
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: message,
-      child: GestureDetector(
-        onTap: () => AppToast.info(context, message),
-        child: child,
+    final cs = Theme.of(context).colorScheme;
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: cs.onSurface.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '设置助手头像',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: cs.onSurface,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _AvatarOptionTile(
+              icon: LucideIcons.image,
+              title: '选择图片',
+              subtitle: '从相册选择并裁剪',
+              onTap: () => pickImage(),
+            ),
+            _AvatarOptionTile(
+              icon: LucideIcons.smile,
+              title: '选择 Emoji',
+              subtitle: '使用表情作为头像',
+              onTap: () => _pickEmoji(context),
+            ),
+            _AvatarOptionTile(
+              icon: LucideIcons.rotateCcw,
+              title: '重置',
+              subtitle: '恢复默认头像',
+              onTap: () => Navigator.of(context).pop(
+                const _AvatarResult(emoji: null, avatar: null),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickEmoji(BuildContext context) async {
+    final emoji = await showDialog<String>(
+      context: context,
+      builder: (_) => const _AssistantEmojiPickerDialog(),
+    );
+    if (emoji == null || emoji.isEmpty) return;
+    if (context.mounted) {
+      Navigator.of(context).pop(
+        _AvatarResult(emoji: emoji, avatar: null),
+      );
+    }
+  }
+}
+
+class _AvatarOptionTile extends StatelessWidget {
+  const _AvatarOptionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: ListTile(
+        dense: true,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        leading: Icon(icon, size: 20, color: cs.primary),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: cs.onSurface,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+        ),
+        onTap: onTap,
+      ),
+    );
+  }
+}
+
+/// Emoji picker dialog for the assistant avatar (mirrors the user avatar's
+/// emoji picker).
+class _AssistantEmojiPickerDialog extends StatefulWidget {
+  const _AssistantEmojiPickerDialog();
+
+  @override
+  State<_AssistantEmojiPickerDialog> createState() =>
+      _AssistantEmojiPickerDialogState();
+}
+
+class _AssistantEmojiPickerDialogState
+    extends State<_AssistantEmojiPickerDialog> {
+  final _controller = TextEditingController();
+
+  static const _quickEmojis = [
+    '🤖', '🧠', '💡', '⚡', '🔥', '🌟', '🎯', '🚀',
+    '📚', '🔍', '💻', '🛠️', '🎨', '🎵', '📊', '🌍',
+    '🦊', '🐱', '🐶', '🐼', '🦁', '🐯', '🐮', '🐸',
+    '😀', '😎', '🤗', '🤔', '🥳', '🤩', '😇', '🥸',
+    '🌸', '🌺', '🌻', '🌹', '🍀', '⭐', '🌈', '💎',
+  ];
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: const Text('选择 Emoji'),
+      content: SizedBox(
+        width: 280,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _controller,
+              decoration: const InputDecoration(
+                hintText: '输入或粘贴 Emoji',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 24),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '快捷选择',
+              style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 160,
+              child: GridView.builder(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 8,
+                  mainAxisSpacing: 4,
+                  crossAxisSpacing: 4,
+                ),
+                itemCount: _quickEmojis.length,
+                itemBuilder: (ctx, i) => GestureDetector(
+                  onTap: () => Navigator.of(context).pop(_quickEmojis[i]),
+                  child: Center(
+                    child: Text(
+                      _quickEmojis[i],
+                      style: const TextStyle(fontSize: 22),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: () {
+            final text = _controller.text.trim();
+            if (text.isNotEmpty) {
+              Navigator.of(context).pop(text.characters.first);
+            }
+          },
+          child: const Text('确定'),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Avatar crop page (bytes variant) ────────────────────────────────────────
+
+/// A crop page that accepts raw bytes (from [ImagePickerApi.pickFromGallery])
+/// rather than a file path; otherwise identical to the user avatar crop page.
+class _AvatarCropPage extends StatefulWidget {
+  const _AvatarCropPage({required this.imageBytes});
+
+  final Uint8List imageBytes;
+
+  static Future<Uint8List?> push(BuildContext context, Uint8List imageBytes) {
+    return Navigator.of(context).push<Uint8List?>(
+      PageRouteBuilder<Uint8List?>(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (_, __, ___) =>
+            _AvatarCropPage(imageBytes: imageBytes),
+      ),
+    );
+  }
+
+  @override
+  State<_AvatarCropPage> createState() => _AvatarCropPageState();
+}
+
+class _AvatarCropPageState extends State<_AvatarCropPage> {
+  final _cropController = CropController();
+  bool _isCropping = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              height: 56,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(LucideIcons.x, color: Colors.white),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '裁剪头像',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  const SizedBox(width: 48),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Crop(
+                image: widget.imageBytes,
+                controller: _cropController,
+                aspectRatio: 1,
+                withCircleUi: true,
+                baseColor: Colors.black,
+                maskColor: Colors.black.withValues(alpha: 0.7),
+                cornerDotBuilder: (size, edgeAlignment) =>
+                    const SizedBox.shrink(),
+                onCropped: (croppedImage) {
+                  setState(() => _isCropping = false);
+                  if (mounted) Navigator.of(context).pop(croppedImage);
+                },
+              ),
+            ),
+            Container(
+              height: 72,
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _isCropping
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : FilledButton.icon(
+                          onPressed: () {
+                            setState(() => _isCropping = true);
+                            _cropController.crop();
+                          },
+                          icon: const Icon(LucideIcons.check, size: 18),
+                          label: const Text('确认'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: theme.colorScheme.primary,
+                            foregroundColor: theme.colorScheme.onPrimary,
+                          ),
+                        ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
