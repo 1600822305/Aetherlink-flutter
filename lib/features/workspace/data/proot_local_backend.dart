@@ -500,8 +500,13 @@ class ProotLocalBackend extends WorkspaceBackend {
   // ===== command execution =====
 
   Future<ProotCommandBuilder> _commandBuilder() async {
+    // 手机存储开关随时可切，缓存按当前挂载状态失效重建（新会话生效）。
+    final mountSdcard = await _engine.sdcardMountEnabled() &&
+        Directory(TerminalEngineManager.sdcardHostPath).existsSync();
     final cached = _builder;
-    if (cached != null) return cached;
+    if (cached != null && cached.extraBinds.isNotEmpty == mountSdcard) {
+      return cached;
+    }
     await _engine.ensureInstalled();
     final libDir = await _runner.nativeLibDir();
     final loader32 = File('$libDir/libproot_loader32.so');
@@ -511,6 +516,9 @@ class ProotLocalBackend extends WorkspaceBackend {
       loader32Path: loader32.existsSync() ? loader32.path : null,
       rootfsPath: await _engine.rootfsPath(),
       tmpDirPath: await _engine.tmpDirPath(),
+      extraBinds: [
+        if (mountSdcard) '${TerminalEngineManager.sdcardHostPath}:/sdcard',
+      ],
     );
     _builder = builder;
     return builder;

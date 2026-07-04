@@ -3,8 +3,11 @@
 // apk/apt 命令。命令直接回放进当前交互式终端会话，用户在终端里实时
 // 看到安装过程。
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
 import 'package:aetherlink_flutter/features/terminal/domain/terminal_distro.dart';
@@ -34,6 +37,7 @@ class _TerminalEnvSheet extends StatefulWidget {
 class _TerminalEnvSheetState extends State<_TerminalEnvSheet> {
   bool _switchingMirror = false;
   TerminalDistro _distro = TerminalDistro.alpine;
+  bool _sdcardMounted = false;
 
   @override
   void initState() {
@@ -41,6 +45,42 @@ class _TerminalEnvSheetState extends State<_TerminalEnvSheet> {
     TerminalEngineManager.instance.installedDistro().then((distro) {
       if (mounted && distro != null) setState(() => _distro = distro);
     });
+    TerminalEngineManager.instance.sdcardMountEnabled().then((enabled) {
+      if (mounted) setState(() => _sdcardMounted = enabled);
+    });
+  }
+
+  void _snack(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  /// Android 11+ 要「所有文件访问」才能直接读写 /storage/emulated/0；
+  /// 低版本走传统存储权限兜底。
+  Future<bool> _ensureStoragePermission() async {
+    if (!Platform.isAndroid) return true;
+    if (await Permission.manageExternalStorage.isGranted) return true;
+    if ((await Permission.manageExternalStorage.request()).isGranted) {
+      return true;
+    }
+    if ((await Permission.storage.request()).isGranted) return true;
+    return false;
+  }
+
+  Future<void> _toggleSdcardMount(bool enable) async {
+    if (enable && !await _ensureStoragePermission()) {
+      if (!mounted) return;
+      _snack(
+        '需要「所有文件访问」权限：请在系统设置 → 应用 → 本应用 → 权限 里开启后重试。',
+      );
+      await openAppSettings();
+      return;
+    }
+    await TerminalEngineManager.instance.setSdcardMountEnabled(enable);
+    if (!mounted) return;
+    setState(() => _sdcardMounted = enable);
+    _snack(enable ? '已开启，重新进入终端后 /sdcard 生效' : '已关闭，新会话生效');
   }
 
   void _run(String command) {
@@ -58,9 +98,7 @@ class _TerminalEnvSheetState extends State<_TerminalEnvSheet> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _switchingMirror = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('切换失败：$e')),
-      );
+      _snack('切换失败：$e');
     }
   }
 
@@ -95,6 +133,16 @@ class _TerminalEnvSheetState extends State<_TerminalEnvSheet> {
                 trailing: const Icon(LucideIcons.play, size: 16),
                 onTap: () => _run(preset.command),
               ),
+            const Divider(height: 24),
+            SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              secondary: const Icon(LucideIcons.hardDrive, size: 20),
+              title: const Text('挂载手机存储'),
+              subtitle: const Text('把手机存储映射到 /sdcard（需所有文件访问权限，新会话生效）'),
+              value: _sdcardMounted,
+              onChanged: _toggleSdcardMount,
+            ),
             const Divider(height: 24),
             Text(
               _distro == TerminalDistro.ubuntu ? 'apt 软件源' : 'apk 软件源',
