@@ -13,6 +13,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:aetherlink_flutter/features/terminal/data/proot_process_runner.dart';
+import 'package:aetherlink_flutter/features/terminal/domain/terminal_mirrors.dart';
 
 /// rootfs 未安装时抛出；UI 捕获后弹 terminal_setup_sheet 引导安装。
 class TerminalEngineMissingException implements Exception {
@@ -39,14 +40,13 @@ class TerminalEngineManager {
       };
 
   /// 官方 CDN 直链（安装面板里可替换为网盘等镜像）。
-  static Uri? get defaultRootfsUrl {
+  static Uri? get defaultRootfsUrl => rootfsUrlForMirror(kTerminalMirrors.first);
+
+  /// [mirror] 下当前设备架构的 rootfs 直链；不支持的架构返回 null。
+  static Uri? rootfsUrlForMirror(TerminalMirror mirror) {
     final arch = rootfsArch;
     if (arch == null) return null;
-    final branch = 'v${alpineVersion.split('.').take(2).join('.')}';
-    return Uri.parse(
-      'https://dl-cdn.alpinelinux.org/alpine/$branch/releases/$arch/'
-      'alpine-minirootfs-$alpineVersion-$arch.tar.gz',
-    );
+    return rootfsUrlFor(mirror, alpineVersion, arch);
   }
 
   final ProotProcessRunner _runner = const ProotProcessRunner();
@@ -125,6 +125,18 @@ class TerminalEngineManager {
     await resolv.parent.create(recursive: true);
     await resolv.writeAsString('nameserver 8.8.8.8\nnameserver 1.1.1.1\n');
     await marker.writeAsString(alpineVersion);
+  }
+
+  /// 把 rootfs 内的 /etc/apk/repositories 切到 [mirror]（main + community），
+  /// 之后 apk add / update 都走该镜像。要求 rootfs 已安装。
+  Future<void> setApkMirror(TerminalMirror mirror) async {
+    await ensureInstalled();
+    final repositories =
+        File(p.join(await rootfsPath(), 'etc', 'apk', 'repositories'));
+    await repositories.parent.create(recursive: true);
+    await repositories.writeAsString(
+      apkRepositoriesFor(mirror, alpineVersion),
+    );
   }
 
   /// 卸载（清空 rootfs 与标记），设置页「释放空间」用。

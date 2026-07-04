@@ -38,12 +38,30 @@ class TermuxInstallStatus {
   bool get isUnsupportedPlayBuild => variant == TermuxVariant.play;
 }
 
+/// Thrown by [TermuxApi.runCommand] when the RUN_COMMAND intent is rejected.
+/// [externalAppsDisabled] means Termux 端没开 allow-external-apps=true，UI 据此
+/// 引导用户开启后重试。
+class TermuxRunCommandException implements Exception {
+  const TermuxRunCommandException(this.message, {this.externalAppsDisabled = false});
+
+  final String message;
+  final bool externalAppsDisabled;
+
+  @override
+  String toString() => message;
+}
+
 /// Detects whether (and how) Termux is installed, so the Termux one-tap flow can
-/// guide the user (设计文档 §10.5 / Termux-A 步骤 a).
+/// guide the user (设计文档 §10.5 / Termux-A 步骤 a)，and（Termux-B / 方式 B）
+/// asks Termux to run a script via the RUN_COMMAND intent.
 ///
 /// Android-only via a platform channel; implementations live under `impl/`. The
 /// interface stays pure Dart so callers depend on the abstraction and tests can
 /// substitute a fake (ADR-0007).
 abstract interface class TermuxApi {
   Future<TermuxInstallStatus> detect();
+
+  /// 让 Termux 在前台会话里代跑 [script]（bash -c）。发送即返回，不等执行结果；
+  /// 发不出去时抛 [TermuxRunCommandException]。
+  Future<void> runCommand(String script);
 }

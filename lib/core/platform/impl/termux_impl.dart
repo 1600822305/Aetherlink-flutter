@@ -41,6 +41,21 @@ class PluginTermuxApi implements TermuxApi {
     }
   }
 
+  @override
+  Future<void> runCommand(String script) async {
+    if (!Platform.isAndroid) {
+      throw const TermuxRunCommandException('仅 Android 支持 Termux 直连');
+    }
+    try {
+      await _channel.invokeMethod<void>('runCommand', {'script': script});
+    } on PlatformException catch (e) {
+      throw TermuxRunCommandException(
+        e.message ?? '发送 RUN_COMMAND 失败',
+        externalAppsDisabled: e.code == 'external-apps-disabled',
+      );
+    }
+  }
+
   static TermuxVariant _variantOf(bool installed, String? installer) {
     if (!installed) return TermuxVariant.absent;
     switch (installer) {

@@ -12,9 +12,9 @@
 // and the probe goes through the application-layer pool returning the neutral
 // SshProbeResult.
 //
-// Termux-B (full automation via RUN_COMMAND, 设计文档 §10.5 方式 B) is a later
-// follow-up: it needs allow-external-apps + a manifest RUN_COMMAND permission
-// and is intentionally out of scope here.
+// Termux-B (full automation via RUN_COMMAND, 设计文档 §10.5 方式 B): once the
+// user has enabled allow-external-apps in Termux, the sheet can send the same
+// setup script through the RUN_COMMAND intent so no pasting is needed.
 
 import 'dart:io';
 
@@ -95,6 +95,36 @@ class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
   Future<void> _copyCommand() async {
     await Clipboard.setData(ClipboardData(text: _oneLiner));
     _snack('已复制命令，去 Termux 粘贴执行');
+  }
+
+  Future<void> _copyAllowExternalApps() async {
+    await Clipboard.setData(
+      const ClipboardData(text: TermuxSetup.allowExternalAppsCommand),
+    );
+    _snack('已复制，去 Termux 粘贴执行一次即可开启');
+  }
+
+  // Termux-B：通过 RUN_COMMAND intent 让 Termux 代跑同一份脚本，免粘贴。
+  Future<void> _autoRun() async {
+    setState(() => _busy = true);
+    try {
+      await ref.read(termuxApiProvider).runCommand(
+            TermuxSetup.buildScript(authorizedKey: _keys.authorizedKeyLine),
+          );
+      _snack('已发送到 Termux。切过去看执行过程，看到「完成」后回来点'
+          '「完成 / 测试连接」。');
+    } on TermuxRunCommandException catch (e) {
+      if (e.externalAppsDisabled) {
+        _snack('Termux 未开启 allow-external-apps。请先用下方「复制开启命令」'
+            '在 Termux 里跑一次，再重试。');
+      } else {
+        _snack('发送失败 · $e');
+      }
+    } catch (e) {
+      _snack('发送失败 · $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _shareScript() async {
@@ -221,6 +251,8 @@ class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+              _buildAutoRun(theme),
               const SizedBox(height: 12),
               _buildTips(theme),
               const SizedBox(height: 20),
@@ -369,6 +401,52 @@ class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
         _oneLiner,
         maxLines: 6,
         style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+      ),
+    );
+  }
+
+  // Termux-B（方式 B）区块：免粘贴，前提是 Termux 已开 allow-external-apps。
+  Widget _buildAutoRun(ThemeData theme) {
+    final muted = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('全自动接入（免粘贴）', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 4),
+          Text(
+            '若 Termux 已开启 allow-external-apps，可直接让 App 代跑上面的脚本，'
+            '无需手动复制粘贴。首次需先在 Termux 里跑一次开启命令。',
+            style: muted,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed: _busy ? null : _autoRun,
+                  icon: const Icon(Icons.play_arrow_outlined, size: 18),
+                  label: const Text('代跑脚本'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : _copyAllowExternalApps,
+                  icon: const Icon(Icons.copy, size: 18),
+                  label: const Text('复制开启命令'),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

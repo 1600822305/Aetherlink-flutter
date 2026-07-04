@@ -14,7 +14,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:xterm/xterm.dart';
 
+import 'package:aetherlink_flutter/features/terminal/presentation/mobile/terminal_env_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 
 class WorkspaceTerminalPage extends ConsumerStatefulWidget {
@@ -112,6 +114,7 @@ class _WorkspaceTerminalPageState
     final workspace = ref.watch(currentWorkspaceProvider);
     final backend = ref.watch(workspacePreviewBackendProvider);
     final canExec = backend?.capabilities.canExec ?? false;
+    final isProot = workspace?.backendType == WorkspaceBackendType.prootLocal;
     final topPad = MediaQuery.paddingOf(context).top + widget.topInset;
 
     return Container(
@@ -140,6 +143,17 @@ class _WorkspaceTerminalPageState
                     ),
                   ),
                 ),
+                if (_connected && isProot)
+                  IconButton(
+                    tooltip: '环境（apk 源 / 一键装）',
+                    icon: const Icon(LucideIcons.package,
+                        size: 18, color: Colors.white70),
+                    onPressed: () => showTerminalEnvSheet(
+                      context,
+                      onRunCommand: (command) =>
+                          _session?.write(utf8.encode('$command\n')),
+                    ),
+                  ),
                 if (_connected)
                   IconButton(
                     tooltip: '断开',
