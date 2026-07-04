@@ -44,6 +44,7 @@ Future<McpToolResult> runDexEditorTool(
         return await _modifyClass(dex, args);
       case 'dex_save':
         return await _save(dex, args);
+      // 向后兼容别名：等价 dex_save(scope: all)
       case 'dex_save_all':
         return await _saveAll(dex);
       case 'dex_close':
@@ -62,6 +63,9 @@ Future<McpToolResult> runDexEditorTool(
         return await _outlineClass(dex, args);
       case 'dex_rename_class':
         return await _renameClass(dex, args);
+      case 'dex_find_xrefs':
+        return await _findXrefs(dex, args);
+      // 向后兼容别名：等价 dex_find_xrefs(target: method|field|class)
       case 'dex_find_method_xrefs':
         return await _findMethodXrefs(dex, args);
       case 'dex_find_field_xrefs':
@@ -72,6 +76,9 @@ Future<McpToolResult> runDexEditorTool(
         return await _smaliToJava(dex, args);
       case 'apk_get_manifest':
         return await _getManifest(dex, args);
+      case 'apk_edit_manifest':
+        return await _editManifest(dex, args);
+      // 向后兼容别名：等价 apk_edit_manifest(mode: replace_all|patch|find_replace)
       case 'apk_modify_manifest':
         return await _modifyManifest(dex, args);
       case 'apk_patch_manifest':
@@ -623,6 +630,10 @@ Future<McpToolResult> _renameClass(
 }
 
 Future<McpToolResult> _save(DexEditor dex, Map<String, Object?> args) async {
+  // scope=all 保存全部有改动的会话（等价旧 dex_save_all）；默认 current 仅当前会话。
+  if (_str(args['scope']) == 'all') {
+    return _saveAll(dex);
+  }
   final result = await dex.execute('saveDexToApk', {
     'sessionId': _sessionArg(args),
   });
@@ -691,6 +702,25 @@ Future<McpToolResult> _listStrings(
     return McpToolResult('错误: ${result.error}', isError: true);
   }
   return McpToolResult(encodeJson(result.data));
+}
+
+/// 统一交叉引用入口。`target` 选择分析对象，复用既有专用 handler，行为不变；
+/// 旧的 dex_find_method_xrefs / _field_xrefs / _class_xrefs 仍作向后兼容别名保留。
+Future<McpToolResult> _findXrefs(DexEditor dex, Map<String, Object?> args) async {
+  final target = _str(args['target']).isEmpty ? 'method' : _str(args['target']);
+  switch (target) {
+    case 'method':
+      return _findMethodXrefs(dex, args);
+    case 'field':
+      return _findFieldXrefs(dex, args);
+    case 'class':
+      return _findClassXrefs(dex, args);
+    default:
+      return McpToolResult(
+        '错误: 未知的 target「$target」，应为 method/field/class',
+        isError: true,
+      );
+  }
 }
 
 Future<McpToolResult> _findMethodXrefs(
@@ -802,6 +832,31 @@ Future<McpToolResult> _getManifest(
     }));
   }
   return McpToolResult(content.isEmpty ? '无法读取 Manifest' : content);
+}
+
+/// 统一清单写入入口。`mode` 选择编辑方式，复用既有专用 handler，行为不变：
+///  - `replace_all`（默认）：整体替换（读 `newManifest`，等价旧 apk_modify_manifest）；
+///  - `patch`：结构化补丁（读 `patches`，等价旧 apk_patch_manifest）；
+///  - `find_replace`：文本查找替换（读 `replacements`，等价旧 apk_replace_in_manifest）。
+/// 旧的三个工具仍作向后兼容别名保留。
+Future<McpToolResult> _editManifest(
+  DexEditor dex,
+  Map<String, Object?> args,
+) async {
+  final mode = _str(args['mode']).isEmpty ? 'replace_all' : _str(args['mode']);
+  switch (mode) {
+    case 'replace_all':
+      return _modifyManifest(dex, args);
+    case 'patch':
+      return _patchManifest(dex, args);
+    case 'find_replace':
+      return _replaceInManifest(dex, args);
+    default:
+      return McpToolResult(
+        '错误: 未知的 mode「$mode」，应为 replace_all/patch/find_replace',
+        isError: true,
+      );
+  }
 }
 
 Future<McpToolResult> _modifyManifest(

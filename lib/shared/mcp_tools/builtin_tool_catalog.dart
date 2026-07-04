@@ -1438,77 +1438,59 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
-      name: 'dex_find_method_xrefs',
+      name: 'dex_find_xrefs',
       description:
-          '查找方法的交叉引用（哪些地方调用了这个方法），基于类继承分析(CHA)、跨全部 DEX。'
-          '返回每条引用含 sourceClass/sourceMethod/sourceMethodSignature、invokeType'
-          '(invoke-virtual/super/direct/static/interface)、targetOwner、instruction、'
-          'codeAddress、matchReason（命中原因，便于人工判读）、certainty（置信度：'
-          'exact=字节码确切引用目标本身/静态绑定，改动必生效；possible=虚/接口分发才可能'
-          '落到目标，需确认运行时是否走到）。顶层 summary 汇总 total/exact/possible 计数。',
+          '查找交叉引用（统一入口，跨全部 DEX）。用 target 选择对象：\n'
+          '- target=method：查方法调用点，基于类继承分析(CHA)。每条含 sourceClass/'
+          'sourceMethod/sourceMethodSignature、invokeType(invoke-virtual/super/direct/'
+          'static/interface)、targetOwner、instruction、codeAddress、matchReason、'
+          'certainty（exact=静态绑定/确切引用，改动必生效；possible=虚/接口分发才可能落到）。'
+          '顶层 summary 汇总 total/exact/possible。需要 methodName（可选 methodSignature/resolution）。\n'
+          '- target=field：查字段访问点，理解类继承。每条含 accessType(iget/iput/sget/sput 及'
+          ' -wide/-object 变体)、access(read|write)、isStatic、fieldOwner、fieldType、'
+          'instruction、codeAddress、matchReason。需要 fieldName（可选 fieldType/access）。\n'
+          '- target=class：查类型引用，覆盖指令级(new-instance/check-cast/instance-of/'
+          'const-class/new-array 等)与声明级(extends/implements/字段与方法签名类型)。每条含'
+          ' refKind、detail、codeAddress?、arrayDepth、dexFile。只需 className。',
       inputSchema: {
         'type': 'object',
         'properties': {
+          'target': {
+            'type': 'string',
+            'enum': ['method', 'field', 'class'],
+            'description': '交叉引用对象（默认 method）：method=方法调用点；'
+                'field=字段访问点；class=类型引用点',
+          },
           'sessionId': {
             'type': 'string',
             'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
                 '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
           },
           'className': {'type': 'string', 'description': '类名，如 com.example.Foo'},
-          'methodName': {'type': 'string', 'description': '方法名'},
+          'methodName': {'type': 'string', 'description': 'target=method 时必填：方法名'},
           'methodSignature': {
             'type': 'string',
-            'description': '可选，方法签名(参数+返回)，如 "(Landroid/os/Bundle;)V"，用于区分重载；'
-                'slot/dispatch 模式在方法有重载时必须提供',
+            'description': 'target=method 可选：方法签名(参数+返回)，如 "(Landroid/os/Bundle;)V"，'
+                '用于区分重载；slot/dispatch 模式在方法有重载时必须提供',
           },
           'resolution': {
             'type': 'string',
             'enum': ['exact', 'slot', 'dispatch'],
-            'description': '方法解析模式（默认 dispatch）：'
+            'description': 'target=method 的方法解析模式（默认 dispatch）：'
                 'exact=只匹配完全相等的方法引用；'
                 'slot=同一 vtable 槽位的整个 override 家族（父/子覆写）；'
-                'dispatch=运行时可能分发到该实现的所有多态调用点（找 hook 点最有用，'
-                '可命中通过父类/接口类型调用的点）',
+                'dispatch=运行时可能分发到该实现的所有多态调用点（找 hook 点最有用）',
           },
-          'locator': {
-            'type': 'string',
-            'description': '统一定位符，可替代 className，如 "dex_class:com.example.Foo"',
-          },
-          'limit': {
-            'type': 'integer',
-            'description': '最多返回多少条引用（默认 50）；截断时 hasMore=true',
-          },
-        },
-        'required': ['sessionId', 'methodName'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'dex_find_field_xrefs',
-      description:
-          '查找字段的交叉引用（哪些地方访问了这个字段），基于 dexlib2、跨全部 DEX、'
-          '理解类继承（以父/子类型书写的访问也能命中）。每条引用含 sourceClass/'
-          'sourceMethod/sourceMethodSignature、accessType(iget/iput/sget/sput 及'
-          ' -wide/-object 等变体)、access(read|write)、isStatic、fieldOwner、'
-          'fieldType、instruction、codeAddress、matchReason。',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'sessionId': {
-            'type': 'string',
-            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
-                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
-          },
-          'className': {'type': 'string', 'description': '类名，如 com.example.Foo'},
-          'fieldName': {'type': 'string', 'description': '字段名'},
+          'fieldName': {'type': 'string', 'description': 'target=field 时必填：字段名'},
           'fieldType': {
             'type': 'string',
-            'description': '可选，字段类型描述符（如 "I"、"Ljava/lang/String;"），'
+            'description': 'target=field 可选：字段类型描述符（如 "I"、"Ljava/lang/String;"），'
                 '用于区分同名字段；同名多字段时必须提供',
           },
           'access': {
             'type': 'string',
             'enum': ['read', 'write', 'all'],
-            'description': '访问过滤（默认 all）：read=只读(iget/sget)；'
+            'description': 'target=field 的访问过滤（默认 all）：read=只读(iget/sget)；'
                 'write=只写(iput/sput)；all=全部',
           },
           'locator': {
@@ -1520,38 +1502,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'description': '最多返回多少条引用（默认 50）；截断时 hasMore=true',
           },
         },
-        'required': ['sessionId', 'fieldName'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'dex_find_class_xrefs',
-      description:
-          '查找类（类型）的交叉引用（哪些地方引用了这个类），基于 dexlib2、跨全部 DEX。'
-          '覆盖各种引用形式（含数组包装 [Type）：指令级 new-instance/check-cast/'
-          'instance-of/const-class/new-array/filled-new-array、字段访问的字段类型、'
-          '方法调用的参数/返回类型；声明级 extends(父类)/implements(接口)、字段声明类型、'
-          '方法声明的参数/返回类型。每条引用含 sourceClass、sourceMethod?/'
-          'sourceMethodSignature?、refKind（引用种类）、detail（指令或位置描述）、'
-          'codeAddress?（指令级才有）、arrayDepth（数组维度，0=非数组）、dexFile。',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'sessionId': {
-            'type': 'string',
-            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
-                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
-          },
-          'className': {'type': 'string', 'description': '类名，如 com.example.Foo'},
-          'locator': {
-            'type': 'string',
-            'description': '统一定位符，可替代 className，如 "dex_class:com.example.Foo"',
-          },
-          'limit': {
-            'type': 'integer',
-            'description': '最多返回多少条引用（默认 50）；截断时 hasMore=true',
-          },
-        },
-        'required': ['sessionId'],
+        'required': ['sessionId', 'target'],
       },
     ),
     McpToolDefinition(
@@ -1575,26 +1526,26 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'dex_save',
-      description: '编译修改后的 Smali 代码并保存 DEX 到 APK。用户需要自行签名 APK。',
+      description:
+          '编译修改后的 Smali 代码并保存 DEX 到 APK。用户需要自行签名 APK。\n'
+          '- scope=current（默认）：仅保存指定会话（需 sessionId，也可填 apkPath）。\n'
+          '- scope=all：一次性保存所有有改动的会话（同时改多个 APK 时用），无需 sessionId；'
+          '逐会话保存，单个失败不影响其余，返回每个会话的 saved/skipped/failed 结果。',
       inputSchema: {
         'type': 'object',
         'properties': {
+          'scope': {
+            'type': 'string',
+            'enum': ['current', 'all'],
+            'description': '保存范围（默认 current）：current=仅当前会话；all=全部有改动的会话',
+          },
           'sessionId': {
             'type': 'string',
-            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+            'description': 'scope=current 时必填：会话 ID（dex_open 返回）。也可直接填 APK 路径，'
                 '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
           },
         },
-        'required': ['sessionId'],
       },
-    ),
-    McpToolDefinition(
-      name: 'dex_save_all',
-      description:
-          '一次性编译并保存所有有改动的 DEX 编辑会话到各自 APK（逆向常同时改多个会话时用）。'
-          '无需传 sessionId；逐会话保存，单个失败不影响其余，返回每个会话的 saved/skipped/failed 结果。'
-          '保存后的 APK 仍需用户自行签名。',
-      inputSchema: {'type': 'object', 'properties': <String, Object?>{}},
     ),
     McpToolDefinition(
       name: 'dex_close',
@@ -1655,28 +1606,29 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
-      name: 'apk_modify_manifest',
-      description: '修改 AndroidManifest.xml 并保存到 APK。支持修改包名、版本、权限、组件等',
+      name: 'apk_edit_manifest',
+      description:
+          '修改 AndroidManifest.xml 并保存到 APK（统一入口）。用 mode 选择编辑方式：\n'
+          '- mode=replace_all（默认）：整体替换，读 newManifest（新的完整 XML）。'
+          '支持改包名/版本/权限/组件等一切结构性改动。\n'
+          '- mode=patch：快速改已存在的标量属性，无需完整 XML（直接改二进制 AXML），读 patches。'
+          '仅支持对已存在属性的 set；新增/删除元素或权限等结构性改动请用 mode=replace_all。\n'
+          '- mode=find_replace：在二进制 AXML 中精准替换字符串，读 replacements。\n'
+          '修改后的 APK 需要重新签名。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'mode': {
+            'type': 'string',
+            'enum': ['replace_all', 'patch', 'find_replace'],
+            'description': '编辑方式（默认 replace_all）：replace_all=整体替换(newManifest)；'
+                'patch=改标量属性(patches)；find_replace=字符串替换(replacements)',
+          },
           'newManifest': {
             'type': 'string',
-            'description': '新的 AndroidManifest.xml 内容',
+            'description': 'mode=replace_all 时必填：新的 AndroidManifest.xml 完整内容',
           },
-        },
-        'required': ['apkPath', 'newManifest'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'apk_patch_manifest',
-      description: '快速修改 AndroidManifest.xml 的现有标量属性，无需提供完整 XML（直接改二进制 AXML）。'
-          '仅支持对已存在属性的 set；新增/删除元素或权限等结构性改动请用 apk_modify_manifest（整体替换）。',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
           'patches': {
             'type': 'array',
             'items': {
@@ -1704,19 +1656,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
               },
               'required': ['type', 'value'],
             },
-            'description': '修改列表',
+            'description': 'mode=patch 时必填：标量属性修改列表',
           },
-        },
-        'required': ['apkPath', 'patches'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'apk_replace_in_manifest',
-      description: '在 AndroidManifest.xml 中精准替换字符串（直接修改二进制 AXML）',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
           'replacements': {
             'type': 'array',
             'items': {
@@ -1727,10 +1668,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
               },
               'required': ['oldValue', 'newValue'],
             },
-            'description': '替换列表',
+            'description': 'mode=find_replace 时必填：字符串替换列表',
           },
         },
-        'required': ['apkPath', 'replacements'],
+        'required': ['apkPath', 'mode'],
       },
     ),
     McpToolDefinition(

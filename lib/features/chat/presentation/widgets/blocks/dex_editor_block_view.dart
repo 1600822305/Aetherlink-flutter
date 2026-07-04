@@ -202,6 +202,14 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
           '重命名类 → ${_shortName(_strArg('newClassName'))}'
         );
       case 'dex_save':
+        // scope=all（或旧 dex_save_all 别名）展示批量保存摘要。
+        if (_strArg('scope') == 'all') {
+          final saved = data?['saved'];
+          return (
+            LucideIcons.save,
+            '批量保存${saved is num ? ' · $saved 个' : ''}'
+          );
+        }
         return (LucideIcons.save, '保存 DEX 到 APK');
       case 'dex_save_all':
         final saved = data?['saved'];
@@ -209,6 +217,7 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
           LucideIcons.save,
           '批量保存${saved is num ? ' · $saved 个' : ''}'
         );
+      case 'dex_find_xrefs':
       case 'dex_find_method_xrefs':
       case 'dex_find_field_xrefs':
       case 'dex_find_class_xrefs':
@@ -219,6 +228,24 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
         return (LucideIcons.coffee, '反编译为 Java ${_shortClass()}');
       case 'apk_get_manifest':
         return (LucideIcons.fileText, '读取 AndroidManifest');
+      case 'apk_edit_manifest':
+        // 统一清单写入：按 mode 呈现对应图标与摘要。
+        switch (_strArg('mode')) {
+          case 'patch':
+            final applied = data?['appliedCount'];
+            return (
+              LucideIcons.filePenLine,
+              'Patch Manifest${applied is num ? ' · $applied 处' : ''}'
+            );
+          case 'find_replace':
+            final replaced = data?['replacedCount'];
+            return (
+              LucideIcons.replace,
+              '替换 Manifest${replaced is num ? ' · $replaced 处' : ''}'
+            );
+          default:
+            return (LucideIcons.filePenLine, '修改 AndroidManifest');
+        }
       case 'apk_modify_manifest':
         return (LucideIcons.filePenLine, '修改 AndroidManifest');
       case 'apk_patch_manifest':
@@ -304,6 +331,7 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
         return _sessionsBody(theme, data?['sessions']);
       case 'dex_open_apk':
         return _stringListBody(theme, data?['dexFiles'], LucideIcons.fileCode);
+      case 'dex_find_xrefs':
       case 'dex_find_method_xrefs':
       case 'dex_find_field_xrefs':
       case 'dex_find_class_xrefs':
