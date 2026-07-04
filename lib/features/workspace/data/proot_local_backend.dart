@@ -55,13 +55,19 @@ class ProotLocalBackend extends WorkspaceBackend {
 
   // ===== guest / host 路径映射 =====
 
-  /// guest posix 路径 → 宿主路径。拒绝 `..` 越出 rootfs。/sdcard 与 shell 里的
-  /// proot 绑定保持一致，映射到手机存储，让文件区也能看到。
+  /// 手机存储在 guest 里的挂载点：系统根与家目录各一个（工作区根是
+  /// /root，只挂在 / 下文件区看不到）。shell 的 proot 绑定与此保持一致。
+  static const List<String> sdcardGuestPaths = ['/sdcard', '/root/sdcard'];
+
+  /// guest posix 路径 → 宿主路径。拒绝 `..` 越出 rootfs。/sdcard 挂载点
+  /// 映射到手机存储，让文件区与 shell 视图一致。
   Future<String> _hostPath(String guestPath) async {
     final normalized = _normalizeGuest(guestPath);
-    if (normalized == '/sdcard' || normalized.startsWith('/sdcard/')) {
-      return TerminalEngineManager.sdcardHostPath +
-          normalized.substring('/sdcard'.length);
+    for (final mount in sdcardGuestPaths) {
+      if (normalized == mount || normalized.startsWith('$mount/')) {
+        return TerminalEngineManager.sdcardHostPath +
+            normalized.substring(mount.length);
+      }
     }
     final rootfs = await _engine.rootfsPath();
     return normalized == '/' ? rootfs : '$rootfs$normalized';
@@ -107,11 +113,15 @@ class ProotLocalBackend extends WorkspaceBackend {
       final name = _basename(entity.path);
       out.add(await _toEntry(_joinGuest(guestDir, name), entity.path, name));
     }
-    if (guestDir == '/') {
-      // 手机存储的挂载点不在 rootfs 目录里，根目录单独注入。
-      final sdcard = Directory(TerminalEngineManager.sdcardHostPath);
-      if (sdcard.existsSync()) {
-        out.add(await _toEntry('/sdcard', sdcard.path, 'sdcard'));
+    // 手机存储的挂载点不在 rootfs 目录里，列到挂载点父目录时单独注入。
+    final sdcard = Directory(TerminalEngineManager.sdcardHostPath);
+    if (sdcard.existsSync()) {
+      for (final mount in sdcardGuestPaths) {
+        final parent = mount.substring(0, mount.lastIndexOf('/'));
+        if (guestDir == (parent.isEmpty ? '/' : parent) &&
+            !out.any((e) => e.path == mount)) {
+          out.add(await _toEntry(mount, sdcard.path, 'sdcard'));
+        }
       }
     }
     return out;
@@ -529,7 +539,9 @@ class ProotLocalBackend extends WorkspaceBackend {
       rootfsPath: await _engine.rootfsPath(),
       tmpDirPath: await _engine.tmpDirPath(),
       extraBinds: [
-        if (mountSdcard) '${TerminalEngineManager.sdcardHostPath}:/sdcard',
+        if (mountSdcard)
+          for (final mount in sdcardGuestPaths)
+            '${TerminalEngineManager.sdcardHostPath}:$mount',
       ],
     );
     _builder = builder;
