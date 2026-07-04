@@ -234,6 +234,8 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
       'copy_file' =>
         '复制 ${tail(_args['source_path'])} → ${tail(_args['destination_path'])}/',
       'delete_file' => '删除 ${tail(_args['path'])}',
+      'create_directory' =>
+        '新建目录 ${tail(_args['parent_path'])}/${_args['name'] ?? ''}',
       _ => _tool,
     };
   }
@@ -271,6 +273,7 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
         'move_file' => LucideIcons.cornerUpRight,
         'copy_file' => LucideIcons.copy,
         'delete_file' => LucideIcons.trash2,
+        'create_directory' => LucideIcons.folderPlus,
         _ => LucideIcons.file,
       };
 
@@ -279,5 +282,6 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
         'move_file',
         'copy_file',
         'delete_file',
+        'create_directory',
       }.contains(tool);
 }

@@ -2475,11 +2475,14 @@ class ChatController extends _$ChatController {
                 (route is _TerminalToolRoute &&
                     terminalToolNeedsConfirmation(call.name));
 
-            // `run_command` can be aborted mid-flight: register a cancel signal
+            // `run_command` / `terminal_execute` can be aborted mid-flight:
+            // register a cancel signal
             // (keyed by this block) before running so the block's 中断 button
             // can kill the remote session, then deregister once it settles.
             final isCancelableCommand =
-                route is _FileEditorToolRoute && call.name == 'run_command';
+                (route is _FileEditorToolRoute && call.name == 'run_command') ||
+                    (route is _TerminalToolRoute &&
+                        call.name == 'terminal_execute');
             Future<McpToolResult> runRoute() async {
               if (!isCancelableCommand) {
                 return _runTool(route, call.name, args);

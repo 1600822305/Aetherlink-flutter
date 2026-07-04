@@ -121,7 +121,7 @@ class _RunCommandBlockViewState extends ConsumerState<RunCommandBlockView> {
                   ),
                   if (!isProcessing && !hasError && data != null) ...[
                     const SizedBox(width: 8),
-                    _StatusBadge(data: data),
+                    CommandStatusBadge(data: data),
                   ],
                   if (isRunning) ...[
                     const SizedBox(width: 8),
@@ -229,15 +229,16 @@ class _RunCommandBlockViewState extends ConsumerState<RunCommandBlockView> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (workspace != null && workspace.isNotEmpty)
-            _MetaRow(label: '工作区', value: workspace),
-          if (cwd != null && cwd.isNotEmpty) _MetaRow(label: '目录', value: cwd),
+            CommandMetaRow(label: '工作区', value: workspace),
+          if (cwd != null && cwd.isNotEmpty)
+            CommandMetaRow(label: '目录', value: cwd),
           if (workspace != null || cwd != null) const SizedBox(height: 8),
           if (stdout.trim().isNotEmpty) ...[
-            _OutputSection(label: 'stdout', text: stdout),
+            CommandOutputSection(label: 'stdout', text: stdout),
           ],
           if (stderr.trim().isNotEmpty) ...[
             if (stdout.trim().isNotEmpty) const SizedBox(height: 8),
-            _OutputSection(label: 'stderr', text: stderr, isError: true),
+            CommandOutputSection(label: 'stderr', text: stderr, isError: true),
           ],
           if (!hasOutput)
             Text(
@@ -324,9 +325,10 @@ class _InterruptButton extends StatelessWidget {
   }
 }
 
-/// Exit-code / timeout pill shown in the header.
-class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.data});
+/// Exit-code / timeout pill shown in the header. Shared with the terminal
+/// session card, which reports the same exitCode/timedOut/canceled fields.
+class CommandStatusBadge extends StatelessWidget {
+  const CommandStatusBadge({required this.data, super.key});
 
   final Map<String, Object?> data;
 
@@ -371,9 +373,9 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-/// A muted `label: value` meta line (workspace / cwd).
-class _MetaRow extends StatelessWidget {
-  const _MetaRow({required this.label, required this.value});
+/// A muted `label: value` meta line (workspace / cwd / session).
+class CommandMetaRow extends StatelessWidget {
+  const CommandMetaRow({required this.label, required this.value, super.key});
 
   final String label;
   final String value;
@@ -412,11 +414,12 @@ class _MetaRow extends StatelessWidget {
 }
 
 /// A labelled, height-capped, scrollable monospace output box (stdout / stderr).
-class _OutputSection extends StatelessWidget {
-  const _OutputSection({
+class CommandOutputSection extends StatelessWidget {
+  const CommandOutputSection({
     required this.label,
     required this.text,
     this.isError = false,
+    super.key,
   });
 
   final String label;

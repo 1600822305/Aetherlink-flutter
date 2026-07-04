@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/fil
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/run_command_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/dex_editor_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/knowledge_block_view.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/terminal_session_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/web_search_block_view.dart';
 
 /// Builds a special-purpose widget for a [ToolBlock].
@@ -17,6 +18,7 @@ const Set<String> _fileEditorWriteTools = {
   'write_to_file',
   'apply_diff',
   'create_file',
+  'create_directory',
   'rename_file',
   'move_file',
   'copy_file',
@@ -41,6 +43,11 @@ const Set<String> _fileEditorReadTools = {
 final Map<String, ToolBlockBuilder> _toolRenderers = {
   'builtin_web_search': (b) => WebSearchBlockView(block: b),
   'run_command': (b) => RunCommandBlockView(block: b),
+  // terminal_execute 的结果字段与 run_command 一致（command/cwd/stdout/stderr/
+  // exitCode），直接复用终端卡片。
+  'terminal_execute': (b) => RunCommandBlockView(block: b),
+  for (final t in _terminalSessionTools)
+    t: (b) => TerminalSessionBlockView(block: b),
   for (final t in _fileEditorWriteTools)
     t: (b) => FileEditorBlockView(block: b),
   for (final t in _fileEditorReadTools)
@@ -79,6 +86,15 @@ const Set<String> _dexEditorTools = {
   'apk_file',
   'apk_parse_arsc_cpp',
   'attempt_completion',
+};
+
+/// `@aether/terminal` 长驻会话工具，渲染为终端会话卡片。
+const Set<String> _terminalSessionTools = {
+  'terminal_session_create',
+  'terminal_session_list',
+  'terminal_session_exec',
+  'terminal_session_output',
+  'terminal_session_close',
 };
 
 /// `@aether/knowledge` tools, rendered as compact knowledge cards
