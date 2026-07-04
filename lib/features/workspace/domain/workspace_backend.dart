@@ -254,6 +254,13 @@ abstract class WorkspaceBackend {
   Stream<WorkspaceChangeEvent> watch() =>
       throw UnsupportedError('watch is not supported by this backend');
 
+  /// Whether [path] is a protected entry that must not be deleted, renamed
+  /// or moved — e.g. a mount point mapping to real phone storage (`/sdcard`
+  /// in the PRoot backend), where a recursive delete would destroy the user's
+  /// files. Contents *inside* a protected directory are not affected. UI
+  /// hides the destructive actions and backends throw when one is attempted.
+  bool isProtectedPath(String path) => false;
+
   /// Lists the entries in [path]. Throws if [path] is a file or doesn't
   /// exist.
   Future<List<WorkspaceEntry>> listDir(String path);
