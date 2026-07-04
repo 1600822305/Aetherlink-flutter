@@ -159,7 +159,10 @@ class _TerminalSetupSheetState extends State<TerminalSetupSheet> {
           16,
           0,
           16,
-          16 + MediaQuery.viewInsetsOf(context).bottom,
+          // 键盘高度 + 手势条安全区（底部 sheet 的 SafeArea 拿不到 bottom padding）。
+          16 +
+              MediaQuery.viewInsetsOf(context).bottom +
+              MediaQuery.viewPaddingOf(context).bottom,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
