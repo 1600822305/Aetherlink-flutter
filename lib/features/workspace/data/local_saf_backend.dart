@@ -51,6 +51,10 @@ class LocalSafBackend implements WorkspaceBackend {
         isRemote: false,
       );
 
+  // SAF trees have no mount points; nothing is protected.
+  @override
+  bool isProtectedPath(String path) => false;
+
   @override
   Stream<WorkspaceChangeEvent> watch() => _changes.stream;
 
