@@ -38,8 +38,8 @@ Future<McpToolResult> runDexEditorTool(
         return await _listClasses(dex, args);
       case 'dex_search':
         return await _search(dex, args);
-      case 'dex_get_class':
-        return await _getClass(dex, args);
+      case 'dex_read_class':
+        return await _readClass(dex, args);
       case 'dex_modify_class':
         return await _modifyClass(dex, args);
       case 'dex_save':
@@ -52,8 +52,6 @@ Future<McpToolResult> runDexEditorTool(
         return await _addClass(dex, args);
       case 'dex_delete_class':
         return await _deleteClass(dex, args);
-      case 'dex_get_method':
-        return await _getMethod(dex, args);
       case 'dex_modify_method':
         return await _modifyMethod(dex, args);
       case 'dex_outline_class':
@@ -179,7 +177,7 @@ bool _isHighSurrogate(int unit) => unit >= 0xD800 && unit <= 0xDBFF;
 
 bool _isLowSurrogate(int unit) => unit >= 0xDC00 && unit <= 0xDFFF;
 
-/// Uniform pagination metadata for the char-sliced readers (`dex_get_class`,
+/// Uniform pagination metadata for the char-sliced readers (`dex_read_class`,
 /// `apk_get_resource`, `apk_get_manifest`). Exposes `totalChars`/`hasMore` so
 /// the model can decide whether to page again, `nextOffset` so it doesn't have
 /// to compute the next window itself, and an opaque `nextCursor` it can echo
@@ -463,6 +461,18 @@ Map<String, Object?> _withArscTarget(Map<String, Object?> args) {
   final arscTarget = _str(args['arscTarget']);
   if (arscTarget.isEmpty) return args;
   return {...args, 'target': arscTarget};
+}
+
+/// 统一类内容读取入口（均返回 Smali 文本）：传 methodName 读单个方法，否则读整类。
+/// 类轮廓（字段/方法列表的结构化 JSON）请用 dex_outline_class。
+Future<McpToolResult> _readClass(
+  DexEditor dex,
+  Map<String, Object?> args,
+) async {
+  if (_str(args['methodName']).isNotEmpty) {
+    return _getMethod(dex, args);
+  }
+  return _getClass(dex, args);
 }
 
 Future<McpToolResult> _getClass(

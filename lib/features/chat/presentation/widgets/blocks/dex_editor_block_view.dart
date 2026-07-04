@@ -182,12 +182,14 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
           LucideIcons.search,
           '搜索「$query」${total is num ? ' · $total 条命中' : ''}'
         );
-      case 'dex_get_class':
+      case 'dex_read_class':
+        // 传 methodName 读单方法，否则读整类。
+        if (_strArg('methodName').isNotEmpty) {
+          return (LucideIcons.code, '查看方法 ${_strArg('methodName')}');
+        }
         return (LucideIcons.fileCode, '查看类 ${_shortClass()}');
       case 'dex_outline_class':
         return (LucideIcons.listTree, '类轮廓 ${_shortClass()}');
-      case 'dex_get_method':
-        return (LucideIcons.code, '查看方法 ${_strArg('methodName')}');
       case 'dex_modify_class':
         return (LucideIcons.filePenLine, '修改类 ${_shortClass()}');
       case 'dex_add_class':
@@ -274,7 +276,7 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
   String _processingLabel() => switch (_tool) {
         'dex_open_apk' || 'dex_open' => '打开 APK 中...',
         'dex_search' => '搜索中...',
-        'dex_get_class' || 'dex_get_method' => '读取反汇编中...',
+        'dex_read_class' => '读取反汇编中...',
         'dex_smali_to_java' => '反编译中...',
         'dex_save' => '编译并保存中...',
         _ when _tool.startsWith('dex_modify') ||
@@ -605,8 +607,7 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
   (String, String)? _codeContent() {
     String lang;
     switch (_tool) {
-      case 'dex_get_class':
-      case 'dex_get_method':
+      case 'dex_read_class':
         lang = 'smali';
       case 'dex_smali_to_java':
         lang = 'java';

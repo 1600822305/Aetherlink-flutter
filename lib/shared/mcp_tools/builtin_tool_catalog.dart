@@ -1114,7 +1114,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'dex_list_classes',
       description: '列出 DEX 中的所有类，支持包名过滤和分页。'
-          '返回的 className 统一为点分格式（com.example.Foo），可直接传给 dex_get_class 等工具。',
+          '返回的 className 统一为点分格式（com.example.Foo），可直接传给 dex_read_class 等工具。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1246,12 +1246,15 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
-      name: 'dex_get_class',
+      name: 'dex_read_class',
       description:
-          '获取指定类的 Smali 代码。支持限制返回的字符数（用于控制 token）。'
+          '读取类的 Smali 代码（统一入口，均返回 Smali 文本）：\n'
+          '- 不传 methodName：读整类 Smali。支持限制返回字符数（控制 token）；'
           '传入 maxChars/offset 时返回 JSON，含 totalChars(总字符数)、returnedLength、'
           'hasMore(是否还有后续)、nextOffset(下一页 offset)、nextCursor(分页游标)，'
-          '据此翻页无需自己计算；把 nextCursor 原样回传到 cursor 即可取下一页。',
+          '据此翻页无需自己计算；把 nextCursor 原样回传到 cursor 即可取下一页。\n'
+          '- 传 methodName：只读该类中的单个方法（大类只看特定方法时用）。\n'
+          '需要类的字段/方法列表（结构化轮廓）请改用 dex_outline_class。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1263,7 +1266,17 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           'className': {
             'type': 'string',
             'description':
-                '类名（如 "com.example.MainActivity" 或 "Lcom/example/MainActivity;"）',
+                '类名（点分/L描述符/斜杠任意格式均可，内部自动转换），'
+                '如 "com.example.MainActivity" 或 "Lcom/example/MainActivity;"',
+          },
+          'methodName': {
+            'type': 'string',
+            'description': '可选：仅读取该方法（如 "onCreate" 或 "<init>"）；'
+                '不传则读整类',
+          },
+          'methodSignature': {
+            'type': 'string',
+            'description': '可选，配合 methodName 区分重载方法，如 "(Landroid/os/Bundle;)V"',
           },
           'locator': {
             'type': 'string',
@@ -1271,12 +1284,12 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'maxChars': {
             'type': 'integer',
-            'description': '最大返回字符数（用于限制 token），0 表示不限制',
+            'description': '最大返回字符数（用于限制 token），0 表示不限制。仅读整类时生效',
             'default': 0,
           },
           'offset': {
             'type': 'integer',
-            'description': '字符偏移量（用于分页获取大文件）',
+            'description': '字符偏移量（用于分页获取大文件）。仅读整类时生效',
             'default': 0,
           },
           'cursor': {
@@ -1285,33 +1298,6 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
         },
         'required': ['sessionId', 'className'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'dex_get_method',
-      description: '获取类中单个方法的 Smali 代码。适用于大类只看特定方法的场景',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'sessionId': {
-            'type': 'string',
-            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
-                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
-          },
-          'className': {
-            'type': 'string',
-            'description': '类名（点分/L描述符/斜杠任意格式均可，内部自动转换）',
-          },
-          'methodName': {
-            'type': 'string',
-            'description': '方法名（如 "onCreate" 或 "<init>"）',
-          },
-          'methodSignature': {
-            'type': 'string',
-            'description': '方法签名（可选，用于区分重载方法，如 "(Landroid/os/Bundle;)V"）',
-          },
-        },
-        'required': ['sessionId', 'className', 'methodName'],
       },
     ),
     McpToolDefinition(
@@ -1403,7 +1389,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       description:
           '获取类的轮廓：一次返回父类(superclass)、接口(interfaces)、字段列表(name/type/'
           'accessFlags)和方法列表(name/signature/returnType/accessFlags)。'
-          '适合在读取全量 Smali(dex_get_class) 前先了解类结构，省 token。',
+          '适合在读取全量 Smali(dex_read_class) 前先了解类结构，省 token。',
       inputSchema: {
         'type': 'object',
         'properties': {
