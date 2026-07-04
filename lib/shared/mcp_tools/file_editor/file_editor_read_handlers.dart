@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_search.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 
 /// `list_workspaces` — all opened workspaces, numbered (1-based) for use as the
@@ -154,6 +155,8 @@ Future<McpToolResult> getFileInfo(Ref ref, Map<String, Object?> args) async {
 }
 
 /// `search_files` — search by file name and/or content under `directory`.
+/// ripgrep 级参数：`glob` 路径过滤、`case_sensitive`、`context_lines` 上下文、
+/// `output_mode`（content / files_with_matches / count）。
 Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
   final directory = requireString(args, 'directory');
   final query = requireString(args, 'query');
@@ -165,27 +168,94 @@ Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
     _ => WorkspaceSearchType.name,
   };
   final fileTypes = optionalStringList(args, 'file_types');
-
   final useRegex = optionalBool(args, 'use_regex');
-  final results = await backend.searchFiles(
+  final caseSensitive = optionalBool(args, 'case_sensitive');
+  final contextLines = (optionalInt(args, 'context_lines') ?? 0).clamp(0, 10);
+  final maxResults = (optionalInt(args, 'max_results') ?? 200).clamp(1, 1000);
+  final outputMode = optionalString(args, 'output_mode') ?? 'content';
+  if (!const {'content', 'files_with_matches', 'count'}.contains(outputMode)) {
+    throw FileEditorError(
+      '无效的 output_mode: $outputMode（可选 content / files_with_matches / count）',
+    );
+  }
+
+  final glob = optionalString(args, 'glob');
+  final RegExp? globPattern;
+  if (glob != null) {
+    globPattern = globToRegExp(glob);
+    if (globPattern == null) throw FileEditorError('无效的 glob 模式: $glob');
+  } else {
+    globPattern = null;
+  }
+
+  final matcher = SearchLineMatcher.tryCreate(
+    query,
+    useRegex: useRegex,
+    caseSensitive: caseSensitive,
+  );
+  if (useRegex && matcher == null) {
+    throw FileEditorError('无效的正则表达式: $query');
+  }
+
+  // 后端搜索是大小写不敏感的，其结果是 case_sensitive 命中的超集；
+  // 大小写过滤在下面按行匹配时收紧。
+  var results = await backend.searchFiles(
     directory,
     query,
     searchType: searchType,
     fileTypes: fileTypes,
     useRegex: useRegex,
   );
+  if (globPattern != null) {
+    results = [
+      for (final e in results)
+        if (globHits(
+          globPattern,
+          glob!,
+          name: e.name,
+          relPath: relativePathOf(directory, e.path, e.name),
+        ))
+          e,
+    ];
+  }
 
-  // 内容搜索时把命中行（行号 + 内容）一并带回，模型不用再整读文件定位。
-  final withMatches = searchType != WorkspaceSearchType.name;
+  // 内容搜索时把命中行（行号 + 内容 + 可选上下文）一并带回，模型不用再
+  // 整读文件定位；count 模式给每文件命中行数；files_with_matches 只回文件。
+  final contentSearch = searchType != WorkspaceSearchType.name;
+  final needLines = contentSearch &&
+      matcher != null &&
+      (outputMode != 'files_with_matches' || caseSensitive);
   final files = <Map<String, Object?>>[];
   var totalMatches = 0;
   for (final e in results) {
+    if (files.length >= maxResults) break;
     final json = entryJson(e);
-    if (withMatches && !e.isDirectory && totalMatches < _kMaxTotalMatches) {
-      final matches = await _matchingLines(backend, e.path, query, useRegex);
-      if (matches != null) {
-        totalMatches += matches.length;
-        json['matches'] = matches;
+    if (needLines && !e.isDirectory) {
+      final String? content = await _tryRead(backend, e.path);
+      if (content != null) {
+        if (outputMode == 'count') {
+          final count = countMatchingLines(content, matcher);
+          if (count == 0 &&
+              caseSensitive &&
+              searchType == WorkspaceSearchType.content) {
+            continue; // 大小写不敏感的候选，在敏感模式下实际没命中
+          }
+          totalMatches += count;
+          json['matchCount'] = count;
+        } else {
+          final matches = totalMatches < kMaxTotalMatches
+              ? findMatchingLines(content, matcher, contextLines: contextLines)
+              : const <LineMatch>[];
+          if (matches.isEmpty &&
+              caseSensitive &&
+              searchType == WorkspaceSearchType.content) {
+            continue;
+          }
+          totalMatches += matches.length;
+          if (outputMode == 'content') {
+            json['matches'] = [for (final m in matches) m.toJson()];
+          }
+        }
       }
     }
     files.add(json);
@@ -194,57 +264,25 @@ Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
     'directory': directory,
     'query': query,
     'searchType': searchType.name,
+    'outputMode': outputMode,
     if (useRegex) 'useRegex': true,
-    'count': results.length,
+    if (caseSensitive) 'caseSensitive': true,
+    if (glob != null) 'glob': glob,
+    if (outputMode == 'count') 'totalMatches': totalMatches,
+    'count': files.length,
     'files': files,
   });
 }
 
-/// Caps for [_matchingLines]: per-file / overall hit counts and per-line
-/// snippet length, so a hot query can't flood the model context.
-const int _kMaxMatchesPerFile = 5;
-const int _kMaxTotalMatches = 100;
-const int _kMaxMatchLineChars = 200;
-
-/// The matching lines of [path] as `{line, text}` maps（1-based 行号，行内容
-/// 截到 [_kMaxMatchLineChars] 字符）。Matching mirrors the backends' content
-/// search: case-insensitive, regex or literal contains. Returns null when the
-/// file can't be read as text (binary / too large / permission) — the entry
-/// still rides in the results, just without `matches`.
-Future<List<Map<String, Object?>>?> _matchingLines(
-  WorkspaceBackend backend,
-  String path,
-  String query,
-  bool useRegex,
-) async {
-  final String content;
+/// Best-effort text read for match extraction — null when the file can't be
+/// read as text (binary / too large / permission); the entry still rides in
+/// the results, just without `matches`.
+Future<String?> _tryRead(WorkspaceBackend backend, String path) async {
   try {
-    content = await backend.readFile(path);
+    return await backend.readFile(path);
   } catch (_) {
     return null;
   }
-  final RegExp? pattern;
-  try {
-    pattern = useRegex ? RegExp(query, caseSensitive: false) : null;
-  } catch (_) {
-    return null;
-  }
-  final lowerQuery = query.toLowerCase();
-  final matches = <Map<String, Object?>>[];
-  final lines = content.split('\n');
-  for (var i = 0; i < lines.length; i++) {
-    final line = lines[i];
-    final hit = pattern != null
-        ? pattern.hasMatch(line)
-        : line.toLowerCase().contains(lowerQuery);
-    if (!hit) continue;
-    final text = line.length > _kMaxMatchLineChars
-        ? '${line.substring(0, _kMaxMatchLineChars)}…'
-        : line;
-    matches.add({'line': i + 1, 'text': text});
-    if (matches.length >= _kMaxMatchesPerFile) break;
-  }
-  return matches;
 }
 
 // ===== internals =====

@@ -726,9 +726,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'search_files',
-      description: '在目录中搜索文件。支持按文件名或内容搜索，可选正则。'
-          '内容搜索（content/both）会在每个命中文件上返回 matches：命中行的行号与内容'
-          '（每文件最多 5 条），可直接定位而无需再读整个文件。',
+      description: '在目录中搜索文件。支持按文件名或内容搜索，可选正则、glob 路径过滤、大小写开关。'
+          '内容搜索（content/both）默认返回每个命中文件的 matches：命中行的行号与内容'
+          '（每文件最多 5 条，可带上下文行），可直接定位而无需再读整个文件；'
+          'output_mode 可切换为仅文件列表或按文件计数。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -744,9 +745,31 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'items': {'type': 'string'},
             'description': '文件类型过滤，如 ["ts", "js", "md"]',
           },
+          'glob': {
+            'type': 'string',
+            'description': 'glob 路径过滤，如 "*.dart" 或 "src/**/*.ts"'
+                '（* 不跨目录、** 跨目录、? 单字符；含 / 时按相对路径匹配，否则按文件名）',
+          },
           'use_regex': {
             'type': 'boolean',
-            'description': 'query 是否按正则解释（大小写不敏感），默认 false',
+            'description': 'query 是否按正则解释，默认 false',
+          },
+          'case_sensitive': {
+            'type': 'boolean',
+            'description': '内容匹配是否区分大小写，默认 false',
+          },
+          'context_lines': {
+            'type': 'number',
+            'description': '每条命中行附带前后 N 行上下文（0-10，默认 0）',
+          },
+          'output_mode': {
+            'type': 'string',
+            'enum': ['content', 'files_with_matches', 'count'],
+            'description': '输出模式：content(命中行，默认), files_with_matches(仅文件列表), count(每文件命中行数)',
+          },
+          'max_results': {
+            'type': 'number',
+            'description': '最多返回多少个文件（1-1000，默认 200）',
           },
         },
         'required': ['directory', 'query'],
