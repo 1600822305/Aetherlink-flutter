@@ -73,6 +73,7 @@ import 'package:aetherlink_flutter/shared/utils/regex_replacement.dart';
 import 'package:aetherlink_flutter/shared/utils/system_prompt_variables.dart';
 
 part 'chat_controller.g.dart';
+part 'chat_controller_debate.dart';
 
 /// One assistant sibling of a multi-model turn: the chosen model and the
 /// streaming message/block/view created for it. Used by [sendMultiModel] to
@@ -102,10 +103,11 @@ typedef _MultiModelSibling = ({
 /// state per chunk → on [LlmDone] finalize and persist the blocks; on a stream
 /// error mark the message errored and persist an `error` block.
 @riverpod
-class ChatController extends _$ChatController {
+class ChatController extends _$ChatController with _ChatDebate {
   static const String _defaultAssistantId = 'default-assistant';
 
   String? _topicId;
+  @override
   String _assistantId = _defaultAssistantId;
 
   /// The id of the last assistant message that was truncated due to
@@ -113,6 +115,7 @@ class ChatController extends _$ChatController {
   /// the next send / regenerate. The UI reads this to show a "继续生成" button.
   String? _truncatedMessageId;
 
+  @override
   ChatRepository get _repo => ref.read(chatRepositoryProvider);
 
   /// Message version history operations (manual save / switch / delete /
@@ -144,6 +147,7 @@ class ChatController extends _$ChatController {
   /// away); the on-screen [ChatState] is only touched when [turnTopicId] is the
   /// topic currently being displayed. This is what makes switching topics
   /// mid-stream instant while the old topic keeps generating in the background.
+  @override
   void _emitTurn(
     String turnTopicId,
     List<ChatMessageView> views, {
@@ -766,228 +770,6 @@ class ChatController extends _$ChatController {
     unawaited(_generateTitle(topicId));
     unawaited(_maybeGenerateSuggestions(topicId, List.of(views)));
     unawaited(_maybeExtractMemory(topicId));
-  }
-
-  /// AI 辩论的一次角色发言：以 [current] 指定的模型发起一条**不携带话题历史**
-  /// 的助手流式消息（辩论上下文由引擎在 [prompt] 里自建）。[header] 作为消息
-  /// 顶部的成功块渲染（角色/轮次徽章），[metadata] 原样存进消息（`debate` 标记）。
-  /// [toolsEnabled] 为 true 时按当前 MCP/搜索开关注入工具（事实核查角色）。
-  /// 返回消息 id 与流式完成后的正文（不含 header）；话题已有流式请求时返回 null。
-  Future<({String messageId, String text})?> sendDebateTurn({
-    required CurrentModel current,
-    required String system,
-    required String prompt,
-    String header = '',
-    Map<String, dynamic>? metadata,
-    bool toolsEnabled = false,
-  }) async {
-    final snapshot = state.value ?? ChatState.initial();
-    if (snapshot.isStreaming) return null;
-
-    _truncatedMessageId = null;
-    final topicId = await _ensureTopic();
-    final now = DateTime.now();
-    final effective = effectiveModelFor(current);
-
-    final assistantMessageId = generateId('msg');
-    final assistantBlockId = generateId('block');
-    final headerBlock = header.isEmpty
-        ? null
-        : MessageBlock.mainText(
-            id: generateId('block'),
-            messageId: assistantMessageId,
-            status: MessageBlockStatus.success,
-            createdAt: now,
-            content: header,
-          );
-    final assistantMessage = Message(
-      id: assistantMessageId,
-      role: MessageRole.assistant,
-      assistantId: _assistantId,
-      topicId: topicId,
-      createdAt: now,
-      status: MessageStatus.streaming,
-      model: effective,
-      metadata: metadata,
-      blocks: <String>[assistantBlockId],
-    );
-    await _repo.saveMessage(assistantMessage);
-    await _repo.saveMessageBlock(
-      MessageBlock.mainText(
-        id: assistantBlockId,
-        messageId: assistantMessageId,
-        status: MessageBlockStatus.streaming,
-        createdAt: now,
-        content: '',
-      ),
-    );
-    final assistantView = ChatMessageView(
-      id: assistantMessageId,
-      role: MessageRole.assistant,
-      status: MessageStatus.streaming,
-      createdAt: now,
-      modelName: effective.name,
-      providerName: current.provider.name,
-      modelId: effective.id,
-      providerId: current.provider.id,
-      debatePhase: _debatePhaseOf(metadata),
-    );
-    final views = <ChatMessageView>[...snapshot.messages, assistantView];
-    _emitTurn(topicId, views, streaming: true);
-
-    final mcp = toolsEnabled ? await _mcpSetup() : const McpSetup.disabled();
-    final ctx = _contextSettings();
-    final request = LlmChatRequest(
-      model: effective,
-      system: system,
-      messages: <LlmMessage>[
-        LlmMessage(role: MessageRole.user, content: prompt),
-      ],
-      maxTokens: ctx.maxTokens,
-      tools: mcp.useFunctionTools ? mcp.tools : null,
-      useResponsesAPI: current.provider.useResponsesAPI ?? false,
-      extraHeaders: effective.providerExtraHeaders,
-      extraBody: effective.providerExtraBody,
-    );
-    await _streamInto(
-      request: request,
-      effective: effective,
-      provider: current.provider,
-      turnTopicId: topicId,
-      assistantMessageId: assistantMessageId,
-      assistantBlockId: assistantBlockId,
-      assistantTime: now,
-      views: views,
-      assistantView: assistantView,
-      mcp: mcp,
-      leadingBlocks: [if (headerBlock != null) headerBlock],
-    );
-
-    final blocks = await _repo.getMessageBlocksByMessageId(assistantMessageId);
-    final text = <String>[
-      for (final b in blocks)
-        if (b is MainTextBlock &&
-            b.id != headerBlock?.id &&
-            b.content.trim().isNotEmpty)
-          b.content,
-    ].join('\n\n');
-    return (messageId: assistantMessageId, text: text);
-  }
-
-  /// 从消息 metadata 里取辩论阶段标记（`metadata['debate']['phase']`）。
-  static String? _debatePhaseOf(Map<String, dynamic>? metadata) {
-    final debate = metadata?['debate'];
-    if (debate is! Map) return null;
-    return debate['phase']?.toString();
-  }
-
-  /// AI 辩论的系统通告（开场/结束/错误提示）：直接落一条无模型的成功
-  /// 助手消息并刷新会话视图。
-  Future<void> sendDebateNotice(
-    String content, {
-    Map<String, dynamic>? metadata,
-  }) async {
-    final topicId = await _ensureTopic();
-    final now = DateTime.now();
-    final messageId = generateId('msg');
-    final blockId = generateId('block');
-    await _repo.saveMessage(
-      Message(
-        id: messageId,
-        role: MessageRole.assistant,
-        assistantId: _assistantId,
-        topicId: topicId,
-        createdAt: now,
-        status: MessageStatus.success,
-        metadata: metadata,
-        blocks: <String>[blockId],
-      ),
-    );
-    await _repo.saveMessageBlock(
-      MessageBlock.mainText(
-        id: blockId,
-        messageId: messageId,
-        status: MessageBlockStatus.success,
-        createdAt: now,
-        content: content,
-      ),
-    );
-    ref.read(chatRefreshProvider.notifier).bump();
-    unawaited(_refreshTopicPreview(topicId));
-  }
-
-  /// AI 辩论的用户插话：只落一条普通用户消息（带 debate 标记），
-  /// 不触发任何模型回复——发言内容由辩论引擎注入后续上下文。
-  Future<void> sendDebateInterjection(String text) async {
-    final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
-    final topicId = await _ensureTopic();
-    final now = DateTime.now();
-    final messageId = generateId('msg');
-    final blockId = generateId('block');
-    await _repo.saveMessage(
-      Message(
-        id: messageId,
-        role: MessageRole.user,
-        assistantId: _assistantId,
-        topicId: topicId,
-        createdAt: now,
-        status: MessageStatus.success,
-        metadata: const {
-          'debate': {'phase': 'interjection'},
-        },
-        blocks: <String>[blockId],
-      ),
-    );
-    await _repo.saveMessageBlock(
-      MessageBlock.mainText(
-        id: blockId,
-        messageId: messageId,
-        status: MessageBlockStatus.success,
-        createdAt: now,
-        content: trimmed,
-      ),
-    );
-    ref.read(chatRefreshProvider.notifier).bump();
-    unawaited(_refreshTopicPreview(topicId));
-  }
-
-  /// AI 辩论的静默一次性生成（不落聊天消息），用于裁决 JSON 等
-  /// 结构化产出；失败时返回 null。
-  Future<String?> generateDebateText({
-    required CurrentModel current,
-    required String system,
-    required String prompt,
-  }) async {
-    try {
-      final effective = effectiveModelFor(current);
-      final request = LlmChatRequest(
-        model: effective,
-        system: system,
-        messages: <LlmMessage>[
-          LlmMessage(role: MessageRole.user, content: prompt),
-        ],
-        useResponsesAPI: current.provider.useResponsesAPI ?? false,
-        extraHeaders: effective.providerExtraHeaders,
-        extraBody: effective.providerExtraBody,
-      );
-      final gateway = ref.read(llmGatewayFactoryProvider).forModel(effective);
-      final buffer = StringBuffer();
-      await for (final chunk in gateway.streamChat(request)) {
-        switch (chunk) {
-          case LlmTextDelta(:final text):
-            buffer.write(text);
-          case LlmReasoningDelta():
-          case LlmToolCallChunk():
-          case LlmDone():
-            break;
-        }
-      }
-      final text = buffer.toString().trim();
-      return text.isEmpty ? null : text;
-    } on Exception {
-      return null;
-    }
   }
 
   /// The next free sibling-group id for [topicId]: one past the largest existing
@@ -1782,6 +1564,7 @@ class ChatController extends _$ChatController {
   /// Reads the sidebar 上下文设置 and returns the `maxTokens` to set on the
   /// request (`null` when the user disabled the limit) and the `contextCount`
   /// (number of history messages to include).
+  @override
   ({int contextCount, int? maxTokens}) _contextSettings() {
     final s = ref.read(sidebarSettingsControllerProvider);
     // Prefer ParameterSettings maxOutputTokens when enabled (unified parameter
@@ -1946,6 +1729,7 @@ class ChatController extends _$ChatController {
   /// no (more) tools are requested the turn finalizes: blocks are persisted and
   /// the view reloaded; a stream error keeps any completed blocks and appends an
   /// `error` block. Shared by [send], [regenerate] and [resend].
+  @override
   Future<void> _streamInto({
     required String turnTopicId,
     required LlmChatRequest request,
@@ -2844,6 +2628,7 @@ class ChatController extends _$ChatController {
   /// `TopicPreviewService.refreshTopicPreview`. Failure is logged but never
   /// rethrown (preview is a display enhancement, must not disrupt the message
   /// flow).
+  @override
   Future<void> _refreshTopicPreview([String? forTopicId]) async {
     final topicId = forTopicId ?? _topicId;
     if (topicId == null) return;
@@ -3826,6 +3611,7 @@ class ChatController extends _$ChatController {
   /// Assembles the [McpSetup] for the current turn (see [buildMcpSetup]);
   /// the bound-skills lookup stays here because it needs the repository and
   /// the controller's active assistant.
+  @override
   Future<McpSetup> _mcpSetup() => buildMcpSetup(
     ref,
     loadBoundSkills: () async {
@@ -3871,6 +3657,7 @@ class ChatController extends _$ChatController {
     return prompt;
   }
 
+  @override
   Future<String> _ensureTopic() async {
     final existing = _topicId;
     if (existing != null) return existing;
