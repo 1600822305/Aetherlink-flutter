@@ -92,8 +92,11 @@ Future<McpToolResult> listFiles(Ref ref, Map<String, Object?> args) async {
 }
 
 /// `read_file` — read one (`path`) or many (`files`) files, optionally limited
-/// to a `start_line`..`end_line` range (1-based, inclusive).
+/// to a `start_line`..`end_line` range (1-based, inclusive). Content lines are
+/// prefixed `N | ` by default (`line_numbers=false` for raw text) so the model
+/// can reference exact lines in insert_content / apply_diff without counting.
 Future<McpToolResult> readFile(Ref ref, Map<String, Object?> args) async {
+  final withLineNumbers = optionalBool(args, 'line_numbers', fallback: true);
   final files = args['files'];
   if (files is List && files.isNotEmpty) {
     final results = <Map<String, Object?>>[];
@@ -109,7 +112,8 @@ Future<McpToolResult> readFile(Ref ref, Map<String, Object?> args) async {
       }
       try {
         final one = await _readOne(
-            ref, path, optionalInt(m, 'start_line'), optionalInt(m, 'end_line'));
+            ref, path, optionalInt(m, 'start_line'), optionalInt(m, 'end_line'),
+            withLineNumbers: withLineNumbers);
         results.add({'status': 'success', ...one});
       } on FileEditorError catch (e) {
         errors++;
@@ -128,7 +132,8 @@ Future<McpToolResult> readFile(Ref ref, Map<String, Object?> args) async {
   }
   final path = requireString(args, 'path');
   final one = await _readOne(
-      ref, path, optionalInt(args, 'start_line'), optionalInt(args, 'end_line'));
+      ref, path, optionalInt(args, 'start_line'), optionalInt(args, 'end_line'),
+      withLineNumbers: withLineNumbers);
   return fileEditorOk(one);
 }
 
@@ -169,14 +174,77 @@ Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
     fileTypes: fileTypes,
     useRegex: useRegex,
   );
+
+  // 内容搜索时把命中行（行号 + 内容）一并带回，模型不用再整读文件定位。
+  final withMatches = searchType != WorkspaceSearchType.name;
+  final files = <Map<String, Object?>>[];
+  var totalMatches = 0;
+  for (final e in results) {
+    final json = entryJson(e);
+    if (withMatches && !e.isDirectory && totalMatches < _kMaxTotalMatches) {
+      final matches = await _matchingLines(backend, e.path, query, useRegex);
+      if (matches != null) {
+        totalMatches += matches.length;
+        json['matches'] = matches;
+      }
+    }
+    files.add(json);
+  }
   return fileEditorOk({
     'directory': directory,
     'query': query,
     'searchType': searchType.name,
     if (useRegex) 'useRegex': true,
     'count': results.length,
-    'files': [for (final e in results) entryJson(e)],
+    'files': files,
   });
+}
+
+/// Caps for [_matchingLines]: per-file / overall hit counts and per-line
+/// snippet length, so a hot query can't flood the model context.
+const int _kMaxMatchesPerFile = 5;
+const int _kMaxTotalMatches = 100;
+const int _kMaxMatchLineChars = 200;
+
+/// The matching lines of [path] as `{line, text}` maps（1-based 行号，行内容
+/// 截到 [_kMaxMatchLineChars] 字符）。Matching mirrors the backends' content
+/// search: case-insensitive, regex or literal contains. Returns null when the
+/// file can't be read as text (binary / too large / permission) — the entry
+/// still rides in the results, just without `matches`.
+Future<List<Map<String, Object?>>?> _matchingLines(
+  WorkspaceBackend backend,
+  String path,
+  String query,
+  bool useRegex,
+) async {
+  final String content;
+  try {
+    content = await backend.readFile(path);
+  } catch (_) {
+    return null;
+  }
+  final RegExp? pattern;
+  try {
+    pattern = useRegex ? RegExp(query, caseSensitive: false) : null;
+  } catch (_) {
+    return null;
+  }
+  final lowerQuery = query.toLowerCase();
+  final matches = <Map<String, Object?>>[];
+  final lines = content.split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    final line = lines[i];
+    final hit = pattern != null
+        ? pattern.hasMatch(line)
+        : line.toLowerCase().contains(lowerQuery);
+    if (!hit) continue;
+    final text = line.length > _kMaxMatchLineChars
+        ? '${line.substring(0, _kMaxMatchLineChars)}…'
+        : line;
+    matches.add({'line': i + 1, 'text': text});
+    if (matches.length >= _kMaxMatchesPerFile) break;
+  }
+  return matches;
 }
 
 // ===== internals =====
@@ -186,12 +254,17 @@ int _dirsFirst(WorkspaceEntry a, WorkspaceEntry b) {
   return a.name.compareTo(b.name);
 }
 
+/// 行号输出时附在 payload 里的提醒：行号前缀仅供定位，不是文件内容。
+const String _kLineNumbersNote =
+    '每行前的「N | 」是行号前缀，不属于文件内容；写入/SEARCH 块/替换时请用不含行号的原始文本。';
+
 Future<Map<String, Object?>> _readOne(
   Ref ref,
   String path,
   int? startLine,
-  int? endLine,
-) async {
+  int? endLine, {
+  bool withLineNumbers = true,
+}) async {
   final backend = await backendForPath(ref, path);
   // A range read kicks in when *either* bound is given: a missing start means
   // "from line 1", a missing end means "to the last line". (Previously both
@@ -211,10 +284,17 @@ Future<Map<String, Object?>> _readOne(
       'startLine': start,
       'endLine': end,
       'totalLines': range.totalLines,
-      'content': range.content,
+      'content': withLineNumbers
+          ? numberLines(range.content, startAt: start)
+          : range.content,
       'rangeHash': range.rangeHash,
+      if (withLineNumbers) 'note': _kLineNumbersNote,
     };
   }
   final content = await backend.readFile(path);
-  return {'path': path, 'content': content};
+  return {
+    'path': path,
+    'content': withLineNumbers ? numberLines(content) : content,
+    if (withLineNumbers) 'note': _kLineNumbersNote,
+  };
 }

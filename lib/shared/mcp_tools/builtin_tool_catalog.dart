@@ -679,7 +679,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       name: 'read_file',
       description: '读取文件内容。支持单文件(path)或批量(files 数组)读取。大文件建议指定行范围（1-based，含端点）：'
           'start_line/end_line 可单独使用——只给 start_line 表示读到文件末尾，只给 end_line 表示从第 1 行开始。'
-          '范围读取会返回 rangeHash，可配合 apply_diff 的乐观锁。',
+          '范围读取会返回 rangeHash，可配合 apply_diff 的乐观锁。'
+          '返回内容默认每行带「N | 」行号前缀（仅供定位，不是文件内容）；'
+          '需要原始文本时传 line_numbers=false。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -704,6 +706,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'type': 'number',
             'description': '结束行号 (1-based, 包含)，可选。省略则读到文件末尾。给出任一端点即按范围读取',
           },
+          'line_numbers': {
+            'type': 'boolean',
+            'description': '是否在每行前加「N | 」行号前缀，默认 true',
+          },
         },
       },
     ),
@@ -720,7 +726,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'search_files',
-      description: '在目录中搜索文件。支持按文件名或内容搜索，可选正则。',
+      description: '在目录中搜索文件。支持按文件名或内容搜索，可选正则。'
+          '内容搜索（content/both）会在每个命中文件上返回 matches：命中行的行号与内容'
+          '（每文件最多 5 条），可直接定位而无需再读整个文件。',
       inputSchema: {
         'type': 'object',
         'properties': {

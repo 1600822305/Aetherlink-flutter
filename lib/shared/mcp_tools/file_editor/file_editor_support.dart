@@ -272,6 +272,24 @@ Future<RecursiveListing> listRecursive(
   return RecursiveListing(out, truncated: truncated);
 }
 
+/// Prefixes each line of [content] with its 1-based line number（`N | 内容`，
+/// 行号右对齐），starting at [startAt]. Read-tool output only — write tools
+/// always take raw content.
+String numberLines(String content, {int startAt = 1}) {
+  if (content.isEmpty) return content;
+  final hasTrailingNewline = content.endsWith('\n');
+  final lines =
+      (hasTrailingNewline ? content.substring(0, content.length - 1) : content)
+          .split('\n');
+  final width = '${startAt + lines.length - 1}'.length;
+  final buf = StringBuffer();
+  for (var i = 0; i < lines.length; i++) {
+    buf.write('${'${startAt + i}'.padLeft(width)} | ${lines[i]}');
+    if (i < lines.length - 1 || hasTrailingNewline) buf.write('\n');
+  }
+  return buf.toString();
+}
+
 // ===== content processing (shared by all write handlers) =====
 //
 // Models occasionally wrap whole-file content in a Markdown code fence, or send
