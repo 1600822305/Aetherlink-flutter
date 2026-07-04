@@ -1965,16 +1965,21 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'terminal_execute',
       description:
-          '在内置终端（应用内 Alpine Linux 沙箱）里执行一条 shell 命令，返回 stdout / stderr / 退出码。'
+          '在终端里执行一条 shell 命令，返回 stdout / stderr / 退出码。默认目标是内置终端'
+          '（应用内 Alpine Linux 沙箱）；传 workspace 参数可在 SSH / Termux 工作区的远端 shell 里执行。'
           '适合一次性命令（如 apk add、cat、python 脚本）。每次调用都是独立进程，不保留 shell 状态；'
           '需要保留状态（cd、环境变量、后台任务）时用 terminal_session_* 系列。执行前会请用户确认。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'command': {'type': 'string', 'description': '要执行的 shell 命令'},
+          'workspace': {
+            'type': 'string',
+            'description': '目标工作区（序号 / ID / 名称，可选；不传时在内置终端沙箱里执行）',
+          },
           'cwd': {
             'type': 'string',
-            'description': '工作目录（沙箱内路径，可选，默认 /root）',
+            'description': '工作目录（可选；内置终端默认 /root，指定工作区时默认其根目录）',
           },
           'timeout_ms': {
             'type': 'number',
@@ -1987,28 +1992,34 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'terminal_session_create',
       description:
-          '新建一个长驻终端会话（内置 Alpine 沙箱里的持久 shell）。会话保留 cd / 环境变量 / 后台进程等状态，'
+          '新建一个长驻终端会话（持久 shell）。默认在内置 Alpine 沙箱里；传 workspace 参数可在'
+          ' SSH / Termux 工作区的远端开会话。会话保留 cd / 环境变量 / 后台进程等状态，'
           '空闲 10 分钟自动回收。返回 sessionId 供 terminal_session_exec 等使用。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'name': {'type': 'string', 'description': '会话名称（可选）'},
+          'workspace': {
+            'type': 'string',
+            'description': '目标工作区（序号 / ID / 名称，可选；不传时在内置终端沙箱里开会话）',
+          },
           'cwd': {
             'type': 'string',
-            'description': '初始工作目录（沙箱内路径，可选，默认 /root）',
+            'description': '初始工作目录（可选；内置终端默认 /root，指定工作区时默认其根目录）',
           },
         },
       },
     ),
     McpToolDefinition(
       name: 'terminal_session_list',
-      description: '列出当前所有长驻终端会话（sessionId、名称、是否正忙、最近使用时间）。',
+      description: '列出当前所有长驻终端会话（sessionId、名称、所属工作区、是否正忙、最近使用时间）。',
       inputSchema: {'type': 'object', 'properties': {}},
     ),
     McpToolDefinition(
       name: 'terminal_session_exec',
       description:
-          '在指定长驻会话里执行一条命令并等待结束（保留 shell 状态）。不传 session_id 时自动复用/新建默认会话。'
+          '在指定长驻会话里执行一条命令并等待结束（保留 shell 状态）。不传 session_id 时自动复用/新建'
+          '默认会话（可配合 workspace 参数指定在哪个工作区）。'
           '超时不杀命令——命令继续在会话里跑，可用 terminal_session_output 回看。执行前会请用户确认。',
       inputSchema: {
         'type': 'object',
@@ -2017,6 +2028,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           'session_id': {
             'type': 'string',
             'description': '目标会话 ID（可选，默认复用空闲会话）',
+          },
+          'workspace': {
+            'type': 'string',
+            'description': '不传 session_id 时的目标工作区（序号 / ID / 名称，可选；默认内置终端）',
           },
           'timeout_ms': {
             'type': 'number',

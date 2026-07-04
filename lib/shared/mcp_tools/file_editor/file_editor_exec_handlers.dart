@@ -50,6 +50,10 @@ Future<McpToolResult> runCommand(
     'cwd': cwd,
     'exitCode': result.exitCode,
     'timedOut': result.timedOut,
+    if (result.timedOut)
+      'hint': '命令超时已被终止。长任务建议改用 @aether/terminal 的 terminal_session_exec'
+          '（传 workspace 参数指定本工作区）：超时不杀命令、后台继续跑，'
+          '可用 terminal_session_output 回看。',
     'canceled': result.canceled,
     'stdout': result.stdout,
     'stderr': result.stderr,

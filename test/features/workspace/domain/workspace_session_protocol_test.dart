@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:aetherlink_flutter/features/terminal/domain/terminal_session_protocol.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace_session_protocol.dart';
 
 void main() {
   group('buildSentinelInput', () {
