@@ -263,6 +263,51 @@ class Assistants extends _$Assistants {
     ref.read(currentTopicIdProvider.notifier).set(topicId);
   }
 
+  /// Creates a brand-new assistant from user-supplied fields (the 创建助手 flow)
+  /// with a default topic, then selects it.
+  Future<void> createAssistant({
+    required String name,
+    required String systemPrompt,
+    String? emoji,
+    String? avatar,
+    bool memoryEnabled = false,
+    List<String> skillIds = const <String>[],
+    ParameterSettings? paramSettings,
+    AssistantChatBackground? chatBackground,
+    List<AssistantRegex>? regexRules,
+  }) async {
+    final now = DateTime.now();
+    final id = generateId('assistant');
+    final topicId = generateId('topic');
+    var assistant = Assistant(
+      id: id,
+      name: name,
+      systemPrompt: systemPrompt,
+      emoji: emoji,
+      avatar: avatar,
+      isSystem: false,
+      isDefault: false,
+      memoryEnabled: memoryEnabled,
+      skillIds: skillIds,
+      chatBackground: chatBackground,
+      regexRules: regexRules,
+      type: 'assistant',
+      createdAt: now,
+      updatedAt: now,
+      topicIds: <String>[topicId],
+    );
+    if (paramSettings != null) {
+      assistant = _applyParamSettings(assistant, paramSettings);
+    }
+    await _repo.saveAssistant(assistant);
+    await _repo.saveTopic(
+      newDefaultTopic(id: topicId, assistantId: id, now: now),
+    );
+    await _reload();
+    ref.read(currentAssistantIdProvider.notifier).set(id);
+    ref.read(currentTopicIdProvider.notifier).set(topicId);
+  }
+
   /// Duplicates [source] as "名称 (复制)" with its own default topic.
   Future<void> copy(Assistant source) async {
     final now = DateTime.now();

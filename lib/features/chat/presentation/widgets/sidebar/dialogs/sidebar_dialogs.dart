@@ -1,4 +1,4 @@
-// Sidebar dialogs: add-assistant, create/add-to group, move-topic, text/confirm prompts.
+// Sidebar dialogs: create/add-to group, move-topic, text/confirm prompts.
 
 import 'dart:async';
 
@@ -6,79 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import 'package:aetherlink_flutter/features/chat/application/assistant_presets.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/sidebar_tokens.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/sidebar_avatar.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
-
-/// The 添加助手 picker: a scrollable list of the 17 [kAssistantPresets].
-Future<void> showAddAssistantDialog(BuildContext context, WidgetRef ref) async {
-  await showDialog<void>(
-    context: context,
-    builder: (dialogContext) {
-      final theme = Theme.of(dialogContext);
-      return AlertDialog(
-        title: const Text('选择助手'),
-        contentPadding: const EdgeInsets.fromLTRB(0, 12, 0, 0),
-        content: SizedBox(
-          width: 360,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-                child: Text(
-                  '选择一个预设助手来添加到你的助手列表中',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: kAssistantPresets.length,
-                  itemBuilder: (context, index) {
-                    final preset = kAssistantPresets[index];
-                    return ListTile(
-                      leading: Text(
-                        preset.emoji ?? '🤖',
-                        style: const TextStyle(fontSize: 24),
-                      ),
-                      title: Text(preset.name),
-                      subtitle: preset.description == null
-                          ? null
-                          : Text(
-                              preset.description!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                      onTap: () {
-                        ref.read(assistantsProvider.notifier).addPreset(preset);
-                        Navigator.of(dialogContext).pop();
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
-          ),
-        ],
-      );
-    },
-  );
-}
 
 /// Prompts for a folder name and creates the group (创建分组 / 创建话题分组).
 Future<void> showCreateGroupDialog(

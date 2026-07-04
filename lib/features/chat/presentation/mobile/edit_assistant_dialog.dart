@@ -22,6 +22,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/mobile/assistant_preset_sheet.dart';
 import 'package:aetherlink_flutter/features/memory/presentation/mobile/assistant_memory_index_page.dart';
 import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
@@ -50,10 +51,22 @@ Future<void> showEditAssistantDialog(
   );
 }
 
+/// Opens the 创建助手 dialog — same layout as edit but with blank fields and
+/// an option to fill from a preset. On save, creates a new assistant.
+Future<void> showCreateAssistantDialog(BuildContext context) {
+  return showDialog<void>(
+    context: context,
+    barrierColor: const Color(0x80000000),
+    useSafeArea: false,
+    builder: (_) => const _EditAssistantDialog(assistant: null),
+  );
+}
+
 class _EditAssistantDialog extends ConsumerStatefulWidget {
   const _EditAssistantDialog({required this.assistant});
 
-  final Assistant assistant;
+  /// `null` means create mode (blank fields); non-null means edit mode.
+  final Assistant? assistant;
 
   @override
   ConsumerState<_EditAssistantDialog> createState() =>
@@ -70,17 +83,19 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
   double _swipeDx = 0;
   double _swipeDy = 0;
 
+  bool get _isCreateMode => widget.assistant == null;
+
   late final TextEditingController _nameController = TextEditingController(
-    text: widget.assistant.name,
+    text: widget.assistant?.name ?? '',
   );
   late final TextEditingController _promptController = TextEditingController(
-    text: widget.assistant.systemPrompt ?? '',
+    text: widget.assistant?.systemPrompt ?? '',
   );
-  late bool _memoryEnabled = widget.assistant.memoryEnabled ?? false;
-  late String? _emoji = widget.assistant.emoji;
-  late String? _avatar = widget.assistant.avatar;
+  late bool _memoryEnabled = widget.assistant?.memoryEnabled ?? false;
+  late String? _emoji = widget.assistant?.emoji;
+  late String? _avatar = widget.assistant?.avatar;
   late AssistantChatBackground _chatBackground =
-      widget.assistant.chatBackground ??
+      widget.assistant?.chatBackground ??
       const AssistantChatBackground(
         enabled: false,
         imageUrl: '',
@@ -88,10 +103,10 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
         showOverlay: true,
       );
   late List<String> _skillIds = List<String>.from(
-    widget.assistant.skillIds ?? const <String>[],
+    widget.assistant?.skillIds ?? const <String>[],
   );
   late List<AssistantRegex> _regexRules = List<AssistantRegex>.from(
-    widget.assistant.regexRules ?? const <AssistantRegex>[],
+    widget.assistant?.regexRules ?? const <AssistantRegex>[],
   );
   late ParameterSettings _paramSettings = _initParamSettings();
   late final _AssistantParamDelegate _paramDelegate = _AssistantParamDelegate(
@@ -100,6 +115,13 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
 
   ParameterSettings _initParamSettings() {
     final a = widget.assistant;
+    if (a == null) {
+      return const ParameterSettings(
+        values: <String, dynamic>{},
+        enabledFlags: <String, bool>{},
+        customParameters: <Map<String, dynamic>>[],
+      );
+    }
     final values = <String, dynamic>{};
     final flags = <String, bool>{};
     if (a.temperature != null) {
@@ -282,26 +304,61 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
     });
   }
 
+  /// Opens the preset bottom sheet and fills the form with the selected preset.
+  Future<void> _applyPreset() async {
+    final preset = await showAssistantPresetSheet(context);
+    if (preset == null || !mounted) return;
+    setState(() {
+      _nameController.text = preset.name;
+      _promptController.text = preset.systemPrompt ?? '';
+      _emoji = preset.emoji;
+      _avatar = preset.avatar;
+    });
+  }
+
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
       final name = _nameController.text.trim();
-      await ref
-          .read(assistantsProvider.notifier)
-          .applyEdits(
-            widget.assistant.id,
-            name: name.isEmpty ? widget.assistant.name : name,
-            systemPrompt: _promptController.text.trim(),
-            memoryEnabled: _memoryEnabled,
-            skillIds: _skillIds,
-            emoji: _emoji,
-            avatar: _avatar,
-            paramSettings: _paramSettings,
-            chatBackground: _chatBackground.imageUrl.isEmpty
-                ? null
-                : _chatBackground,
-            regexRules: _regexRules,
-          );
+      if (_isCreateMode) {
+        if (name.isEmpty) {
+          setState(() => _saving = false);
+          AppToast.error(context, '请输入助手名称');
+          return;
+        }
+        await ref
+            .read(assistantsProvider.notifier)
+            .createAssistant(
+              name: name,
+              systemPrompt: _promptController.text.trim(),
+              emoji: _emoji,
+              avatar: _avatar,
+              memoryEnabled: _memoryEnabled,
+              skillIds: _skillIds,
+              paramSettings: _paramSettings,
+              chatBackground: _chatBackground.imageUrl.isEmpty
+                  ? null
+                  : _chatBackground,
+              regexRules: _regexRules,
+            );
+      } else {
+        await ref
+            .read(assistantsProvider.notifier)
+            .applyEdits(
+              widget.assistant!.id,
+              name: name.isEmpty ? widget.assistant!.name : name,
+              systemPrompt: _promptController.text.trim(),
+              memoryEnabled: _memoryEnabled,
+              skillIds: _skillIds,
+              emoji: _emoji,
+              avatar: _avatar,
+              paramSettings: _paramSettings,
+              chatBackground: _chatBackground.imageUrl.isEmpty
+                  ? null
+                  : _chatBackground,
+              regexRules: _regexRules,
+            );
+      }
       if (mounted) Navigator.of(context).pop();
     } catch (_) {
       if (mounted) {
@@ -371,8 +428,8 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
                   onChange: (rules) => setState(() => _regexRules = rules),
                 ),
                 _MemoryTab(
-                  assistantId: widget.assistant.id,
-                  assistantName: widget.assistant.name,
+                  assistantId: widget.assistant?.id ?? '',
+                  assistantName: widget.assistant?.name ?? '',
                   enabled: _memoryEnabled,
                   onChanged: (v) => setState(() => _memoryEnabled = v),
                 ),
@@ -430,13 +487,24 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
           ),
           const SizedBox(width: 4),
           Text(
-            '编辑助手',
+            _isCreateMode ? '创建助手' : '编辑助手',
             style: TextStyle(
               fontSize: isMobile ? 18 : 16,
               fontWeight: FontWeight.w600,
               color: theme.colorScheme.onSurface,
             ),
           ),
+          const Spacer(),
+          if (_isCreateMode)
+            OutlinedButton.icon(
+              onPressed: _applyPreset,
+              icon: const Icon(LucideIcons.sparkles, size: 16),
+              label: const Text('使用预设'),
+              style: OutlinedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                textStyle: const TextStyle(fontSize: 12),
+              ),
+            ),
         ],
       ),
     );
@@ -514,7 +582,11 @@ class _EditAssistantDialogState extends ConsumerState<_EditAssistantDialog>
           const SizedBox(width: 8),
           FilledButton(
             onPressed: _saving ? null : _save,
-            child: Text(_saving ? '保存中...' : '保存'),
+            child: Text(
+              _saving
+                  ? (_isCreateMode ? '创建中...' : '保存中...')
+                  : (_isCreateMode ? '创建' : '保存'),
+            ),
           ),
         ],
       ),
@@ -557,7 +629,7 @@ class _BasicTab extends StatelessWidget {
     this.avatarImage,
   });
 
-  final Assistant assistant;
+  final Assistant? assistant;
   final TextEditingController nameController;
   final String avatarDisplayText;
   final bool hasAvatarImage;
