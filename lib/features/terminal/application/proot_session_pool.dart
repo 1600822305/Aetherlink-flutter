@@ -49,7 +49,11 @@ class PooledTerminalSession {
   })  : _shell = shell,
         createdAt = DateTime.now(),
         lastUsedAt = DateTime.now() {
+    // cast 到 List<int>：Utf8Decoder 的 StreamTransformer 反化是
+    // <List<int>, String>，Stream<Uint8List>.transform 在运行时泛型检查下
+    // 会直接抛 type error。
     _outputSub = shell.output
+        .cast<List<int>>()
         .transform(const Utf8Decoder(allowMalformed: true))
         .listen(_append);
     shell.done.whenComplete(() => _alive = false);

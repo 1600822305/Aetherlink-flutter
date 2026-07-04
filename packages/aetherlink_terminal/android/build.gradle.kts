@@ -29,7 +29,6 @@ android {
     namespace = "com.example.aetherlink.aetherlink_terminal"
 
     compileSdk = 36
-    ndkVersion = "25.2.9519653"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -49,13 +48,10 @@ android {
         minSdk = 24
     }
 
-    // The forkpty JNI bridge (src/main/cpp). The prebuilt PRoot binaries live
-    // in src/main/jniLibs and are packaged as-is.
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-        }
-    }
+    // All native pieces (libproot*.so and the forkpty bridge libaether_pty.so)
+    // ship prebuilt in src/main/jniLibs — no NDK/CMake step at build time.
+    // Rebuild libaether_pty.so with src/main/cpp/build_pty.sh after editing
+    // src/main/cpp/aether_pty.c.
 }
 
 kotlin {
