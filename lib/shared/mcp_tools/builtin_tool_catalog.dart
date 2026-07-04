@@ -629,12 +629,6 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
   ],
   '@aether/file-editor': [
     McpToolDefinition(
-      name: 'list_workspaces',
-      description:
-          '获取用户已打开的所有工作区列表。返回带编号的工作区，可用编号、ID 或名称调用其他工具。操作文件前应先调用此工具了解可用工作区。',
-      inputSchema: {'type': 'object', 'properties': {}},
-    ),
-    McpToolDefinition(
       name: 'get_workspace_files',
       description: '获取指定工作区中的文件和目录列表。支持浅层（只看当前目录）或递归（获取所有子目录内容）两种模式。',
       inputSchema: {
@@ -662,7 +656,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'list_files',
-      description: '列出指定目录的内容。path 为 get_workspace_files / list_workspaces 返回的目录路径（不透明句柄）。',
+      description: '列出指定目录的内容。path 为 get_workspace_files 返回的目录路径（不透明句柄）。',
       inputSchema: {
         'type': 'object',
         'properties': {

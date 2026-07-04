@@ -148,9 +148,6 @@ class _FileEditorReadBlockViewState extends State<FileEditorReadBlockView> {
         final name = fileNameFromPath(data?['path']?.toString() ??
             _args['path']?.toString());
         return (LucideIcons.folderOpen, '列出 $name · $count 项');
-      case 'list_workspaces':
-        final count = data?['count'] ?? 0;
-        return (LucideIcons.layoutGrid, '工作区 · $count 个');
       case 'get_file_info':
         final name = fileNameFromPath(data?['name']?.toString() ??
             _args['path']?.toString());
@@ -180,8 +177,6 @@ class _FileEditorReadBlockViewState extends State<FileEditorReadBlockView> {
       case 'get_workspace_files':
       case 'search_files':
         return _entryListBody(data['files']);
-      case 'list_workspaces':
-        return _workspacesBody(data['workspaces']);
       case 'get_file_info':
         return _fileInfoBody(data);
     }
@@ -230,23 +225,6 @@ class _FileEditorReadBlockViewState extends State<FileEditorReadBlockView> {
       children: [
         for (final e in files)
           if (e is Map) _EntryRow(entry: e.cast<String, Object?>()),
-      ],
-    );
-  }
-
-  Widget _workspacesBody(Object? workspaces) {
-    if (workspaces is! List || workspaces.isEmpty) {
-      return const FileEditorEmptyBody();
-    }
-    return Column(
-      children: [
-        for (final w in workspaces)
-          if (w is Map)
-            _SimpleRow(
-              icon: LucideIcons.folder,
-              title: '${w['index']}. ${w['name'] ?? ''}',
-              subtitle: w['path']?.toString(),
-            ),
       ],
     );
   }
@@ -358,44 +336,6 @@ class _EntryRow extends StatelessWidget {
   }
 }
 
-class _SimpleRow extends StatelessWidget {
-  const _SimpleRow({required this.icon, required this.title, this.subtitle});
-
-  final IconData icon;
-  final String title;
-  final String? subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      child: Row(
-        children: [
-          Icon(icon, size: 14, color: theme.colorScheme.primary),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall),
-                if (subtitle != null && subtitle!.isNotEmpty)
-                  Text(subtitle!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 String _formatSize(int bytes) {
   if (bytes < 1024) return '$bytes B';

@@ -60,8 +60,6 @@ Future<McpToolResult> runFileEditorTool(
 }) async {
   try {
     switch (toolName) {
-      case 'list_workspaces':
-        return await listWorkspaces(ref);
       case 'get_workspace_files':
         return await getWorkspaceFiles(ref, args);
       case 'list_files':

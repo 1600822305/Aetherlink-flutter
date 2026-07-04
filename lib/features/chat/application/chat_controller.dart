@@ -4241,8 +4241,8 @@ class ChatController extends _$ChatController {
     _maybeInjectWebSearch(tools, routes);
     _maybeInjectMemorySearch(tools, routes);
 
-    // 文件工具在列时把当前工作区上下文直接送进系统提示，免得模型每轮先调
-    // list_workspaces 探路。
+    // 文件工具在列时把当前工作区上下文直接送进系统提示，模型开局即知可用
+    // 工作区（编号/ID/名称），无需专门的列表工具。
     String? workspaceContext;
     if (routes.values.any((r) => r is _FileEditorToolRoute)) {
       workspaceContext = await buildWorkspaceContextSection(ref);

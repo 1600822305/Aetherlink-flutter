@@ -27,7 +27,6 @@ const Set<String> _fileEditorWriteTools = {
 
 /// `@aether/file-editor` read-only tools, rendered as compact read/list rows.
 const Set<String> _fileEditorReadTools = {
-  'list_workspaces',
   'get_workspace_files',
   'list_files',
   'read_file',
