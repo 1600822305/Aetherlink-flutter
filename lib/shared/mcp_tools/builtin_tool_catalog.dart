@@ -1820,12 +1820,22 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
-      name: 'apk_read_file',
-      description: '读取 APK 中的任意文件内容（文本或 Base64 编码）',
+      name: 'apk_file',
+      description:
+          '对 APK 内文件的读/增/删（统一入口）。用 op 选择动作，filePath 始终必填：\n'
+          '- op=read（默认）：读取文件内容（文本或 Base64）；\n'
+          '- op=add：添加或替换文件（如注入 assets、so 库），必填 content；\n'
+          '- op=delete：删除文件（如广告资源、无用 so 库）。\n'
+          'add/delete 后 APK 需要重新签名。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
+          'op': {
+            'type': 'string',
+            'enum': ['read', 'add', 'delete'],
+            'description': '操作类型（默认 read）：read=读取；add=添加/替换；delete=删除',
+          },
           'filePath': {
             'type': 'string',
             'description':
@@ -1835,66 +1845,32 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'type': 'string',
             'description': '统一定位符，可替代 filePath，如 "apk_file:assets/config.json"',
           },
+          'content': {
+            'type': 'string',
+            'description': 'op=add 时必填：文件内容（文本直接传内容，二进制传 Base64 编码）',
+          },
+          'isBase64': {
+            'type': 'boolean',
+            'description': 'op=add 时：content 是否为 Base64 编码',
+            'default': false,
+          },
           'asBase64': {
             'type': 'boolean',
-            'description': '是否以 Base64 编码返回（用于二进制文件）',
+            'description': 'op=read 时：是否以 Base64 编码返回（用于二进制文件）',
             'default': false,
           },
           'maxBytes': {
             'type': 'integer',
-            'description': '最大读取字节数（0 表示不限制）',
+            'description': 'op=read 时：最大读取字节数（0 表示不限制）',
             'default': 0,
           },
-          'offset': {'type': 'integer', 'description': '字节偏移量', 'default': 0},
-        },
-        'required': ['apkPath', 'filePath'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'apk_delete_file',
-      description: '从 APK 中删除指定的文件（如广告资源、无用 so 库等）',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
-          'filePath': {
-            'type': 'string',
-            'description': '要删除的文件路径（如 "lib/arm64-v8a/libad.so", "assets/config.json"）',
-          },
-          'locator': {
-            'type': 'string',
-            'description': '统一定位符，可替代 filePath，如 "apk_file:lib/arm64-v8a/libad.so"',
+          'offset': {
+            'type': 'integer',
+            'description': 'op=read 时：字节偏移量',
+            'default': 0,
           },
         },
-        'required': ['apkPath', 'filePath'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'apk_add_file',
-      description: '向 APK 中添加或替换文件（如注入 assets、so 库等）',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'apkPath': {'type': 'string', 'description': 'APK 文件路径'},
-          'filePath': {
-            'type': 'string',
-            'description': '目标路径（如 "assets/config.json"）',
-          },
-          'locator': {
-            'type': 'string',
-            'description': '统一定位符，可替代 filePath，如 "apk_file:assets/config.json"',
-          },
-          'content': {
-            'type': 'string',
-            'description': '文件内容（文本文件直接传内容，二进制文件传 Base64 编码）',
-          },
-          'isBase64': {
-            'type': 'boolean',
-            'description': '内容是否为 Base64 编码',
-            'default': false,
-          },
-        },
-        'required': ['apkPath', 'filePath', 'content'],
+        'required': ['apkPath', 'op', 'filePath'],
       },
     ),
     McpToolDefinition(

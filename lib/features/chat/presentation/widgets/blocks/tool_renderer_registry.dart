@@ -77,9 +77,7 @@ const Set<String> _dexEditorTools = {
   'apk_get_resource_value',
   'apk_set_resource_value',
   'apk_list_files',
-  'apk_read_file',
-  'apk_delete_file',
-  'apk_add_file',
+  'apk_file',
   'apk_parse_arsc_cpp',
   'attempt_completion',
 };

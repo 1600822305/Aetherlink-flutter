@@ -78,12 +78,8 @@ Future<McpToolResult> runDexEditorTool(
         return await _setResourceValue(dex, args);
       case 'apk_list_files':
         return await _listApkFiles(dex, args);
-      case 'apk_read_file':
-        return await _readApkFile(dex, args);
-      case 'apk_delete_file':
-        return await _deleteApkFile(dex, args);
-      case 'apk_add_file':
-        return await _addApkFile(dex, args);
+      case 'apk_file':
+        return await _apkFile(dex, args);
       case 'apk_parse_arsc_cpp':
         return await _parseArscCpp(dex, args);
       case 'attempt_completion':
@@ -1071,6 +1067,27 @@ Future<McpToolResult> _searchTextInApk(
     'truncated': data['truncated'] ?? false,
     'results': data['results'] ?? [],
   }));
+}
+
+/// 统一 APK 内文件操作入口。`op` 选择动作，复用既有专用 handler：
+///  - `read`（默认）：读取文件内容（filePath 必填）；
+///  - `add`：新增/替换文件（filePath + content 必填）；
+///  - `delete`：删除文件（filePath 必填）。
+Future<McpToolResult> _apkFile(DexEditor dex, Map<String, Object?> args) async {
+  final op = _str(args['op']).isEmpty ? 'read' : _str(args['op']);
+  switch (op) {
+    case 'read':
+      return _readApkFile(dex, args);
+    case 'add':
+      return _addApkFile(dex, args);
+    case 'delete':
+      return _deleteApkFile(dex, args);
+    default:
+      return McpToolResult(
+        '错误: 未知的 op「$op」，应为 read/add/delete',
+        isError: true,
+      );
+  }
 }
 
 Future<McpToolResult> _readApkFile(

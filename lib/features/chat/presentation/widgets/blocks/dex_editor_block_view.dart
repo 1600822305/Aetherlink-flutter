@@ -259,12 +259,17 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
           LucideIcons.files,
           'APK 文件列表${total is num ? ' · 共 $total 个' : ''}'
         );
-      case 'apk_read_file':
-        return (LucideIcons.file, '读取 APK 文件 ${_shortName(_strArg('filePath'))}');
-      case 'apk_delete_file':
-        return (LucideIcons.fileX, '删除 APK 文件 ${_shortName(_strArg('filePath'))}');
-      case 'apk_add_file':
-        return (LucideIcons.filePlus, '添加 APK 文件 ${_shortName(_strArg('filePath'))}');
+      case 'apk_file':
+        // 按 op 呈现对应图标与摘要。
+        final name = _shortName(_strArg('filePath'));
+        switch (_strArg('op')) {
+          case 'add':
+            return (LucideIcons.filePlus, '添加 APK 文件 $name');
+          case 'delete':
+            return (LucideIcons.fileX, '删除 APK 文件 $name');
+          default:
+            return (LucideIcons.file, '读取 APK 文件 $name');
+        }
       case 'apk_parse_arsc_cpp':
         return (LucideIcons.database, '解析 resources.arsc');
       case 'attempt_completion':
