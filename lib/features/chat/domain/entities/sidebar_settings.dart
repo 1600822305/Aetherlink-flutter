@@ -121,7 +121,7 @@ abstract class SidebarSettings with _$SidebarSettings {
     @Default(true) bool autoScrollToBottom,
     @Default(MessageStyle.bubble) MessageStyle messageStyle,
     @Default(MessageNavigation.none) MessageNavigation messageNavigation,
-    @Default(true) bool showContextTokenIndicator,
+    @Default(true) bool showMessageTokenUsage,
     // ── 侧边栏宽度 (px) ───────────────────────────────────────────────────────
     // Flutter mobile drawer default 350 (`AppSidebar.solid.tsx`); clamped to
     // [kSidebarWidthMin, getSafeMaxSidebarWidth] when applied.

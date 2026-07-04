@@ -93,9 +93,10 @@ class SidebarSettingsController extends _$SidebarSettingsController
   void setMessageNavigation(MessageNavigation value) =>
       persist(state.copyWith(messageNavigation: value));
 
-  /// Toggles Token用量指示 (persisted; chat-view effect 即将支持).
-  void setShowContextTokenIndicator(bool value) =>
-      persist(state.copyWith(showContextTokenIndicator: value));
+  /// Toggles 显示Token用量 (wired: [MessageToolbar] hides its [TokenDisplay]
+  /// chip when off).
+  void setShowMessageTokenUsage(bool value) =>
+      persist(state.copyWith(showMessageTokenUsage: value));
 
   // ── 侧边栏宽度 ──────────────────────────────────────────────────────────
   /// Live-previews 侧边栏宽度 without persisting — the dialog drives this on every

@@ -75,7 +75,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       description: '渲染用户输入的 Markdown 格式（关闭后用户消息显示为纯文本）',
       value: s.renderUserInputAsMarkdown,
       onChanged: c.setRenderUserInputAsMarkdown,
-      comingSoon: true,
     ),
     _SwitchSettingRow(
       title: '自动下滑',
@@ -99,11 +98,10 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       comingSoon: true,
     ),
     _SwitchSettingRow(
-      title: 'Token 用量指示',
-      description: '在右侧显示上下文 Token 用量呼吸灯',
-      value: s.showContextTokenIndicator,
-      onChanged: c.setShowContextTokenIndicator,
-      comingSoon: true,
+      title: '显示 Token 用量',
+      description: '在信息气泡底部工具栏显示 Token 用量',
+      value: s.showMessageTokenUsage,
+      onChanged: c.setShowMessageTokenUsage,
     ),
   ];
 
@@ -1148,21 +1146,18 @@ class _SwitchSettingRow extends StatelessWidget {
     required this.description,
     required this.value,
     required this.onChanged,
-    this.comingSoon = false,
   });
 
   final String title;
   final String description;
   final bool value;
   final ValueChanged<bool> onChanged;
-  final bool comingSoon;
 
   @override
   Widget build(BuildContext context) {
     return _SettingItemShell(
       title: title,
       description: description,
-      comingSoon: comingSoon,
       trailing: CustomSwitch(value: value, onChanged: onChanged),
     );
   }

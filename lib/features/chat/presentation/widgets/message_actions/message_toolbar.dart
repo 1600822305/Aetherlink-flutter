@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/tts_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
+import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_action.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_action_button.dart';
@@ -73,8 +74,13 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
     // right for AI replies, the left for user messages — with the button group
     // hugging the opposite edge (matching `MessageActions`' toolbar layout). The
     // row fills the bubble width ([BubbleFooterLayout] stretches the footer), so
-    // a [Spacer] separates the two groups.
-    final tokenDisplay = TokenDisplay(view: widget.view, baseColor: baseColor);
+    // a [Spacer] separates the two groups. Hidden when 显示Token用量 is off.
+    final showTokenUsage = ref.watch(
+      sidebarSettingsControllerProvider.select((s) => s.showMessageTokenUsage),
+    );
+    final Widget tokenDisplay = showTokenUsage
+        ? TokenDisplay(view: widget.view, baseColor: baseColor)
+        : const SizedBox.shrink();
 
     return Row(
       children: isUser
