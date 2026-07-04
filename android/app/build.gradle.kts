@@ -31,6 +31,14 @@ android {
         versionName = flutter.versionName
     }
 
+    packaging {
+        jniLibs {
+            // 内置终端要求 libproot*.so 以真实文件形式解压到 nativeLibraryDir
+            // （Process.start 无法从 APK 内直接 exec）——见 内置终端PRoot-设计文档 §1.4。
+            useLegacyPackaging = true
+        }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.

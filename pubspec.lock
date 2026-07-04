@@ -30,6 +30,13 @@ packages:
       relative: true
     source: path
     version: "0.0.1"
+  aetherlink_terminal:
+    dependency: "direct main"
+    description:
+      path: "packages/aetherlink_terminal"
+      relative: true
+    source: path
+    version: "0.0.1"
   analyzer:
     dependency: transitive
     description:

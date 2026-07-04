@@ -169,7 +169,7 @@ class _WorkspaceTerminalPageState
     if (!canExec) {
       return const _Hint(
         icon: LucideIcons.terminalSquare,
-        text: '终端仅在 SSH / Termux 工作区可用',
+        text: '终端仅在内置终端 / SSH / Termux 工作区可用',
       );
     }
     if (_connected && _session != null) {
