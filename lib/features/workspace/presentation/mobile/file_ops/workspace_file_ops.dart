@@ -53,10 +53,11 @@ class WorkspaceFileOps {
   /// Opens the per-entry action sheet (long-press menu). [entry] is the
   /// long-pressed row.
   Future<void> showEntryMenu(WorkspaceEntry entry) async {
+    final protected = backend.isProtectedPath(entry.path);
     final action = await showModalBottomSheet<_FileAction>(
       context: context,
       showDragHandle: true,
-      builder: (context) => _ActionSheet(entry: entry),
+      builder: (context) => _ActionSheet(entry: entry, protected: protected),
     );
     if (action == null || !context.mounted) return;
     switch (action) {
@@ -114,7 +115,7 @@ class WorkspaceFileOps {
   }
 
   Future<void> rename(WorkspaceEntry entry) async {
-    if (!_guardWritable()) return;
+    if (!_guardWritable() || !_guardNotProtected(entry)) return;
     final name = await promptName(
       context,
       title: '重命名',
@@ -132,7 +133,7 @@ class WorkspaceFileOps {
   }
 
   Future<void> delete(WorkspaceEntry entry) async {
-    if (!_guardWritable()) return;
+    if (!_guardWritable() || !_guardNotProtected(entry)) return;
     final ok = await confirmDelete(
       context,
       name: entry.name,
@@ -153,7 +154,7 @@ class WorkspaceFileOps {
   }
 
   Future<void> move(WorkspaceEntry entry) async {
-    if (!_guardWritable()) return;
+    if (!_guardWritable() || !_guardNotProtected(entry)) return;
     final dest = await pickDestinationDirectory(
       context,
       backend: backend,
@@ -202,14 +203,25 @@ class WorkspaceFileOps {
     _snack('当前后端不支持写操作');
     return false;
   }
+
+  // Mount points mapping to real phone storage (e.g. /sdcard in the PRoot
+  // backend) must not be deleted / renamed / moved.
+  bool _guardNotProtected(WorkspaceEntry entry) {
+    if (!backend.isProtectedPath(entry.path)) return true;
+    _snack('${entry.name} 是受保护的挂载点，不能删除/重命名/移动');
+    return false;
+  }
 }
 
 enum _FileAction { newFile, newFolder, rename, move, copy, delete }
 
 class _ActionSheet extends StatelessWidget {
-  const _ActionSheet({required this.entry});
+  const _ActionSheet({required this.entry, this.protected = false});
 
   final WorkspaceEntry entry;
+
+  /// Protected entries (storage mount points) hide the destructive actions.
+  final bool protected;
 
   @override
   Widget build(BuildContext context) {
@@ -242,27 +254,30 @@ class _ActionSheet extends StatelessWidget {
               action: _FileAction.newFolder,
             ),
           ],
-          const _ActionTile(
-            icon: LucideIcons.pencil,
-            label: '重命名',
-            action: _FileAction.rename,
-          ),
-          const _ActionTile(
-            icon: LucideIcons.cornerUpRight,
-            label: '移动到…',
-            action: _FileAction.move,
-          ),
+          if (!protected) ...[
+            const _ActionTile(
+              icon: LucideIcons.pencil,
+              label: '重命名',
+              action: _FileAction.rename,
+            ),
+            const _ActionTile(
+              icon: LucideIcons.cornerUpRight,
+              label: '移动到…',
+              action: _FileAction.move,
+            ),
+          ],
           const _ActionTile(
             icon: LucideIcons.copy,
             label: '复制到…',
             action: _FileAction.copy,
           ),
-          const _ActionTile(
-            icon: LucideIcons.trash2,
-            label: '删除',
-            action: _FileAction.delete,
-            destructive: true,
-          ),
+          if (!protected)
+            const _ActionTile(
+              icon: LucideIcons.trash2,
+              label: '删除',
+              action: _FileAction.delete,
+              destructive: true,
+            ),
         ],
       ),
     );

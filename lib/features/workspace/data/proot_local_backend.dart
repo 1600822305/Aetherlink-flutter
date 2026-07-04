@@ -222,6 +222,23 @@ class ProotLocalBackend extends WorkspaceBackend {
     return i <= 0 ? '/' : normalized.substring(0, i);
   }
 
+  /// 受保护路径：rootfs 根与手机存储挂载点本身。对它们做删除/重命名/移动
+  /// 会直接作用到手机真实文件或破坏 rootfs，挂载点内部的文件不受限。
+  @override
+  bool isProtectedPath(String path) {
+    final normalized = _normalizeGuest(path);
+    return normalized == '/' || sdcardGuestPaths.contains(normalized);
+  }
+
+  void _guardProtected(String path) {
+    if (isProtectedPath(path)) {
+      throw ProotBackendException(
+        '受保护路径：${_normalizeGuest(path)} 是手机存储挂载点或 rootfs 根，'
+        '不允许删除/重命名/移动',
+      );
+    }
+  }
+
   // ===== mutations =====
 
   @override
@@ -276,6 +293,7 @@ class ProotLocalBackend extends WorkspaceBackend {
     bool isDirectory = false,
     bool recursive = false,
   }) async {
+    _guardProtected(path);
     final host = await _hostPath(path);
     if (isDirectory) {
       await Directory(host).delete(recursive: recursive);
@@ -287,6 +305,7 @@ class ProotLocalBackend extends WorkspaceBackend {
 
   @override
   Future<String> rename(String path, String newName) async {
+    _guardProtected(path);
     final newGuest = _joinGuest(_dirnameGuest(path), newName);
     await _rename(path, newGuest);
     _emit(
@@ -299,6 +318,7 @@ class ProotLocalBackend extends WorkspaceBackend {
 
   @override
   Future<String> move(String sourcePath, String destinationParent) async {
+    _guardProtected(sourcePath);
     final newGuest = _joinGuest(
       _normalizeGuest(destinationParent),
       _basename(_normalizeGuest(sourcePath)),
