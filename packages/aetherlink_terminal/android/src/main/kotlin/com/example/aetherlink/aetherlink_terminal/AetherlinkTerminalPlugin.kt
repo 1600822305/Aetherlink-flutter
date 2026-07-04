@@ -136,6 +136,8 @@ class AetherlinkTerminalPlugin : FlutterPlugin, MethodChannel.MethodCallHandler 
             input = FileOutputStream(pfd.fileDescriptor),
         )
         sessions[id] = session
+        // 保活：有存活会话期间起前台服务，防止 OEM 杀后台连带杀掉 ptrace 子链。
+        TerminalForegroundService.start(context)
 
         // Reader: pump master-fd output to the event stream until EOF/close.
         executor.execute {
@@ -209,6 +211,11 @@ class AetherlinkTerminalPlugin : FlutterPlugin, MethodChannel.MethodCallHandler 
         try {
             session.fileDescriptor.close()
         } catch (_: Exception) {
+        }
+        if (sessions.isEmpty()) {
+            mainHandler.post {
+                if (sessions.isEmpty()) TerminalForegroundService.stop(context)
+            }
         }
     }
 }

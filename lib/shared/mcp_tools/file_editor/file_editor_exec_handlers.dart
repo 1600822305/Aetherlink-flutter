@@ -29,7 +29,7 @@ Future<McpToolResult> runCommand(
 
   if (!backend.capabilities.canExec) {
     return fileEditorError(
-      '工作区「${resolved.workspace.name}」的后端不支持命令执行（仅 SSH / Termux 支持）。',
+      '工作区「${resolved.workspace.name}」的后端不支持命令执行（仅 SSH / Termux / 内置终端支持）。',
     );
   }
 

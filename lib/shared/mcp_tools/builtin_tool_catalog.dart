@@ -1921,6 +1921,98 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
   ],
+  '@aether/terminal': [
+    McpToolDefinition(
+      name: 'terminal_execute',
+      description:
+          '在内置终端（应用内 Alpine Linux 沙箱）里执行一条 shell 命令，返回 stdout / stderr / 退出码。'
+          '适合一次性命令（如 apk add、cat、python 脚本）。每次调用都是独立进程，不保留 shell 状态；'
+          '需要保留状态（cd、环境变量、后台任务）时用 terminal_session_* 系列。执行前会请用户确认。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'command': {'type': 'string', 'description': '要执行的 shell 命令'},
+          'cwd': {
+            'type': 'string',
+            'description': '工作目录（沙箱内路径，可选，默认 /root）',
+          },
+          'timeout_ms': {
+            'type': 'number',
+            'description': '超时毫秒数（可选，默认 120000）',
+          },
+        },
+        'required': ['command'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'terminal_session_create',
+      description:
+          '新建一个长驻终端会话（内置 Alpine 沙箱里的持久 shell）。会话保留 cd / 环境变量 / 后台进程等状态，'
+          '空闲 10 分钟自动回收。返回 sessionId 供 terminal_session_exec 等使用。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'name': {'type': 'string', 'description': '会话名称（可选）'},
+          'cwd': {
+            'type': 'string',
+            'description': '初始工作目录（沙箱内路径，可选，默认 /root）',
+          },
+        },
+      },
+    ),
+    McpToolDefinition(
+      name: 'terminal_session_list',
+      description: '列出当前所有长驻终端会话（sessionId、名称、是否正忙、最近使用时间）。',
+      inputSchema: {'type': 'object', 'properties': {}},
+    ),
+    McpToolDefinition(
+      name: 'terminal_session_exec',
+      description:
+          '在指定长驻会话里执行一条命令并等待结束（保留 shell 状态）。不传 session_id 时自动复用/新建默认会话。'
+          '超时不杀命令——命令继续在会话里跑，可用 terminal_session_output 回看。执行前会请用户确认。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'command': {'type': 'string', 'description': '要执行的 shell 命令'},
+          'session_id': {
+            'type': 'string',
+            'description': '目标会话 ID（可选，默认复用空闲会话）',
+          },
+          'timeout_ms': {
+            'type': 'number',
+            'description': '等待毫秒数（可选，默认 120000）',
+          },
+        },
+        'required': ['command'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'terminal_session_output',
+      description: '回看指定会话最近的输出（如超时后查看长任务进度）。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'session_id': {'type': 'string', 'description': '目标会话 ID'},
+          'tail_chars': {
+            'type': 'number',
+            'description': '返回末尾多少个字符（可选，默认 4000）',
+          },
+        },
+        'required': ['session_id'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'terminal_session_close',
+      description: '关闭指定长驻会话并结束其中的进程。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'session_id': {'type': 'string', 'description': '目标会话 ID'},
+        },
+        'required': ['session_id'],
+      },
+    ),
+  ],
 };
 
 /// Whether [serverName] is a built-in server whose tools can be executed
@@ -1943,6 +2035,7 @@ const Set<String> kRefDependentBuiltins = {
   '@aether/settings',
   '@aether/file-editor',
   '@aether/knowledge',
+  '@aether/terminal',
 };
 
 /// The tools a built-in MCP server exposes, or an empty list for servers
