@@ -98,6 +98,11 @@ class SidebarSettingsController extends _$SidebarSettingsController
   void setShowMessageTokenUsage(bool value) =>
       persist(state.copyWith(showMessageTokenUsage: value));
 
+  /// Toggles 消息可复制 (wired: [MainTextBlockView] wraps the rendered body in a
+  /// [SelectionArea] so the text can be long-press selected/copied).
+  void setSelectableMessageText(bool value) =>
+      persist(state.copyWith(selectableMessageText: value));
+
   // ── 侧边栏宽度 ──────────────────────────────────────────────────────────
   /// Live-previews 侧边栏宽度 without persisting — the dialog drives this on every
   /// drag so the drawer resizes in real time, then commits with [setSidebarWidth]

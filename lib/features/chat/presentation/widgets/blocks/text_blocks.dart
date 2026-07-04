@@ -26,6 +26,10 @@ String cleanMainText(String content) =>
 
 /// Renders a `MAIN_TEXT` block as Markdown, mirroring `MainTextBlock.tsx`.
 ///
+/// When the 「消息可选中复制」 setting (`selectableMessageText`) is on, the
+/// rendered body is wrapped in a [SelectionArea] so it can be long-press
+/// selected and copied.
+///
 /// User messages honor the 「渲染用户输入」 setting
 /// (`renderUserInputAsMarkdown`): when off they are shown as plain selectable
 /// text; assistant text always renders as Markdown. Returns nothing when the
@@ -72,6 +76,10 @@ class MainTextBlockView extends ConsumerWidget {
       height: 1.6,
     );
 
+    final selectable = ref.watch(
+      sidebarSettingsControllerProvider.select((s) => s.selectableMessageText),
+    );
+
     if (role == MessageRole.user) {
       final renderAsMarkdown = ref.watch(
         sidebarSettingsControllerProvider.select(
@@ -83,10 +91,11 @@ class MainTextBlockView extends ConsumerWidget {
       }
     }
 
-    return AppMarkdown(
+    final body = AppMarkdown(
       content: cleaned,
       style: textStyle,
     );
+    return selectable ? SelectionArea(child: body) : body;
   }
 }
 
