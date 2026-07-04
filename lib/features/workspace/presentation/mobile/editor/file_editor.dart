@@ -23,6 +23,7 @@ import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_text_area.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_header.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/file_open_policy.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/image_preview.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_replace_bar.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_session.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/readable_path.dart';
@@ -70,8 +71,8 @@ class _FileEditorState extends ConsumerState<FileEditor> {
       _openKind == FileOpenKind.editable &&
       (ref.read(workspacePreviewBackendProvider)?.capabilities.canWrite ??
           false);
-  // Binary / too-large files render a placeholder instead of the editor, so the
-  // find bar, status bar and edit affordances are all suppressed.
+  // Binary / too-large / image files render a placeholder instead of the text
+  // editor, so the find bar, status bar and edit affordances are all suppressed.
   bool get _hasTextBody =>
       _openKind == FileOpenKind.editable ||
       _openKind == FileOpenKind.rangedReadOnly;
@@ -224,7 +225,8 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     }
 
     _openKind = classifyOpen(size: size, head: head);
-    if (_openKind == FileOpenKind.binary) {
+    if (_openKind == FileOpenKind.binary ||
+        _openKind == FileOpenKind.image) {
       _readOnlyReason = null;
       return;
     }
@@ -253,6 +255,10 @@ class _FileEditorState extends ConsumerState<FileEditor> {
   Widget? _placeholder() => switch (_openKind) {
         FileOpenKind.binary => EditorPlaceholders.binary(widget.entry),
         FileOpenKind.tooLarge => EditorPlaceholders.tooLarge(widget.entry),
+        FileOpenKind.image => ImagePreview(
+            entry: widget.entry,
+            backend: ref.read(workspacePreviewBackendProvider)!,
+          ),
         _ => null,
       };
 
