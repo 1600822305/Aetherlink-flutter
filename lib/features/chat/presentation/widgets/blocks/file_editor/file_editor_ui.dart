@@ -82,27 +82,36 @@ class FileEditorCard extends StatelessWidget {
                 children: [
                   Icon(icon, size: 15, color: theme.colorScheme.primary),
                   const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      fileName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                  // 文件名 + 副标题独占一个 Expanded：若与 Spacer 各自参与
+                  // flex 分配，文件名较短时其未用完的配额会落在行尾，导致右侧
+                  // 徽章/箭头不贴边。
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            fileName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        if (subtitle.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            subtitle,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant
+                                  .withValues(alpha: 0.7),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                  if (subtitle.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    Text(
-                      subtitle,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant
-                            .withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ],
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   _DiffStatsBadge(added: addedLines, removed: removedLines),
                   const SizedBox(width: 6),
                   _StatusIcon(status: status),
