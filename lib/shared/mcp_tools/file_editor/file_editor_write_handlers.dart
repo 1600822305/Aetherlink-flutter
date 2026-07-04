@@ -12,6 +12,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace_text_ops.dart'
+    as text_ops;
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 
@@ -321,26 +323,120 @@ Future<McpToolResult> applyDiff(Ref ref, Map<String, Object?> args) async {
   });
 }
 
-/// `replace_in_file` — search-and-replace literal or regex text.
+/// `replace_in_file` — search-and-replace literal or regex text, one pair
+/// (`search`/`replace`) or a batch (`edits` array). The whole call is atomic:
+/// every edit is applied in memory in order and the file is written once —
+/// any failure leaves the file untouched.
+///
+/// Safety semantics (mirrors a uniqueness-guarded editor):
+/// - `replace_all` defaults to **false**; a single-replacement edit whose
+///   search hits more than once is rejected, so the model can't silently
+///   change the wrong occurrence — it must add context or opt into
+///   `replace_all=true`.
+/// - a search with zero hits is an error (not a silent no-op).
 Future<McpToolResult> replaceInFile(Ref ref, Map<String, Object?> args) async {
   final path = requireString(args, 'path');
-  final search = requireString(args, 'search');
-  final raw = args['replace'];
-  if (raw == null) throw const FileEditorError('缺少必需参数: replace');
-  final replace = raw is String ? raw : raw.toString();
+  final isRegex = optionalBool(args, 'is_regex');
+  final replaceAll = optionalBool(args, 'replace_all');
+  final caseSensitive = optionalBool(args, 'case_sensitive', fallback: true);
+
+  final edits = <({String search, String replace})>[];
+  final rawEdits = args['edits'];
+  if (rawEdits is List && rawEdits.isNotEmpty) {
+    for (final item in rawEdits) {
+      if (item is! Map) {
+        throw const FileEditorError('edits 数组的元素必须是 {search, replace} 对象');
+      }
+      final m = item.map((k, v) => MapEntry(k.toString(), v as Object?));
+      final search = optionalString(m, 'search');
+      final rawReplace = m['replace'];
+      if (search == null || search.isEmpty) {
+        throw const FileEditorError('edits 元素缺少必需参数: search');
+      }
+      if (rawReplace == null) {
+        throw const FileEditorError('edits 元素缺少必需参数: replace');
+      }
+      edits.add((
+        search: search,
+        replace: rawReplace is String ? rawReplace : rawReplace.toString(),
+      ));
+    }
+  } else {
+    final search = requireString(args, 'search');
+    final raw = args['replace'];
+    if (raw == null) throw const FileEditorError('缺少必需参数: replace');
+    edits.add((search: search, replace: raw is String ? raw : raw.toString()));
+  }
 
   final backend = await backendForPath(ref, path);
-  final count = await backend.replaceInFile(
-    path,
-    search,
-    replace,
-    isRegex: optionalBool(args, 'is_regex'),
-    replaceAll: optionalBool(args, 'replace_all', fallback: true),
-    caseSensitive: optionalBool(args, 'case_sensitive', fallback: true),
-  );
+  var content = await backend.readFile(path);
+  final original = content;
+  var total = 0;
+
+  for (var i = 0; i < edits.length; i++) {
+    final edit = edits[i];
+    final label = edits.length > 1 ? '第 ${i + 1} 个 edit 的 ' : '';
+    final counted = text_ops.replaceInFile(
+      content,
+      edit.search,
+      edit.replace,
+      isRegex: isRegex,
+      replaceAll: true,
+      caseSensitive: caseSensitive,
+    );
+    if (counted.replacements == 0) {
+      throw FileEditorError(
+        '${label}search 内容未在文件中命中，未做任何修改。'
+        '请用 read_file 确认最新内容（含缩进/空白）后重试。',
+      );
+    }
+    if (!replaceAll && counted.replacements > 1) {
+      throw FileEditorError(
+        '${label}search 内容命中 ${counted.replacements} 处，无法确定要替换哪一处，未做任何修改。'
+        '请在 search 里加入更多上下文使其唯一，或明确传 replace_all=true 全部替换。',
+      );
+    }
+    final applied = replaceAll
+        ? counted
+        : text_ops.replaceInFile(
+            content,
+            edit.search,
+            edit.replace,
+            isRegex: isRegex,
+            replaceAll: false,
+            caseSensitive: caseSensitive,
+          );
+    content = applied.newContent;
+    total += applied.replacements;
+  }
+
+  if (content != original) await backend.writeFile(path, content);
   return fileEditorOk({
-    'message': '替换完成（$count 处）',
+    'message': '替换完成（$total 处${edits.length > 1 ? '，${edits.length} 个 edit' : ''}）',
     'path': path,
-    'replacements': count,
+    'replacements': total,
+    if (edits.length > 1) 'edits': edits.length,
   });
+}
+
+/// `create_directory` — create a directory under an opaque [parent_path],
+/// mirroring `create_file`'s addressing (SAF paths are opaque URIs, so new
+/// entries are always parent + name).
+Future<McpToolResult> createDirectory(Ref ref, Map<String, Object?> args) async {
+  final parentPath = requireString(args, 'parent_path');
+  final name = requireString(args, 'name');
+  final backend = await backendForPath(ref, parentPath);
+  final existing = await findChildByName(backend, parentPath, name);
+  if (existing != null) {
+    if (existing.isDirectory) {
+      return fileEditorOk({
+        'message': '目录已存在',
+        'path': existing.path,
+        'created': false,
+      });
+    }
+    throw FileEditorError('「$name」已存在且是一个文件，无法创建同名目录。');
+  }
+  final created = await backend.createDirectory(parentPath, name);
+  return fileEditorOk({'message': '目录创建成功', 'path': created, 'created': true});
 }
