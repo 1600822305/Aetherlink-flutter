@@ -202,7 +202,7 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
           '重命名类 → ${_shortName(_strArg('newClassName'))}'
         );
       case 'dex_save':
-        // scope=all（或旧 dex_save_all 别名）展示批量保存摘要。
+        // scope=all 展示批量保存摘要。
         if (_strArg('scope') == 'all') {
           final saved = data?['saved'];
           return (
@@ -211,16 +211,7 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
           );
         }
         return (LucideIcons.save, '保存 DEX 到 APK');
-      case 'dex_save_all':
-        final saved = data?['saved'];
-        return (
-          LucideIcons.save,
-          '批量保存${saved is num ? ' · $saved 个' : ''}'
-        );
       case 'dex_find_xrefs':
-      case 'dex_find_method_xrefs':
-      case 'dex_find_field_xrefs':
-      case 'dex_find_class_xrefs':
         final xrefs = data?['xrefs'];
         final count = xrefs is List ? xrefs.length : 0;
         return (LucideIcons.gitFork, '交叉引用 · $count 处');
@@ -246,20 +237,6 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
           default:
             return (LucideIcons.filePenLine, '修改 AndroidManifest');
         }
-      case 'apk_modify_manifest':
-        return (LucideIcons.filePenLine, '修改 AndroidManifest');
-      case 'apk_patch_manifest':
-        final applied = data?['appliedCount'];
-        return (
-          LucideIcons.filePenLine,
-          'Patch Manifest${applied is num ? ' · $applied 处' : ''}'
-        );
-      case 'apk_replace_in_manifest':
-        final replaced = data?['replacedCount'];
-        return (
-          LucideIcons.replace,
-          '替换 Manifest${replaced is num ? ' · $replaced 处' : ''}'
-        );
       case 'apk_list_resources':
         final total = data?['total'];
         return (
@@ -299,7 +276,7 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
         'dex_search' => '搜索中...',
         'dex_get_class' || 'dex_get_method' => '读取反汇编中...',
         'dex_smali_to_java' => '反编译中...',
-        'dex_save' || 'dex_save_all' => '编译并保存中...',
+        'dex_save' => '编译并保存中...',
         _ when _tool.startsWith('dex_modify') ||
             _tool.startsWith('dex_add') ||
             _tool.startsWith('dex_delete') ||
@@ -332,9 +309,6 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
       case 'dex_open_apk':
         return _stringListBody(theme, data?['dexFiles'], LucideIcons.fileCode);
       case 'dex_find_xrefs':
-      case 'dex_find_method_xrefs':
-      case 'dex_find_field_xrefs':
-      case 'dex_find_class_xrefs':
         return _xrefsBody(theme, data?['xrefs']);
       case 'apk_list_resources':
         return _resourcesBody(theme, data?['resources']);

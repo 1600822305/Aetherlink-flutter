@@ -60,7 +60,6 @@ const Set<String> _dexEditorTools = {
   'dex_get_class',
   'dex_modify_class',
   'dex_save',
-  'dex_save_all', // 向后兼容别名，等价 dex_save(scope: all)
   'dex_close',
   'dex_list_sessions',
   'dex_add_class',
@@ -70,15 +69,9 @@ const Set<String> _dexEditorTools = {
   'dex_outline_class',
   'dex_rename_class',
   'dex_find_xrefs',
-  'dex_find_method_xrefs', // 向后兼容别名，等价 dex_find_xrefs(target: method)
-  'dex_find_field_xrefs', // 向后兼容别名，等价 dex_find_xrefs(target: field)
-  'dex_find_class_xrefs', // 向后兼容别名，等价 dex_find_xrefs(target: class)
   'dex_smali_to_java',
   'apk_get_manifest',
   'apk_edit_manifest',
-  'apk_modify_manifest', // 向后兼容别名，等价 apk_edit_manifest(mode: replace_all)
-  'apk_patch_manifest', // 向后兼容别名，等价 apk_edit_manifest(mode: patch)
-  'apk_replace_in_manifest', // 向后兼容别名，等价 apk_edit_manifest(mode: find_replace)
   'apk_list_resources',
   'apk_get_resource',
   'apk_modify_resource',
