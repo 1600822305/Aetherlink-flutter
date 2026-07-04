@@ -53,12 +53,17 @@ class CodeBlockView extends ConsumerStatefulWidget {
     required this.language,
     required this.code,
     this.isStreaming = false,
+    this.gutterStartLine = 1,
     super.key,
   });
 
   final String language;
   final String code;
   final bool isStreaming;
+
+  /// First line number shown in the gutter (used when the code is an excerpt,
+  /// e.g. a read_file with an offset).
+  final int gutterStartLine;
 
   @override
   ConsumerState<CodeBlockView> createState() => _CodeBlockViewState();
@@ -139,6 +144,7 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
           gutterBorderColor: border,
           showLineNumbers: cs.showLineNumbers,
           wrappable: cs.wrappable,
+          gutterStartLine: widget.gutterStartLine,
         ),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
@@ -340,6 +346,7 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
       isStreaming: widget.isStreaming,
       searchQuery: _showSearch ? _searchQuery : null,
       currentMatchIndex: _showSearch ? _currentMatchIndex : null,
+      gutterStartLine: widget.gutterStartLine,
     );
 
     if (!cs.fixedHeight) return body;

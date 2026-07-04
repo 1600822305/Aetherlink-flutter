@@ -19,6 +19,7 @@ class CodeBlockFullScreen extends StatefulWidget {
     required this.gutterBorderColor,
     required this.showLineNumbers,
     required this.wrappable,
+    this.gutterStartLine = 1,
     super.key,
   });
 
@@ -31,6 +32,7 @@ class CodeBlockFullScreen extends StatefulWidget {
   final Color gutterBorderColor;
   final bool showLineNumbers;
   final bool wrappable;
+  final int gutterStartLine;
 
   @override
   State<CodeBlockFullScreen> createState() => _CodeBlockFullScreenState();
@@ -206,6 +208,7 @@ class _CodeBlockFullScreenState extends State<CodeBlockFullScreen> {
             gutterBorderColor: widget.gutterBorderColor,
             searchQuery: _searchQuery,
             currentMatchIndex: _currentMatchIndex,
+            gutterStartLine: widget.gutterStartLine,
           ),
         ),
       );
@@ -224,6 +227,7 @@ class _CodeBlockFullScreenState extends State<CodeBlockFullScreen> {
         codeStyle: widget.codeStyle,
         lineNumberStyle: widget.lineNumberStyle,
         gutterBorderColor: widget.gutterBorderColor,
+        gutterStartLine: widget.gutterStartLine,
       ),
     );
   }
