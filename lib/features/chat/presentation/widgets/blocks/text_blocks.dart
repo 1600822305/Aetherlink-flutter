@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_co
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_selection_area.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
 import 'package:aetherlink_flutter/shared/utils/regex_replacement.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
@@ -95,7 +96,7 @@ class MainTextBlockView extends ConsumerWidget {
       content: cleaned,
       style: textStyle,
     );
-    return selectable ? SelectionArea(child: body) : body;
+    return selectable ? MessageSelectionArea(child: body) : body;
   }
 }
 
