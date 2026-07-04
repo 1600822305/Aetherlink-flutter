@@ -85,7 +85,10 @@ class _AssistantPresetSheet extends StatelessWidget {
           // Scrollable preset list
           Expanded(
             child: ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: EdgeInsets.only(
+                top: 8,
+                bottom: 8 + MediaQuery.of(context).padding.bottom,
+              ),
               itemCount: kAssistantPresets.length,
               separatorBuilder: (_, __) => const SizedBox(height: 2),
               itemBuilder: (context, index) {
