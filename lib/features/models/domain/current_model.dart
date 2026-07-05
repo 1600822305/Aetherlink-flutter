@@ -87,6 +87,7 @@ String? _providerApiKey(ModelProvider provider) {
     final selected = ApiKeyManager.instance.selectApiKey(
       pool,
       provider.keyManagement?.strategy ?? 'round_robin',
+      config: provider.keyManagement,
     );
     if (selected != null) return selected.key;
   }

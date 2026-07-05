@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
+import 'package:aetherlink_flutter/shared/domain/api_key_manager.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 
 /// 多 Key 管理 sub-page — a style-aligned port of the original
@@ -39,6 +41,23 @@ class _MultiKeyManagementPageState
     extends ConsumerState<MultiKeyManagementPage> {
   String? _pendingDeleteId;
 
+  /// Ticks the cooldown countdowns shown on errored / rate-limited keys.
+  Timer? _cooldownTicker;
+
+  @override
+  void initState() {
+    super.initState();
+    _cooldownTicker = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _cooldownTicker?.cancel();
+    super.dispose();
+  }
+
   /// Persists the full pool (add / delete need a list rewrite). Single-key
   /// changes go through [_saveKey] instead so concurrent stat writes merge.
   Future<void> _savePool(
@@ -57,12 +76,18 @@ class _MultiKeyManagementPageState
         .updateApiKeys(providerId: provider.id, keys: [key]);
   }
 
-  Future<void> _saveStrategy(ModelProvider provider, String strategy) async {
-    final management = (provider.keyManagement ?? const KeyManagementConfig())
-        .copyWith(strategy: strategy);
+  Future<void> _saveManagement(
+    ModelProvider provider,
+    KeyManagementConfig management,
+  ) async {
     await ref
         .read(modelStoreProvider.notifier)
         .saveProvider(provider.copyWith(keyManagement: management));
+  }
+
+  Future<void> _recoverKey(ModelProvider provider, ApiKeyConfig key) async {
+    await _saveKey(provider, ApiKeyManager.instance.recoverKey(key));
+    if (mounted) AppToast.success(context, '已恢复');
   }
 
   Future<void> _addOrEditKey(
@@ -170,7 +195,7 @@ class _MultiKeyManagementPageState
     final theme = Theme.of(context);
 
     final keys = [...?provider.apiKeys];
-    final strategy = provider.keyManagement?.strategy ?? 'round_robin';
+    final management = provider.keyManagement ?? const KeyManagementConfig();
     final total = keys.length;
     final active = keys.where((k) => k.isEnabled && k.status == 'active').length;
     final errored = keys.where((k) => k.status == 'error').length;
@@ -232,7 +257,7 @@ class _MultiKeyManagementPageState
                 const ModelSectionTitle('负载均衡策略'),
                 const SizedBox(height: 16),
                 AppSelectField<String>(
-                  value: strategy,
+                  value: management.strategy,
                   sheetTitle: '负载均衡策略',
                   options: const [
                     AppSelectOption(
@@ -246,7 +271,50 @@ class _MultiKeyManagementPageState
                     ),
                     AppSelectOption(value: 'random', label: '随机 (Random)'),
                   ],
-                  onChanged: (value) => _saveStrategy(provider, value),
+                  onChanged: (value) => _saveManagement(
+                    provider,
+                    management.copyWith(strategy: value),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _SliderRow(
+                  label: '连续失败多少次标为错误',
+                  value: management.maxFailuresBeforeDisable,
+                  min: 1,
+                  max: 10,
+                  unit: '次',
+                  onChanged: (v) => _saveManagement(
+                    provider,
+                    management.copyWith(maxFailuresBeforeDisable: v),
+                  ),
+                ),
+                _SliderRow(
+                  label: '错误冷却时长',
+                  value: management.failureRecoveryTime,
+                  min: 1,
+                  max: 30,
+                  unit: '分钟',
+                  onChanged: (v) => _saveManagement(
+                    provider,
+                    management.copyWith(failureRecoveryTime: v),
+                  ),
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '冷却后自动恢复',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ),
+                    CustomSwitch(
+                      value: management.enableAutoRecovery,
+                      onChanged: (v) => _saveManagement(
+                        provider,
+                        management.copyWith(enableAutoRecovery: v),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -293,10 +361,12 @@ class _MultiKeyManagementPageState
                     _KeyRow(
                       index: i,
                       config: keys[i],
+                      management: management,
                       pendingDelete: _pendingDeleteId == keys[i].id,
                       onEdit: () => _addOrEditKey(provider, keys[i]),
                       onDelete: () => _deleteKey(provider, keys[i].id),
                       onToggle: (v) => _toggleKey(provider, keys[i].id, v),
+                      onRecover: () => _recoverKey(provider, keys[i]),
                     ),
               ],
             ),
@@ -387,24 +457,78 @@ class _StatCard extends StatelessWidget {
   }
 }
 
+/// A labelled int slider row (failure threshold / cooldown minutes).
+class _SliderRow extends StatelessWidget {
+  const _SliderRow({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.unit,
+    required this.onChanged,
+  });
+
+  final String label;
+  final int value;
+  final int min;
+  final int max;
+  final String unit;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Expanded(child: Text(label, style: theme.textTheme.bodyMedium)),
+        SizedBox(
+          width: 140,
+          child: Slider(
+            value: value.clamp(min, max).toDouble(),
+            min: min.toDouble(),
+            max: max.toDouble(),
+            divisions: max - min,
+            onChanged: (v) => onChanged(v.round()),
+          ),
+        ),
+        SizedBox(
+          width: 56,
+          child: Text(
+            '$value $unit',
+            textAlign: TextAlign.end,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// One API key row: name + status / priority chips, the masked key, the usage
-/// line, an enable toggle and edit / (2-step) delete actions.
+/// line, the last error + cooldown countdown when the key is unhealthy, an
+/// enable toggle and recover / edit / (2-step) delete actions.
 class _KeyRow extends StatelessWidget {
   const _KeyRow({
     required this.index,
     required this.config,
+    required this.management,
     required this.pendingDelete,
     required this.onEdit,
     required this.onDelete,
     required this.onToggle,
+    required this.onRecover,
   });
 
   final int index;
   final ApiKeyConfig config;
+  final KeyManagementConfig management;
   final bool pendingDelete;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final ValueChanged<bool> onToggle;
+  final VoidCallback onRecover;
 
   static String _mask(String key) {
     if (key.length <= 8) return '••••••••';
@@ -426,11 +550,36 @@ class _KeyRow extends StatelessWidget {
     }
   }
 
+  /// The health line under the stats for an unhealthy key: last error, plus
+  /// the cooldown countdown (or a manual-recovery hint when auto-recovery is
+  /// off).
+  String? _healthLine() {
+    if (config.status != 'error' && config.status != 'rate_limited') {
+      return null;
+    }
+    final remaining = ApiKeyManager.instance.cooldownRemaining(
+      config,
+      config: management,
+    );
+    final String recovery;
+    if (remaining != null) {
+      final minutes = (remaining.inSeconds / 60).ceil();
+      recovery = '约 $minutes 分钟后自动恢复';
+    } else if (config.status == 'error' && !management.enableAutoRecovery) {
+      recovery = '自动恢复已关闭，需手动恢复';
+    } else {
+      recovery = '冷却已结束，下次发送时重试';
+    }
+    final error = config.lastError;
+    return error == null || error.isEmpty ? recovery : '$error（$recovery）';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final (statusText, statusColor) = _statusInfo(theme);
     final usage = config.usage;
+    final healthLine = _healthLine();
 
     return Container(
       decoration: BoxDecoration(
@@ -481,11 +630,28 @@ class _KeyRow extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
+          if (healthLine != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              healthLine,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 12,
+                color: statusColor,
+              ),
+            ),
+          ],
           Align(
             alignment: Alignment.centerRight,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (healthLine != null)
+                  IconButton(
+                    icon: const Icon(LucideIcons.refreshCcw, size: 16),
+                    color: _successColor(theme),
+                    tooltip: '立即恢复',
+                    onPressed: onRecover,
+                  ),
                 IconButton(
                   icon: const Icon(LucideIcons.pencil, size: 16),
                   color: theme.colorScheme.secondary,

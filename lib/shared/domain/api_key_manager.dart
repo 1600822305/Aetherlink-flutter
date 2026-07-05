@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
+import 'package:aetherlink_flutter/core/error/failure.dart';
 
 /// Multi-key load balancing + failover for a provider's [ApiKeyConfig] pool.
 ///
@@ -20,12 +21,22 @@ class ApiKeyManager {
 
   static final ApiKeyManager instance = ApiKeyManager._();
 
-  /// Five-minute cooldown applied to a key after it trips into `error`, matching
-  /// the Web `isKeyInCooldown` constant (`5 * 60 * 1000` ms).
+  /// Default cooldown after a key trips into `error`, matching the Web
+  /// `isKeyInCooldown` constant (`5 * 60 * 1000` ms). Overridable per provider
+  /// via [KeyManagementConfig.failureRecoveryTime] (minutes).
   static const Duration cooldown = Duration(minutes: 5);
 
-  /// Consecutive failures that flip a key to `error` (Web hardcodes `>= 3`).
+  /// Cooldown after an HTTP 429: rate limits clear quickly, so the key comes
+  /// back much sooner than an errored one and its failure streak is untouched.
+  static const Duration rateLimitCooldown = Duration(minutes: 1);
+
+  /// Default consecutive failures that flip a key to `error` (Web hardcodes
+  /// `>= 3`). Overridable via [KeyManagementConfig.maxFailuresBeforeDisable].
   static const int maxConsecutiveFailures = 3;
+
+  /// Whether [error] is a provider rate limit (HTTP 429).
+  static bool isRateLimitError(Object error) =>
+      error is NetworkFailure && error.statusCode == 429;
 
   /// Per key-group round-robin cursor, keyed by the sorted key ids joined with
   /// `|` (so changing the pool restarts the cycle), mirroring the Web
@@ -42,14 +53,15 @@ class ApiKeyManager {
     List<ApiKeyConfig> keys,
     String strategy, {
     Set<String> excludeIds = const <String>{},
+    KeyManagementConfig? config,
     DateTime? now,
   }) {
     final at = now ?? DateTime.now();
     final available = [
       for (final key in keys)
         if (key.isEnabled &&
-            key.status == 'active' &&
-            !isKeyInCooldown(key, now: at) &&
+            key.status != 'disabled' &&
+            !isKeyInCooldown(key, config: config, now: at) &&
             !excludeIds.contains(key.id) &&
             key.key.trim().isNotEmpty)
           key,
@@ -96,24 +108,62 @@ class ApiKeyManager {
     return sorted[index];
   }
 
-  /// Whether [key] is still cooling down from its last error. Only `error` keys
-  /// cool down; once [cooldown] has elapsed they become selectable again (the
-  /// "auto recover on next select").
-  bool isKeyInCooldown(ApiKeyConfig key, {DateTime? now}) {
-    if (key.status != 'error') return false;
+  /// Whether [key] is still cooling down from its last failure. `error` keys
+  /// cool down for [KeyManagementConfig.failureRecoveryTime] minutes (default
+  /// [cooldown]) — or indefinitely when auto-recovery is disabled — and
+  /// `rate_limited` keys for [rateLimitCooldown]; once elapsed they become
+  /// selectable again (the "auto recover on next select").
+  bool isKeyInCooldown(ApiKeyConfig key, {KeyManagementConfig? config, DateTime? now}) {
+    final Duration window;
+    switch (key.status) {
+      case 'error':
+        if (!(config?.enableAutoRecovery ?? true)) return true;
+        final minutes = config?.failureRecoveryTime;
+        window = minutes != null && minutes > 0
+            ? Duration(minutes: minutes)
+            : cooldown;
+      case 'rate_limited':
+        window = rateLimitCooldown;
+      default:
+        return false;
+    }
     final at = now ?? DateTime.now();
     final updatedAt = DateTime.fromMillisecondsSinceEpoch(key.updatedAt);
-    return at.difference(updatedAt) < cooldown;
+    return at.difference(updatedAt) < window;
+  }
+
+  /// Time left before [key] leaves cooldown, or `null` when it is not cooling
+  /// down (or will not auto-recover). For the manager page's countdown.
+  Duration? cooldownRemaining(
+    ApiKeyConfig key, {
+    KeyManagementConfig? config,
+    DateTime? now,
+  }) {
+    if (key.status == 'error' && !(config?.enableAutoRecovery ?? true)) {
+      return null;
+    }
+    if (!isKeyInCooldown(key, config: config, now: now)) return null;
+    final at = now ?? DateTime.now();
+    final minutes = config?.failureRecoveryTime;
+    final window = key.status == 'rate_limited'
+        ? rateLimitCooldown
+        : (minutes != null && minutes > 0 ? Duration(minutes: minutes) : cooldown);
+    final end = DateTime.fromMillisecondsSinceEpoch(key.updatedAt).add(window);
+    return end.difference(at);
   }
 
   /// Returns a new [ApiKeyConfig] with usage counters and status advanced for a
   /// completed request. On success the failure streak resets and the key is
-  /// re-activated; on failure the streak grows and the key trips to `error`
-  /// (entering cooldown) once it reaches [maxConsecutiveFailures]. Mirrors the
-  /// Web `updateKeyStatus`.
+  /// re-activated; a rate-limited failure ([rateLimited]) parks the key in
+  /// `rate_limited` (short [rateLimitCooldown]) without growing the streak;
+  /// any other failure grows the streak and trips the key to `error` (entering
+  /// cooldown) once it reaches [KeyManagementConfig.maxFailuresBeforeDisable]
+  /// (default [maxConsecutiveFailures]). Mirrors the Web `updateKeyStatus`.
   ApiKeyConfig updateKeyStatus(
     ApiKeyConfig key, {
     required bool success,
+    bool rateLimited = false,
+    KeyManagementConfig? config,
     String? error,
     DateTime? now,
   }) {
@@ -131,7 +181,20 @@ class ApiKeyManager {
         updatedAt: nowMs,
       );
     }
+    if (rateLimited) {
+      return key.copyWith(
+        usage: key.usage.copyWith(
+          totalRequests: key.usage.totalRequests + 1,
+          failedRequests: key.usage.failedRequests + 1,
+          lastUsed: nowMs,
+        ),
+        status: 'rate_limited',
+        lastError: error,
+        updatedAt: nowMs,
+      );
+    }
     final failures = key.usage.consecutiveFailures + 1;
+    final maxFailures = config?.maxFailuresBeforeDisable ?? maxConsecutiveFailures;
     return key.copyWith(
       usage: key.usage.copyWith(
         totalRequests: key.usage.totalRequests + 1,
@@ -139,9 +202,19 @@ class ApiKeyManager {
         consecutiveFailures: failures,
         lastUsed: nowMs,
       ),
-      status: failures >= maxConsecutiveFailures ? 'error' : key.status,
+      status: failures >= maxFailures ? 'error' : key.status,
       lastError: error,
       updatedAt: nowMs,
     );
   }
+
+  /// A manually recovered [key]: back to `active` with a cleared failure
+  /// streak, so it is immediately selectable again (立即恢复 in the manager
+  /// page).
+  ApiKeyConfig recoverKey(ApiKeyConfig key, {DateTime? now}) => key.copyWith(
+    status: 'active',
+    lastError: null,
+    usage: key.usage.copyWith(consecutiveFailures: 0),
+    updatedAt: (now ?? DateTime.now()).millisecondsSinceEpoch,
+  );
 }

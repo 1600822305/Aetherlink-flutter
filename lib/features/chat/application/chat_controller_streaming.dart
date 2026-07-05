@@ -99,7 +99,8 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
     final keyManager = ApiKeyManager.instance;
     final keyPool = provider.apiKeys ?? const <ApiKeyConfig>[];
     final useKeyPool = keyPool.isNotEmpty;
-    final keyStrategy = provider.keyManagement?.strategy ?? 'round_robin';
+    final keyConfig = provider.keyManagement;
+    final keyStrategy = keyConfig?.strategy ?? 'round_robin';
     final hasSingleKeyFallback = (effective.apiKey ?? '').trim().isNotEmpty;
     // Every pool key gets at most one try per send (failed keys are excluded
     // from re-selection below), plus one trailing slot for the single-key
@@ -119,11 +120,18 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
           );
     }
 
-    void recordKeyOutcome(int index, {required bool success, String? error}) {
+    void recordKeyOutcome(
+      int index, {
+      required bool success,
+      bool rateLimited = false,
+      String? error,
+    }) {
       if (index < 0 || index >= workingKeys.length) return;
       final updated = keyManager.updateKeyStatus(
         workingKeys[index],
         success: success,
+        rateLimited: rateLimited,
+        config: keyConfig,
         error: error,
       );
       workingKeys[index] = updated;
@@ -360,6 +368,7 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
           workingKeys,
           keyStrategy,
           excludeIds: failedKeyIds,
+          config: keyConfig,
         );
         if (selected != null) {
           selectedIndex = workingKeys.indexWhere((k) => k.id == selected.id);
@@ -778,6 +787,7 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
           recordKeyOutcome(
             selectedIndex,
             success: false,
+            rateLimited: ApiKeyManager.isRateLimitError(error),
             error: _errorMessage(error),
           );
         }
