@@ -91,6 +91,11 @@ class MessageBubbleSettingsController extends _$MessageBubbleSettingsController
   void setHideAIBubble(bool value) =>
       persist(state.copyWith(hideAIBubble: value));
 
+  /// Replaces 底部工具栏收纳 action id list (恢复预设 passes
+  /// [kDefaultCollapsedActionIds]).
+  void setCollapsedActionIds(List<String> ids) =>
+      persist(state.copyWith(collapsedActionIds: ids));
+
   /// Replaces the whole 自定义气泡颜色 block.
   void setCustomBubbleColors(CustomBubbleColors colors) =>
       persist(state.copyWith(customBubbleColors: colors));

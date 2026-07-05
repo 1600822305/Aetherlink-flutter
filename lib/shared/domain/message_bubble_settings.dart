@@ -42,6 +42,18 @@ enum VersionSwitchStyle {
   }
 }
 
+/// 预设的底部工具栏「收纳进更多菜单」操作（按 `MessageActionId.name`）：低频的
+/// 导出/分享、版本历史、分叉、另存新话题、存入知识库默认收进上拉菜单，
+/// 高频的复制/编辑/重新生成/播放/翻译/删除保持外露。用户可在信息气泡管理
+/// 页自定义；[MessageBubbleSettings.collapsedActionIds] 为 null 时用此预设。
+const List<String> kDefaultCollapsedActionIds = [
+  'export',
+  'versionHistory',
+  'fork',
+  'branch',
+  'saveToKnowledge',
+];
+
 /// 自定义气泡颜色 (`settings.customBubbleColors`): 用户/AI 气泡的背景色与字体色。
 /// 空字符串表示「使用系统默认（主题）颜色」，对齐原版的留空回退行为。颜色以
 /// `#RRGGBB` 字符串保存。
@@ -84,6 +96,9 @@ abstract class MessageBubbleSettings with _$MessageBubbleSettings {
     @Default(true) bool showModelName,
     @Default(false) bool hideUserBubble,
     @Default(false) bool hideAIBubble,
+    // 底部工具栏收纳进「更多」上拉菜单的操作 id 列表（MessageActionId.name）。
+    // null = 未自定义，用 [kDefaultCollapsedActionIds] 预设；空列表 = 全部外露。
+    List<String>? collapsedActionIds,
     @Default(CustomBubbleColors()) CustomBubbleColors customBubbleColors,
   }) = _MessageBubbleSettings;
 

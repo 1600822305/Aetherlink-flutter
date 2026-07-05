@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme_extension.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_action.dart';
 import 'package:aetherlink_flutter/features/settings/application/message_bubble_settings_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/message_bubble_settings.dart';
@@ -125,6 +126,12 @@ class _MessageBubbleSettingsPageState
                   _TabList(
                     children: [
                       _FunctionCard(settings: settings, controller: controller),
+                      if (settings.messageActionMode ==
+                          MessageActionMode.toolbar)
+                        _ToolbarCollapseCard(
+                          settings: settings,
+                          controller: controller,
+                        ),
                     ],
                   ),
                   _TabList(
@@ -315,6 +322,209 @@ class _FunctionCard extends StatelessWidget {
                 ),
               ),
             ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 底部工具栏按钮收纳
+// ---------------------------------------------------------------------------
+
+/// 底部工具栏按钮收纳：选择哪些操作收进末尾的「更多」上拉菜单，顶部带
+/// 实时预览（外露图标行 + 更多按钮 + 菜单内容概览），可一键恢复预设。
+/// 仅底部工具栏模式下显示；改动即存，聊天页实时生效。
+class _ToolbarCollapseCard extends StatelessWidget {
+  const _ToolbarCollapseCard({required this.settings, required this.controller});
+
+  final MessageBubbleSettings settings;
+  final MessageBubbleSettingsController controller;
+
+  /// resend/regenerate share one visual slot; the customization list shows the
+  /// AI-side set plus 重新发送/重新生成 merged into one row (they collapse
+  /// together).
+  static const List<MessageActionId> _configurable = [
+    MessageActionId.copy,
+    MessageActionId.edit,
+    MessageActionId.export,
+    MessageActionId.regenerate,
+    MessageActionId.tts,
+    MessageActionId.translate,
+    MessageActionId.versionHistory,
+    MessageActionId.fork,
+    MessageActionId.branch,
+    MessageActionId.saveToKnowledge,
+    MessageActionId.delete,
+  ];
+
+  List<String> get _collapsed =>
+      settings.collapsedActionIds ?? kDefaultCollapsedActionIds;
+
+  void _toggle(MessageActionId id, bool collapse) {
+    final next = {..._collapsed};
+    // 重新生成与重新发送共用一个收纳开关。
+    final names = id == MessageActionId.regenerate
+        ? const ['regenerate', 'resend']
+        : [id.name];
+    for (final name in names) {
+      collapse ? next.add(name) : next.remove(name);
+    }
+    controller.setCollapsedActionIds(next.toList());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final collapsed = _collapsed;
+    final isPreset = settings.collapsedActionIds == null ||
+        (collapsed.toSet().length == kDefaultCollapsedActionIds.length &&
+            collapsed.toSet().containsAll(kDefaultCollapsedActionIds));
+
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardHeader(
+            icon: LucideIcons.ellipsis,
+            hue: Color(0xFFF59E0B), // amber
+            title: '工具栏按钮收纳',
+            tooltip: '把不常用的操作收进工具栏末尾的「更多」上拉菜单',
+          ),
+          const SizedBox(height: 8),
+          _ToolbarPreview(collapsed: collapsed.toSet()),
+          const _CardDivider(),
+          for (final id in _configurable) ...[
+            Row(
+              children: [
+                Icon(
+                  kMessageActionCatalog[id]!.icon,
+                  size: 18,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    id == MessageActionId.regenerate
+                        ? '重新生成 / 重新发送'
+                        : kMessageActionCatalog[id]!.label,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+                Text(
+                  collapsed.contains(id.name) ? '收纳' : '外露',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                CustomSwitch(
+                  value: collapsed.contains(id.name),
+                  onChanged: (v) => _toggle(id, v),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: isPreset
+                  ? null
+                  : () => controller.setCollapsedActionIds(
+                      kDefaultCollapsedActionIds.toList(),
+                    ),
+              icon: const Icon(LucideIcons.rotateCcw, size: 15),
+              label: const Text('恢复预设'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 实时预览：上行是聊天页工具栏的外露图标（含末尾「更多」按钮），下行
+/// 列出收进菜单的操作名。随上方开关即时变化。
+class _ToolbarPreview extends StatelessWidget {
+  const _ToolbarPreview({required this.collapsed});
+
+  final Set<String> collapsed;
+
+  static const List<MessageActionId> _aiToolbarOrder = [
+    MessageActionId.copy,
+    MessageActionId.edit,
+    MessageActionId.export,
+    MessageActionId.regenerate,
+    MessageActionId.tts,
+    MessageActionId.translate,
+    MessageActionId.versionHistory,
+    MessageActionId.fork,
+    MessageActionId.branch,
+    MessageActionId.saveToKnowledge,
+    MessageActionId.delete,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final inline = [
+      for (final id in _aiToolbarOrder)
+        if (!collapsed.contains(id.name)) id,
+    ];
+    final hidden = [
+      for (final id in _aiToolbarOrder)
+        if (collapsed.contains(id.name)) id,
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '预览（AI 消息工具栏）',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 10,
+            runSpacing: 6,
+            children: [
+              for (final id in inline)
+                Icon(
+                  kMessageActionCatalog[id]!.icon,
+                  size: 17,
+                  color: id == MessageActionId.delete
+                      ? theme.colorScheme.error
+                      : theme.colorScheme.onSurface,
+                ),
+              if (hidden.isNotEmpty)
+                Icon(
+                  LucideIcons.ellipsis,
+                  size: 17,
+                  color: theme.colorScheme.primary,
+                ),
+            ],
+          ),
+          if (hidden.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              '更多菜单内：${hidden.map((id) => kMessageActionCatalog[id]!.label).join('、')}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 12,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
           ],
         ],
       ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// Stable identity of a message action, independent of how it is rendered.
 ///
@@ -21,6 +22,26 @@ enum MessageActionId {
   saveToKnowledge,
   delete,
 }
+
+/// Static display metadata (icon + label) per action id, for surfaces that
+/// list actions without a live message — e.g. 信息气泡管理 → 工具栏收纳
+/// customization and its live preview. Icons/labels match
+/// `MessageActionsBuilder.build`.
+const Map<MessageActionId, ({IconData icon, String label})>
+kMessageActionCatalog = {
+  MessageActionId.copy: (icon: LucideIcons.copy, label: '复制内容'),
+  MessageActionId.edit: (icon: LucideIcons.squarePen, label: '编辑'),
+  MessageActionId.export: (icon: LucideIcons.fileText, label: '导出/分享'),
+  MessageActionId.resend: (icon: LucideIcons.refreshCw, label: '重新发送'),
+  MessageActionId.regenerate: (icon: LucideIcons.refreshCw, label: '重新生成'),
+  MessageActionId.tts: (icon: LucideIcons.volume2, label: '语音播放'),
+  MessageActionId.translate: (icon: LucideIcons.languages, label: '翻译'),
+  MessageActionId.versionHistory: (icon: LucideIcons.history, label: '版本历史'),
+  MessageActionId.fork: (icon: LucideIcons.gitBranch, label: '从此处分叉'),
+  MessageActionId.branch: (icon: LucideIcons.save, label: '另存为新话题'),
+  MessageActionId.saveToKnowledge: (icon: LucideIcons.bookOpen, label: '存入知识库'),
+  MessageActionId.delete: (icon: LucideIcons.trash2, label: '删除'),
+};
 
 /// A single message action as pure data: *what* it is and *what it does*, with
 /// no opinion on *how* it is laid out.

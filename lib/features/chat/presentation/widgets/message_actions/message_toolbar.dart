@@ -10,7 +10,9 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_ac
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_action_button.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_actions_builder.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/token_display.dart';
+import 'package:aetherlink_flutter/features/settings/application/message_bubble_settings_controller.dart';
 import 'package:aetherlink_flutter/features/voice/domain/tts_playback_state.dart';
+import 'package:aetherlink_flutter/shared/domain/message_bubble_settings.dart';
 
 /// The message bubble bottom toolbar (`MessageActions` `renderMode === 'toolbar'`),
 /// i.e. 信息气泡管理 → 操作显示模式 = 底部工具栏模式.
@@ -59,13 +61,39 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
       isMounted: () => mounted,
     ).build();
 
+    // 收纳：信息气泡管理 → 工具栏按钮收纳里勾选的操作不内联渲染，而是收进
+    // 末尾的「更多」上拉菜单；未自定义时用预设。
+    final collapsedIds = ref.watch(
+      messageBubbleSettingsControllerProvider.select(
+        (s) => s.collapsedActionIds ?? kDefaultCollapsedActionIds,
+      ),
+    );
+    final inline = [
+      for (final a in actions)
+        if (!collapsedIds.contains(a.id.name)) a,
+    ];
+    final collapsed = [
+      for (final a in actions)
+        if (collapsedIds.contains(a.id.name)) a,
+    ];
+
     final buttonGroup = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (final action in actions)
+        for (final action in inline)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2),
             child: _buildButton(action, baseColor, errorColor),
+          ),
+        if (collapsed.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: MessageActionButton(
+              icon: LucideIcons.ellipsis,
+              tooltip: '更多',
+              color: baseColor,
+              onTap: () => _showMoreSheet(collapsed),
+            ),
           ),
       ],
     );
@@ -86,6 +114,71 @@ class _MessageToolbarState extends ConsumerState<MessageToolbar> {
       children: isUser
           ? [tokenDisplay, const Spacer(), buttonGroup]
           : [buttonGroup, const Spacer(), tokenDisplay],
+    );
+  }
+
+  /// The 「更多」上拉菜单 listing the collapsed actions. 删除 keeps its two-tap
+  /// confirmation inside the sheet (first tap arms, second confirms).
+  Future<void> _showMoreSheet(List<MessageAction> collapsed) async {
+    final theme = Theme.of(context);
+    MessageActionId? armedDelete;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: theme.colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.onSurfaceVariant.withValues(
+                    alpha: 0.4,
+                  ),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 8),
+              for (final action in collapsed)
+                ListTile(
+                  dense: true,
+                  leading: Icon(
+                    action.icon,
+                    size: 20,
+                    color: action.isDestructive
+                        ? theme.colorScheme.error
+                        : theme.colorScheme.onSurface,
+                  ),
+                  title: Text(
+                    action.isDestructive && armedDelete == action.id
+                        ? '再次点击确认删除'
+                        : action.tooltip,
+                    style: TextStyle(
+                      color: action.isDestructive
+                          ? theme.colorScheme.error
+                          : theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  onTap: () {
+                    if (action.isDestructive && armedDelete != action.id) {
+                      setSheetState(() => armedDelete = action.id);
+                      return;
+                    }
+                    Navigator.of(sheetContext).pop();
+                    action.onInvoke();
+                  },
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
