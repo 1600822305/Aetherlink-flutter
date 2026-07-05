@@ -4,6 +4,7 @@ import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/ada
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/adapters/gemini_adapter.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/adapters/openai_compatible_adapter.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/llm_protocol.dart';
+import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/reasoning_tag_gateway.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway_factory.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
@@ -24,12 +25,15 @@ class LlmProviderFactory implements LlmGatewayFactory {
   @override
   LlmGateway forModel(Model model) {
     switch (protocolForModel(model)) {
+      // OpenAI 兼容 / Gemini 通道的部分模型（如 MiniMax-M 系列、Qwen3）把思考
+      // 内联在正文的 <think> 标签里，套一层 ReasoningTagGateway 拆成思考流；
+      // Anthropic 走原生 thinking 块，无需拆分。
       case LlmProtocol.openaiCompatible:
-        return OpenAiCompatibleAdapter(_dio);
+        return ReasoningTagGateway(OpenAiCompatibleAdapter(_dio));
       case LlmProtocol.anthropic:
         return AnthropicAdapter(_dio);
       case LlmProtocol.gemini:
-        return GeminiAdapter(_dio);
+        return ReasoningTagGateway(GeminiAdapter(_dio));
     }
   }
 }

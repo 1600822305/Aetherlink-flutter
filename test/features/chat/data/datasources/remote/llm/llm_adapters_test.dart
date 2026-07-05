@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/ada
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/adapters/openai_compatible_adapter.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/llm_protocol.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/provider_factory.dart';
+import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/reasoning_tag_gateway.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_content_image.dart';
@@ -434,7 +435,7 @@ data: {"candidates":[{"content":{"role":"model","parts":[{"text":" friend"}]},"f
 
       expect(
         factory.forModel(_model(provider: 'dashscope')),
-        isA<OpenAiCompatibleAdapter>(),
+        isA<ReasoningTagGateway>(),
       );
       expect(
         factory.forModel(_model(provider: 'anthropic')),
@@ -442,7 +443,7 @@ data: {"candidates":[{"content":{"role":"model","parts":[{"text":" friend"}]},"f
       );
       expect(
         factory.forModel(_model(provider: 'gemini')),
-        isA<GeminiAdapter>(),
+        isA<ReasoningTagGateway>(),
       );
     });
   });
