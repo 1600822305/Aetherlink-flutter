@@ -83,7 +83,8 @@ Model effectiveModelFor(CurrentModel current) {
 /// when a multi-key pool exists, else the provider's single [ModelProvider.apiKey].
 String? _providerApiKey(ModelProvider provider) {
   final pool = provider.apiKeys;
-  if (pool != null && pool.isNotEmpty) {
+  final poolEnabled = provider.keyManagement?.enabled ?? true;
+  if (poolEnabled && pool != null && pool.isNotEmpty) {
     final selected = ApiKeyManager.instance.selectApiKey(
       pool,
       provider.keyManagement?.strategy ?? 'round_robin',

@@ -60,6 +60,10 @@ abstract class ApiKeyConfig with _$ApiKeyConfig {
 @freezed
 abstract class KeyManagementConfig with _$KeyManagementConfig {
   const factory KeyManagementConfig({
+    /// Whether the multi-key pool is active. When `false` (单 Key 模式) the
+    /// request layer uses only the provider's single `apiKey`; the pool data
+    /// stays stored untouched so flipping back restores it.
+    @Default(true) bool enabled,
     @Default('round_robin') String strategy,
     @Default(3) int maxFailuresBeforeDisable,
     @Default(5) int failureRecoveryTime,

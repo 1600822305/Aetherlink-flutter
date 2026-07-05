@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_p
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/detail/provider_dialogs.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/provider_config_utils.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
@@ -73,9 +74,12 @@ class _ModelProviderDetailPageState
     _baseUrlController.text = provider.baseUrl ?? '';
     _isEnabled = provider.isEnabled;
     _useResponsesAPI = provider.useResponsesAPI ?? false;
-    _useMultiKey = provider.apiKeys?.isNotEmpty ?? false;
+    final management = provider.keyManagement;
+    _useMultiKey = management?.enabled ?? (provider.apiKeys?.isNotEmpty ?? false);
     _initialized = true;
-    _loadKvSettings(provider.id);
+    // keyManagement.enabled is the source of truth; the KV setting is only a
+    // legacy fallback from before the flag existed.
+    if (management == null) _loadKvSettings(provider.id);
   }
 
   Future<void> _loadKvSettings(String providerId) async {
@@ -110,6 +114,41 @@ class _ModelProviderDetailPageState
     await ref.read(modelStoreProvider.notifier).saveProvider(updated);
     if (!mounted) return;
     AppToast.success(context, '已保存');
+  }
+
+  /// Flips 单/多 Key mode. Turning multi-key **on** with an empty pool inherits
+  /// the current single key as the pool's first entry; turning it **off** keeps
+  /// the pool stored untouched (only `keyManagement.enabled` flips), so the
+  /// keys and their stats survive a round-trip back to multi-key.
+  Future<void> _setMultiKeyMode(ModelProvider provider, bool enabled) async {
+    setState(() => _useMultiKey = enabled);
+    final management = (provider.keyManagement ?? const KeyManagementConfig())
+        .copyWith(enabled: enabled);
+    var updated = provider.copyWith(keyManagement: management);
+    final mainKey = _apiKeyController.text.trim();
+    if (enabled &&
+        (provider.apiKeys == null || provider.apiKeys!.isEmpty) &&
+        mainKey.isNotEmpty) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      updated = updated.copyWith(
+        apiKeys: [
+          ApiKeyConfig(
+            id: 'main_$now',
+            key: mainKey,
+            name: '主 Key',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        ],
+      );
+    }
+    await ref.read(modelStoreProvider.notifier).saveProvider(updated);
+    if (!mounted) return;
+    if (enabled && updated.apiKeys?.length == 1 && mainKey.isNotEmpty) {
+      AppToast.success(context, '已将主 Key 导入多 Key 池');
+    } else if (!enabled && (provider.apiKeys?.isNotEmpty ?? false)) {
+      AppToast.success(context, '已切为单 Key，多 Key 池已保留');
+    }
   }
 
   /// Auto-save a single toggle field immediately.
@@ -303,15 +342,7 @@ class _ModelProviderDetailPageState
                   const SizedBox(width: 8),
                   CustomSwitch(
                     value: _useMultiKey,
-                    onChanged: (v) {
-                      setState(() => _useMultiKey = v);
-                      ref
-                          .read(appSettingsStoreProvider)
-                          .saveSetting(
-                            'useMultiKey_${provider.id}',
-                            v.toString(),
-                          );
-                    },
+                    onChanged: (v) => _setMultiKeyMode(provider, v),
                   ),
                 ],
               ),

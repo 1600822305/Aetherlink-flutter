@@ -98,8 +98,9 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
     // original single-key behaviour. Mirrors the web `EnhancedApiProvider`.
     final keyManager = ApiKeyManager.instance;
     final keyPool = provider.apiKeys ?? const <ApiKeyConfig>[];
-    final useKeyPool = keyPool.isNotEmpty;
     final keyConfig = provider.keyManagement;
+    // 单 Key 模式（keyManagement.enabled == false）下池数据保留但不参与请求。
+    final useKeyPool = keyPool.isNotEmpty && (keyConfig?.enabled ?? true);
     final keyStrategy = keyConfig?.strategy ?? 'round_robin';
     final hasSingleKeyFallback = (effective.apiKey ?? '').trim().isNotEmpty;
     // Every pool key gets at most one try per send (failed keys are excluded
