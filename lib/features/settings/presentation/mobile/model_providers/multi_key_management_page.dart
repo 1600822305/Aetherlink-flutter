@@ -88,6 +88,31 @@ class _MultiKeyManagementPageState
     if (mounted) AppToast.success(context, '已保存');
   }
 
+  Future<void> _importKeys(ModelProvider provider) async {
+    final existing = [...?provider.apiKeys];
+    final imported = await showDialog<List<String>>(
+      context: context,
+      builder: (_) => _BatchImportDialog(
+        existingKeys: {for (final k in existing) k.key},
+      ),
+    );
+    if (imported == null || imported.isEmpty) return;
+    setState(() => _pendingDeleteId = null);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final added = [
+      for (var i = 0; i < imported.length; i++)
+        ApiKeyConfig(
+          id: '${now}_${i}_${Random().nextInt(1 << 32)}',
+          key: imported[i],
+          name: '导入 Key ${existing.length + i + 1}',
+          createdAt: now,
+          updatedAt: now,
+        ),
+    ];
+    await _savePool(provider, [...existing, ...added]);
+    if (mounted) AppToast.success(context, '已导入 ${added.length} 个 Key');
+  }
+
   Future<void> _deleteKey(ModelProvider provider, String id) async {
     if (_pendingDeleteId == id) {
       setState(() => _pendingDeleteId = null);
@@ -237,6 +262,12 @@ class _MultiKeyManagementPageState
                 Row(
                   children: [
                     Expanded(child: ModelSectionTitle('API Keys ($total)')),
+                    ModelTonalButton(
+                      label: '导入',
+                      icon: LucideIcons.clipboardPaste,
+                      onPressed: () => _importKeys(provider),
+                    ),
+                    const SizedBox(width: 8),
                     ModelTonalButton(
                       label: '添加 Key',
                       icon: LucideIcons.plus,
@@ -657,6 +688,107 @@ class _KeyEditorDialogState extends State<_KeyEditorDialog> {
           child: const Text('取消'),
         ),
         FilledButton(onPressed: _submit, child: const Text('保存')),
+      ],
+    );
+  }
+}
+
+/// The batch import dialog: paste any number of keys separated by newlines /
+/// commas / semicolons / spaces; blanks and duplicates (against the pasted
+/// text and [existingKeys]) are dropped, and a live count previews how many
+/// will be imported. Pops the deduplicated key list.
+class _BatchImportDialog extends StatefulWidget {
+  const _BatchImportDialog({required this.existingKeys});
+
+  final Set<String> existingKeys;
+
+  @override
+  State<_BatchImportDialog> createState() => _BatchImportDialogState();
+}
+
+class _BatchImportDialogState extends State<_BatchImportDialog> {
+  final TextEditingController _input = TextEditingController();
+  List<String> _parsed = const [];
+  int _skipped = 0;
+
+  @override
+  void dispose() {
+    _input.dispose();
+    super.dispose();
+  }
+
+  void _parse(String raw) {
+    final tokens = raw
+        .split(RegExp(r'[\s,;，；]+'))
+        .map((t) => t.trim())
+        .where((t) => t.isNotEmpty)
+        .toList();
+    final seen = <String>{};
+    final unique = <String>[];
+    var skipped = 0;
+    for (final token in tokens) {
+      if (widget.existingKeys.contains(token) || !seen.add(token)) {
+        skipped++;
+      } else {
+        unique.add(token);
+      }
+    }
+    setState(() {
+      _parsed = unique;
+      _skipped = skipped;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text(
+        '批量导入 API Key',
+        style: TextStyle(fontWeight: FontWeight.w600),
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _input,
+              autofocus: true,
+              minLines: 4,
+              maxLines: 8,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+              decoration: const InputDecoration(
+                hintText: '每行一个 Key，也可用逗号 / 分号 / 空格分隔\nsk-aaa\nsk-bbb, sk-ccc',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: _parse,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _parsed.isEmpty && _skipped == 0
+                  ? '粘贴后自动识别并去重'
+                  : '识别到 ${_parsed.length} 个新 Key'
+                        '${_skipped > 0 ? '，跳过 $_skipped 个重复/已存在' : ''}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _parsed.isEmpty
+              ? null
+              : () => Navigator.of(context).pop(_parsed),
+          child: Text('导入${_parsed.isEmpty ? '' : ' ${_parsed.length} 个'}'),
+        ),
       ],
     );
   }
