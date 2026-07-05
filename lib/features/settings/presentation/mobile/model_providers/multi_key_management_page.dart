@@ -14,6 +14,10 @@ import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 /// 多 Key 管理 sub-page — a style-aligned port of the original
 /// `src/components/settings/MultiKeyManager.tsx`. Lists / adds / edits the
 /// provider's `apiKeys` pool and its `keyManagement` load-balancing strategy.
+/// Every mutation persists immediately (no explicit 保存 step): edits merge
+/// into the latest stored pool by key id, so usage stats written by concurrent
+/// requests are never clobbered, and the list re-renders from the store so the
+/// stats stay live.
 ///
 /// The request layer (`ChatController._streamInto` via `ApiKeyManager`) now
 /// strategy-selects a key from this pool per request, fails over on error and
@@ -33,82 +37,85 @@ class MultiKeyManagementPage extends ConsumerStatefulWidget {
 
 class _MultiKeyManagementPageState
     extends ConsumerState<MultiKeyManagementPage> {
-  bool _initialized = false;
-  List<ApiKeyConfig> _keys = const [];
-  String _strategy = 'round_robin';
   String? _pendingDeleteId;
 
-  void _seedFrom(ModelProvider provider) {
-    if (_initialized) return;
-    _keys = [...?provider.apiKeys];
-    _strategy = provider.keyManagement?.strategy ?? 'round_robin';
-    _initialized = true;
+  /// Persists the full pool (add / delete need a list rewrite). Single-key
+  /// changes go through [_saveKey] instead so concurrent stat writes merge.
+  Future<void> _savePool(
+    ModelProvider provider,
+    List<ApiKeyConfig> keys,
+  ) async {
+    await ref
+        .read(modelStoreProvider.notifier)
+        .saveProvider(provider.copyWith(apiKeys: keys.isEmpty ? null : keys));
   }
 
-  Future<void> _save(ModelProvider provider) async {
+  /// Persists one changed key, merged into the latest stored pool by id.
+  Future<void> _saveKey(ModelProvider provider, ApiKeyConfig key) async {
+    await ref
+        .read(modelStoreProvider.notifier)
+        .updateApiKeys(providerId: provider.id, keys: [key]);
+  }
+
+  Future<void> _saveStrategy(ModelProvider provider, String strategy) async {
     final management = (provider.keyManagement ?? const KeyManagementConfig())
-        .copyWith(strategy: _strategy);
-    final updated = provider.copyWith(
-      apiKeys: _keys.isEmpty ? null : _keys,
-      keyManagement: management,
-    );
-    await ref.read(modelStoreProvider.notifier).saveProvider(updated);
-    if (!mounted) return;
-    AppToast.success(context, '已保存');
+        .copyWith(strategy: strategy);
+    await ref
+        .read(modelStoreProvider.notifier)
+        .saveProvider(provider.copyWith(keyManagement: management));
   }
 
   Future<void> _addOrEditKey(
     ModelProvider provider, [
     ApiKeyConfig? key,
   ]) async {
+    final keys = [...?provider.apiKeys];
     final result = await showDialog<ApiKeyConfig>(
       context: context,
       builder: (_) => _KeyEditorDialog(
         providerName: provider.name,
         existing: key,
-        siblings: _keys,
+        siblings: keys,
       ),
     );
     if (result == null) return;
-    setState(() {
-      _pendingDeleteId = null;
-      final index = _keys.indexWhere((k) => k.id == result.id);
-      if (index >= 0) {
-        _keys = [..._keys]..[index] = result;
-      } else {
-        _keys = [..._keys, result];
-      }
-    });
+    setState(() => _pendingDeleteId = null);
+    if (keys.any((k) => k.id == result.id)) {
+      await _saveKey(provider, result);
+    } else {
+      await _savePool(provider, [...keys, result]);
+    }
+    if (mounted) AppToast.success(context, '已保存');
   }
 
-  void _deleteKey(String id) {
+  Future<void> _deleteKey(ModelProvider provider, String id) async {
     if (_pendingDeleteId == id) {
-      setState(() {
-        _keys = [
-          for (final k in _keys)
-            if (k.id != id) k,
-        ];
-        _pendingDeleteId = null;
-      });
+      setState(() => _pendingDeleteId = null);
+      await _savePool(provider, [
+        for (final k in [...?provider.apiKeys])
+          if (k.id != id) k,
+      ]);
+      if (mounted) AppToast.success(context, '已删除');
     } else {
       setState(() => _pendingDeleteId = id);
     }
   }
 
-  void _toggleKey(String id, bool enabled) {
-    setState(() {
-      _pendingDeleteId = null;
-      _keys = [
-        for (final k in _keys)
-          if (k.id == id)
-            k.copyWith(
-              isEnabled: enabled,
-              updatedAt: DateTime.now().millisecondsSinceEpoch,
-            )
-          else
-            k,
-      ];
-    });
+  Future<void> _toggleKey(
+    ModelProvider provider,
+    String id,
+    bool enabled,
+  ) async {
+    setState(() => _pendingDeleteId = null);
+    final key = [...?provider.apiKeys].where((k) => k.id == id).firstOrNull;
+    if (key == null) return;
+    await _saveKey(
+      provider,
+      key.copyWith(
+        isEnabled: enabled,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
   }
 
   @override
@@ -125,7 +132,6 @@ class _MultiKeyManagementPageState
             body: Center(child: Text('供应商不存在')),
           );
         }
-        _seedFrom(provider);
         return _buildContent(context, provider);
       },
       orElse: () => const Scaffold(
@@ -138,16 +144,16 @@ class _MultiKeyManagementPageState
   Widget _buildContent(BuildContext context, ModelProvider provider) {
     final theme = Theme.of(context);
 
-    final total = _keys.length;
-    final active = _keys
-        .where((k) => k.isEnabled && k.status == 'active')
-        .length;
-    final errored = _keys.where((k) => k.status == 'error').length;
-    final totalReq = _keys.fold<int>(
+    final keys = [...?provider.apiKeys];
+    final strategy = provider.keyManagement?.strategy ?? 'round_robin';
+    final total = keys.length;
+    final active = keys.where((k) => k.isEnabled && k.status == 'active').length;
+    final errored = keys.where((k) => k.status == 'error').length;
+    final totalReq = keys.fold<int>(
       0,
       (sum, k) => sum + k.usage.totalRequests,
     );
-    final successReq = _keys.fold<int>(
+    final successReq = keys.fold<int>(
       0,
       (sum, k) => sum + k.usage.successfulRequests,
     );
@@ -156,21 +162,7 @@ class _MultiKeyManagementPageState
         : (successReq * 100 / totalReq).round();
 
     return Scaffold(
-      appBar: ModelSettingsAppBar(
-        title: MultiKeyManagementPage._title,
-        actions: [
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: ModelTonalButton(
-                label: '保存',
-                onPressed: () => _save(provider),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
+      appBar: const ModelSettingsAppBar(title: MultiKeyManagementPage._title),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
           16,
@@ -182,7 +174,7 @@ class _MultiKeyManagementPageState
           const _InfoNotice(
             text:
                 '发送时按下方策略从启用的 Key 中自动选择，连续失败会标为错误并冷却 5 分钟，'
-                '冷却期过后自动恢复；以下统计会随真实请求更新。',
+                '冷却期过后自动恢复；以下统计会随真实请求更新，修改即时保存。',
           ),
           const SizedBox(height: 16),
           // 统计卡片
@@ -215,7 +207,7 @@ class _MultiKeyManagementPageState
                 const ModelSectionTitle('负载均衡策略'),
                 const SizedBox(height: 16),
                 AppSelectField<String>(
-                  value: _strategy,
+                  value: strategy,
                   sheetTitle: '负载均衡策略',
                   options: const [
                     AppSelectOption(
@@ -229,7 +221,7 @@ class _MultiKeyManagementPageState
                     ),
                     AppSelectOption(value: 'random', label: '随机 (Random)'),
                   ],
-                  onChanged: (value) => setState(() => _strategy = value),
+                  onChanged: (value) => _saveStrategy(provider, value),
                 ),
               ],
             ),
@@ -253,7 +245,7 @@ class _MultiKeyManagementPageState
                   ],
                 ),
                 const SizedBox(height: 16),
-                if (_keys.isEmpty)
+                if (keys.isEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 24),
                     child: Center(
@@ -266,14 +258,14 @@ class _MultiKeyManagementPageState
                     ),
                   )
                 else
-                  for (var i = 0; i < _keys.length; i++)
+                  for (var i = 0; i < keys.length; i++)
                     _KeyRow(
                       index: i,
-                      config: _keys[i],
-                      pendingDelete: _pendingDeleteId == _keys[i].id,
-                      onEdit: () => _addOrEditKey(provider, _keys[i]),
-                      onDelete: () => _deleteKey(_keys[i].id),
-                      onToggle: (v) => _toggleKey(_keys[i].id, v),
+                      config: keys[i],
+                      pendingDelete: _pendingDeleteId == keys[i].id,
+                      onEdit: () => _addOrEditKey(provider, keys[i]),
+                      onDelete: () => _deleteKey(provider, keys[i].id),
+                      onToggle: (v) => _toggleKey(provider, keys[i].id, v),
                     ),
               ],
             ),

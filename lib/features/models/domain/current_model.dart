@@ -1,3 +1,4 @@
+import 'package:aetherlink_flutter/shared/domain/api_key_manager.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 
@@ -60,16 +61,36 @@ List<ModelProvider> providersWithCurrentModel(
 /// `apiKey` / `baseUrl` / `providerType` fill in for an empty model value, and
 /// the provider's extra headers / body are exposed via
 /// [providerExtraHeaders] / [providerExtraBody] for callers building a request.
+///
+/// With a multi-key pool the provider-level key is strategy-selected from the
+/// pool ([ApiKeyManager]), so every flow resolving through here — translate,
+/// title/suggestions, multi-model, OCR, memory, notes… — load-balances across
+/// the pool instead of requiring the single provider key. The chat send path
+/// additionally re-selects per failover attempt in `_streamInto`.
 Model effectiveModelFor(CurrentModel current) {
   final model = current.model;
   final provider = current.provider;
   return model.copyWith(
-    apiKey: _firstNonEmpty(model.apiKey, provider.apiKey),
+    apiKey: _firstNonEmpty(model.apiKey, _providerApiKey(provider)),
     baseUrl: _firstNonEmpty(model.baseUrl, provider.baseUrl),
     providerType: model.providerType ?? provider.providerType,
     providerExtraHeaders: provider.extraHeaders,
     providerExtraBody: provider.extraBody,
   );
+}
+
+/// The provider-level key: a usable pool key under the configured strategy
+/// when a multi-key pool exists, else the provider's single [ModelProvider.apiKey].
+String? _providerApiKey(ModelProvider provider) {
+  final pool = provider.apiKeys;
+  if (pool != null && pool.isNotEmpty) {
+    final selected = ApiKeyManager.instance.selectApiKey(
+      pool,
+      provider.keyManagement?.strategy ?? 'round_robin',
+    );
+    if (selected != null) return selected.key;
+  }
+  return provider.apiKey;
 }
 
 String? _firstNonEmpty(String? a, String? b) {

@@ -33,7 +33,7 @@ import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.d
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_setup.dart';
 import 'package:aetherlink_flutter/features/chat/application/suggestion_service.dart';
 import 'package:aetherlink_flutter/features/chat/application/translate_controller.dart';
-import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/api_key_manager.dart';
+import 'package:aetherlink_flutter/shared/domain/api_key_manager.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/message_ordering.dart';

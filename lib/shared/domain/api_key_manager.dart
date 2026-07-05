@@ -35,10 +35,13 @@ class ApiKeyManager {
   /// Selects the next usable key from [keys] under [strategy], or `null` when
   /// none is currently usable (all disabled / errored / in cooldown). A key is
   /// usable when it is enabled, has `active` status, is past any cooldown and
-  /// carries a non-empty secret.
+  /// carries a non-empty secret. Keys whose id is in [excludeIds] are skipped —
+  /// failover passes the keys already tried this send so a bad key is never
+  /// re-picked before the pool is exhausted.
   ApiKeyConfig? selectApiKey(
     List<ApiKeyConfig> keys,
     String strategy, {
+    Set<String> excludeIds = const <String>{},
     DateTime? now,
   }) {
     final at = now ?? DateTime.now();
@@ -47,6 +50,7 @@ class ApiKeyManager {
         if (key.isEnabled &&
             key.status == 'active' &&
             !isKeyInCooldown(key, now: at) &&
+            !excludeIds.contains(key.id) &&
             key.key.trim().isNotEmpty)
           key,
     ];

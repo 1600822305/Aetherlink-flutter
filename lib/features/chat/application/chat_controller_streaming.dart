@@ -47,10 +47,6 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
   /// "继续生成" button.
   static const int _kMaxAutoContinues = 3;
 
-  /// The most keys a single send tries before giving up, when the provider has a
-  /// multi-key pool. Mirrors the web `EnhancedApiProvider` `maxRetries = 3`.
-  static const int _kMaxKeyAttempts = 3;
-
   /// 流式回复 UI 刷新的最小间隔（节流窗口）。
   static const Duration _kStreamEmitInterval = Duration(milliseconds: 100);
 
@@ -105,8 +101,12 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
     final useKeyPool = keyPool.isNotEmpty;
     final keyStrategy = provider.keyManagement?.strategy ?? 'round_robin';
     final hasSingleKeyFallback = (effective.apiKey ?? '').trim().isNotEmpty;
-    final maxAttempts = useKeyPool ? _kMaxKeyAttempts : 1;
+    // Every pool key gets at most one try per send (failed keys are excluded
+    // from re-selection below), plus one trailing slot for the single-key
+    // fallback when the whole pool is unusable.
+    final maxAttempts = useKeyPool ? keyPool.length + 1 : 1;
     final workingKeys = List<ApiKeyConfig>.of(keyPool);
+    final failedKeyIds = <String>{};
     final keyUpdates = <String, ApiKeyConfig>{};
 
     Future<void> persistKeyUpdates() async {
@@ -354,13 +354,19 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
       // (mirroring the web `enableFallback`), else surface 没有可用的 Key.
       var effectiveForAttempt = effective;
       var selectedIndex = -1;
+      var isFallbackAttempt = false;
       if (useKeyPool) {
-        final selected = keyManager.selectApiKey(workingKeys, keyStrategy);
+        final selected = keyManager.selectApiKey(
+          workingKeys,
+          keyStrategy,
+          excludeIds: failedKeyIds,
+        );
         if (selected != null) {
           selectedIndex = workingKeys.indexWhere((k) => k.id == selected.id);
           effectiveForAttempt = effective.copyWith(apiKey: selected.key);
         } else if (hasSingleKeyFallback) {
           effectiveForAttempt = effective;
+          isFallbackAttempt = true;
         } else {
           lastError ??= const _NoUsableApiKeyException();
           break;
@@ -768,12 +774,16 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
         }
         lastError = error;
         if (selectedIndex != -1) {
+          failedKeyIds.add(workingKeys[selectedIndex].id);
           recordKeyOutcome(
             selectedIndex,
             success: false,
             error: _errorMessage(error),
           );
         }
+        // The single-key fallback is a one-shot last resort — once it fails
+        // there is nothing left to fail over to.
+        if (isFallbackAttempt) break;
         // Fail over to the next key only if nothing streamed yet and another
         // attempt remains; otherwise fall through to the terminal error below.
         if (useKeyPool && !committed && attempt < maxAttempts - 1) {
