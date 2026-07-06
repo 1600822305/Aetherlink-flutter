@@ -1,4 +1,5 @@
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 /// A [ScrollController] whose position pins to the bottom *during layout*
@@ -49,8 +50,13 @@ class _AutoFollowScrollPosition extends ScrollPositionWithSingleContext {
     // user's scroll for one frame and feel "stuck / can't scroll up".
     if (controller.shouldAutoFollow() &&
         userScrollDirection == ScrollDirection.idle) {
+      // Correct in *both* directions: content growth leaves pixels above the
+      // bottom (gap > 0), while a shrinking estimated extent (ListView.builder
+      // extrapolates unbuilt children) leaves pixels beyond it (gap < 0) — the
+      // latter would otherwise settle through a visible ballistic clamp
+      // animation instead of staying pinned.
       final gap = this.maxScrollExtent - pixels;
-      if (gap > 0.5) {
+      if (gap.abs() > 0.5) {
         correctPixels(this.maxScrollExtent);
         return false; // Re-run layout with the corrected position.
       }
@@ -143,6 +149,14 @@ class ChatAutoScrollController {
     if (_disposed) return;
     _stick = true;
     _pinnedUntil = DateTime.now().add(pinWindow);
+    // Jump synchronously when called outside a frame (e.g. a tap handler) so
+    // the very next frame already renders at the bottom — web
+    // `pinToBottom('auto')` is an instant `scrollTop = scrollHeight`. When
+    // called mid-build (didUpdateWidget on append) only the post-frame jump
+    // runs; the layout-time auto-follow pins that frame anyway.
+    if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.idle) {
+      _jumpToBottom();
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToBottom());
   }
 
@@ -152,7 +166,7 @@ class ChatAutoScrollController {
     // route/topic transition.
     if (_scrollController.positions.length != 1) return;
     final position = _scrollController.position;
-    if (position.pixels < position.maxScrollExtent) {
+    if (position.pixels != position.maxScrollExtent) {
       position.jumpTo(position.maxScrollExtent);
     }
   }
