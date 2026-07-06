@@ -89,7 +89,7 @@ class SidebarSettingsController extends _$SidebarSettingsController
   void setMessageStyle(MessageStyle value) =>
       persist(state.copyWith(messageStyle: value));
 
-  /// Sets 对话导航 (persisted; chat-view effect 即将支持).
+  /// Sets 对话导航 (wired: [ChatNavigationOverlay] shows the jump panel).
   void setMessageNavigation(MessageNavigation value) =>
       persist(state.copyWith(messageNavigation: value));
 

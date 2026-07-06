@@ -22,6 +22,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_se
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/multi_model_message_group.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/plain_style_message.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/chat_sidebar.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_navigation.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_top_bar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar_host.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/system_prompt_bubble.dart';
@@ -320,6 +321,9 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
                     ),
                   ),
                 ),
+                // 对话导航：右侧呼吸灯 + 上下跳转面板（设置 tab → 对话导航）。
+                if (!widget.isSelecting)
+                  const Positioned.fill(child: ChatNavigationOverlay()),
                 if (widget.isSelecting)
                   const Positioned(
                     left: 0,
@@ -770,6 +774,58 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     super.dispose();
   }
 
+  /// Executes a 对话导航 action. 上一条/下一条 move relative to the first
+  /// row currently visible (observed via [ListObserverController]), falling
+  /// back to 回顶/回底 at the ends — mirroring the web `ChatNavigation`.
+  Future<void> _handleNavigation(
+    ChatNavigationAction action,
+    int headerCount,
+    int rowCount,
+  ) async {
+    switch (action) {
+      case ChatNavigationAction.top:
+        _autoScroll.unstick();
+        await _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        );
+      case ChatNavigationAction.bottom:
+        _autoScroll.pinToBottom();
+      case ChatNavigationAction.prevMessage:
+      case ChatNavigationAction.nextMessage:
+        final result = await _observerController.dispatchOnceObserve(
+          isForce: true,
+          isDependObserveCallback: false,
+        );
+        final firstIndex = result.observeResult?.firstChild?.index;
+        if (firstIndex == null || !mounted) return;
+        final delta = action == ChatNavigationAction.prevMessage ? -1 : 1;
+        final target = firstIndex + delta;
+        if (target < headerCount) {
+          return _handleNavigation(
+            ChatNavigationAction.top,
+            headerCount,
+            rowCount,
+          );
+        }
+        if (target >= headerCount + rowCount) {
+          return _handleNavigation(
+            ChatNavigationAction.bottom,
+            headerCount,
+            rowCount,
+          );
+        }
+        _autoScroll.unstick();
+        await _observerController.animateTo(
+          index: target,
+          alignment: 0,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isSelecting = widget.isSelecting;
@@ -799,6 +855,16 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOutCubic,
       );
+    });
+
+    // 对话导航面板的回顶/上一条/下一条/回底请求。
+    ref.listen<ChatNavigationAction?>(chatNavigationRequestProvider, (
+      prev,
+      action,
+    ) {
+      if (action == null) return;
+      ref.read(chatNavigationRequestProvider.notifier).clear();
+      _handleNavigation(action, headerCount, rows.length);
     });
 
     // 消息分割线 (设置 tab 常规设置)：开启时在相邻消息之间画一条分割线。

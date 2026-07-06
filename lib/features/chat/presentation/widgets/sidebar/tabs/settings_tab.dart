@@ -95,7 +95,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       value: s.messageNavigation,
       options: [for (final v in MessageNavigation.values) (v, v.label)],
       onChanged: c.setMessageNavigation,
-      comingSoon: true,
     ),
     _SwitchSettingRow(
       title: '显示 Token 用量',
