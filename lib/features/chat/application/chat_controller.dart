@@ -16,6 +16,7 @@ import 'package:aetherlink_flutter/shared/domain/model_combo.dart';
 import 'package:aetherlink_flutter/core/error/failure.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
+import 'package:aetherlink_flutter/features/chat/data/datasources/remote/media/media_generation_api.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/parameter_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_send_hooks.dart';
@@ -74,6 +75,7 @@ import 'package:aetherlink_flutter/shared/utils/system_prompt_variables.dart';
 
 part 'chat_controller.g.dart';
 part 'chat_controller_debate.dart';
+part 'chat_controller_media_generation.dart';
 part 'chat_controller_multi_model.dart';
 part 'chat_controller_post_turn.dart';
 part 'chat_controller_streaming.dart';
@@ -98,6 +100,7 @@ part 'chat_controller_translate.dart';
 class ChatController extends _$ChatController
     with
         _ChatDebate,
+        _ChatMediaGeneration,
         _ChatMultiModel,
         _ChatPostTurn,
         _ChatTranslate,
@@ -269,6 +272,20 @@ class ChatController extends _$ChatController
     _truncatedMessageId = null;
     final snapshot = state.value ?? ChatState.initial();
     if (snapshot.isStreaming) return;
+
+    // 图像/视频生成模式（输入框互斥模式）优先：这一轮不走 LLM 对话，而是
+    // 直接调相应供应商的生成 API（web handleMessageSend 的模式分发）。
+    final inputMode = ref.read(inputModeControllerProvider);
+    if (trimmed.isNotEmpty &&
+        (inputMode == InputMode.image || inputMode == InputMode.video)) {
+      await _sendMediaGeneration(
+        inputMode!,
+        trimmed,
+        attachments: attachments,
+        snapshot: snapshot,
+      );
+      return;
+    }
 
     // Staged 多模型发送 mentions take priority: fan this turn out to every chosen
     // model, then clear the staged selection (a one-shot, like the web).
@@ -510,7 +527,8 @@ class ChatController extends _$ChatController
     required DateTime createdAt,
     required ChatMemoryInjection injection,
   }) {
-    if (injection.isEmpty || injection.count == 0) return const <MessageBlock>[];
+    if (injection.isEmpty || injection.count == 0)
+      return const <MessageBlock>[];
     return <MessageBlock>[
       MessageBlock.memoryInjection(
         id: generateId('block'),
@@ -1851,7 +1869,6 @@ class ChatController extends _$ChatController
     if (error is Failure) return error.message;
     return error.toString();
   }
-
 }
 
 /// Raised when a provider has a multi-key pool but every key is disabled,

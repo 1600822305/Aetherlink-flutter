@@ -3,7 +3,9 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/network_proxy_access.dart';
 import 'package:aetherlink_flutter/core/database/app_database.dart';
+import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/provider_factory.dart';
+import 'package:aetherlink_flutter/features/chat/data/datasources/remote/media/media_generation_api.dart';
 import 'package:aetherlink_flutter/features/chat/data/repositories/chat_repository_impl.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
@@ -57,6 +59,13 @@ ChatRepository chatRepository(Ref ref) =>
 @Riverpod(keepAlive: true)
 LlmGatewayFactory llmGatewayFactory(Ref ref) =>
     LlmProviderFactory(proxy: ref.watch(appNetworkProxyConfigProvider));
+
+/// 图像/视频生成的供应商适配层（OpenAI 兼容 / Gemini / DashScope / Veo /
+/// 硅基流动），与 LLM 通道共用同一套 dio 构造（含代理配置）。
+@Riverpod(keepAlive: true)
+MediaGenerationApi mediaGenerationApi(Ref ref) => MediaGenerationApi(
+  buildLlmDio(proxy: ref.watch(appNetworkProxyConfigProvider)),
+);
 
 /// The live MCP connection pool for remote (sse / streamableHttp) servers,
 /// shared across chat turns. Kept alive so connections are reused; closed when
