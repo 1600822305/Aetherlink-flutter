@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/settings/application/theme_mode_cont
 import 'package:aetherlink_flutter/features/settings/domain/app_theme_mode.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/font_picker.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
+import 'package:aetherlink_flutter/features/theming/presentation/mobile/theme_style_settings_page.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 
 /// The "外观设置" second-level page (hub "外观" → this page), originally a 1:1
@@ -161,6 +162,8 @@ class _AppearanceSettingsPageState extends ConsumerState<AppearanceSettingsPage>
                             .read(fontSizeControllerProvider.notifier)
                             .use(next),
                       ),
+                      const SizedBox(height: 12),
+                      const _ThemeStyleCard(),
                     ],
                   ),
                   // 界面定制 + 开发者工具 合并为一个 tab：上卡为界面定制，下卡为
@@ -355,6 +358,31 @@ class _CardHeader extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The "主题风格" card on the 主题字体 tab: the preset selector grid
+/// ([ThemeStyleSelector]) inside the tab's standard card chrome, so the style
+/// choice lives together with 主题/字体 instead of under 界面定制.
+class _ThemeStyleCard extends StatelessWidget {
+  const _ThemeStyleCard();
+
+  static const String _title = '主题风格';
+  static const String _description = '选择应用的整体设计风格和色彩主题';
+
+  @override
+  Widget build(BuildContext context) {
+    return const _AppearanceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _CardHeader(title: _title, description: _description),
+          Divider(height: 1, thickness: 1),
+          Padding(padding: EdgeInsets.all(14), child: ThemeStyleSelector()),
+        ],
       ),
     );
   }
@@ -857,15 +885,9 @@ class _CustomizationCard extends StatelessWidget {
   static const String _title = '界面定制';
   static const String _description = '自定义聊天界面、消息气泡和工具栏的外观设置';
 
-  // The six rows, in the original's order, with their verbatim brand-hue avatars.
+  // The customization rows with their verbatim brand-hue avatars (主题风格 lives
+  // on the 主题字体 tab).
   static const List<_CustomizationItem> _items = [
-    _CustomizationItem(
-      icon: LucideIcons.palette,
-      accent: Color(0xFF9333EA), // purple
-      title: '主题风格',
-      description: '选择应用的整体设计风格和色彩主题',
-      route: AppRouter.themeStyleSettingsPath,
-    ),
     _CustomizationItem(
       icon: LucideIcons.layoutDashboard,
       accent: Color(0xFF10B981), // emerald

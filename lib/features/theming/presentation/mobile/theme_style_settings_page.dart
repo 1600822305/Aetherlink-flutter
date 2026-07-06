@@ -21,14 +21,10 @@ class ThemeStyleSettingsPage extends ConsumerWidget {
   const ThemeStyleSettingsPage({super.key});
 
   static const String _title = '主题风格';
-  static const String _description = '选择您喜欢的界面设计风格，每种风格都有独特的色彩搭配和视觉效果';
-  static const String _tip =
-      '💡 提示：主题风格会影响整个应用的色彩搭配、按钮样式和视觉效果。您可以随时在设置中更改主题风格，更改会立即生效。';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final currentStyleId = ref.watch(themeControllerProvider).id;
 
     return Scaffold(
       appBar: AppBar(
@@ -97,38 +93,62 @@ class ThemeStyleSettingsPage extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Text(
-                    _description,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontSize: 12.8,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _ThemeGrid(currentStyleId: currentStyleId),
-                  const SizedBox(height: 24),
-                  // 主题特性说明 tip box.
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      _tip,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontSize: 12.8,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
+                  const ThemeStyleSelector(),
                 ],
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The 主题风格 selector body — description, preset grid and the tip box —
+/// without any surrounding card chrome, so it can live both on this standalone
+/// page and embedded in the 外观设置 主题字体 tab's card.
+class ThemeStyleSelector extends ConsumerWidget {
+  const ThemeStyleSelector({super.key});
+
+  static const String _description = '选择您喜欢的界面设计风格，每种风格都有独特的色彩搭配和视觉效果';
+  static const String _tip =
+      '💡 提示：主题风格会影响整个应用的色彩搭配、按钮样式和视觉效果。您可以随时在设置中更改主题风格，更改会立即生效。';
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final currentStyleId = ref.watch(themeControllerProvider).id;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          _description,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontSize: 12.8,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _ThemeGrid(currentStyleId: currentStyleId),
+        const SizedBox(height: 24),
+        // 主题特性说明 tip box.
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primary.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Text(
+            _tip,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontSize: 12.8,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
