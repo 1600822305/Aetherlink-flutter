@@ -204,9 +204,11 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
   /// Called by the native plugin. The "will" events snap the layout to the
   /// final height in a single frame — WeChat/QQ-style instant reposition, with
   /// the OS keyboard sliding up over the (opaque) area below the composer.
-  /// The "did" events settle any residual mismatch once the animation ends;
-  /// per-frame progress events are ignored (frame-synced panning reads as a
-  /// slow transition rather than an instant snap).
+  /// Once the animation ends (didShow), the height is settled against
+  /// Flutter's own `viewInsets` — authoritative in logical pixels, whereas the
+  /// native dp conversion can drift on some devices. Per-frame progress events
+  /// are ignored (frame-synced panning reads as a slow transition rather than
+  /// an instant snap).
   void _onKeyboardEvent(KeyboardEvent event) {
     if (!mounted) return;
     // Cancel any pending fallback — the plugin is authoritative.
@@ -215,9 +217,13 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
       case KeyboardEventType.progress:
         break;
       case KeyboardEventType.willShow:
-      case KeyboardEventType.didShow:
         if ((event.height - _keyboardHeight).abs() > 0.5) {
           setState(() => _keyboardHeight = event.height);
+        }
+      case KeyboardEventType.didShow:
+        final settled = _flutterImeInset() ?? event.height;
+        if ((settled - _keyboardHeight).abs() > 0.5) {
+          setState(() => _keyboardHeight = settled);
         }
       case KeyboardEventType.willHide:
       case KeyboardEventType.didHide:
@@ -225,6 +231,16 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
           setState(() => _keyboardHeight = 0);
         }
     }
+  }
+
+  /// The keyboard inset as measured by Flutter itself (logical pixels), or
+  /// null when the engine hasn't received a non-zero inset yet.
+  double? _flutterImeInset() {
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    if (views.isEmpty) return null;
+    final view = views.first;
+    final bottom = view.viewInsets.bottom / view.devicePixelRatio;
+    return bottom > 0 ? bottom : null;
   }
 
   /// Fallback: if the native plugin misses an event, the platform's
@@ -244,8 +260,9 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
       if (rawBottom < 1 && _keyboardHeight > 0) {
         // Keyboard is gone but we still think it's open — missed hide event.
         setState(() => _keyboardHeight = 0);
-      } else if (rawBottom > 0 && _keyboardHeight < 1) {
-        // Keyboard appeared but we missed the show event — use raw value.
+      } else if (rawBottom > 0 && (rawBottom - _keyboardHeight).abs() > 1) {
+        // Missed show event, or the native-side height disagrees with the
+        // settled Flutter inset — the engine's own measure wins.
         setState(() => _keyboardHeight = rawBottom);
       }
     });
