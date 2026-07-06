@@ -901,6 +901,13 @@ class _CustomizationCard extends StatelessWidget {
       description: '自定义输入框的风格和布局样式',
       route: AppRouter.inputBoxSettingsPath,
     ),
+    _CustomizationItem(
+      icon: LucideIcons.clipboardCopy,
+      accent: Color(0xFF0EA5E9), // sky
+      title: '复制面板',
+      description: '自定义长按选中文本的操作面板',
+      route: AppRouter.selectionMenuSettingsPath,
+    ),
   ];
 
   @override

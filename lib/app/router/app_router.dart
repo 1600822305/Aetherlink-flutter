@@ -35,6 +35,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_ser
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/message_bubble_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/network_proxy_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/quick_phrases_settings_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/selection_menu_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/thinking_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/add_provider_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/advanced_api_config_page.dart';
@@ -80,6 +81,8 @@ abstract final class AppRouter {
   static const String messageBubbleSettingsPath =
       '/settings/appearance/message-bubble';
   static const String thinkingSettingsPath = '/settings/appearance/thinking';
+  static const String selectionMenuSettingsPath =
+      '/settings/appearance/selection-menu';
   static const String themeStyleSettingsPath =
       '/settings/appearance/theme-style';
   static const String mcpServerPath = '/settings/mcp-server';
@@ -467,6 +470,12 @@ abstract final class AppRouter {
         name: 'thinking-settings',
         pageBuilder: (context, state) =>
             _instant(state, const ThinkingSettingsPage()),
+      ),
+      GoRoute(
+        path: selectionMenuSettingsPath,
+        name: 'selection-menu-settings',
+        pageBuilder: (context, state) =>
+            _instant(state, const SelectionMenuSettingsPage()),
       ),
       GoRoute(
         path: themeStyleSettingsPath,

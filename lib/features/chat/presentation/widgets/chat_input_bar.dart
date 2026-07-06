@@ -43,6 +43,11 @@ const String _noModelHint = '请先配置模型';
 class ChatInputBar extends ConsumerStatefulWidget {
   const ChatInputBar({super.key});
 
+  /// Inserts text at the composer caret from outside the widget tree — wired
+  /// by the mounted composer state, used by the message selection 复制面板's
+  /// 引用到输入框 action. Null when no chat composer is on screen.
+  static void Function(String content)? insertTextHook;
+
   @override
   ConsumerState<ChatInputBar> createState() => _ChatInputBarState();
 }
@@ -67,6 +72,7 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
     super.initState();
     _lastText = _controller.text;
     _controller.addListener(_onTextChanged);
+    ChatInputBar.insertTextHook = _insertPhrase;
   }
 
   /// Hardware-keyboard Enter handling (port of `useChatInputLogic.handleKeyDown`):
@@ -161,6 +167,9 @@ class _ChatInputBarState extends ConsumerState<ChatInputBar> {
 
   @override
   void dispose() {
+    if (ChatInputBar.insertTextHook == _insertPhrase) {
+      ChatInputBar.insertTextHook = null;
+    }
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _focusNode.dispose();
