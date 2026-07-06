@@ -121,6 +121,9 @@ abstract class SidebarSettings with _$SidebarSettings {
     @Default(true) bool autoScrollToBottom,
     @Default(MessageStyle.bubble) MessageStyle messageStyle,
     @Default(MessageNavigation.none) MessageNavigation messageNavigation,
+    // 滚动时显示导航 (`settings.showNavigationOnScroll`)：开启后消息列表滚动时自动
+    // 弹出导航面板，停止后自动隐藏。默认关闭，与 Web 一致。
+    @Default(false) bool showNavigationOnScroll,
     @Default(true) bool showMessageTokenUsage,
     // 消息正文可选中复制：开启后聊天消息的正文支持长按选中/复制（Flutter
     // SelectionArea）。默认开启。

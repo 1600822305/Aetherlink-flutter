@@ -96,6 +96,13 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       options: [for (final v in MessageNavigation.values) (v, v.label)],
       onChanged: c.setMessageNavigation,
     ),
+    if (s.messageNavigation == MessageNavigation.buttons)
+      _SwitchSettingRow(
+        title: '滚动时显示导航',
+        description: '滚动消息列表时自动弹出导航面板，停止后自动隐藏',
+        value: s.showNavigationOnScroll,
+        onChanged: c.setShowNavigationOnScroll,
+      ),
     _SwitchSettingRow(
       title: '显示 Token 用量',
       description: '在信息气泡底部工具栏显示 Token 用量',

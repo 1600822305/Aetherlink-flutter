@@ -159,6 +159,10 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
   final GlobalKey _inputKey = GlobalKey();
   double _inputHeight = 0;
 
+  /// Live scroll activity of the message list, fed to [ChatNavigationOverlay]
+  /// for 滚动时显示导航.
+  final ValueNotifier<bool> _listScrolling = ValueNotifier(false);
+
   /// Guards against queuing more than one pending measure.
   bool _measureScheduled = false;
 
@@ -197,6 +201,7 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
   void dispose() {
     _fallbackTimer?.cancel();
     _keyboardSub?.cancel();
+    _listScrolling.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -342,19 +347,36 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
                 // Isolated as one raster layer so the keyboard animation samples
                 // a cached texture instead of replaying every bubble's paint.
                 Positioned.fill(
-                  child: RepaintBoundary(
-                    child: _MessageList(
-                      showSystemPromptBubble: widget.showSystemPromptBubble,
-                      bottomReserve: widget.isSelecting
-                          ? 120 + viewPadding
-                          : _inputHeight + 16 + bottomOffset,
-                      isSelecting: widget.isSelecting,
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: (notification) {
+                      if (notification is ScrollStartNotification) {
+                        _listScrolling.value = true;
+                      } else if (notification is ScrollEndNotification) {
+                        _listScrolling.value = false;
+                      }
+                      return false;
+                    },
+                    child: RepaintBoundary(
+                      child: _MessageList(
+                        showSystemPromptBubble: widget.showSystemPromptBubble,
+                        bottomReserve: widget.isSelecting
+                            ? 120 + viewPadding
+                            : _inputHeight + 16 + bottomOffset,
+                        isSelecting: widget.isSelecting,
+                      ),
                     ),
                   ),
                 ),
                 // 对话导航：右侧呼吸灯 + 上下跳转面板（设置 tab → 对话导航）。
+                // bottomInset 让它在可见消息区域（键盘 + 输入框之上）内垂直居中。
                 if (!widget.isSelecting)
-                  const Positioned.fill(child: ChatNavigationOverlay()),
+                  Positioned.fill(
+                    child: ChatNavigationOverlay(
+                      isScrolling: _listScrolling,
+                      bottomInset: _inputHeight + 16 + bottomOffset,
+                      keyboardVisible: keyboardActive,
+                    ),
+                  ),
                 if (widget.isSelecting)
                   const Positioned(
                     left: 0,
@@ -778,6 +800,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     final ids = _flatIds;
     _firstId = ids.isEmpty ? null : ids.first;
     _count = ids.length;
+    registerChatNavigationHandler(_handleNavigation);
     // Initial entry pins to the bottom (latest message), like the web's mount.
     _autoScroll.pinToBottom();
   }
@@ -807,19 +830,19 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
 
   @override
   void dispose() {
+    unregisterChatNavigationHandler(_handleNavigation);
     _autoScroll.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  /// Executes a 对话导航 action. 上一条/下一条 move relative to the first
+  /// Executes a 对话导航 action (invoked directly by [ChatNavigationOverlay]
+  /// through the handler registry). 上一条/下一条 move relative to the first
   /// row currently visible (observed via [ListObserverController]), falling
   /// back to 回顶/回底 at the ends — mirroring the web `ChatNavigation`.
-  Future<void> _handleNavigation(
-    ChatNavigationAction action,
-    int headerCount,
-    int rowCount,
-  ) async {
+  Future<void> _handleNavigation(ChatNavigationAction action) async {
+    final headerCount = widget.showSystemPromptBubble ? 1 : 0;
+    final rowCount = widget.rows.length;
     switch (action) {
       case ChatNavigationAction.top:
         _autoScroll.unstick();
@@ -841,18 +864,10 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         final delta = action == ChatNavigationAction.prevMessage ? -1 : 1;
         final target = firstIndex + delta;
         if (target < headerCount) {
-          return _handleNavigation(
-            ChatNavigationAction.top,
-            headerCount,
-            rowCount,
-          );
+          return _handleNavigation(ChatNavigationAction.top);
         }
         if (target >= headerCount + rowCount) {
-          return _handleNavigation(
-            ChatNavigationAction.bottom,
-            headerCount,
-            rowCount,
-          );
+          return _handleNavigation(ChatNavigationAction.bottom);
         }
         _autoScroll.unstick();
         await _observerController.animateTo(
@@ -893,16 +908,6 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOutCubic,
       );
-    });
-
-    // 对话导航面板的回顶/上一条/下一条/回底请求。
-    ref.listen<ChatNavigationAction?>(chatNavigationRequestProvider, (
-      prev,
-      action,
-    ) {
-      if (action == null) return;
-      ref.read(chatNavigationRequestProvider.notifier).clear();
-      _handleNavigation(action, headerCount, rows.length);
     });
 
     // 消息分割线 (设置 tab 常规设置)：开启时在相邻消息之间画一条分割线。

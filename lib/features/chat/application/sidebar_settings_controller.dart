@@ -93,6 +93,11 @@ class SidebarSettingsController extends _$SidebarSettingsController
   void setMessageNavigation(MessageNavigation value) =>
       persist(state.copyWith(messageNavigation: value));
 
+  /// Toggles 滚动时显示导航 (wired: [ChatNavigationOverlay] pops the jump panel
+  /// while the message list scrolls).
+  void setShowNavigationOnScroll(bool value) =>
+      persist(state.copyWith(showNavigationOnScroll: value));
+
   /// Toggles 显示Token用量 (wired: [MessageToolbar] hides its [TokenDisplay]
   /// chip when off).
   void setShowMessageTokenUsage(bool value) =>
