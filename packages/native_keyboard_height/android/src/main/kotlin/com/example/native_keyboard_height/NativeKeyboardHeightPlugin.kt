@@ -1,7 +1,9 @@
 package com.example.native_keyboard_height
 
 import android.app.Activity
+import android.os.Build
 import android.view.View
+import kotlin.math.max
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
@@ -33,6 +35,35 @@ class NativeKeyboardHeightPlugin : FlutterPlugin, ActivityAware, EventChannel.St
     private var eventChannel: EventChannel? = null
     private var eventSink: EventChannel.EventSink? = null
     private var activity: Activity? = null
+
+    /** Last sane keyboard height (px), used as the fallback for implausible readings. */
+    private var lastGoodHeightPx = 0
+
+    /**
+     * Keyboard height in dp above the navigation bar — the QQ/WeChat convention:
+     * `ime insets − navigation bar insets`, so the value composes with the
+     * safe-area padding instead of double-counting the nav bar. Also guards
+     * against implausible readings (> 80% of screen height) with the last good
+     * value (or a 280dp default), mirroring QQ's AdjustCommonStrategy.
+     */
+    private fun keyboardHeightDp(act: Activity, insets: WindowInsetsCompat): Int {
+        val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+        val nav = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+        var heightPx = max(0, ime.bottom - nav.bottom)
+
+        val metrics = act.resources.displayMetrics
+        val density = metrics.density
+        if (heightPx > metrics.heightPixels * 0.8) {
+            heightPx = if (lastGoodHeightPx > 0) lastGoodHeightPx else (280 * density).toInt()
+        } else if (heightPx > 0) {
+            lastGoodHeightPx = heightPx
+        }
+        return (heightPx / density).roundToInt()
+    }
+
+    /** Multi-window / split-screen layouts confuse inset math — skip, like WeChat/QQ. */
+    private fun inMultiWindow(act: Activity): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && act.isInMultiWindowMode
 
     // ── FlutterPlugin ────────────────────────────────────────────────────────
 
@@ -102,10 +133,8 @@ class NativeKeyboardHeightPlugin : FlutterPlugin, ActivityAware, EventChannel.St
                     val imeAnimating = runningAnimations.any {
                         it.typeMask and WindowInsetsCompat.Type.ime() != 0
                     }
-                    if (imeAnimating) {
-                        val imeHeightPx = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-                        val density = act.resources.displayMetrics.density
-                        val imeHeightDp = (imeHeightPx / density).roundToInt()
+                    if (imeAnimating && !inMultiWindow(act)) {
+                        val imeHeightDp = keyboardHeightDp(act, insets)
                         eventSink?.success(mapOf("type" to "progress", "height" to imeHeightDp))
                     }
                     return insets
@@ -124,11 +153,10 @@ class NativeKeyboardHeightPlugin : FlutterPlugin, ActivityAware, EventChannel.St
                 ): WindowInsetsAnimationCompat.BoundsCompat {
                     val currentInsets = ViewCompat.getRootWindowInsets(rootView)
                         ?: return super.onStart(animation, bounds)
+                    if (inMultiWindow(act)) return super.onStart(animation, bounds)
 
                     val showingKeyboard = currentInsets.isVisible(WindowInsetsCompat.Type.ime())
-                    val imeHeightPx = currentInsets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-                    val density = act.resources.displayMetrics.density
-                    val imeHeightDp = (imeHeightPx / density).roundToInt()
+                    val imeHeightDp = keyboardHeightDp(act, currentInsets)
 
                     if (showingKeyboard) {
                         eventSink?.success(mapOf("type" to "willShow", "height" to imeHeightDp))
@@ -146,10 +174,9 @@ class NativeKeyboardHeightPlugin : FlutterPlugin, ActivityAware, EventChannel.St
                 override fun onEnd(animation: WindowInsetsAnimationCompat) {
                     super.onEnd(animation)
                     val currentInsets = ViewCompat.getRootWindowInsets(rootView) ?: return
+                    if (inMultiWindow(act)) return
                     val showingKeyboard = currentInsets.isVisible(WindowInsetsCompat.Type.ime())
-                    val imeHeightPx = currentInsets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-                    val density = act.resources.displayMetrics.density
-                    val imeHeightDp = (imeHeightPx / density).roundToInt()
+                    val imeHeightDp = keyboardHeightDp(act, currentInsets)
 
                     if (showingKeyboard) {
                         eventSink?.success(mapOf("type" to "didShow", "height" to imeHeightDp))

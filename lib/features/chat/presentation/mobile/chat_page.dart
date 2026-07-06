@@ -233,13 +233,17 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
     }
   }
 
-  /// The keyboard inset as measured by Flutter itself (logical pixels), or
-  /// null when the engine hasn't received a non-zero inset yet.
+  /// The keyboard height above the navigation bar as measured by Flutter
+  /// itself (logical pixels) — `viewInsets − viewPadding`, the same
+  /// nav-bar-excluded convention the native plugin reports — or null when the
+  /// engine hasn't received a non-zero inset yet.
   double? _flutterImeInset() {
     final views = WidgetsBinding.instance.platformDispatcher.views;
     if (views.isEmpty) return null;
     final view = views.first;
-    final bottom = view.viewInsets.bottom / view.devicePixelRatio;
+    final bottom =
+        (view.viewInsets.bottom - view.viewPadding.bottom) /
+        view.devicePixelRatio;
     return bottom > 0 ? bottom : null;
   }
 
@@ -255,7 +259,9 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
       final views = WidgetsBinding.instance.platformDispatcher.views;
       if (views.isEmpty) return;
       final view = views.first;
-      final rawBottom = view.viewInsets.bottom / view.devicePixelRatio;
+      final rawBottom =
+          (view.viewInsets.bottom - view.viewPadding.bottom) /
+          view.devicePixelRatio;
 
       if (rawBottom < 1 && _keyboardHeight > 0) {
         // Keyboard is gone but we still think it's open — missed hide event.
@@ -304,12 +310,13 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
     // visible gap — matching the original's `position: fixed; bottom:
     // var(--keyboard-height)`.
     final keyboardActive = isTopRoute && _keyboardHeight > 0;
-    // math.max keeps the composer at the safe-area line while a low
-    // (mid-animation) keyboard height is still below it.
+    // _keyboardHeight excludes the nav bar (QQ convention: ime − navBars), so
+    // it stacks on top of the safe-area padding — correct both edge-to-edge
+    // and when the system already insets the view above the nav bar.
     final bottomOffset = isTopRoute
         ? (keyboardActive
-              ? math.max(_keyboardHeight - 8, viewPadding)
-              : math.max(_keyboardHeight, viewPadding))
+              ? math.max(_keyboardHeight + viewPadding - 8, viewPadding)
+              : viewPadding)
         : viewPadding;
 
     return Column(
