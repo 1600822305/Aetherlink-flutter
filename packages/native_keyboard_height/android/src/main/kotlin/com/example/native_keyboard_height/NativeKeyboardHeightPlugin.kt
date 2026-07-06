@@ -61,6 +61,24 @@ class NativeKeyboardHeightPlugin : FlutterPlugin, ActivityAware, EventChannel.St
         return (heightPx / density).roundToInt()
     }
 
+    /** Event payload with the raw ime/nav readings attached for diagnostics. */
+    private fun payload(
+        type: String,
+        heightDp: Int,
+        act: Activity,
+        insets: WindowInsetsCompat,
+    ): Map<String, Any> {
+        val density = act.resources.displayMetrics.density
+        val imePx = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+        val navPx = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+        return mapOf(
+            "type" to type,
+            "height" to heightDp,
+            "imeDp" to (imePx / density).roundToInt(),
+            "navDp" to (navPx / density).roundToInt(),
+        )
+    }
+
     /** Multi-window / split-screen layouts confuse inset math — skip, like WeChat/QQ. */
     private fun inMultiWindow(act: Activity): Boolean =
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && act.isInMultiWindowMode
@@ -135,7 +153,7 @@ class NativeKeyboardHeightPlugin : FlutterPlugin, ActivityAware, EventChannel.St
                     }
                     if (imeAnimating && !inMultiWindow(act)) {
                         val imeHeightDp = keyboardHeightDp(act, insets)
-                        eventSink?.success(mapOf("type" to "progress", "height" to imeHeightDp))
+                        eventSink?.success(payload("progress", imeHeightDp, act, insets))
                     }
                     return insets
                 }
@@ -159,7 +177,7 @@ class NativeKeyboardHeightPlugin : FlutterPlugin, ActivityAware, EventChannel.St
                     val imeHeightDp = keyboardHeightDp(act, currentInsets)
 
                     if (showingKeyboard) {
-                        eventSink?.success(mapOf("type" to "willShow", "height" to imeHeightDp))
+                        eventSink?.success(payload("willShow", imeHeightDp, act, currentInsets))
                     } else {
                         eventSink?.success(mapOf("type" to "willHide"))
                     }
@@ -179,7 +197,7 @@ class NativeKeyboardHeightPlugin : FlutterPlugin, ActivityAware, EventChannel.St
                     val imeHeightDp = keyboardHeightDp(act, currentInsets)
 
                     if (showingKeyboard) {
-                        eventSink?.success(mapOf("type" to "didShow", "height" to imeHeightDp))
+                        eventSink?.success(payload("didShow", imeHeightDp, act, currentInsets))
                     } else {
                         eventSink?.success(mapOf("type" to "didHide"))
                     }

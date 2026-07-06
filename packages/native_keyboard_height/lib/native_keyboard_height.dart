@@ -34,10 +34,19 @@ class KeyboardEvent {
   const KeyboardEvent({
     required this.type,
     required this.height,
+    this.imeDp,
+    this.navDp,
   });
 
   /// The event phase.
   final KeyboardEventType type;
+
+  /// Diagnostics: the raw IME inset in dp as read natively (before the
+  /// nav-bar subtraction), when the native layer attached it.
+  final double? imeDp;
+
+  /// Diagnostics: the navigation-bar inset in dp as read natively.
+  final double? navDp;
 
   /// The keyboard height in logical pixels (dp on Android, pt on iOS).
   /// The final height for [KeyboardEventType.willShow] / [KeyboardEventType.didShow],
@@ -122,21 +131,29 @@ class NativeKeyboardHeight {
     if (raw is Map) {
       final type = raw['type'] as String?;
       final height = (raw['height'] as num?)?.toDouble() ?? 0.0;
+      final imeDp = (raw['imeDp'] as num?)?.toDouble();
+      final navDp = (raw['navDp'] as num?)?.toDouble();
       switch (type) {
         case 'willShow':
           return KeyboardEvent(
             type: KeyboardEventType.willShow,
             height: height,
+            imeDp: imeDp,
+            navDp: navDp,
           );
         case 'progress':
           return KeyboardEvent(
             type: KeyboardEventType.progress,
             height: height,
+            imeDp: imeDp,
+            navDp: navDp,
           );
         case 'didShow':
           return KeyboardEvent(
             type: KeyboardEventType.didShow,
             height: height,
+            imeDp: imeDp,
+            navDp: navDp,
           );
         case 'willHide':
           return const KeyboardEvent(
