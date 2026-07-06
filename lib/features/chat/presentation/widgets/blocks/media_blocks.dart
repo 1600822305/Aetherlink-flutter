@@ -1,7 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:video_player/video_player.dart';
 
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 
@@ -189,13 +193,138 @@ class ImageBlockGroupView extends StatelessWidget {
   }
 }
 
-/// Renders a `VIDEO` block. Playback needs a video plugin (later slice); for
-/// now this shows the poster (when present) or a placeholder card with a play
-/// glyph and 「播放即将支持」.
-class VideoBlockView extends StatelessWidget {
+/// Renders a `VIDEO` block, mirroring `VideoBlock.tsx`: an inline player
+/// (chewie controls, tap-to-play, fullscreen) capped at 400px like the web's
+/// `<video>`. Sources resolve the same way the web does — an http(s) URL plays
+/// directly; inline base64 (`base64Data` or a `data:` URL) is materialized to
+/// a temp file first since the platform players can't stream data URIs.
+class VideoBlockView extends StatefulWidget {
   const VideoBlockView({required this.block, super.key});
 
   final VideoBlock block;
+
+  @override
+  State<VideoBlockView> createState() => _VideoBlockViewState();
+}
+
+class _VideoBlockViewState extends State<VideoBlockView> {
+  VideoPlayerController? _videoController;
+  ChewieController? _chewieController;
+  bool _error = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  @override
+  void dispose() {
+    _chewieController?.dispose();
+    _videoController?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _init() async {
+    try {
+      final controller = await _createController(widget.block);
+      if (controller == null) {
+        if (mounted) setState(() => _error = true);
+        return;
+      }
+      await controller.initialize();
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      _videoController = controller;
+      _chewieController = ChewieController(
+        videoPlayerController: controller,
+        autoPlay: false,
+        looping: false,
+        aspectRatio: controller.value.aspectRatio == 0
+            ? 16 / 9
+            : controller.value.aspectRatio,
+      );
+      setState(() {});
+    } catch (_) {
+      if (mounted) setState(() => _error = true);
+    }
+  }
+
+  static Future<VideoPlayerController?> _createController(
+    VideoBlock block,
+  ) async {
+    final url = block.url;
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return VideoPlayerController.networkUrl(Uri.parse(url));
+    }
+    var b64 = block.base64Data;
+    if (b64 == null || b64.isEmpty) {
+      if (url.startsWith('data:')) {
+        final marker = url.indexOf('base64,');
+        if (marker >= 0) b64 = url.substring(marker + 7);
+      }
+    }
+    if (b64 == null || b64.isEmpty) return null;
+    final bytes = base64Decode(b64);
+    final dir = await getTemporaryDirectory();
+    final ext = _extensionFor(block.mimeType);
+    final file = File('${dir.path}/video_block_${block.id}$ext');
+    if (!file.existsSync() || file.lengthSync() != bytes.length) {
+      await file.writeAsBytes(bytes, flush: true);
+    }
+    return VideoPlayerController.file(file);
+  }
+
+  static String _extensionFor(String mimeType) => switch (mimeType) {
+    'video/webm' => '.webm',
+    'video/quicktime' => '.mov',
+    'video/x-matroska' => '.mkv',
+    _ => '.mp4',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    if (_error) return const _VideoError();
+    final chewie = _chewieController;
+    if (chewie == null) {
+      return Container(
+        height: 160,
+        width: double.infinity,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.black87,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Colors.white70,
+          ),
+        ),
+      );
+    }
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 400),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: ColoredBox(
+          color: Colors.black,
+          child: AspectRatio(
+            aspectRatio: chewie.aspectRatio ?? 16 / 9,
+            child: Chewie(controller: chewie),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VideoError extends StatelessWidget {
+  const _VideoError();
 
   @override
   Widget build(BuildContext context) {
@@ -205,17 +334,22 @@ class VideoBlockView extends StatelessWidget {
       width: double.infinity,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: Colors.black87,
+        color: Colors.black.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(LucideIcons.play, color: Colors.white, size: 32),
-          const SizedBox(height: 6),
+          Icon(
+            LucideIcons.circleAlert,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(height: 4),
           Text(
-            '视频 · 播放即将支持',
-            style: theme.textTheme.labelSmall?.copyWith(color: Colors.white70),
+            '视频加载失败',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),

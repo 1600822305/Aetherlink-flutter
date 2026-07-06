@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_s
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/chart_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/code_block/code_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/data_blocks.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/media_blocks.dart';

@@ -656,38 +656,6 @@ class CitationBlockView extends StatelessWidget {
   }
 }
 
-/// Renders a `CHART` block. Chart rendering needs a charting dependency (later
-/// slice); for now this shows a placeholder card labelled with the chart type.
-class ChartBlockView extends StatelessWidget {
-  const ChartBlockView({required this.block, super.key});
-
-  final ChartBlock block;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return _card(
-      context,
-      child: Row(
-        children: [
-          Icon(
-            LucideIcons.chartColumn,
-            size: 16,
-            color: theme.colorScheme.primary,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            '图表（${block.chartType.name}）· 即将支持',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// Renders a legacy `KNOWLEDGE_REFERENCE` block, mirroring
 /// `KnowledgeReferenceBlock.tsx`: the reference content with its source and
 /// similarity score.
