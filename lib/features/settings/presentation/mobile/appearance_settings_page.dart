@@ -11,7 +11,6 @@ import 'package:aetherlink_flutter/features/settings/application/theme_mode_cont
 import 'package:aetherlink_flutter/features/settings/domain/app_theme_mode.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/font_picker.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
-import 'package:aetherlink_flutter/features/theming/presentation/mobile/theme_style_settings_page.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 
 /// The "外观设置" second-level page (hub "外观" → this page), originally a 1:1
@@ -363,28 +362,23 @@ class _CardHeader extends StatelessWidget {
   }
 }
 
-/// The "主题风格" card on the 主题字体 tab: the preset selector grid
-/// ([ThemeStyleSelector]) inside the tab's standard card chrome, so the style
-/// choice lives together with 主题/字体 instead of under 界面定制.
+/// The "主题风格" card on the 主题字体 tab: an entry row that navigates to the
+/// standalone theme-style page, so the style choice lives together with
+/// 主题/字体 instead of under 界面定制.
 class _ThemeStyleCard extends StatelessWidget {
   const _ThemeStyleCard();
 
-  static const String _title = '主题风格';
-  static const String _description = '选择应用的整体设计风格和色彩主题';
+  static const _CustomizationItem _entry = _CustomizationItem(
+    icon: LucideIcons.palette,
+    accent: Color(0xFF9333EA), // purple
+    title: '主题风格',
+    description: '选择应用的整体设计风格和色彩主题',
+    route: AppRouter.themeStyleSettingsPath,
+  );
 
   @override
   Widget build(BuildContext context) {
-    return const _AppearanceCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _CardHeader(title: _title, description: _description),
-          Divider(height: 1, thickness: 1),
-          Padding(padding: EdgeInsets.all(14), child: ThemeStyleSelector()),
-        ],
-      ),
-    );
+    return const _AppearanceCard(child: _CustomizationRow(item: _entry));
   }
 }
 
