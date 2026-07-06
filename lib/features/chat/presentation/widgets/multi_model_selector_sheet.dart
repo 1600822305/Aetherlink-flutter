@@ -50,7 +50,12 @@ class _MultiModelSelectorSheetState
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final providersAsync = ref.watch(appModelProvidersProvider);
-    final providers = providersAsync.value ?? const <ModelProvider>[];
+    // Only enabled providers are offered, matching web `useModelSelection`'s
+    // `provider.isEnabled` gate.
+    final providers = [
+      for (final p in providersAsync.value ?? const <ModelProvider>[])
+        if (p.isEnabled) p,
+    ];
     final mq = MediaQuery.of(context);
 
     return SafeArea(

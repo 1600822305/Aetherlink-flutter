@@ -168,16 +168,18 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
     final providers = providersAsync.value ?? const [];
     final current = currentAsync.value;
 
-    // availableModels: every model, in provider-defined order, tagged with its
-    // vendor. (Parent passes enabled models flattened; mirror that here.) When
-    // a [filter] is supplied, models failing it are dropped — this is how the
-    // chat selector hides embedding/rerank/生成类模型 (see Cherry Studio's
-    // `ModelSelector` `filter` prop).
+    // availableModels: every enabled provider's models, in provider-defined
+    // order, tagged with their vendor — disabled providers are hidden, like
+    // the web `ModelSelector`'s `provider.isEnabled` gate. When a [filter] is
+    // supplied, models failing it are dropped — this is how the chat selector
+    // hides embedding/rerank/生成类模型 (see Cherry Studio's `ModelSelector`
+    // `filter` prop).
     final filter = widget.filter;
     final available = <_Entry>[
       for (final p in providers)
-        for (final m in p.models)
-          if (filter == null || filter(m)) _Entry(p, m),
+        if (p.isEnabled)
+          for (final m in p.models)
+            if (filter == null || filter(m)) _Entry(p, m),
     ];
 
     // groupedModels(): models grouped by vendor + the ordered vendor list of
