@@ -3,7 +3,7 @@
 ///
 /// This is the Flutter equivalent of Capacitor's `keyboardWillShow` /
 /// `keyboardWillHide` events, ported 1:1 from `capacitor-edge-to-edge`.
-library native_keyboard_height;
+library;
 
 import 'dart:async';
 import 'package:flutter/services.dart';
@@ -13,6 +13,11 @@ enum KeyboardEventType {
   /// Fires **before** the keyboard animation starts (≈ keyboardWillShow).
   /// [KeyboardEvent.height] is the **final** keyboard height.
   willShow,
+
+  /// Fires every animation frame with the interpolated IME height —
+  /// frame-synced with the OS keyboard animation, so layout can track the
+  /// IME's top edge exactly (WeChat/QQ-style pan).
+  progress,
 
   /// Fires **after** the keyboard animation completes (≈ keyboardDidShow).
   didShow,
@@ -35,7 +40,8 @@ class KeyboardEvent {
   final KeyboardEventType type;
 
   /// The keyboard height in logical pixels (dp on Android, pt on iOS).
-  /// Non-zero for [KeyboardEventType.willShow] and [KeyboardEventType.didShow],
+  /// The final height for [KeyboardEventType.willShow] / [KeyboardEventType.didShow],
+  /// the current interpolated height for [KeyboardEventType.progress],
   /// always 0 for hide events.
   final double height;
 
@@ -95,7 +101,9 @@ class NativeKeyboardHeight {
     _channel.receiveBroadcastStream().listen(
       (dynamic raw) {
         final event = _parse(raw);
-        if (event.visible) {
+        if (event.type == KeyboardEventType.progress) {
+          currentHeight = event.height;
+        } else if (event.visible) {
           currentHeight = event.height;
         } else {
           currentHeight = 0;
@@ -117,14 +125,29 @@ class NativeKeyboardHeight {
       switch (type) {
         case 'willShow':
           return KeyboardEvent(
-              type: KeyboardEventType.willShow, height: height);
+            type: KeyboardEventType.willShow,
+            height: height,
+          );
+        case 'progress':
+          return KeyboardEvent(
+            type: KeyboardEventType.progress,
+            height: height,
+          );
         case 'didShow':
           return KeyboardEvent(
-              type: KeyboardEventType.didShow, height: height);
+            type: KeyboardEventType.didShow,
+            height: height,
+          );
         case 'willHide':
-          return KeyboardEvent(type: KeyboardEventType.willHide, height: 0);
+          return const KeyboardEvent(
+            type: KeyboardEventType.willHide,
+            height: 0,
+          );
         case 'didHide':
-          return KeyboardEvent(type: KeyboardEventType.didHide, height: 0);
+          return const KeyboardEvent(
+            type: KeyboardEventType.didHide,
+            height: 0,
+          );
       }
     }
     return const KeyboardEvent(type: KeyboardEventType.didHide, height: 0);

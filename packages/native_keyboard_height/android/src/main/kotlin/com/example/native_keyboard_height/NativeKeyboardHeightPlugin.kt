@@ -24,6 +24,7 @@ import kotlin.math.roundToInt
  *
  * Events sent via [EventChannel]:
  *   {type: "willShow", height: <int dp>}
+ *   {type: "progress", height: <int dp>}   // per animation frame, frame-synced
  *   {type: "didShow",  height: <int dp>}
  *   {type: "willHide"}
  *   {type: "didHide"}
@@ -89,10 +90,26 @@ class NativeKeyboardHeightPlugin : FlutterPlugin, ActivityAware, EventChannel.St
             rootView,
             object : WindowInsetsAnimationCompat.Callback(DISPATCH_MODE_STOP) {
 
+                /**
+                 * Fires every animation frame with the interpolated insets —
+                 * the same signal native apps (WeChat/QQ) use to pan their
+                 * content in exact sync with the IME's top edge.
+                 */
                 override fun onProgress(
                     insets: WindowInsetsCompat,
                     runningAnimations: List<WindowInsetsAnimationCompat>,
-                ): WindowInsetsCompat = insets
+                ): WindowInsetsCompat {
+                    val imeAnimating = runningAnimations.any {
+                        it.typeMask and WindowInsetsCompat.Type.ime() != 0
+                    }
+                    if (imeAnimating) {
+                        val imeHeightPx = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+                        val density = act.resources.displayMetrics.density
+                        val imeHeightDp = (imeHeightPx / density).roundToInt()
+                        eventSink?.success(mapOf("type" to "progress", "height" to imeHeightDp))
+                    }
+                    return insets
+                }
 
                 /**
                  * Fires **before** the keyboard animation starts.

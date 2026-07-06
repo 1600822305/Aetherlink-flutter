@@ -179,6 +179,13 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
   /// Subscription to native keyboard events.
   StreamSubscription<KeyboardEvent>? _keyboardSub;
 
+  /// Whether frame-synced progress events arrived for the current transition.
+  bool _sawProgress = false;
+
+  /// Snaps to the final height if no progress events arrive (OEM devices
+  /// where WindowInsetsAnimationCompat doesn't dispatch onProgress).
+  Timer? _snapTimer;
+
   /// Debounce timer for the didChangeMetrics fallback — avoids acting on
   /// intermediate animation frames.
   Timer? _fallbackTimer;
@@ -196,29 +203,50 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
   @override
   void dispose() {
     _fallbackTimer?.cancel();
+    _snapTimer?.cancel();
     _keyboardSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  /// Called by the native plugin. Layout updates only on the "will" events
-  /// (before the OS animation starts), matching the original KeyboardManager.
+  /// Called by the native plugin. Layout is driven by the frame-synced
+  /// progress events, so the composer tracks the IME's top edge exactly — the
+  /// WeChat/QQ-style pan where content and keyboard move as one. The "will"
+  /// events only arm a fallback snap for devices whose insets animation does
+  /// not dispatch progress; the "did" events settle the final height.
   void _onKeyboardEvent(KeyboardEvent event) {
     if (!mounted) return;
     // Cancel any pending fallback — the plugin is authoritative.
     _fallbackTimer?.cancel();
     switch (event.type) {
-      case KeyboardEventType.willShow:
+      case KeyboardEventType.progress:
+        _sawProgress = true;
+        _snapTimer?.cancel();
         if ((event.height - _keyboardHeight).abs() > 0.5) {
           setState(() => _keyboardHeight = event.height);
         }
+      case KeyboardEventType.willShow:
       case KeyboardEventType.willHide:
-        if (_keyboardHeight != 0) {
-          setState(() => _keyboardHeight = 0);
-        }
+        _sawProgress = false;
+        final target = event.type == KeyboardEventType.willShow
+            ? event.height
+            : 0.0;
+        _snapTimer?.cancel();
+        _snapTimer = Timer(const Duration(milliseconds: 100), () {
+          if (!mounted || _sawProgress) return;
+          if ((target - _keyboardHeight).abs() > 0.5) {
+            setState(() => _keyboardHeight = target);
+          }
+        });
       case KeyboardEventType.didShow:
       case KeyboardEventType.didHide:
-        break;
+        _snapTimer?.cancel();
+        final settled = event.type == KeyboardEventType.didShow
+            ? event.height
+            : 0.0;
+        if ((settled - _keyboardHeight).abs() > 0.5) {
+          setState(() => _keyboardHeight = settled);
+        }
     }
   }
 
@@ -282,9 +310,11 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
     // visible gap — matching the original's `position: fixed; bottom:
     // var(--keyboard-height)`.
     final keyboardActive = isTopRoute && _keyboardHeight > 0;
+    // math.max keeps the composer at the safe-area line while a low
+    // (mid-animation) keyboard height is still below it.
     final bottomOffset = isTopRoute
         ? (keyboardActive
-              ? _keyboardHeight - 8
+              ? math.max(_keyboardHeight - 8, viewPadding)
               : math.max(_keyboardHeight, viewPadding))
         : viewPadding;
 
