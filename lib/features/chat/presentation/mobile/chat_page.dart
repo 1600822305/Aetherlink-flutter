@@ -176,10 +176,6 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
   /// Current keyboard height applied to layout (logical pixels).
   double _keyboardHeight = 0;
 
-  /// 临时调试：last native event's raw readings, shown in the on-screen
-  /// overlay while diagnosing per-device keyboard-offset drift.
-  String _kbDebug = '';
-
   /// Subscription to native keyboard events.
   StreamSubscription<KeyboardEvent>? _keyboardSub;
 
@@ -221,37 +217,20 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
       case KeyboardEventType.progress:
         break;
       case KeyboardEventType.willShow:
-        setState(() {
-          _keyboardHeight = event.height;
-          _kbDebug = _debugLine('will', event);
-        });
+        if ((event.height - _keyboardHeight).abs() > 0.5) {
+          setState(() => _keyboardHeight = event.height);
+        }
       case KeyboardEventType.didShow:
         final settled = _flutterImeInset() ?? event.height;
-        setState(() {
-          _keyboardHeight = settled;
-          _kbDebug = _debugLine('did', event, settled: settled);
-        });
+        if ((settled - _keyboardHeight).abs() > 0.5) {
+          setState(() => _keyboardHeight = settled);
+        }
       case KeyboardEventType.willHide:
       case KeyboardEventType.didHide:
         if (_keyboardHeight != 0) {
           setState(() => _keyboardHeight = 0);
         }
     }
-  }
-
-  /// 临时调试：formats one line of native + Flutter inset readings.
-  String _debugLine(String phase, KeyboardEvent event, {double? settled}) {
-    final views = WidgetsBinding.instance.platformDispatcher.views;
-    if (views.isEmpty) return '';
-    final view = views.first;
-    final dpr = view.devicePixelRatio;
-    final vi = view.viewInsets.bottom / dpr;
-    final vp = view.viewPadding.bottom / dpr;
-    return '$phase h=${event.height.toStringAsFixed(1)} '
-        'ime=${event.imeDp?.toStringAsFixed(1)} nav=${event.navDp?.toStringAsFixed(1)}\n'
-        'vi=${vi.toStringAsFixed(1)} vp=${vp.toStringAsFixed(1)} '
-        'dpr=${dpr.toStringAsFixed(2)}'
-        '${settled != null ? ' settled=${settled.toStringAsFixed(1)}' : ''}';
   }
 
   /// The keyboard height above the navigation bar as measured by Flutter
@@ -373,28 +352,6 @@ class _ChatBodyState extends State<_ChatBody> with WidgetsBindingObserver {
                     ),
                   ),
                 ),
-                // 临时调试浮层：键盘弹出时显示原生/Flutter 两侧的 inset 读数，
-                // 用于定位个别机型停稳后的贴合偏差，定位完成后移除。
-                if (keyboardActive && _kbDebug.isNotEmpty)
-                  Positioned(
-                    left: 8,
-                    bottom: bottomOffset + _inputHeight + 8,
-                    child: IgnorePointer(
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        color: const Color(0xB3000000),
-                        child: Text(
-                          _kbDebug,
-                          style: const TextStyle(
-                            color: Color(0xFF00FF88),
-                            fontSize: 11,
-                            fontFamily: 'monospace',
-                            height: 1.3,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
                 // 对话导航：右侧呼吸灯 + 上下跳转面板（设置 tab → 对话导航）。
                 if (!widget.isSelecting)
                   const Positioned.fill(child: ChatNavigationOverlay()),
