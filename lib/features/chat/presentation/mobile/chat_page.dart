@@ -828,6 +828,13 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   @override
   void didUpdateWidget(covariant _MessageListView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Keyboard show/hide (or the composer growing) changes the bottom reserve;
+    // pan the content by the same delta so what was visible above the composer
+    // stays visible — WeChat-style whole-content shift.
+    final reserveDelta = widget.bottomReserve - oldWidget.bottomReserve;
+    if (reserveDelta.abs() > 0.5) {
+      _scrollController.pendingAdjust += reserveDelta;
+    }
     final ids = _flatIds;
     final firstId = ids.isEmpty ? null : ids.first;
     final count = ids.length;

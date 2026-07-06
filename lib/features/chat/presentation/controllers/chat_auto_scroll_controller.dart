@@ -14,6 +14,12 @@ class ChatAutoFollowScrollController extends ScrollController {
   /// Checked during layout to decide whether to pin to the bottom.
   bool Function() shouldAutoFollow = () => false;
 
+  /// Pending scroll compensation (px), applied during the next layout pass —
+  /// used to pan the content in the same frame the keyboard reserve changes
+  /// (WeChat-style: the viewport keeps showing the same content, shifted by
+  /// exactly the keyboard height). Positive pans the content up.
+  double pendingAdjust = 0;
+
   @override
   ScrollPosition createScrollPosition(
     ScrollPhysics physics,
@@ -45,6 +51,20 @@ class _AutoFollowScrollPosition extends ScrollPositionWithSingleContext {
       minScrollExtent,
       maxScrollExtent,
     );
+    // Keyboard-reserve compensation: shift the content by the reserve delta in
+    // the same layout pass, so the messages visible above the composer stay
+    // anchored to it while the keyboard shows/hides.
+    if (controller.pendingAdjust != 0) {
+      final target = (pixels + controller.pendingAdjust).clamp(
+        this.minScrollExtent,
+        this.maxScrollExtent,
+      );
+      controller.pendingAdjust = 0;
+      if ((target - pixels).abs() > 0.5) {
+        correctPixels(target);
+        return false; // Re-run layout with the corrected position.
+      }
+    }
     // Guard on userScrollDirection (updated by the scroll activity, earlier than
     // any controller listener): correcting pixels mid-drag would override the
     // user's scroll for one frame and feel "stuck / can't scroll up".
