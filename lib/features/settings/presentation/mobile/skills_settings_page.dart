@@ -182,16 +182,20 @@ class _SkillsSettingsPageState extends ConsumerState<SkillsSettingsPage>
   /// Writes the whole library to a temp JSON file and opens the share sheet
   /// (port of 导出全部).
   Future<void> _exportAll() async {
-    final fs = ref.read(fileSystemApiProvider);
-    final doc = _skills.exportToJson();
-    final dir = await fs.temporaryDirectoryPath();
-    final path =
-        '$dir/aetherlink-skills-${DateTime.now().millisecondsSinceEpoch}.json';
-    await fs.writeAsString(
-      path,
-      const JsonEncoder.withIndent('  ').convert(doc),
-    );
-    await ref.read(shareApiProvider).shareFiles([path], subject: '技能库导出');
+    try {
+      final fs = ref.read(fileSystemApiProvider);
+      final doc = _skills.exportToJson();
+      final dir = await fs.temporaryDirectoryPath();
+      final path =
+          '$dir/aetherlink-skills-${DateTime.now().millisecondsSinceEpoch}.json';
+      await fs.writeAsString(
+        path,
+        const JsonEncoder.withIndent('  ').convert(doc),
+      );
+      await ref.read(shareApiProvider).shareFiles([path], subject: '技能库导出');
+    } catch (e) {
+      if (mounted) _toast('导出失败：$e');
+    }
   }
 
   Future<void> _bind(Skill skill) async {
@@ -209,7 +213,9 @@ class _SkillsSettingsPageState extends ConsumerState<SkillsSettingsPage>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final all = ref.watch(skillsProvider).asData?.value ?? const <Skill>[];
+    // `value` (not `asData`) so a 刷新-triggered rebuild keeps showing the
+    // previous library instead of flashing the empty state.
+    final all = ref.watch(skillsProvider).value ?? const <Skill>[];
     // Single-pass split + enabled count.
     final builtin = <Skill>[];
     final custom = <Skill>[];

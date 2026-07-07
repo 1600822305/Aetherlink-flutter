@@ -149,8 +149,10 @@ class Skills extends _$Skills {
   }
 
   /// Imports skills from an export document (port of `SkillManager.importSkills`).
-  /// Every imported skill is forced to `source: user`, enabled, with a fresh id
-  /// to avoid collisions; malformed entries are skipped, not fatal.
+  /// Every imported skill is forced to `source: user` with a fresh id to avoid
+  /// collisions; malformed entries are skipped, not fatal. Imported skills stay
+  /// enabled only while the [kMaxEnabledSkills] budget lasts — the rest come in
+  /// disabled, matching what the toggle enforces.
   Future<SkillImportResult> importFromJson(String raw) async {
     final decoded = jsonDecode(raw);
     final list = decoded is Map<String, dynamic> ? decoded['skills'] : decoded;
@@ -161,6 +163,8 @@ class Skills extends _$Skills {
     final now = DateTime.now().toUtc().toIso8601String();
     final added = <Skill>[];
     var skipped = 0;
+    var enabledBudget =
+        kMaxEnabledSkills - _current.where((s) => s.enabled).length;
     for (final entry in list) {
       try {
         if (entry is! Map<String, dynamic>) {
@@ -171,7 +175,7 @@ class Skills extends _$Skills {
           parsed.copyWith(
             id: generateId('skill'),
             source: SkillSource.user,
-            enabled: true,
+            enabled: enabledBudget-- > 0,
             createdAt: now,
             updatedAt: now,
           ),
@@ -218,17 +222,27 @@ class Skills extends _$Skills {
           .firstOrNull;
       if (latest == null || latest.version == existing.version) return existing;
       upgraded++;
-      return latest.copyWith(enabled: existing.enabled, updatedAt: now);
+      return latest.copyWith(
+        enabled: existing.enabled,
+        usageCount: existing.usageCount,
+        lastUsedAt: existing.lastUsedAt,
+        createdAt: existing.createdAt,
+        updatedAt: now,
+      );
     }).toList();
     if (upgraded > 0) await _commit(next);
     return upgraded;
   }
 
+  /// Publishes [next] to listeners synchronously, *then* persists it: rapid
+  /// consecutive mutations (e.g. flipping two switches back to back) each
+  /// compute from the freshest list instead of racing the storage write and
+  /// losing the earlier change.
   Future<void> _commit(List<Skill> next) async {
+    state = AsyncData<List<Skill>>(next);
     await ref
         .read(appSettingsStoreProvider)
         .saveSetting(kSkillsSettingKey, _encode(next));
-    state = AsyncData<List<Skill>>(next);
   }
 
   static String _encode(List<Skill> skills) =>
