@@ -68,10 +68,12 @@ enum SettingsLayoutMode {
 }
 
 /// 对话导航 (`settings.messageNavigation`): `none` 不显示（默认）；`buttons` 显示上下
-/// 按钮快速跳转。
+/// 按钮快速跳转；`always` 导航面板常驻右侧（Flutter 特有，免呼出手势，
+/// 适配全面屏手势与右边缘返回冲突的场景）。
 enum MessageNavigation {
   none('none', '不显示'),
-  buttons('buttons', '上下按钮');
+  buttons('buttons', '上下按钮'),
+  always('always', '常驻显示');
 
   const MessageNavigation(this.id, this.label);
 
