@@ -218,7 +218,7 @@ class _ChatNavigationOverlayState extends ConsumerState<ChatNavigationOverlay>
 
 /// The slim breathing strip on the right edge with a generous invisible hit
 /// area, so the tap / left-swipe reveal is easy to trigger.
-class _PulseIndicator extends StatelessWidget {
+class _PulseIndicator extends StatefulWidget {
   const _PulseIndicator({
     super.key,
     required this.opacity,
@@ -234,6 +234,13 @@ class _PulseIndicator extends StatelessWidget {
   final VoidCallback onReveal;
 
   @override
+  State<_PulseIndicator> createState() => _PulseIndicatorState();
+}
+
+class _PulseIndicatorState extends State<_PulseIndicator> {
+  double _dragDx = 0;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Semantics(
@@ -241,21 +248,31 @@ class _PulseIndicator extends StatelessWidget {
       label: '显示对话导航',
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onReveal,
+        onTap: widget.onReveal,
+        // 左滑触发对齐 web（累计滑动 ≥50px 即可，不要求甩动手速）；web 版
+        // 还接受快速轻扫，所以松手时速度够快也触发。
+        onHorizontalDragStart: (_) => _dragDx = 0,
+        onHorizontalDragUpdate: (details) {
+          _dragDx += details.delta.dx;
+          if (_dragDx <= -50) {
+            _dragDx = 0;
+            widget.onReveal();
+          }
+        },
         onHorizontalDragEnd: (details) {
-          if ((details.primaryVelocity ?? 0) < -100) onReveal();
+          if ((details.primaryVelocity ?? 0) < -100) widget.onReveal();
         },
         child: SizedBox(
-          width: 28,
-          height: 140,
+          width: 56,
+          height: 160,
           child: Align(
             alignment: Alignment.centerRight,
             child: FadeTransition(
-              opacity: opacity,
+              opacity: widget.opacity,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 width: 5,
-                height: compact ? 60 : 100,
+                height: widget.compact ? 60 : 100,
                 decoration: BoxDecoration(
                   color: theme.colorScheme.primary,
                   borderRadius: const BorderRadius.horizontal(
