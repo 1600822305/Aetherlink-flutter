@@ -51,6 +51,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/top_too
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search_settings_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search/add_search_provider_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search/search_provider_detail_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search/search_multi_key_page.dart';
 import 'package:aetherlink_flutter/features/theming/presentation/mobile/theme_style_settings_page.dart';
 import 'package:aetherlink_flutter/features/voice/presentation/mobile/voice_settings_page.dart';
 import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
@@ -99,6 +100,8 @@ abstract final class AppRouter {
   static const String addSearchProviderPath = '/settings/web-search/add';
   static String searchProviderDetailPath(String providerId) =>
       '/settings/web-search/provider/$providerId';
+  static String searchProviderMultiKeyPath(String providerId) =>
+      '/settings/web-search/provider/$providerId/multi-key';
   static const String modelComboPath = '/settings/model-combo';
   static const String networkProxyPath = '/settings/network-proxy';
   static const String behaviorPath = '/settings/behavior';
@@ -291,6 +294,16 @@ abstract final class AppRouter {
         pageBuilder: (context, state) => _instant(
           state,
           SearchProviderDetailPage(
+            providerId: state.pathParameters['providerId'] ?? '',
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/settings/web-search/provider/:providerId/multi-key',
+        name: 'search-provider-multi-key',
+        pageBuilder: (context, state) => _instant(
+          state,
+          SearchMultiKeyPage(
             providerId: state.pathParameters['providerId'] ?? '',
           ),
         ),

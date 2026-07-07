@@ -1,7 +1,14 @@
 import 'package:flutter/foundation.dart';
 
+import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
+
 /// A single search-provider configuration — the Flutter port of the web's
 /// `WebSearchProviderConfig`. Each provider the user adds gets one of these.
+///
+/// Like [ModelProvider], a provider can carry a multi-key pool ([apiKeys] +
+/// [keyManagement]) on top of the single [apiKey]: when the pool is non-empty
+/// and `keyManagement.enabled` is true the search layer strategy-selects a key
+/// per request via `ApiKeyManager`; otherwise the single [apiKey] is used.
 @immutable
 class SearchProviderConfig {
   const SearchProviderConfig({
@@ -10,6 +17,8 @@ class SearchProviderConfig {
     this.apiHost = '',
     this.apiKey = '',
     this.isEnabled = true,
+    this.apiKeys = const [],
+    this.keyManagement,
   });
 
   factory SearchProviderConfig.fromJson(Map<String, dynamic> json) =>
@@ -19,6 +28,15 @@ class SearchProviderConfig {
         apiHost: json['apiHost'] as String? ?? '',
         apiKey: json['apiKey'] as String? ?? '',
         isEnabled: json['isEnabled'] as bool? ?? true,
+        apiKeys: (json['apiKeys'] as List<dynamic>?)
+                ?.map((e) => ApiKeyConfig.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
+        keyManagement: json['keyManagement'] == null
+            ? null
+            : KeyManagementConfig.fromJson(
+                json['keyManagement'] as Map<String, dynamic>,
+              ),
       );
 
   final String id;
@@ -27,12 +45,20 @@ class SearchProviderConfig {
   final String apiKey;
   final bool isEnabled;
 
+  /// Multi-key pool; empty means single-key mode.
+  final List<ApiKeyConfig> apiKeys;
+
+  /// Load-balancing strategy for [apiKeys]; `null` falls back to defaults.
+  final KeyManagementConfig? keyManagement;
+
   SearchProviderConfig copyWith({
     String? id,
     String? name,
     String? apiHost,
     String? apiKey,
     bool? isEnabled,
+    List<ApiKeyConfig>? apiKeys,
+    KeyManagementConfig? keyManagement,
   }) =>
       SearchProviderConfig(
         id: id ?? this.id,
@@ -40,6 +66,8 @@ class SearchProviderConfig {
         apiHost: apiHost ?? this.apiHost,
         apiKey: apiKey ?? this.apiKey,
         isEnabled: isEnabled ?? this.isEnabled,
+        apiKeys: apiKeys ?? this.apiKeys,
+        keyManagement: keyManagement ?? this.keyManagement,
       );
 
   Map<String, dynamic> toJson() => {
@@ -48,6 +76,9 @@ class SearchProviderConfig {
         'apiHost': apiHost,
         'apiKey': apiKey,
         'isEnabled': isEnabled,
+        if (apiKeys.isNotEmpty)
+          'apiKeys': apiKeys.map((k) => k.toJson()).toList(),
+        if (keyManagement != null) 'keyManagement': keyManagement!.toJson(),
       };
 
   @override
@@ -58,10 +89,20 @@ class SearchProviderConfig {
           other.name == name &&
           other.apiHost == apiHost &&
           other.apiKey == apiKey &&
-          other.isEnabled == isEnabled;
+          other.isEnabled == isEnabled &&
+          listEquals(other.apiKeys, apiKeys) &&
+          other.keyManagement == keyManagement;
 
   @override
-  int get hashCode => Object.hash(id, name, apiHost, apiKey, isEnabled);
+  int get hashCode => Object.hash(
+        id,
+        name,
+        apiHost,
+        apiKey,
+        isEnabled,
+        Object.hashAll(apiKeys),
+        keyManagement,
+      );
 }
 
 /// The default search provider seeded for every fresh install: SearXNG needs

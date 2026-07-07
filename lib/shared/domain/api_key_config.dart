@@ -4,11 +4,9 @@ part 'api_key_config.freezed.dart';
 part 'api_key_config.g.dart';
 
 /// Per-key usage counters. Translation of `ApiKeyConfig['usage']`
-/// (`src/shared/config/defaultModels.ts`). Persisted so the multi-key UI can
-/// surface request/success/failure stats, but **not yet populated**: the
-/// request layer (`LlmGateway`) still authenticates with the single
-/// [ModelProvider.apiKey], so these stay at their defaults until multi-key
-/// scheduling is wired (界面标注「调度即将支持」).
+/// (`src/shared/config/defaultModels.ts`). Updated by `ApiKeyManager` after
+/// every request through the pool and persisted, so the multi-key UI's
+/// request/success/failure stats reflect real traffic.
 @freezed
 abstract class ApiKeyUsage with _$ApiKeyUsage {
   const factory ApiKeyUsage({
@@ -28,9 +26,10 @@ abstract class ApiKeyUsage with _$ApiKeyUsage {
 /// page lists / edits these.
 ///
 /// [status] mirrors the original union (`active` | `disabled` | `error` |
-/// `rate_limited`) and [priority] is `1..10` (lower = higher priority). Carried
-/// for UI + persistence; the scheduling runtime that consumes them (round-robin
-/// / quota) is not yet ported — see [KeyManagementConfig].
+/// `rate_limited`) and [priority] is `1..10` (lower = higher priority).
+/// Consumed at request time by `ApiKeyManager`, which strategy-selects a
+/// usable key per request and advances these fields — see
+/// [KeyManagementConfig].
 @freezed
 abstract class ApiKeyConfig with _$ApiKeyConfig {
   const factory ApiKeyConfig({
@@ -55,8 +54,8 @@ abstract class ApiKeyConfig with _$ApiKeyConfig {
 /// `keyManagement` (`src/shared/config/defaultModels.ts`).
 ///
 /// [strategy] is the original `LoadBalanceStrategy` union (`round_robin` |
-/// `priority` | `least_used` | `random`). Stored so the manager page can edit
-/// it; the scheduler that acts on it is 即将支持.
+/// `priority` | `least_used` | `random`), applied by `ApiKeyManager` when the
+/// request layer picks a key from the pool.
 @freezed
 abstract class KeyManagementConfig with _$KeyManagementConfig {
   const factory KeyManagementConfig({

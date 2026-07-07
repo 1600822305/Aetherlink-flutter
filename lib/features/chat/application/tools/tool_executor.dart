@@ -9,6 +9,9 @@ import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/core/error/failure.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
 import 'package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/web_search_settings.dart';
+import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
+import 'package:aetherlink_flutter/shared/domain/api_key_manager.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
@@ -321,14 +324,92 @@ class ChatToolExecutor {
       );
     }
 
-    return WebSearchService.search(
-      config: config,
-      query: query,
-      maxResults: (args['maxResults'] as int?) ?? ws.maxResults,
-      timeout: ws.timeout,
-      language: (args['language'] as String?) ?? ws.language,
-      categories: (args['categories'] as String?) ?? ws.categories,
-    );
+    final maxResults = (args['maxResults'] as int?) ?? ws.maxResults;
+    final language = (args['language'] as String?) ?? ws.language;
+    final categories = (args['categories'] as String?) ?? ws.categories;
+
+    Future<McpToolResult> searchWith(SearchProviderConfig c) =>
+        WebSearchService.search(
+          config: c,
+          query: query,
+          maxResults: maxResults,
+          timeout: ws.timeout,
+          language: language,
+          categories: categories,
+        );
+
+    // Multi-key load balancing + failover, mirroring the chat request layer
+    // (`ChatController._streamInto`): with a pool each attempt strategy-selects
+    // a usable key via [ApiKeyManager], a failed attempt fails over to the next
+    // key, and per-key usage/status is persisted so the 多 Key 管理 stats
+    // reflect real traffic. With no pool (or 单 Key 模式) this collapses to a
+    // single attempt on the provider's own key.
+    final keyPool = config.apiKeys;
+    final keyConfig = config.keyManagement;
+    final useKeyPool = keyPool.isNotEmpty && (keyConfig?.enabled ?? true);
+    if (!useKeyPool) return searchWith(config);
+
+    final keyManager = ApiKeyManager.instance;
+    final keyStrategy = keyConfig?.strategy ?? 'round_robin';
+    final workingKeys = List<ApiKeyConfig>.of(keyPool);
+    final failedKeyIds = <String>{};
+    final keyUpdates = <String, ApiKeyConfig>{};
+
+    void persistKeyUpdates() {
+      if (keyUpdates.isEmpty) return;
+      _ref
+          .read(webSearchSettingsControllerProvider.notifier)
+          .mergeProviderApiKeys(config.id, keyUpdates.values.toList());
+    }
+
+    void recordKeyOutcome(int index, {required bool success, String? error}) {
+      final updated = keyManager.updateKeyStatus(
+        workingKeys[index],
+        success: success,
+        config: keyConfig,
+        error: error,
+      );
+      workingKeys[index] = updated;
+      keyUpdates[updated.id] = updated;
+    }
+
+    McpToolResult? lastResult;
+    final hasSingleKeyFallback = config.apiKey.trim().isNotEmpty;
+    // Every pool key gets at most one try per search, plus one trailing slot
+    // for the single-key fallback when the whole pool is unusable.
+    final maxAttempts = workingKeys.length + 1;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      final selected = keyManager.selectApiKey(
+        workingKeys,
+        keyStrategy,
+        excludeIds: failedKeyIds,
+        config: keyConfig,
+      );
+      if (selected == null) {
+        // Pool exhausted — fall back to the provider's single key once.
+        if (hasSingleKeyFallback) lastResult = await searchWith(config);
+        break;
+      }
+      final index = workingKeys.indexWhere((k) => k.id == selected.id);
+      final result = await searchWith(config.copyWith(apiKey: selected.key));
+      recordKeyOutcome(
+        index,
+        success: !result.isError,
+        error: result.isError ? result.text : null,
+      );
+      if (!result.isError) {
+        persistKeyUpdates();
+        return result;
+      }
+      lastResult = result;
+      failedKeyIds.add(selected.id);
+    }
+    persistKeyUpdates();
+    return lastResult ??
+        const McpToolResult(
+          '没有可用的搜索 API Key（全部被禁用或处于冷却中）',
+          isError: true,
+        );
   }
 
   /// Executes one `search_memory` call: retrieves the user's long-term memories

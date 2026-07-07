@@ -4,6 +4,7 @@ import 'package:aetherlink_flutter/app/di/json_kv_notifier.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/web_search_settings.dart';
 import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_repository.dart';
+import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
 
 part 'web_search_settings_controller.g.dart';
 
@@ -78,6 +79,21 @@ class WebSearchSettingsController extends _$WebSearchSettingsController
       return p.id == updated.id ? updated : p;
     }).toList();
     persist(state.copyWith(providers: list));
+  }
+
+  /// Merges per-key usage/status changes into [providerId]'s multi-key pool
+  /// (matched by key id), mirroring the model store's `updateApiKeys`. Used by
+  /// the search request layer to record load-balancing stats and cooldowns; a
+  /// no-op when the provider is gone or has no pool.
+  void mergeProviderApiKeys(String providerId, List<ApiKeyConfig> keys) {
+    if (keys.isEmpty) return;
+    final provider =
+        state.providers.where((p) => p.id == providerId).firstOrNull;
+    if (provider == null || provider.apiKeys.isEmpty) return;
+    final byId = {for (final key in keys) key.id: key};
+    updateProvider(provider.copyWith(
+      apiKeys: [for (final key in provider.apiKeys) byId[key.id] ?? key],
+    ));
   }
 
   /// Toggles a provider's enabled state.

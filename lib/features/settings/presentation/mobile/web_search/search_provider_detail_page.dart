@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/web_search_settings.dart';
+import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search/search_provider_catalog.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
@@ -203,20 +205,73 @@ class _SearchProviderDetailPageState
                 ),
                 Divider(height: 1, color: theme.dividerColor),
 
-                // API Key
-                _TextFieldRow(
-                  icon: LucideIcons.key,
-                  accent: const Color(0xFF8B5CF6),
-                  label: 'API 密钥',
-                  description: preset?.needsApiKey == true
-                      ? '此提供商需要 API 密钥'
-                      : '可选，部分提供商无需密钥',
-                  controller: _apiKeyController,
-                  placeholder: 'sk-...',
-                  obscure: _obscureKey,
-                  onToggleObscure: () =>
-                      setState(() => _obscureKey = !_obscureKey),
+                // 多 Key 模式 — 与模型服务商一致：开启后搜索时按策略从 Key 池
+                // 自动选择并故障转移；关闭时仅使用下方单个 API 密钥。
+                _SwitchRow(
+                  icon: LucideIcons.keyRound,
+                  accent: const Color(0xFFEC4899),
+                  label: '多 Key 模式',
+                  description: _useMultiKey(config)
+                      ? '按策略自动选 Key，失败自动切换并冷却'
+                      : '使用单个 API 密钥（传统方式）',
+                  value: _useMultiKey(config),
+                  onChanged: (v) => _setMultiKeyMode(config, v),
                 ),
+                Divider(height: 1, color: theme.dividerColor),
+
+                if (_useMultiKey(config))
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 2,
+                    ),
+                    leading: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF8B5CF6).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        LucideIcons.key,
+                        size: 16,
+                        color: Color(0xFF8B5CF6),
+                      ),
+                    ),
+                    title: Text(
+                      '多 Key 管理（${config.apiKeys.length} 个密钥）',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: Text(
+                      '轮询 / 优先级 / 最少使用 / 随机，失败自动切换并冷却',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontSize: 12,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    trailing: const Icon(LucideIcons.chevronRight, size: 18),
+                    onTap: () => context.push(
+                      AppRouter.searchProviderMultiKeyPath(config.id),
+                    ),
+                  )
+                else
+                  // API Key
+                  _TextFieldRow(
+                    icon: LucideIcons.key,
+                    accent: const Color(0xFF8B5CF6),
+                    label: 'API 密钥',
+                    description: preset?.needsApiKey == true
+                        ? '此提供商需要 API 密钥'
+                        : '可选，部分提供商无需密钥',
+                    controller: _apiKeyController,
+                    placeholder: 'sk-...',
+                    obscure: _obscureKey,
+                    onToggleObscure: () =>
+                        setState(() => _obscureKey = !_obscureKey),
+                  ),
               ],
             ),
           ),
@@ -239,6 +294,37 @@ class _SearchProviderDetailPageState
           const SizedBox(height: 16),
         ],
       ),
+    );
+  }
+
+  bool _useMultiKey(SearchProviderConfig config) =>
+      config.keyManagement?.enabled ?? config.apiKeys.isNotEmpty;
+
+  /// Flips 单/多 Key mode, mirroring the model provider detail page: turning
+  /// multi-key **on** with an empty pool inherits the current single key so
+  /// requests keep working; turning it **off** keeps the pool stored (单 Key
+  /// 模式) so flipping back restores keys and their stats.
+  void _setMultiKeyMode(SearchProviderConfig config, bool enabled) {
+    final notifier = ref.read(webSearchSettingsControllerProvider.notifier);
+    final management =
+        (config.keyManagement ?? const KeyManagementConfig())
+            .copyWith(enabled: enabled);
+    var keys = config.apiKeys;
+    final single = _apiKeyController.text.trim();
+    if (enabled && keys.isEmpty && single.isNotEmpty) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      keys = [
+        ApiKeyConfig(
+          id: '$now',
+          key: single,
+          name: '默认 Key',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      ];
+    }
+    notifier.updateProvider(
+      config.copyWith(apiKeys: keys, keyManagement: management),
     );
   }
 

@@ -11,21 +11,17 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_manager.dart';
-import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 
 /// 多 Key 管理 sub-page — a style-aligned port of the original
 /// `src/components/settings/MultiKeyManager.tsx`. Lists / adds / edits the
-/// provider's `apiKeys` pool and its `keyManagement` load-balancing strategy.
-/// Every mutation persists immediately (no explicit 保存 step): edits merge
-/// into the latest stored pool by key id, so usage stats written by concurrent
-/// requests are never clobbered, and the list re-renders from the store so the
-/// stats stay live.
+/// provider's `apiKeys` pool and its `keyManagement` load-balancing strategy
+/// through the shared [MultiKeyPoolScreen].
 ///
 /// The request layer (`ChatController._streamInto` via `ApiKeyManager`) now
 /// strategy-selects a key from this pool per request, fails over on error and
 /// persists per-key usage/status back here, so the stats below reflect real
 /// traffic.
-class MultiKeyManagementPage extends ConsumerStatefulWidget {
+class MultiKeyManagementPage extends ConsumerWidget {
   const MultiKeyManagementPage({super.key, required this.providerId});
 
   final String providerId;
@@ -33,12 +29,77 @@ class MultiKeyManagementPage extends ConsumerStatefulWidget {
   static const String _title = '多 Key 管理';
 
   @override
-  ConsumerState<MultiKeyManagementPage> createState() =>
-      _MultiKeyManagementPageState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final providerAsync = ref.watch(appModelProviderProvider(providerId));
+
+    return providerAsync.maybeWhen(
+      data: (provider) {
+        if (provider == null) {
+          return const Scaffold(
+            appBar: ModelSettingsAppBar(title: MultiKeyManagementPage._title),
+            body: Center(child: Text('供应商不存在')),
+          );
+        }
+        final store = ref.read(modelStoreProvider.notifier);
+        return MultiKeyPoolScreen(
+          ownerName: provider.name,
+          keys: [...?provider.apiKeys],
+          management: provider.keyManagement ?? const KeyManagementConfig(),
+          onSavePool: (keys) => store.saveProvider(
+            provider.copyWith(apiKeys: keys.isEmpty ? null : keys),
+          ),
+          onSaveKey: (key) =>
+              store.updateApiKeys(providerId: provider.id, keys: [key]),
+          onSaveManagement: (management) =>
+              store.saveProvider(provider.copyWith(keyManagement: management)),
+        );
+      },
+      orElse: () => const Scaffold(
+        appBar: ModelSettingsAppBar(title: MultiKeyManagementPage._title),
+        body: Center(child: CircularProgressIndicator()),
+      ),
+    );
+  }
 }
 
-class _MultiKeyManagementPageState
-    extends ConsumerState<MultiKeyManagementPage> {
+/// The shared 多 Key 管理 screen — owner-agnostic so any feature with an
+/// [ApiKeyConfig] pool (model providers, web-search providers, …) can reuse
+/// it: the owner passes the current pool + strategy and persistence callbacks.
+/// Every mutation persists immediately (no explicit 保存 step): single-key
+/// changes go through [onSaveKey] so concurrent stat writes merge, and the
+/// list re-renders from the caller's store so the stats stay live.
+class MultiKeyPoolScreen extends StatefulWidget {
+  const MultiKeyPoolScreen({
+    super.key,
+    required this.ownerName,
+    required this.keys,
+    required this.management,
+    required this.onSavePool,
+    required this.onSaveKey,
+    required this.onSaveManagement,
+  });
+
+  /// Display name used in the key editor dialog (e.g. the provider's name).
+  final String ownerName;
+
+  final List<ApiKeyConfig> keys;
+  final KeyManagementConfig management;
+
+  /// Persists the full pool (add / delete need a list rewrite).
+  final Future<void> Function(List<ApiKeyConfig> keys) onSavePool;
+
+  /// Persists one changed key, merged into the latest stored pool by id.
+  final Future<void> Function(ApiKeyConfig key) onSaveKey;
+
+  final Future<void> Function(KeyManagementConfig management) onSaveManagement;
+
+  static const String _title = '多 Key 管理';
+
+  @override
+  State<MultiKeyPoolScreen> createState() => _MultiKeyPoolScreenState();
+}
+
+class _MultiKeyPoolScreenState extends State<MultiKeyPoolScreen> {
   String? _pendingDeleteId;
 
   /// Ticks the cooldown countdowns shown on errored / rate-limited keys.
@@ -58,47 +119,17 @@ class _MultiKeyManagementPageState
     super.dispose();
   }
 
-  /// Persists the full pool (add / delete need a list rewrite). Single-key
-  /// changes go through [_saveKey] instead so concurrent stat writes merge.
-  Future<void> _savePool(
-    ModelProvider provider,
-    List<ApiKeyConfig> keys,
-  ) async {
-    await ref
-        .read(modelStoreProvider.notifier)
-        .saveProvider(provider.copyWith(apiKeys: keys.isEmpty ? null : keys));
-  }
-
-  /// Persists one changed key, merged into the latest stored pool by id.
-  Future<void> _saveKey(ModelProvider provider, ApiKeyConfig key) async {
-    await ref
-        .read(modelStoreProvider.notifier)
-        .updateApiKeys(providerId: provider.id, keys: [key]);
-  }
-
-  Future<void> _saveManagement(
-    ModelProvider provider,
-    KeyManagementConfig management,
-  ) async {
-    await ref
-        .read(modelStoreProvider.notifier)
-        .saveProvider(provider.copyWith(keyManagement: management));
-  }
-
-  Future<void> _recoverKey(ModelProvider provider, ApiKeyConfig key) async {
-    await _saveKey(provider, ApiKeyManager.instance.recoverKey(key));
+  Future<void> _recoverKey(ApiKeyConfig key) async {
+    await widget.onSaveKey(ApiKeyManager.instance.recoverKey(key));
     if (mounted) AppToast.success(context, '已恢复');
   }
 
-  Future<void> _addOrEditKey(
-    ModelProvider provider, [
-    ApiKeyConfig? key,
-  ]) async {
-    final keys = [...?provider.apiKeys];
+  Future<void> _addOrEditKey([ApiKeyConfig? key]) async {
+    final keys = widget.keys;
     final result = await showDialog<ApiKeyConfig>(
       context: context,
       builder: (_) => _KeyEditorDialog(
-        providerName: provider.name,
+        providerName: widget.ownerName,
         existing: key,
         siblings: keys,
       ),
@@ -106,15 +137,15 @@ class _MultiKeyManagementPageState
     if (result == null) return;
     setState(() => _pendingDeleteId = null);
     if (keys.any((k) => k.id == result.id)) {
-      await _saveKey(provider, result);
+      await widget.onSaveKey(result);
     } else {
-      await _savePool(provider, [...keys, result]);
+      await widget.onSavePool([...keys, result]);
     }
     if (mounted) AppToast.success(context, '已保存');
   }
 
-  Future<void> _importKeys(ModelProvider provider) async {
-    final existing = [...?provider.apiKeys];
+  Future<void> _importKeys() async {
+    final existing = widget.keys;
     final imported = await showDialog<List<String>>(
       context: context,
       builder: (_) => _BatchImportDialog(
@@ -134,15 +165,15 @@ class _MultiKeyManagementPageState
           updatedAt: now,
         ),
     ];
-    await _savePool(provider, [...existing, ...added]);
+    await widget.onSavePool([...existing, ...added]);
     if (mounted) AppToast.success(context, '已导入 ${added.length} 个 Key');
   }
 
-  Future<void> _deleteKey(ModelProvider provider, String id) async {
+  Future<void> _deleteKey(String id) async {
     if (_pendingDeleteId == id) {
       setState(() => _pendingDeleteId = null);
-      await _savePool(provider, [
-        for (final k in [...?provider.apiKeys])
+      await widget.onSavePool([
+        for (final k in widget.keys)
           if (k.id != id) k,
       ]);
       if (mounted) AppToast.success(context, '已删除');
@@ -151,16 +182,11 @@ class _MultiKeyManagementPageState
     }
   }
 
-  Future<void> _toggleKey(
-    ModelProvider provider,
-    String id,
-    bool enabled,
-  ) async {
+  Future<void> _toggleKey(String id, bool enabled) async {
     setState(() => _pendingDeleteId = null);
-    final key = [...?provider.apiKeys].where((k) => k.id == id).firstOrNull;
+    final key = widget.keys.where((k) => k.id == id).firstOrNull;
     if (key == null) return;
-    await _saveKey(
-      provider,
+    await widget.onSaveKey(
       key.copyWith(
         isEnabled: enabled,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
@@ -170,32 +196,10 @@ class _MultiKeyManagementPageState
 
   @override
   Widget build(BuildContext context) {
-    final providerAsync = ref.watch(
-      appModelProviderProvider(widget.providerId),
-    );
-
-    return providerAsync.maybeWhen(
-      data: (provider) {
-        if (provider == null) {
-          return const Scaffold(
-            appBar: ModelSettingsAppBar(title: MultiKeyManagementPage._title),
-            body: Center(child: Text('供应商不存在')),
-          );
-        }
-        return _buildContent(context, provider);
-      },
-      orElse: () => const Scaffold(
-        appBar: ModelSettingsAppBar(title: MultiKeyManagementPage._title),
-        body: Center(child: CircularProgressIndicator()),
-      ),
-    );
-  }
-
-  Widget _buildContent(BuildContext context, ModelProvider provider) {
     final theme = Theme.of(context);
 
-    final keys = [...?provider.apiKeys];
-    final management = provider.keyManagement ?? const KeyManagementConfig();
+    final keys = widget.keys;
+    final management = widget.management;
     final total = keys.length;
     final active = keys.where((k) => k.isEnabled && k.status == 'active').length;
     final errored = keys.where((k) => k.status == 'error').length;
@@ -212,7 +216,7 @@ class _MultiKeyManagementPageState
         : (successReq * 100 / totalReq).round();
 
     return Scaffold(
-      appBar: const ModelSettingsAppBar(title: MultiKeyManagementPage._title),
+      appBar: const ModelSettingsAppBar(title: MultiKeyPoolScreen._title),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
           16,
@@ -271,8 +275,7 @@ class _MultiKeyManagementPageState
                     ),
                     AppSelectOption(value: 'random', label: '随机 (Random)'),
                   ],
-                  onChanged: (value) => _saveManagement(
-                    provider,
+                  onChanged: (value) => widget.onSaveManagement(
                     management.copyWith(strategy: value),
                   ),
                 ),
@@ -283,8 +286,7 @@ class _MultiKeyManagementPageState
                   min: 1,
                   max: 10,
                   unit: '次',
-                  onChanged: (v) => _saveManagement(
-                    provider,
+                  onChanged: (v) => widget.onSaveManagement(
                     management.copyWith(maxFailuresBeforeDisable: v),
                   ),
                 ),
@@ -294,8 +296,7 @@ class _MultiKeyManagementPageState
                   min: 1,
                   max: 30,
                   unit: '分钟',
-                  onChanged: (v) => _saveManagement(
-                    provider,
+                  onChanged: (v) => widget.onSaveManagement(
                     management.copyWith(failureRecoveryTime: v),
                   ),
                 ),
@@ -309,8 +310,7 @@ class _MultiKeyManagementPageState
                     ),
                     CustomSwitch(
                       value: management.enableAutoRecovery,
-                      onChanged: (v) => _saveManagement(
-                        provider,
+                      onChanged: (v) => widget.onSaveManagement(
                         management.copyWith(enableAutoRecovery: v),
                       ),
                     ),
@@ -333,13 +333,13 @@ class _MultiKeyManagementPageState
                     ModelTonalButton(
                       label: '导入',
                       icon: LucideIcons.clipboardPaste,
-                      onPressed: () => _importKeys(provider),
+                      onPressed: _importKeys,
                     ),
                     const SizedBox(width: 8),
                     ModelTonalButton(
                       label: '添加 Key',
                       icon: LucideIcons.plus,
-                      onPressed: () => _addOrEditKey(provider),
+                      onPressed: _addOrEditKey,
                     ),
                   ],
                 ),
@@ -363,10 +363,10 @@ class _MultiKeyManagementPageState
                       config: keys[i],
                       management: management,
                       pendingDelete: _pendingDeleteId == keys[i].id,
-                      onEdit: () => _addOrEditKey(provider, keys[i]),
-                      onDelete: () => _deleteKey(provider, keys[i].id),
-                      onToggle: (v) => _toggleKey(provider, keys[i].id, v),
-                      onRecover: () => _recoverKey(provider, keys[i]),
+                      onEdit: () => _addOrEditKey(keys[i]),
+                      onDelete: () => _deleteKey(keys[i].id),
+                      onToggle: (v) => _toggleKey(keys[i].id, v),
+                      onRecover: () => _recoverKey(keys[i]),
                     ),
               ],
             ),
