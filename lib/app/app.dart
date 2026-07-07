@@ -13,6 +13,7 @@ import 'package:aetherlink_flutter/features/settings/application/font_settings_c
 import 'package:aetherlink_flutter/features/settings/application/font_size_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/dev_tools_button_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/dev_tools_button_position_controller.dart';
+import 'package:aetherlink_flutter/features/settings/application/display_refresh_rate_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/perf_monitor_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/theme_mode_controller.dart';
 import 'package:aetherlink_flutter/features/settings/domain/app_theme_mode.dart';
@@ -61,6 +62,10 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
     // On MIUI devices binding takes several seconds; starting early ensures
     // the engine is ready by the time the user presses speak.
     ref.read(ttsControllerProvider);
+    // Instantiate the 刷新率 controller so the persisted preference is
+    // re-asserted to the display on every launch (it does not survive process
+    // death on the platform side).
+    ref.read(displayRefreshRateControllerProvider);
   }
 
   @override

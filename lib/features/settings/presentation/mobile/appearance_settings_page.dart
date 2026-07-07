@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/settings/application/dev_tools_button_controller.dart';
+import 'package:aetherlink_flutter/features/settings/application/display_refresh_rate_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/font_size_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/perf_monitor_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/theme_mode_controller.dart';
@@ -1064,6 +1065,8 @@ class _DeveloperToolsCard extends StatelessWidget {
   static const String _perfDesc = '在界面显示可拖拽的实时性能面板：分线程帧时间(Build/Raster)、掉帧率、内存与瓶颈诊断，可一键导出报告给 AI';
   static const String _floatTitle = '显示开发者工具悬浮按钮';
   static const String _floatDesc = '在聊天界面显示一个悬浮按钮，点击可快速进入开发者工具页面';
+  static const String _refreshTitle = '刷新率';
+  static const String _refreshDesc = '锁最高可避免部分机型把应用限在 60Hz；锁 60Hz 更省电（仅 Android）';
 
   @override
   Widget build(BuildContext context) {
@@ -1094,6 +1097,96 @@ class _DeveloperToolsCard extends StatelessWidget {
               onChanged: (v) =>
                   ref.read(devToolsButtonControllerProvider.notifier).set(v),
             ),
+          ),
+          const Divider(height: 1, thickness: 1),
+          Consumer(
+            builder: (context, ref, _) {
+              final current = ref.watch(displayRefreshRateControllerProvider);
+              return _DevToolDropdownRow(
+                title: _refreshTitle,
+                description: _refreshDesc,
+                value: current,
+                onChanged: (v) => ref
+                    .read(displayRefreshRateControllerProvider.notifier)
+                    .set(v),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The 刷新率 row: same compact layout as [_DevToolRow] but with a trailing
+/// dropdown of [DisplayRefreshRate] options instead of a switch.
+class _DevToolDropdownRow extends StatelessWidget {
+  const _DevToolDropdownRow({
+    required this.title,
+    required this.description,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String description;
+  final DisplayRefreshRate value;
+  final ValueChanged<DisplayRefreshRate> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontSize: 14.5,
+                    height: 1.2,
+                    fontWeight: FontWeight.w500,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  description,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontSize: 12.5,
+                    height: 1.2,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          DropdownButton<DisplayRefreshRate>(
+            value: value,
+            isDense: true,
+            underline: const SizedBox.shrink(),
+            borderRadius: BorderRadius.circular(8),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontSize: 13,
+              color: theme.colorScheme.onSurface,
+            ),
+            items: [
+              for (final option in DisplayRefreshRate.values)
+                DropdownMenuItem(value: option, child: Text(option.label)),
+            ],
+            onChanged: (v) {
+              if (v != null) onChanged(v);
+            },
           ),
         ],
       ),

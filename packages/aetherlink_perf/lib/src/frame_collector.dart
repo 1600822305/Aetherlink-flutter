@@ -159,25 +159,22 @@ class FrameCollector {
     }
   }
 
-  /// FPS estimated over roughly the last [seconds] of wall time from the frame
-  /// count, falling back to instantaneous `1000/totalSpan` when too few frames.
-  /// This is a live gauge only — never a window summary.
+  /// FPS over the last [seconds] of wall time, anchored to *now* (not the last
+  /// rendered frame): frames actually presented within the window, capped at
+  /// the display refresh rate. Flutter renders on demand, so an idle app
+  /// produces no frames and correctly reads 0 rather than replaying the last
+  /// burst. This is a live gauge only — never a window summary.
   double recentFps([int seconds = 1]) {
-    if (_recent.isEmpty) return 0;
-    final cutoff = _recent.last.wallMs - seconds * 1000;
+    if (_recent.isEmpty || seconds <= 0) return 0;
+    final nowMs = DateTime.now().difference(_epoch).inMilliseconds;
+    final cutoff = nowMs - seconds * 1000;
     var count = 0;
-    var minMs = _recent.last.wallMs;
     for (var i = _recent.length - 1; i >= 0; i--) {
       if (_recent[i].wallMs < cutoff) break;
       count++;
-      minMs = _recent[i].wallMs;
     }
-    final span = _recent.last.wallMs - minMs;
-    if (count < 2 || span <= 0) {
-      final last = _recent.last.totalMs;
-      return last <= 0 ? 0 : (1000 / last).clamp(0, 240).toDouble();
-    }
-    return (count - 1) * 1000 / span;
+    final cap = _budgetMs <= 0 ? 240.0 : 1000 / _budgetMs;
+    return (count / seconds).clamp(0, cap).toDouble();
   }
 
   /// Steady-state aggregate (warm-up excluded).
