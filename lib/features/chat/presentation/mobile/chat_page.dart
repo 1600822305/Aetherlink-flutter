@@ -47,6 +47,30 @@ final scrollToMessageIdProvider =
       ScrollToMessageNotifier.new,
     );
 
+/// Briefly highlights the message a 对话导航 jump landed on, mirroring the
+/// web's `scrollToMessage` flash (1.6s), so the user can tell which message
+/// the jump targeted.
+class NavHighlightNotifier extends Notifier<String?> {
+  Timer? _timer;
+
+  @override
+  String? build() {
+    ref.onDispose(() => _timer?.cancel());
+    return null;
+  }
+
+  void flash(String id) {
+    _timer?.cancel();
+    state = id;
+    _timer = Timer(const Duration(milliseconds: 1600), () {
+      if (state == id) state = null;
+    });
+  }
+}
+
+final navHighlightMessageIdProvider =
+    NotifierProvider<NavHighlightNotifier, String?>(NavHighlightNotifier.new);
+
 /// Static UI strings. The original ran these through i18n; they are ported
 /// verbatim as constants per the M4.1 approach — wiring up i18n is a separate
 /// effort and out of scope.
@@ -791,6 +815,12 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   /// clamped near the list's ends. Cleared as soon as the user scrolls.
   int? _navAnchorIndex;
 
+  /// QQ's `getExtraLayoutSpace` pattern: the enlarged cache extent is only
+  /// engaged while a navigation jump is in flight (so the glide path is
+  /// pre-built), and released back to the framework default afterwards —
+  /// off-viewport layout work and memory stay small during normal use.
+  bool _navCacheBoost = false;
+
   /// Every message id in display order (groups flattened) — for the autoscroll
   /// heuristic and mini-map scroll-to-message lookups.
   List<String> get _flatIds => [for (final row in widget.rows) ...row];
@@ -864,6 +894,31 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   /// visible (observed via [ListObserverController]), falling back to
   /// 回顶/回底 at the ends — mirroring the web `ChatNavigation`.
   Future<void> _handleNavigation(ChatNavigationAction action) async {
+    if (!_navCacheBoost && mounted) {
+      setState(() => _navCacheBoost = true);
+      // Let the boosted cache build before measuring/jumping.
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+    }
+    try {
+      await _runNavigation(action);
+    } finally {
+      if (mounted && _navCacheBoost) {
+        setState(() => _navCacheBoost = false);
+      }
+    }
+  }
+
+  /// Flashes the row a prev/next jump landed on (web's scrollToMessage flash).
+  void _flashRow(int target, int headerCount) {
+    final rowIndex = target - headerCount;
+    if (rowIndex < 0 || rowIndex >= widget.rows.length) return;
+    ref
+        .read(navHighlightMessageIdProvider.notifier)
+        .flash(widget.rows[rowIndex].first);
+  }
+
+  Future<void> _runNavigation(ChatNavigationAction action) async {
     final headerCount = widget.showSystemPromptBubble ? 1 : 0;
     final rowCount = widget.rows.length;
     switch (action) {
@@ -947,6 +1002,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOutCubic,
         );
+        if (mounted) _flashRow(target, headerCount);
     }
   }
 
@@ -974,6 +1030,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       if (index < 0) return;
       _navAnchorIndex = index + headerCount;
       _autoScroll.unstick();
+      ref.read(navHighlightMessageIdProvider.notifier).flash(messageId);
       _observerController.animateTo(
         index: index + headerCount,
         alignment: 0.1,
@@ -1016,13 +1073,12 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         controller: _observerController,
         child: ListView.builder(
           controller: _scrollController,
-        // Enlarged from the 250px default so the neighbouring (heavy markdown)
-        // bubbles are already built and laid out before a 上一条/下一条 jump:
-        // the observer then resolves the target offset in a single pass and
-        // the scroll animation runs without mid-flight builds — the main
-        // source of the visible jank. Also smooths ordinary fast scrolling.
-        // One full viewport on each side, so it scales with the device.
-        scrollCacheExtent: const ScrollCacheExtent.viewport(1),
+        // QQ getExtraLayoutSpace pattern: enlarged only while a navigation
+        // jump is in flight (so the glide path is pre-built); the framework
+        // default otherwise, keeping off-viewport layout and memory small.
+        scrollCacheExtent: _navCacheBoost
+            ? const ScrollCacheExtent.viewport(1)
+            : null,
         padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + widget.bottomReserve),
         itemCount: rows.length + headerCount,
         itemBuilder: (context, index) {
@@ -1035,7 +1091,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           final row = rows[rowIndex];
           // A multi-member row is a multi-model 对比 group; a single-member row is
           // an ordinary message.
-          final Widget item;
+          Widget item;
           if (row.length > 1) {
             item = MultiModelMessageGroup(
               key: ValueKey('group:${row.join(',')}'),
@@ -1057,6 +1113,9 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
                   )
                 : bubble;
           }
+
+          // Navigation landing flash (web scrollToMessage's 1.6s highlight).
+          item = _NavFlashHighlight(messageId: row.first, child: item);
 
           // Plain style uses its own bottom border; bubble style uses a Divider
           // when the setting is on.
@@ -1080,6 +1139,32 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Flashes a translucent primary tint over the message a navigation jump
+/// landed on (web scrollToMessage's highlight), fading back out when
+/// [navHighlightMessageIdProvider] clears after 1.6s. Watches with a select
+/// on its own id, so only the affected row rebuilds.
+class _NavFlashHighlight extends ConsumerWidget {
+  const _NavFlashHighlight({required this.messageId, required this.child});
+
+  final String messageId;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final active = ref.watch(
+      navHighlightMessageIdProvider.select((id) => id == messageId),
+    );
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOut,
+      color: active
+          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.10)
+          : Colors.transparent,
+      child: child,
     );
   }
 }
