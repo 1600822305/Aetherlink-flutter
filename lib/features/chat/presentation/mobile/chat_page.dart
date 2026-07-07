@@ -882,7 +882,11 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       case ChatNavigationAction.nextMessage:
         var anchor = _navAnchorIndex;
         if (anchor == null) {
+          // isForce: without it the observer skips re-dispatch when the scroll
+          // offset hasn't changed since the last observation (e.g. resting at
+          // the bottom after the entry pin), returning a null result.
           final result = await _observerController.dispatchOnceObserve(
+            isForce: true,
             isDependObserveCallback: false,
           );
           anchor = result.observeResult?.firstChild?.index;
