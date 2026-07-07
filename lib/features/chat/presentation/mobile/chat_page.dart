@@ -882,6 +882,11 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         final topFar = topPosition.viewportDimension * 0.8;
         if (topPosition.pixels > topFar) {
           _scrollController.jumpTo(topFar);
+          // Let the teleport frame's build storm (target screen + cache)
+          // finish before starting the glide, so the animation's first
+          // frames aren't the ones paying for it.
+          await WidgetsBinding.instance.endOfFrame;
+          if (!mounted || !_scrollController.hasClients) return;
         }
         await _scrollController.animateTo(
           0,
@@ -896,7 +901,10 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           final far = position.viewportDimension * 0.8;
           if (position.maxScrollExtent - position.pixels > far) {
             _scrollController.jumpTo(position.maxScrollExtent - far);
+            await WidgetsBinding.instance.endOfFrame;
+            if (!mounted) return;
           }
+          if (!_scrollController.hasClients) return;
           await _scrollController.animateTo(
             _scrollController.position.maxScrollExtent,
             duration: const Duration(milliseconds: 300),

@@ -4,6 +4,11 @@ import 'package:highlighting/highlighting.dart' show Node, highlight;
 import 'code_highlight_themes.dart';
 
 /// Parse [source] into highlighted [TextSpan]s using highlight.js.
+///
+/// Results are memoized in an LRU cache keyed by (source, language, theme
+/// identity): list items are disposed and re-realized constantly while
+/// scrolling, and re-running highlight.parse on every realization is the
+/// single most expensive part of building a code bubble.
 List<TextSpan> parseToSpans(
   String source,
   String? language,
@@ -12,13 +17,28 @@ List<TextSpan> parseToSpans(
   if (language == null) {
     return <TextSpan>[TextSpan(text: source)];
   }
+  final key = (source, language, identityHashCode(theme));
+  final cached = _spanCache.remove(key);
+  if (cached != null) {
+    _spanCache[key] = cached; // re-insert as most recently used
+    return cached;
+  }
+  List<TextSpan> spans;
   try {
     final result = highlight.parse(source, languageId: language);
-    return _convertNodes(result.nodes ?? const [], theme);
+    spans = _convertNodes(result.nodes ?? const [], theme);
   } catch (_) {
-    return <TextSpan>[TextSpan(text: source)];
+    spans = <TextSpan>[TextSpan(text: source)];
   }
+  _spanCache[key] = spans;
+  if (_spanCache.length > _spanCacheLimit) {
+    _spanCache.remove(_spanCache.keys.first);
+  }
+  return spans;
 }
+
+const _spanCacheLimit = 128;
+final Map<(String, String, int), List<TextSpan>> _spanCache = {};
 
 List<TextSpan> _convertNodes(
   List<Node> nodes,
