@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:aetherlink_flutter/app/di/font_settings_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/code_block/code_block_view.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/deferred_content.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/copy_icon_button.dart';
 
@@ -298,6 +299,24 @@ class _MarkdownTableState extends State<MarkdownTable> {
           ),
         );
 
+        // Each cell renders its own GptMarkdown and the stretch pass lays the
+        // table out twice — a big table can blow a frame's budget alone. The
+        // card + toolbar stay; the table body materializes deferred.
+        var cellCount = 0;
+        var charCount = 0;
+        for (final row in widget.rows) {
+          cellCount += row.fields.length;
+          for (final field in row.fields) {
+            charCount += field.data.length;
+          }
+        }
+        final rowHeight = (widget.baseStyle.fontSize ?? 14) * 1.5 + 9;
+        final Widget deferredTable = DeferredContent(
+          cost: charCount + cellCount * 60,
+          estimatedHeight: widget.rows.length * rowHeight,
+          builder: (_) => tableContent,
+        );
+
         // rikkahub: shapes.large = 16dp, 1dp outlineVariant border
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -364,7 +383,7 @@ class _MarkdownTableState extends State<MarkdownTable> {
                 if (!_collapsed) ...[
                   Divider(height: 1, thickness: 0.5, color: borderColor),
                   // Table content (flex-filled when it fits, scrollable when wide)
-                  tableContent,
+                  deferredTable,
                 ],
               ],
             ),

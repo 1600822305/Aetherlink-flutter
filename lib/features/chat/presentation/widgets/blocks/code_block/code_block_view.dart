@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/app/di/font_settings_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/deferred_content.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'code_block_body.dart';
 import 'code_block_fullscreen.dart';
@@ -349,11 +350,28 @@ class _CodeBlockViewState extends ConsumerState<CodeBlockView> {
       gutterStartLine: widget.gutterStartLine,
     );
 
-    if (!cs.fixedHeight) return body;
+    final Widget content = cs.fixedHeight
+        ? ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: cs.maxHeight.toDouble()),
+            child: SingleChildScrollView(child: body),
+          )
+        : body;
 
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: cs.maxHeight.toDouble()),
-      child: SingleChildScrollView(child: body),
+    if (widget.isStreaming) return content;
+
+    // Highlight + Text.rich layout of a long code body can blow a frame's
+    // budget on its own; the header stays, the body materializes deferred.
+    final fontSize = codeStyle.fontSize ?? 14;
+    final lineCount = '\n'.allMatches(widget.code).length + 1;
+    var estimated = lineCount * fontSize * 1.5 + 16;
+    if (cs.fixedHeight && estimated > cs.maxHeight) {
+      estimated = cs.maxHeight.toDouble();
+    }
+    return DeferredContent(
+      key: const ValueKey('code-block-body-deferred'),
+      cost: widget.code.length,
+      estimatedHeight: estimated,
+      builder: (_) => content,
     );
   }
 

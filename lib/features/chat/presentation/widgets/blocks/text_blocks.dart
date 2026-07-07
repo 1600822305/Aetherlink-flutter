@@ -6,8 +6,10 @@ import 'package:aetherlink_flutter/features/chat/application/context_condense_se
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/deferred_content.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_selection_area.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
 import 'package:aetherlink_flutter/shared/utils/regex_replacement.dart';
@@ -92,10 +94,21 @@ class MainTextBlockView extends ConsumerWidget {
       }
     }
 
-    final body = AppMarkdown(
-      content: cleaned,
-      style: textStyle,
-    );
+    // A very long finished markdown body (e.g. multi-round tool-call answers
+    // stacked in one bubble) can blow a frame's build budget on its own —
+    // materialize it deferred. Streaming text always renders inline.
+    final content = cleaned;
+    Widget body;
+    if (kTerminalBlockStatuses.contains(block.status)) {
+      final fontSize = textStyle?.fontSize ?? 14;
+      body = DeferredContent(
+        cost: content.length,
+        estimatedHeight: content.length / 22 * fontSize * 1.6,
+        builder: (_) => AppMarkdown(content: content, style: textStyle),
+      );
+    } else {
+      body = AppMarkdown(content: content, style: textStyle);
+    }
     return selectable ? MessageSelectionArea(child: body) : body;
   }
 }
