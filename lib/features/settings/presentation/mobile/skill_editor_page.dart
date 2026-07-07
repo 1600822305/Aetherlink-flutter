@@ -189,9 +189,16 @@ class _SkillEditorPageState extends ConsumerState<SkillEditorPage> {
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: ModelTonalButton(
-              label: '保存',
-              icon: LucideIcons.save,
+            child: TextButton.icon(
+              style: TextButton.styleFrom(
+                foregroundColor: theme.colorScheme.primary,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                minimumSize: const Size(0, 36),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              icon: const Icon(LucideIcons.save, size: 16),
+              label: const Text('保存', style: TextStyle(fontSize: 14)),
               onPressed: _save,
             ),
           ),

@@ -409,7 +409,8 @@ class _SkillsSettingsPageState extends ConsumerState<SkillsSettingsPage>
     onBind: () => _bind(skill),
     onExport: _comingSoon,
     onToggle: (enabled) => _toggle(skill, enabled),
-    onDelete: skill.source == SkillSource.user ? () => _delete(skill) : null,
+    onDelete:
+        skill.source != SkillSource.builtin ? () => _delete(skill) : null,
   );
 
   Widget _customEmpty(ThemeData theme) {
