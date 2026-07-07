@@ -902,12 +902,9 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         }
         _navAnchorIndex = target;
         _autoScroll.unstick();
-        await _observerController.animateTo(
-          index: target,
-          alignment: 0,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutCubic,
-        );
+        // Instant jump (no scroll animation): lands immediately and never
+        // builds heavy bubbles mid-animation, so it cannot drop frames.
+        await _observerController.jumpTo(index: target, alignment: 0);
     }
   }
 
