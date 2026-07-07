@@ -902,9 +902,15 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         }
         _navAnchorIndex = target;
         _autoScroll.unstick();
-        // Instant jump (no scroll animation): lands immediately and never
-        // builds heavy bubbles mid-animation, so it cannot drop frames.
-        await _observerController.jumpTo(index: target, alignment: 0);
+        // Smooth scroll like the web's `scrollIntoView({behavior: 'smooth'})`.
+        // The enlarged scrollCacheExtent keeps the neighbouring bubbles built
+        // ahead of time, so the animation runs without mid-flight builds.
+        await _observerController.animateTo(
+          index: target,
+          alignment: 0,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
+        );
     }
   }
 
@@ -977,9 +983,10 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         // Enlarged from the 250px default so the neighbouring (heavy markdown)
         // bubbles are already built and laid out before a 上一条/下一条 jump:
         // the observer then resolves the target offset in a single pass and
-        // the 200ms animation runs without mid-flight builds — the main source
-        // of the visible jank. Also smooths ordinary fast scrolling.
-        scrollCacheExtent: const ScrollCacheExtent.pixels(800),
+        // the scroll animation runs without mid-flight builds — the main
+        // source of the visible jank. Also smooths ordinary fast scrolling.
+        // One full viewport on each side, so it scales with the device.
+        scrollCacheExtent: const ScrollCacheExtent.viewport(1),
         padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + widget.bottomReserve),
         itemCount: rows.length + headerCount,
         itemBuilder: (context, index) {
