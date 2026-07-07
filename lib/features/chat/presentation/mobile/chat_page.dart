@@ -873,12 +873,14 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         if (!_scrollController.hasClients) return;
         // Long-distance smooth scrolls would lazily build every message on
         // the way (the web keeps the whole DOM alive, Flutter doesn't), which
-        // is what dropped frames. Teleport to ~1.5 viewports from the target
-        // first, then finish with a short smooth glide — looks the same,
-        // builds only the destination screen.
+        // is what dropped frames. Teleport close to the target first, then
+        // finish with a short glide. The glide distance must stay *within*
+        // the scrollCacheExtent (1 viewport): everything the glide passes is
+        // then already built by the teleport frame, so the animation itself
+        // runs completely build-free.
         final topPosition = _scrollController.position;
-        final topFar = topPosition.viewportDimension * 1.5;
-        if (topPosition.pixels > topFar * 1.5) {
+        final topFar = topPosition.viewportDimension * 0.8;
+        if (topPosition.pixels > topFar) {
           _scrollController.jumpTo(topFar);
         }
         await _scrollController.animateTo(
@@ -889,11 +891,10 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       case ChatNavigationAction.bottom:
         _navAnchorIndex = null;
         if (_scrollController.hasClients) {
-          // Same near-jump + short glide as 回顶, so the landing is smooth
-          // instead of a single heavy-build frame.
+          // Same near-jump + cache-covered short glide as 回顶.
           final position = _scrollController.position;
-          final far = position.viewportDimension * 1.5;
-          if (position.maxScrollExtent - position.pixels > far * 1.5) {
+          final far = position.viewportDimension * 0.8;
+          if (position.maxScrollExtent - position.pixels > far) {
             _scrollController.jumpTo(position.maxScrollExtent - far);
           }
           await _scrollController.animateTo(
