@@ -797,6 +797,19 @@ class _MessageListView extends ConsumerStatefulWidget {
 }
 
 class _MessageListViewState extends ConsumerState<_MessageListView> {
+  /// Rows rendered when entering a topic (kelivo's initial history window).
+  /// Entering pins to the bottom, which lays the list out from the top — so
+  /// the very first frame pays for every row it can reach. Windowing caps
+  /// that first-frame build to the most recent rows; older history is
+  /// revealed page-by-page as the user scrolls near the top.
+  static const int _kInitialWindowRows = 30;
+
+  /// Rows revealed per load when scrolling near the hidden history.
+  static const int _kRevealPageRows = 30;
+
+  /// Distance (px) from the top that triggers revealing another page.
+  static const double _kRevealThreshold = 200;
+
   final ChatAutoFollowScrollController _scrollController =
       ChatAutoFollowScrollController();
   late final ListObserverController _observerController;
@@ -821,6 +834,20 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   /// off-viewport layout work and memory stay small during normal use.
   bool _navCacheBoost = false;
 
+  /// Leading rows of the conversation currently *not* rendered (the hidden
+  /// history window). Always indexes into [widget.rows] space.
+  int _hiddenRowCount = 0;
+  bool _revealScheduled = false;
+  DateTime? _lastRevealAt;
+
+  int get _effectiveHiddenRows =>
+      widget.isSelecting ? 0 : _hiddenRowCount.clamp(0, widget.rows.length);
+
+  /// The system-prompt bubble is only the first item once the full history is
+  /// revealed — it belongs at the very top of the conversation.
+  int get _headerCount =>
+      widget.showSystemPromptBubble && _effectiveHiddenRows == 0 ? 1 : 0;
+
   /// Every message id in display order (groups flattened) — for the autoscroll
   /// heuristic and mini-map scroll-to-message lookups.
   List<String> get _flatIds => [for (final row in widget.rows) ...row];
@@ -838,6 +865,10 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     final ids = _flatIds;
     _firstId = ids.isEmpty ? null : ids.first;
     _count = ids.length;
+    _hiddenRowCount = (widget.rows.length - _kInitialWindowRows).clamp(
+      0,
+      widget.rows.length,
+    );
     _scrollController.addListener(_onUserScrollResetNavAnchor);
     registerChatNavigationHandler(_handleNavigation);
     // Initial entry pins to the bottom (latest message), like the web's mount.
@@ -862,9 +893,86 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     _firstId = firstId;
     _count = count;
 
+    if (topicSwitched) {
+      _hiddenRowCount = (widget.rows.length - _kInitialWindowRows).clamp(
+        0,
+        widget.rows.length,
+      );
+    } else {
+      _hiddenRowCount = _hiddenRowCount.clamp(0, widget.rows.length);
+    }
+
     if (topicSwitched || appended) {
       _navAnchorIndex = null;
       _autoScroll.pinToBottom();
+    }
+  }
+
+  /// Reveals another page of hidden history when the user scrolls near the
+  /// top, keeping the viewport anchored on the same content by jumping down
+  /// by the added extent after the relayout (kelivo's history-load pattern).
+  void _maybeRevealMore(ScrollMetrics metrics) {
+    if (_revealScheduled || _effectiveHiddenRows == 0) return;
+    if (metrics.pixels > _kRevealThreshold) return;
+    final last = _lastRevealAt;
+    if (last != null &&
+        DateTime.now().difference(last) < const Duration(milliseconds: 120)) {
+      return;
+    }
+    _revealScheduled = true;
+    _lastRevealAt = DateTime.now();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _revealScheduled = false;
+        return;
+      }
+      final before = _scrollController.hasClients
+          ? _scrollController.position.maxScrollExtent
+          : 0.0;
+      setState(() {
+        _hiddenRowCount = (_hiddenRowCount - _kRevealPageRows).clamp(
+          0,
+          widget.rows.length,
+        );
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _revealScheduled = false;
+        if (!mounted || !_scrollController.hasClients) return;
+        final position = _scrollController.position;
+        final delta = position.maxScrollExtent - before;
+        if (delta <= 0) return;
+        _scrollController.jumpTo(
+          (position.pixels + delta).clamp(
+            position.minScrollExtent,
+            position.maxScrollExtent,
+          ),
+        );
+      });
+    });
+  }
+
+  /// Reveals hidden history down to (at most) [targetRow], compensating the
+  /// scroll offset so the viewport stays on the same content.
+  Future<void> _revealDownTo(int targetRow) async {
+    if (targetRow >= _effectiveHiddenRows) return;
+    final before = _scrollController.hasClients
+        ? _scrollController.position.maxScrollExtent
+        : 0.0;
+    setState(() {
+      _hiddenRowCount = targetRow.clamp(0, widget.rows.length);
+    });
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || !_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    final delta = position.maxScrollExtent - before;
+    if (delta > 0) {
+      _scrollController.jumpTo(
+        (position.pixels + delta).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        ),
+      );
+      await WidgetsBinding.instance.endOfFrame;
     }
   }
 
@@ -909,18 +1017,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     }
   }
 
-  /// Flashes the row a prev/next jump landed on (web's scrollToMessage flash).
-  void _flashRow(int target, int headerCount) {
-    final rowIndex = target - headerCount;
-    if (rowIndex < 0 || rowIndex >= widget.rows.length) return;
-    ref
-        .read(navHighlightMessageIdProvider.notifier)
-        .flash(widget.rows[rowIndex].first);
-  }
-
   Future<void> _runNavigation(ChatNavigationAction action) async {
-    final headerCount = widget.showSystemPromptBubble ? 1 : 0;
-    final rowCount = widget.rows.length;
     switch (action) {
       case ChatNavigationAction.top:
         _navAnchorIndex = null;
@@ -935,7 +1032,15 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         // runs completely build-free.
         final topPosition = _scrollController.position;
         final topFar = topPosition.viewportDimension * 0.8;
-        if (topPosition.pixels > topFar) {
+        if (_effectiveHiddenRows > 0) {
+          // Reveal the whole history and land near the top *in the same
+          // frame*: the relayout then only builds the top screen, never the
+          // hidden rows in between.
+          setState(() => _hiddenRowCount = 0);
+          _scrollController.jumpTo(topFar);
+          await WidgetsBinding.instance.endOfFrame;
+          if (!mounted || !_scrollController.hasClients) return;
+        } else if (topPosition.pixels > topFar) {
           _scrollController.jumpTo(topFar);
           // Let the teleport frame's build storm (target screen + cache)
           // finish before starting the glide, so the animation's first
@@ -971,8 +1076,10 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         _autoScroll.pinToBottom();
       case ChatNavigationAction.prevMessage:
       case ChatNavigationAction.nextMessage:
-        var anchor = _navAnchorIndex;
-        if (anchor == null) {
+        // The anchor lives in full-row space ([widget.rows] index) so it
+        // survives history reveals shifting the list indices.
+        var anchorRow = _navAnchorIndex;
+        if (anchorRow == null) {
           // isForce: without it the observer skips re-dispatch when the scroll
           // offset hasn't changed since the last observation (e.g. resting at
           // the bottom after the entry pin), returning a null result.
@@ -980,30 +1087,71 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
             isForce: true,
             isDependObserveCallback: false,
           );
-          anchor = result.observeResult?.firstChild?.index;
-          if (anchor == null || !mounted) return;
+          final first = result.observeResult?.firstChild?.index;
+          if (first == null || !mounted) return;
+          anchorRow = first - _headerCount + _effectiveHiddenRows;
         }
         final delta = action == ChatNavigationAction.prevMessage ? -1 : 1;
-        final target = anchor + delta;
-        if (target < headerCount) {
+        final targetRow = anchorRow + delta;
+        if (targetRow < 0) {
           return _handleNavigation(ChatNavigationAction.top);
         }
-        if (target >= headerCount + rowCount) {
+        if (targetRow >= widget.rows.length) {
           return _handleNavigation(ChatNavigationAction.bottom);
         }
-        _navAnchorIndex = target;
+        if (targetRow < _effectiveHiddenRows) {
+          // Stepping into hidden history: reveal a page above it first.
+          await _revealDownTo(
+            (targetRow - _kRevealPageRows + 1).clamp(0, targetRow),
+          );
+          if (!mounted) return;
+        }
+        _navAnchorIndex = targetRow;
         _autoScroll.unstick();
         // Smooth scroll like the web's `scrollIntoView({behavior: 'smooth'})`.
         // The enlarged scrollCacheExtent keeps the neighbouring bubbles built
         // ahead of time, so the animation runs without mid-flight builds.
         await _observerController.animateTo(
-          index: target,
+          index: targetRow - _effectiveHiddenRows + _headerCount,
           alignment: 0,
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOutCubic,
         );
-        if (mounted) _flashRow(target, headerCount);
+        if (mounted && targetRow < widget.rows.length) {
+          ref
+              .read(navHighlightMessageIdProvider.notifier)
+              .flash(widget.rows[targetRow].first);
+        }
     }
+  }
+
+  /// Handles a mini-map scroll-to-message request, revealing hidden history
+  /// first when the target is above the current window.
+  Future<void> _scrollToMessageFromMiniMap(String messageId) async {
+    final rowIndex = widget.rows.indexWhere((row) => row.contains(messageId));
+    if (rowIndex < 0) return;
+    if (rowIndex < _effectiveHiddenRows) {
+      await _revealDownTo(rowIndex);
+      if (!mounted) return;
+    }
+    _navAnchorIndex = rowIndex;
+    _autoScroll.unstick();
+    ref.read(navHighlightMessageIdProvider.notifier).flash(messageId);
+    var listIndex = rowIndex - _effectiveHiddenRows + _headerCount;
+    if (widget.isSelecting) {
+      // Multi-select expands 对比 groups into one list item per message.
+      var expanded = 0;
+      for (var i = 0; i < rowIndex; i++) {
+        expanded += widget.rows[i].length;
+      }
+      listIndex = expanded + widget.rows[rowIndex].indexOf(messageId);
+    }
+    await _observerController.animateTo(
+      index: listIndex,
+      alignment: 0.1,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
@@ -1011,13 +1159,17 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     final isSelecting = widget.isSelecting;
     // Multi-select shows every message individually so each can be ticked; the
     // 对比 grouping only applies to the normal (read) view.
-    final rows = isSelecting
+    final hiddenRows = _effectiveHiddenRows;
+    final allRows = isSelecting
         ? <List<String>>[
             for (final row in widget.rows)
               for (final id in row) <String>[id],
           ]
         : widget.rows;
-    final headerCount = widget.showSystemPromptBubble ? 1 : 0;
+    // Kelivo-style history window: only the most recent rows are rendered on
+    // entry; older history is revealed page-by-page near the top.
+    final rows = hiddenRows > 0 ? allRows.sublist(hiddenRows) : allRows;
+    final headerCount = _headerCount;
     final selectedIds = isSelecting
         ? ref.watch(messageSelectionProvider.select((s) => s.selectedIds))
         : const <String>{};
@@ -1026,17 +1178,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     ref.listen<String?>(scrollToMessageIdProvider, (prev, messageId) {
       if (messageId == null) return;
       ref.read(scrollToMessageIdProvider.notifier).clear();
-      final index = rows.indexWhere((row) => row.contains(messageId));
-      if (index < 0) return;
-      _navAnchorIndex = index + headerCount;
-      _autoScroll.unstick();
-      ref.read(navHighlightMessageIdProvider.notifier).flash(messageId);
-      _observerController.animateTo(
-        index: index + headerCount,
-        alignment: 0.1,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-      );
+      _scrollToMessageFromMiniMap(messageId);
     });
 
     // 消息分割线 (设置 tab 常规设置)：开启时在相邻消息之间画一条分割线。
@@ -1051,7 +1193,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     // Report the visible message count and live scroll state to the performance
     // monitor, so scroll jank can be attributed to "/chat scrolling". Both are
     // no-ops while the monitor is stopped.
-    PerfMonitor.instance.setMessages(rows.length);
+    PerfMonitor.instance.setMessages(allRows.length);
     // 消息可选中复制: a tap anywhere in the list clears a lingering text
     // selection held by a message's [MessageSelectionArea] (each message wraps
     // its own small SelectionArea, so a tap on another bubble / blank space
@@ -1066,6 +1208,8 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           PerfMonitor.instance.setScrolling(true);
         } else if (n is ScrollEndNotification) {
           PerfMonitor.instance.setScrolling(false);
+        } else if (n is ScrollUpdateNotification && n.depth == 0) {
+          _maybeRevealMore(n.metrics);
         }
         return false;
       },
