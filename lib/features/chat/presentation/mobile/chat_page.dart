@@ -1062,23 +1062,50 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           // when the setting is on.
           final needsDivider =
               isPlain || (showDivider && rowIndex < rows.length - 1);
-          if (!needsDivider) return item;
+          if (!needsDivider) return _KeepAliveItem(child: item);
           final dividerColor = Theme.of(context).brightness == Brightness.dark
               ? const Color(0x1AFFFFFF)
               : const Color(0x14000000);
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              item,
-              Divider(height: 1, thickness: 1, color: dividerColor),
-            ],
+          return _KeepAliveItem(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                item,
+                Divider(height: 1, thickness: 1, color: dividerColor),
+              ],
+            ),
           );
         },
           ),
         ),
       ),
     );
+  }
+}
+
+/// Keeps a message row's element tree alive when it scrolls out of the
+/// viewport cache, mirroring the web's resident DOM. Rebuilding a long
+/// markdown bubble from scratch takes 100ms+ on a single frame (the dominant
+/// jank source measured on-device); keeping it alive makes re-entry free.
+class _KeepAliveItem extends StatefulWidget {
+  const _KeepAliveItem({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_KeepAliveItem> createState() => _KeepAliveItemState();
+}
+
+class _KeepAliveItemState extends State<_KeepAliveItem>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }
 
