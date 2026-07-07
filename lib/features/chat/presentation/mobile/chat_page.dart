@@ -4,7 +4,7 @@ import 'dart:math' as math;
 
 import 'package:aetherlink_perf/aetherlink_perf.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show ScrollDirection;
+import 'package:flutter/rendering.dart' show ScrollCacheExtent, ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/chat_interface_access.dart';
@@ -977,6 +977,12 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         controller: _observerController,
         child: ListView.builder(
           controller: _scrollController,
+        // Enlarged from the 250px default so the neighbouring (heavy markdown)
+        // bubbles are already built and laid out before a 上一条/下一条 jump:
+        // the observer then resolves the target offset in a single pass and
+        // the 200ms animation runs without mid-flight builds — the main source
+        // of the visible jank. Also smooths ordinary fast scrolling.
+        scrollCacheExtent: const ScrollCacheExtent.pixels(800),
         padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + widget.bottomReserve),
         itemCount: rows.length + headerCount,
         itemBuilder: (context, index) {
