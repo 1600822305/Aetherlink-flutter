@@ -151,12 +151,18 @@ class ChatAutoScrollController {
 
   /// User scroll is the only input that flips [_stick] (web `handleScroll`):
   /// within [threshold] → follow; an active scroll away from the bottom → stop.
+  ///
+  /// Re-sticking requires an active *user* scroll (non-idle direction, which a
+  /// drag or its fling keeps until the scroll ends). Programmatic animations
+  /// (导航的上一条/下一条) leave the direction idle, so passing through the
+  /// bottom threshold never re-engages the follow — otherwise the layout-time
+  /// pin would fight the animation and yank the list back to the bottom.
   void _onScroll() {
     if (_disposed || !_scrollController.hasClients) return;
     final position = _scrollController.position;
     final atBottom = position.maxScrollExtent - position.pixels <= threshold;
     if (atBottom) {
-      _stick = true;
+      if (position.userScrollDirection != ScrollDirection.idle) _stick = true;
     } else if (position.userScrollDirection != ScrollDirection.idle) {
       _stick = false;
       _pinnedUntil = DateTime.fromMillisecondsSinceEpoch(0);

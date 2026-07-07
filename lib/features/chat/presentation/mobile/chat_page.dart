@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:aetherlink_perf/aetherlink_perf.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/chat_interface_access.dart';
@@ -783,6 +784,13 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   String? _firstId;
   int _count = 0;
 
+  /// Chained anchor for 上一条/下一条 (kelivo's `_lastJumpUserMessageId`
+  /// pattern): the row index the last jump landed on. Consecutive taps step
+  /// from here directly — no per-tap viewport observation (cheaper, no jank
+  /// from a forced observe pass) and immune to the landing position being
+  /// clamped near the list's ends. Cleared as soon as the user scrolls.
+  int? _navAnchorIndex;
+
   /// Every message id in display order (groups flattened) — for the autoscroll
   /// heuristic and mini-map scroll-to-message lookups.
   List<String> get _flatIds => [for (final row in widget.rows) ...row];
@@ -800,6 +808,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     final ids = _flatIds;
     _firstId = ids.isEmpty ? null : ids.first;
     _count = ids.length;
+    _scrollController.addListener(_onUserScrollResetNavAnchor);
     registerChatNavigationHandler(_handleNavigation);
     // Initial entry pins to the bottom (latest message), like the web's mount.
     _autoScroll.pinToBottom();
@@ -824,27 +833,42 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     _count = count;
 
     if (topicSwitched || appended) {
+      _navAnchorIndex = null;
       _autoScroll.pinToBottom();
+    }
+  }
+
+  /// A user scroll invalidates the chained jump anchor — the next 上一条/
+  /// 下一条 re-observes the viewport instead (kelivo resets its anchor the
+  /// same way).
+  void _onUserScrollResetNavAnchor() {
+    if (_navAnchorIndex == null || !_scrollController.hasClients) return;
+    if (_scrollController.position.userScrollDirection !=
+        ScrollDirection.idle) {
+      _navAnchorIndex = null;
     }
   }
 
   @override
   void dispose() {
     unregisterChatNavigationHandler(_handleNavigation);
+    _scrollController.removeListener(_onUserScrollResetNavAnchor);
     _autoScroll.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
   /// Executes a 对话导航 action (invoked directly by [ChatNavigationOverlay]
-  /// through the handler registry). 上一条/下一条 move relative to the first
-  /// row currently visible (observed via [ListObserverController]), falling
-  /// back to 回顶/回底 at the ends — mirroring the web `ChatNavigation`.
+  /// through the handler registry). 上一条/下一条 step from the chained
+  /// [_navAnchorIndex] when present, otherwise from the first row currently
+  /// visible (observed via [ListObserverController]), falling back to
+  /// 回顶/回底 at the ends — mirroring the web `ChatNavigation`.
   Future<void> _handleNavigation(ChatNavigationAction action) async {
     final headerCount = widget.showSystemPromptBubble ? 1 : 0;
     final rowCount = widget.rows.length;
     switch (action) {
       case ChatNavigationAction.top:
+        _navAnchorIndex = null;
         _autoScroll.unstick();
         await _scrollController.animateTo(
           0,
@@ -852,28 +876,32 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           curve: Curves.easeOutCubic,
         );
       case ChatNavigationAction.bottom:
+        _navAnchorIndex = null;
         _autoScroll.pinToBottom();
       case ChatNavigationAction.prevMessage:
       case ChatNavigationAction.nextMessage:
-        final result = await _observerController.dispatchOnceObserve(
-          isForce: true,
-          isDependObserveCallback: false,
-        );
-        final firstIndex = result.observeResult?.firstChild?.index;
-        if (firstIndex == null || !mounted) return;
+        var anchor = _navAnchorIndex;
+        if (anchor == null) {
+          final result = await _observerController.dispatchOnceObserve(
+            isDependObserveCallback: false,
+          );
+          anchor = result.observeResult?.firstChild?.index;
+          if (anchor == null || !mounted) return;
+        }
         final delta = action == ChatNavigationAction.prevMessage ? -1 : 1;
-        final target = firstIndex + delta;
+        final target = anchor + delta;
         if (target < headerCount) {
           return _handleNavigation(ChatNavigationAction.top);
         }
         if (target >= headerCount + rowCount) {
           return _handleNavigation(ChatNavigationAction.bottom);
         }
+        _navAnchorIndex = target;
         _autoScroll.unstick();
         await _observerController.animateTo(
           index: target,
           alignment: 0,
-          duration: const Duration(milliseconds: 250),
+          duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,
         );
     }
@@ -901,6 +929,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       ref.read(scrollToMessageIdProvider.notifier).clear();
       final index = rows.indexWhere((row) => row.contains(messageId));
       if (index < 0) return;
+      _navAnchorIndex = index + headerCount;
       _autoScroll.unstick();
       _observerController.animateTo(
         index: index + headerCount,
