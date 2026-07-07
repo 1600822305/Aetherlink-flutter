@@ -870,6 +870,17 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       case ChatNavigationAction.top:
         _navAnchorIndex = null;
         _autoScroll.unstick();
+        if (!_scrollController.hasClients) return;
+        // Long-distance smooth scrolls would lazily build every message on
+        // the way (the web keeps the whole DOM alive, Flutter doesn't), which
+        // is what dropped frames. Teleport to ~1.5 viewports from the target
+        // first, then finish with a short smooth glide — looks the same,
+        // builds only the destination screen.
+        final topPosition = _scrollController.position;
+        final topFar = topPosition.viewportDimension * 1.5;
+        if (topPosition.pixels > topFar * 1.5) {
+          _scrollController.jumpTo(topFar);
+        }
         await _scrollController.animateTo(
           0,
           duration: const Duration(milliseconds: 300),
@@ -877,6 +888,22 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         );
       case ChatNavigationAction.bottom:
         _navAnchorIndex = null;
+        if (_scrollController.hasClients) {
+          // Same near-jump + short glide as 回顶, so the landing is smooth
+          // instead of a single heavy-build frame.
+          final position = _scrollController.position;
+          final far = position.viewportDimension * 1.5;
+          if (position.maxScrollExtent - position.pixels > far * 1.5) {
+            _scrollController.jumpTo(position.maxScrollExtent - far);
+          }
+          await _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic,
+          );
+        }
+        // Re-stick and settle any residual gap (estimated extents can shift
+        // while the destination screen builds).
         _autoScroll.pinToBottom();
       case ChatNavigationAction.prevMessage:
       case ChatNavigationAction.nextMessage:
