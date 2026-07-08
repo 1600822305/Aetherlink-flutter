@@ -89,7 +89,12 @@ class MessageSelectionTopBar extends ConsumerWidget
 
     ref.read(messageSelectionProvider.notifier).exitSelectionMode();
 
-    showMessageExportSheet(context, messages: selectedMessages);
+    showMessageExportSheet(
+      context,
+      messages: selectedMessages,
+      showThinkingAndTools: selState.showThinkingAndTools,
+      expandThinking: selState.expandThinking,
+    );
   }
 }
 
@@ -139,7 +144,12 @@ class MessageSelectionBottomBar extends ConsumerWidget {
                       color: cs.tertiary,
                       onTap: selState.selectedIds.isEmpty
                           ? null
-                          : () => _confirmExport(context, ref, messages),
+                          : () => _exportAs(
+                              context,
+                              ref,
+                              messages,
+                              MessageExportFormat.txt,
+                            ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -150,7 +160,12 @@ class MessageSelectionBottomBar extends ConsumerWidget {
                       color: cs.primary,
                       onTap: selState.selectedIds.isEmpty
                           ? null
-                          : () => _confirmExport(context, ref, messages),
+                          : () => _exportAs(
+                              context,
+                              ref,
+                              messages,
+                              MessageExportFormat.markdown,
+                            ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -161,7 +176,12 @@ class MessageSelectionBottomBar extends ConsumerWidget {
                       color: cs.secondary,
                       onTap: selState.selectedIds.isEmpty
                           ? null
-                          : () => _confirmExport(context, ref, messages),
+                          : () => _exportAs(
+                              context,
+                              ref,
+                              messages,
+                              MessageExportFormat.image,
+                            ),
                     ),
                   ),
                 ],
@@ -201,10 +221,13 @@ class MessageSelectionBottomBar extends ConsumerWidget {
     );
   }
 
-  void _confirmExport(
+  /// One-tap export in the chosen format — no second sheet. The two toggle
+  /// chips in this bar decide whether thinking/tool blocks are included.
+  void _exportAs(
     BuildContext context,
     WidgetRef ref,
     List<ChatMessageView> messages,
+    MessageExportFormat format,
   ) {
     final selState = ref.read(messageSelectionProvider);
     final selectedMessages = messages
@@ -214,7 +237,13 @@ class MessageSelectionBottomBar extends ConsumerWidget {
 
     ref.read(messageSelectionProvider.notifier).exitSelectionMode();
 
-    showMessageExportSheet(context, messages: selectedMessages);
+    exportMessagesAs(
+      context,
+      format: format,
+      messages: selectedMessages,
+      showThinkingAndTools: selState.showThinkingAndTools,
+      expandThinking: selState.expandThinking,
+    );
   }
 }
 

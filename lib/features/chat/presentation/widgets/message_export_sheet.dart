@@ -30,6 +30,8 @@ Future<void> showMessageExportSheet(
   BuildContext context, {
   required List<ChatMessageView> messages,
   String? topicTitle,
+  bool showThinkingAndTools = false,
+  bool expandThinking = false,
 }) async {
   await showModalBottomSheet<void>(
     context: context,
@@ -38,8 +40,197 @@ Future<void> showMessageExportSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
-    builder: (ctx) => _ExportSheet(messages: messages, topicTitle: topicTitle),
+    builder: (ctx) => _ExportSheet(
+      messages: messages,
+      topicTitle: topicTitle,
+      showThinkingAndTools: showThinkingAndTools,
+      expandThinking: expandThinking,
+    ),
   );
+}
+
+/// The three one-tap export formats (多选底部栏的格式按钮).
+enum MessageExportFormat { txt, markdown, image }
+
+/// Exports [messages] in [format] directly — no sheet — honouring the
+/// 思考和工具/展开思考 toggles. Debate flow notices are always filtered, like
+/// the sheet's default. Used by the multi-select bottom bar's format buttons.
+Future<void> exportMessagesAs(
+  BuildContext context, {
+  required MessageExportFormat format,
+  required List<ChatMessageView> messages,
+  String? topicTitle,
+  bool showThinkingAndTools = false,
+  bool expandThinking = false,
+}) async {
+  final msgs = [
+    for (final m in messages)
+      if (m.debatePhase != 'notice') m,
+  ];
+  if (msgs.isEmpty) {
+    AppToast.info(context, '没有可导出的内容');
+    return;
+  }
+  try {
+    switch (format) {
+      case MessageExportFormat.txt:
+        final content = _buildTxtFor(
+          msgs,
+          topicTitle: topicTitle,
+          showThinkingAndTools: showThinkingAndTools,
+          expandThinking: expandThinking,
+        );
+        final saved = await _saveTextFile(
+          content,
+          'chat-export-${DateTime.now().millisecondsSinceEpoch}.txt',
+          ['txt'],
+        );
+        if (saved && context.mounted) AppToast.info(context, '已导出');
+      case MessageExportFormat.markdown:
+        final content = _buildMarkdownFor(
+          msgs,
+          topicTitle: topicTitle,
+          showThinkingAndTools: showThinkingAndTools,
+          expandThinking: expandThinking,
+        );
+        final saved = await _saveTextFile(
+          content,
+          'chat-export-${DateTime.now().millisecondsSinceEpoch}.md',
+          ['md'],
+        );
+        if (saved && context.mounted) AppToast.info(context, '已导出');
+      case MessageExportFormat.image:
+        final file = await _renderMessagesAsImage(
+          context,
+          messages: msgs,
+          topicTitle: topicTitle,
+          showThinking: showThinkingAndTools && expandThinking,
+          showTools: showThinkingAndTools,
+        );
+        if (file == null) {
+          if (context.mounted) AppToast.info(context, '渲染图片失败');
+          return;
+        }
+        await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
+    }
+  } catch (e) {
+    if (context.mounted) AppToast.info(context, '导出失败: $e');
+  }
+}
+
+/// Returns true when the file was written (false = user cancelled).
+Future<bool> _saveTextFile(
+  String content,
+  String filename,
+  List<String> extensions,
+) async {
+  final bytes = utf8.encode(content);
+  final path = await FilePicker.saveFile(
+    dialogTitle: '导出文件',
+    fileName: filename,
+    type: FileType.custom,
+    allowedExtensions: extensions,
+    bytes: Uint8List.fromList(bytes),
+  );
+  if (path == null) return false; // user cancelled
+  // On desktop, FilePicker.saveFile doesn't write bytes — write manually.
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    await File(path).writeAsString(content);
+  }
+  return true;
+}
+
+String _buildMarkdownFor(
+  List<ChatMessageView> messages, {
+  String? topicTitle,
+  required bool showThinkingAndTools,
+  required bool expandThinking,
+}) {
+  final buf = StringBuffer();
+  final title = topicTitle?.trim();
+  if (title != null && title.isNotEmpty) {
+    buf.writeln('# $title\n');
+  }
+  for (final msg in messages) {
+    final isUser = msg.role == MessageRole.user;
+    final roleName = isUser ? '用户' : (msg.modelName ?? 'AI助手');
+    final time = _formatTimeFull(msg.createdAt);
+    buf.writeln('> $time · $roleName\n');
+
+    if (showThinkingAndTools && expandThinking && msg.thinking.isNotEmpty) {
+      buf.writeln('**思考过程**\n');
+      buf.writeln('```text');
+      buf.writeln(msg.thinking.trim());
+      buf.writeln('```\n');
+    }
+
+    if (showThinkingAndTools) {
+      for (final block in msg.blocks) {
+        if (block is ToolBlock) {
+          final name = block.toolName ?? block.toolId;
+          final failed = block.status == MessageBlockStatus.error;
+          buf.writeln('> 🔧 **$name** → ${failed ? "错误" : "完成"}\n');
+        }
+      }
+    }
+
+    if (msg.text.trim().isNotEmpty) {
+      buf.writeln(msg.text.trim());
+      buf.writeln();
+    }
+    buf.writeln('---\n');
+  }
+  return buf.toString();
+}
+
+String _buildTxtFor(
+  List<ChatMessageView> messages, {
+  String? topicTitle,
+  required bool showThinkingAndTools,
+  required bool expandThinking,
+}) {
+  final buf = StringBuffer();
+  final title = topicTitle?.trim();
+  if (title != null && title.isNotEmpty) {
+    buf.writeln('$title\n');
+  }
+  for (final msg in messages) {
+    final isUser = msg.role == MessageRole.user;
+    final roleName = isUser ? '用户' : (msg.modelName ?? 'AI助手');
+    final time = _formatTimeFull(msg.createdAt);
+    buf.writeln('$time · $roleName\n');
+
+    if (showThinkingAndTools && expandThinking && msg.thinking.isNotEmpty) {
+      buf.writeln('[思考过程]');
+      buf.writeln(msg.thinking.trim());
+      buf.writeln();
+    }
+
+    if (showThinkingAndTools) {
+      for (final block in msg.blocks) {
+        if (block is ToolBlock) {
+          final name = block.toolName ?? block.toolId;
+          final failed = block.status == MessageBlockStatus.error;
+          buf.writeln('[工具] $name → ${failed ? "错误" : "完成"}');
+        }
+      }
+    }
+
+    if (msg.text.trim().isNotEmpty) {
+      buf.writeln(msg.text.trim());
+      buf.writeln();
+    }
+    buf.writeln('---\n');
+  }
+  return buf.toString();
+}
+
+String _formatTimeFull(DateTime? time) {
+  if (time == null) return '';
+  final t = time.toLocal();
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${t.year}-${two(t.month)}-${two(t.day)} '
+      '${two(t.hour)}:${two(t.minute)}';
 }
 
 // ---------------------------------------------------------------------------
@@ -47,18 +238,26 @@ Future<void> showMessageExportSheet(
 // ---------------------------------------------------------------------------
 
 class _ExportSheet extends ConsumerStatefulWidget {
-  const _ExportSheet({required this.messages, this.topicTitle});
+  const _ExportSheet({
+    required this.messages,
+    this.topicTitle,
+    this.showThinkingAndTools = false,
+    this.expandThinking = false,
+  });
 
   final List<ChatMessageView> messages;
   final String? topicTitle;
+  final bool showThinkingAndTools;
+  final bool expandThinking;
 
   @override
   ConsumerState<_ExportSheet> createState() => _ExportSheetState();
 }
 
 class _ExportSheetState extends ConsumerState<_ExportSheet> {
-  bool _showThinkingAndTools = false;
-  bool _expandThinking = false;
+  late bool _showThinkingAndTools = widget.showThinkingAndTools;
+  late bool _expandThinking =
+      widget.showThinkingAndTools && widget.expandThinking;
   bool _includeDebateNotices = false;
   bool _exporting = false;
 
@@ -233,80 +432,19 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
   // Content builders
   // ---------------------------------------------------------------------------
 
-  String _buildMarkdown() {
-    final buf = StringBuffer();
-    final title = widget.topicTitle?.trim();
-    if (title != null && title.isNotEmpty) {
-      buf.writeln('# $title\n');
-    }
-    for (final msg in _exportMessages) {
-      final isUser = msg.role == MessageRole.user;
-      final roleName = isUser ? '用户' : (msg.modelName ?? 'AI助手');
-      final time = _formatTimeFull(msg.createdAt);
-      buf.writeln('> $time · $roleName\n');
+  String _buildMarkdown() => _buildMarkdownFor(
+    _exportMessages,
+    topicTitle: widget.topicTitle,
+    showThinkingAndTools: _showThinkingAndTools,
+    expandThinking: _expandThinking,
+  );
 
-      if (_showThinkingAndTools && _expandThinking && msg.thinking.isNotEmpty) {
-        buf.writeln('**思考过程**\n');
-        buf.writeln('```text');
-        buf.writeln(msg.thinking.trim());
-        buf.writeln('```\n');
-      }
-
-      if (_showThinkingAndTools) {
-        for (final block in msg.blocks) {
-          if (block is ToolBlock) {
-            final name = block.toolName ?? block.toolId;
-            final failed = block.status == MessageBlockStatus.error;
-            buf.writeln('> 🔧 **$name** → ${failed ? "错误" : "完成"}\n');
-          }
-        }
-      }
-
-      if (msg.text.trim().isNotEmpty) {
-        buf.writeln(msg.text.trim());
-        buf.writeln();
-      }
-      buf.writeln('---\n');
-    }
-    return buf.toString();
-  }
-
-  String _buildTxt() {
-    final buf = StringBuffer();
-    final title = widget.topicTitle?.trim();
-    if (title != null && title.isNotEmpty) {
-      buf.writeln('$title\n');
-    }
-    for (final msg in _exportMessages) {
-      final isUser = msg.role == MessageRole.user;
-      final roleName = isUser ? '用户' : (msg.modelName ?? 'AI助手');
-      final time = _formatTimeFull(msg.createdAt);
-      buf.writeln('$time · $roleName\n');
-
-      if (_showThinkingAndTools && _expandThinking && msg.thinking.isNotEmpty) {
-        buf.writeln('[思考过程]');
-        buf.writeln(msg.thinking.trim());
-        buf.writeln();
-      }
-
-      if (_showThinkingAndTools) {
-        for (final block in msg.blocks) {
-          if (block is ToolBlock) {
-            final name = block.toolName ?? block.toolId;
-            final failed = block.status == MessageBlockStatus.error;
-            buf.writeln('[工具] $name → ${failed ? "错误" : "完成"}');
-          }
-        }
-      }
-
-      if (msg.text.trim().isNotEmpty) {
-        buf.writeln(msg.text.trim());
-        buf.writeln();
-      }
-      buf.writeln('---\n');
-    }
-    return buf.toString();
-  }
+  String _buildTxt() => _buildTxtFor(
+    _exportMessages,
+    topicTitle: widget.topicTitle,
+    showThinkingAndTools: _showThinkingAndTools,
+    expandThinking: _expandThinking,
+  );
 
   // ---------------------------------------------------------------------------
   // Export actions
@@ -432,20 +570,8 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
     String filename,
     List<String> extensions,
   ) async {
-    final bytes = utf8.encode(content);
-    final path = await FilePicker.saveFile(
-      dialogTitle: '导出文件',
-      fileName: filename,
-      type: FileType.custom,
-      allowedExtensions: extensions,
-      bytes: Uint8List.fromList(bytes),
-    );
-    if (path == null) return; // user cancelled
-    // On desktop, FilePicker.saveFile doesn't write bytes — write manually.
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      await File(path).writeAsString(content);
-    }
-    if (!mounted) return;
+    final saved = await _saveTextFile(content, filename, extensions);
+    if (!saved || !mounted) return;
     Navigator.of(context).pop();
     _toast('已导出');
   }
@@ -457,14 +583,6 @@ class _ExportSheetState extends ConsumerState<_ExportSheet> {
   void _toast(String message) {
     if (!mounted) return;
     AppToast.info(context, message);
-  }
-
-  static String _formatTimeFull(DateTime? time) {
-    if (time == null) return '';
-    final t = time.toLocal();
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${t.year}-${two(t.month)}-${two(t.day)} '
-        '${two(t.hour)}:${two(t.minute)}';
   }
 }
 
