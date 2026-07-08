@@ -804,6 +804,16 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   /// revealed page-by-page as the user scrolls near the top.
   static const int _kInitialWindowRows = 30;
 
+  /// Rows in the very first frame of a topic entry/switch — roughly one
+  /// screenful. The rest of the initial window is ramped in over the next
+  /// frames ([_rampStep]), so even a heavy conversation never pays for 30
+  /// rows on the single frame that runs the page transition (WeChat-style
+  /// instant entry; older rows stream in with no artificial delay).
+  static const int _kFirstFrameRows = 8;
+
+  /// Rows added per frame while ramping up to [_kInitialWindowRows].
+  static const int _kRampRowsPerFrame = 8;
+
   /// Rows revealed per load when scrolling near the hidden history.
   static const int _kRevealPageRows = 30;
 
@@ -840,6 +850,10 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   bool _revealScheduled = false;
   DateTime? _lastRevealAt;
 
+  /// Frame-by-frame expansion of the entry window (see [_kFirstFrameRows]).
+  bool _ramping = false;
+  int _rampTargetHidden = 0;
+
   int get _effectiveHiddenRows =>
       widget.isSelecting ? 0 : _hiddenRowCount.clamp(0, widget.rows.length);
 
@@ -847,6 +861,11 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   /// revealed — it belongs at the very top of the conversation.
   int get _headerCount =>
       widget.showSystemPromptBubble && _effectiveHiddenRows == 0 ? 1 : 0;
+
+  /// A slim spinner row sits above the window while history is still hidden
+  /// (loaded on scroll), WeChat-style. Mutually exclusive with [_headerCount]
+  /// (the prompt bubble only shows once everything is revealed).
+  int get _loaderCount => _effectiveHiddenRows > 0 ? 1 : 0;
 
   /// Every message id in display order (groups flattened) — for the autoscroll
   /// heuristic and mini-map scroll-to-message lookups.
@@ -865,10 +884,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     final ids = _flatIds;
     _firstId = ids.isEmpty ? null : ids.first;
     _count = ids.length;
-    _hiddenRowCount = (widget.rows.length - _kInitialWindowRows).clamp(
-      0,
-      widget.rows.length,
-    );
+    _beginWindowRamp();
     _scrollController.addListener(_onUserScrollResetNavAnchor);
     registerChatNavigationHandler(_handleNavigation);
     // Initial entry pins to the bottom (latest message), like the web's mount.
@@ -894,12 +910,10 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     _count = count;
 
     if (topicSwitched) {
-      _hiddenRowCount = (widget.rows.length - _kInitialWindowRows).clamp(
-        0,
-        widget.rows.length,
-      );
+      _beginWindowRamp();
     } else {
       _hiddenRowCount = _hiddenRowCount.clamp(0, widget.rows.length);
+      _rampTargetHidden = _rampTargetHidden.clamp(0, widget.rows.length);
     }
 
     if (topicSwitched || appended) {
@@ -908,11 +922,69 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     }
   }
 
+  /// Sets the entry window to [_kFirstFrameRows] and schedules the frame-by-
+  /// frame ramp up to [_kInitialWindowRows] — pure post-frame callbacks, no
+  /// timers, so short topics still mount whole in one frame.
+  void _beginWindowRamp() {
+    final total = widget.rows.length;
+    _rampTargetHidden = (total - _kInitialWindowRows).clamp(0, total);
+    _hiddenRowCount = (total - _kFirstFrameRows).clamp(0, total);
+    if (_hiddenRowCount <= _rampTargetHidden) {
+      _hiddenRowCount = _rampTargetHidden;
+      _ramping = false;
+      return;
+    }
+    if (!_ramping) {
+      _ramping = true;
+      WidgetsBinding.instance.addPostFrameCallback(_rampStep);
+    }
+  }
+
+  /// One ramp increment per frame, compensating the scroll offset by the
+  /// added extent (same anchoring as [_maybeRevealMore]) — a no-op while the
+  /// entry pin is sticking to the bottom, and keeps the viewport still when
+  /// the user has already scrolled away.
+  void _rampStep(Duration _) {
+    if (!mounted || !_ramping) return;
+    if (_hiddenRowCount <= _rampTargetHidden) {
+      _ramping = false;
+      return;
+    }
+    final before = _scrollController.hasClients
+        ? _scrollController.position.maxScrollExtent
+        : 0.0;
+    setState(() {
+      _hiddenRowCount = (_hiddenRowCount - _kRampRowsPerFrame).clamp(
+        _rampTargetHidden,
+        widget.rows.length,
+      );
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _ramping = false;
+        return;
+      }
+      if (_scrollController.hasClients) {
+        final position = _scrollController.position;
+        final delta = position.maxScrollExtent - before;
+        if (delta > 0 && position.pixels < position.maxScrollExtent) {
+          _scrollController.jumpTo(
+            (position.pixels + delta).clamp(
+              position.minScrollExtent,
+              position.maxScrollExtent,
+            ),
+          );
+        }
+      }
+      _rampStep(Duration.zero);
+    });
+  }
+
   /// Reveals another page of hidden history when the user scrolls near the
   /// top, keeping the viewport anchored on the same content by jumping down
   /// by the added extent after the relayout (kelivo's history-load pattern).
   void _maybeRevealMore(ScrollMetrics metrics) {
-    if (_revealScheduled || _effectiveHiddenRows == 0) return;
+    if (_revealScheduled || _ramping || _effectiveHiddenRows == 0) return;
     if (metrics.pixels > _kRevealThreshold) return;
     final last = _lastRevealAt;
     if (last != null &&
@@ -955,6 +1027,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   /// scroll offset so the viewport stays on the same content.
   Future<void> _revealDownTo(int targetRow) async {
     if (targetRow >= _effectiveHiddenRows) return;
+    _ramping = false;
     final before = _scrollController.hasClients
         ? _scrollController.position.maxScrollExtent
         : 0.0;
@@ -1036,6 +1109,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           // Reveal the whole history and land near the top *in the same
           // frame*: the relayout then only builds the top screen, never the
           // hidden rows in between.
+          _ramping = false;
           setState(() => _hiddenRowCount = 0);
           _scrollController.jumpTo(topFar);
           await WidgetsBinding.instance.endOfFrame;
@@ -1089,7 +1163,8 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           );
           final first = result.observeResult?.firstChild?.index;
           if (first == null || !mounted) return;
-          anchorRow = first - _headerCount + _effectiveHiddenRows;
+          anchorRow =
+              first - _headerCount - _loaderCount + _effectiveHiddenRows;
         }
         final delta = action == ChatNavigationAction.prevMessage ? -1 : 1;
         final targetRow = anchorRow + delta;
@@ -1112,7 +1187,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         // The enlarged scrollCacheExtent keeps the neighbouring bubbles built
         // ahead of time, so the animation runs without mid-flight builds.
         await _observerController.animateTo(
-          index: targetRow - _effectiveHiddenRows + _headerCount,
+          index: targetRow - _effectiveHiddenRows + _headerCount + _loaderCount,
           alignment: 0,
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOutCubic,
@@ -1137,7 +1212,8 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     _navAnchorIndex = rowIndex;
     _autoScroll.unstick();
     ref.read(navHighlightMessageIdProvider.notifier).flash(messageId);
-    var listIndex = rowIndex - _effectiveHiddenRows + _headerCount;
+    var listIndex =
+        rowIndex - _effectiveHiddenRows + _headerCount + _loaderCount;
     if (widget.isSelecting) {
       // Multi-select expands 对比 groups into one list item per message.
       var expanded = 0;
@@ -1170,6 +1246,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     // entry; older history is revealed page-by-page near the top.
     final rows = hiddenRows > 0 ? allRows.sublist(hiddenRows) : allRows;
     final headerCount = _headerCount;
+    final loaderCount = _loaderCount;
     final selectedIds = isSelecting
         ? ref.watch(messageSelectionProvider.select((s) => s.selectedIds))
         : const <String>{};
@@ -1224,14 +1301,19 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
             ? const ScrollCacheExtent.viewport(1)
             : null,
         padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + widget.bottomReserve),
-        itemCount: rows.length + headerCount,
+        itemCount: rows.length + headerCount + loaderCount,
         itemBuilder: (context, index) {
+          // A slim spinner tops the list while older history is hidden — it
+          // loads in as the user scrolls up (WeChat-style), never eagerly.
+          if (loaderCount == 1 && index == 0) {
+            return const _HistoryLoadingRow();
+          }
           // The system-prompt bubble is the first item when enabled; it scrolls
           // with the list and is never part of multi-select.
           if (headerCount == 1 && index == 0) {
             return const SystemPromptBubble();
           }
-          final rowIndex = index - headerCount;
+          final rowIndex = index - headerCount - loaderCount;
           final row = rows[rowIndex];
           // A multi-member row is a multi-model 对比 group; a single-member row is
           // an ordinary message.
@@ -1280,6 +1362,31 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
             ),
           );
         },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The slim spinner row shown above the rendered window while older history
+/// is still hidden (revealed page-by-page as the user scrolls up).
+class _HistoryLoadingRow extends StatelessWidget {
+  const _HistoryLoadingRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Center(
+        child: SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
           ),
         ),
       ),
