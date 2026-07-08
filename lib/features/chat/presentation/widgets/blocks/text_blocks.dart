@@ -96,21 +96,104 @@ class MainTextBlockView extends ConsumerWidget {
 
     // A very long finished markdown body (e.g. multi-round tool-call answers
     // stacked in one bubble) can blow a frame's build budget on its own —
-    // materialize it deferred. Streaming text always renders inline.
+    // deferring it as a single unit only moves the spike to whichever frame
+    // materializes it. Split it into fence-aware paragraph chunks instead:
+    // each chunk parses + lays out independently under the scheduler's
+    // per-frame budget, so no single frame ever pays for the whole body.
+    // Streaming text always renders inline.
     final content = cleaned;
     Widget body;
     if (kTerminalBlockStatuses.contains(block.status)) {
       final fontSize = textStyle?.fontSize ?? 14;
-      body = DeferredContent(
-        cost: content.length,
-        estimatedHeight: content.length / 22 * fontSize * 1.6,
-        builder: (_) => AppMarkdown(content: content, style: textStyle),
-      );
+      final lineHeight = fontSize * 1.6;
+      final chunks = splitMarkdownChunks(content);
+      if (chunks.length == 1) {
+        body = DeferredContent(
+          cost: content.length,
+          estimatedHeight: content.length / 22 * lineHeight,
+          builder: (_) => AppMarkdown(content: content, style: textStyle),
+        );
+      } else {
+        body = Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final chunk in chunks)
+              DeferredContent(
+                cost: chunk.length,
+                estimatedHeight: chunk.length / 22 * lineHeight,
+                builder: (_) => AppMarkdown(content: chunk, style: textStyle),
+              ),
+          ],
+        );
+      }
     } else {
       body = AppMarkdown(content: content, style: textStyle);
     }
     return selectable ? MessageSelectionArea(child: body) : body;
   }
+}
+
+/// Target size (chars) of one markdown chunk — small enough that a single
+/// chunk's parse + text layout fits a 120Hz frame's budget.
+const int _kMarkdownChunkSize = 3000;
+
+/// Splits [src] into rendering chunks of roughly [_kMarkdownChunkSize] chars.
+///
+/// Cuts only at blank-line paragraph boundaries that are *outside* fenced
+/// code blocks, and never right before a continuation-looking line (list
+/// item, indent, blockquote, table row) so lists / tables / quotes stay in
+/// one chunk. Returns `[src]` unchanged when it's short enough.
+List<String> splitMarkdownChunks(String src) {
+  if (src.length <= _kMarkdownChunkSize * 2) return [src];
+  final lines = src.split('\n');
+  final chunks = <String>[];
+  final current = StringBuffer();
+  var currentLen = 0;
+  var inFence = false;
+
+  bool isContinuation(String line) {
+    final t = line.trimLeft();
+    if (t.isEmpty) return false;
+    if (line.startsWith(' ') || line.startsWith('\t')) return true;
+    return t.startsWith('- ') ||
+        t.startsWith('* ') ||
+        t.startsWith('+ ') ||
+        t.startsWith('>') ||
+        t.startsWith('|') ||
+        RegExp(r'^\d+[.)] ').hasMatch(t);
+  }
+
+  for (var i = 0; i < lines.length; i++) {
+    final line = lines[i];
+    final fenceMark = RegExp(r'^\s*(```|~~~)').hasMatch(line);
+    if (fenceMark) inFence = !inFence;
+
+    if (!inFence &&
+        !fenceMark &&
+        line.trim().isEmpty &&
+        currentLen >= _kMarkdownChunkSize) {
+      // Cut here unless the next non-empty line continues this construct.
+      var j = i + 1;
+      while (j < lines.length && lines[j].trim().isEmpty) {
+        j++;
+      }
+      if (j >= lines.length || !isContinuation(lines[j])) {
+        chunks.add(current.toString());
+        current.clear();
+        currentLen = 0;
+        continue; // drop the separating blank line
+      }
+    }
+    if (currentLen > 0) {
+      current.write('\n');
+      currentLen++;
+    }
+    current.write(line);
+    currentLen += line.length;
+  }
+  if (currentLen > 0) chunks.add(current.toString());
+  return chunks.isEmpty ? [src] : chunks;
 }
 
 /// Renders a standalone `MATH` block, mirroring `MathBlock.tsx`: the formula

@@ -1428,7 +1428,13 @@ class _DeferredBubbleState extends ConsumerState<_DeferredBubble> {
       return;
     }
     _estimatedHeight = (cost * 0.5).clamp(120.0, 2000.0);
-    _entry = DeferredContentScheduler.instance.enqueue(cost, _materialize);
+    // The bubble's own build is cheap once its heavy content re-defers
+    // internally (chunked markdown / code placeholders) — enqueue at a capped
+    // cost so a giant bubble doesn't starve the scheduler for many frames.
+    _entry = DeferredContentScheduler.instance.enqueue(
+      math.min(cost, 3000),
+      _materialize,
+    );
   }
 
   void _materialize() {

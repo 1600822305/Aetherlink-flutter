@@ -110,8 +110,10 @@ class DeferredContentScheduler {
 
   static final DeferredContentScheduler instance = DeferredContentScheduler._();
 
-  /// Cost units (≈ source characters) materialized per frame.
-  static const int _frameBudget = 20000;
+  /// Cost units (≈ source characters) materialized per frame. One ~3000-char
+  /// markdown chunk parses + lays out in a few ms on-device; two per frame
+  /// keeps the pump comfortably inside a 120Hz budget even mid-scroll.
+  static const int _frameBudget = 6000;
 
   final List<DeferredContentEntry> _stack = [];
   bool _pumpScheduled = false;
