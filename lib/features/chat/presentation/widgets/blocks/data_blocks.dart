@@ -90,13 +90,18 @@ class _ToolBlockViewState extends ConsumerState<ToolBlockView> {
         ? _toolSuccessColor
         : theme.colorScheme.primary;
 
-    if (!identical(block.arguments, _lastArgs)) {
-      _lastArgs = block.arguments;
-      _cachedParams = _prettyArgs(block.arguments);
-    }
-    if (!identical(block.content, _lastContent)) {
-      _lastContent = block.content;
-      _cachedResult = _formatResult(block.content);
+    // Pretty-printing (JSON encode of possibly huge tool results) and the
+    // body's text layout are only paid when the card is actually expanded —
+    // a collapsed card costs just its header row.
+    if (_expanded) {
+      if (!identical(block.arguments, _lastArgs)) {
+        _lastArgs = block.arguments;
+        _cachedParams = _prettyArgs(block.arguments);
+      }
+      if (!identical(block.content, _lastContent)) {
+        _lastContent = block.content;
+        _cachedResult = _formatResult(block.content);
+      }
     }
     final params = _cachedParams ?? '';
     final result = _cachedResult ?? '';
@@ -181,20 +186,20 @@ class _ToolBlockViewState extends ConsumerState<ToolBlockView> {
               ),
             ),
           ),
-          AnimatedCrossFade(
-            firstChild: const SizedBox(width: double.infinity),
-            secondChild: _content(
-              context,
-              params: params,
-              result: result,
-              isProcessing: isProcessing,
-              hasError: hasError,
-              confirmationRequest: pending,
-            ),
-            crossFadeState: _expanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
+          AnimatedSize(
             duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: _expanded
+                ? _content(
+                    context,
+                    params: params,
+                    result: result,
+                    isProcessing: isProcessing,
+                    hasError: hasError,
+                    confirmationRequest: pending,
+                  )
+                : const SizedBox(width: double.infinity),
           ),
         ],
       ),

@@ -11,6 +11,8 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/mes
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/tool_renderer_registry.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/deferred_content.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/text_blocks.dart';
 import 'package:aetherlink_flutter/shared/domain/thinking_settings.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
@@ -192,7 +194,35 @@ class _ThinkingBlockViewState extends ConsumerState<ThinkingBlockView> {
       previewContent: _previewContent(),
       inlineTools: inlineTools,
       markdownBuilder: (context, content, style) {
-        final body = AppMarkdown(content: content, style: style);
+        // A long finished reasoning body is chunk-deferred like MAIN_TEXT so
+        // no single frame parses/lays out the whole thing; streaming
+        // reasoning renders inline.
+        Widget body;
+        if (_isThinking) {
+          body = AppMarkdown(content: content, style: style);
+        } else {
+          final chunks = splitMarkdownChunks(content);
+          final lineHeight = (style?.fontSize ?? 14) * 1.6;
+          body = chunks.length == 1
+              ? DeferredContent(
+                  cost: content.length,
+                  estimatedHeight: content.length / 22 * lineHeight,
+                  builder: (_) => AppMarkdown(content: content, style: style),
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final chunk in chunks)
+                      DeferredContent(
+                        cost: chunk.length,
+                        estimatedHeight: chunk.length / 22 * lineHeight,
+                        builder: (_) =>
+                            AppMarkdown(content: chunk, style: style),
+                      ),
+                  ],
+                );
+        }
         // 消息可选中复制 (侧边栏常规设置)：思考过程正文也支持长按选中/复制。
         final selectable = ref.watch(
           sidebarSettingsControllerProvider.select(
