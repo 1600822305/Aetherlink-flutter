@@ -17,6 +17,8 @@ import 'package:aetherlink_flutter/features/chat/presentation/controllers/chat_a
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/deferred_content.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/message_selection_area.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_message_bubble.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_selection_bar.dart';
@@ -1340,6 +1342,13 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
                 : bubble;
           }
 
+          // Heavy terminal bubbles first mount as a skeleton and materialize
+          // over the following frames — the frame that runs the page
+          // transition never pays for a giant bubble's build.
+          if (!isSelecting) {
+            item = _DeferredBubble(rowIds: row, child: item);
+          }
+
           // Navigation landing flash (web scrollToMessage's 1.6s highlight).
           item = _NavFlashHighlight(messageId: row.first, child: item);
 
@@ -1363,6 +1372,90 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           );
         },
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Defers a whole message row's first build behind a skeleton bubble.
+///
+/// Row-count windowing and in-bubble [DeferredContent] still leave one cost
+/// on the entry frame: assembling the bubble chrome + parsing its (possibly
+/// many) blocks — a single multi-round tool-call message can blow the frame
+/// budget alone. Heavy *terminal* rows therefore mount as a fixed-height
+/// skeleton and are swapped in by [DeferredContentScheduler] over the next
+/// frames (LIFO — rows near the viewport first). Streaming / cheap rows
+/// build inline so live output and short chats never flash a skeleton.
+/// [_KeepAliveItem] keeps materialized rows alive, so this only ever happens
+/// on the row's first mount (topic entry / history reveal).
+class _DeferredBubble extends ConsumerStatefulWidget {
+  const _DeferredBubble({required this.rowIds, required this.child});
+
+  final List<String> rowIds;
+  final Widget child;
+
+  /// Rows costing at most this (≈ source characters) build inline.
+  static const int _inlineCostThreshold = 2000;
+
+  @override
+  ConsumerState<_DeferredBubble> createState() => _DeferredBubbleState();
+}
+
+class _DeferredBubbleState extends ConsumerState<_DeferredBubble> {
+  bool _materialized = false;
+  DeferredContentEntry? _entry;
+  double _estimatedHeight = 120;
+
+  @override
+  void initState() {
+    super.initState();
+    final state = ref.read(chatControllerProvider);
+    var cost = 0;
+    var terminal = true;
+    for (final id in widget.rowIds) {
+      final view = state.messageById(id);
+      if (view == null) continue;
+      if (view.status != MessageStatus.success &&
+          view.status != MessageStatus.error) {
+        terminal = false;
+        break;
+      }
+      cost += view.text.length + view.thinking.length + view.blocks.length * 300;
+    }
+    if (!terminal || cost <= _DeferredBubble._inlineCostThreshold) {
+      _materialized = true;
+      return;
+    }
+    _estimatedHeight = (cost * 0.5).clamp(120.0, 2000.0);
+    _entry = DeferredContentScheduler.instance.enqueue(cost, _materialize);
+  }
+
+  void _materialize() {
+    _entry = null;
+    if (!mounted) return;
+    setState(() => _materialized = true);
+  }
+
+  @override
+  void dispose() {
+    _entry?.cancel();
+    _entry = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_materialized) return widget.child;
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Container(
+        width: double.infinity,
+        height: _estimatedHeight,
+        decoration: BoxDecoration(
+          color: cs.onSurface.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(16),
         ),
       ),
     );
