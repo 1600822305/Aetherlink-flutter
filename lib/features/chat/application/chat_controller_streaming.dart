@@ -47,9 +47,6 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
   /// "继续生成" button.
   static const int _kMaxAutoContinues = 3;
 
-  /// 流式回复 UI 刷新的最小间隔（节流窗口）。
-  static const Duration _kStreamEmitInterval = Duration(milliseconds: 100);
-
   /// 流式过程中把已生成内容检查点写入数据库的最小间隔。对齐 Cherry Studio 的
   /// 崩溃安全策略：闪退/被系统杀死时最多丢最后几秒的增量，而不是整轮回复
   /// （MCP 工具执行可能耗时数分钟，期间尤其需要落盘）。
@@ -189,23 +186,7 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
       if (thinking.isNotEmpty) thinking.toString(),
     ].join('\n\n');
 
-    // 流式 UI 刷新节流（对齐 Cherry Studio 的 ~100ms 合帧）：SSE delta 一秒可达
-    // 数十次，而每次刷新都要全量聚合文本并触发整段 Markdown 重建，成本随回复
-    // 长度线性上涨；合并到至多每 100ms 一次后，单个 delta 不再放大为全文重排。
-    // [update] 立即发射并取消尾随定时器（块边界/工具状态等需要即时呈现的时刻
-    // 使用）；delta 走 [scheduleUpdate]，间隔不足时挂一个尾随定时器，保证最后
-    // 一段文字不会丢帧。
-    Timer? pendingEmit;
-    var lastEmitAt = DateTime.fromMillisecondsSinceEpoch(0);
-
-    void cancelPendingEmit() {
-      pendingEmit?.cancel();
-      pendingEmit = null;
-    }
-
     void update() {
-      cancelPendingEmit();
-      lastEmitAt = DateTime.now();
       final current = roundDisplay();
       final liveBlocks = <MessageBlock>[
         ...completed,
@@ -239,19 +220,6 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
       );
       _replace(views, view);
       _emitTurn(turnTopicId, views, streaming: true);
-    }
-
-    void scheduleUpdate() {
-      if (pendingEmit != null) return;
-      final wait = _kStreamEmitInterval - DateTime.now().difference(lastEmitAt);
-      if (wait <= Duration.zero) {
-        update();
-        return;
-      }
-      pendingEmit = Timer(wait, () {
-        pendingEmit = null;
-        update();
-      });
     }
 
     // 崩溃安全检查点（对齐 Cherry Studio）：把目前已生成的块（完成块 + 进行中的
@@ -309,7 +277,6 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
     // thinking + prose into [completed]) and persist as a normal success, then
     // drop the streaming state. Mirrors Cherry Studio — Stop preserves output.
     Future<void> persistStopped() async {
-      cancelPendingEmit();
       stopwatch.stop();
       if (thinking.isNotEmpty) {
         completed.add(
@@ -389,7 +356,6 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
 
       // Reset the per-attempt accumulators so a failover retry starts clean,
       // re-seeding the leading memory-injection block so it survives retries.
-      cancelPendingEmit();
       thinking.clear();
       thinkingBlockId = '$assistantMessageId::thinking';
       thinkingStartAt = null;
@@ -435,14 +401,14 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
                 firstTokenMs ??= stopwatch.elapsedMilliseconds;
                 if (thinking.isNotEmpty) thinkingEndAt ??= DateTime.now();
                 buffer.write(text);
-                scheduleUpdate();
+                update();
                 checkpoint();
               case LlmReasoningDelta(:final text):
                 committed = true;
                 firstTokenMs ??= stopwatch.elapsedMilliseconds;
                 thinkingStartAt ??= DateTime.now();
                 thinking.write(text);
-                scheduleUpdate();
+                update();
                 checkpoint();
               case LlmToolCallChunk(:final call):
                 committed = true;
@@ -752,7 +718,6 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
           update();
         }
 
-        cancelPendingEmit();
         stopwatch.stop();
         await checkpointChain;
         await _persistMessageBlocks(
@@ -813,7 +778,6 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
 
     // Terminal failure: reject any pending confirmations, persist any key stat
     // changes, then mark the message errored.
-    cancelPendingEmit();
     ref.read(toolConfirmationProvider.notifier).rejectAll();
     ref.read(runningCommandsProvider.notifier).cancelAll();
     await checkpointChain;
