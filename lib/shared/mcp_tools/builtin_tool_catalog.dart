@@ -1203,23 +1203,31 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'dex_search',
       description:
-          '统一搜索入口（一个工具搜遍 5 个面，用 target 区分，无需记忆多个工具）：\n'
+          '统一搜索入口（一个工具搜遍多个面，用 target 区分，无需记忆多个工具）：\n'
           '- target=dex（默认）：已打开会话内的 DEX 搜索，用 searchType 选类名(class)/包名(package)/'
-          '方法名(method)/字段名(field)/字符串(string)/整数(int)/代码(code)/父类(superclass)/'
-          '接口(interface)/注解(annotation)；\n'
+          '方法名(method)/字段名(field)/字符串(string)/整数(int)/代码(code, 反汇编 smali 逐行搜索，'
+          '命中含 lineNumber+snippet)/父类(superclass)/接口(interface)/注解(annotation)；\n'
+          '- target=overview：一次聚合 DEX 类名/方法名/字段名/字符串 4 个面，结果按面分组在 hits 下，'
+          '各面各取 maxResults(默认 20) 条，适合关键字初筛；\n'
           '- target=strings：DEX 字符串池（用 filter 过滤）；\n'
-          '- target=files：APK 内文本文件搜索（用 query 作为 pattern）；\n'
-          '- target=arsc：resources.arsc 搜索（arscTarget=strings/resources）；\n'
+          '- target=files：APK 内文本文件搜索（用 query 作为 pattern，命中含 locator=apk_file:路径:行号）；\n'
+          '- target=arsc：resources.arsc 搜索（arscTarget=strings/resources，resources 命中含'
+          ' locator=resource:0x7f...、resourceType、resourceName）；\n'
           '- target=manifest：AndroidManifest 属性/值搜索（用 attrName/value）。\n'
-          'dex/strings 走会话（sessionId，也可填 apkPath）；files/arsc/manifest 走 apkPath。'
-          'dex 结果中的 className/superclass/interface/annotation 统一为点分格式（com.example.Foo）。',
+          'dex/strings/overview 走会话（sessionId，也可填 apkPath）；files/arsc/manifest 走 apkPath。\n'
+          '所有 DEX 命中统一带 locator（class→dex_class:、method/code→dex_method:、field→dex_field:），'
+          '可直接回传给 dex_read_class/dex_read_method 等定位。className/superclass/interface/annotation '
+          '统一为点分格式（com.example.Foo）。\n'
+          'target=dex 支持分页：传 offset/limit 或把返回的 nextCursor 原样回传到 cursor 取下一页，'
+          '返回体含 hasMore/nextOffset/nextCursor。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'target': {
             'type': 'string',
-            'enum': ['dex', 'strings', 'files', 'arsc', 'manifest'],
-            'description': '搜索面，默认 dex。dex/strings 需 sessionId；files/arsc/manifest 需 apkPath',
+            'enum': ['dex', 'overview', 'strings', 'files', 'arsc', 'manifest'],
+            'description': '搜索面，默认 dex。dex/strings/overview 需 sessionId；'
+                'files/arsc/manifest 需 apkPath',
             'default': 'dex',
           },
           'sessionId': {
@@ -1296,12 +1304,22 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'maxResults': {
             'type': 'integer',
-            'description': '最大返回结果数',
+            'description': '最大返回结果数（target=dex 时作为单页 limit 的兜底；'
+                'target=overview 时为每个面各取的条数）',
             'default': 50,
+          },
+          'offset': {
+            'type': 'integer',
+            'description': '分页起始偏移（仅 target=dex）；也可用 cursor 代替',
+            'default': 0,
+          },
+          'cursor': {
+            'type': 'string',
+            'description': '分页游标（仅 target=dex）：把上一页返回的 nextCursor 原样回传即可翻页',
           },
           'limit': {
             'type': 'integer',
-            'description': '最大返回数量（target=strings/arsc/manifest）',
+            'description': '最大返回数量（target=dex 单页大小 / strings/arsc/manifest）',
             'default': 50,
           },
         },

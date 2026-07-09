@@ -178,6 +178,22 @@ class MultiDexSessionOps {
                                     jsItem.put("fieldType", item.getString("fieldType"));
                                 }
                                 break;
+                            case "code":
+                                // C++ code 搜索：class/name/prototype + 命中行号/片段。
+                                jsItem.put("className", item.optString("className",
+                                        item.optString("class", "")));
+                                jsItem.put("methodName", item.optString("methodName",
+                                        item.optString("name", "")));
+                                if (item.has("prototype")) {
+                                    jsItem.put("prototype", item.getString("prototype"));
+                                }
+                                if (item.has("line")) {
+                                    jsItem.put("line", item.optInt("line"));
+                                }
+                                if (item.has("snippet")) {
+                                    jsItem.put("snippet", item.optString("snippet", ""));
+                                }
+                                break;
                             case "string":
                                 jsItem.put("value", item.optString("value", ""));
                                 break;

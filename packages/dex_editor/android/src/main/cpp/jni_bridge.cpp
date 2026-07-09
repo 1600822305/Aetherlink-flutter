@@ -275,6 +275,48 @@ Java_com_aetherlink_dexeditor_CppDex_searchInDex(JNIEnv* env, jclass, jbyteArray
                     count++;
                 }
             }
+        } else if (type == "code") {
+            // 反汇编每个方法体，逐行文本匹配，返回命中所在的方法+行号+代码片段。
+            // 对齐 MT target=smali：之前缺 code 分支导致 searchType=code 恒返回 0。
+            dex::SmaliDisassembler disasm;
+            disasm.set_strings(parser.strings());
+            disasm.set_types(parser.types());
+            disasm.set_methods(parser.get_method_signatures());
+            disasm.set_fields(parser.get_field_signatures());
+            auto methods = parser.get_methods();
+            for (const auto& m : methods) {
+                if (count >= maxResults) break;
+                dex::CodeItem code_item;
+                if (!parser.get_method_code(m.class_name, m.method_name, code_item, m.prototype)) {
+                    continue;
+                }
+                auto insns = disasm.disassemble_method(code_item.insns.data(), code_item.insns.size());
+                std::string body = disasm.to_smali(insns);
+                size_t line_no = 1;
+                size_t start = 0;
+                while (start <= body.size()) {
+                    size_t nl = body.find('\n', start);
+                    std::string line = (nl == std::string::npos)
+                        ? body.substr(start)
+                        : body.substr(start, nl - start);
+                    if (safe_contains(line, q, caseSensitive)) {
+                        size_t p = line.find_first_not_of(" \t");
+                        std::string snippet = (p == std::string::npos) ? line : line.substr(p);
+                        results.push_back({
+                            {"type", "code"},
+                            {"class", sanitize_utf8(m.class_name)},
+                            {"name", sanitize_utf8(m.method_name)},
+                            {"prototype", sanitize_utf8(m.prototype)},
+                            {"line", static_cast<int>(line_no)},
+                            {"snippet", sanitize_utf8(snippet)}
+                        });
+                        if (++count >= maxResults) break;
+                    }
+                    if (nl == std::string::npos) break;
+                    start = nl + 1;
+                    line_no++;
+                }
+            }
         }
         
         json result = {

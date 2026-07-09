@@ -691,11 +691,14 @@ Future<McpToolResult> _search(DexEditor dex, Map<String, Object?> args) async {
       return _searchArsc(dex, _withArscTarget(_withPattern(args)));
     case 'manifest':
       return _searchManifestCpp(dex, args);
+    case 'overview':
+      return _searchOverview(dex, args);
     case 'dex':
       break;
     default:
       return McpToolResult(
-        '错误: 未知的 target "$target"（可选 dex/strings/files/arsc/manifest）',
+        '错误: 未知的 target "$target"'
+        '（可选 dex/strings/files/arsc/manifest/overview）',
         isError: true,
       );
   }
@@ -709,28 +712,143 @@ Future<McpToolResult> _search(DexEditor dex, Map<String, Object?> args) async {
       isError: true,
     );
   }
+  // 分页：cursor 优先（回传 nextCursor），否则读显式 offset/limit（兼容旧 maxResults）。
+  final c = decodeCursor(args['cursor']);
+  final offset = _int(c['offset'] ?? args['offset']);
+  final limit =
+      _int(c['limit'] ?? args['limit'] ?? args['maxResults'], 50);
+  // native 不支持 offset，故拉取 offset+limit(+1 探测 hasMore) 后在 Dart 切片。
+  final want = offset + limit;
   final result = await dex.execute('searchInDexSession', {
     'sessionId': _sessionArg(args),
     'query': query,
     'searchType': searchType,
     'caseSensitive': _bool(args['caseSensitive']),
-    'maxResults': _int(args['maxResults'], 50),
+    'maxResults': want + 1,
   });
   if (!result.success) {
     return McpToolResult('错误: ${result.error}', isError: true);
   }
   final data = _map(result.data);
-  final results = data['results'] is List
+  final all = data['results'] is List
       ? _normalizeClassFields(
-          data['results'] as List,
-          const ['className', 'superclass', 'interface', 'annotation'],
-        )
+              data['results'] as List,
+              const ['className', 'superclass', 'interface', 'annotation'],
+            )
+            .map(_decorateDexResult)
+            .toList()
       : const <Object?>[];
+  final hasMore = all.length > want;
+  final pageItems = all.skip(offset).take(limit).toList();
   return McpToolResult(encodeJson({
     'query': query,
     'searchType': searchType,
-    'total': data['total'] ?? 0,
-    'results': results,
+    'total': data['total'] ?? all.length,
+    ..._listMeta(
+      offset: offset,
+      limit: limit,
+      returnedCount: pageItems.length,
+      hasMore: hasMore,
+    ),
+    'results': pageItems,
+  }));
+}
+
+/// 给单条 DEX 搜索结果补 `locator`（已把 className 归一为点分后调用）：
+///  - class/superclass/interface/annotation → dex_class:...
+///  - method/code → dex_method:...（缺签名时回退类 locator）
+///  - field → dex_field:...（缺 fieldType 时回退类 locator）
+///  - string → 若 native 给出 className 归属，补 classLocator。
+Map<String, Object?> _decorateDexResult(Object? item) {
+  if (item is! Map) return {'value': item};
+  final m = Map<String, Object?>.of(item.cast<String, Object?>());
+  final type = _str(m['type']);
+  final className = _str(m['className']);
+  switch (type) {
+    case 'class':
+    case 'superclass':
+    case 'interface':
+    case 'annotation':
+      if (className.isNotEmpty) m['locator'] = _classLocator(className);
+      break;
+    case 'method':
+    case 'code':
+      final name = _str(m['methodName']);
+      final proto = _str(m['prototype']);
+      if (className.isNotEmpty && name.isNotEmpty && proto.isNotEmpty) {
+        m['locator'] = _methodLocator(className, name, proto);
+      } else if (className.isNotEmpty) {
+        m['locator'] = _classLocator(className);
+      }
+      // 与 files 搜索统一用 lineNumber（native code 搜索回传 line）。
+      if (m.containsKey('line')) {
+        m['lineNumber'] = m.remove('line');
+      }
+      break;
+    case 'field':
+      final name = _str(m['fieldName']);
+      final ftype = _str(m['fieldType']);
+      if (className.isNotEmpty && name.isNotEmpty && ftype.isNotEmpty) {
+        m['locator'] = _fieldLocator(className, name, ftype);
+      } else if (className.isNotEmpty) {
+        m['locator'] = _classLocator(className);
+      }
+      break;
+    case 'string':
+      if (className.isNotEmpty) m['classLocator'] = _classLocator(className);
+      break;
+  }
+  return m;
+}
+
+/// 一次拉取某 searchType 的 DEX 搜索结果（已归一 + 补 locator），供 overview 聚合。
+Future<List<Object?>> _dexSearchList(
+  DexEditor dex,
+  Map<String, Object?> args,
+  String searchType,
+  int maxResults,
+) async {
+  final result = await dex.execute('searchInDexSession', {
+    'sessionId': _sessionArg(args),
+    'query': _str(args['query']),
+    'searchType': searchType,
+    'caseSensitive': _bool(args['caseSensitive']),
+    'maxResults': maxResults,
+  });
+  if (!result.success) return const <Object?>[];
+  final data = _map(result.data);
+  if (data['results'] is! List) return const <Object?>[];
+  return _normalizeClassFields(
+    data['results'] as List,
+    const ['className', 'superclass', 'interface', 'annotation'],
+  ).map(_decorateDexResult).toList();
+}
+
+/// target=overview：一次调用聚合多个搜索面（DEX 类名/方法名/字段名/字符串），
+/// 每面各取 [perTarget] 条，结果统一带 locator，按面分组返回 `hits`，
+/// 对齐 MT `mt_apk_search(target=overview)` 的「一次搜遍」体验。
+/// 说明：files/arsc/manifest 走 apkPath 而非会话，overview 聚焦已打开会话内的
+/// DEX 搜索面；跨 ZIP/资源/清单的搜索请用对应的专用 target。
+Future<McpToolResult> _searchOverview(
+  DexEditor dex,
+  Map<String, Object?> args,
+) async {
+  final query = _str(args['query']);
+  if (query.isEmpty) {
+    return const McpToolResult('错误: target=overview 需要 query', isError: true);
+  }
+  final perTarget = _int(args['maxResults'], 20);
+  final hits = <String, Object?>{};
+  for (final st in const ['class', 'method', 'field', 'string']) {
+    hits[st] = await _dexSearchList(dex, args, st, perTarget);
+  }
+  final total = hits.values
+      .fold<int>(0, (sum, v) => sum + (v is List ? v.length : 0));
+  return McpToolResult(encodeJson({
+    'query': query,
+    'perTarget': perTarget,
+    'total': total,
+    'hits': hits,
   }));
 }
 
@@ -1471,13 +1589,29 @@ Future<McpToolResult> _searchTextInApk(
     return McpToolResult('错误: ${result.error}', isError: true);
   }
   final data = _map(result.data);
+  final results = data['results'] is List
+      ? (data['results'] as List).map(_decorateApkFileResult).toList()
+      : const <Object?>[];
   return McpToolResult(encodeJson({
     'pattern': pattern,
     'totalFound': data['totalFound'] ?? 0,
     'filesSearched': data['filesSearched'] ?? 0,
     'truncated': data['truncated'] ?? false,
-    'results': data['results'] ?? [],
+    'results': results,
   }));
+}
+
+/// 给 APK 文件文本命中补 `locator`（apk_file:路径 或 apk_file:路径:行号），
+/// 对齐 P0 统一 locator 要求；native 已返回 file/lineNumber/line/context。
+Map<String, Object?> _decorateApkFileResult(Object? item) {
+  if (item is! Map) return {'value': item};
+  final m = Map<String, Object?>.of(item.cast<String, Object?>());
+  final file = _str(m['file']);
+  if (file.isNotEmpty) {
+    final line = _int(m['lineNumber'], -1);
+    m['locator'] = line >= 0 ? 'apk_file:$file:$line' : 'apk_file:$file';
+  }
+  return m;
 }
 
 /// 统一 APK 内文件操作入口。`op` 选择动作，复用既有专用 handler：
@@ -1588,7 +1722,34 @@ Future<McpToolResult> _searchArsc(
   if (!result.success) {
     return McpToolResult('错误: ${result.error}', isError: true);
   }
+  // 资源命中补统一 locator（resource:0x7fXXXXXX），并给出 resourceType/resourceName
+  // 别名，对齐 MT arsc 结果字段；字符串池命中无资源归属，保持原样。
+  if (target == 'resources') {
+    final data = Map<String, Object?>.of(_map(result.data));
+    if (data['results'] is List) {
+      data['results'] =
+          (data['results'] as List).map(_decorateArscResource).toList();
+    }
+    return McpToolResult(encodeJson(data));
+  }
   return McpToolResult(encodeJson(result.data));
+}
+
+/// 给 arsc 资源命中补 `locator`（resource:0x7fXXXXXX）与 resourceType/resourceName
+/// 别名。native 已返回 id/name/type/value/package，这里只做展现层归一。
+Map<String, Object?> _decorateArscResource(Object? item) {
+  if (item is! Map) return {'value': item};
+  final m = Map<String, Object?>.of(item.cast<String, Object?>());
+  final id = _int(m['id'], -1);
+  if (id >= 0) {
+    m['locator'] =
+        'resource:0x${id.toRadixString(16).padLeft(8, '0')}';
+  }
+  final type = _str(m['type']);
+  if (type.isNotEmpty) m['resourceType'] = type;
+  final name = _str(m['name']);
+  if (name.isNotEmpty) m['resourceName'] = name;
+  return m;
 }
 
 Future<McpToolResult> _searchManifestCpp(
