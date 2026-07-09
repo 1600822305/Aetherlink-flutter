@@ -705,6 +705,8 @@ void main() {
       expect(dex.lastAction, 'outlineClassFromSession');
       final json = _json(result);
       expect(json['className'], 'com.example.Foo');
+      // 命名统一：类主体带 locator，classLocator 为兼容别名。
+      expect(json['locator'], 'dex_class:com.example.Foo');
       expect(json['classLocator'], 'dex_class:com.example.Foo');
       expect(json['superclass'], 'java.lang.Object');
       expect(json['interfaces'], ['java.lang.Runnable']);

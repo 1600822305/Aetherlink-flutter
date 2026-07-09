@@ -775,6 +775,9 @@ Future<McpToolResult> _outlineClass(
       ? _normalizeClassName(_str(data['className']))
       : className;
   data['className'] = outClass;
+  // 命名统一：类主体的返回一律带 locator（与 dex_read_class 一致）；
+  // classLocator 保留作向后兼容别名。
+  data['locator'] = _classLocator(outClass);
   data['classLocator'] = _classLocator(outClass);
   if (data['accessFlags'] is int) {
     data['accessFlagsText'] =
