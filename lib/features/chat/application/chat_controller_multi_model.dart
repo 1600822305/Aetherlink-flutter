@@ -67,6 +67,7 @@ mixin _ChatMultiModel on _$ChatController {
     Iterable<ChatMessageView> views, {
     required Model chatModel,
     List<AssistantRegex>? regexRules,
+    required McpMode toolMode,
   });
   String _requestContent(
     ChatMessageView view, {
@@ -302,6 +303,7 @@ mixin _ChatMultiModel on _$ChatController {
             contextViews,
             chatModel: effective,
             regexRules: regexRules,
+            toolMode: mcp.mode,
           );
           final request = LlmChatRequest(
             model: effective,

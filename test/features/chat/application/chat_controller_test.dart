@@ -10,7 +10,9 @@ import 'package:aetherlink_flutter/features/chat/application/chat_controller.dar
 import 'package:aetherlink_flutter/features/chat/application/chat_providers.dart';
 import 'package:aetherlink_flutter/features/chat/application/multi_model_mentions_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/composer_attachment.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_status.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
@@ -119,12 +121,13 @@ ProviderContainer _container({
   required LlmGateway gateway,
   required ChatRepositoryImpl repo,
   CurrentModel? current,
+  Topic? topic,
 }) {
   final container = ProviderContainer(
     overrides: [
       chatRepositoryProvider.overrideWithValue(repo),
       llmGatewayFactoryProvider.overrideWithValue(_FakeFactory(gateway)),
-      currentTopicProvider.overrideWith((ref) async => null),
+      currentTopicProvider.overrideWith((ref) async => topic),
       appCurrentModelProvider.overrideWith((ref) async => current),
       // `_viewOf` reads this to resolve a message's provider name; override it
       // so the view build stays in-memory instead of opening the real store.
@@ -137,6 +140,95 @@ ProviderContainer _container({
   );
   addTearDown(container.dispose);
   return container;
+}
+
+Future<Topic> _seedToolConversation(
+  ChatRepositoryImpl repo, {
+  String mode = 'function',
+}) async {
+  final createdAt = DateTime.utc(2026, 7, 9);
+  final userId = 'msg-tool-user';
+  final assistantId = 'msg-tool-assistant';
+  final topic = Topic(
+    id: 'topic-tool-history',
+    assistantId: 'default-assistant',
+    name: '工具历史',
+    createdAt: createdAt,
+    updatedAt: createdAt,
+    messageIds: [userId, assistantId],
+    activeNodeId: assistantId,
+  );
+  await repo.saveTopic(topic);
+  await repo.saveMessage(
+    Message(
+      id: userId,
+      role: MessageRole.user,
+      assistantId: topic.assistantId,
+      topicId: topic.id,
+      createdAt: createdAt,
+      status: MessageStatus.success,
+      blocks: const ['block-tool-user'],
+    ),
+  );
+  await repo.saveMessageBlock(
+    MessageBlock.mainText(
+      id: 'block-tool-user',
+      messageId: userId,
+      status: MessageBlockStatus.success,
+      createdAt: createdAt,
+      content: '检查项目',
+    ),
+  );
+  await repo.saveMessage(
+    Message(
+      id: assistantId,
+      role: MessageRole.assistant,
+      assistantId: topic.assistantId,
+      topicId: topic.id,
+      parentId: userId,
+      createdAt: createdAt.add(const Duration(microseconds: 1)),
+      status: MessageStatus.success,
+      model: _currentModel().model,
+      askId: userId,
+      blocks: const [
+        'block-tool-prose',
+        'block-tool-call',
+        'block-tool-partial',
+      ],
+    ),
+  );
+  await repo.saveMessageBlock(
+    MessageBlock.mainText(
+      id: 'block-tool-prose',
+      messageId: assistantId,
+      status: MessageBlockStatus.success,
+      createdAt: createdAt,
+      content: '我先读取目录。',
+    ),
+  );
+  await repo.saveMessageBlock(
+    MessageBlock.tool(
+      id: 'block-tool-call',
+      messageId: assistantId,
+      status: MessageBlockStatus.error,
+      createdAt: createdAt,
+      toolId: 'call-1',
+      toolName: 'list_files',
+      arguments: const {'path': 'lib'},
+      content: '{"canceled":true,"files":["main.dart"]}',
+      metadata: {'mcpMode': mode, 'toolRoundId': 'block-tool-prose'},
+    ),
+  );
+  await repo.saveMessageBlock(
+    MessageBlock.mainText(
+      id: 'block-tool-partial',
+      messageId: assistantId,
+      status: MessageBlockStatus.success,
+      createdAt: createdAt,
+      content: '目录读取被中断。',
+    ),
+  );
+  return topic;
 }
 
 void main() {
@@ -254,6 +346,91 @@ void main() {
     // No error block: a user-initiated stop is not a failure.
     expect(blocks.whereType<ErrorBlock>(), isEmpty);
   });
+
+  test('send restores persisted function tool calls and results', () async {
+    final topic = await _seedToolConversation(repo);
+    final gateway = _FakeGateway(const [
+      LlmStreamChunk.textDelta('继续处理'),
+      LlmStreamChunk.done(),
+    ]);
+    final container = _container(
+      gateway: gateway,
+      repo: repo,
+      current: _currentModel(),
+      topic: topic,
+    );
+
+    await container.read(chatControllerProvider.future);
+    await container.read(chatControllerProvider.notifier).send('继续');
+
+    final history = gateway.lastRequest!.messages;
+    expect(history, hasLength(5));
+    expect(history[0].content, '检查项目');
+    expect(history[1].content, '我先读取目录。');
+    expect(history[1].toolCalls, hasLength(1));
+    expect(history[1].toolCalls!.single.id, 'call-1');
+    expect(history[1].toolCalls!.single.name, 'list_files');
+    expect(history[1].toolCalls!.single.arguments, '{"path":"lib"}');
+    expect(history[2].toolCallId, 'call-1');
+    expect(history[2].toolName, 'list_files');
+    expect(history[2].content, '{"canceled":true,"files":["main.dart"]}');
+    expect(history[3].content, '目录读取被中断。');
+    expect(history[4].content, '继续');
+  });
+
+  test('send restores persisted prompt-injection tool history', () async {
+    final topic = await _seedToolConversation(repo, mode: 'prompt');
+    final gateway = _FakeGateway(const [
+      LlmStreamChunk.textDelta('继续处理'),
+      LlmStreamChunk.done(),
+    ]);
+    final container = _container(
+      gateway: gateway,
+      repo: repo,
+      current: _currentModel(),
+      topic: topic,
+    );
+
+    await container.read(chatControllerProvider.future);
+    await container.read(chatControllerProvider.notifier).send('继续');
+
+    final history = gateway.lastRequest!.messages;
+    expect(history, hasLength(5));
+    expect(history[1].toolCalls, isNull);
+    expect(history[1].content, contains('<name>list_files</name>'));
+    expect(history[1].content, contains('<arguments>{"path":"lib"}</arguments>'));
+    expect(history[2].content, contains('<tool_use_result>'));
+    expect(history[2].content, contains('{"canceled":true,"files":["main.dart"]}'));
+    expect(history[3].content, '目录读取被中断。');
+  });
+
+  test(
+    'continueGenerating restores tool context from the current reply',
+    () async {
+      final topic = await _seedToolConversation(repo);
+      final gateway = _FakeGateway(const [
+        LlmStreamChunk.textDelta('现在继续。'),
+        LlmStreamChunk.done(),
+      ]);
+      final container = _container(
+        gateway: gateway,
+        repo: repo,
+        current: _currentModel(),
+        topic: topic,
+      );
+
+      await container.read(chatControllerProvider.future);
+      await container
+          .read(chatControllerProvider.notifier)
+          .continueGenerating('msg-tool-assistant');
+
+      final history = gateway.lastRequest!.messages;
+      expect(history, hasLength(4));
+      expect(history[1].toolCalls, hasLength(1));
+      expect(history[2].toolCallId, 'call-1');
+      expect(history[3].content, '目录读取被中断。');
+    },
+  );
 
   test(
     'a pasted-as-file attachment becomes a FILE block and feeds the model',
