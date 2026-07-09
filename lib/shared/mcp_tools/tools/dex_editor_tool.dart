@@ -728,12 +728,13 @@ Future<McpToolResult> _getMethod(
   if (code.startsWith('#')) return McpToolResult(code);
   return McpToolResult(encodeJson({
     'className': className,
-    'classLocator': _classLocator(className),
     'methodName': methodName,
     if (signature.isNotEmpty) 'methodSignature': signature,
-    // 方法 locator 需要完整签名才唯一，缺签名时只给类 locator。
-    if (signature.isNotEmpty)
-      'locator': _methodLocator(className, methodName, signature),
+    // 方法 locator 需要完整签名才唯一；缺签名时回退到类 locator（dex_class:...），
+    // 保证结果始终有单一 locator 字段。
+    'locator': signature.isNotEmpty
+        ? _methodLocator(className, methodName, signature)
+        : _classLocator(className),
     'targetVersion': _targetVersion(code),
     'smali': code,
   }));
@@ -775,10 +776,8 @@ Future<McpToolResult> _outlineClass(
       ? _normalizeClassName(_str(data['className']))
       : className;
   data['className'] = outClass;
-  // 命名统一：类主体的返回一律带 locator（与 dex_read_class 一致）；
-  // classLocator 保留作向后兼容别名。
+  // 统一定位符：类结果只用 locator（dex_class:...），与 dex_read_class 一致。
   data['locator'] = _classLocator(outClass);
-  data['classLocator'] = _classLocator(outClass);
   if (data['accessFlags'] is int) {
     data['accessFlagsText'] =
         _accessFlagsText(data['accessFlags'] as int, _AccessKind.classKind);
