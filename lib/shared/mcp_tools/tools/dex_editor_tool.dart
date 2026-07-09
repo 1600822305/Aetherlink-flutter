@@ -140,6 +140,20 @@ String _classToDescriptor(String className) {
   return 'L${className.replaceAll('.', '/')};';
 }
 
+/// 归一 packageFilter：native 的 listClasses 用子串匹配比对「描述符」形态的类名
+/// （如 `Lcom/yuanshi/wanyu/...;`，内部用 `/` 分隔），而调用方习惯传点分包名
+/// （`com.yuanshi.wanyu`）。这里把点分包名转成 `/` 形态，避免因分隔符不一致而
+/// 永远匹配不到。已是 `/` 形态或含描述符符号（`L`/`;`/`[`）的过滤串保持原样。
+String _normalizePackageFilter(String filter) {
+  if (filter.isEmpty) return filter;
+  if (filter.contains('/') ||
+      filter.contains(';') ||
+      filter.startsWith('[')) {
+    return filter;
+  }
+  return filter.replaceAll('.', '/');
+}
+
 /// 统一 locator 体系（见 dex.md 第 5 节，风格对齐 MT 工具）：
 ///  - 类：`dex_class:com.example.Foo`（点分）
 ///  - 方法：`dex_method:Lcom/example/Foo;->bar(I)V`（描述符）
@@ -151,6 +165,52 @@ String _methodLocator(String dottedClassName, String name, String signature) =>
 
 String _fieldLocator(String dottedClassName, String name, String type) =>
     'dex_field:${_classToDescriptor(dottedClassName)}->$name:$type';
+
+/// access_flags 的可读化目标（class/method/field 的部分位含义不同，如 0x40：
+/// 方法是 bridge、字段是 volatile）。
+enum _AccessKind { classKind, method, field }
+
+/// 把 DEX access_flags 数字解成 Java 修饰符字符串（如 17 → "public final"），
+/// 便于人读。位定义见 DEX 规范 access_flags；未知位忽略。空串表示无修饰符。
+String _accessFlagsText(int flags, _AccessKind kind) {
+  const shared = <int, String>{
+    0x1: 'public',
+    0x2: 'private',
+    0x4: 'protected',
+    0x8: 'static',
+    0x10: 'final',
+  };
+  final parts = <String>[];
+  shared.forEach((bit, name) {
+    if (flags & bit != 0) parts.add(name);
+  });
+  switch (kind) {
+    case _AccessKind.classKind:
+      if (flags & 0x200 != 0) parts.add('interface');
+      if (flags & 0x400 != 0) parts.add('abstract');
+      if (flags & 0x1000 != 0) parts.add('synthetic');
+      if (flags & 0x2000 != 0) parts.add('@interface');
+      if (flags & 0x4000 != 0) parts.add('enum');
+      break;
+    case _AccessKind.method:
+      if (flags & 0x20 != 0) parts.add('synchronized');
+      if (flags & 0x40 != 0) parts.add('bridge');
+      if (flags & 0x80 != 0) parts.add('varargs');
+      if (flags & 0x100 != 0) parts.add('native');
+      if (flags & 0x400 != 0) parts.add('abstract');
+      if (flags & 0x800 != 0) parts.add('strictfp');
+      if (flags & 0x1000 != 0) parts.add('synthetic');
+      if (flags & 0x10000 != 0) parts.add('constructor');
+      break;
+    case _AccessKind.field:
+      if (flags & 0x40 != 0) parts.add('volatile');
+      if (flags & 0x80 != 0) parts.add('transient');
+      if (flags & 0x1000 != 0) parts.add('synthetic');
+      if (flags & 0x4000 != 0) parts.add('enum');
+      break;
+  }
+  return parts.join(' ');
+}
 
 /// targetVersion：对内容做 SHA-256 取前 32 个 hex 字符，加 `dex-v1:` 前缀。
 /// 读取时下发，编辑工具据此做并发校验（内容变了 targetVersion 就变）。
@@ -395,11 +455,23 @@ Future<McpToolResult> _openApk(DexEditor dex, Map<String, Object?> args) async {
     return McpToolResult('错误: ${result.error}', isError: true);
   }
   final data = _map(result.data);
-  return McpToolResult(encodeJson({
+  // 概要字段由 native 尽力提供（解析 manifest + 汇总各 DEX header）；缺失则省略。
+  final summary = <String, Object?>{
     'apkPath': apkPath,
+    for (final k in const [
+      'packageName',
+      'versionName',
+      'versionCode',
+      'minSdkVersion',
+      'targetSdkVersion',
+      'totalClasses',
+      'totalMethods',
+    ])
+      if (data[k] != null) k: data[k],
     'dexFiles': data['dexFiles'] ?? [],
     'hint': '请使用 dex_open 打开你想编辑的 DEX 文件',
-  }));
+  };
+  return McpToolResult(encodeJson(summary));
 }
 
 Future<McpToolResult> _openDex(DexEditor dex, Map<String, Object?> args) async {
@@ -429,7 +501,7 @@ Future<McpToolResult> _listClasses(
   final page = _listPage(args, 100);
   final result = await dex.execute('listClasses', {
     'sessionId': _sessionArg(args),
-    'packageFilter': _str(args['packageFilter']),
+    'packageFilter': _normalizePackageFilter(_str(args['packageFilter'])),
     'offset': page.offset,
     'limit': page.limit,
   });
@@ -704,6 +776,10 @@ Future<McpToolResult> _outlineClass(
       : className;
   data['className'] = outClass;
   data['classLocator'] = _classLocator(outClass);
+  if (data['accessFlags'] is int) {
+    data['accessFlagsText'] =
+        _accessFlagsText(data['accessFlags'] as int, _AccessKind.classKind);
+  }
   if (data['superclass'] is String) {
     data['superclass'] = _normalizeClassName(_str(data['superclass']));
   }
@@ -723,6 +799,10 @@ Future<McpToolResult> _outlineClass(
       if (name.isNotEmpty && type.isNotEmpty) {
         fm['locator'] = _fieldLocator(outClass, name, type);
       }
+      if (fm['accessFlags'] is int) {
+        fm['accessFlagsText'] =
+            _accessFlagsText(fm['accessFlags'] as int, _AccessKind.field);
+      }
       return fm;
     }).toList();
   }
@@ -735,6 +815,10 @@ Future<McpToolResult> _outlineClass(
       final signature = _str(mm['signature']);
       if (name.isNotEmpty && signature.isNotEmpty) {
         mm['locator'] = _methodLocator(outClass, name, signature);
+      }
+      if (mm['accessFlags'] is int) {
+        mm['accessFlagsText'] =
+            _accessFlagsText(mm['accessFlags'] as int, _AccessKind.method);
       }
       return mm;
     }).toList();

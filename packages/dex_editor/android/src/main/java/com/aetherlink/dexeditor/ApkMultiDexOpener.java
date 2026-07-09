@@ -40,12 +40,15 @@ class ApkMultiDexOpener {
     JSObject listDexFilesInApk(String apkPath) throws Exception {
         JSObject result = new JSObject();
         JSArray dexFiles = new JSArray();
-        
+        long totalClasses = 0;
+        long totalMethods = 0;
+        boolean countsAvailable = CppDex.isAvailable();
+
         java.util.zip.ZipFile zipFile = null;
         try {
             zipFile = new java.util.zip.ZipFile(apkPath);
             java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zipFile.entries();
-            
+
             while (entries.hasMoreElements()) {
                 java.util.zip.ZipEntry entry = entries.nextElement();
                 String name = entry.getName();
@@ -53,21 +56,71 @@ class ApkMultiDexOpener {
                     JSObject dexInfo = new JSObject();
                     dexInfo.put("name", name);
                     dexInfo.put("size", entry.getSize());
+                    // 每个 DEX 的类/方法数（C++ 读 header，成本低）——用于 APK 概览摘要，
+                    // 让 dex_open_apk 一次性给出整体规模，而不必先 open。
+                    if (countsAvailable) {
+                        try {
+                            byte[] dexData = readEntryBytes(zipFile, entry);
+                            String infoJson = CppDex.getDexInfo(dexData);
+                            if (infoJson != null && !infoJson.contains("\"error\"")) {
+                                org.json.JSONObject info = new org.json.JSONObject(infoJson);
+                                int classes = info.optInt("classes_count", 0);
+                                int methods = info.optInt("methods_count", 0);
+                                dexInfo.put("classCount", classes);
+                                dexInfo.put("methodCount", methods);
+                                totalClasses += classes;
+                                totalMethods += methods;
+                            }
+                        } catch (Exception e) {
+                            Log.w(TAG, "getDexInfo failed for " + name + ": " + e.getMessage());
+                            countsAvailable = false;
+                        }
+                    }
                     dexFiles.put(dexInfo);
                 }
             }
-            
+
             result.put("apkPath", apkPath);
             result.put("dexFiles", dexFiles);
             result.put("count", dexFiles.length());
-            
+            if (countsAvailable) {
+                result.put("totalClasses", totalClasses);
+                result.put("totalMethods", totalMethods);
+            }
+
+            // APK 概要（包名/版本），失败不阻塞列举。
+            try {
+                JSObject manifest = CppApkHelper.parseManifestFromApk(apkPath);
+                result.put("packageName", manifest.optString("packageName", ""));
+                result.put("versionCode", manifest.optInt("versionCode", 0));
+                result.put("versionName", manifest.optString("versionName", ""));
+                result.put("minSdkVersion", manifest.optInt("minSdkVersion", 0));
+                result.put("targetSdkVersion", manifest.optInt("targetSdkVersion", 0));
+            } catch (Exception e) {
+                Log.w(TAG, "parseManifestFromApk failed: " + e.getMessage());
+            }
+
         } finally {
             if (zipFile != null) {
                 try { zipFile.close(); } catch (Exception ignored) {}
             }
         }
-        
+
         return result;
+    }
+
+    /** 读取 ZIP 条目全部字节。 */
+    private static byte[] readEntryBytes(java.util.zip.ZipFile zipFile,
+                                         java.util.zip.ZipEntry entry) throws Exception {
+        java.io.InputStream is = zipFile.getInputStream(entry);
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int len;
+        while ((len = is.read(buffer)) != -1) {
+            baos.write(buffer, 0, len);
+        }
+        is.close();
+        return baos.toByteArray();
     }
 
     /**

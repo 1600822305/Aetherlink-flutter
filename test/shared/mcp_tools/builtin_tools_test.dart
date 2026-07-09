@@ -686,13 +686,14 @@ void main() {
               success: true,
               data: {
                 'className': 'Lcom/example/Foo;',
+                'accessFlags': 0x11,
                 'superclass': 'Ljava/lang/Object;',
                 'interfaces': ['Ljava/lang/Runnable;'],
                 'fields': [
-                  {'name': 'flag', 'type': 'Z', 'accessFlags': 2},
+                  {'name': 'flag', 'type': 'Z', 'accessFlags': 0x42},
                 ],
                 'methods': [
-                  {'name': 'bar', 'signature': '(I)V', 'accessFlags': 1},
+                  {'name': 'bar', 'signature': '(I)V', 'accessFlags': 0x101},
                 ],
               },
             );
@@ -707,11 +708,78 @@ void main() {
       expect(json['classLocator'], 'dex_class:com.example.Foo');
       expect(json['superclass'], 'java.lang.Object');
       expect(json['interfaces'], ['java.lang.Runnable']);
+      // accessFlags 数字被解成可读修饰符（class/method/field 位含义不同）。
+      expect(json['accessFlagsText'], 'public final');
       final fields = json['fields'] as List;
       expect((fields.first as Map)['locator'], 'dex_field:Lcom/example/Foo;->flag:Z');
+      expect((fields.first as Map)['accessFlagsText'], 'private volatile');
       final methods = json['methods'] as List;
       expect((methods.first as Map)['locator'],
           'dex_method:Lcom/example/Foo;->bar(I)V');
+      expect((methods.first as Map)['accessFlagsText'], 'public native');
+    });
+
+    test('dex_list_classes normalizes a dotted packageFilter to slash form',
+        () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(
+              success: true,
+              data: {'classes': <Object?>[], 'total': 0, 'hasMore': false},
+            );
+      await runDexEditorTool(
+        'dex_list_classes',
+        {'sessionId': 'S-1', 'packageFilter': 'com.yuanshi.wanyu'},
+        editor: dex,
+      );
+      expect(dex.lastAction, 'listClasses');
+      // native 用子串匹配描述符（`Lcom/yuanshi/...;`），点分包名需转成 `/`。
+      expect(dex.lastParams!['packageFilter'], 'com/yuanshi/wanyu');
+    });
+
+    test('dex_list_classes leaves an already-slash packageFilter untouched',
+        () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(
+              success: true,
+              data: {'classes': <Object?>[], 'total': 0, 'hasMore': false},
+            );
+      await runDexEditorTool(
+        'dex_list_classes',
+        {'sessionId': 'S-1', 'packageFilter': 'com/yuanshi/wanyu'},
+        editor: dex,
+      );
+      expect(dex.lastParams!['packageFilter'], 'com/yuanshi/wanyu');
+    });
+
+    test('dex_open_apk surfaces the native APK summary fields', () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(
+              success: true,
+              data: {
+                'apkPath': '/x.apk',
+                'packageName': 'com.yuanshi.wenxiaobai',
+                'versionName': '4.8.5',
+                'versionCode': 485,
+                'totalClasses': 58368,
+                'totalMethods': 300000,
+                'dexFiles': [
+                  {'name': 'classes.dex', 'size': 100, 'classCount': 58368},
+                ],
+              },
+            );
+      final result = await runDexEditorTool(
+        'dex_open_apk',
+        {'apkPath': '/x.apk'},
+        editor: dex,
+      );
+      expect(dex.lastAction, 'listDexFiles');
+      final json = _json(result);
+      expect(json['packageName'], 'com.yuanshi.wenxiaobai');
+      expect(json['versionName'], '4.8.5');
+      expect(json['versionCode'], 485);
+      expect(json['totalClasses'], 58368);
+      expect(json['totalMethods'], 300000);
+      expect((json['dexFiles'] as List).length, 1);
     });
   });
 
