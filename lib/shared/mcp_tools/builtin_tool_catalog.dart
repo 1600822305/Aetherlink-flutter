@@ -1141,7 +1141,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
   '@aether/dex-editor': [
     McpToolDefinition(
       name: 'dex_open_apk',
-      description: '打开 APK 文件，查看其中包含的所有 DEX 文件列表。这是第一步操作。',
+      description: '打开 APK 文件，查看其中包含的所有 DEX 文件列表。这是第一步操作。'
+          '（原生可用时）一并返回 APK 概要：packageName、versionName、versionCode、'
+          'minSdkVersion/targetSdkVersion，以及全量 totalClasses/totalMethods 和每个 '
+          'DEX 的 classCount/methodCount，便于先了解整体规模再决定打开哪个 DEX。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1184,7 +1187,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'packageFilter': {
             'type': 'string',
-            'description': '包名过滤（如 "com.example"）',
+            'description': '包名过滤（如 "com.example"），子串匹配包路径；'
+                '点分/斜杠写法均可（内部会归一，避免因分隔符不同而漏匹配）。',
           },
           'offset': {'type': 'integer', 'description': '偏移量', 'default': 0},
           'limit': {'type': 'integer', 'description': '返回数量', 'default': 100},
@@ -1489,8 +1493,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       name: 'dex_outline_class',
       description:
           '获取类的轮廓：一次返回类的 classLocator（dex_class:...）、父类(superclass)、'
-          '接口(interfaces)、字段列表(name/type/accessFlags/locator[dex_field:...])'
-          '和方法列表(name/signature/returnType/accessFlags/locator[dex_method:...])。'
+          '接口(interfaces)、字段列表(name/type/accessFlags/accessFlagsText/locator[dex_field:...])'
+          '和方法列表(name/signature/returnType/accessFlags/accessFlagsText/'
+          'locator[dex_method:...])。accessFlagsText 是 accessFlags 的可读修饰符形式'
+          '（如 "public final"）。'
           '方法/字段的 locator 可直接回传给 dex_read_method / dex_find_xrefs 等工具。'
           '适合在读取全量 Smali(dex_read_class) 前先了解类结构，省 token。',
       inputSchema: {

@@ -417,7 +417,14 @@ Java_com_aetherlink_dexeditor_CppDex_smaliToJava(JNIEnv* env, jclass, jbyteArray
         if (parser.get_class_name(cls.class_idx) == class_name) {
             found = true;
             smali << ".class public " << class_name << "\n";
-            smali << ".super Ljava/lang/Object;\n\n";
+            // 用真实父类，而非恒定 Object：superclass_idx 为 NO_INDEX(0xFFFFFFFF)
+            // 时（如 java.lang.Object 本身）才无父类。
+            if (cls.superclass_idx != 0xFFFFFFFF) {
+                smali << ".super " << parser.get_class_name(cls.superclass_idx)
+                      << "\n\n";
+            } else {
+                smali << "\n";
+            }
             
             auto methods = parser.get_methods();
             for (const auto& m : methods) {

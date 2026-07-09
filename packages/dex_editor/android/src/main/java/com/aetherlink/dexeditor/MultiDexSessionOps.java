@@ -133,15 +133,50 @@ class MultiDexSessionOps {
                 if (rustResults != null) {
                     for (int i = 0; i < rustResults.length() && allResults.length() < maxResults; i++) {
                         org.json.JSONObject item = rustResults.getJSONObject(i);
+                        String type = item.optString("type", searchType);
                         JSObject jsItem = new JSObject();
-                        jsItem.put("type", item.optString("type", searchType));
-                        jsItem.put("className", item.optString("className", ""));
+                        jsItem.put("type", type);
                         jsItem.put("dexFile", dexName);
-                        if (item.has("methodName")) {
-                            jsItem.put("methodName", item.getString("methodName"));
-                        }
-                        if (item.has("fieldName")) {
-                            jsItem.put("fieldName", item.getString("fieldName"));
+                        // C++ searchInDex 的键随类型而异：
+                        //   class  -> {name}
+                        //   method -> {class, name, prototype}
+                        //   field  -> {class, name, fieldType}
+                        //   string -> {value}
+                        // 统一归一到 className/methodName/fieldName 等，供 Dart 层消费。
+                        switch (type) {
+                            case "class":
+                                jsItem.put("className", item.optString("className",
+                                        item.optString("name", "")));
+                                break;
+                            case "method":
+                                jsItem.put("className", item.optString("className",
+                                        item.optString("class", "")));
+                                jsItem.put("methodName", item.optString("methodName",
+                                        item.optString("name", "")));
+                                if (item.has("prototype")) {
+                                    jsItem.put("prototype", item.getString("prototype"));
+                                }
+                                break;
+                            case "field":
+                                jsItem.put("className", item.optString("className",
+                                        item.optString("class", "")));
+                                jsItem.put("fieldName", item.optString("fieldName",
+                                        item.optString("name", "")));
+                                if (item.has("fieldType")) {
+                                    jsItem.put("fieldType", item.getString("fieldType"));
+                                }
+                                break;
+                            case "string":
+                                jsItem.put("value", item.optString("value", ""));
+                                break;
+                            default:
+                                jsItem.put("className", item.optString("className", ""));
+                                if (item.has("methodName")) {
+                                    jsItem.put("methodName", item.getString("methodName"));
+                                }
+                                if (item.has("fieldName")) {
+                                    jsItem.put("fieldName", item.getString("fieldName"));
+                                }
                         }
                         allResults.put(jsItem);
                     }
