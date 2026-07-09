@@ -824,11 +824,12 @@ Future<List<Object?>> _dexSearchList(
   ).map(_decorateDexResult).toList();
 }
 
-/// target=overview：一次调用聚合多个搜索面（DEX 类名/方法名/字段名/字符串），
-/// 每面各取 [perTarget] 条，结果统一带 locator，按面分组返回 `hits`，
-/// 对齐 MT `mt_apk_search(target=overview)` 的「一次搜遍」体验。
-/// 说明：files/arsc/manifest 走 apkPath 而非会话，overview 聚焦已打开会话内的
-/// DEX 搜索面；跨 ZIP/资源/清单的搜索请用对应的专用 target。
+/// target=overview：一次调用聚合多个搜索面，结果统一带 locator、按面分组返回
+/// `hits`，对齐 MT `mt_apk_search(target=overview)` 的「一次搜遍」体验。
+///  - 会话内 DEX 面：class/method/field/string（总是执行）；
+///  - APK 整包面：file(ZIP 内文本)/resource(arsc 资源)/manifest(AXML 属性值)，
+///    仅当能解析出 apkPath 时才执行（overview 的 sessionId 也可直接填 APK 路径）。
+/// 每面各取 [perTarget] 条。
 Future<McpToolResult> _searchOverview(
   DexEditor dex,
   Map<String, Object?> args,
@@ -842,14 +843,91 @@ Future<McpToolResult> _searchOverview(
   for (final st in const ['class', 'method', 'field', 'string']) {
     hits[st] = await _dexSearchList(dex, args, st, perTarget);
   }
+  // APK 整包面需要 apkPath；overview 的 sessionId 允许直接是 APK 路径。
+  final apkPath = _apkPathArg(args);
+  if (apkPath.isNotEmpty) {
+    hits['file'] = await _apkFileSearchList(dex, args, apkPath, perTarget);
+    hits['resource'] = await _arscResourceList(dex, args, apkPath, perTarget);
+    hits['manifest'] = await _manifestList(dex, args, apkPath, perTarget);
+  }
   final total = hits.values
       .fold<int>(0, (sum, v) => sum + (v is List ? v.length : 0));
   return McpToolResult(encodeJson({
     'query': query,
     'perTarget': perTarget,
+    'apkFacets': apkPath.isNotEmpty,
     'total': total,
     'hits': hits,
   }));
+}
+
+/// overview 用：解析可用于 APK 整包搜索的 apkPath。显式 apkPath 优先，
+/// 否则若 sessionId/locator 本身就是 `.apk` 路径则复用（会话按 apkPath 寻址）。
+String _apkPathArg(Map<String, Object?> args) {
+  final explicit = _str(args['apkPath']);
+  if (explicit.isNotEmpty) return explicit;
+  final s = _sessionArg(args);
+  return s.toLowerCase().endsWith('.apk') ? s : '';
+}
+
+/// overview 子面：APK 内文本文件搜索命中（带 apk_file locator），失败返回空。
+Future<List<Object?>> _apkFileSearchList(
+  DexEditor dex,
+  Map<String, Object?> args,
+  String apkPath,
+  int maxResults,
+) async {
+  final result = await dex.execute('searchTextInApk', {
+    'apkPath': apkPath,
+    'pattern': _str(args['query']),
+    'fileExtensions': args['fileExtensions'] ?? [],
+    'caseSensitive': _bool(args['caseSensitive']),
+    'isRegex': _bool(args['isRegex']),
+    'maxResults': maxResults,
+    'contextLines': _int(args['contextLines'], 2),
+  });
+  if (!result.success) return const <Object?>[];
+  final data = _map(result.data);
+  if (data['results'] is! List) return const <Object?>[];
+  return (data['results'] as List).map(_decorateApkFileResult).toList();
+}
+
+/// overview 子面：arsc 资源命中（带 resource locator + type/name），失败返回空。
+Future<List<Object?>> _arscResourceList(
+  DexEditor dex,
+  Map<String, Object?> args,
+  String apkPath,
+  int maxResults,
+) async {
+  final result = await dex.execute('searchArscResources', {
+    'apkPath': apkPath,
+    'pattern': _str(args['query']),
+    'type': _str(args['type']),
+    'limit': maxResults,
+  });
+  if (!result.success) return const <Object?>[];
+  final data = _map(result.data);
+  if (data['results'] is! List) return const <Object?>[];
+  return (data['results'] as List).map(_decorateArscResource).toList();
+}
+
+/// overview 子面：AXML 清单命中（按属性值匹配 query），失败返回空。
+Future<List<Object?>> _manifestList(
+  DexEditor dex,
+  Map<String, Object?> args,
+  String apkPath,
+  int maxResults,
+) async {
+  final result = await dex.execute('searchManifestCpp', {
+    'apkPath': apkPath,
+    'attrName': _str(args['attrName']),
+    'value': _str(args['value']).isEmpty ? _str(args['query']) : _str(args['value']),
+    'limit': maxResults,
+  });
+  if (!result.success) return const <Object?>[];
+  final data = _map(result.data);
+  if (data['results'] is! List) return const <Object?>[];
+  return data['results'] as List;
 }
 
 /// 统一入口用 `query` 表达搜索词；apk 系列专用 handler 读的是 `pattern`。
