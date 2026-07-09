@@ -1047,8 +1047,10 @@ Java_com_aetherlink_dexeditor_CppDex_parseAxml(JNIEnv* env, jclass, jbyteArray a
         {"packageName", parser.get_package_name()},
         {"versionName", parser.get_version_name()},
         {"versionCode", parser.get_version_code()},
-        {"minSdk", parser.get_min_sdk()},
-        {"targetSdk", parser.get_target_sdk()},
+        // 键名对齐 Java 消费方 CppApkHelper.parseManifest（读 minSdkVersion/targetSdkVersion），
+        // 否则 dex_open_apk 摘要里这两项恒为 0。
+        {"minSdkVersion", parser.get_min_sdk()},
+        {"targetSdkVersion", parser.get_target_sdk()},
         {"permissions", parser.get_permissions()},
         {"activities", parser.get_activities()},
         {"services", parser.get_services()},

@@ -1319,7 +1319,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           'hasMore(是否还有后续)、nextOffset(下一页 offset)、nextCursor(分页游标)，'
           '据此翻页无需自己计算；把 nextCursor 原样回传到 cursor 即可取下一页。\n'
           '- 传 methodName（或 dex_method locator）：只读该类中的单个方法'
-          '（等价于 dex_read_method，大类只看特定方法时用）。\n'
+          '（等价于 dex_read_method，大类只看特定方法时用）；额外返回 '
+          'absoluteStartLine/absoluteEndLine——该方法在整类 Smali 中的绝对行号（1 起）。\n'
           '需要类的字段/方法列表（结构化轮廓）请改用 dex_outline_class。',
       inputSchema: {
         'type': 'object',
@@ -1372,7 +1373,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '读取类中单个方法的 Smali 代码（大类只看某个方法时更省 token）。'
           '返回 JSON，含 className、methodName、locator'
           '（dex_method:Lcom/example/Foo;->bar(I)V，签名齐全；缺签名时回退为类 dex_class:...）、'
-          'targetVersion（内容指纹，供并发校验）、smali（方法体）。\n'
+          'targetVersion（内容指纹，供并发校验）、'
+          'absoluteStartLine/absoluteEndLine（方法在整类 Smali 中的绝对行号，1 起）、'
+          'smali（方法体）。\n'
           '定位方式二选一：①className+methodName（可选 methodSignature 区分重载）；'
           '②locator=dex_method:...（内含类/方法/签名，无需再填其他）。',
       inputSchema: {
@@ -1493,9 +1496,14 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       name: 'dex_outline_class',
       description:
           '获取类的轮廓：一次返回类的 locator（dex_class:...）、父类(superclass)、'
-          '接口(interfaces)、字段列表(name/type/accessFlags/accessFlagsText/locator[dex_field:...])'
+          '接口(interfaces)、classHeader（把 accessFlags/accessFlagsText/superclass/'
+          'interfaces 聚成一个类头对象）、字段列表'
+          '(name/type/accessFlags/accessFlagsText/locator[dex_field:...])'
           '和方法列表(name/signature/returnType/accessFlags/accessFlagsText/'
-          'locator[dex_method:...])。accessFlagsText 是 accessFlags 的可读修饰符形式'
+          'locator[dex_method:...])。每个方法还带分析字段：stringRefCount（const-string 数）、'
+          'resourceRefCount（0x7f 资源 ID 引用数）、invokeCount（invoke 指令数）、'
+          'interestingStrings（挑出的 URL/路径/域名等有信息量字符串）、'
+          'interestingInvokes（调用的目标方法引用）。accessFlagsText 是 accessFlags 的可读修饰符形式'
           '（如 "public final"）。'
           '方法/字段的 locator 可直接回传给 dex_read_method / dex_find_xrefs 等工具。'
           '适合在读取全量 Smali(dex_read_class) 前先了解类结构，省 token。',
