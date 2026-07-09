@@ -393,3 +393,38 @@ const char* dexcore_last_error(dexcore_ws*);
 2. ELF 分析是否要？**默认：不做，按需再加。**
 3. `dexcore` 先内置本仓库还是即刻独立仓库？**默认：先内置 `packages/dexcore/`。**
 4. Android 是否即刻从 JNI 全切 FFI？**默认：D 阶段一次性切，并直接删除旧 Java/JNI 读搜路径与 dexlib2 读侧——不在仓库里留回退分支（要回退用 git 历史）。保持干净。**
+
+### 11.14 工具清单（要重构/迁移的 MCP 工具，逐个对应 C ABI op）
+现有 17 个 dex 工具（`builtin_tool_catalog.dart` / `dex_editor_tool.dart`），重构后**全部保留对外名字与语义**，只是底层从「JNI+Java+每次重解析」换成「dexcore C ABI + 常驻会话/索引」。分三类：
+
+**A. 会话/生命周期（Workspace 管理，阶段 A/B）**
+| 工具 | C ABI | 说明 |
+|---|---|---|
+| `dex_open_apk` | `dexcore_open_apk` | mmap 映射 + 建索引 + 返回摘要(包名/版本/总类/总方法/每 dex 统计) |
+| `dex_open` | `dexcore_open_dex` | 打开单个 dex 会话 |
+| `dex_close` | `dexcore_close` | 释放 Workspace |
+| `dex_list_sessions` | 上层维护 handle 表 | 列当前会话 |
+| `dex_save` | `dexcore_write`(save) | 写回落盘（阶段 E） |
+
+**B. 读 / 搜 / 分析（纯 native 读侧，阶段 B/C/D——本轮重点）**
+| 工具 | C ABI op | 依赖 |
+|---|---|---|
+| `dex_list_classes` | `query "list_classes"` | 类名索引 + 计数头（superclass/interfaces/fieldsCount/methodsCount/locator） |
+| `dex_outline_class` | `query "outline"` | 类模型（字段/方法 + locator/instructionsCount/accessFlagsText） |
+| `dex_read_class` | `query "read_class"` | 反汇编 + 分页（locator/targetVersion） |
+| `dex_read_method` | `query "read_method"` | 单方法反汇编（方法级 locator） |
+| `dex_smali_to_java` | `query "smali_to_java"` | 伪代码（.super 正确解析） |
+| `dex_search` | `query "search"` | 六面 class/method/field/string/code + overview + 整包面 + 分页；**查索引不重解析** |
+| `dex_find_xrefs` | `query "xref"` | xref/CHA（懒建缓存） |
+
+**C. 写 / 改（写侧，阶段 E，风险高，最后做）**
+| 工具 | C ABI | 说明 |
+|---|---|---|
+| `dex_modify_class` | `dexcore_write "modify_class"` | 改类 smali → 重汇编 |
+| `dex_modify_method` | `dexcore_write "modify_method"` | 改方法 smali → 重汇编 |
+| `dex_add_class` | `dexcore_write "add_class"` | 新增类 |
+| `dex_delete_class` | `dexcore_write "delete_class"` | 删类 |
+| `dex_rename_class` | `dexcore_write "rename_class"` | 重命名 + 引用更新 |
+
+> 说明：A/B 类工具在阶段 A–D 完成即全部走 dexcore；C 类（写侧）在阶段 E 前**暂时仍可保留 dexlib2**，
+> 待 writer 进核心后再切、并删 dexlib2 写侧。对外这 17 个工具名/入参/返回契约保持不变，调用方（Dart/UI）无感。
