@@ -51,38 +51,50 @@ class MultiDexSessionOps {
         
         JSObject result = new JSObject();
         JSArray classes = new JSArray();
-        List<String> allClasses = new ArrayList<>();
+        // 收集富摘要类信息，按 className 排序后分页。
+        List<org.json.JSONObject> allClasses = new ArrayList<>();
         String filter = packageFilter != null ? packageFilter : "";
         
-        // 使用 Rust 获取每个 DEX 的类列表
+        // 使用 C++ 获取每个 DEX 的类列表（含 superclass/接口/字段数/方法数）
         for (Map.Entry<String, byte[]> entry : session.dexBytes.entrySet()) {
             String dexName = entry.getKey();
             byte[] dexData = entry.getValue();
             
-            String jsonResult = CppDex.listClasses(dexData, filter, 0, 100000);
+            String jsonResult = CppDex.listClassesDetailed(dexData, filter, 0, 100000);
             if (jsonResult != null && !jsonResult.contains("\"error\"")) {
-                org.json.JSONObject rustResult = new org.json.JSONObject(jsonResult);
-                org.json.JSONArray rustClasses = rustResult.optJSONArray("classes");
-                if (rustClasses != null) {
-                    for (int i = 0; i < rustClasses.length(); i++) {
-                        allClasses.add(rustClasses.getString(i) + "|" + dexName);
+                org.json.JSONObject cppResult = new org.json.JSONObject(jsonResult);
+                org.json.JSONArray cppClasses = cppResult.optJSONArray("classes");
+                if (cppClasses != null) {
+                    for (int i = 0; i < cppClasses.length(); i++) {
+                        org.json.JSONObject c = cppClasses.getJSONObject(i);
+                        c.put("dexFile", dexName);
+                        allClasses.add(c);
                     }
                 }
             }
         }
         
-        // 排序
-        java.util.Collections.sort(allClasses);
+        // 按类名排序
+        java.util.Collections.sort(allClasses, (a, b) ->
+            a.optString("className").compareTo(b.optString("className")));
         
         // 分页
         int total = allClasses.size();
         int end = Math.min(offset + limit, total);
         
         for (int i = offset; i < end; i++) {
-            String[] parts = allClasses.get(i).split("\\|");
+            org.json.JSONObject c = allClasses.get(i);
             JSObject classInfo = new JSObject();
-            classInfo.put("className", parts[0]);
-            classInfo.put("dexFile", parts[1]);
+            classInfo.put("className", c.optString("className"));
+            classInfo.put("dexFile", c.optString("dexFile"));
+            String superclass = c.optString("superclass", "");
+            if (!superclass.isEmpty()) {
+                classInfo.put("superclass", superclass);
+            }
+            org.json.JSONArray interfaces = c.optJSONArray("interfaces");
+            classInfo.put("interfaces", interfaces != null ? interfaces : new org.json.JSONArray());
+            classInfo.put("fieldsCount", c.optInt("fieldsCount", 0));
+            classInfo.put("methodsCount", c.optInt("methodsCount", 0));
             classes.put(classInfo);
         }
         

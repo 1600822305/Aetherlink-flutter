@@ -753,6 +753,43 @@ void main() {
       expect(dex.lastParams!['packageFilter'], 'com/yuanshi/wanyu');
     });
 
+    test('dex_list_classes passes native brief fields through + adds locator',
+        () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(
+              success: true,
+              data: {
+                'classes': <Object?>[
+                  {
+                    'className': 'Lcom/example/Child;',
+                    'dexFile': 'classes.dex',
+                    'superclass': 'Lcom/example/Base;',
+                    'interfaces': ['Ljava/lang/Runnable;'],
+                    'fieldsCount': 1,
+                    'methodsCount': 2,
+                  },
+                ],
+                'total': 1,
+                'hasMore': false,
+              },
+            );
+      final result = await runDexEditorTool(
+        'dex_list_classes',
+        {'sessionId': 'S-1'},
+        editor: dex,
+      );
+      final json = _json(result);
+      final classes = json['classes'] as List;
+      final first = classes.first as Map;
+      // className/superclass/interfaces 归一为点分，计数原样透传，并补 locator。
+      expect(first['className'], 'com.example.Child');
+      expect(first['locator'], 'dex_class:com.example.Child');
+      expect(first['superclass'], 'com.example.Base');
+      expect(first['interfaces'], ['java.lang.Runnable']);
+      expect(first['fieldsCount'], 1);
+      expect(first['methodsCount'], 2);
+    });
+
     test('dex_open_apk surfaces the native APK summary fields', () async {
       final dex = _RecordingDexEditor()
         ..onExecute = (_, __) => const DexResult(

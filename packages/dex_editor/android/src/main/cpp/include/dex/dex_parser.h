@@ -114,6 +114,17 @@ public:
         uint32_t instructions_count = 0;  // 全类指令总数
     };
     ClassOutline get_class_outline(const std::string& class_name) const;
+
+    // 轻量类摘要：只读 class_data_item 的计数头 + 父类/接口，不解析成员名字/签名，
+    // 用于 dex_list_classes 给每个类补 superclass/接口/字段数/方法数（大列表下比
+    // 逐类 get_class_outline 便宜得多）。
+    struct ClassBrief {
+        std::string superclass;               // 父类描述符 Lx;，无（仅 Object）则空
+        std::vector<std::string> interfaces;  // 接口描述符列表
+        uint32_t field_count = 0;             // static + instance
+        uint32_t method_count = 0;            // direct + virtual
+    };
+    ClassBrief get_class_brief(const ClassDef& cls) const;
     
     // Get method code for disassembly
     // prototype 非空时需 name + proto 同时匹配（用于区分重载）；为空则仅按名字匹配（向后兼容）
