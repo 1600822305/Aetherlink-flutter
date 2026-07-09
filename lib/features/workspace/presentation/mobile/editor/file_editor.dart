@@ -53,6 +53,10 @@ class _FileEditorState extends ConsumerState<FileEditor> {
   bool _showFind = false;
   bool _showReplace = false;
   double _fontSize = kEditorDefaultFontSize;
+  bool _tooManyLinesToEdit = false;
+
+  // Debounces the O(text) find recompute while typing with the find bar open.
+  Timer? _findDebounce;
 
   // Live external-change watch (in-app mutations from file-ops / agent tools).
   StreamSubscription<WorkspaceChangeEvent>? _watchSub;
@@ -69,6 +73,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
   // Editing is only ever offered for small text files on a writable backend.
   bool get _writable =>
       _openKind == FileOpenKind.editable &&
+      !_tooManyLinesToEdit &&
       (ref.read(workspacePreviewBackendProvider)?.capabilities.canWrite ??
           false);
   // Binary / too-large / image files render a placeholder instead of the text
@@ -95,6 +100,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
 
   @override
   void dispose() {
+    _findDebounce?.cancel();
     _watchSub?.cancel();
     _controller.removeListener(_onTextChanged);
     ref.read(editorRegistryProvider).unregister(_path);
@@ -181,15 +187,20 @@ class _FileEditorState extends ConsumerState<FileEditor> {
   }
 
   void _onTextChanged() {
-    if (_find.query.isNotEmpty) _find.recompute();
     // Dirty state flows through [dirtyFilesProvider] (deduped), so the header /
     // save button rebuild only on a dirty *transition*, watched in [build] —
     // not on every keystroke. The text area, caret highlight and status bar
     // each listen to the controller directly, so no whole-page setState is
-    // needed here for typing. Only the find bar's live match count must be
-    // refreshed while it is open.
+    // needed here for typing. The find recompute is an O(text) scan, so it is
+    // debounced instead of running per keystroke while the find bar is open.
     ref.read(dirtyFilesProvider.notifier).set(_path, dirty: _dirty);
-    if (_showFind) setState(() {});
+    if (_find.query.isEmpty) return;
+    _findDebounce?.cancel();
+    _findDebounce = Timer(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+      _find.recompute();
+      if (_showFind) setState(() {});
+    });
   }
 
   Future<void> _load() async {
@@ -200,6 +211,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     _find.update('', _find.options);
     _original = '';
     _controller.text = '';
+    _tooManyLinesToEdit = false;
 
     final size = widget.entry.size;
 
@@ -244,8 +256,18 @@ class _FileEditorState extends ConsumerState<FileEditor> {
           '仅显示前 ${range.endLine}/${range.totalLines} 行,暂不可编辑';
       _original = range.content;
     } else {
-      _readOnlyReason = null;
       _original = await backend.readFile(widget.entry.path);
+      // Small-by-bytes files can still have too many lines for the editable
+      // whole-document TextField; keep those read-only (the virtualized
+      // viewer handles them fine).
+      var lines = 1;
+      for (var i = 0; i < _original.length; i++) {
+        if (_original.codeUnitAt(i) == 0x0A) lines++;
+      }
+      _tooManyLinesToEdit = lines > kMaxEditableLines;
+      _readOnlyReason = _tooManyLinesToEdit
+          ? '文件行数较多($lines 行),为保证流畅暂不可编辑'
+          : null;
     }
     _controller.text = _original;
   }

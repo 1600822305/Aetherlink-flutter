@@ -16,6 +16,12 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_sess
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 
+/// Cap on simultaneously open tabs. Every open tab keeps a live editor (its
+/// own controller + watch subscription) in the middle page's IndexedStack, so
+/// memory grows linearly with tab count; past the cap the oldest clean,
+/// non-active tab is evicted (dirty tabs are never dropped silently).
+const int kMaxOpenTabs = 12;
+
 /// The workspace currently open in the shell, or `null` when nothing is open
 /// (the left tree shows its empty state). Set by auto-restore on entry or by
 /// the 「打开文件夹」 button in the file-tree header.
@@ -96,15 +102,24 @@ class OpenWorkspaceFiles extends Notifier<WorkspaceTabsState> {
   WorkspaceTabsState build() => const WorkspaceTabsState();
 
   /// Opens [entry] in a tab: switches to it if already open, otherwise appends
-  /// it and makes it active.
-  void open(WorkspaceEntry entry) {
+  /// it and makes it active. Past [kMaxOpenTabs] the oldest clean, non-active
+  /// tab is evicted; [dirtyPaths] (from the caller's dirty-files state) marks
+  /// tabs that must never be dropped silently.
+  void open(WorkspaceEntry entry, {Set<String> dirtyPaths = const {}}) {
     if (state.tabs.any((t) => t.path == entry.path)) {
       state = state.copyWith(activePath: entry.path);
     } else {
-      state = WorkspaceTabsState(
-        tabs: [...state.tabs, entry],
-        activePath: entry.path,
-      );
+      final tabs = [...state.tabs, entry];
+      if (tabs.length > kMaxOpenTabs) {
+        final evict = tabs.indexWhere(
+          (t) =>
+              t.path != entry.path &&
+              t.path != state.activePath &&
+              !dirtyPaths.contains(t.path),
+        );
+        if (evict >= 0) tabs.removeAt(evict);
+      }
+      state = WorkspaceTabsState(tabs: tabs, activePath: entry.path);
     }
     _persist();
   }

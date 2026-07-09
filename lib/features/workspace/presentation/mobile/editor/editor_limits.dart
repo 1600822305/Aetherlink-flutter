@@ -22,6 +22,13 @@ const int kHeaderProbeBytes = 8 * 1024;
 /// Read-only preview length (in lines) for large-but-allowed files.
 const int kPreviewLines = 5000;
 
+/// Files with more lines than this open read-only even when under
+/// [kEditableMaxBytes]: the editable `TextField` lays the whole document out
+/// in a single `RenderEditable`, so every keystroke relayouts the full text
+/// and janks past a few thousand lines (the read-only viewer is virtualized
+/// and unaffected).
+const int kMaxEditableLines = 10000;
+
 /// Lines longer than this flip the text area into a soft-wrap fallback, so a
 /// single pathologically long line (e.g. minified JS, a one-line JSON blob)
 /// can't trigger an enormous non-wrapping layout pass that freezes the UI.

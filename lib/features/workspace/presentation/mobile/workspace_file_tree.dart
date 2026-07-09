@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_registry.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/open_workspace_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/workspace_file_ops.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
@@ -28,6 +29,11 @@ import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// Fixed row height so scroll-to-index can target the active file precisely.
 const double _kRowHeight = 38;
+
+/// Cap on the directories the reveal fallback DFS may list. Without it, a
+/// deep / wide project could trigger a full recursive `listDir` crawl (slow
+/// on SAF and remote backends) just to locate one file.
+const int _kMaxRevealSearchDirs = 64;
 
 class WorkspaceFileTree extends ConsumerStatefulWidget {
   const WorkspaceFileTree({
@@ -201,20 +207,59 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     return null;
   }
 
+  // Derives the ancestor chain from path strings when the backend uses plain
+  // posix paths (SSH / Termux / PRoot), so revealing a file costs one listDir
+  // per ancestor instead of a tree crawl. Each derived level is verified
+  // against the actual listing; any mismatch (opaque SAF URIs, odd layouts)
+  // returns null and the caller falls back to the DFS.
+  Future<List<String>?> _deriveChain(String root, String target) async {
+    if (root.contains('://')) return null;
+    final base = root.endsWith('/')
+        ? root.substring(0, root.length - 1)
+        : root;
+    if (!target.startsWith('$base/')) return null;
+    final segments = target.substring(base.length + 1).split('/');
+    if (segments.isEmpty || segments.any((s) => s.isEmpty)) return null;
+    final chain = <String>[root];
+    var dir = base;
+    for (var i = 0; i < segments.length - 1; i++) {
+      dir = '$dir/${segments[i]}';
+      chain.add(dir);
+    }
+    for (var i = 0; i < chain.length; i++) {
+      final entries = await _ensureChildren(chain[i]);
+      if (entries == null) return null;
+      final expected = i + 1 < chain.length ? chain[i + 1] : target;
+      if (!entries.any((e) => e.path == expected)) return null;
+    }
+    return chain;
+  }
+
   // Depth-first search down from [dir] for [target], returning the directory
-  // chain to expand (root → … → parent), or null if not found.
+  // chain to expand (root → … → parent), or null if not found. [visited]
+  // caps how many directories may be listed so the fallback can't crawl an
+  // entire large project.
   Future<List<String>?> _searchChain(
     String dir,
     String target,
     List<String> chain,
+    _SearchBudget visited,
   ) async {
+    if (visited.used >= _kMaxRevealSearchDirs) return null;
+    visited.used++;
     final entries = await _ensureChildren(dir);
     if (entries == null) return null;
     if (entries.any((e) => e.path == target)) return chain;
     for (final e in entries) {
       if (!e.isDirectory) continue;
-      final found = await _searchChain(e.path, target, [...chain, e.path]);
+      final found = await _searchChain(
+        e.path,
+        target,
+        [...chain, e.path],
+        visited,
+      );
       if (found != null) return found;
+      if (visited.used >= _kMaxRevealSearchDirs) return null;
     }
     return null;
   }
@@ -228,7 +273,8 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     _revealedPath = target;
 
     var chain = _knownChain(target);
-    chain ??= await _searchChain(root, target, [root]);
+    chain ??= await _deriveChain(root, target);
+    chain ??= await _searchChain(root, target, [root], _SearchBudget());
     if (chain == null || !mounted) return;
 
     final toExpand = chain.where((d) => !_expanded.contains(d)).toList();
@@ -518,7 +564,10 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                             } else {
                               ref
                                   .read(openWorkspaceFilesProvider.notifier)
-                                  .open(entry);
+                                  .open(
+                                    entry,
+                                    dirtyPaths: ref.read(dirtyFilesProvider),
+                                  );
                             }
                           },
                           onLongPress: ops == null
@@ -533,6 +582,11 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
       ),
     );
   }
+}
+
+// Mutable listDir counter shared across a reveal DFS's recursive calls.
+class _SearchBudget {
+  int used = 0;
 }
 
 class _TreeRow {
