@@ -392,4 +392,4 @@ const char* dexcore_last_error(dexcore_ws*);
 1. 写回(E) 本轮是否做？**默认：先做 A–D（读/搜/分析纯 native+多端），E 最后单独评估。**
 2. ELF 分析是否要？**默认：不做，按需再加。**
 3. `dexcore` 先内置本仓库还是即刻独立仓库？**默认：先内置 `packages/dexcore/`。**
-4. Android 是否即刻从 JNI 全切 FFI？**默认：D 阶段一次性切，切前保留旧 JNI 路径可回退。**
+4. Android 是否即刻从 JNI 全切 FFI？**默认：D 阶段一次性切，并直接删除旧 Java/JNI 读搜路径与 dexlib2 读侧——不在仓库里留回退分支（要回退用 git 历史）。保持干净。**
