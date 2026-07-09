@@ -108,9 +108,13 @@ public class CppApkHelper {
             for (int i = 0; i < cppResults.length(); i++) {
                 JSONObject r = cppResults.getJSONObject(i);
                 JSObject item = new JSObject();
-                item.put("element", r.optString("element"));
-                item.put("attribute", r.optString("attribute"));
-                item.put("value", r.optString("value"));
+                // C++ searchXml 的键为 elementName/attributeName/attributeValue/
+                // elementPath/elementIndex，之前误读 element/attribute/value 导致全空。
+                item.put("element", r.optString("elementName"));
+                item.put("attribute", r.optString("attributeName"));
+                item.put("value", r.optString("attributeValue"));
+                item.put("elementPath", r.optString("elementPath"));
+                item.put("elementIndex", r.optInt("elementIndex", -1));
                 results.put(item);
             }
         }
