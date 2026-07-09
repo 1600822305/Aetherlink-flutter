@@ -166,6 +166,21 @@ String _methodLocator(String dottedClassName, String name, String signature) =>
 String _fieldLocator(String dottedClassName, String name, String type) =>
     'dex_field:${_classToDescriptor(dottedClassName)}->$name:$type';
 
+/// 从 smali 里还原方法签名 `(参数)返回类型`（如 `()Ljava/lang/String;`）。
+/// 用于 dex_read_method 只按 className+methodName 读取、未显式给签名时补全方法
+/// locator。匹配首个 `.method ... name(...)ret` 行，取名字后的 `(...)ret`。
+String _signatureFromSmali(String smali, String methodName) {
+  if (methodName.isEmpty) return '';
+  for (final raw in const LineSplitter().convert(smali)) {
+    final line = raw.trim();
+    if (!line.startsWith('.method')) continue;
+    final idx = line.indexOf('$methodName(');
+    if (idx < 0) continue;
+    return line.substring(idx + methodName.length).trim();
+  }
+  return '';
+}
+
 /// access_flags 的可读化目标（class/method/field 的部分位含义不同，如 0x40：
 /// 方法是 bridge、字段是 volatile）。
 enum _AccessKind { classKind, method, field }
@@ -726,14 +741,17 @@ Future<McpToolResult> _getMethod(
   // native 未命中时返回以 `#` 开头的提示文本，原样透出。
   if (code.isEmpty) return const McpToolResult('# 方法未找到');
   if (code.startsWith('#')) return McpToolResult(code);
+  // 调用方常只给 className+methodName（不给签名），此时从返回的 smali `.method`
+  // 行里还原签名，保证 locator 始终是方法级 dex_method:...（而非退回类 locator）。
+  final effectiveSig =
+      signature.isNotEmpty ? signature : _signatureFromSmali(code, methodName);
   return McpToolResult(encodeJson({
     'className': className,
     'methodName': methodName,
-    if (signature.isNotEmpty) 'methodSignature': signature,
-    // 方法 locator 需要完整签名才唯一；缺签名时回退到类 locator（dex_class:...），
-    // 保证结果始终有单一 locator 字段。
-    'locator': signature.isNotEmpty
-        ? _methodLocator(className, methodName, signature)
+    if (effectiveSig.isNotEmpty) 'methodSignature': effectiveSig,
+    // 签名齐全时给方法级 locator；实在拿不到签名（罕见）才回退类 locator。
+    'locator': effectiveSig.isNotEmpty
+        ? _methodLocator(className, methodName, effectiveSig)
         : _classLocator(className),
     'targetVersion': _targetVersion(code),
     'smali': code,

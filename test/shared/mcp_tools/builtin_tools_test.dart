@@ -660,6 +660,27 @@ void main() {
       expect(json['smali'], contains('.method public bar(I)V'));
     });
 
+    test('dex_read_method recovers method locator from smali when no signature',
+        () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(
+              success: true,
+              data: {
+                'methodCode':
+                    '.method public a()Ljava/lang/StackTraceElement;\n.end method\n',
+              },
+            );
+      final result = await runDexEditorTool(
+        'dex_read_method',
+        {'sessionId': 'S-1', 'className': 'a.a', 'methodName': 'a'},
+        editor: dex,
+      );
+      final json = _json(result);
+      // 未传签名时应从 smali 还原出方法级 locator，而非退回类 locator。
+      expect(json['methodSignature'], '()Ljava/lang/StackTraceElement;');
+      expect(json['locator'], 'dex_method:La/a;->a()Ljava/lang/StackTraceElement;');
+    });
+
     test('dex_read_method accepts a dex_method locator in place of args',
         () async {
       final dex = _RecordingDexEditor()
