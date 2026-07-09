@@ -351,6 +351,7 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
               theme,
               icon: LucideIcons.fileCode,
               title: _pick(c, ['className', 'name']) ?? c.toString(),
+              trailing: _classCounts(c),
             )
           else
             _simpleRow(theme, icon: LucideIcons.fileCode, title: c.toString()),
@@ -562,6 +563,18 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
         ],
       ),
     );
+  }
+
+  /// dex_list_classes 每个类的字段/方法数摘要，如 "3字段·5方法"。原生不可用时
+  /// 缺这些键，返回 null（不显示尾标）。
+  String? _classCounts(Map<Object?, Object?> c) {
+    final fields = c['fieldsCount'];
+    final methods = c['methodsCount'];
+    final parts = <String>[
+      if (fields is num) '$fields 字段',
+      if (methods is num) '$methods 方法',
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
   }
 
   /// First non-empty value among [keys] of [m], or null. dex 原生结果里缺失字段
