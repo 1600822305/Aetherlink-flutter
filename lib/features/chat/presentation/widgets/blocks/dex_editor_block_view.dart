@@ -372,7 +372,7 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
               theme,
               icon: LucideIcons.search,
               title: _searchTitle(r),
-              trailing: _pick(r, ['type']),
+              trailing: _searchTrailing(r),
             )
           else
             _simpleRow(theme, icon: LucideIcons.search, title: r.toString()),
@@ -395,6 +395,15 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
     ]);
     if (cls != null && member != null) return '${_shortName(cls)} · $member';
     return cls ?? member ?? r.toString();
+  }
+
+  /// 命中行右侧标注：字符串命中若被多个类引用，显示「被 N 类引用」，否则回退到 type。
+  String? _searchTrailing(Map<Object?, Object?> r) {
+    if (_pick(r, ['type']) == 'string') {
+      final refs = r['referencedBy'];
+      if (refs is List && refs.length > 1) return '被 ${refs.length} 类引用';
+    }
+    return _pick(r, ['type']);
   }
 
   Widget _sessionsBody(ThemeData theme, Object? sessions) {
