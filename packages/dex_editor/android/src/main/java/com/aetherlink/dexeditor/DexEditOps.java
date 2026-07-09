@@ -47,10 +47,15 @@ class DexEditOps {
                     if (cppClasses != null) {
                         JSArray classes = new JSArray();
                         for (int i = 0; i < cppClasses.length(); i++) {
-                            String className = cppClasses.getString(i);
+                            org.json.JSONObject c = cppClasses.getJSONObject(i);
+                            String className = c.optString("className");
                             if (!session.removedClasses.contains(className)) {
                                 JSObject classInfo = new JSObject();
                                 classInfo.put("type", className);
+                                String superclass = c.optString("superclass", "");
+                                if (!superclass.isEmpty()) {
+                                    classInfo.put("superclass", superclass);
+                                }
                                 classes.put(classInfo);
                             }
                         }

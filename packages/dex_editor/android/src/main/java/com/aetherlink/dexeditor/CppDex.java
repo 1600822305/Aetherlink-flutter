@@ -38,30 +38,15 @@ public class CppDex {
     public static native String getDexInfo(byte[] dexBytes);
 
     /**
-     * 列出 DEX 中的类
-     * @param dexBytes DEX 文件字节数组
-     * @param packageFilter 包名过滤器
-     * @param offset 偏移量
-     * @param limit 限制数量
-     * @return JSON 格式的类列表
-     */
-    public static native String listClasses(
-        byte[] dexBytes,
-        String packageFilter,
-        int offset,
-        int limit
-    );
-
-    /**
-     * 列出 DEX 中的类（富摘要）：每个类返回 className/superclass/interfaces/
-     * fieldsCount/methodsCount，供 dex_list_classes 一次拿到结构化信息。
+     * 列出 DEX 中的类（结构化摘要）：每个类返回
+     * className/superclass/interfaces/fieldsCount/methodsCount。
      * @param dexBytes DEX 文件字节数组
      * @param packageFilter 包名过滤器
      * @param offset 偏移量
      * @param limit 限制数量
      * @return JSON：{classes:[{className,superclass,interfaces,fieldsCount,methodsCount}],total,shown}
      */
-    public static native String listClassesDetailed(
+    public static native String listClasses(
         byte[] dexBytes,
         String packageFilter,
         int offset,

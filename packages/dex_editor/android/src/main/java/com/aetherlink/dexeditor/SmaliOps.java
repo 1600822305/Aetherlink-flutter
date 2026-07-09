@@ -93,7 +93,7 @@ class SmaliOps {
                     org.json.JSONArray classes = result.optJSONArray("classes");
                     if (classes != null) {
                         for (int i = 0; i < classes.length(); i++) {
-                            String className = classes.getString(i);
+                            String className = classes.getJSONObject(i).optString("className");
                             try {
                                 String smaliJson = CppDex.getClassSmali(session.dexBytes, className);
                                 if (smaliJson != null && !smaliJson.contains("\"error\"")) {
