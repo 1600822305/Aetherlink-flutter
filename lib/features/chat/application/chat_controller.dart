@@ -129,7 +129,11 @@ class ChatController extends _$ChatController
   /// MCP / bridge / web search / memory search).
   @override
   late final ChatToolExecutor _toolExecutor = ChatToolExecutor(
-    ref,
+    // Resolved lazily: `ref` returns a new object after every rebuild, and a
+    // long tool-call turn routinely spans rebuilds (topic updates re-run
+    // build()), so capturing the Ref by value here would leave the executor
+    // holding a disposed Ref.
+    () => ref,
     assistantId: () => _assistantId,
   );
 
@@ -527,8 +531,9 @@ class ChatController extends _$ChatController
     required DateTime createdAt,
     required ChatMemoryInjection injection,
   }) {
-    if (injection.isEmpty || injection.count == 0)
+    if (injection.isEmpty || injection.count == 0) {
       return const <MessageBlock>[];
+    }
     return <MessageBlock>[
       MessageBlock.memoryInjection(
         id: generateId('block'),

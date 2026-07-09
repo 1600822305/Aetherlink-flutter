@@ -26,15 +26,19 @@ import 'package:aetherlink_flutter/shared/services/web_search_service.dart';
 
 /// Executes one tool call along its [ToolRoute]: built-ins run in-process,
 /// remote tools are dispatched to their server through
-/// [RemoteMcpConnectionManager]. Owned by the chat controller; [assistantId]
-/// is a getter callback because the controller's active assistant changes as
-/// the user switches topics.
+/// [RemoteMcpConnectionManager]. Owned by the chat controller; both fields are
+/// getter callbacks: the active assistant changes as the user switches topics,
+/// and the controller's [Ref] object is replaced on every provider rebuild
+/// (Riverpod 3 invalidates the previous build's Ref), so a Ref captured at
+/// construction would throw once the controller rebuilds mid-turn.
 class ChatToolExecutor {
-  const ChatToolExecutor(this._ref, {required String Function() assistantId})
+  const ChatToolExecutor(this._refOf, {required String Function() assistantId})
     : _assistantId = assistantId;
 
-  final Ref _ref;
+  final Ref Function() _refOf;
   final String Function() _assistantId;
+
+  Ref get _ref => _refOf();
 
   /// Executes one tool call along its [route]: a built-in runs in-process via
   /// [runBuiltinTool]; a remote tool is dispatched to its server through
