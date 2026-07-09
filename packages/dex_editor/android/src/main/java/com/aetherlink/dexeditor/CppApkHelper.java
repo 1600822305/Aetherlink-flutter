@@ -201,6 +201,8 @@ public class CppApkHelper {
                 item.put("type", r.optString("type"));
                 item.put("value", r.optString("value"));
                 item.put("id", r.optString("id"));
+                // C++ 已给资源命中补配置限定符 variant（default/zh-rCN/xxhdpi/...）。
+                item.put("variant", r.optString("variant", "default"));
                 results.put(item);
             }
         }

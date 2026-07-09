@@ -705,6 +705,121 @@ void main() {
       expect((r2.first as Map)['className'], 'com.example.C2');
     });
 
+    test('target=strings paginates the native string pool', () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => DexResult(success: true, data: {
+              'strings': List.generate(5, (i) => 'http://s$i'),
+              'total': 5,
+            });
+      final page1 = _json(await runDexEditorTool(
+        'dex_search',
+        {'target': 'strings', 'sessionId': 'S-1', 'query': 'http', 'limit': 2},
+        editor: dex,
+      ));
+      // 拉取 offset+limit+1 探测 hasMore。
+      expect(dex.lastParams!['limit'], 3);
+      expect((page1['strings'] as List).length, 2);
+      expect(page1['hasMore'], isTrue);
+      expect(page1['nextCursor'], isNotNull);
+    });
+
+    test('target=dex string search attributes className→classLocator',
+        () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(success: true, data: {
+              'results': [
+                {
+                  'type': 'string',
+                  'value': 'http://api.example.com',
+                  'className': 'com.example.Api',
+                },
+              ],
+              'total': 1,
+            });
+      final result = await runDexEditorTool(
+        'dex_search',
+        {'sessionId': 'S-1', 'query': 'http', 'searchType': 'string'},
+        editor: dex,
+      );
+      final r = (_json(result)['results'] as List).first as Map;
+      // native 反扫 const-string 回填的 className 被补成 classLocator。
+      expect(r['classLocator'], 'dex_class:com.example.Api');
+    });
+
+    test('target=arsc resources gets locator + resourceType/name + variant',
+        () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(success: true, data: [
+              {
+                'id': 0x7f0f0001,
+                'name': 'app_name',
+                'type': 'string',
+                'value': 'Demo',
+                'variant': 'zh-rCN',
+              },
+            ]);
+      final json = _json(await runDexEditorTool(
+        'dex_search',
+        {
+          'target': 'arsc',
+          'apkPath': '/sd/app.apk',
+          'query': 'app_name',
+          'arscTarget': 'resources',
+        },
+        editor: dex,
+      ));
+      final r = (json['results'] as List).first as Map;
+      expect(r['locator'], 'resource:0x7f0f0001');
+      expect(r['resourceType'], 'string');
+      expect(r['resourceName'], 'app_name');
+      expect(r['variant'], 'zh-rCN');
+      expect(json['hasMore'], isFalse);
+    });
+
+    test('target=arsc resources defaults variant to "default" when absent',
+        () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(success: true, data: [
+              {'id': 0x7f0f0002, 'name': 'foo', 'type': 'string', 'value': 'x'},
+            ]);
+      final json = _json(await runDexEditorTool(
+        'dex_search',
+        {
+          'target': 'arsc',
+          'apkPath': '/sd/app.apk',
+          'query': 'foo',
+          'arscTarget': 'resources',
+        },
+        editor: dex,
+      ));
+      final r = (json['results'] as List).first as Map;
+      expect(r['variant'], 'default');
+    });
+
+    test('target=manifest paginates a bare native array', () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => DexResult(
+              success: true,
+              data: List.generate(
+                5,
+                (i) => {'element': 'activity', 'attribute': 'name', 'value': 'A$i'},
+              ),
+            );
+      final json = _json(await runDexEditorTool(
+        'dex_search',
+        {
+          'target': 'manifest',
+          'apkPath': '/sd/app.apk',
+          'query': 'A',
+          'limit': 2,
+        },
+        editor: dex,
+      ));
+      expect((json['results'] as List).length, 2);
+      expect(json['hasMore'], isTrue);
+      expect(json['nextCursor'], isNotNull);
+    });
+
     test('target=overview aggregates dex facets into hits', () async {
       final dex = _RecordingDexEditor()
         ..onExecute = (action, params) {
