@@ -138,20 +138,7 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
                       top: group.y / 100 * h,
                       child: FractionalTranslation(
                         translation: const Offset(-0.5, -0.5),
-                        child: _GroupButton(
-                          group: group,
-                          buildChild: (component) => _buildComponent(
-                            component,
-                            context: context,
-                            ref: ref,
-                            theme: theme,
-                            settings: settings,
-                            topicName: topic?.name,
-                            current: current,
-                            hasModels: hasModels,
-                            comboName: comboName,
-                          ),
-                        ),
+                        child: _GroupButton(group: group),
                       ),
                     ),
                 ],
@@ -231,38 +218,6 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
         const SizedBox(width: 4),
       ],
     );
-  }
-
-  Future<void> _openMiniMap(BuildContext context, WidgetRef ref) async {
-    final messages =
-        ref.read(chatControllerProvider).value?.messages ??
-        const <ChatMessageView>[];
-    if (messages.isEmpty) {
-      AppToast.warning(context, '当前话题暂无消息');
-      return;
-    }
-    final isSelecting = ref.read(messageSelectionProvider).isSelecting;
-    final messageId = await showMiniMapSheet(
-      context,
-      messages,
-      selecting: isSelecting,
-      ref: ref,
-    );
-    if (messageId != null && !isSelecting) {
-      ref.read(scrollToMessageIdProvider.notifier).scrollTo(messageId);
-    }
-  }
-
-  Future<void> _openCondenseDialog(BuildContext context) async {
-    final result = await showContextCondenseDialog(context);
-    if (result != null && result.success && context.mounted) {
-      AppToast.success(
-        context,
-        '已压缩 ${result.originalMessageCount} 条消息，'
-        '节省约 ${result.tokensSaved} tokens',
-        duration: const Duration(seconds: 3),
-      );
-    }
   }
 
   /// Builds a single toolbar component, or `null` when it should not render
@@ -383,6 +338,81 @@ class ChatTopBar extends ConsumerWidget implements PreferredSizeWidget {
   }
 }
 
+Future<void> _openMiniMap(BuildContext context, WidgetRef ref) async {
+  final messages =
+      ref.read(chatControllerProvider).value?.messages ??
+      const <ChatMessageView>[];
+  if (messages.isEmpty) {
+    AppToast.warning(context, '当前话题暂无消息');
+    return;
+  }
+  final isSelecting = ref.read(messageSelectionProvider).isSelecting;
+  final messageId = await showMiniMapSheet(
+    context,
+    messages,
+    selecting: isSelecting,
+    ref: ref,
+  );
+  if (messageId != null && !isSelecting) {
+    ref.read(scrollToMessageIdProvider.notifier).scrollTo(messageId);
+  }
+}
+
+Future<void> _openCondenseDialog(BuildContext context) async {
+  final result = await showContextCondenseDialog(context);
+  if (result != null && result.success && context.mounted) {
+    AppToast.success(
+      context,
+      '已压缩 ${result.originalMessageCount} 条消息，'
+      '节省约 ${result.tokensSaved} tokens',
+      duration: const Duration(seconds: 3),
+    );
+  }
+}
+
+/// The action a group-sheet row dispatches for [component], run against the
+/// toolbar's [context] after the sheet closes, or `null` when the component
+/// has no tap behavior right now (`topicName`, a disabled 压缩上下文 while
+/// streaming, 新建话题 with no assistant). `clearButton` is also `null` here: its
+/// two-step confirm is stateful and lives in its hosts.
+VoidCallback? _componentAction(
+  TopToolbarComponent component, {
+  required BuildContext context,
+  required WidgetRef ref,
+}) {
+  switch (component) {
+    case TopToolbarComponent.menuButton:
+      return () => SidebarScope.of(context).openSidebar();
+    case TopToolbarComponent.topicName:
+      return null;
+    case TopToolbarComponent.newTopicButton:
+      final assistantId = ref.read(currentAssistantProvider)?.id;
+      if (assistantId == null) return null;
+      return () => ref.read(topicsProvider.notifier).create(assistantId);
+    case TopToolbarComponent.clearButton:
+      return null;
+    case TopToolbarComponent.searchButton:
+      return () => showChatSearchDialog(context);
+    case TopToolbarComponent.modelSelector:
+      final providers = ref.read(appModelProvidersProvider).value ?? const [];
+      final hasModels = providers.any((p) => p.models.isNotEmpty);
+      return () => hasModels
+          ? showModelSelectorDialog(context, filter: (m) => !isNonChatModel(m))
+          : context.push(AppRouter.defaultModelPath);
+    case TopToolbarComponent.settingsButton:
+      return () => context.push(AppRouter.settingsPath);
+    case TopToolbarComponent.condenseButton:
+      final isStreaming =
+          ref.read(chatControllerProvider).value?.isStreaming ?? false;
+      if (isStreaming) return null;
+      return () => _openCondenseDialog(context);
+    case TopToolbarComponent.miniMapButton:
+      return () => _openMiniMap(context, ref);
+    case TopToolbarComponent.branchManagerButton:
+      return () => showBranchManagerSheet(context);
+  }
+}
+
 /// The topic name (`Typography variant="h6" noWrap`, 18px/500), ellipsized and
 /// width-capped so it stays on one line in either layout.
 class _TopicTitle extends StatelessWidget {
@@ -429,15 +459,13 @@ class _ToolbarIconButton extends StatelessWidget {
 }
 
 /// A 聚合按钮: a single toolbar icon that pops up a sheet of its
-/// [TopToolbarGroup.children]. Each child is built through the same
-/// [_buildComponent] the toolbar uses (passed in via [buildChild]), so its
-/// behavior is identical whether it sits inline on the bar or inside a group —
-/// the group only changes *where* it lives, never *what it does*.
+/// [TopToolbarGroup.children]. Each row runs the same action the component
+/// would inline on the bar ([_componentAction]) — the group only changes
+/// *where* a component lives, never *what it does*.
 class _GroupButton extends StatelessWidget {
-  const _GroupButton({required this.group, required this.buildChild});
+  const _GroupButton({required this.group});
 
   final TopToolbarGroup group;
-  final Widget? Function(TopToolbarComponent) buildChild;
 
   @override
   Widget build(BuildContext context) {
@@ -447,68 +475,152 @@ class _GroupButton extends StatelessWidget {
       tooltip: group.label,
       onPressed: group.children.isEmpty
           ? null
-          : () => _openSheet(context),
+          : () => showModalBottomSheet<void>(
+              context: context,
+              showDragHandle: true,
+              builder: (_) => _GroupSheet(group: group, hostContext: context),
+            ),
+    );
+  }
+}
+
+/// The 聚合按钮 sheet: one full-width tappable row per grouped component. A tap
+/// closes the sheet and runs the component's action against [hostContext] (the
+/// toolbar's context — the sheet's own is gone once popped). 清空内容 keeps its
+/// two-step confirm inside the sheet (arm on the first tap, auto-disarm after
+/// 3s, clear and close on the second), and 话题名称 renders as an inert row.
+class _GroupSheet extends ConsumerStatefulWidget {
+  const _GroupSheet({required this.group, required this.hostContext});
+
+  final TopToolbarGroup group;
+  final BuildContext hostContext;
+
+  @override
+  ConsumerState<_GroupSheet> createState() => _GroupSheetState();
+}
+
+class _GroupSheetState extends ConsumerState<_GroupSheet> {
+  bool _clearConfirm = false;
+  Timer? _clearTimer;
+
+  @override
+  void dispose() {
+    _clearTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onClearTap() {
+    final topicId = ref.read(currentTopicProvider).value?.id;
+    if (topicId == null) return;
+    if (_clearConfirm) {
+      _clearTimer?.cancel();
+      Navigator.of(context).pop();
+      ref.read(topicsProvider.notifier).clearMessages(topicId);
+      return;
+    }
+    setState(() => _clearConfirm = true);
+    _clearTimer?.cancel();
+    _clearTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _clearConfirm = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: 16 + MediaQuery.paddingOf(context).bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Text(
+                widget.group.label,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+            ),
+            for (final component in widget.group.children)
+              _row(context, theme, component),
+          ],
+        ),
+      ),
     );
   }
 
-  Future<void> _openSheet(BuildContext context) {
-    return showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) {
-        final theme = Theme.of(context);
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              0,
-              16,
-              16 + MediaQuery.paddingOf(context).bottom,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(
-                    group.label,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                  ),
-                ),
-                // One function per row (a list, not equal-width tiles), so
-                // long labels stay readable and the order matches the editor.
-                for (final component in group.children)
-                  if (buildChild(component) case final Widget child)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Row(
-                        children: [
-                          child,
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              topToolbarComponentName(component),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: theme.colorScheme.onSurface,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-              ],
-            ),
-          ),
-        );
-      },
+  Widget _row(
+    BuildContext context,
+    ThemeData theme,
+    TopToolbarComponent component,
+  ) {
+    final color = theme.colorScheme.onSurface;
+
+    if (component == TopToolbarComponent.topicName) {
+      final name = ref.watch(currentTopicProvider).value?.name;
+      return ListTile(
+        dense: true,
+        leading: topToolbarComponentIcon(component, color: color),
+        title: Text(
+          name ?? topToolbarComponentName(component),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      );
+    }
+
+    if (component == TopToolbarComponent.clearButton) {
+      final hasTopic = ref.watch(currentTopicProvider).value != null;
+      final confirm = _clearConfirm;
+      return ListTile(
+        dense: true,
+        enabled: hasTopic,
+        leading: confirm
+            ? const Icon(
+                LucideIcons.alertTriangle,
+                size: 20,
+                color: _ClearTopicButtonState._confirmColor,
+              )
+            : topToolbarComponentIcon(
+                component,
+                color: hasTopic ? color : theme.disabledColor,
+              ),
+        title: Text(
+          confirm ? '确认清空' : topToolbarComponentName(component),
+          style: confirm
+              ? const TextStyle(color: _ClearTopicButtonState._confirmColor)
+              : null,
+        ),
+        onTap: hasTopic ? _onClearTap : null,
+      );
+    }
+
+    final action = _componentAction(
+      component,
+      context: widget.hostContext,
+      ref: ref,
+    );
+    return ListTile(
+      dense: true,
+      enabled: action != null,
+      leading: topToolbarComponentIcon(
+        component,
+        color: action != null ? color : theme.disabledColor,
+      ),
+      title: Text(topToolbarComponentName(component)),
+      onTap: action == null
+          ? null
+          : () {
+              Navigator.of(context).pop();
+              action();
+            },
     );
   }
 }
