@@ -20,7 +20,12 @@ Map<String, Object?> _json(McpToolResult result) =>
 class _RecordingDexEditor implements DexEditor {
   String? lastAction;
   Map<String, Object?>? lastParams;
+  final List<String> actions = <String>[];
+  final Map<String, Map<String, Object?>> paramsByAction = {};
   DexResult Function(String action, Map<String, Object?> params)? onExecute;
+
+  /// 最近一次某 action 的入参（用于断言，某些工具会连续调用多个 native action）。
+  Map<String, Object?>? paramsFor(String action) => paramsByAction[action];
 
   @override
   Future<DexResult> execute(
@@ -29,6 +34,8 @@ class _RecordingDexEditor implements DexEditor {
   ]) async {
     lastAction = action;
     lastParams = params;
+    actions.add(action);
+    paramsByAction[action] = params;
     return onExecute?.call(action, params) ?? const DexResult(success: true);
   }
 
@@ -634,10 +641,19 @@ void main() {
 
     test('dex_read_method dispatches getMethodFromSession with structured JSON',
         () async {
+      const classSmali = '.class public Lcom/example/Foo;\n'
+          '.super Ljava/lang/Object;\n'
+          '.method public bar(I)V\n'
+          '    return-void\n'
+          '.end method\n';
       final dex = _RecordingDexEditor()
-        ..onExecute = (_, __) => const DexResult(
+        ..onExecute = (action, __) => DexResult(
               success: true,
-              data: {'methodCode': '.method public bar(I)V\n.end method\n'},
+              data: action == 'getClassSmaliFromSession'
+                  ? const {'smaliContent': classSmali}
+                  : const {
+                      'methodCode': '.method public bar(I)V\n.end method\n',
+                    },
             );
       final result = await runDexEditorTool(
         'dex_read_method',
@@ -649,7 +665,7 @@ void main() {
         },
         editor: dex,
       );
-      expect(dex.lastAction, 'getMethodFromSession');
+      expect(dex.actions, contains('getMethodFromSession'));
       final json = _json(result);
       expect(json['className'], 'com.example.Foo');
       expect(json['methodName'], 'bar');
@@ -658,6 +674,9 @@ void main() {
       expect(json['locator'], 'dex_method:Lcom/example/Foo;->bar(I)V');
       expect((json['targetVersion'] as String).startsWith('dex-v1:'), isTrue);
       expect(json['smali'], contains('.method public bar(I)V'));
+      // 绝对行号：.method 在类 smali 第 3 行，.end method 第 5 行。
+      expect(json['absoluteStartLine'], 3);
+      expect(json['absoluteEndLine'], 5);
     });
 
     test('dex_read_method recovers method locator from smali when no signature',
@@ -696,35 +715,52 @@ void main() {
         },
         editor: dex,
       );
-      expect(dex.lastAction, 'getMethodFromSession');
-      expect(dex.lastParams!['className'], 'com.example.Foo');
-      expect(dex.lastParams!['methodName'], 'bar');
-      expect(dex.lastParams!['methodSignature'], '(I)V');
+      expect(dex.actions, contains('getMethodFromSession'));
+      final mp = dex.paramsFor('getMethodFromSession')!;
+      expect(mp['className'], 'com.example.Foo');
+      expect(mp['methodName'], 'bar');
+      expect(mp['methodSignature'], '(I)V');
     });
 
     test('dex_outline_class decorates class + members with locators', () async {
+      // 方法体带 const-string / invoke / 资源 ID const，验证逐方法分析字段。
+      const classSmali = '.class public final Lcom/example/Foo;\n'
+          '.super Ljava/lang/Object;\n'
+          '.method public bar(I)V\n'
+          '    const-string v0, "https://example.com/x"\n'
+          '    const-string v1, "plain text here"\n'
+          '    const v2, 0x7f0a0001\n'
+          '    invoke-virtual {v0}, Ljava/lang/String;->length()I\n'
+          '    return-void\n'
+          '.end method\n';
       final dex = _RecordingDexEditor()
-        ..onExecute = (_, __) => const DexResult(
+        ..onExecute = (action, __) => DexResult(
               success: true,
-              data: {
-                'className': 'Lcom/example/Foo;',
-                'accessFlags': 0x11,
-                'superclass': 'Ljava/lang/Object;',
-                'interfaces': ['Ljava/lang/Runnable;'],
-                'fields': [
-                  {'name': 'flag', 'type': 'Z', 'accessFlags': 0x42},
-                ],
-                'methods': [
-                  {'name': 'bar', 'signature': '(I)V', 'accessFlags': 0x101},
-                ],
-              },
+              data: action == 'getClassSmaliFromSession'
+                  ? const {'smaliContent': classSmali}
+                  : const {
+                      'className': 'Lcom/example/Foo;',
+                      'accessFlags': 0x11,
+                      'superclass': 'Ljava/lang/Object;',
+                      'interfaces': ['Ljava/lang/Runnable;'],
+                      'fields': [
+                        {'name': 'flag', 'type': 'Z', 'accessFlags': 0x42},
+                      ],
+                      'methods': [
+                        {
+                          'name': 'bar',
+                          'signature': '(I)V',
+                          'accessFlags': 0x101,
+                        },
+                      ],
+                    },
             );
       final result = await runDexEditorTool(
         'dex_outline_class',
         {'sessionId': 'S-1', 'className': 'Lcom/example/Foo;'},
         editor: dex,
       );
-      expect(dex.lastAction, 'outlineClassFromSession');
+      expect(dex.actions, contains('outlineClassFromSession'));
       final json = _json(result);
       expect(json['className'], 'com.example.Foo');
       // 干净版：类结果只用单一 locator（dex_class:...），不再有 classLocator。
@@ -734,13 +770,25 @@ void main() {
       expect(json['interfaces'], ['java.lang.Runnable']);
       // accessFlags 数字被解成可读修饰符（class/method/field 位含义不同）。
       expect(json['accessFlagsText'], 'public final');
+      // classHeader 聚合类头元信息。
+      final header = json['classHeader'] as Map;
+      expect(header['accessFlagsText'], 'public final');
+      expect(header['superclass'], 'java.lang.Object');
+      expect(header['interfaces'], ['java.lang.Runnable']);
       final fields = json['fields'] as List;
       expect((fields.first as Map)['locator'], 'dex_field:Lcom/example/Foo;->flag:Z');
       expect((fields.first as Map)['accessFlagsText'], 'private volatile');
       final methods = json['methods'] as List;
-      expect((methods.first as Map)['locator'],
-          'dex_method:Lcom/example/Foo;->bar(I)V');
-      expect((methods.first as Map)['accessFlagsText'], 'public native');
+      final bar = methods.first as Map;
+      expect(bar['locator'], 'dex_method:Lcom/example/Foo;->bar(I)V');
+      expect(bar['accessFlagsText'], 'public native');
+      // 逐方法分析字段。
+      expect(bar['stringRefCount'], 2);
+      expect(bar['resourceRefCount'], 1);
+      expect(bar['invokeCount'], 1);
+      expect(bar['interestingStrings'], ['https://example.com/x']);
+      expect(bar['interestingInvokes'],
+          ['Ljava/lang/String;->length()I']);
     });
 
     test('dex_list_classes normalizes a dotted packageFilter to slash form',

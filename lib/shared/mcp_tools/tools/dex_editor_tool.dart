@@ -181,6 +181,131 @@ String _signatureFromSmali(String smali, String methodName) {
   return '';
 }
 
+/// 域名/文件名样式（如 `example.com`、`config.json`、`a.b.c/d`），用于挑选
+/// interestingStrings。
+final RegExp _domainLikeRe =
+    RegExp(r'^[A-Za-z0-9_.-]+\.[A-Za-z]{2,8}([/?#].*)?$');
+
+/// 资源 ID 字面量（aapt 分配的 0x7fxxxxxx 区间），用于统计 resourceRefCount。
+final RegExp _resourceIdRe = RegExp(r'0x7f[0-9a-fA-F]{6}');
+
+/// 是否是「有信息量」的字符串（URL/路径/域名/文件名），过滤掉海量无意义常量。
+bool _isInterestingString(String s) {
+  final t = s.trim();
+  if (t.length < 4 || t.length > 300) return false;
+  if (t.contains('://')) return true;
+  if (t.startsWith('http')) return true;
+  if (t.startsWith('/') && t.length > 1) return true;
+  if (t.contains(' ')) return false;
+  return _domainLikeRe.hasMatch(t);
+}
+
+/// 取 smali 行里第一个双引号包裹的字面量（如 const-string 的字符串）。
+String? _quotedLiteral(String line) {
+  final a = line.indexOf('"');
+  if (a < 0) return null;
+  final b = line.lastIndexOf('"');
+  if (b <= a) return null;
+  return line.substring(a + 1, b);
+}
+
+/// 取 invoke 指令的目标方法引用（`}, ` 之后的部分，k35c/k3rc 皆适用），
+/// 如 `Lcom/foo/Bar;->baz(I)V`。
+String? _invokeTarget(String line) {
+  final i = line.indexOf('}, ');
+  if (i < 0) return null;
+  final t = line.substring(i + 3).trim();
+  return t.isEmpty ? null : t;
+}
+
+/// smali `.method` 行里的 `name(参数)返回` 键（与 outline 的 name+signature 对齐），
+/// 匹配不到返回 null。
+String? _methodKeyFromSmaliLine(String methodLine) {
+  final p = methodLine.indexOf('(');
+  if (p <= 0) return null;
+  final before = methodLine.substring(0, p);
+  final sp = before.lastIndexOf(' ');
+  final name = before.substring(sp + 1);
+  if (name.isEmpty) return null;
+  return name + methodLine.substring(p).trim();
+}
+
+/// 从整类 smali 逐方法统计分析字段，返回 `name+signature -> 分析结果`。
+/// 分析项：const-string 数、资源引用数、invoke 数，以及挑选后的
+/// interestingStrings / interestingInvokes。用于 dex_outline_class 对齐 MT 输出。
+Map<String, Map<String, Object?>> _analyzeClassMethods(String classSmali) {
+  const stringCap = 20;
+  const invokeCap = 30;
+  final result = <String, Map<String, Object?>>{};
+  String? key;
+  var stringRefs = 0;
+  var resourceRefs = 0;
+  var invokes = 0;
+  var strings = <String>{};
+  var invokeTargets = <String>{};
+  for (final raw in const LineSplitter().convert(classSmali)) {
+    final line = raw.trim();
+    if (line.startsWith('.method')) {
+      key = _methodKeyFromSmaliLine(line);
+      stringRefs = 0;
+      resourceRefs = 0;
+      invokes = 0;
+      strings = <String>{};
+      invokeTargets = <String>{};
+    } else if (line.startsWith('.end method')) {
+      if (key != null) {
+        result[key] = {
+          'stringRefCount': stringRefs,
+          'resourceRefCount': resourceRefs,
+          'invokeCount': invokes,
+          'interestingStrings': strings.take(stringCap).toList(),
+          'interestingInvokes': invokeTargets.take(invokeCap).toList(),
+        };
+      }
+      key = null;
+    } else if (key != null) {
+      if (line.startsWith('const-string')) {
+        stringRefs++;
+        final s = _quotedLiteral(line);
+        if (s != null && _isInterestingString(s)) strings.add(s);
+      } else if (line.startsWith('invoke-')) {
+        invokes++;
+        final t = _invokeTarget(line);
+        if (t != null) invokeTargets.add(t);
+      } else if (line.startsWith('const')) {
+        if (_resourceIdRe.hasMatch(line)) resourceRefs++;
+      }
+    }
+  }
+  return result;
+}
+
+/// 在整类 smali 里定位某方法的行号范围（1 起）。找不到返回 null。
+/// signature 非空时要求 `name+signature` 精确命中（区分重载）。
+Map<String, Object?>? _methodLineRange(
+  String classSmali,
+  String methodName,
+  String signature,
+) {
+  if (methodName.isEmpty) return null;
+  final lines = const LineSplitter().convert(classSmali);
+  for (var i = 0; i < lines.length; i++) {
+    final line = lines[i].trim();
+    if (!line.startsWith('.method')) continue;
+    if (!line.contains('$methodName(')) continue;
+    if (signature.isNotEmpty && !line.contains('$methodName$signature')) {
+      continue;
+    }
+    for (var j = i + 1; j < lines.length; j++) {
+      if (lines[j].trim().startsWith('.end method')) {
+        return {'absoluteStartLine': i + 1, 'absoluteEndLine': j + 1};
+      }
+    }
+    return {'absoluteStartLine': i + 1, 'absoluteEndLine': lines.length};
+  }
+  return null;
+}
+
 /// access_flags 的可读化目标（class/method/field 的部分位含义不同，如 0x40：
 /// 方法是 bridge、字段是 volatile）。
 enum _AccessKind { classKind, method, field }
@@ -745,6 +870,19 @@ Future<McpToolResult> _getMethod(
   // 行里还原签名，保证 locator 始终是方法级 dex_method:...（而非退回类 locator）。
   final effectiveSig =
       signature.isNotEmpty ? signature : _signatureFromSmali(code, methodName);
+  // 方法在整类 smali 中的绝对行号（1 起），供调用方定位/跳转。额外拉一次整类
+  // smali 计算，失败或定位不到则不带该字段（不影响方法读取主体）。
+  Map<String, Object?>? lineRange;
+  final classResult = await dex.execute('getClassSmaliFromSession', {
+    'sessionId': _sessionArg(args),
+    'className': className,
+  });
+  if (classResult.success) {
+    final classSmali = _str(_map(classResult.data)['smaliContent']);
+    if (classSmali.isNotEmpty) {
+      lineRange = _methodLineRange(classSmali, methodName, effectiveSig);
+    }
+  }
   return McpToolResult(encodeJson({
     'className': className,
     'methodName': methodName,
@@ -754,6 +892,7 @@ Future<McpToolResult> _getMethod(
         ? _methodLocator(className, methodName, effectiveSig)
         : _classLocator(className),
     'targetVersion': _targetVersion(code),
+    if (lineRange != null) ...lineRange,
     'smali': code,
   }));
 }
@@ -809,6 +948,26 @@ Future<McpToolResult> _outlineClass(
         .map((e) => e is String ? _normalizeClassName(e) : e)
         .toList();
   }
+  // classHeader：把类头元信息（访问标志/父类/接口）聚成一个对象，对齐 MT 的
+  // classHeader，方便调用方一次性拿到类签名概览（顶层字段保留不动）。
+  data['classHeader'] = <String, Object?>{
+    if (data['accessFlags'] is int) 'accessFlags': data['accessFlags'],
+    if (data['accessFlagsText'] is String)
+      'accessFlagsText': data['accessFlagsText'],
+    'superclass': data['superclass'],
+    'interfaces': data['interfaces'] ?? const <Object?>[],
+  };
+  // 逐方法分析字段（const-string/资源/invoke 计数 + interesting 列表）来自整类
+  // smali 文本统计。额外拉一次 smali，失败则跳过分析（不影响 outline 主体）。
+  var methodAnalysis = const <String, Map<String, Object?>>{};
+  final smaliResult = await dex.execute('getClassSmaliFromSession', {
+    'sessionId': _sessionArg(args),
+    'className': className,
+  });
+  if (smaliResult.success) {
+    final smali = _str(_map(smaliResult.data)['smaliContent']);
+    if (smali.isNotEmpty) methodAnalysis = _analyzeClassMethods(smali);
+  }
   final fields = data['fields'];
   if (fields is List) {
     data['fields'] = fields.map((f) {
@@ -839,6 +998,11 @@ Future<McpToolResult> _outlineClass(
       if (mm['accessFlags'] is int) {
         mm['accessFlagsText'] =
             _accessFlagsText(mm['accessFlags'] as int, _AccessKind.method);
+      }
+      // 附加逐方法分析字段（按 name+signature 匹配 smali 统计结果）。
+      final analysis = methodAnalysis[name + signature];
+      if (analysis != null) {
+        mm.addAll(analysis);
       }
       return mm;
     }).toList();
