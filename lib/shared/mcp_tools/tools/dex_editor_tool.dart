@@ -781,7 +781,7 @@ Future<McpToolResult> _search(DexEditor dex, Map<String, Object?> args) async {
 ///  - class/superclass/interface/annotation → dex_class:...
 ///  - method/code → dex_method:...（缺签名时回退类 locator）
 ///  - field → dex_field:...（缺 fieldType 时回退类 locator）
-///  - string → 若 native 给出 className 归属，补 classLocator。
+///  - string → 若 native 给出 className 归属，补 locator=dex_class:...。
 Map<String, Object?> _decorateDexResult(Object? item) {
   if (item is! Map) return {'value': item};
   final m = Map<String, Object?>.of(item.cast<String, Object?>());
@@ -818,7 +818,9 @@ Map<String, Object?> _decorateDexResult(Object? item) {
       }
       break;
     case 'string':
-      if (className.isNotEmpty) m['classLocator'] = _classLocator(className);
+      // 统一只用单一 locator（对齐 #618 去 classLocator 的约定）：
+      // native 给出首个引用该字符串的类时，locator=dex_class:类名，表示字符串归属。
+      if (className.isNotEmpty) m['locator'] = _classLocator(className);
       break;
   }
   return m;
@@ -1853,6 +1855,8 @@ Future<McpToolResult> _searchArsc(
   var pageItems = all.skip(page.offset).take(page.limit).toList();
   if (target == 'resources') {
     pageItems = pageItems.map(_decorateArscResource).toList();
+  } else {
+    pageItems = pageItems.map(_decorateArscString).toList();
   }
   return McpToolResult(encodeJson({
     'target': target,
@@ -1887,15 +1891,30 @@ Map<String, Object?> _decorateArscResource(Object? item) {
   return m;
 }
 
+/// 给 arsc 全局字符串池命中补 `locator`（`arsc_string:<index>`）。字符串池条目非资源，
+/// 没有 resType/resName，只用其在池中的下标做定位，便于回引与去重。
+Map<String, Object?> _decorateArscString(Object? item) {
+  if (item is! Map) return {'value': item};
+  final m = Map<String, Object?>.of(item.cast<String, Object?>());
+  final index = _int(m['index'], -1);
+  if (index >= 0) m['locator'] = 'arsc_string:$index';
+  return m;
+}
+
 Future<McpToolResult> _searchManifestCpp(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
   final page = _searchPage(args, 50);
+  // 统一入口用 query 传搜索词；value 为空时回退 query（与 overview 的 manifest 面一致），
+  // 否则直接 target=manifest 搜 login 时因只读 value 而恒 0。
+  final value = _str(args['value']).isEmpty
+      ? _str(args['query'])
+      : _str(args['value']);
   final result = await dex.execute('searchManifestCpp', {
     'apkPath': _str(args['apkPath']),
     'attrName': _str(args['attrName']),
-    'value': _str(args['value']),
+    'value': value,
     'limit': page.want + 1,
   });
   if (!result.success) {

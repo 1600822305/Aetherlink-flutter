@@ -723,8 +723,7 @@ void main() {
       expect(page1['nextCursor'], isNotNull);
     });
 
-    test('target=dex string search attributes className→classLocator',
-        () async {
+    test('target=dex string search attributes className→locator', () async {
       final dex = _RecordingDexEditor()
         ..onExecute = (_, __) => const DexResult(success: true, data: {
               'results': [
@@ -742,8 +741,9 @@ void main() {
         editor: dex,
       );
       final r = (_json(result)['results'] as List).first as Map;
-      // native 反扫 const-string 回填的 className 被补成 classLocator。
-      expect(r['classLocator'], 'dex_class:com.example.Api');
+      // native 反扫 const-string 回填的 className 归一为单一 locator（去 classLocator）。
+      expect(r['locator'], 'dex_class:com.example.Api');
+      expect(r.containsKey('classLocator'), isFalse);
     });
 
     test('target=arsc resources gets locator + resourceType/name + variant',
@@ -794,6 +794,49 @@ void main() {
       ));
       final r = (json['results'] as List).first as Map;
       expect(r['variant'], 'default');
+    });
+
+    test('target=arsc strings gets arsc_string locator', () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (action, params) {
+          if (action == 'searchArscStrings') {
+            return const DexResult(success: true, data: [
+              {'value': 'login', 'index': 42},
+            ]);
+          }
+          return const DexResult(success: true, data: []);
+        };
+      final json = _json(await runDexEditorTool(
+        'dex_search',
+        {
+          'target': 'arsc',
+          'apkPath': '/sd/app.apk',
+          'query': 'login',
+          'arscTarget': 'strings',
+        },
+        editor: dex,
+      ));
+      expect(dex.lastAction, 'searchArscStrings');
+      final r = (json['results'] as List).first as Map;
+      expect(r['locator'], 'arsc_string:42');
+      expect(r['value'], 'login');
+    });
+
+    test('target=manifest falls back to query when value absent', () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(success: true, data: []);
+      await runDexEditorTool(
+        'dex_search',
+        {
+          'target': 'manifest',
+          'apkPath': '/sd/app.apk',
+          'query': 'login',
+        },
+        editor: dex,
+      );
+      expect(dex.lastAction, 'searchManifestCpp');
+      // 统一入口用 query 传搜索词，_searchManifestCpp 需回退 query→value。
+      expect(dex.lastParams!['value'], 'login');
     });
 
     test('target=manifest paginates a bare native array', () async {
