@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <algorithm>
 #include <android/log.h>
 
 #include "dex/dex_parser.h"
@@ -208,17 +209,25 @@ static std::string sanitize_utf8(const std::string& s) {
     return result;
 }
 
-// 建立 string_idx -> 首个通过 const-string / const-string/jumbo 引用它的类名 的映射。
-// 用于 DEX 字符串搜索给命中补 className/classLocator（对齐 MT 的字符串归属）。
-// 反汇编每个方法体、扫描 const-string 指令取其 string 索引，首个引用者优先。
-static std::unordered_map<uint32_t, std::string> build_string_class_map(
+// 建立 string_idx -> 所有通过 const-string / const-string/jumbo 引用它的类名列表。
+// 用于 DEX 字符串搜索给命中补 className（对齐 MT「按 class 分组」的字符串归属）：
+// 一个字符串常量可能被多个类引用，全部返回，让调用方知道哪些类引用了它。
+// 反汇编每个方法体、扫描 const-string 指令取其 string 索引，按类去重、保持首次出现顺序。
+static std::unordered_map<uint32_t, std::vector<std::string>> build_string_class_map(
         const dex::DexParser& parser) {
-    std::unordered_map<uint32_t, std::string> map;
+    std::unordered_map<uint32_t, std::vector<std::string>> map;
     dex::SmaliDisassembler disasm;
     disasm.set_strings(parser.strings());
     disasm.set_types(parser.types());
     disasm.set_methods(parser.get_method_signatures());
     disasm.set_fields(parser.get_field_signatures());
+    auto record = [&map](uint32_t sidx, const std::string& cls) {
+        auto& vec = map[sidx];
+        // 同一字符串被同一类多处引用只记一次。
+        if (std::find(vec.begin(), vec.end(), cls) == vec.end()) {
+            vec.push_back(cls);
+        }
+    };
     for (const auto& m : parser.get_methods()) {
         dex::CodeItem code;
         if (!parser.get_method_code(m.class_name, m.method_name, code, m.prototype)) {
@@ -227,12 +236,12 @@ static std::unordered_map<uint32_t, std::string> build_string_class_map(
         auto insns = disasm.disassemble_method(code.insns.data(), code.insns.size());
         for (const auto& insn : insns) {
             if (insn.opcode == "const-string" && insn.raw_bytes.size() >= 2) {
-                map.emplace(insn.raw_bytes[1], m.class_name);
+                record(insn.raw_bytes[1], m.class_name);
             } else if (insn.opcode == "const-string/jumbo" &&
                        insn.raw_bytes.size() >= 3) {
                 uint32_t sidx = static_cast<uint32_t>(insn.raw_bytes[1]) |
                                 (static_cast<uint32_t>(insn.raw_bytes[2]) << 16);
-                map.emplace(sidx, m.class_name);
+                record(sidx, m.class_name);
             }
         }
     }
@@ -265,15 +274,29 @@ Java_com_aetherlink_dexeditor_CppDex_searchInDex(JNIEnv* env, jclass, jbyteArray
             for (uint32_t i = 0; i < all.size() && (int)matched.size() < maxResults; i++) {
                 if (safe_contains(all[i], q, caseSensitive)) matched.push_back(i);
             }
-            std::unordered_map<uint32_t, std::string> str_class;
+            std::unordered_map<uint32_t, std::vector<std::string>> str_class;
             if (!matched.empty()) str_class = build_string_class_map(parser);
             for (uint32_t idx : matched) {
-                json item = {{"type", "string"}, {"value", sanitize_utf8(all[idx])}};
+                std::string value = sanitize_utf8(all[idx]);
                 auto it = str_class.find(idx);
                 if (it != str_class.end() && !it->second.empty()) {
-                    item["className"] = sanitize_utf8(it->second);
+                    // 该字符串被 const-string 引用：为每个引用类各出一条，
+                    // 让调用方知道哪些类引用了它（对齐 MT 按 class 分组）；
+                    // referencedBy 汇总全部引用类，className 取首个便于展示/补 locator。
+                    json refs = json::array();
+                    for (const auto& c : it->second) refs.push_back(sanitize_utf8(c));
+                    for (const auto& c : it->second) {
+                        results.push_back({
+                            {"type", "string"},
+                            {"value", value},
+                            {"className", sanitize_utf8(c)},
+                            {"referencedBy", refs}
+                        });
+                    }
+                } else {
+                    // 无 const-string 引用（如仅作类型/方法/字段名出现），只给 value。
+                    results.push_back({{"type", "string"}, {"value", value}});
                 }
-                results.push_back(item);
                 count++;
             }
         } else if (type == "class") {
