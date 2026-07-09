@@ -736,6 +736,68 @@ void main() {
       expect(json['total'], 4);
       final method = (hits['method'] as List).first as Map;
       expect(method['locator'], 'dex_method:Lcom/example/Foo;->bar()V');
+      // 无 apkPath 时不含整包面。
+      expect(json['apkFacets'], isFalse);
+      expect(hits.containsKey('file'), isFalse);
+    });
+
+    test('target=overview also aggregates file/resource/manifest with apkPath',
+        () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (action, params) {
+          switch (action) {
+            case 'searchInDexSession':
+              return DexResult(success: true, data: {
+                'results': [
+                  {'type': params['searchType'], 'className': 'com.example.Foo'},
+                ],
+              });
+            case 'searchTextInApk':
+              return const DexResult(success: true, data: {
+                'results': [
+                  {'file': 'assets/a.json', 'lineNumber': 1, 'line': 'x'},
+                ],
+              });
+            case 'searchArscResources':
+              return const DexResult(success: true, data: {
+                'results': [
+                  {'id': 0x7f0e0001, 'name': 'app_name', 'type': 'string'},
+                ],
+              });
+            case 'searchManifestCpp':
+              return const DexResult(success: true, data: {
+                'results': [
+                  {'attrName': 'android:name', 'value': 'com.example.Foo'},
+                ],
+              });
+            default:
+              return const DexResult(success: true, data: {});
+          }
+        };
+      final json = _json(await runDexEditorTool(
+        'dex_search',
+        {'target': 'overview', 'apkPath': '/sd/app.apk', 'query': 'Foo'},
+        editor: dex,
+      ));
+      expect(json['apkFacets'], isTrue);
+      final hits = json['hits'] as Map;
+      expect(
+        hits.keys,
+        containsAll(
+          ['class', 'method', 'field', 'string', 'file', 'resource', 'manifest'],
+        ),
+      );
+      expect(((hits['file'] as List).first as Map)['locator'],
+          'apk_file:assets/a.json:1');
+      expect(((hits['resource'] as List).first as Map)['locator'],
+          'resource:0x7f0e0001');
+      // 用 sessionId 直接填 APK 路径也应触发整包面。
+      final viaSession = _json(await runDexEditorTool(
+        'dex_search',
+        {'target': 'overview', 'sessionId': '/sd/app.apk', 'query': 'Foo'},
+        editor: dex,
+      ));
+      expect(viaSession['apkFacets'], isTrue);
     });
 
     test('target=arsc resources adds resource locator + resourceType/Name',
