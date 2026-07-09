@@ -723,7 +723,8 @@ void main() {
       expect(page1['nextCursor'], isNotNull);
     });
 
-    test('target=dex string search attributes className→locator', () async {
+    test('target=dex string search attributes className→locator + referencedBy',
+        () async {
       final dex = _RecordingDexEditor()
         ..onExecute = (_, __) => const DexResult(success: true, data: {
               'results': [
@@ -731,6 +732,7 @@ void main() {
                   'type': 'string',
                   'value': 'http://api.example.com',
                   'className': 'com.example.Api',
+                  'referencedBy': ['com.example.Api', 'com.example.Net'],
                 },
               ],
               'total': 1,
@@ -741,9 +743,11 @@ void main() {
         editor: dex,
       );
       final r = (_json(result)['results'] as List).first as Map;
-      // native 反扫 const-string 回填的 className 归一为单一 locator（去 classLocator）。
+      // native 反扫 const-string 回填的 className 归一为单一 locator（去 classLocator），
+      // referencedBy 透传全部引用类。
       expect(r['locator'], 'dex_class:com.example.Api');
       expect(r.containsKey('classLocator'), isFalse);
+      expect(r['referencedBy'], ['com.example.Api', 'com.example.Net']);
     });
 
     test('target=arsc resources gets locator + resourceType/name + variant',
