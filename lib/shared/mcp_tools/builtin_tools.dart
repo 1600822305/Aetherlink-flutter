@@ -1,6 +1,5 @@
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/tools/calculator_tool.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/tools/dex_editor_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/tools/fetch_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/tools/grok_search_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/tools/metaso_tool.dart';
@@ -36,8 +35,6 @@ Future<McpToolResult?> runBuiltinTool(
       return runMetasoTool(toolName, args, env: env);
     case '@aether/grok-search':
       return runGrokSearchTool(toolName, args, env: env);
-    case '@aether/dex-editor':
-      return runDexEditorTool(toolName, args);
   }
   return null;
 }

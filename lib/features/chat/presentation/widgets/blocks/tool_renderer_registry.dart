@@ -4,7 +4,6 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/file_editor_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/file_editor_read_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/run_command_block_view.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/dex_editor_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/knowledge_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/terminal_session_block_view.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/web_search_block_view.dart';
@@ -53,39 +52,6 @@ final Map<String, ToolBlockBuilder> _toolRenderers = {
   for (final t in _fileEditorReadTools)
     t: (b) => FileEditorReadBlockView(block: b),
   for (final t in _knowledgeTools) t: (b) => KnowledgeBlockView(block: b),
-  for (final t in _dexEditorTools) t: (b) => DexEditorBlockView(block: b),
-};
-
-/// `@aether/dex-editor` built-in tools (会话工作流 / 类·方法反汇编 / 搜索 /
-/// 交叉引用 / 反编译 / 清单与资源 / APK 文件 / 任务完成)，渲染为紧凑的 DEX 卡片。
-const Set<String> _dexEditorTools = {
-  'dex_open_apk',
-  'dex_open',
-  'dex_list_classes',
-  'dex_search',
-  'dex_read_class',
-  'dex_modify_class',
-  'dex_save',
-  'dex_close',
-  'dex_list_sessions',
-  'dex_add_class',
-  'dex_delete_class',
-  'dex_modify_method',
-  'dex_outline_class',
-  'dex_rename_class',
-  'dex_find_xrefs',
-  'dex_smali_to_java',
-  'apk_get_manifest',
-  'apk_edit_manifest',
-  'apk_list_resources',
-  'apk_get_resource',
-  'apk_modify_resource',
-  'apk_get_resource_value',
-  'apk_set_resource_value',
-  'apk_list_files',
-  'apk_file',
-  'apk_parse_arsc_cpp',
-  'attempt_completion',
 };
 
 /// `@aether/terminal` 长驻会话工具，渲染为终端会话卡片。

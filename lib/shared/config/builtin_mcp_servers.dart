@@ -71,16 +71,6 @@ const List<McpServer> kBuiltinMcpServers = [
     tags: ['文件', '编辑', 'AI', '工作区', '笔记', '工具'],
   ),
   McpServer(
-    id: 'builtin-dex-editor',
-    name: '@aether/dex-editor',
-    type: McpServerType.inMemory,
-    category: McpServerCategory.builtin,
-    description:
-        'DEX 文件编辑工具，让 AI 可以浏览、搜索、查看和修改 APK 中的 Smali 代码。支持列出类、获取方法、搜索代码、编辑保存和签名。',
-    provider: 'AetherAI',
-    tags: ['DEX', 'Smali', 'APK', '逆向', '编辑', 'Android', '工具'],
-  ),
-  McpServer(
     id: 'builtin-grok-search',
     name: '@aether/grok-search',
     type: McpServerType.inMemory,
