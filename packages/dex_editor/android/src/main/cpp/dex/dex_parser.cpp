@@ -304,6 +304,39 @@ DexParser::ClassOutline DexParser::get_class_outline(const std::string& class_na
     return outline;
 }
 
+DexParser::ClassBrief DexParser::get_class_brief(const ClassDef& cls) const {
+    ClassBrief brief;
+
+    // 父类：superclass_idx == NO_INDEX(0xFFFFFFFF) 表示无父类（仅 Object）
+    if (cls.superclass_idx != 0xFFFFFFFF) {
+        brief.superclass = get_class_name(cls.superclass_idx);
+    }
+
+    // 接口：interfaces_off 指向 type_list（uint32 size + size 个 uint16 type_idx）
+    if (cls.interfaces_off != 0 && cls.interfaces_off + 4 <= data_.size()) {
+        uint32_t size = read_le<uint32_t>(&data_[cls.interfaces_off]);
+        for (uint32_t i = 0; i < size; i++) {
+            size_t p = cls.interfaces_off + 4 + i * 2;
+            if (p + 2 > data_.size()) break;
+            uint16_t type_idx = read_le<uint16_t>(&data_[p]);
+            brief.interfaces.push_back(get_class_name(type_idx));
+        }
+    }
+
+    // 字段/方法数：只读 class_data_item 的四个计数头（uleb128），不解析成员本体。
+    if (cls.class_data_off != 0 && cls.class_data_off < data_.size()) {
+        size_t offset = cls.class_data_off;
+        uint32_t static_fields_size = read_uleb128(offset);
+        uint32_t instance_fields_size = read_uleb128(offset);
+        uint32_t direct_methods_size = read_uleb128(offset);
+        uint32_t virtual_methods_size = read_uleb128(offset);
+        brief.field_count = static_fields_size + instance_fields_size;
+        brief.method_count = direct_methods_size + virtual_methods_size;
+    }
+
+    return brief;
+}
+
 std::string DexParser::get_info() const {
     std::stringstream ss;
     

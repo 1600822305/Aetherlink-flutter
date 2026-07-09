@@ -53,6 +53,22 @@ public class CppDex {
     );
 
     /**
+     * 列出 DEX 中的类（富摘要）：每个类返回 className/superclass/interfaces/
+     * fieldsCount/methodsCount，供 dex_list_classes 一次拿到结构化信息。
+     * @param dexBytes DEX 文件字节数组
+     * @param packageFilter 包名过滤器
+     * @param offset 偏移量
+     * @param limit 限制数量
+     * @return JSON：{classes:[{className,superclass,interfaces,fieldsCount,methodsCount}],total,shown}
+     */
+    public static native String listClassesDetailed(
+        byte[] dexBytes,
+        String packageFilter,
+        int offset,
+        int limit
+    );
+
+    /**
      * 在 DEX 中搜索
      * @param dexBytes DEX 文件字节数组
      * @param query 搜索查询

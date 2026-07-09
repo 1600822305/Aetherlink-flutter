@@ -122,6 +122,57 @@ Java_com_aetherlink_dexeditor_CppDex_listClasses(JNIEnv* env, jclass, jbyteArray
     return string_to_jstring(env, result.dump());
 }
 
+// 富类列表：每个类返回 {className, superclass, interfaces, fieldsCount,
+// methodsCount}，供 dex_list_classes 一次拿到结构化摘要（对齐 dex_outline_class
+// 的字段口径）。计数只读 class_data 头，接口/父类只读索引，避免逐类全解析。
+JNIEXPORT jstring JNICALL
+Java_com_aetherlink_dexeditor_CppDex_listClassesDetailed(JNIEnv* env, jclass, jbyteArray dexBytes,
+                                                         jstring packageFilter, jint offset, jint limit) {
+    auto data = jbyteArray_to_vector(env, dexBytes);
+    std::string filter = jstring_to_string(env, packageFilter);
+
+    dex::DexParser parser;
+    if (!parser.parse(data)) {
+        json error = {{"error", "Failed to parse DEX"}};
+        return string_to_jstring(env, error.dump());
+    }
+
+    json class_list = json::array();
+    const auto& classes = parser.classes();
+    int count = 0;
+    int matched = 0;
+
+    for (const auto& cls : classes) {
+        std::string class_name = parser.get_class_name(cls.class_idx);
+
+        if (!filter.empty() && class_name.find(filter) == std::string::npos) {
+            continue;
+        }
+
+        matched++;
+        if (matched > offset && count < limit) {
+            dex::DexParser::ClassBrief brief = parser.get_class_brief(cls);
+            json item = {
+                {"className", class_name},
+                {"superclass", brief.superclass},
+                {"interfaces", brief.interfaces},
+                {"fieldsCount", brief.field_count},
+                {"methodsCount", brief.method_count}
+            };
+            class_list.push_back(std::move(item));
+            count++;
+        }
+    }
+
+    json result = {
+        {"classes", class_list},
+        {"shown", class_list.size()},
+        {"total", matched}
+    };
+
+    return string_to_jstring(env, result.dump());
+}
+
 // Helper: Safe ASCII lowercase (UTF-8 safe - only converts ASCII a-z)
 static std::string safe_tolower_ascii(const std::string& s) {
     std::string result = s;
