@@ -1492,7 +1492,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'dex_outline_class',
       description:
-          '获取类的轮廓：一次返回类的 classLocator（dex_class:...）、父类(superclass)、'
+          '获取类的轮廓：一次返回类的 locator（dex_class:...，classLocator 为兼容别名）、父类(superclass)、'
           '接口(interfaces)、字段列表(name/type/accessFlags/accessFlagsText/locator[dex_field:...])'
           '和方法列表(name/signature/returnType/accessFlags/accessFlagsText/'
           'locator[dex_method:...])。accessFlagsText 是 accessFlags 的可读修饰符形式'
