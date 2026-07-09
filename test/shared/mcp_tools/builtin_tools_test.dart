@@ -616,6 +616,173 @@ void main() {
       expect(result.text, contains('target'));
       expect(dex.lastAction, isNull);
     });
+
+    test('target=dex decorates method results with dex_method locator',
+        () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(success: true, data: {
+              'results': [
+                {
+                  'type': 'method',
+                  'className': 'com.example.Foo',
+                  'methodName': 'bar',
+                  'prototype': '(I)V',
+                  'dexFile': 'classes.dex',
+                },
+              ],
+              'total': 1,
+            });
+      final result = await runDexEditorTool(
+        'dex_search',
+        {'sessionId': 'S-1', 'query': 'bar', 'searchType': 'method'},
+        editor: dex,
+      );
+      final results = _json(result)['results'] as List;
+      expect(
+        (results.first as Map)['locator'],
+        'dex_method:Lcom/example/Foo;->bar(I)V',
+      );
+    });
+
+    test('target=dex code search yields dex_method locator + lineNumber',
+        () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(success: true, data: {
+              'results': [
+                {
+                  'type': 'code',
+                  'className': 'com.example.Foo',
+                  'methodName': 'bar',
+                  'prototype': '()V',
+                  'line': 3,
+                  'snippet': 'const-string v0',
+                },
+              ],
+            });
+      final result = await runDexEditorTool(
+        'dex_search',
+        {'sessionId': 'S-1', 'query': 'const-string', 'searchType': 'code'},
+        editor: dex,
+      );
+      final r = (_json(result)['results'] as List).first as Map;
+      expect(r['locator'], 'dex_method:Lcom/example/Foo;->bar()V');
+      expect(r['lineNumber'], 3);
+      expect(r.containsKey('line'), isFalse);
+      expect(r['snippet'], 'const-string v0');
+    });
+
+    test('target=dex paginates via offset/limit with hasMore + nextCursor',
+        () async {
+      final five = List.generate(
+        5,
+        (i) => {'type': 'class', 'className': 'com.example.C$i'},
+      );
+      final dex = _RecordingDexEditor()
+        ..onExecute =
+            (_, __) => DexResult(success: true, data: {'results': five});
+      final page1 = _json(await runDexEditorTool(
+        'dex_search',
+        {'sessionId': 'S-1', 'query': 'C', 'searchType': 'class', 'limit': 2},
+        editor: dex,
+      ));
+      final r1 = page1['results'] as List;
+      expect(r1.length, 2);
+      expect((r1.first as Map)['locator'], 'dex_class:com.example.C0');
+      expect(page1['hasMore'], isTrue);
+      expect(page1['nextCursor'], isNotNull);
+      final page2 = _json(await runDexEditorTool(
+        'dex_search',
+        {
+          'sessionId': 'S-1',
+          'query': 'C',
+          'searchType': 'class',
+          'cursor': page1['nextCursor'],
+        },
+        editor: dex,
+      ));
+      final r2 = page2['results'] as List;
+      expect(r2.length, 2);
+      expect((r2.first as Map)['className'], 'com.example.C2');
+    });
+
+    test('target=overview aggregates dex facets into hits', () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (action, params) {
+          final st = params['searchType'];
+          final item = <String, Object?>{'type': st};
+          if (st == 'string') {
+            item['value'] = 'hello';
+          } else {
+            item['className'] = 'com.example.Foo';
+            if (st == 'method') {
+              item['methodName'] = 'bar';
+              item['prototype'] = '()V';
+            } else if (st == 'field') {
+              item['fieldName'] = 'x';
+              item['fieldType'] = 'I';
+            }
+          }
+          return DexResult(success: true, data: {
+            'results': [item],
+          });
+        };
+      final json = _json(await runDexEditorTool(
+        'dex_search',
+        {'target': 'overview', 'sessionId': 'S-1', 'query': 'Foo'},
+        editor: dex,
+      ));
+      final hits = json['hits'] as Map;
+      expect(hits.keys, containsAll(['class', 'method', 'field', 'string']));
+      expect(json['total'], 4);
+      final method = (hits['method'] as List).first as Map;
+      expect(method['locator'], 'dex_method:Lcom/example/Foo;->bar()V');
+    });
+
+    test('target=arsc resources adds resource locator + resourceType/Name',
+        () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(success: true, data: {
+              'results': [
+                {
+                  'id': 0x7f0e0001,
+                  'name': 'app_name',
+                  'type': 'string',
+                  'value': 'WenXiaoBai',
+                },
+              ],
+            });
+      final json = _json(await runDexEditorTool(
+        'dex_search',
+        {
+          'target': 'arsc',
+          'apkPath': '/sd/app.apk',
+          'query': 'app_name',
+          'arscTarget': 'resources',
+        },
+        editor: dex,
+      ));
+      final r = (json['results'] as List).first as Map;
+      expect(r['locator'], 'resource:0x7f0e0001');
+      expect(r['resourceType'], 'string');
+      expect(r['resourceName'], 'app_name');
+    });
+
+    test('target=files adds apk_file locator', () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(success: true, data: {
+              'results': [
+                {'file': 'assets/config.json', 'lineNumber': 12, 'line': 'x'},
+              ],
+              'totalFound': 1,
+            });
+      final json = _json(await runDexEditorTool(
+        'dex_search',
+        {'target': 'files', 'apkPath': '/sd/app.apk', 'query': 'x'},
+        editor: dex,
+      ));
+      final r = (json['results'] as List).first as Map;
+      expect(r['locator'], 'apk_file:assets/config.json:12');
+    });
   });
 
   group('dex read structured outputs (locator + targetVersion)', () {
