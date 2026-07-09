@@ -1370,8 +1370,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       name: 'dex_read_method',
       description:
           '读取类中单个方法的 Smali 代码（大类只看某个方法时更省 token）。'
-          '返回 JSON，含 className、methodName、classLocator、locator'
-          '（dex_method:Lcom/example/Foo;->bar(I)V，签名齐全时才有）、'
+          '返回 JSON，含 className、methodName、locator'
+          '（dex_method:Lcom/example/Foo;->bar(I)V，签名齐全；缺签名时回退为类 dex_class:...）、'
           'targetVersion（内容指纹，供并发校验）、smali（方法体）。\n'
           '定位方式二选一：①className+methodName（可选 methodSignature 区分重载）；'
           '②locator=dex_method:...（内含类/方法/签名，无需再填其他）。',
@@ -1492,7 +1492,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'dex_outline_class',
       description:
-          '获取类的轮廓：一次返回类的 locator（dex_class:...，classLocator 为兼容别名）、父类(superclass)、'
+          '获取类的轮廓：一次返回类的 locator（dex_class:...）、父类(superclass)、'
           '接口(interfaces)、字段列表(name/type/accessFlags/accessFlagsText/locator[dex_field:...])'
           '和方法列表(name/signature/returnType/accessFlags/accessFlagsText/'
           'locator[dex_method:...])。accessFlagsText 是 accessFlags 的可读修饰符形式'

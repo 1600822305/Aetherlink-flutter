@@ -652,8 +652,9 @@ void main() {
       expect(dex.lastAction, 'getMethodFromSession');
       final json = _json(result);
       expect(json['className'], 'com.example.Foo');
-      expect(json['classLocator'], 'dex_class:com.example.Foo');
       expect(json['methodName'], 'bar');
+      // 干净版：只保留单一 locator（方法级），不再有 classLocator。
+      expect(json.containsKey('classLocator'), isFalse);
       expect(json['locator'], 'dex_method:Lcom/example/Foo;->bar(I)V');
       expect((json['targetVersion'] as String).startsWith('dex-v1:'), isTrue);
       expect(json['smali'], contains('.method public bar(I)V'));
@@ -705,9 +706,9 @@ void main() {
       expect(dex.lastAction, 'outlineClassFromSession');
       final json = _json(result);
       expect(json['className'], 'com.example.Foo');
-      // 命名统一：类主体带 locator，classLocator 为兼容别名。
+      // 干净版：类结果只用单一 locator（dex_class:...），不再有 classLocator。
       expect(json['locator'], 'dex_class:com.example.Foo');
-      expect(json['classLocator'], 'dex_class:com.example.Foo');
+      expect(json.containsKey('classLocator'), isFalse);
       expect(json['superclass'], 'java.lang.Object');
       expect(json['interfaces'], ['java.lang.Runnable']);
       // accessFlags 数字被解成可读修饰符（class/method/field 位含义不同）。
