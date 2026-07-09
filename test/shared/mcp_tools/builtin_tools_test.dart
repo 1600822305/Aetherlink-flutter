@@ -611,6 +611,110 @@ void main() {
     });
   });
 
+  group('dex read structured outputs (locator + targetVersion)', () {
+    test('dex_read_class returns JSON with locator + targetVersion + smali',
+        () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(
+              success: true,
+              data: {'smaliContent': '.class public Lcom/example/Foo;\n'},
+            );
+      final result = await runDexEditorTool(
+        'dex_read_class',
+        {'sessionId': 'S-1', 'className': 'Lcom/example/Foo;'},
+        editor: dex,
+      );
+      expect(dex.lastAction, 'getClassSmaliFromSession');
+      final json = _json(result);
+      expect(json['className'], 'com.example.Foo');
+      expect(json['locator'], 'dex_class:com.example.Foo');
+      expect((json['targetVersion'] as String).startsWith('dex-v1:'), isTrue);
+      expect(json['smali'], contains('.class public Lcom/example/Foo;'));
+    });
+
+    test('dex_read_method dispatches getMethodFromSession with structured JSON',
+        () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(
+              success: true,
+              data: {'methodCode': '.method public bar(I)V\n.end method\n'},
+            );
+      final result = await runDexEditorTool(
+        'dex_read_method',
+        {
+          'sessionId': 'S-1',
+          'className': 'com.example.Foo',
+          'methodName': 'bar',
+          'methodSignature': '(I)V',
+        },
+        editor: dex,
+      );
+      expect(dex.lastAction, 'getMethodFromSession');
+      final json = _json(result);
+      expect(json['className'], 'com.example.Foo');
+      expect(json['classLocator'], 'dex_class:com.example.Foo');
+      expect(json['methodName'], 'bar');
+      expect(json['locator'], 'dex_method:Lcom/example/Foo;->bar(I)V');
+      expect((json['targetVersion'] as String).startsWith('dex-v1:'), isTrue);
+      expect(json['smali'], contains('.method public bar(I)V'));
+    });
+
+    test('dex_read_method accepts a dex_method locator in place of args',
+        () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(
+              success: true,
+              data: {'methodCode': '.method public bar(I)V\n.end method\n'},
+            );
+      await runDexEditorTool(
+        'dex_read_method',
+        {
+          'sessionId': 'S-1',
+          'locator': 'dex_method:Lcom/example/Foo;->bar(I)V',
+        },
+        editor: dex,
+      );
+      expect(dex.lastAction, 'getMethodFromSession');
+      expect(dex.lastParams!['className'], 'com.example.Foo');
+      expect(dex.lastParams!['methodName'], 'bar');
+      expect(dex.lastParams!['methodSignature'], '(I)V');
+    });
+
+    test('dex_outline_class decorates class + members with locators', () async {
+      final dex = _RecordingDexEditor()
+        ..onExecute = (_, __) => const DexResult(
+              success: true,
+              data: {
+                'className': 'Lcom/example/Foo;',
+                'superclass': 'Ljava/lang/Object;',
+                'interfaces': ['Ljava/lang/Runnable;'],
+                'fields': [
+                  {'name': 'flag', 'type': 'Z', 'accessFlags': 2},
+                ],
+                'methods': [
+                  {'name': 'bar', 'signature': '(I)V', 'accessFlags': 1},
+                ],
+              },
+            );
+      final result = await runDexEditorTool(
+        'dex_outline_class',
+        {'sessionId': 'S-1', 'className': 'Lcom/example/Foo;'},
+        editor: dex,
+      );
+      expect(dex.lastAction, 'outlineClassFromSession');
+      final json = _json(result);
+      expect(json['className'], 'com.example.Foo');
+      expect(json['classLocator'], 'dex_class:com.example.Foo');
+      expect(json['superclass'], 'java.lang.Object');
+      expect(json['interfaces'], ['java.lang.Runnable']);
+      final fields = json['fields'] as List;
+      expect((fields.first as Map)['locator'], 'dex_field:Lcom/example/Foo;->flag:Z');
+      final methods = json['methods'] as List;
+      expect((methods.first as Map)['locator'],
+          'dex_method:Lcom/example/Foo;->bar(I)V');
+    });
+  });
+
   group('file-editor risk classification', () {
     test('run_command is high-risk and needs HITL confirmation', () {
       expect(fileEditorRiskLevel('run_command'), FileEditorRisk.high);

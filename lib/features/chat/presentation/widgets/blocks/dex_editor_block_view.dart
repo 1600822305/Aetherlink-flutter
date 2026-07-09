@@ -188,6 +188,9 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
           return (LucideIcons.code, '查看方法 ${_strArg('methodName')}');
         }
         return (LucideIcons.fileCode, '查看类 ${_shortClass()}');
+      case 'dex_read_method':
+        final name = _strArg('methodName');
+        return (LucideIcons.code, '查看方法${name.isNotEmpty ? ' $name' : ''}');
       case 'dex_outline_class':
         return (LucideIcons.listTree, '类轮廓 ${_shortClass()}');
       case 'dex_modify_class':
@@ -281,7 +284,7 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
   String _processingLabel() => switch (_tool) {
         'dex_open_apk' || 'dex_open' => '打开 APK 中...',
         'dex_search' => '搜索中...',
-        'dex_read_class' => '读取反汇编中...',
+        'dex_read_class' || 'dex_read_method' => '读取反汇编中...',
         'dex_smali_to_java' => '反编译中...',
         'dex_save' => '编译并保存中...',
         _ when _tool.startsWith('dex_modify') ||
@@ -613,6 +616,7 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
     String lang;
     switch (_tool) {
       case 'dex_read_class':
+      case 'dex_read_method':
         lang = 'smali';
       case 'dex_smali_to_java':
         lang = 'java';
@@ -627,6 +631,10 @@ class _DexEditorBlockViewState extends State<DexEditorBlockView> {
         return null;
     }
     final data = _dataMap();
+    // dex_read_class / dex_read_method 现在恒定返回结构化 JSON，正文在 smali 字段。
+    if (data != null && data['smali'] is String) {
+      return (lang, data['smali'] as String);
+    }
     if (data != null && data['content'] is String) {
       // Base64 二进制内容不当作代码块渲染。
       if (_tool == 'apk_file' && data['encoding'] == 'base64') return null;

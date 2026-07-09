@@ -556,66 +556,80 @@ class MultiDexSessionOps {
     public JSObject outlineClassFromSession(String sessionId, String className) throws Exception {
         DexManager.MultiDexSession session = dex.sessionManager.requireOrRebuild(sessionId);
 
+        if (!CppDex.isAvailable()) {
+            throw new RuntimeException("C++ DEX library not available");
+        }
+
         String targetType = dex.convertClassNameToType(className);
-        JSObject result = new JSObject();
-        JSArray fields = new JSArray();
-        JSArray methods = new JSArray();
-        boolean found = false;
 
-        for (DexBackedDexFile dexFile : session.dexFiles.values()) {
-            for (ClassDef classDef : dexFile.getClasses()) {
-                if (!classDef.getType().equals(targetType)) {
-                    continue;
-                }
-                found = true;
-                result.put("accessFlags", classDef.getAccessFlags());
-                if (classDef.getSuperclass() != null) {
-                    result.put("superclass", dex.convertTypeToClassName(classDef.getSuperclass()));
-                }
-                JSArray interfaces = new JSArray();
-                for (String iface : classDef.getInterfaces()) {
-                    interfaces.put(dex.convertTypeToClassName(iface));
-                }
-                result.put("interfaces", interfaces);
+        for (Map.Entry<String, byte[]> entry : session.dexBytes.entrySet()) {
+            byte[] dexData = entry.getValue();
+            String jsonResult = CppDex.outlineClass(dexData, targetType);
+            if (jsonResult == null || jsonResult.contains("\"error\"")) {
+                continue;
+            }
 
-                for (com.android.tools.smali.dexlib2.iface.Field field : classDef.getFields()) {
+            org.json.JSONObject obj = new org.json.JSONObject(jsonResult);
+            if (!obj.optBoolean("found", false)) {
+                continue;
+            }
+
+            JSObject result = new JSObject();
+            result.put("className", className);
+            result.put("dexFile", entry.getKey());
+            result.put("accessFlags", obj.optInt("accessFlags", 0));
+
+            String superType = obj.optString("superclass", "");
+            if (!superType.isEmpty()) {
+                result.put("superclass", dex.convertTypeToClassName(superType));
+            }
+
+            JSArray interfaces = new JSArray();
+            org.json.JSONArray ifaceArr = obj.optJSONArray("interfaces");
+            if (ifaceArr != null) {
+                for (int i = 0; i < ifaceArr.length(); i++) {
+                    interfaces.put(dex.convertTypeToClassName(ifaceArr.getString(i)));
+                }
+            }
+            result.put("interfaces", interfaces);
+
+            JSArray fields = new JSArray();
+            org.json.JSONArray fieldArr = obj.optJSONArray("fields");
+            if (fieldArr != null) {
+                for (int i = 0; i < fieldArr.length(); i++) {
+                    org.json.JSONObject f = fieldArr.getJSONObject(i);
                     JSObject fieldInfo = new JSObject();
-                    fieldInfo.put("name", field.getName());
-                    fieldInfo.put("type", field.getType());
-                    fieldInfo.put("accessFlags", field.getAccessFlags());
+                    fieldInfo.put("name", f.optString("name", ""));
+                    fieldInfo.put("type", f.optString("type", ""));
+                    fieldInfo.put("accessFlags", f.optInt("accessFlags", 0));
                     fields.put(fieldInfo);
                 }
+            }
+            result.put("fields", fields);
+            result.put("fieldCount", fields.length());
 
-                for (com.android.tools.smali.dexlib2.iface.Method method : classDef.getMethods()) {
+            JSArray methods = new JSArray();
+            org.json.JSONArray methodArr = obj.optJSONArray("methods");
+            if (methodArr != null) {
+                for (int i = 0; i < methodArr.length(); i++) {
+                    org.json.JSONObject m = methodArr.getJSONObject(i);
                     JSObject methodInfo = new JSObject();
-                    methodInfo.put("name", method.getName());
-                    methodInfo.put("returnType", method.getReturnType());
-                    methodInfo.put("accessFlags", method.getAccessFlags());
-                    StringBuilder params = new StringBuilder("(");
-                    for (CharSequence param : method.getParameterTypes()) {
-                        params.append(param);
-                    }
-                    params.append(")").append(method.getReturnType());
-                    methodInfo.put("signature", params.toString());
+                    methodInfo.put("name", m.optString("name", ""));
+                    methodInfo.put("returnType", m.optString("returnType", ""));
+                    methodInfo.put("accessFlags", m.optInt("accessFlags", 0));
+                    methodInfo.put("signature", m.optString("signature", ""));
+                    methodInfo.put("instructionsCount", m.optInt("instructionsCount", 0));
                     methods.put(methodInfo);
                 }
-                break;
             }
-            if (found) {
-                break;
-            }
+            result.put("methods", methods);
+            result.put("methodCount", methods.length());
+            result.put("instructionsCount", obj.optInt("instructionsCount", 0));
+            result.put("engine", "cpp");
+            return result;
         }
 
-        if (!found) {
-            throw new IllegalArgumentException("Class not found: " + className);
-        }
-
-        result.put("className", className);
-        result.put("fields", fields);
-        result.put("fieldCount", fields.length());
-        result.put("methods", methods);
-        result.put("methodCount", methods.length());
-        return result;
+        throw new IllegalArgumentException("Class not found: " + className);
     }
 
     /**

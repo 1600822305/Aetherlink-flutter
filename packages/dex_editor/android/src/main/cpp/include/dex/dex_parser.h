@@ -88,6 +88,32 @@ public:
 
     std::string get_class_name(uint32_t idx) const;
     std::vector<std::string> get_class_methods(const std::string& class_name) const;
+
+    // 类轮廓：父类/接口/声明的字段与方法（含访问标志与指令数），
+    // 全部从 class_data_item 解析，取代原先 Java(dexlib2) 的 outline 实现。
+    struct OutlineField {
+        std::string name;
+        std::string type;          // 类型描述符，如 "Z" / "Ljava/lang/String;"
+        uint32_t access_flags = 0;
+    };
+    struct OutlineMethod {
+        std::string name;
+        std::string signature;     // "(参数...)返回" 描述符
+        std::string return_type;   // 返回类型描述符
+        uint32_t access_flags = 0;
+        uint32_t instructions_size = 0; // 指令 code unit 数；无 code(抽象/native) 为 0
+    };
+    struct ClassOutline {
+        bool found = false;
+        std::string type_descriptor;      // 类型描述符 Lx;
+        std::string superclass;           // 父类描述符 Lx;，无则空
+        uint32_t access_flags = 0;
+        std::vector<std::string> interfaces; // 接口描述符列表
+        std::vector<OutlineField> fields;
+        std::vector<OutlineMethod> methods;
+        uint32_t instructions_count = 0;  // 全类指令总数
+    };
+    ClassOutline get_class_outline(const std::string& class_name) const;
     
     // Get method code for disassembly
     // prototype 非空时需 name + proto 同时匹配（用于区分重载）；为空则仅按名字匹配（向后兼容）

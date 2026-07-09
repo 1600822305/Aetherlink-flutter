@@ -209,6 +209,101 @@ std::vector<std::string> DexParser::get_class_methods(const std::string& class_n
     return result;
 }
 
+DexParser::ClassOutline DexParser::get_class_outline(const std::string& class_name) const {
+    ClassOutline outline;
+
+    for (const auto& cls : classes_) {
+        if (get_class_name(cls.class_idx) != class_name) continue;
+
+        outline.found = true;
+        outline.type_descriptor = class_name;
+        outline.access_flags = cls.access_flags;
+
+        // 父类：superclass_idx == NO_INDEX(0xFFFFFFFF) 表示无父类（仅 Object）
+        if (cls.superclass_idx != 0xFFFFFFFF) {
+            outline.superclass = get_class_name(cls.superclass_idx);
+        }
+
+        // 接口：interfaces_off 指向 type_list（uint32 size + size 个 uint16 type_idx）
+        if (cls.interfaces_off != 0 && cls.interfaces_off + 4 <= data_.size()) {
+            uint32_t size = read_le<uint32_t>(&data_[cls.interfaces_off]);
+            for (uint32_t i = 0; i < size; i++) {
+                size_t p = cls.interfaces_off + 4 + i * 2;
+                if (p + 2 > data_.size()) break;
+                uint16_t type_idx = read_le<uint16_t>(&data_[p]);
+                outline.interfaces.push_back(get_class_name(type_idx));
+            }
+        }
+
+        if (cls.class_data_off == 0) return outline;
+
+        size_t offset = cls.class_data_off;
+        uint32_t static_fields_size = read_uleb128(offset);
+        uint32_t instance_fields_size = read_uleb128(offset);
+        uint32_t direct_methods_size = read_uleb128(offset);
+        uint32_t virtual_methods_size = read_uleb128(offset);
+
+        // 字段：static_fields / instance_fields 两个独立列表，field_idx_diff 各自
+        // 从 0 累加（DEX 规范）。
+        for (int list = 0; list < 2; list++) {
+            uint32_t n = list == 0 ? static_fields_size : instance_fields_size;
+            uint32_t field_idx = 0;
+            for (uint32_t i = 0; i < n; i++) {
+                field_idx += read_uleb128(offset);
+                uint32_t af = read_uleb128(offset);
+                OutlineField fi;
+                fi.access_flags = af;
+                if (field_idx < header_.field_ids_size) {
+                    size_t fid = header_.field_ids_off + field_idx * 8;
+                    if (fid + 8 <= data_.size()) {
+                        uint16_t type_idx = read_le<uint16_t>(&data_[fid + 2]);
+                        uint32_t name_idx = read_le<uint32_t>(&data_[fid + 4]);
+                        if (name_idx < strings_.size()) fi.name = strings_[name_idx];
+                        fi.type = get_class_name(type_idx);
+                    }
+                }
+                outline.fields.push_back(std::move(fi));
+            }
+        }
+
+        // 方法：direct_methods / virtual_methods 两个独立列表，method_idx_diff 各自
+        // 从 0 累加（DEX 规范）。
+        for (int list = 0; list < 2; list++) {
+            uint32_t n = list == 0 ? direct_methods_size : virtual_methods_size;
+            uint32_t method_idx = 0;
+            for (uint32_t i = 0; i < n; i++) {
+                method_idx += read_uleb128(offset);
+                uint32_t af = read_uleb128(offset);
+                uint32_t code_off = read_uleb128(offset);
+                OutlineMethod mi;
+                mi.access_flags = af;
+                if (code_off != 0 && code_off + 16 <= data_.size()) {
+                    mi.instructions_size = read_le<uint32_t>(&data_[code_off + 12]);
+                    outline.instructions_count += mi.instructions_size;
+                }
+                if (method_idx < header_.method_ids_size) {
+                    size_t mid = header_.method_ids_off + method_idx * 8;
+                    if (mid + 8 <= data_.size()) {
+                        uint16_t proto_idx = read_le<uint16_t>(&data_[mid + 2]);
+                        uint32_t name_idx = read_le<uint32_t>(&data_[mid + 4]);
+                        if (name_idx < strings_.size()) mi.name = strings_[name_idx];
+                        mi.signature = get_proto_string(proto_idx);
+                        auto rp = mi.signature.find(')');
+                        if (rp != std::string::npos) {
+                            mi.return_type = mi.signature.substr(rp + 1);
+                        }
+                    }
+                }
+                outline.methods.push_back(std::move(mi));
+            }
+        }
+
+        return outline;
+    }
+
+    return outline;
+}
+
 std::string DexParser::get_info() const {
     std::stringstream ss;
     
