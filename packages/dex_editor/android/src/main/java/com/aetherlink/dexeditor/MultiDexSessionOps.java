@@ -196,6 +196,11 @@ class MultiDexSessionOps {
                                 break;
                             case "string":
                                 jsItem.put("value", item.optString("value", ""));
+                                // C++ 已给字符串命中补 className（首个 const-string 引用类），
+                                // 有则透传，供 Dart 补 classLocator。
+                                if (item.has("className")) {
+                                    jsItem.put("className", item.optString("className", ""));
+                                }
                                 break;
                             default:
                                 jsItem.put("className", item.optString("className", ""));

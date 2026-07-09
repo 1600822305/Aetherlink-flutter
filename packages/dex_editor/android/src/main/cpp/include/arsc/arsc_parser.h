@@ -32,6 +32,7 @@ struct ResourceEntry {
     std::string type;      // Type name (string, drawable, etc.)
     std::string value;     // Value (for simple types)
     std::string package;   // Package name
+    std::string config;    // 配置限定符/variant，如 "default"/"zh-rCN"/"xxhdpi"/"v21"
 };
 
 struct StringResource {

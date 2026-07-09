@@ -245,6 +245,8 @@ bool ArscParser::parse_package(size_t offset, size_t size) {
                 
                 size_t offsets_start = chunk_offset + chunk_header_size;
                 size_t entries_data = chunk_offset + entries_start;
+                // 该 type 块的配置限定符（variant）；ResTable_config 位于 chunk_offset+20。
+                std::string type_config = config_to_string(chunk_offset + 20);
                 
                 for (uint32_t i = 0; i < entry_count; i++) {
                     if (offsets_start + i * 4 + 4 > data_.size()) break;
@@ -263,6 +265,7 @@ bool ArscParser::parse_package(size_t offset, size_t size) {
                     res.id = (package_id_ << 24) | (type_id << 16) | i;
                     res.type = type_name;
                     res.package = package_name_;
+                    res.config = type_config;
                     
                     if (key_index < key_strings.size()) {
                         res.name = key_strings[key_index];

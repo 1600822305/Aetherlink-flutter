@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include <android/log.h>
 
 #include "dex/dex_parser.h"
@@ -207,6 +208,37 @@ static std::string sanitize_utf8(const std::string& s) {
     return result;
 }
 
+// 建立 string_idx -> 首个通过 const-string / const-string/jumbo 引用它的类名 的映射。
+// 用于 DEX 字符串搜索给命中补 className/classLocator（对齐 MT 的字符串归属）。
+// 反汇编每个方法体、扫描 const-string 指令取其 string 索引，首个引用者优先。
+static std::unordered_map<uint32_t, std::string> build_string_class_map(
+        const dex::DexParser& parser) {
+    std::unordered_map<uint32_t, std::string> map;
+    dex::SmaliDisassembler disasm;
+    disasm.set_strings(parser.strings());
+    disasm.set_types(parser.types());
+    disasm.set_methods(parser.get_method_signatures());
+    disasm.set_fields(parser.get_field_signatures());
+    for (const auto& m : parser.get_methods()) {
+        dex::CodeItem code;
+        if (!parser.get_method_code(m.class_name, m.method_name, code, m.prototype)) {
+            continue;
+        }
+        auto insns = disasm.disassemble_method(code.insns.data(), code.insns.size());
+        for (const auto& insn : insns) {
+            if (insn.opcode == "const-string" && insn.raw_bytes.size() >= 2) {
+                map.emplace(insn.raw_bytes[1], m.class_name);
+            } else if (insn.opcode == "const-string/jumbo" &&
+                       insn.raw_bytes.size() >= 3) {
+                uint32_t sidx = static_cast<uint32_t>(insn.raw_bytes[1]) |
+                                (static_cast<uint32_t>(insn.raw_bytes[2]) << 16);
+                map.emplace(sidx, m.class_name);
+            }
+        }
+    }
+    return map;
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_aetherlink_dexeditor_CppDex_searchInDex(JNIEnv* env, jclass, jbyteArray dexBytes,
                                                   jstring query, jstring searchType,
@@ -226,14 +258,23 @@ Java_com_aetherlink_dexeditor_CppDex_searchInDex(JNIEnv* env, jclass, jbyteArray
         int count = 0;
         
         if (type == "string") {
-            for (const auto& s : parser.strings()) {
-                if (count >= maxResults) break;
-                
-                if (safe_contains(s, q, caseSensitive)) {
-                    // Sanitize string for JSON
-                    results.push_back({{"type", "string"}, {"value", sanitize_utf8(s)}});
-                    count++;
+            // 先收集命中的 string 索引；有命中才反汇编建立 string_idx->类名 映射
+            // （避免零命中时白扫全 DEX），再给每条命中补 className（class 归属）。
+            const auto& all = parser.strings();
+            std::vector<uint32_t> matched;
+            for (uint32_t i = 0; i < all.size() && (int)matched.size() < maxResults; i++) {
+                if (safe_contains(all[i], q, caseSensitive)) matched.push_back(i);
+            }
+            std::unordered_map<uint32_t, std::string> str_class;
+            if (!matched.empty()) str_class = build_string_class_map(parser);
+            for (uint32_t idx : matched) {
+                json item = {{"type", "string"}, {"value", sanitize_utf8(all[idx])}};
+                auto it = str_class.find(idx);
+                if (it != str_class.end() && !it->second.empty()) {
+                    item["className"] = sanitize_utf8(it->second);
                 }
+                results.push_back(item);
+                count++;
             }
         } else if (type == "class") {
             for (const auto& cls : parser.classes()) {
@@ -1267,7 +1308,8 @@ Java_com_aetherlink_dexeditor_CppDex_searchArscResources(JNIEnv* env, jclass, jb
             {"name", r.name},
             {"type", r.type},
             {"value", r.value},
-            {"package", r.package}
+            {"package", r.package},
+            {"variant", r.config.empty() ? "default" : r.config}
         });
         count++;
     }

@@ -107,6 +107,15 @@ Map<String, Object?> _map(Object? value) {
   return const <String, Object?>{};
 }
 
+/// Extract a results list from a native response that may be either a bare
+/// array (`[...]`) or a wrapper map (`{"<key>": [...]}` or `{"results": [...]}`).
+List<Object?> _resultsList(Object? value, String key) {
+  if (value is List) return value;
+  final m = _map(value);
+  final v = m[key] ?? m['results'];
+  return v is List ? v : const <Object?>[];
+}
+
 String _str(Object? value) => value?.toString() ?? '';
 
 int _int(Object? value, [int fallback = 0]) => asIntOr(value, fallback);
@@ -516,6 +525,20 @@ Map<String, Object?> _listMeta({
   );
 }
 
+/// Resolve `(offset, limit, want)` for a search reader whose native backend
+/// caps by count but has no offset. `want = offset + limit`; callers fetch
+/// `want + 1` from native then slice + build [_listMeta]. Accepts the legacy
+/// `maxResults` as a limit alias so old direct calls keep working.
+({int offset, int limit, int want}) _searchPage(
+  Map<String, Object?> args,
+  int defLimit,
+) {
+  final c = decodeCursor(args['cursor']);
+  final offset = _int(c['offset'] ?? args['offset']);
+  final limit = _int(c['limit'] ?? args['limit'] ?? args['maxResults'], defLimit);
+  return (offset: offset, limit: limit, want: offset + limit);
+}
+
 /// Class name from a unified `locator` (`dex_class:` / `class:`) or the
 /// explicit `className` arg (explicit wins only when no matching locator).
 String _classNameArg(Map<String, Object?> args) {
@@ -887,9 +910,9 @@ Future<List<Object?>> _apkFileSearchList(
     'contextLines': _int(args['contextLines'], 2),
   });
   if (!result.success) return const <Object?>[];
-  final data = _map(result.data);
-  if (data['results'] is! List) return const <Object?>[];
-  return (data['results'] as List).map(_decorateApkFileResult).toList();
+  return _resultsList(result.data, 'results')
+      .map(_decorateApkFileResult)
+      .toList();
 }
 
 /// overview 子面：arsc 资源命中（带 resource locator + type/name），失败返回空。
@@ -906,9 +929,9 @@ Future<List<Object?>> _arscResourceList(
     'limit': maxResults,
   });
   if (!result.success) return const <Object?>[];
-  final data = _map(result.data);
-  if (data['results'] is! List) return const <Object?>[];
-  return (data['results'] as List).map(_decorateArscResource).toList();
+  return _resultsList(result.data, 'results')
+      .map(_decorateArscResource)
+      .toList();
 }
 
 /// overview 子面：AXML 清单命中（按属性值匹配 query），失败返回空。
@@ -925,9 +948,7 @@ Future<List<Object?>> _manifestList(
     'limit': maxResults,
   });
   if (!result.success) return const <Object?>[];
-  final data = _map(result.data);
-  if (data['results'] is! List) return const <Object?>[];
-  return data['results'] as List;
+  return _resultsList(result.data, 'results');
 }
 
 /// 统一入口用 `query` 表达搜索词；apk 系列专用 handler 读的是 `pattern`。
@@ -1289,15 +1310,29 @@ Future<McpToolResult> _listStrings(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
+  // 分页：native 不支持 offset，拉 offset+limit(+1 探测 hasMore) 后 Dart 切片。
+  final page = _searchPage(args, 100);
   final result = await dex.execute('listStrings', {
     'sessionId': _sessionArg(args),
     'filter': _str(args['filter']),
-    'limit': _int(args['limit'], 100),
+    'limit': page.want + 1,
   });
   if (!result.success) {
     return McpToolResult('错误: ${result.error}', isError: true);
   }
-  return McpToolResult(encodeJson(result.data));
+  final data = Map<String, Object?>.of(_map(result.data));
+  final all =
+      data['strings'] is List ? data['strings'] as List : const <Object?>[];
+  final hasMore = all.length > page.want;
+  final pageItems = all.skip(page.offset).take(page.limit).toList();
+  data['strings'] = pageItems;
+  data.addAll(_listMeta(
+    offset: page.offset,
+    limit: page.limit,
+    returnedCount: pageItems.length,
+    hasMore: hasMore,
+  ));
+  return McpToolResult(encodeJson(data));
 }
 
 /// 统一交叉引用入口。`target` 选择分析对象（method|field|class），复用既有专用 handler。
@@ -1654,28 +1689,37 @@ Future<McpToolResult> _searchTextInApk(
   Map<String, Object?> args,
 ) async {
   final pattern = _str(args['pattern']);
+  final page = _searchPage(args, 50);
   final result = await dex.execute('searchTextInApk', {
     'apkPath': _str(args['apkPath']),
     'pattern': pattern,
     'fileExtensions': args['fileExtensions'] ?? [],
     'caseSensitive': _bool(args['caseSensitive']),
     'isRegex': _bool(args['isRegex']),
-    'maxResults': _int(args['maxResults'], 50),
+    'maxResults': page.want + 1,
     'contextLines': _int(args['contextLines'], 2),
   });
   if (!result.success) {
     return McpToolResult('错误: ${result.error}', isError: true);
   }
   final data = _map(result.data);
-  final results = data['results'] is List
+  final all = data['results'] is List
       ? (data['results'] as List).map(_decorateApkFileResult).toList()
       : const <Object?>[];
+  final hasMore = all.length > page.want;
+  final pageItems = all.skip(page.offset).take(page.limit).toList();
   return McpToolResult(encodeJson({
     'pattern': pattern,
     'totalFound': data['totalFound'] ?? 0,
     'filesSearched': data['filesSearched'] ?? 0,
     'truncated': data['truncated'] ?? false,
-    'results': results,
+    ..._listMeta(
+      offset: page.offset,
+      limit: page.limit,
+      returnedCount: pageItems.length,
+      hasMore: hasMore,
+    ),
+    'results': pageItems,
   }));
 }
 
@@ -1782,35 +1826,45 @@ Future<McpToolResult> _searchArsc(
   Map<String, Object?> args,
 ) async {
   final target = _str(args['target']).isEmpty ? 'strings' : _str(args['target']);
+  final page = _searchPage(args, 50);
   final DexResult result;
   if (target == 'resources') {
     result = await dex.execute('searchArscResources', {
       'apkPath': _str(args['apkPath']),
       'pattern': _str(args['pattern']),
       'type': _str(args['type']),
-      'limit': _int(args['limit'], 50),
+      'limit': page.want + 1,
     });
   } else {
     result = await dex.execute('searchArscStrings', {
       'apkPath': _str(args['apkPath']),
       'pattern': _str(args['pattern']),
-      'limit': _int(args['limit'], 50),
+      'limit': page.want + 1,
     });
   }
   if (!result.success) {
     return McpToolResult('错误: ${result.error}', isError: true);
   }
-  // 资源命中补统一 locator（resource:0x7fXXXXXX），并给出 resourceType/resourceName
-  // 别名，对齐 MT arsc 结果字段；字符串池命中无资源归属，保持原样。
+  // native arsc 返回裸数组（resources/strings 命中列表），也兼容 {results:[...]} 形态。
+  // 资源命中补统一 locator（resource:0x7fXXXXXX）+ resourceType/resourceName/variant
+  // 别名，对齐 MT arsc 结果字段；字符串池命中无资源归属，保持原样。分页 Dart 切片。
+  final all = _resultsList(result.data, 'results');
+  final hasMore = all.length > page.want;
+  var pageItems = all.skip(page.offset).take(page.limit).toList();
   if (target == 'resources') {
-    final data = Map<String, Object?>.of(_map(result.data));
-    if (data['results'] is List) {
-      data['results'] =
-          (data['results'] as List).map(_decorateArscResource).toList();
-    }
-    return McpToolResult(encodeJson(data));
+    pageItems = pageItems.map(_decorateArscResource).toList();
   }
-  return McpToolResult(encodeJson(result.data));
+  return McpToolResult(encodeJson({
+    'target': target,
+    'total': all.length,
+    ..._listMeta(
+      offset: page.offset,
+      limit: page.limit,
+      returnedCount: pageItems.length,
+      hasMore: hasMore,
+    ),
+    'results': pageItems,
+  }));
 }
 
 /// 给 arsc 资源命中补 `locator`（resource:0x7fXXXXXX）与 resourceType/resourceName
@@ -1827,6 +1881,9 @@ Map<String, Object?> _decorateArscResource(Object? item) {
   if (type.isNotEmpty) m['resourceType'] = type;
   final name = _str(m['name']);
   if (name.isNotEmpty) m['resourceName'] = name;
+  // native 给出配置限定符（如 zh-rCN/xxhdpi/v21）时透传为 variant，无则默认值。
+  final variant = _str(m['variant'] ?? m['config']);
+  m['variant'] = variant.isEmpty ? 'default' : variant;
   return m;
 }
 
@@ -1834,16 +1891,30 @@ Future<McpToolResult> _searchManifestCpp(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
+  final page = _searchPage(args, 50);
   final result = await dex.execute('searchManifestCpp', {
     'apkPath': _str(args['apkPath']),
     'attrName': _str(args['attrName']),
     'value': _str(args['value']),
-    'limit': _int(args['limit'], 50),
+    'limit': page.want + 1,
   });
   if (!result.success) {
     return McpToolResult('错误: ${result.error}', isError: true);
   }
-  return McpToolResult(encodeJson(result.data));
+  // native manifest 搜索返回裸数组，兼容 {results:[...]} 形态；Dart 侧切片分页。
+  final all = _resultsList(result.data, 'results');
+  final hasMore = all.length > page.want;
+  final pageItems = all.skip(page.offset).take(page.limit).toList();
+  return McpToolResult(encodeJson({
+    'total': all.length,
+    ..._listMeta(
+      offset: page.offset,
+      limit: page.limit,
+      returnedCount: pageItems.length,
+      hasMore: hasMore,
+    ),
+    'results': pageItems,
+  }));
 }
 
 Future<McpToolResult> _parseArscCpp(
