@@ -86,10 +86,6 @@ dependencies:
   # 只有 lib/features/terminal/ 的 data 层允许 import 它。见 docs/内置终端PRoot-设计文档.md。
   aetherlink_terminal:
     path: packages/aetherlink_terminal
-  # DEX/APK 编辑插件（迁移自 capacitor-dex-editor）：dexlib2 + C++ 原生桥，
-  # 供 @aether/dex-editor 内置 MCP 工具调用。见 lib/shared/mcp_tools/tools/dex_editor_tool.dart。
-  dex_editor:
-    path: packages/dex_editor
   # In-app performance monitor (外观设置→开发者工具→显示性能监控). Pure-Dart,
   # zero extra deps; per-thread frame timing + AI-friendly JSON export.
   aetherlink_perf:
