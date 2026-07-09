@@ -22,6 +22,7 @@ import 'package:aetherlink_flutter/features/chat/application/parameter_settings_
 import 'package:aetherlink_flutter/features/chat/application/chat_send_hooks.dart';
 import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/message_versioning.dart';
+import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/mounted_knowledge_bases_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/multi_model_mentions_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/ocr_service.dart';
@@ -80,6 +81,9 @@ part 'chat_controller_multi_model.dart';
 part 'chat_controller_post_turn.dart';
 part 'chat_controller_streaming.dart';
 part 'chat_controller_translate.dart';
+
+const String _toolModeMetadataKey = 'mcpMode';
+const String _toolRoundMetadataKey = 'toolRoundId';
 
 /// Orchestrates the chat send/stream loop (application layer).
 ///
@@ -411,6 +415,7 @@ class ChatController extends _$ChatController
       contextViews,
       chatModel: effective,
       regexRules: regexRules,
+      toolMode: mcp.mode,
     );
     final memInjection = await collectChatMemoryInjection(
       ref,
@@ -624,6 +629,7 @@ class ChatController extends _$ChatController
       contextViews,
       chatModel: effective,
       regexRules: regexRules,
+      toolMode: mcp.mode,
     );
     final request = LlmChatRequest(
       model: effective,
@@ -754,6 +760,7 @@ class ChatController extends _$ChatController
       contextViews,
       chatModel: effective,
       regexRules: regexRules,
+      toolMode: mcp.mode,
     );
     final request = LlmChatRequest(
       model: effective,
@@ -834,15 +841,8 @@ class ChatController extends _$ChatController
     final effective = effectiveModelFor(current);
     final now = DateTime.now();
 
-    // Gather existing blocks to extract the partial content so far.
-    final existingBlocks = await _repo.getMessageBlocksByMessageId(messageId);
-    final partialText = <String>[
-      for (final block in existingBlocks)
-        if (block is MainTextBlock && block.content.isNotEmpty) block.content,
-    ].join('\n\n');
-
-    // Build conversation history up to (but not including) this message, then
-    // append the partial as an assistant turn for the model to continue from.
+    // Build conversation history through this message so persisted tool calls,
+    // results, and any trailing partial text are all replayed to the model.
     final views = snapshot.messages;
     final msgIndex = views.indexWhere((v) => v.id == messageId);
     if (msgIndex < 0) return;
@@ -852,17 +852,13 @@ class ChatController extends _$ChatController
     final params = _parameterFields();
     final history = _trimViews(views.sublist(0, msgIndex), ctx.contextCount);
     final regexRules = await _sendingRegexRules();
-    final messages = <LlmMessage>[
-      ...await _buildLlmMessages(
-        history,
-        chatModel: effective,
-        regexRules: regexRules,
-        dropEmptyAssistant: false,
-      ),
-      // The partial response as an assistant turn so the model continues.
-      if (partialText.isNotEmpty)
-        LlmMessage(role: MessageRole.assistant, content: partialText),
-    ];
+    final messages = await _buildLlmMessages(
+      [...history, views[msgIndex]],
+      chatModel: effective,
+      regexRules: regexRules,
+      dropEmptyAssistant: false,
+      toolMode: mcp.mode,
+    );
 
     // Create a new block id for the continuation segment.
     final continuationBlockId = generateId('block');
@@ -1419,13 +1415,26 @@ class ChatController extends _$ChatController
     required Model chatModel,
     List<AssistantRegex>? regexRules,
     bool dropEmptyAssistant = true,
+    required McpMode toolMode,
   }) async {
     final ocr = await _resolveOcrFallback(chatModel);
     final messages = <LlmMessage>[];
     for (final view in views) {
+      final hasToolBlocks = view.blocks.any((block) => block is ToolBlock);
       if (dropEmptyAssistant &&
           view.role == MessageRole.assistant &&
-          view.text.isEmpty) {
+          view.text.isEmpty &&
+          !hasToolBlocks) {
+        continue;
+      }
+      if (view.role == MessageRole.assistant && hasToolBlocks) {
+        messages.addAll(
+          _toolHistoryMessages(
+            view,
+            fallbackMode: toolMode,
+            regexRules: regexRules,
+          ),
+        );
         continue;
       }
       var content = _requestContent(view, regexRules: regexRules);
@@ -1448,6 +1457,132 @@ class ChatController extends _$ChatController
       );
     }
     return messages;
+  }
+
+  List<LlmMessage> _toolHistoryMessages(
+    ChatMessageView view, {
+    required McpMode fallbackMode,
+    List<AssistantRegex>? regexRules,
+  }) {
+    final messages = <LlmMessage>[];
+    final pendingText = <String>[];
+    final blocks = view.blocks;
+    var index = 0;
+
+    void flushText() {
+      final content = _applySendingRegex(
+        pendingText.join('\n\n'),
+        view.role,
+        regexRules,
+      );
+      pendingText.clear();
+      if (content.isNotEmpty) {
+        messages.add(LlmMessage(role: view.role, content: content));
+      }
+    }
+
+    while (index < blocks.length) {
+      final block = blocks[index];
+      if (block is MainTextBlock) {
+        if (block.content.isNotEmpty) pendingText.add(block.content);
+        index++;
+        continue;
+      }
+      if (block is! ToolBlock) {
+        index++;
+        continue;
+      }
+
+      final roundId = block.metadata?[_toolRoundMetadataKey]?.toString();
+      final round = <ToolBlock>[block];
+      index++;
+      while (index < blocks.length && blocks[index] is ToolBlock) {
+        final next = blocks[index] as ToolBlock;
+        final nextRoundId = next.metadata?[_toolRoundMetadataKey]?.toString();
+        if (roundId != null ? nextRoundId != roundId : nextRoundId != null) {
+          break;
+        }
+        round.add(next);
+        index++;
+      }
+
+      final prose = _applySendingRegex(
+        pendingText.join('\n\n'),
+        view.role,
+        regexRules,
+      );
+      pendingText.clear();
+      final mode = McpMode.fromStorage(
+        block.metadata?[_toolModeMetadataKey]?.toString(),
+      );
+      final effectiveMode = block.metadata?[_toolModeMetadataKey] == null
+          ? fallbackMode
+          : mode;
+
+      if (effectiveMode == McpMode.prompt) {
+        messages.add(
+          LlmMessage(
+            role: MessageRole.assistant,
+            content: <String>[
+              if (prose.isNotEmpty) prose,
+              for (final tool in round) _promptToolCall(tool),
+            ].join('\n\n'),
+          ),
+        );
+        for (final tool in round) {
+          messages.add(
+            LlmMessage(
+              role: MessageRole.user,
+              content: formatToolUseResult(
+                tool.toolName ?? tool.toolId,
+                _toolResultText(tool.content),
+              ),
+            ),
+          );
+        }
+      } else {
+        messages.add(
+          LlmMessage(
+            role: MessageRole.assistant,
+            content: prose,
+            toolCalls: [
+              for (final tool in round)
+                LlmToolCall(
+                  id: tool.toolId,
+                  name: tool.toolName ?? tool.toolId,
+                  arguments: jsonEncode(tool.arguments ?? const {}),
+                ),
+            ],
+          ),
+        );
+        for (final tool in round) {
+          messages.add(
+            LlmMessage(
+              role: MessageRole.user,
+              content: _toolResultText(tool.content),
+              toolCallId: tool.toolId,
+              toolName: tool.toolName ?? tool.toolId,
+            ),
+          );
+        }
+      }
+    }
+
+    flushText();
+    return messages;
+  }
+
+  String _promptToolCall(ToolBlock block) {
+    final name = block.toolName ?? block.toolId;
+    final arguments = jsonEncode(block.arguments ?? const {});
+    return '<tool_use>\n<name>$name</name>\n<arguments>$arguments</arguments>\n'
+        '</tool_use>';
+  }
+
+  String _toolResultText(Object? content) {
+    if (content == null) return '';
+    if (content is String) return content;
+    return jsonEncode(content);
   }
 
   /// Resolves the OCR fallback for [chatModel]: returns the configured OCR
@@ -1520,7 +1655,15 @@ class ChatController extends _$ChatController
             text,
     ];
     final content = parts.join('\n\n');
-    final scope = _regexScopeFor(view.role);
+    return _applySendingRegex(content, view.role, regexRules);
+  }
+
+  String _applySendingRegex(
+    String content,
+    MessageRole role,
+    List<AssistantRegex>? regexRules,
+  ) {
+    final scope = _regexScopeFor(role);
     if (scope == null || regexRules == null || regexRules.isEmpty) {
       return content;
     }

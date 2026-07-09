@@ -643,9 +643,11 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
                 toolId: toolId,
                 toolName: call.name,
                 arguments: args,
-                metadata: needsConfirm
-                    ? const {'needsConfirmation': true}
-                    : null,
+                metadata: {
+                  _toolModeMetadataKey: mcp.mode.storageValue,
+                  _toolRoundMetadataKey: roundBlockId,
+                  if (needsConfirm) 'needsConfirmation': true,
+                },
               ),
             );
             update();
@@ -695,6 +697,10 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
                 toolName: call.name,
                 arguments: args,
                 content: result.text,
+                metadata: {
+                  _toolModeMetadataKey: mcp.mode.storageValue,
+                  _toolRoundMetadataKey: roundBlockId,
+                },
               ),
             );
             update();
