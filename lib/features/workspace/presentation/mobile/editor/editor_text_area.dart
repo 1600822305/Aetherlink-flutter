@@ -63,6 +63,10 @@ class _EditorTextAreaState extends State<EditorTextArea> {
   int _lineCount = 1;
   int _maxLineLen = 1;
   bool _softWrap = false;
+  // Start offset of every line, so caret → line lookups (current-line
+  // highlight) are a binary search instead of an O(offset) rescan per caret
+  // move / scroll frame.
+  List<int> _lineStarts = const [0];
 
   // Memoized non-wrapping content width (the longest line laid out). Depends
   // only on [_maxLineLen] + the font size, so it survives caret moves and is
@@ -123,13 +127,13 @@ class _EditorTextAreaState extends State<EditorTextArea> {
   void _recomputeMetrics() {
     final text = widget.controller.text;
     _lastText = text;
-    var lines = 1;
     var maxLen = 1;
     var col = 0;
     var longLine = false;
+    final starts = <int>[0];
     for (var i = 0; i < text.length; i++) {
       if (text.codeUnitAt(i) == 0x0A) {
-        lines++;
+        starts.add(i + 1);
         if (col > maxLen) maxLen = col;
         col = 0;
       } else {
@@ -138,9 +142,10 @@ class _EditorTextAreaState extends State<EditorTextArea> {
       }
     }
     if (col > maxLen) maxLen = col;
-    _lineCount = lines;
+    _lineCount = starts.length;
     _maxLineLen = maxLen;
     _softWrap = longLine;
+    _lineStarts = starts;
   }
 
   // Tab inserts spaces (instead of moving focus) while editing; auto-indent on
@@ -284,6 +289,7 @@ class _EditorTextAreaState extends State<EditorTextArea> {
                     _CurrentLineHighlight(
                       scroll: _textScroll,
                       controller: widget.controller,
+                      lineStarts: _lineStarts,
                       lineHeight: lineHeight,
                       color: theme.colorScheme.primary.withValues(alpha: 0.07),
                     ),
@@ -368,27 +374,36 @@ class _CurrentLineHighlight extends StatelessWidget {
   const _CurrentLineHighlight({
     required this.scroll,
     required this.controller,
+    required this.lineStarts,
     required this.lineHeight,
     required this.color,
   });
 
   final ScrollController scroll;
   final TextEditingController controller;
+
+  /// Precomputed line start offsets (from the text area's metrics pass), so
+  /// the caret line is a binary search rather than a scan of the text.
+  final List<int> lineStarts;
   final double lineHeight;
   final Color color;
 
-  // 0-based line index of the caret (newlines before the offset), or -1 when
-  // there is no valid caret.
-  static int _caretLine(TextEditingController controller) {
-    final text = controller.text;
+  // 0-based line index of the caret, or -1 when there is no valid caret.
+  int _caretLine() {
     final sel = controller.selection;
     if (!sel.isValid) return -1;
-    final offset = sel.extentOffset.clamp(0, text.length);
-    var lines = 0;
-    for (var i = 0; i < offset; i++) {
-      if (text.codeUnitAt(i) == 0x0A) lines++;
+    final offset = sel.extentOffset.clamp(0, controller.text.length);
+    var lo = 0;
+    var hi = lineStarts.length - 1;
+    while (lo < hi) {
+      final mid = (lo + hi + 1) >> 1;
+      if (lineStarts[mid] <= offset) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
     }
-    return lines;
+    return lo;
   }
 
   @override
@@ -398,7 +413,7 @@ class _CurrentLineHighlight extends StatelessWidget {
     return AnimatedBuilder(
       animation: Listenable.merge([scroll, controller]),
       builder: (context, _) {
-        final caretLine = _caretLine(controller);
+        final caretLine = _caretLine();
         if (caretLine < 0) return const SizedBox.shrink();
         final offset = scroll.hasClients ? scroll.offset : 0.0;
         final top = _topPad + caretLine * lineHeight - offset;

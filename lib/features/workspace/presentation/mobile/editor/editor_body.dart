@@ -130,6 +130,25 @@ class _EditorStatusBarState extends State<EditorStatusBar> {
   String _cachedText = '\u0000__uncomputed__';
   int _lineCount = 1;
   int _charCount = 0;
+  // Line start offsets, recomputed only when the text changes, so the caret
+  // line/column is a binary search per caret move instead of an O(offset)
+  // substring + rescan.
+  List<int> _lineStarts = const [0];
+
+  // 0-based index of the line containing [offset].
+  int _lineOfOffset(int offset) {
+    var lo = 0;
+    var hi = _lineStarts.length - 1;
+    while (lo < hi) {
+      final mid = (lo + hi + 1) >> 1;
+      if (_lineStarts[mid] <= offset) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return lo;
+  }
 
   @override
   void initState() {
@@ -161,7 +180,12 @@ class _EditorStatusBarState extends State<EditorStatusBar> {
     final text = value.text;
     if (text != _cachedText) {
       _cachedText = text;
-      _lineCount = '\n'.allMatches(text).length + 1;
+      final starts = <int>[0];
+      for (var i = 0; i < text.length; i++) {
+        if (text.codeUnitAt(i) == 0x0A) starts.add(i + 1);
+      }
+      _lineStarts = starts;
+      _lineCount = starts.length;
       _charCount = text.characters.length;
     }
     final lineCount = _lineCount;
@@ -171,9 +195,9 @@ class _EditorStatusBarState extends State<EditorStatusBar> {
     String caretLabel;
     if (sel.isValid) {
       final offset = sel.extentOffset.clamp(0, text.length);
-      final before = text.substring(0, offset);
-      final line = '\n'.allMatches(before).length + 1;
-      final col = offset - (before.lastIndexOf('\n') + 1) + 1;
+      final lineIdx = _lineOfOffset(offset);
+      final line = lineIdx + 1;
+      final col = offset - _lineStarts[lineIdx] + 1;
       final selected = (sel.end - sel.start).abs();
       caretLabel = selected > 0
           ? '行 $line, 列 $col  (已选 $selected)'
