@@ -60,7 +60,7 @@ class MultiDexSessionOps {
             String dexName = entry.getKey();
             byte[] dexData = entry.getValue();
             
-            String jsonResult = CppDex.listClassesDetailed(dexData, filter, 0, 100000);
+            String jsonResult = CppDex.listClasses(dexData, filter, 0, 100000);
             if (jsonResult != null && !jsonResult.contains("\"error\"")) {
                 org.json.JSONObject cppResult = new org.json.JSONObject(jsonResult);
                 org.json.JSONArray cppClasses = cppResult.optJSONArray("classes");

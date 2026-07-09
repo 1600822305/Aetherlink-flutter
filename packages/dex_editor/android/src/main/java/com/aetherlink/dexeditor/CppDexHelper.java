@@ -56,7 +56,7 @@ public class CppDexHelper {
         JSArray classes = new JSArray();
         if (cppClasses != null) {
             for (int i = 0; i < cppClasses.length(); i++) {
-                classes.put(cppClasses.getString(i));
+                classes.put(cppClasses.getJSONObject(i).optString("className"));
             }
         }
         return classes;
