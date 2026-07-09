@@ -428,3 +428,38 @@ const char* dexcore_last_error(dexcore_ws*);
 
 > 说明：A/B 类工具在阶段 A–D 完成即全部走 dexcore；C 类（写侧）在阶段 E 前**暂时仍可保留 dexlib2**，
 > 待 writer 进核心后再切、并删 dexlib2 写侧。对外这 17 个工具名/入参/返回契约保持不变，调用方（Dart/UI）无感。
+
+### 11.15 请求/响应契约（是否对齐 MT？）
+
+**立场：对齐 MT 的「能力与概念」，不照抄 MT 的 JSON 字段名。** 用我们自己这套干净契约作**唯一事实源**（写在 `dexcore.h` 旁）。
+- 为什么不照抄 MT 键名：①用户要干净、拒绝冗余别名；②MT 是混淆过的私有 schema、无公开文档，无法逐字对齐；③三批已逐功能对齐甚至超越 MT。哪里 MT 命名确实更好就采纳，否则用我们的。
+- 契约铁律：**core 直接产出最终字段名 + locator，Dart 原样解析，全链路零改名兜底**（根治 manifest 空/className 空这类三层错位）。
+
+**通用约定**
+- 所有请求：JSON 对象；会话类工具必带 `sessionId`（`dex_open_apk`/`dex_open` 除外，它们返回 `sessionId`）。
+- 所有响应：`{ "ok": bool, "error": string?, ...data }`；出错时 `ok=false` + `error`，不再靠空字段表达失败。
+- locator 统一：类=`dex_class:<点分类名>`，方法=`dex_method:L..;->name(args)ret`，字段=`dex_field:L..;->name:type`，资源=`arsc_string:<idx>` 等。
+- 分页统一：请求 `offset`/`limit`/`cursor`；响应 `hasMore`/`nextOffset`/`nextCursor`/`total?`。
+
+**代表性 schema（其余工具照此风格，实现时在 `dexcore.h` 补全）**
+
+`dex_open_apk` → `{ ok, sessionId, packageName, versionName, versionCode, minSdkVersion, targetSdkVersion, totalClasses, totalMethods, dexFiles:[{name, classCount, methodCount, size}] }`
+
+`dex_list_classes` 请求 `{ sessionId, packageFilter?, offset?, limit?, cursor? }` →
+`{ ok, classes:[{ className, dexFile, superclass, interfaces:[], fieldsCount, methodsCount, locator }], hasMore, nextCursor }`
+
+`dex_search` 请求 `{ sessionId, query, target: "class|method|field|string|code|overview", caseSensitive?, apkPath?, offset?, limit?, cursor? }` →
+`{ ok, results:[ /* 按 target 而定，字段名统一 */ ], hasMore, nextCursor }`
+- class：`{ className, dexFile, locator }`
+- method：`{ className, methodName, prototype, dexFile, locator }`
+- field：`{ className, fieldName, fieldType, dexFile, locator }`
+- code：`{ className, methodName, line, snippet, dexFile, locator }`
+- string：`{ value, className, referencedBy:[], dexFile, locator }`
+- overview：`{ classes:[…], methods:[…], fields:[…], strings:[…], files?:[…], resources?:[…], manifest?:[…] }`
+
+`dex_read_class` 请求 `{ sessionId, className|locator, offset?, limit? }` →
+`{ ok, locator, targetVersion, smali, totalChars, hasMore, nextOffset }`
+
+`dex_outline_class` → `{ ok, locator, superclass, interfaces:[], fieldCount, methodCount, instructionsCount, fields:[{name, type, accessFlags, accessFlagsText, locator}], methods:[{name, prototype, accessFlags, accessFlagsText, instructionsCount, locator}] }`
+
+> 待用户拍板（默认＝上面这套「自有干净契约」）：是否反而要求**严格 MT 兼容**（工具可当 MT 的 drop-in 替换）？若要，需用户提供 MT 各工具的真实请求/响应样例，再逐字对齐——代价是会引入 MT 的混淆命名与可能的冗余，和「干净」相悖。
