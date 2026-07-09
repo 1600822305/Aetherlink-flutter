@@ -662,6 +662,65 @@ Java_com_aetherlink_dexeditor_CppDex_listFields(JNIEnv* env, jclass, jbyteArray 
     return string_to_jstring(env, result.dump());
 }
 
+JNIEXPORT jstring JNICALL
+Java_com_aetherlink_dexeditor_CppDex_outlineClass(JNIEnv* env, jclass, jbyteArray dexBytes,
+                                                   jstring className) {
+    auto data = jbyteArray_to_vector(env, dexBytes);
+    std::string class_name = jstring_to_string(env, className);
+
+    dex::DexParser parser;
+    if (!parser.parse(data)) {
+        json error = {{"error", "Failed to parse DEX"}};
+        return string_to_jstring(env, error.dump());
+    }
+
+    auto outline = parser.get_class_outline(class_name);
+    if (!outline.found) {
+        json not_found = {{"found", false}};
+        return string_to_jstring(env, not_found.dump());
+    }
+
+    json fields = json::array();
+    for (const auto& f : outline.fields) {
+        fields.push_back({
+            {"name", f.name},
+            {"type", f.type},
+            {"accessFlags", f.access_flags}
+        });
+    }
+
+    json methods = json::array();
+    for (const auto& m : outline.methods) {
+        methods.push_back({
+            {"name", m.name},
+            {"signature", m.signature},
+            {"returnType", m.return_type},
+            {"accessFlags", m.access_flags},
+            {"instructionsCount", m.instructions_size}
+        });
+    }
+
+    json interfaces = json::array();
+    for (const auto& i : outline.interfaces) {
+        interfaces.push_back(i);
+    }
+
+    json result = {
+        {"found", true},
+        {"className", outline.type_descriptor},
+        {"accessFlags", outline.access_flags},
+        {"superclass", outline.superclass},
+        {"interfaces", interfaces},
+        {"fields", fields},
+        {"fieldCount", fields.size()},
+        {"methods", methods},
+        {"methodCount", methods.size()},
+        {"instructionsCount", outline.instructions_count}
+    };
+
+    return string_to_jstring(env, result.dump());
+}
+
 // ==================== 字符串操作 ====================
 
 JNIEXPORT jstring JNICALL

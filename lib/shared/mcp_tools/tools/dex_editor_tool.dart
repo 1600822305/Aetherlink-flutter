@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/tools/tool_helpers.dart';
+import 'package:crypto/crypto.dart';
 import 'package:dex_editor/dex_editor.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -40,6 +42,8 @@ Future<McpToolResult> runDexEditorTool(
         return await _search(dex, args);
       case 'dex_read_class':
         return await _readClass(dex, args);
+      case 'dex_read_method':
+        return await _getMethod(dex, args);
       case 'dex_modify_class':
         return await _modifyClass(dex, args);
       case 'dex_save':
@@ -126,6 +130,59 @@ String _normalizeClassName(String className) {
   return className;
 }
 
+/// Inverse of [_normalizeClassName]: dotted/slash class name → type descriptor
+/// `Lcom/example/Foo;`. Already-descriptor (`L...;`) and array (`[...`) forms
+/// pass through unchanged.
+String _classToDescriptor(String className) {
+  if (className.isEmpty) return className;
+  if (className.startsWith('L') && className.endsWith(';')) return className;
+  if (className.startsWith('[')) return className;
+  return 'L${className.replaceAll('.', '/')};';
+}
+
+/// 统一 locator 体系（见 dex.md 第 5 节，风格对齐 MT 工具）：
+///  - 类：`dex_class:com.example.Foo`（点分）
+///  - 方法：`dex_method:Lcom/example/Foo;->bar(I)V`（描述符）
+///  - 字段：`dex_field:Lcom/example/Foo;->flag:Z`（描述符）
+String _classLocator(String dottedClassName) => 'dex_class:$dottedClassName';
+
+String _methodLocator(String dottedClassName, String name, String signature) =>
+    'dex_method:${_classToDescriptor(dottedClassName)}->$name$signature';
+
+String _fieldLocator(String dottedClassName, String name, String type) =>
+    'dex_field:${_classToDescriptor(dottedClassName)}->$name:$type';
+
+/// targetVersion：对内容做 SHA-256 取前 32 个 hex 字符，加 `dex-v1:` 前缀。
+/// 读取时下发，编辑工具据此做并发校验（内容变了 targetVersion 就变）。
+String _targetVersion(String content) {
+  final digest = sha256.convert(utf8.encode(content));
+  return 'dex-v1:${digest.toString().substring(0, 32)}';
+}
+
+/// 方法级 locator 解析结果（`dex_method:Lowner;->name(sig)ret`）。
+typedef _MethodRef = ({String className, String methodName, String signature});
+
+/// 从 `dex_method:` locator 解析出类名（点分）、方法名与签名（含参数与返回，
+/// 如 `(I)V`）。非方法 locator 或格式不符时返回 null，调用方回退到显式参数。
+_MethodRef? _methodRefFromLocator(Map<String, Object?> args) {
+  final loc = parseLocator(args['locator']);
+  if (loc == null || loc.scheme != 'dex_method') return null;
+  final value = loc.value;
+  final arrow = value.indexOf('->');
+  if (arrow <= 0) return null;
+  final owner = value.substring(0, arrow);
+  final rest = value.substring(arrow + 2);
+  final paren = rest.indexOf('(');
+  final methodName = paren >= 0 ? rest.substring(0, paren) : rest;
+  final signature = paren >= 0 ? rest.substring(paren) : '';
+  if (methodName.isEmpty) return null;
+  return (
+    className: _normalizeClassName(owner),
+    methodName: methodName,
+    signature: signature,
+  );
+}
+
 /// Returns a copy of [items] (a list of native result maps) with the given
 /// class-name [keys] normalized to dotted form via [_normalizeClassName], so
 /// `dex_search` / `dex_list_classes` output matches what the other tools echo
@@ -141,6 +198,24 @@ List<Object?> _normalizeClassFields(List<Object?> items, List<String> keys) {
       }
     }
     return normalized;
+  }).toList();
+}
+
+/// 给 dex_list_classes 的每个类补上统一 `locator`（dex_class:点分类名），
+/// 并把 native 可能带的 `interfaces` 列表统一为点分格式。缺字段/非 Map 透传。
+List<Object?> _decorateClasses(List<Object?> items) {
+  return items.map((item) {
+    if (item is! Map) return item;
+    final m = _map(item);
+    final className = _str(m['className']);
+    if (className.isNotEmpty) m['locator'] = _classLocator(className);
+    final interfaces = m['interfaces'];
+    if (interfaces is List) {
+      m['interfaces'] = interfaces
+          .map((e) => e is String ? _normalizeClassName(e) : e)
+          .toList();
+    }
+    return m;
   }).toList();
 }
 
@@ -363,7 +438,12 @@ Future<McpToolResult> _listClasses(
   }
   final data = _map(result.data);
   final classes = data['classes'] is List
-      ? _normalizeClassFields(data['classes'] as List, const ['className'])
+      ? _decorateClasses(
+          _normalizeClassFields(
+            data['classes'] as List,
+            const ['className', 'superclass'],
+          ),
+        )
       : const <Object?>[];
   final hasMore = data['hasMore'] == true;
   return McpToolResult(encodeJson({
@@ -459,13 +539,14 @@ Map<String, Object?> _withArscTarget(Map<String, Object?> args) {
   return {...args, 'target': arscTarget};
 }
 
-/// 统一类内容读取入口（均返回 Smali 文本）：传 methodName 读单个方法，否则读整类。
-/// 类轮廓（字段/方法列表的结构化 JSON）请用 dex_outline_class。
+/// 统一类内容读取入口：传 methodName（或 dex_method locator）读单个方法，
+/// 否则读整类。均返回结构化 JSON（含 locator + targetVersion + smali）。
+/// 类轮廓（字段/方法列表）请用 dex_outline_class。
 Future<McpToolResult> _readClass(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
-  if (_str(args['methodName']).isNotEmpty) {
+  if (_methodRefFromLocator(args) != null || _str(args['methodName']).isNotEmpty) {
     return _getMethod(dex, args);
   }
   return _getClass(dex, args);
@@ -483,21 +564,23 @@ Future<McpToolResult> _getClass(
   if (!result.success) {
     return McpToolResult('错误: ${result.error}', isError: true);
   }
-  var smali = _str(_map(result.data)['smaliContent']);
-  final totalChars = smali.length;
+  final fullSmali = _str(_map(result.data)['smaliContent']);
+  final totalChars = fullSmali.length;
   final page = _textPage(args);
   final offset = page.offset;
   final maxChars = page.maxChars;
+  var smali = fullSmali;
   if (offset > 0) smali = _sliceFrom(smali, offset);
   if (maxChars > 0) smali = _sliceMax(smali, maxChars);
-  if (maxChars > 0 || offset > 0) {
-    return McpToolResult(encodeJson({
-      'className': className,
+  return McpToolResult(encodeJson({
+    'className': className,
+    'locator': _classLocator(className),
+    // targetVersion 基于完整类内容，翻页不影响，供后续编辑做并发校验。
+    'targetVersion': _targetVersion(fullSmali),
+    if (maxChars > 0 || offset > 0)
       ..._pageMeta(offset, smali.length, totalChars, maxChars),
-      'content': smali,
-    }));
-  }
-  return McpToolResult(smali);
+    'smali': smali,
+  }));
 }
 
 Future<McpToolResult> _modifyClass(
@@ -551,18 +634,37 @@ Future<McpToolResult> _getMethod(
   DexEditor dex,
   Map<String, Object?> args,
 ) async {
-  final className = _normalizeClassName(_classNameArg(args));
+  // 优先解析 dex_method locator，其次回退到显式 className/methodName/signature。
+  final ref = _methodRefFromLocator(args);
+  final className = ref?.className ?? _normalizeClassName(_classNameArg(args));
+  final methodName = ref?.methodName ?? _str(args['methodName']);
+  final signature = (ref != null && ref.signature.isNotEmpty)
+      ? ref.signature
+      : _str(args['methodSignature']);
   final result = await dex.execute('getMethodFromSession', {
     'sessionId': _sessionArg(args),
     'className': className,
-    'methodName': _str(args['methodName']),
-    'methodSignature': _str(args['methodSignature']),
+    'methodName': methodName,
+    'methodSignature': signature,
   });
   if (!result.success) {
     return McpToolResult('获取方法失败: ${result.error}', isError: true);
   }
   final code = _str(_map(result.data)['methodCode']);
-  return McpToolResult(code.isEmpty ? '# 方法未找到' : code);
+  // native 未命中时返回以 `#` 开头的提示文本，原样透出。
+  if (code.isEmpty) return const McpToolResult('# 方法未找到');
+  if (code.startsWith('#')) return McpToolResult(code);
+  return McpToolResult(encodeJson({
+    'className': className,
+    'classLocator': _classLocator(className),
+    'methodName': methodName,
+    if (signature.isNotEmpty) 'methodSignature': signature,
+    // 方法 locator 需要完整签名才唯一，缺签名时只给类 locator。
+    if (signature.isNotEmpty)
+      'locator': _methodLocator(className, methodName, signature),
+    'targetVersion': _targetVersion(code),
+    'smali': code,
+  }));
 }
 
 Future<McpToolResult> _modifyMethod(
@@ -596,7 +698,48 @@ Future<McpToolResult> _outlineClass(
   if (!result.success) {
     return McpToolResult('获取类轮廓失败: ${result.error}', isError: true);
   }
-  return McpToolResult(encodeJson(result.data));
+  final data = _map(result.data);
+  final outClass = _str(data['className']).isNotEmpty
+      ? _normalizeClassName(_str(data['className']))
+      : className;
+  data['className'] = outClass;
+  data['classLocator'] = _classLocator(outClass);
+  if (data['superclass'] is String) {
+    data['superclass'] = _normalizeClassName(_str(data['superclass']));
+  }
+  final interfaces = data['interfaces'];
+  if (interfaces is List) {
+    data['interfaces'] = interfaces
+        .map((e) => e is String ? _normalizeClassName(e) : e)
+        .toList();
+  }
+  final fields = data['fields'];
+  if (fields is List) {
+    data['fields'] = fields.map((f) {
+      if (f is! Map) return f;
+      final fm = _map(f);
+      final name = _str(fm['name']);
+      final type = _str(fm['type']);
+      if (name.isNotEmpty && type.isNotEmpty) {
+        fm['locator'] = _fieldLocator(outClass, name, type);
+      }
+      return fm;
+    }).toList();
+  }
+  final methods = data['methods'];
+  if (methods is List) {
+    data['methods'] = methods.map((m) {
+      if (m is! Map) return m;
+      final mm = _map(m);
+      final name = _str(mm['name']);
+      final signature = _str(mm['signature']);
+      if (name.isNotEmpty && signature.isNotEmpty) {
+        mm['locator'] = _methodLocator(outClass, name, signature);
+      }
+      return mm;
+    }).toList();
+  }
+  return McpToolResult(encodeJson(data));
 }
 
 Future<McpToolResult> _renameClass(

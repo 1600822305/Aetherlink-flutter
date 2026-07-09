@@ -169,6 +169,21 @@ public class CppDex {
         String className
     );
 
+    /**
+     * 获取类轮廓（父类/接口/字段/方法，含访问标志与指令数）。
+     * 取代原先基于 dexlib2 的 Java outline 实现。
+     * @param dexBytes DEX 文件字节数组
+     * @param className 类型描述符（如 Lcom/example/Foo;）
+     * @return JSON：{found, className, accessFlags, superclass, interfaces,
+     *         fields:[{name,type,accessFlags}], fieldCount,
+     *         methods:[{name,signature,returnType,accessFlags,instructionsCount}],
+     *         methodCount, instructionsCount}
+     */
+    public static native String outlineClass(
+        byte[] dexBytes,
+        String className
+    );
+
     // ==================== 字符串操作 ====================
 
     /**

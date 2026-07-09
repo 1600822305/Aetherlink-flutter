@@ -1171,7 +1171,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'dex_list_classes',
       description: '列出 DEX 中的所有类，支持包名过滤和分页。'
-          '返回的 className 统一为点分格式（com.example.Foo），可直接传给 dex_read_class 等工具。',
+          '返回的 className 统一为点分格式（com.example.Foo），可直接传给 dex_read_class 等工具；'
+          '每个类还带 locator（dex_class:com.example.Foo，可直接回传到支持 locator 的工具），'
+          '以及（原生可用时）superclass/interfaces/fieldsCount/methodsCount 等结构化字段。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1305,12 +1307,15 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'dex_read_class',
       description:
-          '读取类的 Smali 代码（统一入口，均返回 Smali 文本）：\n'
+          '读取类的 Smali 代码（统一入口，均返回 JSON，Smali 文本在 smali 字段）：\n'
+          '- 返回体固定含 className、locator（dex_class:...）、targetVersion'
+          '（内容指纹，后续 dex_modify_* 可带上做并发校验）、smali。\n'
           '- 不传 methodName：读整类 Smali。支持限制返回字符数（控制 token）；'
-          '传入 maxChars/offset 时返回 JSON，含 totalChars(总字符数)、returnedLength、'
+          '传入 maxChars/offset 时额外返回 totalChars(总字符数)、returnedLength、'
           'hasMore(是否还有后续)、nextOffset(下一页 offset)、nextCursor(分页游标)，'
           '据此翻页无需自己计算；把 nextCursor 原样回传到 cursor 即可取下一页。\n'
-          '- 传 methodName：只读该类中的单个方法（大类只看特定方法时用）。\n'
+          '- 传 methodName（或 dex_method locator）：只读该类中的单个方法'
+          '（等价于 dex_read_method，大类只看特定方法时用）。\n'
           '需要类的字段/方法列表（结构化轮廓）请改用 dex_outline_class。',
       inputSchema: {
         'type': 'object',
@@ -1355,6 +1360,45 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
         },
         'required': ['sessionId', 'className'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'dex_read_method',
+      description:
+          '读取类中单个方法的 Smali 代码（大类只看某个方法时更省 token）。'
+          '返回 JSON，含 className、methodName、classLocator、locator'
+          '（dex_method:Lcom/example/Foo;->bar(I)V，签名齐全时才有）、'
+          'targetVersion（内容指纹，供并发校验）、smali（方法体）。\n'
+          '定位方式二选一：①className+methodName（可选 methodSignature 区分重载）；'
+          '②locator=dex_method:...（内含类/方法/签名，无需再填其他）。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'sessionId': {
+            'type': 'string',
+            'description': '会话 ID（dex_open 返回）。也可直接填 APK 路径，'
+                '系统会自动复用或按 apkPath 重建该会话，避免 "Session not found"。',
+          },
+          'className': {
+            'type': 'string',
+            'description': '类名（点分/L描述符/斜杠任意格式均可，内部自动转换）；'
+                '用 locator 时可省略',
+          },
+          'methodName': {
+            'type': 'string',
+            'description': '方法名（如 "onCreate" 或 "<init>"）；用 locator 时可省略',
+          },
+          'methodSignature': {
+            'type': 'string',
+            'description': '可选，区分重载方法，如 "(Landroid/os/Bundle;)V"',
+          },
+          'locator': {
+            'type': 'string',
+            'description': '统一方法定位符，可替代 className+methodName+methodSignature，'
+                '如 "dex_method:Lcom/example/Foo;->bar(I)V"',
+          },
+        },
+        'required': ['sessionId'],
       },
     ),
     McpToolDefinition(
@@ -1444,8 +1488,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'dex_outline_class',
       description:
-          '获取类的轮廓：一次返回父类(superclass)、接口(interfaces)、字段列表(name/type/'
-          'accessFlags)和方法列表(name/signature/returnType/accessFlags)。'
+          '获取类的轮廓：一次返回类的 classLocator（dex_class:...）、父类(superclass)、'
+          '接口(interfaces)、字段列表(name/type/accessFlags/locator[dex_field:...])'
+          '和方法列表(name/signature/returnType/accessFlags/locator[dex_method:...])。'
+          '方法/字段的 locator 可直接回传给 dex_read_method / dex_find_xrefs 等工具。'
           '适合在读取全量 Smali(dex_read_class) 前先了解类结构，省 token。',
       inputSchema: {
         'type': 'object',
