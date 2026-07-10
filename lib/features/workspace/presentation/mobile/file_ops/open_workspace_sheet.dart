@@ -136,7 +136,7 @@ class _OpenWorkspaceSheet extends ConsumerWidget {
                   // is defunct afterwards but navigator.context stays valid.
                   final navigator = Navigator.of(context);
                   navigator.pop();
-                  await openProotWorkspace(navigator.context, parentRef);
+                  await showProotScopeSheet(navigator.context, parentRef);
                 },
               ),
             ),
@@ -215,23 +215,85 @@ Future<void> openLocalFolder(BuildContext context, WidgetRef ref) async {
   }
 }
 
-/// Opens the 内置终端 (PRoot Alpine) workspace, installing the rootfs via the
-/// setup sheet on first use.
+/// Directory that hosts 项目模式 workspaces inside the PRoot rootfs
+///（双作用域设计稿 §2.2）。
+const String kProotProjectsDir = '/root/projects';
+
+/// Shows the 内置终端 scope chooser: 项目文件夹 (project) vs 完整终端 (full)
+///（双作用域设计稿 §5）。
+Future<void> showProotScopeSheet(BuildContext context, WidgetRef ref) {
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) {
+      final theme = Theme.of(sheetContext);
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                '内置终端',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            ListTile(
+              leading: Icon(
+                LucideIcons.folderGit2,
+                color: theme.colorScheme.primary,
+              ),
+              title: const Text('打开项目文件夹'),
+              subtitle: const Text('工作区锚定到一个项目目录（IDE 式）'),
+              onTap: () async {
+                final navigator = Navigator.of(sheetContext);
+                navigator.pop();
+                await openProotProjectWorkspace(navigator.context, ref);
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                LucideIcons.squareTerminal,
+                color: theme.colorScheme.primary,
+              ),
+              title: const Text('打开完整终端'),
+              subtitle: const Text('整个 Alpine 环境，命令全量确认'),
+              onTap: () async {
+                final navigator = Navigator.of(sheetContext);
+                navigator.pop();
+                await openProotWorkspace(navigator.context, ref);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+/// Ensures the PRoot rootfs is installed, guiding through the setup sheet on
+/// first use. Returns false when the user bails out.
+Future<bool> _ensureProotInstalled(BuildContext context, WidgetRef ref) async {
+  if (await TerminalEngineManager.instance.isInstalled()) return true;
+  if (!context.mounted) return false;
+  return showTerminalSetupSheet(context, ref.read(fileSystemApiProvider));
+}
+
+/// Opens the 内置终端 (PRoot Alpine) workspace in 全机模式, installing the
+/// rootfs via the setup sheet on first use.
 Future<void> openProotWorkspace(BuildContext context, WidgetRef ref) async {
   try {
-    if (!await TerminalEngineManager.instance.isInstalled()) {
-      if (!context.mounted) return;
-      final installed = await showTerminalSetupSheet(
-        context,
-        ref.read(fileSystemApiProvider),
-      );
-      if (!installed) return;
-    }
+    if (!await _ensureProotInstalled(context, ref)) return;
     final workspace = await ref
         .read(workspaceStoreProvider.notifier)
         .open(
           name: '内置终端',
           backendType: WorkspaceBackendType.prootLocal,
+          scope: WorkspaceScope.full,
           root: '/root',
           displayPath: 'Alpine Linux · 内置 (PRoot)',
         );
@@ -242,6 +304,79 @@ Future<void> openProotWorkspace(BuildContext context, WidgetRef ref) async {
   }
 }
 
+/// Opens (creating on demand) a 项目模式 workspace under [kProotProjectsDir]
+/// in the PRoot rootfs: prompts for a project name, `mkdir -p`s the directory
+/// and anchors the workspace root there（双作用域设计稿 §2.2）。
+Future<void> openProotProjectWorkspace(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  try {
+    if (!await _ensureProotInstalled(context, ref)) return;
+    if (!context.mounted) return;
+    final name = await _promptProjectName(context);
+    if (name == null) return;
+    final backend = ref.read(prootLocalBackendProvider);
+    final root = await backend.createDirectory(
+      kProotProjectsDir,
+      name,
+      recursive: true,
+    );
+    final workspace = await ref
+        .read(workspaceStoreProvider.notifier)
+        .open(
+          name: name,
+          backendType: WorkspaceBackendType.prootLocal,
+          scope: WorkspaceScope.project,
+          root: root,
+          displayPath: '内置终端 · $root',
+        );
+    _switchTo(ref, workspace);
+  } catch (e) {
+    if (!context.mounted) return;
+    AppToast.error(context, '打开失败 · $e');
+  }
+}
+
+/// Allowed project-directory name: no path separators / traversal, keeps the
+/// root safely inside [kProotProjectsDir].
+final RegExp _kProjectNamePattern = RegExp(r'^[\w][\w.-]*$');
+
+Future<String?> _promptProjectName(BuildContext context) async {
+  final controller = TextEditingController();
+  try {
+    return await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('项目名称'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '如 my-app（建在 /root/projects/ 下）',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final name = controller.text.trim();
+              if (!_kProjectNamePattern.hasMatch(name)) return;
+              Navigator.of(dialogContext).pop(name);
+            },
+            child: const Text('打开'),
+          ),
+        ],
+      ),
+    );
+  } finally {
+    controller.dispose();
+  }
+}
+
 /// Re-opens a "最近打开" entry as the current workspace.
 Future<void> openRecent(WidgetRef ref, Workspace workspace) async {
   final stored = await ref
@@ -249,6 +384,7 @@ Future<void> openRecent(WidgetRef ref, Workspace workspace) async {
       .open(
         name: workspace.name,
         backendType: workspace.backendType,
+        scope: workspace.scope,
         root: workspace.root,
         displayPath: workspace.displayPath,
         // SSH / Termux workspaces must keep their SshConnection reference, else

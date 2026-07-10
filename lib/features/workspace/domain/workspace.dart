@@ -21,6 +21,24 @@ enum WorkspaceBackendType {
   }
 }
 
+/// The scope a workspace grants over its backend（双作用域设计稿 §2.1）：
+///
+/// - [project] : 项目模式——root = 一个项目目录，工具/终端会话锚定在
+///               root 内（IDE 式真工作区）。
+/// - [full]    : 全机模式——root = 整个执行环境（rootfs / 远端 $HOME），
+///               完整终端能力，全量 HITL 审批。
+enum WorkspaceScope {
+  project,
+  full;
+
+  static WorkspaceScope fromName(String? name) {
+    for (final scope in WorkspaceScope.values) {
+      if (scope.name == name) return scope;
+    }
+    return WorkspaceScope.project;
+  }
+}
+
 /// A single opened workspace — a pure file domain (no agent). Persisted as a
 /// JSON record in the "最近打开" list so reopening lands straight back in it.
 ///
@@ -40,6 +58,7 @@ class Workspace {
     required this.backendType,
     required this.root,
     required this.lastOpenedAt,
+    this.scope = WorkspaceScope.project,
     this.displayPath,
     this.connectionId,
   });
@@ -51,6 +70,16 @@ class Workspace {
       backendType: WorkspaceBackendType.fromName(
         (json['backendType'] ?? '').toString(),
       ),
+      // Absent in pre-scope records → infer from backendType (back-compat):
+      // 旧内置终端记录（root=/root 整机）归 full，其余均为目录即工作区 → project。
+      scope: json.containsKey('scope')
+          ? WorkspaceScope.fromName((json['scope'] ?? '').toString())
+          : (WorkspaceBackendType.fromName(
+                    (json['backendType'] ?? '').toString(),
+                  ) ==
+                  WorkspaceBackendType.prootLocal
+              ? WorkspaceScope.full
+              : WorkspaceScope.project),
       root: (json['root'] ?? '').toString(),
       displayPath: (json['displayPath'] as Object?)?.toString(),
       // Absent in pre-SSH records → null (back-compat).
@@ -64,6 +93,7 @@ class Workspace {
   final String id;
   final String name;
   final WorkspaceBackendType backendType;
+  final WorkspaceScope scope;
   final String root;
   final String? displayPath;
   final String? connectionId;
@@ -74,6 +104,7 @@ class Workspace {
       id: id,
       name: name ?? this.name,
       backendType: backendType,
+      scope: scope,
       root: root,
       displayPath: displayPath,
       connectionId: connectionId,
@@ -85,6 +116,7 @@ class Workspace {
     'id': id,
     'name': name,
     'backendType': backendType.name,
+    'scope': scope.name,
     'root': root,
     if (displayPath != null) 'displayPath': displayPath,
     if (connectionId != null) 'connectionId': connectionId,
