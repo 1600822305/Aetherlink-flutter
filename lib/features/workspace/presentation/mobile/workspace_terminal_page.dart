@@ -3,6 +3,9 @@
 // hint instead. The shell is started lazily on an explicit「启动终端」tap so we
 // never open a surprise SSH channel just by entering a workspace.
 //
+// 多 tab（双作用域设计稿 §3.3）：每个 tab 一个独立 PTY 会话，生命周期由
+// 页面管理（与 AI 会话池分开）；新 tab 初始 cwd = workspace.root。
+//
 // dartssh2 is never imported here — the page talks to the backend-neutral
 // [WorkspaceShellSession] (bytes in / bytes out), and xterm renders it.
 
@@ -22,6 +25,27 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_view
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 
+/// 单个终端 tab：独立的 xterm 缓冲 + PTY 会话与连接状态。
+class _TerminalTab {
+  _TerminalTab({required this.name});
+
+  String name;
+  final Terminal terminal = Terminal(maxLines: 10000);
+
+  WorkspaceShellSession? session;
+  StreamSubscription<String>? outSub;
+  bool connecting = false;
+  bool connected = false;
+  String? error;
+
+  Future<void> dispose() async {
+    await outSub?.cancel();
+    outSub = null;
+    await session?.close();
+    session = null;
+  }
+}
+
 class WorkspaceTerminalPage extends ConsumerStatefulWidget {
   const WorkspaceTerminalPage({
     required this.topInset,
@@ -39,32 +63,32 @@ class WorkspaceTerminalPage extends ConsumerStatefulWidget {
 
 class _WorkspaceTerminalPageState
     extends ConsumerState<WorkspaceTerminalPage> {
-  final Terminal _terminal = Terminal(maxLines: 10000);
+  final List<_TerminalTab> _tabs = [];
+  int _active = 0;
+  int _nextTabNumber = 1;
 
-  WorkspaceShellSession? _session;
-  StreamSubscription<String>? _outSub;
-  bool _connecting = false;
-  bool _connected = false;
-  String? _error;
+  _TerminalTab get _tab => _tabs[_active];
 
   @override
   void initState() {
     super.initState();
+    _tabs.add(_TerminalTab(name: '${_nextTabNumber++}'));
     // 内置终端是本地进程，进页面直接启动；SSH/Termux 保持显式点按，
     // 避免一进工作区就悄悄开远程通道。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _connected || _connecting) return;
+      if (!mounted) return;
       final workspace = ref.read(currentWorkspaceProvider);
       if (workspace?.backendType == WorkspaceBackendType.prootLocal) {
-        _connect();
+        _connect(_tabs.first);
       }
     });
   }
 
   @override
   void dispose() {
-    _outSub?.cancel();
-    _session?.close();
+    for (final tab in _tabs) {
+      tab.dispose();
+    }
     super.dispose();
   }
 
@@ -82,7 +106,7 @@ class _WorkspaceTerminalPageState
     }
   }
 
-  Future<void> _connect() async {
+  Future<void> _connect(_TerminalTab tab) async {
     final backend = ref.read(workspacePreviewBackendProvider);
     final workspace = ref.read(currentWorkspaceProvider);
     if (backend == null || workspace == null) return;
@@ -91,58 +115,109 @@ class _WorkspaceTerminalPageState
     }
 
     setState(() {
-      _connecting = true;
-      _error = null;
+      tab.connecting = true;
+      tab.error = null;
     });
     try {
       final session = await backend.startShell(
-        columns: _terminal.viewWidth,
-        rows: _terminal.viewHeight,
+        columns: tab.terminal.viewWidth,
+        rows: tab.terminal.viewHeight,
         workingDirectory: workspace.root,
       );
       // Wire xterm <-> session: keystrokes out, remote bytes in, size changes.
-      _terminal.onOutput = (data) => session.write(utf8.encode(data));
-      _terminal.onResize = (w, h, _, __) => session.resize(w, h);
+      tab.terminal.onOutput = (data) => session.write(utf8.encode(data));
+      tab.terminal.onResize = (w, h, _, __) => session.resize(w, h);
       // cast 到 List<int>：Utf8Decoder 的 StreamTransformer 反化是
       // <List<int>, String>，Stream<Uint8List>.transform 在运行时泛型检查下
       // 会直接抛 type error。
-      _outSub = session.output
+      tab.outSub = session.output
           .cast<List<int>>()
           .transform(const Utf8Decoder(allowMalformed: true))
-          .listen(_terminal.write);
+          .listen(tab.terminal.write);
       session.done.whenComplete(() {
         if (!mounted) return;
-        _terminal.write('\r\n\x1b[33m[会话已结束]\x1b[0m\r\n');
-        setState(() => _connected = false);
+        tab.terminal.write('\r\n\x1b[33m[会话已结束]\x1b[0m\r\n');
+        setState(() => tab.connected = false);
       });
       if (!mounted) {
         await session.close();
         return;
       }
       setState(() {
-        _session = session;
-        _connected = true;
-        _connecting = false;
+        tab.session = session;
+        tab.connected = true;
+        tab.connecting = false;
       });
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = '$e';
-          _connecting = false;
+          tab.error = '$e';
+          tab.connecting = false;
         });
       }
     }
   }
 
-  Future<void> _disconnect() async {
-    await _outSub?.cancel();
-    _outSub = null;
-    await _session?.close();
+  Future<void> _disconnect(_TerminalTab tab) async {
+    await tab.dispose();
     if (mounted) {
-      setState(() {
-        _session = null;
-        _connected = false;
-      });
+      setState(() => tab.connected = false);
+    }
+  }
+
+  void _addTab() {
+    final workspace = ref.read(currentWorkspaceProvider);
+    final tab = _TerminalTab(name: '${_nextTabNumber++}');
+    setState(() {
+      _tabs.add(tab);
+      _active = _tabs.length - 1;
+    });
+    // 内置终端新 tab 直接启动；远程后端保持显式点按。
+    if (workspace?.backendType == WorkspaceBackendType.prootLocal) {
+      _connect(tab);
+    }
+  }
+
+  Future<void> _closeTab(int index) async {
+    final tab = _tabs[index];
+    if (_tabs.length == 1) {
+      // 最后一个 tab 只断开，不移除（页面始终保留一个 tab）。
+      await _disconnect(tab);
+      return;
+    }
+    await tab.dispose();
+    setState(() {
+      _tabs.removeAt(index);
+      if (_active >= _tabs.length) _active = _tabs.length - 1;
+    });
+  }
+
+  Future<void> _renameTab(_TerminalTab tab) async {
+    final controller = TextEditingController(text: tab.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('重命名终端'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 20,
+          decoration: const InputDecoration(hintText: '终端名称'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (name != null && name.isNotEmpty && mounted) {
+      setState(() => tab.name = name);
     }
   }
 
@@ -154,6 +229,7 @@ class _WorkspaceTerminalPageState
     final canExec = backend?.capabilities.canExec ?? false;
     final isProot = workspace?.backendType == WorkspaceBackendType.prootLocal;
     final topPad = MediaQuery.paddingOf(context).top + widget.topInset;
+    final tab = _tab;
 
     return Container(
       color: const Color(0xFF14161B),
@@ -181,7 +257,7 @@ class _WorkspaceTerminalPageState
                     ),
                   ),
                 ),
-                if (_connected && isProot)
+                if (tab.connected && isProot)
                   IconButton(
                     tooltip: '环境（apk 源 / 一键装）',
                     icon: const Icon(LucideIcons.package,
@@ -189,23 +265,90 @@ class _WorkspaceTerminalPageState
                     onPressed: () => showTerminalEnvSheet(
                       context,
                       onRunCommand: (command) =>
-                          _session?.write(utf8.encode('$command\n')),
+                          tab.session?.write(utf8.encode('$command\n')),
                     ),
                   ),
-                if (_connected)
+                if (tab.connected)
                   IconButton(
                     tooltip: '断开',
                     icon: const Icon(LucideIcons.power,
                         size: 18, color: Colors.white70),
-                    onPressed: _disconnect,
+                    onPressed: () => _disconnect(tab),
                   ),
               ],
             ),
           ),
+          // Tab strip：每 tab 一个独立 PTY 会话（双作用域设计稿 §3.3）。
+          if (canExec && workspace != null)
+            SizedBox(
+              height: 36,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      itemCount: _tabs.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 6),
+                      itemBuilder: (context, index) => _tabChip(index),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '新建终端',
+                    icon: const Icon(LucideIcons.plus,
+                        size: 18, color: Colors.white70),
+                    onPressed: _addTab,
+                  ),
+                ],
+              ),
+            ),
           Expanded(
-            child: _body(theme, canExec: canExec, hasWorkspace: workspace != null),
+            child: _body(theme,
+                canExec: canExec, hasWorkspace: workspace != null),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _tabChip(int index) {
+    final tab = _tabs[index];
+    final selected = index == _active;
+    return GestureDetector(
+      onTap: () => setState(() => _active = index),
+      onLongPress: () => _renameTab(tab),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: selected ? Colors.white12 : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected ? Colors.white38 : Colors.white12,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              LucideIcons.terminal,
+              size: 13,
+              color: tab.connected ? Colors.greenAccent : Colors.white38,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              tab.name,
+              style: TextStyle(
+                fontSize: 13,
+                color: selected ? Colors.white : Colors.white60,
+              ),
+            ),
+            const SizedBox(width: 4),
+            GestureDetector(
+              onTap: () => _closeTab(index),
+              child: const Icon(LucideIcons.x, size: 13, color: Colors.white38),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -224,15 +367,22 @@ class _WorkspaceTerminalPageState
         text: '终端仅在内置终端 / SSH / Termux 工作区可用',
       );
     }
-    if (_connected && _session != null) {
+    final tab = _tab;
+    if (tab.connected && tab.session != null) {
       // 不自动聚焦：进终端页不弹输入法；点按终端时 TerminalView 会自行
-      // requestFocus 呼出键盘。
-      return TerminalView(
-        _terminal,
-        padding: const EdgeInsets.all(8),
+      // requestFocus 呼出键盘。IndexedStack 保活所有 tab 的渲染状态。
+      return IndexedStack(
+        index: _active,
+        children: [
+          for (final t in _tabs)
+            TerminalView(
+              t.terminal,
+              padding: const EdgeInsets.all(8),
+            ),
+        ],
       );
     }
-    if (_connecting) {
+    if (tab.connecting) {
       return const Center(
         child: CircularProgressIndicator(strokeWidth: 2),
       );
@@ -242,11 +392,11 @@ class _WorkspaceTerminalPageState
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_error != null) ...[
+          if (tab.error != null) ...[
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
-                '连接失败 · $_error',
+                '连接失败 · ${tab.error}',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.redAccent),
               ),
@@ -254,9 +404,9 @@ class _WorkspaceTerminalPageState
             const SizedBox(height: 16),
           ],
           FilledButton.icon(
-            onPressed: _connect,
+            onPressed: () => _connect(tab),
             icon: const Icon(LucideIcons.terminal, size: 18),
-            label: Text(_error == null ? '启动终端' : '重试'),
+            label: Text(tab.error == null ? '启动终端' : '重试'),
           ),
         ],
       ),
