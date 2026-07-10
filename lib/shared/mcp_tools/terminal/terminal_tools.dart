@@ -27,13 +27,50 @@ const int _kDefaultTimeoutMs = 120000;
 
 /// Whether [toolName] runs commands and therefore requires HITL confirmation
 /// before executing（默认白名单审批模式，设计文档 §3.2）。
-bool terminalToolNeedsConfirmation(String toolName) {
+///
+/// 双作用域设计稿 §3.2：目标是项目模式（scope=project）工作区时按
+/// [evaluateCommandRisk] 分级——root 内低危只读命令免审批，其余照常；
+/// 全机模式 / 未指定工作区维持全量审批。[workspaces] 用于同步解析
+/// `workspace` 参数（编号 / ID / 名称，与 resolveWorkspace 同规则）。
+bool terminalToolNeedsConfirmation(
+  String toolName,
+  Map<String, Object?> args, {
+  List<Workspace> workspaces = const [],
+}) {
   switch (toolName) {
     case 'terminal_execute':
     case 'terminal_session_exec':
-      return true;
+      break;
+    default:
+      return false;
   }
-  return false;
+  final workspace = _matchWorkspaceArg(args, workspaces);
+  if (workspace == null || workspace.scope != WorkspaceScope.project) {
+    return true;
+  }
+  final command = args['command']?.toString() ?? '';
+  return evaluateCommandRisk(command, root: workspace.root) !=
+      CommandRisk.safeInRoot;
+}
+
+/// 同步版的 `workspace` 参数解析（编号 / ID / 名称），解析不到返回 null。
+Workspace? _matchWorkspaceArg(
+  Map<String, Object?> args,
+  List<Workspace> workspaces,
+) {
+  final raw = args['workspace']?.toString().trim();
+  if (raw == null || raw.isEmpty) return null;
+  final index = int.tryParse(raw);
+  if (index != null && index >= 1 && index <= workspaces.length) {
+    return workspaces[index - 1];
+  }
+  for (final w in workspaces) {
+    if (w.id == raw) return w;
+  }
+  for (final w in workspaces) {
+    if (w.name == raw) return w;
+  }
+  return null;
 }
 
 /// Runs a `@aether/terminal` [toolName] with [args]. Returns an error

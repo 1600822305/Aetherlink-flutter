@@ -30,6 +30,7 @@ import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/streaming_registry.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_confirmation.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_executor.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_setup.dart';

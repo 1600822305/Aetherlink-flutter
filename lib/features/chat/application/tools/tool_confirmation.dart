@@ -1,4 +1,5 @@
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/settings_tools.dart';
@@ -6,12 +7,14 @@ import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart
 
 /// Whether this tool call must pause for user approval (HITL) before running:
 /// settings tools with `confirm` permission, file-editor / knowledge /
-/// terminal write-or-execute tools.
+/// terminal write-or-execute tools. [workspaces] 供终端工具按目标工作区的
+/// scope 分级审批（双作用域设计稿 §3.2）。
 bool toolNeedsConfirmation(
   ToolRoute route,
   String toolName,
-  Map<String, Object?> args,
-) {
+  Map<String, Object?> args, {
+  List<Workspace> workspaces = const [],
+}) {
   return (route is SettingsToolRoute &&
           inferSettingsPermission(toolName) ==
               SettingsToolPermission.confirm) ||
@@ -19,7 +22,12 @@ bool toolNeedsConfirmation(
           fileEditorNeedsConfirmation(toolName)) ||
       (route is KnowledgeToolRoute &&
           knowledgeToolNeedsConfirmation(toolName, args)) ||
-      (route is TerminalToolRoute && terminalToolNeedsConfirmation(toolName));
+      (route is TerminalToolRoute &&
+          terminalToolNeedsConfirmation(
+            toolName,
+            args,
+            workspaces: workspaces,
+          ));
 }
 
 /// Whether this tool call is a one-shot command that can be aborted

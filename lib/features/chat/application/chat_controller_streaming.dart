@@ -627,7 +627,13 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
             final blockId = generateId('block');
             final toolId = call.id.isEmpty ? call.name : call.id;
 
-            final needsConfirm = toolNeedsConfirmation(route, call.name, args);
+            final needsConfirm = toolNeedsConfirmation(
+              route,
+              call.name,
+              args,
+              // 终端工具按目标工作区 scope 分级审批（双作用域设计稿 §3.2）。
+              workspaces: ref.read(workspaceStoreProvider).value ?? const [],
+            );
 
             // `run_command` / `terminal_execute` can be aborted mid-flight:
             // register a cancel signal
