@@ -19,6 +19,7 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_p
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/model_provider_detail_page.dart';
 import 'package:aetherlink_flutter/features/theming/application/default_theme_spec.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/model_registry.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 
 /// A catalog that returns a fixed model list — no network, no key.
@@ -36,6 +37,15 @@ class _FakeCatalog implements LlmModelCatalog {
 }
 
 void main() {
+  // The detail / edit pages enrich models via the preset-registry asset
+  // (rootBundle.loadString), which never completes inside a widget test's
+  // fake-async zone. Load it once on the real async zone so every in-test
+  // ensureLoaded() call resolves synchronously.
+  setUpAll(() async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    await ModelRegistry.instance.ensureLoaded();
+  });
+
   void useTallSurface(WidgetTester tester) {
     tester.view.physicalSize = const Size(1080, 6000);
     tester.view.devicePixelRatio = 1.0;
@@ -143,11 +153,11 @@ void main() {
       expect(find.text('配置'), findsOneWidget);
       expect(find.text('模型'), findsOneWidget);
 
-      // 配置 tab: the API-key + base-URL cards and the advanced-config entry.
+      // 配置 tab: the API-key + base-URL cards and the advanced-config entry
+      // (the compact card shows only the field label, no duplicate 区标题).
       expect(find.text('API 密钥'), findsWidgets);
-      expect(find.text('基础 URL'), findsOneWidget);
       expect(find.text('基础 URL (可选)'), findsOneWidget);
-      expect(find.text('配置高级参数'), findsOneWidget);
+      expect(find.text('高级 API 配置'), findsOneWidget);
 
       // The API-key field is editable (wired to the repository).
       final apiKeyField = tester.widget<TextField>(
@@ -191,18 +201,18 @@ void main() {
       expect(find.text('GPT-4o mini'), findsOneWidget);
     });
 
-    testWidgets('配置高级参数 navigates to the advanced-config page', (tester) async {
+    testWidgets('高级 API 配置 navigates to the advanced-config page', (tester) async {
       await pumpAt(
         tester,
         AppRouter.modelProviderPath('p1'),
         providers: [providerP1()],
       );
 
-      await tester.tap(find.text('配置高级参数'));
+      await tester.tap(find.text('高级 API 配置'));
       await tester.pumpAndSettle();
 
       expect(find.byType(AdvancedApiConfigPage), findsOneWidget);
-      expect(find.text('高级 API 配置'), findsOneWidget);
+      expect(find.text('高级 API 配置'), findsWidgets);
     });
 
     testWidgets('获取 fetches the catalog, then adds the picked models', (
@@ -223,7 +233,7 @@ void main() {
       await tester.enterText(find.byType(TextField).first, 'sk-secret');
       await tester.tap(find.text('模型'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('自动获取'));
+      await tester.tap(find.text('获取'));
       await tester.pumpAndSettle();
 
       // The sheet lists the fetched models; query carried the entered key.
@@ -231,7 +241,12 @@ void main() {
       expect(catalog.lastQuery!.apiKey, 'sk-secret');
       expect(catalog.lastQuery!.providerType, 'openai');
 
-      await tester.tap(find.text('添加 (2)'));
+      // Nothing is pre-selected: pick both rows, then confirm (the button
+      // label reflects the pending selection count).
+      await tester.tap(find.text('GPT-4o'));
+      await tester.tap(find.text('gpt-4o-mini'));
+      await tester.pump();
+      await tester.tap(find.text('添加 2'));
       await tester.pumpAndSettle();
 
       final saved = await repo.getProvider('p1');
@@ -275,7 +290,9 @@ void main() {
       expect(find.text('提供商'), findsOneWidget);
       expect(find.text('模型ID'), findsOneWidget);
       expect(find.text('模型类型'), findsOneWidget);
-      expect(find.text('自动检测'), findsOneWidget);
+      // 自动检测 appears twice: the 参数能力范围 dropdown default and the
+      // model-type section's toggle label.
+      expect(find.text('自动检测'), findsNWidgets(2));
       // A capability chip from the 基础功能 group renders.
       expect(find.text('聊天'), findsOneWidget);
 

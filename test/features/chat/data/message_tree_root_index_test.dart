@@ -30,7 +30,7 @@ void main() {
     status: MessageStatus.success,
   );
 
-  test('schemaVersion is 9', () => expect(db.schemaVersion, 9));
+  test('schemaVersion is 16', () => expect(db.schemaVersion, 16));
 
   test('the single-root partial unique index exists on a fresh DB', () async {
     final rows = await db

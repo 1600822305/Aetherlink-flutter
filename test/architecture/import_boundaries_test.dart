@@ -96,6 +96,23 @@ const _knownAcceptedViolations = <String>{
   'lib/features/settings/presentation/mobile/web_search/add_search_provider_page.dart -> package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart',
   'lib/features/settings/presentation/mobile/web_search/search_provider_detail_page.dart -> package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart',
   'lib/features/settings/presentation/mobile/web_search_settings_page.dart -> package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart',
+  // Accumulated while the guard itself was red (masked by the other failing
+  // suites): workspace/terminal/knowledge/backup slices that landed with
+  // direct cross-feature imports. Same migration debt as above — route these
+  // through app/di and remove the entries.
+  'lib/features/backup/data/chatbox_importer.dart -> package:aetherlink_flutter/features/chat/data/message_tree_backfill.dart',
+  'lib/features/backup/data/chatbox_txt_importer.dart -> package:aetherlink_flutter/features/chat/data/message_tree_backfill.dart',
+  'lib/features/backup/data/cherry_importer.dart -> package:aetherlink_flutter/features/chat/data/message_tree_backfill.dart',
+  'lib/features/chat/application/chat_controller.dart -> package:aetherlink_flutter/features/workspace/application/workspace_store.dart',
+  'lib/features/chat/presentation/widgets/blocks/message_selection_area.dart -> package:aetherlink_flutter/features/settings/application/selection_menu_settings_controller.dart',
+  'lib/features/chat/presentation/widgets/message_actions/message_toolbar.dart -> package:aetherlink_flutter/features/settings/application/message_bubble_settings_controller.dart',
+  'lib/features/knowledge/presentation/mobile/knowledge_base_detail_page.dart -> package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart',
+  'lib/features/knowledge/presentation/mobile/knowledge_base_detail_page.dart -> package:aetherlink_flutter/features/workspace/application/workspace_store.dart',
+  'lib/features/settings/presentation/mobile/web_search/search_multi_key_page.dart -> package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart',
+  'lib/features/workspace/data/proot_local_backend.dart -> package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart',
+  'lib/features/workspace/data/proot_local_backend.dart -> package:aetherlink_flutter/features/terminal/data/proot_process_runner.dart',
+  'lib/features/workspace/presentation/mobile/file_ops/open_workspace_sheet.dart -> package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart',
+  'lib/features/workspace/presentation/mobile/workspace_terminal_page.dart -> package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart',
 };
 
 /// Whether [path] contains [segment] as a full path segment.

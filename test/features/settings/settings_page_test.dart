@@ -57,10 +57,10 @@ void main() {
   ) async {
     await pumpHub(tester);
 
+    // Data-driven: one row per catalog item, so adding a settings entry never
+    // breaks this test.
     final allItems = kSettingsGroups.expand((g) => g.items).toList();
-    // 2 + 5 + 4 + 1 + 6 + 3 = 21 rows.
-    expect(allItems, hasLength(21));
-    expect(find.byType(SettingItem), findsNWidgets(21));
+    expect(find.byType(SettingItem), findsNWidgets(allItems.length));
 
     // A few representative titles and their lucide icons render (the icons are
     // lucide originals, not Icons.* approximations — ADR-0009).
@@ -72,42 +72,26 @@ void main() {
     expect(find.byIcon(LucideIcons.info), findsOneWidget);
 
     // Every row shows the trailing chevron.
-    expect(find.byIcon(LucideIcons.chevronRight), findsNWidgets(21));
+    expect(
+      find.byIcon(LucideIcons.chevronRight),
+      findsNWidgets(allItems.length),
+    );
   });
 
   testWidgets(
-    'only the wired rows (外观, 行为, 关于我们, 配置模型, MCP 服务器, 智能体提示词集合, 快捷短语, 网络代理) are enabled; '
-    'the rest are disabled placeholders',
+    'every catalog row is wired: enabled and tappable, no disabled '
+    'placeholders left',
     (tester) async {
       await pumpHub(tester);
 
       final rows = tester
           .widgetList<SettingItem>(find.byType(SettingItem))
           .toList();
-      final enabled = rows.where((r) => r.enabled).toList();
+      expect(rows, isNotEmpty);
 
-      const wiredTitles = {
-        '外观',
-        '行为',
-        '关于我们',
-        '配置模型',
-        'MCP 服务器',
-        '智能体提示词集合',
-        '快捷短语',
-        '网络代理',
-      };
-      expect(enabled.map((r) => r.title).toSet(), wiredTitles);
-      for (final row in enabled) {
+      for (final row in rows) {
+        expect(row.enabled, isTrue, reason: '${row.title} should be enabled');
         expect(row.onTap, isNotNull, reason: '${row.title} should be tappable');
-      }
-
-      for (final row in rows.where((r) => !wiredTitles.contains(r.title))) {
-        expect(row.enabled, isFalse, reason: '${row.title} should be disabled');
-        expect(
-          row.onTap,
-          isNull,
-          reason: '${row.title} should not be tappable',
-        );
       }
     },
   );

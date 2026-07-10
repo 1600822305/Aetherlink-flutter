@@ -61,7 +61,15 @@ void main() {
 
       // Empty database → empty state (text comes from empty data, not a mock).
       expect(find.text('对话开始了，请输入您的问题'), findsOneWidget);
-      expect(find.byType(ListView), findsNothing);
+      // The always-mounted sidebar (SidebarHost) hosts its own ListView, so
+      // assert the *message* area builds no list rather than "no ListView".
+      expect(
+        find.ancestor(
+          of: find.text('对话开始了，请输入您的问题'),
+          matching: find.byType(ListView),
+        ),
+        findsNothing,
+      );
 
       // The field accepts input (local UI state)...
       await tester.enterText(find.byType(TextField), '你好');
@@ -104,7 +112,7 @@ void main() {
 
   testWidgets(
     'Input button toolbar wires every default button: aggregators open menus, '
-    '网络搜索 toggles its session mode, the rest surface 即将支持, send wired',
+    '网络搜索 opens its settings sheet, the rest surface 即将支持, send wired',
     (tester) async {
       await pumpChatPage(tester);
 
@@ -117,7 +125,7 @@ void main() {
         '扩展', // tools (aggregator)
         '清空内容', // clear
         '网络搜索', // search (session mode)
-        '添加内容', // upload (aggregator)
+        '更多', // upload (aggregator)
         '切换到语音输入模式', // voice
       ];
 
@@ -137,28 +145,19 @@ void main() {
         );
       }
 
-      // 网络搜索 is a mutually-exclusive session mode: tapping it lights the
-      // button (its tooltip flips to the "退出…模式" form); tapping again clears.
+      // 网络搜索 opens the search-settings bottom sheet (enable toggle +
+      // provider picker) instead of blind-toggling the session mode.
       await tester.tap(
         find.byWidgetPredicate((w) => w is IconButton && w.tooltip == '网络搜索'),
       );
-      await tester.pump();
-      expect(
-        find.byWidgetPredicate(
-          (w) => w is IconButton && w.tooltip == '退出网络搜索模式',
-        ),
-        findsOneWidget,
-      );
-      await tester.tap(
-        find.byWidgetPredicate(
-          (w) => w is IconButton && w.tooltip == '退出网络搜索模式',
-        ),
-      );
-      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(find.text('启用网络搜索'), findsOneWidget);
+      // Dismiss the sheet before exercising the next button.
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
 
       // 扩展 opens the data-driven aggregator menu; the local rows (新建话题) are
-      // wired, while a not-yet-wired row (知识库) still surfaces 即将支持 rather
-      // than faking a behavior.
+      // wired, and 知识库 is wired too: it opens the 挂载知识库 picker sheet.
       await tester.tap(
         find.byWidgetPredicate((w) => w is IconButton && w.tooltip == '扩展'),
       );
@@ -167,7 +166,9 @@ void main() {
       expect(find.text('知识库'), findsOneWidget);
       await tester.tap(find.text('知识库'));
       await tester.pumpAndSettle();
-      expect(find.text('即将支持'), findsOneWidget);
+      expect(find.text('挂载知识库'), findsOneWidget);
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
 
       // Send is wired: with no model configured it stays greyed but a tap
       // surfaces the "configure a model first" hint, so it handles taps.
@@ -307,8 +308,13 @@ void main() {
       await pumpChatPage(tester, database: db);
 
       // Both main_text blocks are painted as bubbles (no empty state, a list).
+      // The sidebar (always mounted) owns a second ListView, so pin the one
+      // hosting the bubbles instead of counting all ListViews.
       expect(find.text('对话开始了，请输入您的问题'), findsNothing);
-      expect(find.byType(ListView), findsOneWidget);
+      expect(
+        find.ancestor(of: find.text('用户消息内容'), matching: find.byType(ListView)),
+        findsOneWidget,
+      );
       expect(find.text('用户消息内容'), findsOneWidget);
       expect(find.text('助手回复内容'), findsOneWidget);
 

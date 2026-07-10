@@ -37,7 +37,7 @@ void main() {
   });
 
   testWidgets(
-    'external link rows are tappable; 开发者工具 (no Flutter page yet) is disabled',
+    'all link rows are tappable — 开发者工具 now targets the in-app /devtools page',
     (tester) async {
       await tester.pumpWidget(
         ProviderScope(
@@ -48,21 +48,19 @@ void main() {
         ),
       );
 
-      // The three external rows are wired (InkWell), the devtools row is not.
-      final githubRow = find.ancestor(
-        of: find.text('GitHub'),
-        matching: find.byType(InkWell),
-      );
-      expect(githubRow, findsOneWidget);
+      // The three external rows and the in-app devtools row are all wired.
+      for (final label in const ['GitHub', '官方群组', '反馈', '开发者工具']) {
+        expect(
+          find.ancestor(of: find.text(label), matching: find.byType(InkWell)),
+          findsOneWidget,
+          reason: '$label should be tappable',
+        );
+      }
 
-      // Exactly one row is disabled — rendered at half opacity (开发者工具).
-      final disabled = find.byWidgetPredicate(
-        (w) => w is Opacity && w.opacity == 0.5,
-      );
-      expect(disabled, findsOneWidget);
+      // No row renders disabled (half opacity) anymore.
       expect(
-        find.descendant(of: disabled, matching: find.text('开发者工具')),
-        findsOneWidget,
+        find.byWidgetPredicate((w) => w is Opacity && w.opacity == 0.5),
+        findsNothing,
       );
     },
   );

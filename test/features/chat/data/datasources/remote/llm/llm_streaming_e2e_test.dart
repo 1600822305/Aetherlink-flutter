@@ -106,7 +106,7 @@ void main() {
 
   group('request construction over the real socket', () {
     test(
-      'OpenAI-compatible posts to /chat/completions with bearer auth',
+      'OpenAI-compatible posts to /v1/chat/completions with bearer auth',
       () async {
         final server = await MockSseServer.start(body: 'data: [DONE]\n\n');
         addTearDown(server.stop);
@@ -115,7 +115,9 @@ void main() {
 
         final req = server.lastRequest!;
         expect(req.method, 'POST');
-        expect(req.uri.path, '/chat/completions');
+        // formatApiHost appends /v1 to a bare base URL (matching the web's
+        // host-completion rules), so the mock server sees the /v1 prefix.
+        expect(req.uri.path, '/v1/chat/completions');
         expect(req.headers['authorization'], 'Bearer mock-no-key');
         expect(req.body, contains('"stream":true'));
         expect(req.body, contains('"model":"mock-model"'));

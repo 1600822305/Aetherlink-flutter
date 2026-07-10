@@ -67,7 +67,7 @@ void main() {
   List<MessageActionId> idsOf(List<MessageAction> actions) =>
       actions.map((a) => a.id).toList();
 
-  testWidgets('user message: 复制/编辑/导出/重新发送/创建分支/删除, no AI-only actions',
+  testWidgets('user message: 复制/编辑/导出/重新发送/创建分支/存入知识库/删除, no AI-only actions',
       (tester) async {
     final actions = await buildActions(tester, view(role: MessageRole.user));
     expect(
@@ -79,6 +79,7 @@ void main() {
         MessageActionId.resend,
         MessageActionId.fork,
         MessageActionId.branch,
+        MessageActionId.saveToKnowledge,
         MessageActionId.delete,
       ],
     );
@@ -103,6 +104,7 @@ void main() {
         MessageActionId.translate,
         MessageActionId.fork,
         MessageActionId.branch,
+        MessageActionId.saveToKnowledge,
         MessageActionId.delete,
       ],
     );

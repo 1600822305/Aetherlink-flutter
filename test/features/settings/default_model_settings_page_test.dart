@@ -40,10 +40,9 @@ void main() {
     expect(find.text('模型服务商'), findsOneWidget);
     expect(find.text('您可以配置多个模型服务商，点击对应的服务商进行设置和管理'), findsOneWidget);
 
-    // 推荐操作 card: subheader + the three rows.
+    // 推荐操作 card: subheader + the two rows (辅助模型 / 添加模型服务商).
     expect(find.text('推荐操作'), findsOneWidget);
-    expect(find.text('辅助模型设置'), findsOneWidget);
-    expect(find.text('模型选择器样式'), findsOneWidget);
+    expect(find.text('辅助模型'), findsOneWidget);
     expect(find.text('添加模型服务商'), findsOneWidget);
 
     // Header actions render with their lucide icons.
@@ -52,11 +51,9 @@ void main() {
     expect(find.byIcon(LucideIcons.trash2), findsOneWidget);
     expect(find.byIcon(LucideIcons.arrowLeft), findsOneWidget);
     expect(find.byIcon(LucideIcons.bot), findsOneWidget);
-    expect(find.byIcon(LucideIcons.list), findsOneWidget);
     // plus is used twice: the toolbar 添加 action + the 添加模型服务商 row.
     expect(find.byIcon(LucideIcons.plus), findsNWidgets(2));
-    // The 辅助模型设置 and 添加模型服务商 rows each end with a chevron; the
-    // 模型选择器样式 (toggle) row has none.
+    // Both 推荐操作 rows end with a chevron.
     expect(find.byIcon(LucideIcons.chevronRight), findsNWidgets(2));
   });
 
@@ -70,19 +67,10 @@ void main() {
   testWidgets('the add-provider entries carry tap handlers', (tester) async {
     await pumpPage(tester);
 
-    // Still-unwired rows render at full visual fidelity but carry no handler
-    // this milestone (their destinations / toggles don't exist yet).
-    for (final label in const ['辅助模型设置', '模型选择器样式']) {
-      expect(
-        find.ancestor(of: find.text(label), matching: find.byType(InkWell)),
-        findsNothing,
-        reason: '$label should not be tappable',
-      );
-    }
-
     // The wired entries are ink-tappable: 批量删除 enters the batch-delete flow,
-    // and both 添加 (toolbar) and 添加模型服务商 navigate to AddProviderPage.
-    for (final label in const ['批量删除', '添加', '添加模型服务商']) {
+    // 辅助模型 navigates to its settings page, and both 添加 (toolbar) and
+    // 添加模型服务商 navigate to AddProviderPage.
+    for (final label in const ['批量删除', '添加', '辅助模型', '添加模型服务商']) {
       expect(
         find.ancestor(of: find.text(label), matching: find.byType(InkWell)),
         findsOneWidget,

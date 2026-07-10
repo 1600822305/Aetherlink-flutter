@@ -167,7 +167,9 @@ class MemoryDao extends DatabaseAccessor<AppDatabase> with _$MemoryDaoMixin {
 
     final expiredIds = <String>[
       for (final row in deleted)
-        if ((deletedAtById[row.id] ?? row.createdAt) < cutoffMillis) row.id,
+        // Inclusive so retentionDays 0 (cutoff == now) purges a memory
+        // deleted within the same millisecond.
+        if ((deletedAtById[row.id] ?? row.createdAt) <= cutoffMillis) row.id,
     ];
     if (expiredIds.isEmpty) return 0;
 

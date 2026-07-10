@@ -33,8 +33,10 @@ void main() {
       ).extension<AppThemeExtension>();
 
       expect(ext, isNotNull);
-      expect(ext!.bubbleUser, const Color(0xFF64748B));
-      expect(ext.bubbleAi, const Color(0xFFF1F5F9));
+      // Bubble colors are calibrated 1:1 against the original web design
+      // tokens: the default light user bubble is the pale blue 0xFFE0F2FE.
+      expect(ext!.bubbleUser, const Color(0xFFE0F2FE));
+      expect(ext.bubbleAi, const Color(0xFFF8FAFC));
       expect(ext.borderRadius, 8.0);
     });
 
