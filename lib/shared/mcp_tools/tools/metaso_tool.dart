@@ -67,10 +67,10 @@ Future<McpToolResult> _metasoSearch(
         Uri.parse('https://metaso.cn/api/v1/search'),
       );
       request.headers
-        ..set('Content-Type', 'application/json')
+        ..set('Content-Type', 'application/json; charset=utf-8')
         ..set('Accept', 'application/json')
         ..set('Authorization', 'Bearer $apiKey');
-      request.write(requestBody);
+      request.add(utf8.encode(requestBody));
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
 
@@ -155,10 +155,10 @@ Future<McpToolResult> _metasoReader(
         Uri.parse('https://metaso.cn/api/v1/reader'),
       );
       request.headers
-        ..set('Content-Type', 'application/json')
+        ..set('Content-Type', 'application/json; charset=utf-8')
         ..set('Accept', format == 'markdown' ? 'text/markdown' : 'text/plain')
         ..set('Authorization', 'Bearer $apiKey');
-      request.write(requestBody);
+      request.add(utf8.encode(requestBody));
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
 
@@ -213,10 +213,10 @@ Future<McpToolResult> _metasoChat(
         Uri.parse('https://metaso.cn/api/v1/chat/completions'),
       );
       request.headers
-        ..set('Content-Type', 'application/json')
+        ..set('Content-Type', 'application/json; charset=utf-8')
         ..set('Accept', 'application/json')
         ..set('Authorization', 'Bearer $apiKey');
-      request.write(requestBody);
+      request.add(utf8.encode(requestBody));
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
 
