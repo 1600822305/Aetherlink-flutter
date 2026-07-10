@@ -53,6 +53,30 @@ bool terminalToolNeedsConfirmation(
       CommandRisk.safeInRoot;
 }
 
+/// Whether this terminal call escapes its project workspace root and must
+/// therefore always prompt — 免确认窗口（任务级预授权）不覆盖越界命令
+/// （双作用域设计稿 §4.1 硬要求）。
+bool terminalCommandEscapesRoot(
+  String toolName,
+  Map<String, Object?> args, {
+  List<Workspace> workspaces = const [],
+}) {
+  switch (toolName) {
+    case 'terminal_execute':
+    case 'terminal_session_exec':
+      break;
+    default:
+      return false;
+  }
+  final workspace = _matchWorkspaceArg(args, workspaces);
+  if (workspace == null || workspace.scope != WorkspaceScope.project) {
+    return false;
+  }
+  final command = args['command']?.toString() ?? '';
+  return evaluateCommandRisk(command, root: workspace.root) ==
+      CommandRisk.escapesRoot;
+}
+
 /// 同步版的 `workspace` 参数解析（编号 / ID / 名称），解析不到返回 null。
 Workspace? _matchWorkspaceArg(
   Map<String, Object?> args,

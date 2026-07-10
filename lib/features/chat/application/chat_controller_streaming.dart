@@ -688,8 +688,21 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
             if (needsConfirm) {
               final confirm = ref.read(toolConfirmationProvider.notifier);
               // A 免确认 window opened earlier for this same tool lets it run
-              // without prompting again (per-tool, per-conversation).
-              final approved = confirm.isGraceActive(turnTopicId, call.name)
+              // without prompting again (per-tool, per-conversation)。越出项目
+              // 工作区 root 的终端命令不受免确认窗口覆盖，必须逐条审批
+              // （双作用域设计稿 §4.1 硬要求）。
+              final graceUsable = confirm.isGraceActive(
+                    turnTopicId,
+                    call.name,
+                  ) &&
+                  !(route is TerminalToolRoute &&
+                      terminalCommandEscapesRoot(
+                        call.name,
+                        args,
+                        workspaces:
+                            ref.read(workspaceStoreProvider).value ?? const [],
+                      ));
+              final approved = graceUsable
                   ? true
                   : await confirm.request(
                       ToolConfirmationRequest(
