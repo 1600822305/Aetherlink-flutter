@@ -199,7 +199,10 @@ class _ThinkingBlockViewState extends ConsumerState<ThinkingBlockView> {
         // reasoning renders inline.
         Widget body;
         if (_isThinking) {
-          body = AppMarkdown(content: content, style: style);
+          // 与 MAIN_TEXT 的流式路径一致：按段落切块缓存，已稳定块直接复用
+          // widget 实例，每个 delta / 计时器 tick 只重解析活动尾块，而不是
+          // 整段 reasoning 全文重排。
+          body = StreamingMarkdownBody(content: content, style: style);
         } else {
           final chunks = splitMarkdownChunks(content);
           final lineHeight = (style?.fontSize ?? 14) * 1.6;
