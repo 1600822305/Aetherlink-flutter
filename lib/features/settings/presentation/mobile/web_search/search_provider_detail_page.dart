@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/chat/application/web_search_settings
 import 'package:aetherlink_flutter/features/chat/domain/entities/web_search_settings.dart';
 import 'package:aetherlink_flutter/shared/domain/api_key_config.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search/search_provider_catalog.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 搜索提供商详情三级页面 — 配置一个搜索提供商的参数（API Key、Base URL、启用开关）。
@@ -509,7 +510,7 @@ class _SwitchRow extends StatelessWidget {
               ],
             ),
           ),
-          Switch.adaptive(value: value, onChanged: onChanged),
+          CustomSwitch(value: value, onChanged: onChanged),
         ],
       ),
     );
