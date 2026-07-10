@@ -331,52 +331,61 @@ class _MarkdownTableState extends State<MarkdownTable> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Toolbar — surfaceContainerHighest bg
-                Container(
+                // Toolbar — surfaceContainerHighest bg. Tapping anywhere on
+                // the toolbar toggles collapse (like the tool/thinking blocks);
+                // the copy / download buttons intercept their own taps.
+                Material(
                   color: toolbarBg,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  child: Row(
-                    children: [
-                      _ToolbarIconButton(
-                        icon: _collapsed
-                            ? LucideIcons.chevronRight
-                            : LucideIcons.chevronDown,
-                        tooltip: _collapsed ? '展开表格' : '折叠表格',
-                        onTap: () => setState(() => _collapsed = !_collapsed),
+                  child: InkWell(
+                    onTap: () => setState(() => _collapsed = !_collapsed),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '表格',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          height: 1.0,
-                          color: cs.onSurfaceVariant,
-                        ),
-                      ),
-                      const Spacer(),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
+                      child: Row(
                         children: [
-                          CopyIconButton(
-                            text: _buildMarkdownSource(),
-                            size: 16,
-                            color: cs.onSurfaceVariant.withValues(alpha: 0.5),
-                            copyTooltip: '复制表格',
-                            borderRadius: 4,
-                          ),
-                          const SizedBox(width: 16),
                           _ToolbarIconButton(
-                            icon: LucideIcons.download,
-                            tooltip: '下载 CSV',
-                            onTap: () => _downloadCsv(context),
+                            icon: _collapsed
+                                ? LucideIcons.chevronRight
+                                : LucideIcons.chevronDown,
+                            tooltip: _collapsed ? '展开表格' : '折叠表格',
+                            onTap: () =>
+                                setState(() => _collapsed = !_collapsed),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '表格',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              height: 1.0,
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                          const Spacer(),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CopyIconButton(
+                                text: _buildMarkdownSource(),
+                                size: 16,
+                                color: cs.onSurfaceVariant
+                                    .withValues(alpha: 0.5),
+                                copyTooltip: '复制表格',
+                                borderRadius: 4,
+                              ),
+                              const SizedBox(width: 16),
+                              _ToolbarIconButton(
+                                icon: LucideIcons.download,
+                                tooltip: '下载 CSV',
+                                onTap: () => _downloadCsv(context),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
                 // Divider + table content, hidden when collapsed.
