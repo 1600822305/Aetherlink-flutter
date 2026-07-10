@@ -82,9 +82,9 @@ Future<McpToolResult> runGrokSearchTool(
     try {
       final request = await client.postUrl(Uri.parse(endpoint));
       request.headers
-        ..set('Content-Type', 'application/json')
+        ..set('Content-Type', 'application/json; charset=utf-8')
         ..set('Authorization', 'Bearer $apiKey');
-      request.write(requestBody);
+      request.add(utf8.encode(requestBody));
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
 
