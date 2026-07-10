@@ -78,28 +78,34 @@ class SettingsPage extends ConsumerWidget {
           const SizedBox(width: 4),
         ],
       ),
-      body: ListView(
+      // 懒构建 + 每组一个 RepaintBoundary：首帧只 build 视口内的分组，
+      // 滚动时静态卡片不随帧重绘。
+      body: ListView.builder(
         padding: const EdgeInsets.all(16),
-        children: [
-          for (final group in kSettingsGroups) ...[
-            SettingGroup(
-              title: group.title,
-              children: [
-                for (final item in group.items)
-                  SettingItem(
-                    icon: item.icon,
-                    title: item.title,
-                    description: isCompact ? null : item.description,
-                    enabled: item.enabled,
-                    onTap: item.route == null
-                        ? null
-                        : () => context.push(item.route!),
-                  ),
-              ],
+        itemCount: kSettingsGroups.length,
+        itemBuilder: (context, index) {
+          final group = kSettingsGroups[index];
+          return Padding(
+            padding: const EdgeInsets.only(bottom: _groupSpacing),
+            child: RepaintBoundary(
+              child: SettingGroup(
+                title: group.title,
+                children: [
+                  for (final item in group.items)
+                    SettingItem(
+                      icon: item.icon,
+                      title: item.title,
+                      description: isCompact ? null : item.description,
+                      enabled: item.enabled,
+                      onTap: item.route == null
+                          ? null
+                          : () => context.push(item.route!),
+                    ),
+                ],
+              ),
             ),
-            const SizedBox(height: _groupSpacing),
-          ],
-        ],
+          );
+        },
       ),
     );
   }
