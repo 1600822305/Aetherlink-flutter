@@ -225,9 +225,10 @@ class _WorkspaceTerminalPageState
       );
     }
     if (_connected && _session != null) {
+      // 不自动聚焦：进终端页不弹输入法；点按终端时 TerminalView 会自行
+      // requestFocus 呼出键盘。
       return TerminalView(
         _terminal,
-        autofocus: true,
         padding: const EdgeInsets.all(8),
       );
     }
