@@ -55,7 +55,15 @@ object TarGzExtractor {
                         val file = resolve(dest, name)
                         file.parentFile?.mkdirs()
                         file.delete()
-                        Os.link(resolve(dest, linkName).path, file.path)
+                        val target = resolve(dest, linkName)
+                        try {
+                            Os.link(target.path, file.path)
+                        } catch (_: Exception) {
+                            // SELinux 禁止应用数据目录里创建硬链接（EACCES），
+                            // 例如 Ubuntu Base rootfs 就含硬链接条目——退化为复制。
+                            target.copyTo(file, overwrite = true)
+                            chmod(file, mode)
+                        }
                     }
                     '0', '\u0000', '7' -> {
                         val file = resolve(dest, name)
