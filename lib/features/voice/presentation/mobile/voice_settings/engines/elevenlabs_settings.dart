@@ -115,7 +115,7 @@ extension _ElevenLabsSettings on _TtsProviderDetailPageState {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             const Text('说话者增强'),
-            Switch.adaptive(
+            CustomSwitch(
               value: _useSpeakerBoost,
               onChanged: (v) => setState(() => _useSpeakerBoost = v),
             ),

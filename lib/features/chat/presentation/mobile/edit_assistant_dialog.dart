@@ -1015,7 +1015,7 @@ class _MemoryTab extends StatelessWidget {
                   ],
                 ),
               ),
-              Switch(value: enabled, onChanged: onChanged),
+              CustomSwitch(value: enabled, onChanged: onChanged),
             ],
           ),
         ),

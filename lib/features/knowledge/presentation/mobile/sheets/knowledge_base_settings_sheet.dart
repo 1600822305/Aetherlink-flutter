@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/knowledge/application/knowledge_prov
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 import 'package:aetherlink_flutter/features/knowledge/presentation/mobile/widgets/knowledge_common.dart';
 import 'package:aetherlink_flutter/features/memory/domain/embedding_model_key.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
@@ -220,7 +221,7 @@ class _KnowledgeBaseSettingsSheetState
                 fontWeight: FontWeight.w600,
               ),
             ),
-            Switch(
+            CustomSwitch(
               value: _threshold != null,
               onChanged: (on) => setState(() => _threshold = on ? 0.7 : null),
             ),

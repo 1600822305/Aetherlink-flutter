@@ -116,7 +116,7 @@ class NotesSettingsPage extends ConsumerWidget {
                     ],
                   ),
                 ),
-                Switch(
+                CustomSwitch(
                   value: sidebarTabEnabled,
                   onChanged: (v) =>
                       ref.read(notesSidebarTabToggleProvider).set(v),
@@ -263,7 +263,7 @@ class _ToggleRow extends StatelessWidget {
               ],
             ),
           ),
-          Switch(value: value, onChanged: onChanged),
+          CustomSwitch(value: value, onChanged: onChanged),
         ],
       ),
     );

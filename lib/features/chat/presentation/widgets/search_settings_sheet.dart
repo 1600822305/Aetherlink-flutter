@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/web_search_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/web_search_settings.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_search/search_provider_catalog.dart';
 
 /// 网络搜索设置底部弹窗 — 参考 Kelivo 的三层结构：
@@ -209,7 +210,7 @@ class _ToggleCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Switch.adaptive(
+              CustomSwitch(
                 value: value,
                 onChanged: onChanged,
               ),

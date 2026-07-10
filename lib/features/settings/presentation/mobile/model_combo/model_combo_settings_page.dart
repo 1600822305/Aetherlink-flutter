@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/settings/application/model_combo_controller.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_combo/create_combo_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_combo/edit_combo_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/setting_group.dart';
@@ -409,7 +410,7 @@ class _ComboCard extends ConsumerWidget {
             ),
             const SizedBox(width: 8),
             // Enable/disable toggle
-            Switch.adaptive(
+            CustomSwitch(
               value: combo.enabled,
               onChanged: (_) => ref
                   .read(modelComboControllerProvider.notifier)

@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant_regex.dart';
 import 'package:aetherlink_flutter/shared/utils/regex_replacement.dart';
 import 'package:aetherlink_flutter/shared/utils/silly_tavern_regex_import.dart';
@@ -289,11 +290,9 @@ class _RegexRuleCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                        Switch(
+                        CustomSwitch(
                           value: rule.enabled,
                           onChanged: onToggle,
-                          materialTapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
                         ),
                       ],
                     ),

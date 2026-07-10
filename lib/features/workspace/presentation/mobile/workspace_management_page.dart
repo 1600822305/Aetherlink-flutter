@@ -21,6 +21,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/features/workspace/application/ssh_connection_pool.dart';
 import 'package:aetherlink_flutter/features/workspace/application/ssh_connection_store.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
@@ -366,15 +367,20 @@ class _WorkspaceManagementPageState
           _OutlinedCard(
             child: Column(
               children: [
-                SwitchListTile(
-                  value: _autoRestore ?? true,
-                  onChanged: _autoRestore == null ? null : _setAutoRestore,
+                ListTile(
                   title: const Text('进入工作区自动恢复上次会话'),
                   subtitle: const Text('像 IDE 一样恢复上次打开的工作区与文件标签'),
-                  secondary: Icon(
+                  leading: Icon(
                     LucideIcons.history,
                     color: theme.colorScheme.primary,
                   ),
+                  trailing: CustomSwitch(
+                    value: _autoRestore ?? true,
+                    onChanged: _autoRestore == null ? null : _setAutoRestore,
+                  ),
+                  onTap: _autoRestore == null
+                      ? null
+                      : () => _setAutoRestore(!_autoRestore!),
                 ),
                 Divider(height: 1, color: theme.dividerColor),
                 ListTile(
