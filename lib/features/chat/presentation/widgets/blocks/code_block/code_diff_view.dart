@@ -1,6 +1,6 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
+
+import 'code_block_body.dart';
 
 /// Whether [language]/[code] should be rendered as a diff.
 bool isDiffContent(String? language, String code) {
@@ -34,7 +34,7 @@ class DiffCodeView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final gutterWidth = showLineNumbers
-        ? math.max(34.0, 18.0 + lines.length.toString().length * 8.0)
+        ? gutterWidthFor(lines.length, lineNumberStyle)
         : 0.0;
 
     return SelectionArea(

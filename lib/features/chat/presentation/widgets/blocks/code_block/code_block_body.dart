@@ -77,23 +77,41 @@ class CodeBlockBody extends StatelessWidget {
       );
     }
 
-    return ScrollConfiguration(
+    // The gutter stays pinned outside the horizontal scroll view so line
+    // numbers remain flush left while the code pans.
+    final codeView = ScrollConfiguration(
       behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.all(12),
-        child: SingleBlockCodeView(
-          code: dc.isEmpty ? ' ' : dc,
-          lineCount: lines.length,
-          highlightLanguage: highlightLanguage,
-          highlightTheme: highlightTheme,
-          showLineNumbers: showLineNumbers,
-          codeStyle: codeStyle,
-          lineNumberStyle: lineNumberStyle,
-          gutterBorderColor: gutterBorderColor,
+        child: SelectableHighlightView(
+          dc.isEmpty ? ' ' : dc,
+          language: highlightLanguage,
+          theme: highlightTheme,
+          style: codeStyle,
+          maxLines: lines.length,
           isStreaming: isStreaming,
-          gutterStartLine: gutterStartLine,
         ),
+      ),
+    );
+
+    if (!showLineNumbers) {
+      return Padding(padding: const EdgeInsets.all(12), child: codeView);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LineNumberGutter(
+            lineCount: lines.length,
+            startAt: gutterStartLine,
+            style: lineNumberStyle,
+            borderColor: gutterBorderColor,
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: codeView),
+        ],
       ),
     );
   }
@@ -252,7 +270,7 @@ class _PerLineCodeViewState extends State<PerLineCodeView> {
   Widget build(BuildContext context) {
     final lastLine = widget.gutterStartLine + widget.lines.length - 1;
     final gutterWidth = widget.showLineNumbers
-        ? math.max(34.0, 18.0 + lastLine.toString().length * 8.0)
+        ? gutterWidthFor(lastLine, widget.lineNumberStyle)
         : 0.0;
 
     // During streaming debounce, reuse the last highlighted spans (they'll be
@@ -415,6 +433,9 @@ class _SelectableHighlightViewState extends State<SelectableHighlightView> {
             _spans.isEmpty ? <TextSpan>[TextSpan(text: widget.source)] : _spans,
       ),
       maxLines: widget.maxLines,
+      // Locks every line to the same height so rows stay vertically aligned
+      // with the line-number gutter even when CJK/fallback glyphs appear.
+      strutStyle: StrutStyle.fromTextStyle(widget.style, forceStrutHeight: true),
     );
   }
 }
@@ -438,7 +459,7 @@ class LineNumberGutter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final lastLine = startAt + lineCount - 1;
-    final width = math.max(34.0, 18.0 + lastLine.toString().length * 8.0);
+    final width = gutterWidthFor(lastLine, style);
     return Container(
       width: width,
       padding: const EdgeInsets.only(right: 10),
@@ -452,9 +473,17 @@ class LineNumberGutter extends StatelessWidget {
         ),
         textAlign: TextAlign.right,
         style: style,
+        strutStyle: StrutStyle.fromTextStyle(style, forceStrutHeight: true),
       ),
     );
   }
+}
+
+/// Gutter width sized to the widest line number at the gutter font size, so
+/// numbers never soft-wrap inside the gutter when the code font is enlarged.
+double gutterWidthFor(int lastLine, TextStyle style) {
+  final digitWidth = (style.fontSize ?? 13) * 0.62;
+  return math.max(34.0, 18.0 + lastLine.toString().length * digitWidth);
 }
 
 /// LRU-ish cache for gutter text strings, keyed by `startAt:lineCount`.
