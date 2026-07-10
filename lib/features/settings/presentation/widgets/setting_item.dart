@@ -37,12 +37,20 @@ class SettingItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final description = this.description;
+    // 禁用态直接用半透明颜色绘制，而不是包一层 Opacity——Opacity 会触发
+    // saveLayer 离屏合成，设置页每个占位行一层，raster 开销明显。
+    final onSurface = enabled
+        ? theme.colorScheme.onSurface
+        : theme.colorScheme.onSurface.withValues(alpha: 0.5);
+    final onSurfaceVariant = enabled
+        ? theme.colorScheme.onSurfaceVariant
+        : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5);
 
     final row = Padding(
       padding: _rowPadding,
       child: Row(
         children: [
-          Icon(icon, size: _iconSize, color: theme.colorScheme.onSurface),
+          Icon(icon, size: _iconSize, color: onSurface),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -53,7 +61,7 @@ class SettingItem extends StatelessWidget {
                   title,
                   style: theme.textTheme.bodyLarge?.copyWith(
                     fontWeight: FontWeight.w600,
-                    color: theme.colorScheme.onSurface,
+                    color: onSurface,
                   ),
                 ),
                 if (description != null) ...[
@@ -61,7 +69,7 @@ class SettingItem extends StatelessWidget {
                   Text(
                     description,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                      color: onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -72,14 +80,14 @@ class SettingItem extends StatelessWidget {
           Icon(
             LucideIcons.chevronRight,
             size: _arrowSize,
-            color: theme.colorScheme.onSurfaceVariant,
+            color: onSurfaceVariant,
           ),
         ],
       ),
     );
 
     if (!enabled) {
-      return Opacity(opacity: 0.5, child: row);
+      return row;
     }
     return InkWell(onTap: onTap, child: row);
   }
