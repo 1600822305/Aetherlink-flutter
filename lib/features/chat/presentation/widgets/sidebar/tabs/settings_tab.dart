@@ -948,7 +948,9 @@ class _UserAvatarRow extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '用户头像',
+                    avatar.name.isNotEmpty ? avatar.name : '用户头像',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 14.4,
                       height: 1.2,
@@ -957,7 +959,7 @@ class _UserAvatarRow extends ConsumerWidget {
                     ),
                   ),
                   Text(
-                    '设置您的个人头像',
+                    '设置您的头像与名称',
                     style: TextStyle(
                       fontSize: 12,
                       height: 1.2,

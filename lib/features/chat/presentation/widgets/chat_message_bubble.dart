@@ -100,7 +100,11 @@ class ChatMessageBubble extends ConsumerWidget {
             isUser: isUser,
             showAvatar: showAvatar,
             showName: showName,
-            name: isUser ? '用户' : _modelLabel(view),
+            name: isUser
+                ? (userAvatar != null && userAvatar.name.isNotEmpty
+                    ? userAvatar.name
+                    : '用户')
+                : _modelLabel(view),
             time: _formatTime(view.createdAt),
             userAvatarWidget: (isUser && userAvatar != null)
                 ? UserAvatarWidget(avatar: userAvatar, size: 24)
