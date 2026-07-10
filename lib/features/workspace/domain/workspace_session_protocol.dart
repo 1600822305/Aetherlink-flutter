@@ -41,6 +41,17 @@ String buildExportCommand(Map<String, String> environment) {
   return 'export ${parts.join(' ')}\n';
 }
 
+/// 会话建立后的环境初始化命令：含 `HOME` 时先 `mkdir -p` 确保独立 HOME
+/// 目录存在（L2 语言级隔离，双作用域设计稿 §4 P5），再 export 全部变量。
+String buildSessionEnvSetup(Map<String, String> environment) {
+  if (environment.isEmpty) return '';
+  final home = environment['HOME'];
+  final mkdir = home == null
+      ? ''
+      : "mkdir -p '${home.replaceAll("'", r"'\''")}'\n";
+  return '$mkdir${buildExportCommand(environment)}';
+}
+
 class SentinelMatch {
   const SentinelMatch({required this.output, required this.exitCode});
 

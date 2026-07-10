@@ -24,6 +24,57 @@ void main() {
     });
   });
 
+  group('isolatedHome（L2 语言级隔离，设计稿 §4 P5）', () {
+    Workspace make({required bool isolatedHome, String root = '/root/projects/demo'}) =>
+        Workspace(
+          id: 'ws1',
+          name: 'demo',
+          backendType: WorkspaceBackendType.prootLocal,
+          scope: WorkspaceScope.project,
+          isolatedHome: isolatedHome,
+          root: root,
+          lastOpenedAt: DateTime(2026),
+        );
+
+    test('写入 JSON 并原样读回', () {
+      expect(Workspace.fromJson(make(isolatedHome: true).toJson()).isolatedHome,
+          isTrue);
+      expect(
+          Workspace.fromJson(make(isolatedHome: false).toJson()).isolatedHome,
+          isFalse);
+    });
+
+    test('旧记录（无 isolatedHome 字段）→ false', () {
+      final ws = Workspace.fromJson({
+        'id': 'ws1',
+        'name': 'demo',
+        'backendType': 'prootLocal',
+        'scope': 'project',
+        'root': '/root/projects/demo',
+        'lastOpenedAt': '2026-01-01T00:00:00.000',
+      });
+      expect(ws.isolatedHome, isFalse);
+      expect(ws.isolatedHomePath, isNull);
+    });
+
+    test('isolatedHomePath = <root>/.home（root 末尾斜杠归一化）', () {
+      expect(make(isolatedHome: true).isolatedHomePath,
+          '/root/projects/demo/.home');
+      expect(
+        make(isolatedHome: true, root: '/root/projects/demo/').isolatedHomePath,
+        '/root/projects/demo/.home',
+      );
+      expect(make(isolatedHome: false).isolatedHomePath, isNull);
+    });
+
+    test('copyWith 保留 isolatedHome', () {
+      expect(
+        make(isolatedHome: true).copyWith(name: 'x').isolatedHome,
+        isTrue,
+      );
+    });
+  });
+
   group('旧记录（无 scope 字段）的推断', () {
     Map<String, dynamic> legacy(String backendType, String root) => {
           'id': 'ws1',

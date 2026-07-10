@@ -60,6 +60,7 @@ class WorkspaceStore extends _$WorkspaceStore {
     required WorkspaceBackendType backendType,
     required String root,
     WorkspaceScope scope = WorkspaceScope.project,
+    bool isolatedHome = false,
     String? displayPath,
     String? connectionId,
   }) async {
@@ -79,6 +80,7 @@ class WorkspaceStore extends _$WorkspaceStore {
           name: name,
           backendType: backendType,
           scope: scope,
+          isolatedHome: isolatedHome,
           root: root,
           displayPath: displayPath,
           connectionId: connectionId,
@@ -128,6 +130,7 @@ class WorkspaceStore extends _$WorkspaceStore {
             name: w.name,
             backendType: w.backendType,
             scope: w.scope,
+            isolatedHome: w.isolatedHome,
             root: root,
             displayPath: displayPath,
             // Keep the SshConnection reference across a rebind (设计文档 §5.1).

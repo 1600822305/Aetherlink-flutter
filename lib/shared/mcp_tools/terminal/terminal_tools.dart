@@ -185,6 +185,10 @@ Future<_ExecTarget> _resolveTarget(Ref ref, Map<String, Object?> args) async {
           ? {
               'WORKSPACE_ROOT': workspace.root,
               'WORKSPACE_NAME': workspace.name,
+              // L2 语言级隔离（设计稿 §4 P5）：独立 HOME 按工作区隔离
+              // rc 文件 / 全局配置 / 缓存。
+              if (workspace.isolatedHomePath != null)
+                'HOME': workspace.isolatedHomePath!,
             }
           : const {},
     );

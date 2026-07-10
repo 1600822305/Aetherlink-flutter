@@ -219,7 +219,7 @@ class WorkspaceSessionPool {
       workingDirectory: workingDirectory,
     );
     if (environment.isNotEmpty) {
-      shell.write(utf8.encode(buildExportCommand(environment)));
+      shell.write(utf8.encode(buildSessionEnvSetup(environment)));
     }
     final id = _nextId();
     final session = PooledWorkspaceSession._(

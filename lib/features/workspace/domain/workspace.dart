@@ -59,6 +59,7 @@ class Workspace {
     required this.root,
     required this.lastOpenedAt,
     this.scope = WorkspaceScope.project,
+    this.isolatedHome = false,
     this.displayPath,
     this.connectionId,
   });
@@ -80,6 +81,8 @@ class Workspace {
                   WorkspaceBackendType.prootLocal
               ? WorkspaceScope.full
               : WorkspaceScope.project),
+      // Absent in pre-P5 records → false (back-compat).
+      isolatedHome: json['isolatedHome'] == true,
       root: (json['root'] ?? '').toString(),
       displayPath: (json['displayPath'] as Object?)?.toString(),
       // Absent in pre-SSH records → null (back-compat).
@@ -94,10 +97,20 @@ class Workspace {
   final String name;
   final WorkspaceBackendType backendType;
   final WorkspaceScope scope;
+
+  /// L2 语言级隔离开关（双作用域设计稿 §4 P5，仅项目模式有效）：
+  /// 开启后会话注入独立 `HOME`（[isolatedHomePath]），rc 文件 / 全局
+  /// 配置 / 缓存按工作区隔离；默认关 = 共享环境（现状）。
+  final bool isolatedHome;
   final String root;
   final String? displayPath;
   final String? connectionId;
   final DateTime lastOpenedAt;
+
+  /// 独立 HOME 目录：`<root>/.home`；未开启时为 null。
+  String? get isolatedHomePath => isolatedHome
+      ? '${root.endsWith('/') ? root.substring(0, root.length - 1) : root}/.home'
+      : null;
 
   Workspace copyWith({String? name, DateTime? lastOpenedAt}) {
     return Workspace(
@@ -105,6 +118,7 @@ class Workspace {
       name: name ?? this.name,
       backendType: backendType,
       scope: scope,
+      isolatedHome: isolatedHome,
       root: root,
       displayPath: displayPath,
       connectionId: connectionId,
@@ -117,6 +131,7 @@ class Workspace {
     'name': name,
     'backendType': backendType.name,
     'scope': scope.name,
+    if (isolatedHome) 'isolatedHome': true,
     'root': root,
     if (displayPath != null) 'displayPath': displayPath,
     if (connectionId != null) 'connectionId': connectionId,

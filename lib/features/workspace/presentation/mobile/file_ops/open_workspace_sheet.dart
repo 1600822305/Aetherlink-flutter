@@ -314,20 +314,21 @@ Future<void> openProotProjectWorkspace(
   try {
     if (!await _ensureProotInstalled(context, ref)) return;
     if (!context.mounted) return;
-    final name = await _promptProjectName(context);
-    if (name == null) return;
+    final setup = await _promptProjectSetup(context);
+    if (setup == null) return;
     final backend = ref.read(prootLocalBackendProvider);
     final root = await backend.createDirectory(
       kProotProjectsDir,
-      name,
+      setup.name,
       recursive: true,
     );
     final workspace = await ref
         .read(workspaceStoreProvider.notifier)
         .open(
-          name: name,
+          name: setup.name,
           backendType: WorkspaceBackendType.prootLocal,
           scope: WorkspaceScope.project,
+          isolatedHome: setup.isolatedHome,
           root: root,
           displayPath: '内置终端 · $root',
         );
@@ -342,34 +343,63 @@ Future<void> openProotProjectWorkspace(
 /// root safely inside [kProotProjectsDir].
 final RegExp _kProjectNamePattern = RegExp(r'^[\w][\w.-]*$');
 
-Future<String?> _promptProjectName(BuildContext context) async {
+/// 项目模式工作区的创建参数：项目名 + 是否开启独立 HOME（L2 语言级隔离）。
+class _ProjectSetup {
+  const _ProjectSetup({required this.name, required this.isolatedHome});
+
+  final String name;
+  final bool isolatedHome;
+}
+
+Future<_ProjectSetup?> _promptProjectSetup(BuildContext context) async {
   final controller = TextEditingController();
+  var isolatedHome = false;
   try {
-    return await showDialog<String>(
+    return await showDialog<_ProjectSetup>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('项目名称'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: '如 my-app（建在 /root/projects/ 下）',
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setState) => AlertDialog(
+          title: const Text('项目名称'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: '如 my-app（建在 /root/projects/ 下）',
+                ),
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: const Text('独立环境（HOME 隔离）'),
+                subtitle: const Text(
+                  'rc 文件 / 全局配置 / 缓存按项目隔离；关闭则共享环境',
+                ),
+                value: isolatedHome,
+                onChanged: (v) => setState(() => isolatedHome = v),
+              ),
+            ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final name = controller.text.trim();
+                if (!_kProjectNamePattern.hasMatch(name)) return;
+                Navigator.of(dialogContext).pop(
+                  _ProjectSetup(name: name, isolatedHome: isolatedHome),
+                );
+              },
+              child: const Text('打开'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final name = controller.text.trim();
-              if (!_kProjectNamePattern.hasMatch(name)) return;
-              Navigator.of(dialogContext).pop(name);
-            },
-            child: const Text('打开'),
-          ),
-        ],
       ),
     );
   } finally {
@@ -385,6 +415,7 @@ Future<void> openRecent(WidgetRef ref, Workspace workspace) async {
         name: workspace.name,
         backendType: workspace.backendType,
         scope: workspace.scope,
+        isolatedHome: workspace.isolatedHome,
         root: workspace.root,
         displayPath: workspace.displayPath,
         // SSH / Termux workspaces must keep their SshConnection reference, else

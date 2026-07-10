@@ -24,6 +24,7 @@ import 'package:aetherlink_flutter/features/terminal/presentation/mobile/termina
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace_session_protocol.dart';
 
 /// 单个终端 tab：独立的 xterm 缓冲 + PTY 会话与连接状态。
 class _TerminalTab {
@@ -134,6 +135,11 @@ class _WorkspaceTerminalPageState
           .cast<List<int>>()
           .transform(const Utf8Decoder(allowMalformed: true))
           .listen(tab.terminal.write);
+      // L2 语言级隔离（设计稿 §4 P5）：开启时注入独立 HOME。
+      final isolatedHome = workspace.isolatedHomePath;
+      if (isolatedHome != null) {
+        session.write(utf8.encode(buildSessionEnvSetup({'HOME': isolatedHome})));
+      }
       session.done.whenComplete(() {
         if (!mounted) return;
         tab.terminal.write('\r\n\x1b[33m[会话已结束]\x1b[0m\r\n');

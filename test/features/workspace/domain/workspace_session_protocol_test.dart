@@ -71,4 +71,28 @@ void main() {
       );
     });
   });
+
+  group('buildSessionEnvSetup（L2 语言级隔离，设计稿 §4 P5）', () {
+    test('empty map returns empty string', () {
+      expect(buildSessionEnvSetup(const {}), isEmpty);
+    });
+
+    test('without HOME behaves like buildExportCommand', () {
+      expect(
+        buildSessionEnvSetup(const {'WORKSPACE_NAME': 'demo'}),
+        "export WORKSPACE_NAME='demo'\n",
+      );
+    });
+
+    test('with HOME prepends mkdir -p for the isolated home dir', () {
+      expect(
+        buildSessionEnvSetup(const {
+          'HOME': '/root/projects/demo/.home',
+          'WORKSPACE_NAME': 'demo',
+        }),
+        "mkdir -p '/root/projects/demo/.home'\n"
+        "export HOME='/root/projects/demo/.home' WORKSPACE_NAME='demo'\n",
+      );
+    });
+  });
 }
