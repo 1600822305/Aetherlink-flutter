@@ -41,12 +41,15 @@ class SearchHelpers {
     final c = client(timeout);
     try {
       final request = await c.postUrl(uri);
-      request.headers.set('Content-Type', 'application/json');
+      request.headers.set('Content-Type', 'application/json; charset=utf-8');
       request.headers.set('Accept', 'application/json');
       for (final e in headers.entries) {
         request.headers.set(e.key, e.value);
       }
-      request.write(jsonEncode(payload));
+      // write() 按 latin-1 编码字符串，中文等非 latin-1 字符会抛
+      // "Invalid argument (string): Contains invalid characters"，必须显式
+      // UTF-8 编码成字节再发送。
+      request.add(utf8.encode(jsonEncode(payload)));
       final response = await request.close().timeout(timeout);
       final body = await response.transform(utf8.decoder).join();
       return (response.statusCode, body);
