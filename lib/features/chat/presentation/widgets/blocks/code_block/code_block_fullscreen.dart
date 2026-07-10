@@ -270,7 +270,7 @@ class _VirtualizedCodeBodyState extends State<_VirtualizedCodeBody> {
   final _gutterScroll = ScrollController();
   final _hScroll = ScrollController();
 
-  late List<List<TextSpan>> _lineSpans;
+  late LineHighlighter _highlighter;
   int _maxLineLen = 1;
 
   // Per-search-query cumulative match offsets so each line knows its global
@@ -285,7 +285,7 @@ class _VirtualizedCodeBodyState extends State<_VirtualizedCodeBody> {
   @override
   void initState() {
     super.initState();
-    _lineSpans = _highlight();
+    _highlighter = _makeHighlighter();
     _computeMaxLen();
     _recomputeMatches();
     _vScroll.addListener(_syncGutter);
@@ -297,7 +297,7 @@ class _VirtualizedCodeBodyState extends State<_VirtualizedCodeBody> {
     if (!identical(oldWidget.lines, widget.lines) ||
         oldWidget.highlightLanguage != widget.highlightLanguage ||
         !identical(oldWidget.highlightTheme, widget.highlightTheme)) {
-      _lineSpans = _highlight();
+      _highlighter = _makeHighlighter();
       _computeMaxLen();
       _lastQuery = '\u0000';
     }
@@ -313,15 +313,11 @@ class _VirtualizedCodeBodyState extends State<_VirtualizedCodeBody> {
     super.dispose();
   }
 
-  List<List<TextSpan>> _highlight() {
-    final full = widget.lines.join('\n');
-    final spans = parseToSpans(
-      full,
-      widget.highlightLanguage,
-      widget.highlightTheme,
-    );
-    return splitSpansByLine(spans, widget.lines.length);
-  }
+  LineHighlighter _makeHighlighter() => LineHighlighter(
+        lines: widget.lines,
+        language: widget.highlightLanguage,
+        theme: widget.highlightTheme,
+      );
 
   void _computeMaxLen() {
     var maxLen = 1;
@@ -449,7 +445,7 @@ class _VirtualizedCodeBodyState extends State<_VirtualizedCodeBody> {
   }
 
   Widget _row(int i, double lineHeight, bool hasSearch) {
-    final base = _lineSpans.length > i ? _lineSpans[i] : const <TextSpan>[];
+    final base = _highlighter.spansFor(i);
     final decorated = hasSearch
         ? applySearchHighlight(
             base,

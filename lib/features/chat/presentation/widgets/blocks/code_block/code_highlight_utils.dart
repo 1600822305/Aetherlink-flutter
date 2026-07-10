@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:highlighting/highlighting.dart' show Node, highlight;
+import 'package:highlighting/highlighting.dart' show Mode, Node, highlight;
 
 import 'code_highlight_themes.dart';
 
@@ -55,6 +55,61 @@ List<TextSpan> _convertNodes(
     }
   }
   return spans;
+}
+
+/// Lazy per-line syntax highlighter.
+///
+/// Highlights one line at a time, carrying the parser's ending mode of each
+/// line into the next as a continuation (like highlight.js line-by-line mode),
+/// so cross-line constructs (block comments, multi-line strings) stay correct.
+/// Lines are only parsed on demand and cached, which keeps opening a huge
+/// document O(visible lines) instead of O(document).
+class LineHighlighter {
+  LineHighlighter({
+    required this.lines,
+    required this.language,
+    required this.theme,
+  }) : _cache = List<List<TextSpan>?>.filled(lines.length, null);
+
+  final List<String> lines;
+  final String? language;
+  final Map<String, TextStyle> theme;
+
+  final List<List<TextSpan>?> _cache;
+  Mode? _state;
+  int _parsedUpTo = 0;
+  bool _plain = false;
+
+  /// Spans for [index], parsing forward from the last parsed line if needed.
+  List<TextSpan> spansFor(int index) {
+    if (index < 0 || index >= lines.length) return const <TextSpan>[];
+    if (language == null || _plain) {
+      return <TextSpan>[TextSpan(text: lines[index])];
+    }
+    _ensureParsedThrough(index);
+    return _cache[index] ?? <TextSpan>[TextSpan(text: lines[index])];
+  }
+
+  void _ensureParsedThrough(int index) {
+    while (_parsedUpTo <= index) {
+      final line = lines[_parsedUpTo];
+      try {
+        // ignore: invalid_use_of_internal_member
+        final result = highlight.highlight(
+          language!,
+          line,
+          true,
+          continuation: _state,
+        );
+        _cache[_parsedUpTo] = _convertNodes(result.nodes ?? const [], theme);
+        _state = result.top;
+      } catch (_) {
+        _plain = true;
+        return;
+      }
+      _parsedUpTo++;
+    }
+  }
 }
 
 /// Split a flat list of spans into per-line groups by splitting on '\n'.
