@@ -16,9 +16,12 @@ class TavilySearch {
   ) async {
     if (config.apiKey.isEmpty) return SearchHelpers.apiKeyMissing('Tavily');
     try {
-      final url = config.apiHost.isNotEmpty
-          ? config.apiHost
-          : 'https://api.tavily.com/search';
+      // apiHost 允许填主机根（https://api.tavily.com）或完整端点；搜索端点
+      // 固定是 /search，POST 到主机根会 405。
+      final base = config.apiHost.isNotEmpty
+          ? config.apiHost.replaceAll(RegExp(r'/+$'), '')
+          : 'https://api.tavily.com';
+      final url = base.endsWith('/search') ? base : '$base/search';
       final (status, body) = await SearchHelpers.post(
         Uri.parse(url),
         {'query': query, 'max_results': maxResults},
