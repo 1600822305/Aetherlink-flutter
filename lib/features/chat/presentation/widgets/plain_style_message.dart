@@ -100,7 +100,9 @@ class PlainStyleMessage extends ConsumerWidget {
                     child: Row(
                       children: [
                         Text(
-                          isUser ? '用户' : _modelLabel(view),
+                          isUser
+                              ? _userLabel(ref)
+                              : _modelLabel(view),
                           style: theme.textTheme.bodySmall?.copyWith(
                             fontWeight: FontWeight.w600,
                             fontSize: 12.8,
@@ -140,6 +142,13 @@ class PlainStyleMessage extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  String _userLabel(WidgetRef ref) {
+    final name = ref.watch(
+      userAvatarControllerProvider.select((a) => a.name),
+    );
+    return name.isNotEmpty ? name : '用户';
   }
 
   String _modelLabel(ChatMessageView view) {

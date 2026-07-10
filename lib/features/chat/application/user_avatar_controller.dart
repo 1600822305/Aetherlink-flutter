@@ -32,19 +32,24 @@ class UserAvatarController extends _$UserAvatarController
 
   /// Set the avatar to an emoji.
   void setEmoji(String emoji) => persist(
-        UserAvatar(type: UserAvatarType.emoji, value: emoji),
+        state.copyWith(type: UserAvatarType.emoji, value: emoji),
       );
 
   /// Set the avatar to a remote URL (e.g. QQ avatar link).
   void setUrl(String url) => persist(
-        UserAvatar(type: UserAvatarType.url, value: url),
+        state.copyWith(type: UserAvatarType.url, value: url),
       );
 
   /// Set the avatar to a local file (picked + cropped image path).
   void setFile(String path) => persist(
-        UserAvatar(type: UserAvatarType.file, value: path),
+        state.copyWith(type: UserAvatarType.file, value: path),
       );
 
-  /// Reset to the default avatar (initial character).
-  void reset() => persist(const UserAvatar());
+  /// Set the custom display name; empty restores the default "用户".
+  void setName(String name) => persist(state.copyWith(name: name.trim()));
+
+  /// Reset to the default avatar (initial character), keeping the name.
+  void reset() => persist(
+        state.copyWith(type: UserAvatarType.none, value: ''),
+      );
 }

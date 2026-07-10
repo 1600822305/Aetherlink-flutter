@@ -30,6 +30,9 @@ abstract class UserAvatar with _$UserAvatar {
     ///   - [UserAvatarType.url]: the full HTTPS URL.
     ///   - [UserAvatarType.file]: the local file path.
     @Default('') String value,
+
+    /// Custom display name for the user; empty means the default "用户".
+    @Default('') String name,
   }) = _UserAvatar;
 
   factory UserAvatar.fromJson(Map<String, dynamic> json) =>

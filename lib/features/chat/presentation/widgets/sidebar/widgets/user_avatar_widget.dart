@@ -68,7 +68,7 @@ class UserAvatarWidget extends StatelessWidget {
       color: _defaultAvatarBg,
       alignment: Alignment.center,
       child: Text(
-        '我',
+        avatar.name.isNotEmpty ? avatar.name.characters.first : '我',
         style: TextStyle(
           fontSize: size * 0.636,
           height: 1,

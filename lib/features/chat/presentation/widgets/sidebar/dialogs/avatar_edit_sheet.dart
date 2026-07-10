@@ -32,6 +32,9 @@ class _AvatarEditSheetContent extends StatelessWidget {
 
   final WidgetRef parentRef;
 
+  UserAvatarController get _controller =>
+      parentRef.read(userAvatarControllerProvider.notifier);
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -55,7 +58,7 @@ class _AvatarEditSheetContent extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              '设置头像',
+              '设置头像与名称',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
@@ -63,6 +66,12 @@ class _AvatarEditSheetContent extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
+            _OptionTile(
+              icon: LucideIcons.userPen,
+              title: '修改名称',
+              subtitle: '自定义聊天中显示的用户名',
+              onTap: () => _editName(context),
+            ),
             _OptionTile(
               icon: LucideIcons.image,
               title: '选择图片',
@@ -92,7 +101,7 @@ class _AvatarEditSheetContent extends StatelessWidget {
               title: '重置',
               subtitle: '恢复默认头像',
               onTap: () {
-                parentRef.read(userAvatarControllerProvider.notifier).reset();
+                _controller.reset();
                 Navigator.of(context).pop();
               },
             ),
@@ -101,6 +110,18 @@ class _AvatarEditSheetContent extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _editName(BuildContext context) async {
+    final navigator = Navigator.of(context);
+    final current = parentRef.read(userAvatarControllerProvider).name;
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => _NameInputDialog(initial: current),
+    );
+    if (name == null) return;
+    _controller.setName(name);
+    if (navigator.mounted) navigator.pop();
   }
 
   Future<void> _pickLocalImage(BuildContext context) async {
@@ -123,7 +144,7 @@ class _AvatarEditSheetContent extends StatelessWidget {
     final destPath = p.join(avatarDir.path, 'user_avatar.png');
     await File(destPath).writeAsBytes(croppedBytes);
 
-    parentRef.read(userAvatarControllerProvider.notifier).setFile(destPath);
+    _controller.setFile(destPath);
     if (navigator.mounted) navigator.pop();
   }
 
@@ -134,7 +155,7 @@ class _AvatarEditSheetContent extends StatelessWidget {
       builder: (ctx) => const _EmojiPickerDialog(),
     );
     if (emoji == null || emoji.isEmpty) return;
-    parentRef.read(userAvatarControllerProvider.notifier).setEmoji(emoji);
+    _controller.setEmoji(emoji);
     if (navigator.mounted) navigator.pop();
   }
 
@@ -145,7 +166,7 @@ class _AvatarEditSheetContent extends StatelessWidget {
       builder: (ctx) => const _UrlInputDialog(),
     );
     if (url == null || url.isEmpty) return;
-    parentRef.read(userAvatarControllerProvider.notifier).setUrl(url);
+    _controller.setUrl(url);
     if (navigator.mounted) navigator.pop();
   }
 
@@ -157,7 +178,7 @@ class _AvatarEditSheetContent extends StatelessWidget {
     );
     if (qq == null || qq.isEmpty) return;
     final url = 'https://q1.qlogo.cn/g?b=qq&nk=$qq&s=640';
-    parentRef.read(userAvatarControllerProvider.notifier).setUrl(url);
+    _controller.setUrl(url);
     if (navigator.mounted) navigator.pop();
   }
 }
@@ -198,6 +219,55 @@ class _OptionTile extends StatelessWidget {
         ),
         onTap: onTap,
       ),
+    );
+  }
+}
+
+// ── Name input dialog ───────────────────────────────────────────────────────
+
+class _NameInputDialog extends StatefulWidget {
+  const _NameInputDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_NameInputDialog> createState() => _NameInputDialogState();
+}
+
+class _NameInputDialogState extends State<_NameInputDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('修改用户名称'),
+      content: TextField(
+        controller: _controller,
+        decoration: const InputDecoration(
+          hintText: '输入自定义名称，留空恢复默认',
+          border: OutlineInputBorder(),
+          isDense: true,
+        ),
+        maxLength: 24,
+        autofocus: true,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
+          child: const Text('确定'),
+        ),
+      ],
     );
   }
 }
