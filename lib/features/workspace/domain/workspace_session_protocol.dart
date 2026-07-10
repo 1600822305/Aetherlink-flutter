@@ -29,6 +29,18 @@ SentinelMatch? matchSentinel(String output, String nonce) {
   );
 }
 
+/// 组装会话建立后注入工作区环境变量的 export 命令（双作用域设计稿 §3.1，
+/// 如 `WORKSPACE_ROOT` / `WORKSPACE_NAME`）。值用单引号包裹并转义内嵌单引号，
+/// 防止 shell 注入。空 map 返回空串。
+String buildExportCommand(Map<String, String> environment) {
+  if (environment.isEmpty) return '';
+  final parts = <String>[
+    for (final entry in environment.entries)
+      "${entry.key}='${entry.value.replaceAll("'", r"'\''")}'",
+  ];
+  return 'export ${parts.join(' ')}\n';
+}
+
 class SentinelMatch {
   const SentinelMatch({required this.output, required this.exitCode});
 

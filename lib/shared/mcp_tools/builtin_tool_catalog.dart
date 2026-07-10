@@ -1183,8 +1183,17 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'terminal_session_list',
-      description: '列出当前所有长驻终端会话（sessionId、名称、所属工作区、是否正忙、最近使用时间）。',
-      inputSchema: {'type': 'object', 'properties': {}},
+      description: '列出当前所有长驻终端会话（sessionId、名称、所属工作区、是否正忙、最近使用时间）。'
+          '传 workspace 参数可只列该工作区的会话。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'workspace': {
+            'type': 'string',
+            'description': '只列该工作区的会话（可选；编号/ID/名称）',
+          },
+        },
+      },
     ),
     McpToolDefinition(
       name: 'terminal_session_exec',

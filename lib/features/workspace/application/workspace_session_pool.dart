@@ -53,6 +53,7 @@ class PooledWorkspaceSession {
     required this.id,
     required this.name,
     required this.workspaceLabel,
+    required this.workspaceId,
     required WorkspaceShellSession shell,
   })  : _shell = shell,
         createdAt = DateTime.now(),
@@ -72,6 +73,10 @@ class PooledWorkspaceSession {
 
   /// 会话所属工作区的展示名（内置终端会话为「内置终端」）。
   final String workspaceLabel;
+
+  /// 会话所属工作区的 ID；未锚定工作区（裸后端默认池）时为 null。
+  /// 双作用域设计稿 §3.1：会话按工作区隔离的过滤键。
+  final String? workspaceId;
 
   final DateTime createdAt;
   DateTime lastUsedAt;
@@ -162,6 +167,7 @@ class WorkspaceSessionPool {
     this._backend, {
     required String Function() nextId,
     this.workspaceLabel = '',
+    this.workspaceId,
   }) : _nextId = nextId;
 
   final WorkspaceBackend _backend;
@@ -169,6 +175,9 @@ class WorkspaceSessionPool {
 
   /// 池所属工作区的展示名，赋给新建的会话。
   final String workspaceLabel;
+
+  /// 池所属工作区的 ID（双作用域设计稿 §3.1）；裸后端默认池为 null。
+  final String? workspaceId;
 
   final Map<String, PooledWorkspaceSession> _sessions = {};
   Timer? _reaper;
@@ -186,6 +195,7 @@ class WorkspaceSessionPool {
   Future<PooledWorkspaceSession> create({
     String? name,
     String? workingDirectory,
+    Map<String, String> environment = const {},
   }) async {
     _prune();
     if (_sessions.length >= kMaxPooledSessions) {
@@ -198,11 +208,15 @@ class WorkspaceSessionPool {
       rows: 50,
       workingDirectory: workingDirectory,
     );
+    if (environment.isNotEmpty) {
+      shell.write(utf8.encode(buildExportCommand(environment)));
+    }
     final id = _nextId();
     final session = PooledWorkspaceSession._(
       id: id,
       name: (name == null || name.trim().isEmpty) ? id : name.trim(),
       workspaceLabel: workspaceLabel,
+      workspaceId: workspaceId,
       shell: shell,
     );
     _sessions[id] = session;
@@ -214,12 +228,16 @@ class WorkspaceSessionPool {
   /// 毫秒级复用」。
   Future<PooledWorkspaceSession> acquireDefault({
     String? workingDirectory,
+    Map<String, String> environment = const {},
   }) async {
     _prune();
     for (final session in _sessions.values) {
       if (session.alive && !session.busy) return session;
     }
-    return create(workingDirectory: workingDirectory);
+    return create(
+      workingDirectory: workingDirectory,
+      environment: environment,
+    );
   }
 
   Future<bool> close(String id) async {
@@ -266,23 +284,28 @@ class WorkspaceSessionPool {
   }
 }
 
-/// 会话池管理器：每个后端实例一个池（内置终端 / 各 SSH 连接各自独立），
+/// 会话池管理器：每个工作区一个池（双作用域设计稿 §3.1：同一后端上的
+/// 不同工作区各自隔离；未锚定工作区的裸后端用后端自身做键），
 /// 会话 ID 全局唯一，查找 / 关闭可跨池按 ID 直达。
 class WorkspaceSessionPoolManager {
-  final Map<WorkspaceBackend, WorkspaceSessionPool> _pools = {};
+  final Map<Object, WorkspaceSessionPool> _pools = {};
   int _nextId = 1;
 
-  /// [backend] 的会话池；首次访问时创建，[workspaceLabel] 赋给其新会话。
+  /// [backend] 上工作区 [workspaceId] 的会话池；首次访问时创建，
+  /// [workspaceLabel] 赋给其新会话。[workspaceId] 为 null 时（未锚定
+  /// 工作区的裸后端）退化为按后端实例一个池。
   WorkspaceSessionPool poolFor(
     WorkspaceBackend backend, {
     String workspaceLabel = '',
+    String? workspaceId,
   }) =>
       _pools.putIfAbsent(
-        backend,
+        workspaceId ?? backend,
         () => WorkspaceSessionPool(
           backend,
           nextId: () => 's${_nextId++}',
           workspaceLabel: workspaceLabel,
+          workspaceId: workspaceId,
         ),
       );
 

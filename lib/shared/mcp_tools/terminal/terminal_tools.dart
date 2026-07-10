@@ -14,6 +14,7 @@ import 'package:aetherlink_flutter/features/terminal/domain/terminal_command_gua
 import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
 import 'package:aetherlink_flutter/features/workspace/data/proot_local_backend.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
@@ -50,7 +51,7 @@ Future<McpToolResult> runTerminalTool(
       case 'terminal_session_create':
         return await _sessionCreate(ref, args);
       case 'terminal_session_list':
-        return _sessionList(ref);
+        return await _sessionList(ref, args);
       case 'terminal_session_exec':
         return await _sessionExec(ref, args);
       case 'terminal_session_output':
@@ -74,6 +75,8 @@ class _ExecTarget {
     required this.backend,
     required this.label,
     this.defaultCwd,
+    this.workspaceId,
+    this.environment = const {},
   });
 
   final WorkspaceBackend backend;
@@ -83,6 +86,13 @@ class _ExecTarget {
 
   /// 未指定 cwd 时的工作目录（SSH 为工作区根；内置终端为 null → /root）。
   final String? defaultCwd;
+
+  /// 锚定的工作区 ID（会话池按它隔离，双作用域设计稿 §3.1）；
+  /// 未指定 workspace 时的内置终端默认目标为 null。
+  final String? workspaceId;
+
+  /// 新建会话时注入的环境变量（项目模式下为 WORKSPACE_ROOT / NAME）。
+  final Map<String, String> environment;
 }
 
 /// Resolves the `workspace` arg to an exec-capable backend, defaulting to the
@@ -98,10 +108,18 @@ Future<_ExecTarget> _resolveTarget(Ref ref, Map<String, Object?> args) async {
         '（仅内置终端 / SSH / Termux 支持）。',
       );
     }
+    final workspace = resolved.workspace;
     target = _ExecTarget(
       backend: resolved.backend,
-      label: resolved.workspace.name,
-      defaultCwd: resolved.workspace.root,
+      label: workspace.name,
+      defaultCwd: workspace.root,
+      workspaceId: workspace.id,
+      environment: workspace.scope == WorkspaceScope.project
+          ? {
+              'WORKSPACE_ROOT': workspace.root,
+              'WORKSPACE_NAME': workspace.name,
+            }
+          : const {},
     );
   } else {
     target = _ExecTarget(
@@ -162,12 +180,15 @@ Future<McpToolResult> _sessionCreate(
   Map<String, Object?> args,
 ) async {
   final target = await _resolveTarget(ref, args);
-  final pool = ref
-      .read(workspaceSessionPoolManagerProvider)
-      .poolFor(target.backend, workspaceLabel: target.label);
+  final pool = ref.read(workspaceSessionPoolManagerProvider).poolFor(
+        target.backend,
+        workspaceLabel: target.label,
+        workspaceId: target.workspaceId,
+      );
   final session = await pool.create(
     name: optionalString(args, 'name'),
     workingDirectory: optionalString(args, 'cwd') ?? target.defaultCwd,
+    environment: target.environment,
   );
   return fileEditorOk({
     'sessionId': session.id,
@@ -177,9 +198,19 @@ Future<McpToolResult> _sessionCreate(
   });
 }
 
-McpToolResult _sessionList(Ref ref) {
-  final sessions =
-      ref.read(workspaceSessionPoolManagerProvider).allSessions();
+Future<McpToolResult> _sessionList(
+  Ref ref,
+  Map<String, Object?> args,
+) async {
+  var sessions = ref.read(workspaceSessionPoolManagerProvider).allSessions();
+  // 传 workspace 参数时只列该工作区的会话（双作用域设计稿 §3.1）。
+  if (optionalString(args, 'workspace') != null) {
+    final resolved = await resolveWorkspace(ref, args);
+    sessions = [
+      for (final s in sessions)
+        if (s.workspaceId == resolved.workspace.id) s,
+    ];
+  }
   return fileEditorOk({
     'sessions': [
       for (final s in sessions)
@@ -187,6 +218,7 @@ McpToolResult _sessionList(Ref ref) {
           'sessionId': s.id,
           'name': s.name,
           'workspace': s.workspaceLabel,
+          if (s.workspaceId != null) 'workspaceId': s.workspaceId,
           'busy': s.busy,
           'createdAt': s.createdAt.toIso8601String(),
           'lastUsedAt': s.lastUsedAt.toIso8601String(),
@@ -213,8 +245,15 @@ Future<McpToolResult> _sessionExec(
   } else {
     final target = await _resolveTarget(ref, args);
     session = await manager
-        .poolFor(target.backend, workspaceLabel: target.label)
-        .acquireDefault(workingDirectory: target.defaultCwd);
+        .poolFor(
+          target.backend,
+          workspaceLabel: target.label,
+          workspaceId: target.workspaceId,
+        )
+        .acquireDefault(
+          workingDirectory: target.defaultCwd,
+          environment: target.environment,
+        );
   }
   final timeoutMs = optionalInt(args, 'timeout_ms') ?? _kDefaultTimeoutMs;
   final result = await session.exec(

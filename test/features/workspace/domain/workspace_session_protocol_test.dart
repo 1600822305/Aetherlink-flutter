@@ -48,4 +48,27 @@ void main() {
       expect(matchSentinel('__AETHER_DONE_other_0__', 'abc'), isNull);
     });
   });
+
+  group('buildExportCommand', () {
+    test('empty map returns empty string', () {
+      expect(buildExportCommand(const {}), isEmpty);
+    });
+
+    test('exports variables single-quoted, newline-terminated', () {
+      expect(
+        buildExportCommand(const {
+          'WORKSPACE_ROOT': '/root/projects/demo',
+          'WORKSPACE_NAME': 'demo',
+        }),
+        "export WORKSPACE_ROOT='/root/projects/demo' WORKSPACE_NAME='demo'\n",
+      );
+    });
+
+    test('escapes embedded single quotes', () {
+      expect(
+        buildExportCommand(const {'WORKSPACE_NAME': "it's"}),
+        "export WORKSPACE_NAME='it'\\''s'\n",
+      );
+    });
+  });
 }
