@@ -41,6 +41,10 @@ bool terminalToolNeedsConfirmation(
     case 'terminal_execute':
     case 'terminal_session_exec':
       break;
+    // stdin 写入可驱动会话里的任意程序（shell 提示符下等同执行命令），
+    // 无法静态评级 → 全量审批。
+    case 'terminal_session_write':
+      return true;
     default:
       return false;
   }
@@ -117,6 +121,8 @@ Future<McpToolResult> runTerminalTool(
         return await _sessionExec(ref, args);
       case 'terminal_session_output':
         return _sessionOutput(ref, args);
+      case 'terminal_session_write':
+        return _sessionWrite(ref, args);
       case 'terminal_session_close':
         return await _sessionClose(ref, args);
     }
@@ -346,6 +352,25 @@ McpToolResult _sessionOutput(Ref ref, Map<String, Object?> args) {
     'workspace': session.workspaceLabel,
     'busy': session.busy,
     'output': session.tailOutput(tail > 0 ? tail : 4000),
+  });
+}
+
+/// 往长驻会话的运行中进程写 stdin（交互式程序输入，设计稿 §3.4）。
+McpToolResult _sessionWrite(Ref ref, Map<String, Object?> args) {
+  final sessionId = requireString(args, 'session_id');
+  final session =
+      ref.read(workspaceSessionPoolManagerProvider).find(sessionId);
+  if (session == null) {
+    return fileEditorError('没有找到会话 $sessionId（可用 terminal_session_list 查看）');
+  }
+  final input = requireString(args, 'input');
+  final pressEnter = args['press_enter'] != false;
+  session.writeInput(pressEnter && !input.endsWith('\n') ? '$input\n' : input);
+  return fileEditorOk({
+    'sessionId': session.id,
+    'workspace': session.workspaceLabel,
+    'written': true,
+    'hint': '已写入 stdin；可用 terminal_session_output 回看进程响应。',
   });
 }
 

@@ -1237,6 +1237,25 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
+      name: 'terminal_session_write',
+      description:
+          '往指定会话的运行中进程写 stdin（交互式程序输入，如回答 [y/n] 提示、REPL 输入）。'
+          '默认在末尾追加回车；press_enter 为 false 时原样写入。写入后可用'
+          ' terminal_session_output 回看进程响应。执行前会请用户确认。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'session_id': {'type': 'string', 'description': '目标会话 ID'},
+          'input': {'type': 'string', 'description': '要写入 stdin 的内容'},
+          'press_enter': {
+            'type': 'boolean',
+            'description': '是否在末尾追加回车（可选，默认 true）',
+          },
+        },
+        'required': ['session_id', 'input'],
+      },
+    ),
+    McpToolDefinition(
       name: 'terminal_session_close',
       description: '关闭指定长驻会话并结束其中的进程。',
       inputSchema: {

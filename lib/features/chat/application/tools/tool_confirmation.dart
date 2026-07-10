@@ -71,6 +71,8 @@ String toolConfirmSummary(String toolName, Map<String, Object?> args) {
       return '在「${_pathTail(args['path'])}」中替换「${args['search'] ?? ''}」';
     case 'run_command':
       return '在工作区执行命令：${args['command'] ?? ''}';
+    case 'terminal_session_write':
+      return '向终端会话 ${args['session_id'] ?? ''} 的进程输入：${args['input'] ?? ''}';
     // @aether/knowledge 写操作（kb_manage）。
     case 'kb_manage':
       return _knowledgeManageSummary(args);

@@ -29,6 +29,16 @@ void main() {
       );
     });
 
+    test('stdin 写入全量审批（无法静态评级）', () {
+      expect(
+        terminalToolNeedsConfirmation('terminal_session_write', const {
+          'session_id': 's1',
+          'input': 'y',
+        }),
+        isTrue,
+      );
+    });
+
     test('未指定工作区维持全量审批', () {
       expect(
         terminalToolNeedsConfirmation('terminal_execute', const {

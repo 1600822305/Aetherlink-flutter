@@ -152,6 +152,16 @@ class PooledWorkspaceSession {
     }
   }
 
+  /// 往会话的运行中进程写 stdin（交互式程序输入，设计稿 §3.4）。
+  /// 不自动追加换行，需要回车确认时由调用方在 [data] 末尾带 `\n`。
+  void writeInput(String data) {
+    if (!_alive) {
+      throw const WorkspaceSessionException('会话已结束，请新建会话');
+    }
+    lastUsedAt = DateTime.now();
+    _shell.write(utf8.encode(data));
+  }
+
   Future<void> close() async {
     _alive = false;
     await _outputSub?.cancel();
