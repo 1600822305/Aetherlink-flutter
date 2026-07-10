@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/settings/application/model_combo_controller.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/setting_group.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_combo.dart';
@@ -288,10 +289,13 @@ class _EditComboPageState extends ConsumerState<EditComboPage> {
                   ),
                 ),
                 Divider(height: 1, color: theme.dividerColor),
-                SwitchListTile.adaptive(
+                ListTile(
                   title: const Text('启用'),
-                  value: _enabled,
-                  onChanged: (v) => setState(() => _enabled = v),
+                  trailing: CustomSwitch(
+                    value: _enabled,
+                    onChanged: (v) => setState(() => _enabled = v),
+                  ),
+                  onTap: () => setState(() => _enabled = !_enabled),
                 ),
               ],
             ),
@@ -319,11 +323,14 @@ class _EditComboPageState extends ConsumerState<EditComboPage> {
               SettingGroup(
                 title: '高级选项',
                 children: [
-                  SwitchListTile.adaptive(
+                  ListTile(
                     title: const Text('显示思考过程'),
                     subtitle: const Text('在聊天界面展示推理模型的思考过程'),
-                    value: _showThinking,
-                    onChanged: (v) => setState(() => _showThinking = v),
+                    trailing: CustomSwitch(
+                      value: _showThinking,
+                      onChanged: (v) => setState(() => _showThinking = v),
+                    ),
+                    onTap: () => setState(() => _showThinking = !_showThinking),
                   ),
                 ],
               ),
