@@ -2040,9 +2040,15 @@ extension ChatMessageLookup on AsyncValue<ChatState> {
   ChatMessageView? messageById(String id) {
     final messages = value?.messages;
     if (messages == null) return null;
-    for (final message in messages) {
-      if (message.id == id) return message;
-    }
-    return null;
+    final index = _messageIndexCache[messages] ??= <String, ChatMessageView>{
+      for (final message in messages) message.id: message,
+    };
+    return index[id];
   }
 }
+
+/// Per-list id→view index, keyed weakly on the (immutable once emitted)
+/// messages list itself, so every visible bubble's `messageById` lookup is
+/// O(1) instead of a linear scan on each emit.
+final Expando<Map<String, ChatMessageView>> _messageIndexCache =
+    Expando<Map<String, ChatMessageView>>();

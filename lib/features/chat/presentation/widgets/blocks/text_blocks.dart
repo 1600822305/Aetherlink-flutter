@@ -128,7 +128,11 @@ class MainTextBlockView extends ConsumerWidget {
         );
       }
     } else {
-      body = AppMarkdown(content: content, style: textStyle);
+      // Streaming: Streamdown-style block memoization — the body is split at
+      // stable paragraph boundaries and earlier blocks reuse their previously
+      // built widget instance, so each delta re-parses only the active tail
+      // instead of the whole reply (O(tail) per frame instead of O(n)).
+      body = StreamingMarkdownBody(content: content, style: textStyle);
     }
     return selectable ? MessageSelectionArea(child: body) : body;
   }
@@ -138,14 +142,82 @@ class MainTextBlockView extends ConsumerWidget {
 /// chunk's parse + text layout fits a 120Hz frame's budget.
 const int _kMarkdownChunkSize = 3000;
 
-/// Splits [src] into rendering chunks of roughly [_kMarkdownChunkSize] chars.
+/// Chunk size for the *streaming* split: bounds how much text the active
+/// tail re-parses per frame while keeping the widget count modest.
+const int _kStreamingChunkSize = 512;
+
+/// Renders a streaming markdown body as a column of paragraph chunks with
+/// per-chunk widget reuse. During a stream the text is append-only, so every
+/// chunk except the last is stable: its cached [AppMarkdown] instance is
+/// returned identically, which makes Flutter skip that subtree's rebuild
+/// entirely. Only the growing tail chunk is re-parsed on each delta.
+class StreamingMarkdownBody extends StatefulWidget {
+  const StreamingMarkdownBody({required this.content, this.style, super.key});
+
+  final String content;
+  final TextStyle? style;
+
+  @override
+  State<StreamingMarkdownBody> createState() => _StreamingMarkdownBodyState();
+}
+
+class _StreamingMarkdownBodyState extends State<StreamingMarkdownBody> {
+  final List<String> _chunkTexts = [];
+  final List<Widget> _chunkWidgets = [];
+  TextStyle? _cachedStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.style != _cachedStyle) {
+      // Theme/style change invalidates every cached chunk.
+      _cachedStyle = widget.style;
+      _chunkTexts.clear();
+      _chunkWidgets.clear();
+    }
+    final chunks = splitMarkdownChunks(
+      widget.content,
+      chunkSize: _kStreamingChunkSize,
+    );
+    if (chunks.length == 1) {
+      _chunkTexts.clear();
+      _chunkWidgets.clear();
+      return AppMarkdown(content: chunks.first, style: widget.style);
+    }
+    if (_chunkTexts.length > chunks.length) {
+      // Content was reset/shrunk (e.g. 重试) — drop stale cache entries.
+      _chunkTexts.removeRange(chunks.length, _chunkTexts.length);
+      _chunkWidgets.removeRange(chunks.length, _chunkWidgets.length);
+    }
+    for (var i = 0; i < chunks.length; i++) {
+      final cached = i < _chunkTexts.length;
+      if (cached && _chunkTexts[i] == chunks[i]) continue;
+      final built = AppMarkdown(content: chunks[i], style: widget.style);
+      if (cached) {
+        _chunkTexts[i] = chunks[i];
+        _chunkWidgets[i] = built;
+      } else {
+        _chunkTexts.add(chunks[i]);
+        _chunkWidgets.add(built);
+      }
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: List<Widget>.of(_chunkWidgets),
+    );
+  }
+}
+
+/// Splits [src] into rendering chunks of roughly [chunkSize] chars
+/// (default [_kMarkdownChunkSize]).
 ///
 /// Cuts only at blank-line paragraph boundaries that are *outside* fenced
 /// code blocks, and never right before a continuation-looking line (list
 /// item, indent, blockquote, table row) so lists / tables / quotes stay in
 /// one chunk. Returns `[src]` unchanged when it's short enough.
-List<String> splitMarkdownChunks(String src) {
-  if (src.length <= _kMarkdownChunkSize * 2) return [src];
+List<String> splitMarkdownChunks(String src, {int? chunkSize}) {
+  final minChunk = chunkSize ?? _kMarkdownChunkSize;
+  if (src.length <= minChunk * 2) return [src];
   final lines = src.split('\n');
   final chunks = <String>[];
   final current = StringBuffer();
@@ -172,7 +244,7 @@ List<String> splitMarkdownChunks(String src) {
     if (!inFence &&
         !fenceMark &&
         line.trim().isEmpty &&
-        currentLen >= _kMarkdownChunkSize) {
+        currentLen >= minChunk) {
       // Cut here unless the next non-empty line continues this construct.
       var j = i + 1;
       while (j < lines.length && lines[j].trim().isEmpty) {

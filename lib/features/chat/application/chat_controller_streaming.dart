@@ -52,6 +52,10 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
   /// （MCP 工具执行可能耗时数分钟，期间尤其需要落盘）。
   static const Duration _kCheckpointInterval = Duration(seconds: 2);
 
+  /// 流式 emit 的帧级合并窗口（≈120Hz 一帧）：同一窗口内的多个 SSE delta
+  /// 合并为一次 UI 刷新，首个 delta 立即发射。
+  static const Duration _kFrameEmitWindow = Duration(milliseconds: 8);
+
   /// Subscribes to the gateway stream for [request] and drives the MCP tool-call
   /// loop. Each round accumulates assistant text into a `main_text` block and
   /// reasoning into a single `thinking` card; if the model asks for a tool
@@ -80,12 +84,26 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
     // preview / memory) — the coordinator does that after all siblings settle.
     bool finalizeTurn = true,
   }) async {
+    // 帧级合并：SSE delta 的到达速率可远高于屏幕刷新率，同一个帧窗口
+    // (~8ms，即 120Hz 一帧) 内的多个 delta 合并为一次 emit：首个 delta 立即
+    // 发射（leading edge，无可感知延迟），窗口内的后续 delta 挂一个尾随定时器。
+    // 这不是旧的 100ms 节流——每一帧依然拿到最新内容，只是不再在一帧内
+    // 重复构建同一个气泡。
+    Timer? pendingEmit;
+    var lastEmitAt = DateTime.fromMillisecondsSinceEpoch(0);
+    void cancelScheduledUpdate() {
+      pendingEmit?.cancel();
+      pendingEmit = null;
+    }
+
     // Terminal emit at the end of *this* stream. For a single-model turn it ends
     // the topic's streaming state (streaming:false → registry.finish); for a
     // multi-model sibling it keeps the turn alive (streaming:true) so the other
     // siblings stay visible until the coordinator finishes.
-    void emitTurnEnd() =>
-        _emitTurn(turnTopicId, views, streaming: !finalizeTurn);
+    void emitTurnEnd() {
+      cancelScheduledUpdate();
+      _emitTurn(turnTopicId, views, streaming: !finalizeTurn);
+    }
     // Multi-key load balancing + failover. When the provider carries a multi-key
     // pool, each attempt strategy-selects a usable key ([ApiKeyManager]); a
     // connection-time failure (before anything streamed) fails over to the next
@@ -174,19 +192,44 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
         ? removeToolUseTags(buffer.toString())
         : buffer.toString();
 
-    String aggregateText(String current) => <String>[
-      for (final block in completed)
-        if (block is MainTextBlock && block.content.isNotEmpty) block.content,
-      if (current.isNotEmpty) current,
-    ].join('\n\n');
+    // [completed] 只会整体重置或尾部追加，所以已完成块的聚合前缀按长度缓存，
+    // 每个 delta 只拼接当前轮的增量，不再全量 join。
+    var aggregatedForCount = -1;
+    var completedTextPrefix = '';
+    var completedThinkingPrefix = '';
+    void refreshAggregatePrefixes() {
+      if (completed.length == aggregatedForCount) return;
+      aggregatedForCount = completed.length;
+      completedTextPrefix = <String>[
+        for (final block in completed)
+          if (block is MainTextBlock && block.content.isNotEmpty)
+            block.content,
+      ].join('\n\n');
+      completedThinkingPrefix = <String>[
+        for (final block in completed)
+          if (block is ThinkingBlock && block.content.isNotEmpty)
+            block.content,
+      ].join('\n\n');
+    }
 
-    String aggregateThinking() => <String>[
-      for (final block in completed)
-        if (block is ThinkingBlock && block.content.isNotEmpty) block.content,
-      if (thinking.isNotEmpty) thinking.toString(),
-    ].join('\n\n');
+    String aggregateText(String current) {
+      refreshAggregatePrefixes();
+      if (current.isEmpty) return completedTextPrefix;
+      if (completedTextPrefix.isEmpty) return current;
+      return '$completedTextPrefix\n\n$current';
+    }
+
+    String aggregateThinking() {
+      refreshAggregatePrefixes();
+      final current = thinking.toString();
+      if (current.isEmpty) return completedThinkingPrefix;
+      if (completedThinkingPrefix.isEmpty) return current;
+      return '$completedThinkingPrefix\n\n$current';
+    }
 
     void update() {
+      cancelScheduledUpdate();
+      lastEmitAt = DateTime.now();
       final current = roundDisplay();
       final liveBlocks = <MessageBlock>[
         ...completed,
@@ -220,6 +263,19 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
       );
       _replace(views, view);
       _emitTurn(turnTopicId, views, streaming: true);
+    }
+
+    void scheduleUpdate() {
+      if (pendingEmit != null) return;
+      final wait = _kFrameEmitWindow - DateTime.now().difference(lastEmitAt);
+      if (wait <= Duration.zero) {
+        update();
+        return;
+      }
+      pendingEmit = Timer(wait, () {
+        pendingEmit = null;
+        update();
+      });
     }
 
     // 崩溃安全检查点（对齐 Cherry Studio）：把目前已生成的块（完成块 + 进行中的
@@ -363,6 +419,7 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
       completed
         ..clear()
         ..addAll(leadingBlocks);
+      aggregatedForCount = -1;
       buffer.clear();
       messages = List<LlmMessage>.of(request.messages);
       view = assistantView;
@@ -401,14 +458,14 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
                 firstTokenMs ??= stopwatch.elapsedMilliseconds;
                 if (thinking.isNotEmpty) thinkingEndAt ??= DateTime.now();
                 buffer.write(text);
-                update();
+                scheduleUpdate();
                 checkpoint();
               case LlmReasoningDelta(:final text):
                 committed = true;
                 firstTokenMs ??= stopwatch.elapsedMilliseconds;
                 thinkingStartAt ??= DateTime.now();
                 thinking.write(text);
-                update();
+                scheduleUpdate();
                 checkpoint();
               case LlmToolCallChunk(:final call):
                 committed = true;
