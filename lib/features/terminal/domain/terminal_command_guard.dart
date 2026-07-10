@@ -124,8 +124,13 @@ CommandRisk evaluateCommandRisk(String command, {required String root}) {
     if (words.isEmpty || words.first.isEmpty) return false;
     return _kSafeReadOnlyCommands.contains(words.first);
   });
-  // 重定向会写文件，不算只读。
-  if (allSafe && !command.contains('>')) return CommandRisk.safeInRoot;
+  // 重定向会写文件；find -delete / -exec / -ok、sort -o 等旗标会写或执行
+  // 任意命令，同样不算只读。
+  if (allSafe &&
+      !command.contains('>') &&
+      !RegExp(r'\s-(delete|exec|execdir|ok|okdir|o)\b').hasMatch(command)) {
+    return CommandRisk.safeInRoot;
+  }
 
   return CommandRisk.needsApproval;
 }

@@ -368,6 +368,10 @@ McpToolResult _sessionWrite(Ref ref, Map<String, Object?> args) {
     return fileEditorError('没有找到会话 $sessionId（可用 terminal_session_list 查看）');
   }
   final input = requireString(args, 'input');
+  // stdin 在提示符下等同执行命令，黑名单同样生效，堵住绕过 terminal_execute
+  // 拦截的口子（用户手动输入不受限）。
+  final blocked = _guardCommand(input);
+  if (blocked != null) return blocked;
   final pressEnter = args['press_enter'] != false;
   session.writeInput(pressEnter && !input.endsWith('\n') ? '$input\n' : input);
   return fileEditorOk({

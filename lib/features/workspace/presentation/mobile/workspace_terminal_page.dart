@@ -145,7 +145,8 @@ class _WorkspaceTerminalPageState
         tab.terminal.write('\r\n\x1b[33m[会话已结束]\x1b[0m\r\n');
         setState(() => tab.connected = false);
       });
-      if (!mounted) {
+      // 页面已销毁或 tab 在连接期间被关闭 → 立即释放会话，避免 PTY 泄漏。
+      if (!mounted || !_tabs.contains(tab)) {
         await session.close();
         return;
       }

@@ -61,6 +61,14 @@ void main() {
       expect(risk('git commit -m x'), CommandRisk.needsApproval);
     });
 
+    test('白名单命令携带写/执行旗标 → needsApproval（find -delete 漏洞）', () {
+      expect(risk('find . -name "*.log" -delete'), CommandRisk.needsApproval);
+      expect(risk('find . -exec rm {} +'), CommandRisk.needsApproval);
+      expect(risk('find . -ok rm {} +'), CommandRisk.needsApproval);
+      expect(risk('sort -o out.txt in.txt'), CommandRisk.needsApproval);
+      expect(risk('find . -name "*.dart"'), CommandRisk.safeInRoot);
+    });
+
     test('绝对路径越出 root → escapesRoot', () {
       expect(risk('cat /etc/passwd'), CommandRisk.escapesRoot);
       expect(risk('ls /root'), CommandRisk.escapesRoot);

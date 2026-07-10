@@ -127,8 +127,16 @@ class PooledWorkspaceSession {
     final nonce = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
     final collected = StringBuffer();
     final done = Completer<SentinelMatch>();
+    // 哨兵总在输出末尾：先在「上一块尾部 + 新块」的小窗口里做廉价预检，
+    // 命中才对全量输出跑 matchSentinel，避免长输出下逐块全量重扫（O(n²)）。
+    var windowTail = '';
     final sub = _chunks.stream.listen((chunk) {
       collected.write(chunk);
+      final window = windowTail + chunk;
+      windowTail = window.length <= 96
+          ? window
+          : window.substring(window.length - 96);
+      if (!window.contains('__AETHER_DONE_$nonce')) return;
       final match = matchSentinel(collected.toString(), nonce);
       if (match != null && !done.isCompleted) done.complete(match);
     });
