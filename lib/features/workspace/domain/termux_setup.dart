@@ -53,8 +53,13 @@ AUTHORIZED_KEY='$authorizedKey'
 echo '==> Aetherlink：开始配置 Termux SSH ...'
 
 # 1) 安装 openssh / termux-services（首次需联网；国内慢可先 termux-change-repo 换源）
-echo '==> 安装 openssh / termux-services ...'
-pkg install -y openssh termux-services
+#    已装过则跳过，重复执行脚本不再触发 pkg 的刷源/测速下载。
+if command -v sshd >/dev/null 2>&1 && command -v sv-enable >/dev/null 2>&1; then
+  echo '==> openssh / termux-services 已安装，跳过下载'
+else
+  echo '==> 安装 openssh / termux-services ...'
+  pkg install -y openssh termux-services
+fi
 
 # 2) 写入公钥，开启免密码登录
 mkdir -p ~/.ssh
