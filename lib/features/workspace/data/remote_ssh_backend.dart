@@ -644,8 +644,14 @@ class RemoteSshBackend extends WorkspaceBackend {
     }
   }
 
-  // ===== search (client-side SFTP traversal; exec-backed grep lands in SSH-3) =====
+  // ===== search =====
 
+  // Fast path first: run `find` / `grep` on the remote host over an exec
+  // channel, so the traversal happens server-side in one round trip instead
+  // of one SFTP listdir per directory (and one whole-file read per candidate
+  // for content search). Falls back to the client-side SFTP walk when the
+  // fast path can't run (regex file-name matching, remote tools missing,
+  // exec failing).
   @override
   Future<List<WorkspaceEntry>> searchFiles(
     String directory,
@@ -656,6 +662,17 @@ class RemoteSshBackend extends WorkspaceBackend {
     bool recursive = true,
     bool useRegex = false,
   }) async {
+    if (recursive && query.isNotEmpty) {
+      final fast = await _searchViaExec(
+        directory,
+        query,
+        searchType: searchType,
+        fileTypes: fileTypes,
+        maxResults: maxResults,
+        useRegex: useRegex,
+      );
+      if (fast != null) return fast;
+    }
     final sftp = await _sftpClient();
     final results = <WorkspaceEntry>[];
     final nameMatcher = useRegex
@@ -721,6 +738,82 @@ class RemoteSshBackend extends WorkspaceBackend {
       return false;
     }
   }
+
+  /// Server-side search: file names via `find -iname`, content via
+  /// `grep -rIli` (`-I` skips binaries, `-i` matches the walk's
+  /// case-insensitive semantics). Returns null when this path can't be used,
+  /// so the caller falls back to the SFTP walk:
+  /// · regex name matching (`find -iname` is glob-only);
+  /// · name search with an extension filter (the walk handles it);
+  /// · the remote command timing out, missing, or failing without output.
+  /// Partial output with a non-zero exit (unreadable subdirs) is kept.
+  Future<List<WorkspaceEntry>?> _searchViaExec(
+    String directory,
+    String query, {
+    required WorkspaceSearchType searchType,
+    required List<String> fileTypes,
+    required int maxResults,
+    required bool useRegex,
+  }) async {
+    final wantsName = searchType == WorkspaceSearchType.name ||
+        searchType == WorkspaceSearchType.both;
+    final wantsContent = searchType == WorkspaceSearchType.content ||
+        searchType == WorkspaceSearchType.both;
+    if (wantsName && (useRegex || fileTypes.isNotEmpty)) return null;
+    const timeout = Duration(seconds: 30);
+    try {
+      final paths = <String>[];
+      if (wantsName) {
+        final pattern = '*${_globEscape(query)}*';
+        final r = await exec(
+          'find ${_shellQuote(directory)} -iname ${_shellQuote(pattern)}',
+          timeout: timeout,
+        );
+        if (r.timedOut || (r.exitCode != 0 && r.stdout.trim().isEmpty)) {
+          return null;
+        }
+        paths.addAll(const LineSplitter().convert(r.stdout));
+      }
+      if (wantsContent) {
+        final includes = [
+          for (final t in fileTypes) '--include=${_shellQuote('*$t')}',
+        ].join(' ');
+        final mode = useRegex ? '-E' : '-F';
+        final r = await exec(
+          'grep -rIli $mode $includes -e ${_shellQuote(query)} '
+          '-- ${_shellQuote(directory)}',
+          timeout: timeout,
+        );
+        // grep: 0 = hits, 1 = no hits, >1 = error (kept if partial output).
+        if (r.timedOut || (r.exitCode > 1 && r.stdout.trim().isEmpty)) {
+          return null;
+        }
+        paths.addAll(const LineSplitter().convert(r.stdout));
+      }
+      final sftp = await _sftpClient();
+      final seen = <String>{};
+      final out = <WorkspaceEntry>[];
+      for (final raw in paths) {
+        if (out.length >= maxResults) break;
+        final path = raw.trim();
+        if (path.isEmpty || path == directory || !seen.add(path)) continue;
+        try {
+          final attrs = await sftp.stat(path);
+          out.add(_toEntry(path, _basename(path), attrs));
+        } catch (_) {
+          // Vanished between the remote listing and the stat — skip.
+        }
+      }
+      return out;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Escapes glob metacharacters so [s] matches literally inside a `-iname`
+  // pattern.
+  static String _globEscape(String s) =>
+      s.replaceAllMapped(RegExp(r'[\\*?\[\]]'), (m) => '\\${m[0]}');
 
   // ===== command execution (SSH-3) =====
 
