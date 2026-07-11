@@ -18,6 +18,7 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_back
 import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/proot_folder_picker_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/ssh_connection_form_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/termux_setup_sheet.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
@@ -304,31 +305,38 @@ Future<void> openProotWorkspace(BuildContext context, WidgetRef ref) async {
   }
 }
 
-/// Opens (creating on demand) a 项目模式 workspace under [kProotProjectsDir]
-/// in the PRoot rootfs: prompts for a project name, `mkdir -p`s the directory
-/// and anchors the workspace root there（双作用域设计稿 §2.2）。
+/// Opens a 项目模式 workspace in the PRoot rootfs: shows an IDE-style folder
+/// browser（默认锚在 [kProotProjectsDir]，可逐级浏览 / 新建）, then anchors the
+/// workspace root to the picked directory（双作用域设计稿 §2.2）。
 Future<void> openProotProjectWorkspace(
   BuildContext context,
   WidgetRef ref,
 ) async {
   try {
     if (!await _ensureProotInstalled(context, ref)) return;
-    if (!context.mounted) return;
-    final setup = await _promptProjectSetup(context);
-    if (setup == null) return;
     final backend = ref.read(prootLocalBackendProvider);
-    final root = await backend.createDirectory(
-      kProotProjectsDir,
-      setup.name,
+    // 保证默认项目目录存在，浏览器一进来就有地方落脚。
+    final projectsDir = await backend.createDirectory(
+      '/root',
+      'projects',
       recursive: true,
     );
+    if (!context.mounted) return;
+    final pick = await showProotFolderPickerSheet(
+      context,
+      backend: backend,
+      initialPath: projectsDir,
+    );
+    if (pick == null) return;
+    final root = pick.path;
+    final name = root == '/' ? '/' : root.substring(root.lastIndexOf('/') + 1);
     final workspace = await ref
         .read(workspaceStoreProvider.notifier)
         .open(
-          name: setup.name,
+          name: name,
           backendType: WorkspaceBackendType.prootLocal,
           scope: WorkspaceScope.project,
-          isolatedHome: setup.isolatedHome,
+          isolatedHome: pick.isolatedHome,
           root: root,
           displayPath: '内置终端 · $root',
         );
@@ -336,74 +344,6 @@ Future<void> openProotProjectWorkspace(
   } catch (e) {
     if (!context.mounted) return;
     AppToast.error(context, '打开失败 · $e');
-  }
-}
-
-/// Allowed project-directory name: no path separators / traversal, keeps the
-/// root safely inside [kProotProjectsDir].
-final RegExp _kProjectNamePattern = RegExp(r'^[\w][\w.-]*$');
-
-/// 项目模式工作区的创建参数：项目名 + 是否开启独立 HOME（L2 语言级隔离）。
-class _ProjectSetup {
-  const _ProjectSetup({required this.name, required this.isolatedHome});
-
-  final String name;
-  final bool isolatedHome;
-}
-
-Future<_ProjectSetup?> _promptProjectSetup(BuildContext context) async {
-  final controller = TextEditingController();
-  var isolatedHome = false;
-  try {
-    return await showDialog<_ProjectSetup>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setState) => AlertDialog(
-          title: const Text('项目名称'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: controller,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: '如 my-app（建在 /root/projects/ 下）',
-                ),
-              ),
-              const SizedBox(height: 8),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                title: const Text('独立环境（HOME 隔离）'),
-                subtitle: const Text(
-                  'rc 文件 / 全局配置 / 缓存按项目隔离；关闭则共享环境',
-                ),
-                value: isolatedHome,
-                onChanged: (v) => setState(() => isolatedHome = v),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final name = controller.text.trim();
-                if (!_kProjectNamePattern.hasMatch(name)) return;
-                Navigator.of(dialogContext).pop(
-                  _ProjectSetup(name: name, isolatedHome: isolatedHome),
-                );
-              },
-              child: const Text('打开'),
-            ),
-          ],
-        ),
-      ),
-    );
-  } finally {
-    controller.dispose();
   }
 }
 
