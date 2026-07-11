@@ -1,6 +1,45 @@
 // 文件名 → highlight.js 语言 ID 的映射，供工作区编辑器的语法高亮用。
 // 返回 null 表示按纯文本渲染（未知扩展名 / 天生无高亮的文件）。
 
+/// 语言 ID → 行注释前缀（注释切换用）。返回 null 表示该语言没有行注释
+/// （如 HTML/CSS/Markdown 只有块注释），不提供切换。
+String? lineCommentForLanguage(String? language) => switch (language) {
+  'dart' ||
+  'javascript' ||
+  'typescript' ||
+  'java' ||
+  'kotlin' ||
+  'rust' ||
+  'go' ||
+  'swift' ||
+  'c' ||
+  'cpp' ||
+  'csharp' ||
+  'objectivec' ||
+  'php' ||
+  'scss' ||
+  'less' ||
+  'groovy' ||
+  'gradle' ||
+  'protobuf' ||
+  'json' => '//',
+  'python' ||
+  'yaml' ||
+  'bash' ||
+  'ruby' ||
+  'perl' ||
+  'r' ||
+  'makefile' ||
+  'dockerfile' ||
+  'cmake' ||
+  'ini' ||
+  'properties' ||
+  'powershell' => '#',
+  'sql' || 'lua' => '--',
+  'dos' => 'REM',
+  _ => null,
+};
+
 String? languageForFileName(String name) {
   final lower = name.toLowerCase();
   switch (lower) {

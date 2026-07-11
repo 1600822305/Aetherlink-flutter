@@ -52,6 +52,7 @@ class EditorContent extends StatelessWidget {
     this.jumpLine,
     this.jumpToken = 0,
     this.language,
+    this.commentPrefix,
   });
 
   final Future<void> ready;
@@ -74,6 +75,9 @@ class EditorContent extends StatelessWidget {
 
   /// 语法高亮语言 ID（见 [ReadOnlyCodeView.language]）。
   final String? language;
+
+  /// 行注释前缀（见 [EditorTextArea.commentPrefix]）。
+  final String? commentPrefix;
 
   /// Returns a non-null widget (binary / too-large placeholder) to show instead
   /// of the text area once the load completes; null means "show the editor".
@@ -119,6 +123,7 @@ class EditorContent extends StatelessWidget {
           editing: editing,
           fontSize: fontSize,
           onFontSize: onFontSize,
+          commentPrefix: commentPrefix,
         );
       },
     );
@@ -286,11 +291,16 @@ class ExternalChangeBanner extends StatelessWidget {
     super.key,
     required this.text,
     this.onReload,
+    this.onDiff,
     required this.onDismiss,
   });
 
   final String text;
   final VoidCallback? onReload;
+
+  /// 「对比」：打开本地缓冲区 vs 磁盘内容的 diff 视图（仅在有未保存编辑的
+  /// 冲突时提供）。
+  final VoidCallback? onDiff;
   final VoidCallback onDismiss;
 
   @override
@@ -316,6 +326,15 @@ class ExternalChangeBanner extends StatelessWidget {
               ),
             ),
           ),
+          if (onDiff != null)
+            TextButton(
+              onPressed: onDiff,
+              style: TextButton.styleFrom(
+                foregroundColor: theme.colorScheme.onErrorContainer,
+                visualDensity: VisualDensity.compact,
+              ),
+              child: const Text('对比'),
+            ),
           if (onReload != null)
             TextButton(
               onPressed: onReload,

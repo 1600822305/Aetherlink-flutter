@@ -17,6 +17,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_body.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_diff_view.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_edit_ops.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_language.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_limits.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_placeholders.dart';
@@ -71,6 +73,9 @@ class _FileEditorState extends ConsumerState<FileEditor> {
   String? _externalNotice;
   // Whether the banner offers a 「重新加载」 action.
   bool _externalReloadable = false;
+  // The disk content behind a conflict banner, enabling the 「对比」 diff
+  // sheet (only set when there are unsaved local edits to compare against).
+  String? _conflictDisk;
   // Guards against overlapping disk re-reads when events arrive in a burst.
   bool _checkingExternal = false;
 
@@ -163,19 +168,26 @@ class _FileEditorState extends ConsumerState<FileEditor> {
       if (!mounted) return;
       if (disk == _original) {
         // Our own write (or a no-op change): clear any stale notice.
-        if (_externalNotice != null) setState(() => _externalNotice = null);
+        if (_externalNotice != null) {
+          setState(() {
+            _externalNotice = null;
+            _conflictDisk = null;
+          });
+        }
         return;
       }
       if (_dirty) {
         setState(() {
           _externalNotice = '文件已被外部修改，你有未保存的修改';
           _externalReloadable = true;
+          _conflictDisk = disk;
         });
       } else {
         setState(() {
           _original = disk;
           _controller.text = disk;
           _externalNotice = null;
+          _conflictDisk = null;
         });
       }
     } catch (_) {
@@ -190,8 +202,34 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     setState(() {
       _externalNotice = null;
       _externalReloadable = false;
+      _conflictDisk = null;
       _ready = _load();
     });
+  }
+
+  // Banner 「对比」: full-height diff sheet (local buffer vs disk), resolving
+  // to reload or keep-mine.
+  Future<void> _showConflictDiff() async {
+    final disk = _conflictDisk;
+    if (disk == null) return;
+    final resolution = await showConflictDiffSheet(
+      context,
+      fileName: widget.entry.name,
+      local: _controller.text,
+      disk: disk,
+    );
+    if (!mounted) return;
+    switch (resolution) {
+      case DiffResolution.reloadDisk:
+        _reloadFromDisk();
+      case DiffResolution.keepMine:
+        setState(() {
+          _externalNotice = null;
+          _conflictDisk = null;
+        });
+      case null:
+        break;
+    }
   }
 
   void _onTextChanged() {
@@ -402,7 +440,11 @@ class _FileEditorState extends ConsumerState<FileEditor> {
             ExternalChangeBanner(
               text: _externalNotice!,
               onReload: _externalReloadable ? _reloadFromDisk : null,
-              onDismiss: () => setState(() => _externalNotice = null),
+              onDiff: _conflictDisk != null ? _showConflictDiff : null,
+              onDismiss: () => setState(() {
+                _externalNotice = null;
+                _conflictDisk = null;
+              }),
             ),
           Expanded(
             child: EditorContent(
@@ -419,6 +461,9 @@ class _FileEditorState extends ConsumerState<FileEditor> {
               jumpLine: _jumpLine,
               jumpToken: _jumpToken,
               language: languageForFileName(widget.entry.name),
+              commentPrefix: lineCommentForLanguage(
+                languageForFileName(widget.entry.name),
+              ),
             ),
           ),
           if (_hasTextBody) EditorStatusBar(controller: _controller),
@@ -449,6 +494,21 @@ class _FileEditorState extends ConsumerState<FileEditor> {
           icon: const Icon(LucideIcons.pencil, size: 18),
           onPressed: () {
             setState(() => _editing = true);
+            _focus.requestFocus();
+          },
+        ),
+      if (_editing &&
+          lineCommentForLanguage(languageForFileName(widget.entry.name)) !=
+              null)
+        IconButton(
+          tooltip: '注释切换 (Ctrl+/)',
+          icon: const Icon(LucideIcons.squareSlash, size: 18),
+          onPressed: () {
+            final prefix = lineCommentForLanguage(
+              languageForFileName(widget.entry.name),
+            );
+            if (prefix == null) return;
+            _controller.value = toggleLineComment(_controller.value, prefix);
             _focus.requestFocus();
           },
         ),

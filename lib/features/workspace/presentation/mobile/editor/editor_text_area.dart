@@ -32,6 +32,7 @@ class EditorTextArea extends StatefulWidget {
     required this.editing,
     required this.fontSize,
     required this.onFontSize,
+    this.commentPrefix,
   });
 
   final TextEditingController controller;
@@ -39,6 +40,9 @@ class EditorTextArea extends StatefulWidget {
   final bool editing;
   final double fontSize;
   final ValueChanged<double> onFontSize;
+
+  /// 当前语言的行注释前缀（Ctrl+/ 注释切换用）；null 时不提供切换。
+  final String? commentPrefix;
 
   @override
   State<EditorTextArea> createState() => _EditorTextAreaState();
@@ -154,6 +158,17 @@ class _EditorTextAreaState extends State<EditorTextArea> {
     if (!widget.editing) return KeyEventResult.ignored;
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.slash &&
+        HardwareKeyboard.instance.isControlPressed) {
+      final prefix = widget.commentPrefix;
+      if (prefix != null) {
+        widget.controller.value = toggleLineComment(
+          widget.controller.value,
+          prefix,
+        );
+        return KeyEventResult.handled;
+      }
     }
     if (event.logicalKey == LogicalKeyboardKey.tab) {
       final shift = HardwareKeyboard.instance.isShiftPressed;

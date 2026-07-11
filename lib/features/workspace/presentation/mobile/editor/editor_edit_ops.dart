@@ -79,6 +79,103 @@ TextEditingValue indentLines(TextEditingValue value, {bool dedent = false}) {
   );
 }
 
+/// Toggles line comments over every line touched by the selection using
+/// [prefix] (e.g. `//` or `#`). If every non-blank touched line is already
+/// commented the prefixes are removed (plus one following space, when
+/// present); otherwise `prefix + space` is inserted after each non-blank
+/// line's leading whitespace. The selection tracks the same text.
+TextEditingValue toggleLineComment(TextEditingValue value, String prefix) {
+  final text = value.text;
+  final sel = value.selection;
+  if (!sel.isValid) return value;
+  final selStart = sel.start;
+  final selEnd = sel.end;
+  final effEnd =
+      (selEnd > selStart && selEnd > 0 && text.codeUnitAt(selEnd - 1) == 0x0A)
+          ? selEnd - 1
+          : selEnd;
+  final regionStart =
+      selStart == 0 ? 0 : text.lastIndexOf('\n', selStart - 1) + 1;
+  final endNl = effEnd < text.length ? text.indexOf('\n', effEnd) : -1;
+  final regionEnd = endNl < 0 ? text.length : endNl;
+
+  // Pass 1: are all non-blank touched lines already commented?
+  var hasNonBlank = false;
+  var allCommented = true;
+  var scan = regionStart;
+  while (true) {
+    final lineNl = text.indexOf('\n', scan);
+    final lineEnd = (lineNl < 0 || lineNl > regionEnd) ? regionEnd : lineNl;
+    final line = text.substring(scan, lineEnd);
+    final trimmed = line.trimLeft();
+    if (trimmed.isNotEmpty) {
+      hasNonBlank = true;
+      if (!trimmed.startsWith(prefix)) allCommented = false;
+    }
+    if (lineEnd >= regionEnd) break;
+    scan = lineEnd + 1;
+  }
+  if (!hasNonBlank) return value;
+  final uncomment = allCommented;
+
+  final buf = StringBuffer();
+  var newStart = selStart;
+  var newEnd = selEnd;
+  var lineStart = regionStart;
+  while (true) {
+    final lineNl = text.indexOf('\n', lineStart);
+    final lineEnd = (lineNl < 0 || lineNl > regionEnd) ? regionEnd : lineNl;
+    final line = text.substring(lineStart, lineEnd);
+    var ws = 0;
+    while (ws < line.length && (line[ws] == ' ' || line[ws] == '\t')) {
+      ws++;
+    }
+    final rest = line.substring(ws);
+    if (uncomment) {
+      if (rest.startsWith(prefix)) {
+        var remove = prefix.length;
+        if (rest.length > remove && rest[remove] == ' ') remove++;
+        buf
+          ..write(line.substring(0, ws))
+          ..write(rest.substring(remove));
+        newStart -= _removedBefore(selStart, lineStart + ws, remove);
+        newEnd -= _removedBefore(selEnd, lineStart + ws, remove);
+      } else {
+        buf.write(line);
+      }
+    } else {
+      if (rest.isEmpty) {
+        buf.write(line);
+      } else {
+        final insert = '$prefix ';
+        buf
+          ..write(line.substring(0, ws))
+          ..write(insert)
+          ..write(rest);
+        if (selStart >= lineStart + ws) newStart += insert.length;
+        if (selEnd >= lineStart + ws) newEnd += insert.length;
+      }
+    }
+    if (lineEnd >= regionEnd) break;
+    buf.write('\n');
+    lineStart = lineEnd + 1;
+  }
+
+  final newText =
+      text.substring(0, regionStart) + buf.toString() + text.substring(regionEnd);
+  if (newText == text) return value;
+  newStart = newStart.clamp(0, newText.length);
+  newEnd = newEnd.clamp(0, newText.length);
+  final forward = sel.baseOffset <= sel.extentOffset;
+  return TextEditingValue(
+    text: newText,
+    selection: TextSelection(
+      baseOffset: forward ? newStart : newEnd,
+      extentOffset: forward ? newEnd : newStart,
+    ),
+  );
+}
+
 // How much of a removal of [removed] chars at [lineStart] lands before
 // [offset] (i.e. how far the offset shifts left).
 int _removedBefore(int offset, int lineStart, int removed) {
