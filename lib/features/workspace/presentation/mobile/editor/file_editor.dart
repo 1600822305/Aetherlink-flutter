@@ -17,6 +17,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_body.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_language.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_limits.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_placeholders.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_registry.dart';
@@ -417,6 +418,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
               findIndex: _showFind ? _find.index : -1,
               jumpLine: _jumpLine,
               jumpToken: _jumpToken,
+              language: languageForFileName(widget.entry.name),
             ),
           ),
           if (_hasTextBody) EditorStatusBar(controller: _controller),

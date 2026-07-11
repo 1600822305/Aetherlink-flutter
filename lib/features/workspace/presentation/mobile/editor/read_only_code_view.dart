@@ -10,9 +10,14 @@
 // long-press text selection (via `SelectionArea`, limited to the built rows).
 // Find matches are highlighted per line and the current match is auto-scrolled
 // into view.
+//
+// Syntax highlighting rides the same virtualization: a lazy [LineHighlighter]
+// (shared with chat's code blocks) parses lines on demand with cross-line
+// continuation, so opening a huge file stays O(visible lines).
 
 import 'package:flutter/material.dart';
 
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/code_block/code_highlight_utils.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_text_area.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_replace_engine.dart';
 
@@ -21,6 +26,11 @@ const double _topPad = 12;
 const double _bottomPad = 24;
 const double _textLeftPad = 12;
 const double _textRightPad = 16;
+
+/// Above this line count syntax highlighting is skipped (plain monospace):
+/// the highlighter parses sequentially from the top, so a jump deep into a
+/// very large file would stall on parsing everything before it.
+const int _kMaxHighlightLines = 20000;
 
 class ReadOnlyCodeView extends StatefulWidget {
   const ReadOnlyCodeView({
@@ -32,6 +42,7 @@ class ReadOnlyCodeView extends StatefulWidget {
     this.findIndex = -1,
     this.jumpLine,
     this.jumpToken = 0,
+    this.language,
   });
 
   /// The same controller the editor owns; the viewer reads its text and
@@ -49,6 +60,9 @@ class ReadOnlyCodeView extends StatefulWidget {
   /// 滚动居中，[jumpLine] 所在行会画一条高亮带。
   final int? jumpLine;
   final int jumpToken;
+
+  /// highlight.js 语言 ID（由文件名推断）；null 按纯文本渲染。
+  final String? language;
 
   @override
   State<ReadOnlyCodeView> createState() => _ReadOnlyCodeViewState();
@@ -72,6 +86,9 @@ class _ReadOnlyCodeViewState extends State<ReadOnlyCodeView> {
   double? _cachedWidth;
   int _cachedWidthLen = -1;
   double _cachedWidthFont = -1;
+
+  LineHighlighter? _hl;
+  Map<String, TextStyle>? _hlTheme;
 
   @override
   void initState() {
@@ -131,6 +148,25 @@ class _ReadOnlyCodeViewState extends State<ReadOnlyCodeView> {
     _lines = lines;
     _lineStarts = starts;
     _maxLineLen = maxLen;
+    _hl = null; // stale line list — rebuilt lazily on next build
+  }
+
+  // (Re)creates the lazy highlighter when the line list or resolved theme
+  // changed. [hlTheme] comes from [resolveTheme]'s cache, so identical() is a
+  // reliable change check.
+  void _ensureHighlighter(Map<String, TextStyle> hlTheme) {
+    final language = widget.language;
+    if (language == null || _lines.length > _kMaxHighlightLines) {
+      _hl = null;
+      return;
+    }
+    if (_hl != null &&
+        identical(_hlTheme, hlTheme) &&
+        identical(_hl!.lines, _lines)) {
+      return;
+    }
+    _hl = LineHighlighter(lines: _lines, language: language, theme: hlTheme);
+    _hlTheme = hlTheme;
   }
 
   void _syncGutter() {
@@ -276,6 +312,9 @@ class _ReadOnlyCodeViewState extends State<ReadOnlyCodeView> {
     );
     final matchColor = theme.colorScheme.tertiaryContainer;
     final currentMatchColor = theme.colorScheme.primary.withValues(alpha: 0.4);
+    _ensureHighlighter(
+      resolveTheme('auto', theme.brightness == Brightness.dark),
+    );
 
     return Listener(
       onPointerDown: _onPointerDown,
@@ -353,7 +392,19 @@ class _ReadOnlyCodeViewState extends State<ReadOnlyCodeView> {
     final jumped = widget.jumpLine != null && i == widget.jumpLine! - 1;
     final Widget text;
     if (spans.isEmpty) {
-      text = Text(line, style: style, maxLines: 1, softWrap: false);
+      // No find matches on this line — render with syntax highlighting when
+      // available (match-bearing lines fall back to plain text so the match
+      // background stays visible).
+      final hlSpans = _hl?.spansFor(i);
+      if (hlSpans != null && hlSpans.isNotEmpty) {
+        text = Text.rich(
+          TextSpan(style: style, children: hlSpans),
+          maxLines: 1,
+          softWrap: false,
+        );
+      } else {
+        text = Text(line, style: style, maxLines: 1, softWrap: false);
+      }
     } else {
       final children = <InlineSpan>[];
       var pos = 0;

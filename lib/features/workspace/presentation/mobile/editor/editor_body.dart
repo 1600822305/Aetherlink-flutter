@@ -51,6 +51,7 @@ class EditorContent extends StatelessWidget {
     this.findIndex = -1,
     this.jumpLine,
     this.jumpToken = 0,
+    this.language,
   });
 
   final Future<void> ready;
@@ -70,6 +71,9 @@ class EditorContent extends StatelessWidget {
   /// 「跳到某行」请求，透传给只读查看器（见 [ReadOnlyCodeView.jumpLine]）。
   final int? jumpLine;
   final int jumpToken;
+
+  /// 语法高亮语言 ID（见 [ReadOnlyCodeView.language]）。
+  final String? language;
 
   /// Returns a non-null widget (binary / too-large placeholder) to show instead
   /// of the text area once the load completes; null means "show the editor".
@@ -106,6 +110,7 @@ class EditorContent extends StatelessWidget {
             findIndex: findIndex,
             jumpLine: jumpLine,
             jumpToken: jumpToken,
+            language: language,
           );
         }
         return EditorTextArea(
