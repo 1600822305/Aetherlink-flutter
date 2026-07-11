@@ -94,14 +94,20 @@ class PooledWorkspaceSession {
   final WorkspaceShellSession _shell;
   StreamSubscription<String>? _outputSub;
   final StringBuffer _buffer = StringBuffer();
+  final SentinelDisplayFilter _displayFilter = SentinelDisplayFilter();
+
+  /// 显示流：已滤掉哨兵行，供终端页联动 / 回看缓冲。
   final StreamController<String> _chunks = StreamController<String>.broadcast();
+
+  /// 原始流：含哨兵行，供 exec 扫哨兵判定命令结束。
+  final StreamController<String> _raw = StreamController<String>.broadcast();
   bool _alive = true;
   bool _busy = false;
 
   bool get alive => _alive;
   bool get busy => _busy;
 
-  /// 实时输出流（PTY 合并流，含 ANSI 序列），供终端页联动渲染。
+  /// 实时输出流（PTY 合并流，含 ANSI 序列，已滤掉哨兵行），供终端页联动渲染。
   Stream<String> get chunks => _chunks.stream;
 
   /// 当前回看缓冲的全量快照（含 ANSI 序列），供终端页接入时回放历史。
@@ -114,14 +120,17 @@ class PooledWorkspaceSession {
   }
 
   void _append(String chunk) {
-    _buffer.write(chunk);
+    if (!_raw.isClosed) _raw.add(chunk);
+    final visible = _displayFilter.feed(chunk);
+    if (visible.isEmpty) return;
+    _buffer.write(visible);
     if (_buffer.length > kSessionBufferLimit) {
       final text = _buffer.toString();
       _buffer
         ..clear()
         ..write(text.substring(text.length - kSessionBufferLimit ~/ 2));
     }
-    if (!_chunks.isClosed) _chunks.add(chunk);
+    if (!_chunks.isClosed) _chunks.add(visible);
   }
 
   /// 在本会话里跑 [command]，等哨兵回来或超时。超时不杀会话——命令继续在
@@ -164,7 +173,7 @@ class PooledWorkspaceSession {
         }
       }));
     }
-    final sub = _chunks.stream.listen((chunk) {
+    final sub = _raw.stream.listen((chunk) {
       collected.write(chunk);
       onOutput?.call(chunk);
       final window = windowTail + chunk;
@@ -218,6 +227,7 @@ class PooledWorkspaceSession {
     await _outputSub?.cancel();
     _outputSub = null;
     if (!_chunks.isClosed) await _chunks.close();
+    if (!_raw.isClosed) await _raw.close();
     await _shell.close();
   }
 }
@@ -258,10 +268,13 @@ class WorkspaceSessionPool {
     return _sessions[id];
   }
 
+  /// [greeting] 非空时在环境注入后写入（内置终端的 PS1 + 横幅，与用户
+  /// 终端 tab 一致，终端页联动围观时观感相同）。
   Future<PooledWorkspaceSession> create({
     String? name,
     String? workingDirectory,
     Map<String, String> environment = const {},
+    String? greeting,
   }) async {
     _prune();
     if (_sessions.length >= kMaxPooledSessions) {
@@ -276,6 +289,9 @@ class WorkspaceSessionPool {
     );
     if (environment.isNotEmpty) {
       shell.write(utf8.encode(buildSessionEnvSetup(environment)));
+    }
+    if (greeting != null && greeting.isNotEmpty) {
+      shell.write(utf8.encode(greeting));
     }
     final id = _nextId();
     final session = PooledWorkspaceSession._(
@@ -296,6 +312,7 @@ class WorkspaceSessionPool {
   Future<PooledWorkspaceSession> acquireDefault({
     String? workingDirectory,
     Map<String, String> environment = const {},
+    String? greeting,
   }) async {
     _prune();
     for (final session in _sessions.values) {
@@ -304,6 +321,7 @@ class WorkspaceSessionPool {
     return create(
       workingDirectory: workingDirectory,
       environment: environment,
+      greeting: greeting,
     );
   }
 

@@ -61,6 +61,68 @@ String stripSessionEcho(String head, String command, String nonce) {
   return kept.join('\n');
 }
 
+/// 逐块过滤 PTY 显示流里的哨兵噪音（终端页联动视图 / 回看缓冲用）：
+/// 丢掉所有含 `__AETHER_DONE_` 的行——哨兵结果行和回显的 printf 行都会命中。
+/// 块可能在行中间截断：若未完行有成为哨兵行的可能（已含标记、或行尾是
+/// 标记的前缀），先扣住等下一块再判；否则立即放行（提示符等无换行内容
+/// 不能卡住不显示）。
+class SentinelDisplayFilter {
+  static const String _marker = '__AETHER_DONE_';
+
+  /// 无换行的未完行最多扣多久：超过即放行，防止异常长行永久卡住。
+  static const int _holdLimit = 4096;
+
+  String _pending = '';
+
+  /// 喂入一块原始输出，返回应显示的部分。
+  String feed(String chunk) {
+    final text = _pending + chunk;
+    _pending = '';
+    final out = StringBuffer();
+    var start = 0;
+    while (true) {
+      final nl = text.indexOf('\n', start);
+      if (nl < 0) break;
+      final line = text.substring(start, nl + 1);
+      if (!line.contains(_marker)) out.write(line);
+      start = nl + 1;
+    }
+    final tail = text.substring(start);
+    if (_shouldHold(tail)) {
+      _pending = tail;
+    } else {
+      out.write(tail);
+    }
+    return out.toString();
+  }
+
+  static bool _shouldHold(String tail) {
+    if (tail.isEmpty || tail.length > _holdLimit) return false;
+    if (tail.contains(_marker)) return true;
+    final max = _marker.length - 1;
+    for (var i = max < tail.length ? max : tail.length; i > 0; i--) {
+      if (tail.endsWith(_marker.substring(0, i))) return true;
+    }
+    return false;
+  }
+}
+
+/// 内置终端会话的初始化命令：提示符显示当前路径，清屏后打印工作区信息横幅
+/// （clear 顺便抹掉前面注入命令的回显）。用户终端 tab 和 AI 长驻会话共用，
+/// 两边看到的提示符 / 横幅一致。Alpine 的 busybox ash 编译时关掉了
+/// ASH_EXPAND_PRMT，PS1 里的 bash 风格转义（\e / \w）和 `$PWD` 都不会展开，
+/// 所以颜色用真实 ESC 字节、路径靠包一层 cd 在每次切目录时重算 PS1。
+String buildProotGreeting({required String name, required String root}) {
+  String q(String s) => s.replaceAll("'", r"'\''");
+  final qName = q(name);
+  final qRoot = q(root);
+  return "_aether_name='$qName'; "
+      '_aether_ps1() { PS1="\x1b[1;32m[\${_aether_name}]\x1b[0m:\x1b[1;34m\${PWD}\x1b[0m # "; }; '
+      'cd() { command cd "\$@" && _aether_ps1; }; _aether_ps1; clear; '
+      "printf '\\e[1;36mAetherlink 内置终端\\e[0m · Alpine Linux\\n"
+      "工作区: \\e[1m$qName\\e[0m\\n目录: $qRoot\\n\\n'\n";
+}
+
 /// 组装会话建立后注入工作区环境变量的 export 命令（双作用域设计稿 §3.1，
 /// 如 `WORKSPACE_ROOT` / `WORKSPACE_NAME`）。值用单引号包裹并转义内嵌单引号，
 /// 防止 shell 注入。空 map 返回空串。
