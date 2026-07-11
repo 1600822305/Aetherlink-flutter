@@ -105,6 +105,7 @@ class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
   }
 
   // Termux-B：通过 RUN_COMMAND intent 让 Termux 代跑同一份脚本，免粘贴。
+  // 首次会先弹系统权限申请（RUN_COMMAND 是运行时权限）。
   Future<void> _autoRun() async {
     setState(() => _busy = true);
     try {
@@ -114,7 +115,10 @@ class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
       _snack('已发送到 Termux。切过去看执行过程，看到「完成」后回来点'
           '「完成 / 测试连接」。');
     } on TermuxRunCommandException catch (e) {
-      if (e.externalAppsDisabled) {
+      if (e.permissionDenied) {
+        _snack('本机的「运行 Termux 命令」权限被拒绝。请重试并在弹窗里允许，'
+            '若不再弹窗，去系统设置→应用→权限里手动开启。');
+      } else if (e.externalAppsDisabled) {
         _snack('Termux 未开启 allow-external-apps。请先用下方「复制开启命令」'
             '在 Termux 里跑一次，再重试。');
       } else {
@@ -124,6 +128,14 @@ class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
       _snack('发送失败 · $e');
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _openTermux() async {
+    try {
+      await ref.read(termuxApiProvider).openApp();
+    } catch (e) {
+      _snack('打不开 Termux · $e');
     }
   }
 
@@ -331,6 +343,11 @@ class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
       color: theme.colorScheme.primary.withValues(alpha: 0.12),
       icon: Icons.check_circle_outline,
       text: label,
+      action: TextButton.icon(
+        onPressed: _openTermux,
+        icon: const Icon(Icons.open_in_new, size: 16),
+        label: const Text('打开 Termux'),
+      ),
     );
   }
 
@@ -426,7 +443,8 @@ class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
           const SizedBox(height: 4),
           Text(
             '若 Termux 已开启 allow-external-apps，可直接让 App 代跑上面的脚本，'
-            '无需手动复制粘贴。首次需先在 Termux 里跑一次开启命令。',
+            '无需手动复制粘贴。首次需先在 Termux 里跑一次开启命令，'
+            '并在代跑时允许本机的「运行 Termux 命令」权限弹窗。',
             style: muted,
           ),
           const SizedBox(height: 8),

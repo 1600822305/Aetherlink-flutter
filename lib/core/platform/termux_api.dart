@@ -39,13 +39,19 @@ class TermuxInstallStatus {
 }
 
 /// Thrown by [TermuxApi.runCommand] when the RUN_COMMAND intent is rejected.
-/// [externalAppsDisabled] means Termux 端没开 allow-external-apps=true，UI 据此
-/// 引导用户开启后重试。
+/// [externalAppsDisabled] means Termux 端没开 allow-external-apps=true；
+/// [permissionDenied] means 用户拒了本机的 RUN_COMMAND 运行时权限。UI 据此
+/// 引导用户开启/授权后重试。
 class TermuxRunCommandException implements Exception {
-  const TermuxRunCommandException(this.message, {this.externalAppsDisabled = false});
+  const TermuxRunCommandException(
+    this.message, {
+    this.externalAppsDisabled = false,
+    this.permissionDenied = false,
+  });
 
   final String message;
   final bool externalAppsDisabled;
+  final bool permissionDenied;
 
   @override
   String toString() => message;
@@ -62,6 +68,11 @@ abstract interface class TermuxApi {
   Future<TermuxInstallStatus> detect();
 
   /// 让 Termux 在前台会话里代跑 [script]（bash -c）。发送即返回，不等执行结果；
-  /// 发不出去时抛 [TermuxRunCommandException]。
+  /// 首次会先弹系统权限申请（RUN_COMMAND 是运行时权限）；发不出去时抛
+  /// [TermuxRunCommandException]。
   Future<void> runCommand(String script);
+
+  /// 把 Termux 带到前台（快速跳转，方便去粘贴命令/看代跑进度）。失败抛
+  /// [TermuxRunCommandException]。
+  Future<void> openApp();
 }

@@ -52,7 +52,20 @@ class PluginTermuxApi implements TermuxApi {
       throw TermuxRunCommandException(
         e.message ?? '发送 RUN_COMMAND 失败',
         externalAppsDisabled: e.code == 'external-apps-disabled',
+        permissionDenied: e.code == 'permission-denied',
       );
+    }
+  }
+
+  @override
+  Future<void> openApp() async {
+    if (!Platform.isAndroid) {
+      throw const TermuxRunCommandException('仅 Android 支持 Termux 直连');
+    }
+    try {
+      await _channel.invokeMethod<void>('openTermux');
+    } on PlatformException catch (e) {
+      throw TermuxRunCommandException(e.message ?? '打不开 Termux');
     }
   }
 
