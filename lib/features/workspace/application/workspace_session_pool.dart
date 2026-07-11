@@ -8,6 +8,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
@@ -99,6 +100,12 @@ class PooledWorkspaceSession {
 
   bool get alive => _alive;
   bool get busy => _busy;
+
+  /// 实时输出流（PTY 合并流，含 ANSI 序列），供终端页联动渲染。
+  Stream<String> get chunks => _chunks.stream;
+
+  /// 当前回看缓冲的全量快照（含 ANSI 序列），供终端页接入时回放历史。
+  String snapshot() => _buffer.toString();
 
   /// 回看缓冲的尾部 [tail] 个字符。
   String tailOutput([int tail = 4000]) {
@@ -222,10 +229,15 @@ class WorkspaceSessionPool {
     required String Function() nextId,
     this.workspaceLabel = '',
     this.workspaceId,
-  }) : _nextId = nextId;
+    void Function()? onChanged,
+  })  : _nextId = nextId,
+        _onChanged = onChanged;
 
   final WorkspaceBackend _backend;
   final String Function() _nextId;
+
+  /// 会话集合变化（新建 / 关闭 / 回收）时通知，供终端页联动刷新。
+  final void Function()? _onChanged;
 
   /// 池所属工作区的展示名，赋给新建的会话。
   final String workspaceLabel;
@@ -275,6 +287,7 @@ class WorkspaceSessionPool {
     );
     _sessions[id] = session;
     _ensureReaper();
+    _onChanged?.call();
     return session;
   }
 
@@ -299,6 +312,7 @@ class WorkspaceSessionPool {
     if (session == null) return false;
     await session.close();
     if (_sessions.isEmpty) _stopReaper();
+    _onChanged?.call();
     return true;
   }
 
@@ -313,8 +327,10 @@ class WorkspaceSessionPool {
 
   /// 剔除已退出的会话。
   void _prune() {
+    final before = _sessions.length;
     _sessions.removeWhere((_, s) => !s.alive);
     if (_sessions.isEmpty) _stopReaper();
+    if (_sessions.length != before) _onChanged?.call();
   }
 
   void _ensureReaper() {
@@ -341,7 +357,7 @@ class WorkspaceSessionPool {
 /// 会话池管理器：每个工作区一个池（双作用域设计稿 §3.1：同一后端上的
 /// 不同工作区各自隔离；未锚定工作区的裸后端用后端自身做键），
 /// 会话 ID 全局唯一，查找 / 关闭可跨池按 ID 直达。
-class WorkspaceSessionPoolManager {
+class WorkspaceSessionPoolManager extends ChangeNotifier {
   final Map<Object, WorkspaceSessionPool> _pools = {};
   int _nextId = 1;
 
@@ -360,6 +376,7 @@ class WorkspaceSessionPoolManager {
           nextId: () => 's${_nextId++}',
           workspaceLabel: workspaceLabel,
           workspaceId: workspaceId,
+          onChanged: notifyListeners,
         ),
       );
 

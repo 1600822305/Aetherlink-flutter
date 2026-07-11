@@ -231,6 +231,9 @@ McpToolResult? _guardCommand(String command) {
   );
 }
 
+/// terminal_execute —— 默认跑在长驻默认会话里（IDE 体验：cd / 环境变量跨
+/// 命令保留，终端页可联动围观）。需要隔离环境时 AI 可用
+/// terminal_session_create 新开会话后改用 terminal_session_exec。
 Future<McpToolResult> _execute(
   Ref ref,
   Map<String, Object?> args, {
@@ -241,24 +244,45 @@ Future<McpToolResult> _execute(
   final blocked = _guardCommand(command);
   if (blocked != null) return blocked;
   final target = await _resolveTarget(ref, args);
-  final cwd = optionalString(args, 'cwd') ?? target.defaultCwd;
+  final session = await ref
+      .read(workspaceSessionPoolManagerProvider)
+      .poolFor(
+        target.backend,
+        workspaceLabel: target.label,
+        workspaceId: target.workspaceId,
+      )
+      .acquireDefault(
+        workingDirectory: target.defaultCwd,
+        environment: target.environment,
+      );
+  // 会话里 cwd 是 shell 状态；显式传 cwd 时先 cd 过去再执行。
+  final cwd = optionalString(args, 'cwd');
+  final effective = (cwd == null || cwd.isEmpty)
+      ? command
+      : "cd '${cwd.replaceAll("'", r"'\''")}' && $command";
   final timeoutMs = optionalInt(args, 'timeout_ms') ?? _kDefaultTimeoutMs;
-  final result = await target.backend.exec(
-    command,
-    workingDirectory: cwd,
-    timeout: timeoutMs > 0 ? Duration(milliseconds: timeoutMs) : null,
+  final result = await session.exec(
+    effective,
+    timeout: Duration(
+      milliseconds: timeoutMs > 0 ? timeoutMs : _kDefaultTimeoutMs,
+    ),
     cancelSignal: cancelSignal,
     onOutput: onOutput,
   );
   return fileEditorOk({
     'command': command,
     'workspace': target.label,
-    'cwd': cwd ?? '/root',
+    'sessionId': session.id,
+    if (cwd != null && cwd.isNotEmpty) 'cwd': cwd,
     'exitCode': result.exitCode,
     'timedOut': result.timedOut,
     'canceled': result.canceled,
-    'stdout': result.stdout,
-    'stderr': result.stderr,
+    if (result.timedOut)
+      'hint': '命令超时未结束，仍在会话里继续跑；可稍后用 terminal_session_output 回看输出。'
+    else if (result.canceled)
+      'hint': '命令被用户中断（已向会话发 Ctrl-C），会话仍可继续使用。',
+    'stdout': result.output,
+    'stderr': '',
   });
 }
 
