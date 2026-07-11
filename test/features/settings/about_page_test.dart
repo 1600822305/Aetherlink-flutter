@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme.dart';
@@ -11,6 +12,18 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/about_p
 import 'package:aetherlink_flutter/features/theming/application/default_theme_spec.dart';
 
 void main() {
+  setUp(() {
+    // The About page reads its version from package_info_plus at runtime
+    // (single source of truth: pubspec.yaml's `version`).
+    PackageInfo.setMockInitialValues(
+      appName: 'AetherLink',
+      packageName: 'com.example.aetherlink_flutter',
+      version: '0.7.0',
+      buildNumber: '70',
+      buildSignature: '',
+    );
+  });
+
   testWidgets('About page renders the info card and all link rows', (
     tester,
   ) async {
@@ -23,11 +36,13 @@ void main() {
       ),
     );
 
+    await tester.pumpAndSettle();
+
     // Header + info card.
     expect(find.text('关于我们'), findsOneWidget);
     expect(find.text('AetherLink'), findsOneWidget);
     expect(find.text('一个强大的AI助手应用，支持多种大语言模型，帮助您更高效地完成工作。'), findsOneWidget);
-    expect(find.text('v0.6.5'), findsOneWidget);
+    expect(find.text('v0.7.0'), findsOneWidget);
 
     // Links card: all four rows in order.
     expect(find.text('GitHub'), findsOneWidget);
@@ -47,6 +62,8 @@ void main() {
           ),
         ),
       );
+
+      await tester.pumpAndSettle();
 
       // The three external rows and the in-app devtools row are all wired.
       for (final label in const ['GitHub', '官方群组', '反馈', '开发者工具']) {
