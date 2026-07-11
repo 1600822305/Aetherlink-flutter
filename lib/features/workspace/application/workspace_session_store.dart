@@ -17,6 +17,10 @@ const String kWorkspaceSessionKey = 'workspace_session';
 /// `'false'`). Absent means enabled (the default, IDE-like behaviour).
 const String kWorkspaceAutoRestoreKey = 'workspace_auto_restore';
 
+/// Setting key for the file-tree "显示隐藏文件" toggle (`'true'` / `'false'`).
+/// Absent means hidden files are not shown (the default).
+const String kWorkspaceShowHiddenKey = 'workspace_show_hidden';
+
 /// The persisted middle-page session: the open file tabs of [workspaceId] and
 /// which one was active.
 class WorkspaceSession {

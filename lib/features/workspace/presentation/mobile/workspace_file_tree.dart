@@ -417,17 +417,19 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   }
 
   // Walks the cached tree depth-first into flat rows the ListView renders.
-  void _appendRows(String path, int depth, List<_TreeRow> out) {
+  // Hidden entries are skipped unless the 「显示隐藏文件」 toggle is on.
+  void _appendRows(String path, int depth, List<_TreeRow> out, bool showHidden) {
     final entries = _children[path];
     if (entries == null) return;
     for (final entry in entries) {
+      if (!showHidden && entry.isHidden) continue;
       final expanded = _expanded.contains(entry.path);
       out.add(_TreeRow(entry: entry, depth: depth, expanded: expanded));
       if (entry.isDirectory && expanded) {
         if (_loading.contains(entry.path)) {
           out.add(_TreeRow.loading(depth + 1));
         } else {
-          _appendRows(entry.path, depth + 1, out);
+          _appendRows(entry.path, depth + 1, out, showHidden);
         }
       }
     }
@@ -463,10 +465,11 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
       );
     }
 
+    final showHidden = ref.watch(showHiddenFilesProvider);
     final root = _root;
     final rows = <_TreeRow>[];
     if (root != null) {
-      _appendRows(root, 0, rows);
+      _appendRows(root, 0, rows, showHidden);
     }
     _rows = rows;
     final rootLoading = root != null && _loading.contains(root) && rows.isEmpty;
@@ -551,6 +554,13 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                     onTap: () => ops?.newFolder(ops.rootPath),
                   ),
                   const Spacer(),
+                  _ToolbarButton(
+                    icon: showHidden ? LucideIcons.eye : LucideIcons.eyeOff,
+                    tooltip: showHidden ? '隐藏隐藏文件' : '显示隐藏文件',
+                    enabled: root != null,
+                    onTap: () =>
+                        ref.read(showHiddenFilesProvider.notifier).toggle(),
+                  ),
                   _ToolbarButton(
                     icon: LucideIcons.refreshCw,
                     tooltip: '刷新',

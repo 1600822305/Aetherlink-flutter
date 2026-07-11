@@ -85,6 +85,32 @@ class EditorJump extends Notifier<EditorJumpRequest?> {
   void clear() => state = null;
 }
 
+/// Whether the file tree shows hidden entries ([WorkspaceEntry.isHidden]).
+/// Persisted under [kWorkspaceShowHiddenKey]; defaults to off.
+final showHiddenFilesProvider = NotifierProvider<ShowHiddenFiles, bool>(
+  ShowHiddenFiles.new,
+);
+
+class ShowHiddenFiles extends Notifier<bool> {
+  @override
+  bool build() {
+    ref
+        .read(appSettingsStoreProvider)
+        .getSetting(kWorkspaceShowHiddenKey)
+        .then((raw) {
+      if (raw == 'true' && !state) state = true;
+    });
+    return false;
+  }
+
+  void toggle() {
+    state = !state;
+    ref
+        .read(appSettingsStoreProvider)
+        .saveSetting(kWorkspaceShowHiddenKey, state ? 'true' : 'false');
+  }
+}
+
 /// Whether the three-page horizontal pager is locked. When `true` the shell
 /// disables page swiping so pinch-zoom / drag inside the editor can't
 /// accidentally flip pages. Toggled from the editor header's lock button.
