@@ -1002,9 +1002,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     ),
     McpToolDefinition(
       name: 'run_command',
-      description: '在工作区所在机器上执行一条 shell 命令并返回 stdout/stderr/退出码（非交互、非 PTY）。'
-          '仅远程类后端（SSH / Termux）支持；本地 SAF 工作区不支持。属高危操作，会触发用户确认。'
-          '适合跑构建/测试/git/查询等一次性命令；不要用于需要交互输入的程序。',
+      description: '在工作区的长驻终端会话里执行一条 shell 命令并返回输出/退出码。'
+          '默认复用同一个持久会话（像 IDE 终端：cd、环境变量、venv 等状态跨命令保留，'
+          '用户可在终端页实时围观 / 接管）。仅 canExec 后端（内置终端 / SSH / Termux）支持；'
+          '本地 SAF 工作区不支持。属高危操作，会触发用户确认。'
+          '适合跑构建/测试/git/查询等命令；不要用于需要交互输入的程序。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1019,7 +1021,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'timeout_ms': {
             'type': 'number',
-            'description': '超时毫秒数（可选，默认 60000；超时会终止命令）',
+            'description': '超时毫秒数（可选，默认 60000；超时不杀命令，后台继续跑）',
           },
         },
         'required': ['command'],

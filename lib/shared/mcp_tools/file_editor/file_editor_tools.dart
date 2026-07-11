@@ -8,6 +8,7 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_exec_handlers.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_read_handlers.dart';
@@ -101,6 +102,8 @@ Future<McpToolResult> runFileEditorTool(
     }
     return fileEditorError('未知的工具: $toolName');
   } on FileEditorError catch (e) {
+    return fileEditorError(e.message);
+  } on WorkspaceSessionException catch (e) {
     return fileEditorError(e.message);
   } catch (e) {
     return fileEditorError('文件编辑工具执行失败: $e');

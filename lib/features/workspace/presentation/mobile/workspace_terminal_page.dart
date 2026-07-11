@@ -28,13 +28,17 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.d
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_session_protocol.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
-/// 内置终端连接后注入的初始化命令：提示符显示当前路径（busybox ash
-/// 支持 \w / \e 提示符展开），清屏后打印工作区信息横幅。
+/// 内置终端连接后注入的初始化命令：提示符显示当前路径，清屏后打印工作区
+/// 信息横幅。Alpine 的 busybox ash 编译时关掉了 ASH_EXPAND_PRMT，PS1 里的
+/// bash 风格转义（\e / \w）和 \$PWD 都不会展开，所以颜色用真实 ESC 字节、
+/// 路径靠包一层 cd 在每次切目录时重算 PS1。
 String buildProotGreeting(Workspace workspace) {
   String q(String s) => s.replaceAll("'", r"'\''");
   final name = q(workspace.name);
   final root = q(workspace.root);
-  return "export PS1='\\e[1;32m[$name]\\e[0m:\\e[1;34m\\w\\e[0m # '; clear; "
+  return "_aether_name='$name'; "
+      '_aether_ps1() { PS1="\x1b[1;32m[\${_aether_name}]\x1b[0m:\x1b[1;34m\${PWD}\x1b[0m # "; }; '
+      'cd() { command cd "\$@" && _aether_ps1; }; _aether_ps1; clear; '
       "printf '\\e[1;36mAetherlink 内置终端\\e[0m · Alpine Linux\\n"
       "工作区: \\e[1m$name\\e[0m\\n目录: $root\\n\\n'\n";
 }
