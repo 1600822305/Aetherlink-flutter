@@ -30,7 +30,7 @@ class AboutPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final info = ref.watch(aboutInfoProvider);
+    final asyncInfo = ref.watch(aboutInfoProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -57,14 +57,18 @@ class AboutPage extends ConsumerWidget {
         ),
         title: const Text('关于我们'),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _SettingCard(child: _AboutHeader(info: info)),
-          const SizedBox(height: 24),
-          _SettingCard(child: _LinksList(links: info.links)),
-        ],
-      ),
+      body: switch (asyncInfo) {
+        AsyncData(value: final info) => ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _SettingCard(child: _AboutHeader(info: info)),
+              const SizedBox(height: 24),
+              _SettingCard(child: _LinksList(links: info.links)),
+            ],
+          ),
+        AsyncError(:final error) => Center(child: Text('$error')),
+        _ => const SizedBox.shrink(),
+      },
     );
   }
 }
@@ -144,7 +148,7 @@ class _AboutHeader extends StatelessWidget {
   }
 }
 
-/// The green "v0.6.5" pill. Fills solid with the theme's emerald
+/// The green version pill (e.g. "v0.7.0"). Fills solid with the theme's emerald
 /// [ColorScheme.secondary] as the success accent (the original used MUI's
 /// `success` palette) and reads with [ColorScheme.onSecondary] — no hard-coded
 /// color.

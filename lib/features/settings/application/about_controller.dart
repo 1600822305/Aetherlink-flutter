@@ -1,3 +1,4 @@
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/features/settings/domain/about_info.dart';
@@ -12,31 +13,34 @@ const String _qqGroupUrl =
 /// (the page stays a pure view — no business logic, ADR/PROJECT_STRUCTURE).
 ///
 /// Values are ported verbatim from the original `AboutPage.tsx` /
-/// `settings.about` zh-CN strings. The version is static for now; it can later
-/// be sourced from `package_info_plus` without touching the view — only this
-/// provider changes.
+/// `settings.about` zh-CN strings. The version comes from `package_info_plus`
+/// at runtime, so pubspec.yaml's `version` is the single source of truth for
+/// the About page, the Android versionName and the APK.
 ///
 /// The "开发者工具" row points at the original's in-app `/devtools` page, which
 /// does not exist in the Flutter app yet, so its [AboutLink.url] is `null` and
 /// the row renders disabled (the settings hub's convention for unimplemented
 /// destinations — no fake page).
 @riverpod
-AboutInfo aboutInfo(Ref ref) => const AboutInfo(
-  appName: 'AetherLink',
-  description: '一个强大的AI助手应用，支持多种大语言模型，帮助您更高效地完成工作。',
-  version: '0.6.5',
-  links: <AboutLink>[
-    AboutLink(
-      kind: AboutLinkKind.github,
-      title: 'GitHub',
-      url: 'https://github.com/1600822305/CS-LLM-house',
-    ),
-    AboutLink(kind: AboutLinkKind.qqGroup, title: '官方群组', url: _qqGroupUrl),
-    AboutLink(
-      kind: AboutLinkKind.feedback,
-      title: '反馈',
-      url: 'https://github.com/1600822305/AetherLink/issues',
-    ),
-    AboutLink(kind: AboutLinkKind.devTools, title: '开发者工具'),
-  ],
-);
+Future<AboutInfo> aboutInfo(Ref ref) async {
+  final packageInfo = await PackageInfo.fromPlatform();
+  return AboutInfo(
+    appName: 'AetherLink',
+    description: '一个强大的AI助手应用，支持多种大语言模型，帮助您更高效地完成工作。',
+    version: packageInfo.version,
+    links: const <AboutLink>[
+      AboutLink(
+        kind: AboutLinkKind.github,
+        title: 'GitHub',
+        url: 'https://github.com/1600822305/CS-LLM-house',
+      ),
+      AboutLink(kind: AboutLinkKind.qqGroup, title: '官方群组', url: _qqGroupUrl),
+      AboutLink(
+        kind: AboutLinkKind.feedback,
+        title: '反馈',
+        url: 'https://github.com/1600822305/AetherLink/issues',
+      ),
+      AboutLink(kind: AboutLinkKind.devTools, title: '开发者工具'),
+    ],
+  );
+}
