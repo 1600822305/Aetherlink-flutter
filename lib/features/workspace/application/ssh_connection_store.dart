@@ -56,10 +56,33 @@ class SshConnectionStore extends _$SshConnectionStore {
         );
   }
 
+  /// 当前全部连接档案的快照（未 hydrate 时为空表）。
+  List<SshConnection> all() => state.value ?? const [];
+
   /// The connection with [id], or null when unknown.
   SshConnection? byId(String id) {
     for (final c in state.value ?? const <SshConnection>[]) {
       if (c.id == id) return c;
+    }
+    return null;
+  }
+
+  /// The first connection matching the endpoint四元组（host / port / username /
+  /// authType），没有则 null。持久化前先查它可避免同一目标反复落新档案
+  /// （如 Termux 一键接入每次都指向 127.0.0.1:8022）。
+  SshConnection? findByEndpoint({
+    required String host,
+    required int port,
+    required String username,
+    required SshAuthType authType,
+  }) {
+    for (final c in state.value ?? const <SshConnection>[]) {
+      if (c.host == host &&
+          c.port == port &&
+          c.username == username &&
+          c.authType == authType) {
+        return c;
+      }
     }
     return null;
   }

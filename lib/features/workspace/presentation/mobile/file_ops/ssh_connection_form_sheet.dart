@@ -20,6 +20,7 @@ import 'package:aetherlink_flutter/features/workspace/application/ssh_connection
 import 'package:aetherlink_flutter/features/workspace/application/ssh_connection_store.dart';
 import 'package:aetherlink_flutter/features/workspace/application/ssh_credential_store.dart';
 import 'package:aetherlink_flutter/features/workspace/application/ssh_workspace_setup.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/ssh_connection.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
@@ -81,6 +82,7 @@ class _SshConnectionFormSheetState
   void initState() {
     super.initState();
     final conn = widget.editConnection;
+    if (conn == null) _cleanupDuplicates();
     if (conn != null) {
       _label.text = conn.label;
       _host.text = conn.host;
@@ -89,6 +91,18 @@ class _SshConnectionFormSheetState
       _authType = conn.authType;
       _loadCredential(conn.credentialKeyId);
     }
+  }
+
+  // 一次性合并存量重复连接（同 endpoint 多条档案），避免「复用已有连接」
+  // 列表被历史重复条目污染。
+  Future<void> _cleanupDuplicates() async {
+    await ref.read(sshConnectionStoreProvider.future);
+    await ref.read(workspaceStoreProvider.future);
+    await dedupeSshConnections(
+      connections: ref.read(sshConnectionStoreProvider.notifier),
+      credentials: ref.read(sshCredentialStoreProvider.notifier),
+      workspaces: ref.read(workspaceStoreProvider.notifier),
+    );
   }
 
   // Prefill the secret fields from the credential KV so an edit can keep the
@@ -234,6 +248,8 @@ class _SshConnectionFormSheetState
       params: _params(expectedFingerprint: fingerprint),
       fingerprint: fingerprint,
     );
+    // 同 endpoint 复用时凭据可能已更新，丢掉连接池里的旧通道。
+    await ref.read(sshBackendPoolProvider).invalidate(connection.id);
 
     await _openWorkspaceFor(connection, root: root);
   }
