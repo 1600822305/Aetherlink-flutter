@@ -347,14 +347,16 @@ Future<void> _openMiniMap(BuildContext context, WidgetRef ref) async {
     return;
   }
   final isSelecting = ref.read(messageSelectionProvider).isSelecting;
+  // Grab the notifier up front: when opened from a 聚合按钮 sheet the caller's
+  // ref belongs to the already-popped sheet and is unusable after the await.
+  final scrollNotifier = ref.read(scrollToMessageIdProvider.notifier);
   final messageId = await showMiniMapSheet(
     context,
     messages,
     selecting: isSelecting,
-    ref: ref,
   );
   if (messageId != null && !isSelecting) {
-    ref.read(scrollToMessageIdProvider.notifier).scrollTo(messageId);
+    scrollNotifier.scrollTo(messageId);
   }
 }
 
