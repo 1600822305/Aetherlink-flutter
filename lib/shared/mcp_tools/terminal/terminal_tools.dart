@@ -30,7 +30,9 @@ const int _kDefaultTimeoutMs = 120000;
 ///
 /// 双作用域设计稿 §3.2：目标是项目模式（scope=project）工作区时按
 /// [evaluateCommandRisk] 分级——root 内低危只读命令免审批，其余照常；
-/// 全机模式 / 未指定工作区维持全量审批。[workspaces] 用于同步解析
+/// 全机模式 / 未指定工作区时按 [isReadOnlyCommand] 分级——纯只读命令
+/// （ls / cat / pwd 等白名单，无重定向/提权）在沙箱内无副作用，
+/// 同样免审批，其余全量审批。[workspaces] 用于同步解析
 /// `workspace` 参数（编号 / ID / 名称，与 resolveWorkspace 同规则）。
 bool terminalToolNeedsConfirmation(
   String toolName,
@@ -48,11 +50,11 @@ bool terminalToolNeedsConfirmation(
     default:
       return false;
   }
+  final command = args['command']?.toString() ?? '';
   final workspace = _matchWorkspaceArg(args, workspaces);
   if (workspace == null || workspace.scope != WorkspaceScope.project) {
-    return true;
+    return !isReadOnlyCommand(command);
   }
-  final command = args['command']?.toString() ?? '';
   return evaluateCommandRisk(command, root: workspace.root) !=
       CommandRisk.safeInRoot;
 }
