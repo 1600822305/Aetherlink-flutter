@@ -32,7 +32,6 @@ import 'package:aetherlink_flutter/features/workspace/data/local_saf_backend.dar
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/open_workspace_sheet.dart';
-import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/ssh_connection_form_sheet.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 class WorkspaceManagementPage extends ConsumerStatefulWidget {
@@ -232,8 +231,10 @@ class _WorkspaceManagementPageState
       return;
     }
     if (!mounted) return;
-    final changed =
-        await showSshConnectionFormSheet(context, ref, editConnection: conn);
+    final changed = await context.push<bool>(
+      AppRouter.sshConnectionPath,
+      extra: conn,
+    );
     if (changed == true) {
       await _refreshHealth();
       if (mounted) _snack('已更新连接');

@@ -3,7 +3,7 @@
 // confirmation persists the SshConnection profile + its secret (separate
 // plaintext KV, excluded from backup — 设计文档 §5.2).
 //
-// Three flows share this sheet:
+// Three flows share this page:
 //   · 新建 (editConnection == null): create a fresh connection + workspace.
 //   · 复用已有连接: tap an existing profile, pick a root → open a workspace that
 //     references it (no new connection/credential — 设计文档 §5.1 方案 C 的复用).
@@ -12,9 +12,14 @@
 //
 // dartssh2 is never imported here: the probe goes through the application-layer
 // pool, which returns the neutral domain [SshProbeResult].
+//
+// This is a full-screen route (was a bottom sheet): the form is long and
+// keyboard-heavy, so it owns its own navigation entry and uses its own ref. An
+// edit pops with `true` so the caller (管理页) can refresh its health badges.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:aetherlink_flutter/features/workspace/application/ssh_connection_pool.dart';
 import 'package:aetherlink_flutter/features/workspace/application/ssh_connection_store.dart';
@@ -24,46 +29,21 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_stor
 import 'package:aetherlink_flutter/features/workspace/domain/ssh_connection.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
-/// Opens the SSH connection form sheet. [parentRef] is the page's ref so the
-/// provider writes (open workspace / switch) outlive the dismissed sheet.
-///
-/// Pass [editConnection] to edit an existing profile (管理页「重新授权」); leave it
-/// null to create a new connection / reuse an existing one. Resolves to `true`
-/// when an edit was saved (so the caller can refresh its health badges).
-Future<bool?> showSshConnectionFormSheet(
-  BuildContext context,
-  WidgetRef ref, {
-  SshConnection? editConnection,
-}) {
-  return showModalBottomSheet<bool>(
-    context: context,
-    showDragHandle: true,
-    isScrollControlled: true,
-    builder: (sheetContext) => _SshConnectionFormSheet(
-      parentRef: ref,
-      editConnection: editConnection,
-    ),
-  );
-}
-
-class _SshConnectionFormSheet extends ConsumerStatefulWidget {
-  const _SshConnectionFormSheet({
-    required this.parentRef,
-    this.editConnection,
-  });
-
-  final WidgetRef parentRef;
+/// The SSH connection form page. Pass [editConnection] to edit an existing
+/// profile (管理页「重新授权」); leave it null to create a new connection / reuse
+/// an existing one. Pops with `true` when an edit was saved.
+class SshConnectionFormPage extends ConsumerStatefulWidget {
+  const SshConnectionFormPage({super.key, this.editConnection});
 
   /// Non-null = edit an existing profile instead of creating a new one.
   final SshConnection? editConnection;
 
   @override
-  ConsumerState<_SshConnectionFormSheet> createState() =>
-      _SshConnectionFormSheetState();
+  ConsumerState<SshConnectionFormPage> createState() =>
+      _SshConnectionFormPageState();
 }
 
-class _SshConnectionFormSheetState
-    extends ConsumerState<_SshConnectionFormSheet> {
+class _SshConnectionFormPageState extends ConsumerState<SshConnectionFormPage> {
   final _label = TextEditingController();
   final _host = TextEditingController();
   final _port = TextEditingController(text: '22');
@@ -236,7 +216,6 @@ class _SshConnectionFormSheetState
     required String root,
     required String? fingerprint,
   }) async {
-    final ref = widget.parentRef;
     final label = _label.text.trim().isEmpty
         ? '${_username.text.trim()}@${_host.text.trim()}'
         : _label.text.trim();
@@ -290,7 +269,6 @@ class _SshConnectionFormSheetState
     SshConnection conn, {
     required String? fingerprint,
   }) async {
-    final ref = widget.parentRef;
     final label = _label.text.trim().isEmpty
         ? '${_username.text.trim()}@${_host.text.trim()}'
         : _label.text.trim();
@@ -319,7 +297,7 @@ class _SshConnectionFormSheetState
     // Drop the pooled transport so the next access reconnects with the new
     // host/credential (设计文档 §4.1 connection 复用).
     await ref.read(sshBackendPoolProvider).invalidate(conn.id);
-    if (mounted) Navigator.of(context).pop(true);
+    if (mounted) context.pop(true);
   }
 
   // ── 复用已有连接 ─────────────────────────────────────────────────────────
@@ -363,8 +341,8 @@ class _SshConnectionFormSheetState
     SshConnection connection, {
     required String root,
   }) async {
-    await openAndSwitchSshWorkspace(widget.parentRef, connection, root: root);
-    if (mounted) Navigator.of(context).pop();
+    await openAndSwitchSshWorkspace(ref, connection, root: root);
+    if (mounted) context.pop();
   }
 
   @override
@@ -376,174 +354,159 @@ class _SshConnectionFormSheetState
         ? const <SshConnection>[]
         : (ref.watch(sshConnectionStoreProvider).asData?.value ??
             const <SshConnection>[]);
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.viewInsetsOf(context).bottom,
-        ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
-          ),
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            children: [
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_isEdit ? '编辑 SSH 连接' : '新建 SSH 工作区'),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          children: [
+            if (existing.isNotEmpty) ...[
               Padding(
-                padding: const EdgeInsets.only(bottom: 12, left: 4),
+                padding: const EdgeInsets.only(bottom: 4, left: 4),
                 child: Text(
-                  _isEdit ? '编辑 SSH 连接' : '新建 SSH 工作区',
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700),
+                  '复用已有连接',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-              if (existing.isNotEmpty) ...[
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4, left: 4),
-                  child: Text(
-                    '复用已有连接',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
+              for (final conn in existing)
+                Card(
+                  margin: const EdgeInsets.symmetric(vertical: 2),
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.dns_outlined,
+                      color: theme.colorScheme.primary,
                     ),
+                    title: Text(
+                      conn.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      '${conn.username}@${conn.host}:${conn.port}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _busy ? null : () => _openWithExisting(conn),
                   ),
                 ),
-                for (final conn in existing)
-                  Card(
-                    margin: const EdgeInsets.symmetric(vertical: 2),
-                    child: ListTile(
-                      leading: Icon(
-                        Icons.dns_outlined,
-                        color: theme.colorScheme.primary,
-                      ),
-                      title: Text(
-                        conn.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(
-                        '${conn.username}@${conn.host}:${conn.port}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: _busy ? null : () => _openWithExisting(conn),
-                    ),
-                  ),
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4, left: 4),
-                  child: Text(
-                    '或新建连接',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-              TextField(
-                controller: _label,
-                decoration: const InputDecoration(
-                  labelText: '名称 (可选)',
-                  hintText: '如 我的 VPS',
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: TextField(
-                      controller: _host,
-                      decoration: const InputDecoration(
-                        labelText: '主机',
-                        hintText: 'example.com',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: _port,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: '端口'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _username,
-                decoration: const InputDecoration(labelText: '用户名'),
-              ),
-              if (!_isEdit) ...[
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _root,
-                  decoration: const InputDecoration(
-                    labelText: '远端起始路径',
-                    hintText: '如 /home/alice/project 或 .',
-                  ),
-                ),
-              ],
               const SizedBox(height: 12),
-              SegmentedButton<SshAuthType>(
-                segments: const [
-                  ButtonSegment(
-                    value: SshAuthType.password,
-                    label: Text('密码'),
-                  ),
-                  ButtonSegment(
-                    value: SshAuthType.privateKey,
-                    label: Text('私钥'),
-                  ),
-                ],
-                selected: {_authType},
-                onSelectionChanged: (s) =>
-                    setState(() => _authType = s.first),
-              ),
-              const SizedBox(height: 8),
-              if (isPassword)
-                TextField(
-                  controller: _password,
-                  obscureText: true,
-                  decoration: const InputDecoration(labelText: '密码'),
-                )
-              else ...[
-                TextField(
-                  controller: _privateKey,
-                  minLines: 3,
-                  maxLines: 6,
-                  decoration: const InputDecoration(
-                    labelText: '私钥 (PEM)',
-                    hintText: '-----BEGIN OPENSSH PRIVATE KEY-----',
-                    alignLabelWithHint: true,
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4, left: 4),
+                child: Text(
+                  '或新建连接',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _passphrase,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: '私钥口令 (可选)',
-                  ),
-                ),
-              ],
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed:
-                    _busy ? null : (_isEdit ? _testAndSave : _testAndConnect),
-                child: _busy
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(_isEdit ? '测试并保存' : '测试并连接'),
               ),
             ],
-          ),
+            TextField(
+              controller: _label,
+              decoration: const InputDecoration(
+                labelText: '名称 (可选)',
+                hintText: '如 我的 VPS',
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextField(
+                    controller: _host,
+                    decoration: const InputDecoration(
+                      labelText: '主机',
+                      hintText: 'example.com',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _port,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: '端口'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _username,
+              decoration: const InputDecoration(labelText: '用户名'),
+            ),
+            if (!_isEdit) ...[
+              const SizedBox(height: 8),
+              TextField(
+                controller: _root,
+                decoration: const InputDecoration(
+                  labelText: '远端起始路径',
+                  hintText: '如 /home/alice/project 或 .',
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            SegmentedButton<SshAuthType>(
+              segments: const [
+                ButtonSegment(
+                  value: SshAuthType.password,
+                  label: Text('密码'),
+                ),
+                ButtonSegment(
+                  value: SshAuthType.privateKey,
+                  label: Text('私钥'),
+                ),
+              ],
+              selected: {_authType},
+              onSelectionChanged: (s) => setState(() => _authType = s.first),
+            ),
+            const SizedBox(height: 8),
+            if (isPassword)
+              TextField(
+                controller: _password,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: '密码'),
+              )
+            else ...[
+              TextField(
+                controller: _privateKey,
+                minLines: 3,
+                maxLines: 6,
+                decoration: const InputDecoration(
+                  labelText: '私钥 (PEM)',
+                  hintText: '-----BEGIN OPENSSH PRIVATE KEY-----',
+                  alignLabelWithHint: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _passphrase,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: '私钥口令 (可选)',
+                ),
+              ),
+            ],
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed:
+                  _busy ? null : (_isEdit ? _testAndSave : _testAndConnect),
+              child: _busy
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(_isEdit ? '测试并保存' : '测试并连接'),
+            ),
+          ],
         ),
       ),
     );

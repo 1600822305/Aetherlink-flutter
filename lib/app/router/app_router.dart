@@ -55,6 +55,9 @@ import 'package:aetherlink_flutter/features/settings/presentation/mobile/web_sea
 import 'package:aetherlink_flutter/features/theming/presentation/mobile/theme_style_settings_page.dart';
 import 'package:aetherlink_flutter/features/voice/presentation/mobile/voice_settings_page.dart';
 import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/ssh_connection.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/ssh_connection_form_page.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/termux_setup_page.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_management_page.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_page.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_terminal_page.dart';
@@ -131,6 +134,13 @@ abstract final class AppRouter {
   /// 独立终端页：复用 [WorkspaceTerminalPage]，但作为单独路由压栈，
   /// 返回直接 pop 回上一页（如聊天），不受工作区 PageView / 两次退出影响。
   static const String terminalPath = '/workspace/terminal';
+
+  /// 新建 / 编辑 SSH 连接页（原上拉面板，内容多故独立成页）。编辑时把
+  /// [SshConnection] 通过 `extra` 传入；保存成功 pop `true`。
+  static const String sshConnectionPath = '/workspace/ssh-connection';
+
+  /// Termux 一键接入页（原上拉面板，多步引导故独立成页）。
+  static const String termuxSetupPath = '/workspace/termux';
   static const String devToolsPath = '/devtools';
 
   /// The model-provider third-level pages (M4.3.1). The detail / edit / advanced
@@ -198,6 +208,22 @@ abstract final class AppRouter {
         name: 'terminal',
         pageBuilder: (context, state) =>
             _instant(state, const TerminalRoutePage()),
+      ),
+      GoRoute(
+        path: sshConnectionPath,
+        name: 'ssh-connection',
+        pageBuilder: (context, state) => _instant(
+          state,
+          SshConnectionFormPage(
+            editConnection: state.extra as SshConnection?,
+          ),
+        ),
+      ),
+      GoRoute(
+        path: termuxSetupPath,
+        name: 'termux-setup',
+        pageBuilder: (context, state) =>
+            _instant(state, const TermuxSetupPage()),
       ),
       GoRoute(
         path: settingsPath,

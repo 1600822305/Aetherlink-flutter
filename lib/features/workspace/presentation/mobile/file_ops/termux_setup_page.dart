@@ -1,4 +1,4 @@
-// 「Termux 一键接入」 sheet (设计文档 §10.5 方式 A / Termux-A).
+// 「Termux 一键接入」 page (设计文档 §10.5 方式 A / Termux-A).
 //
 // Flow: detect Termux install → generate an Ed25519 key pair (private key kept
 // local; public key baked into a one-shot setup script) → user pastes the
@@ -13,8 +13,12 @@
 // SshProbeResult.
 //
 // Termux-B (full automation via RUN_COMMAND, 设计文档 §10.5 方式 B): once the
-// user has enabled allow-external-apps in Termux, the sheet can send the same
+// user has enabled allow-external-apps in Termux, the page can send the same
 // setup script through the RUN_COMMAND intent so no pasting is needed.
+//
+// This is a full-screen route (was a bottom sheet): the flow is long, involves
+// keyboard-free but multi-step guidance and app-switching to Termux, so it owns
+// its own navigation entry and uses its own ref (no parent-ref hand-off).
 
 import 'dart:io';
 
@@ -39,28 +43,16 @@ import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 /// F-Droid page for the supported Termux build (Play build is deprecated).
 const String _kTermuxFdroidUrl = 'https://f-droid.org/packages/com.termux/';
 
-/// Opens the Termux one-tap setup sheet. [parentRef] is the page's ref so the
-/// open/switch writes outlive the dismissed sheet.
-Future<void> showTermuxSetupSheet(BuildContext context, WidgetRef ref) {
-  return showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    isScrollControlled: true,
-    builder: (sheetContext) => _TermuxSetupSheet(parentRef: ref),
-  );
-}
-
-class _TermuxSetupSheet extends ConsumerStatefulWidget {
-  const _TermuxSetupSheet({required this.parentRef});
-
-  final WidgetRef parentRef;
+/// The Termux one-tap setup page.
+class TermuxSetupPage extends ConsumerStatefulWidget {
+  const TermuxSetupPage({super.key});
 
   @override
-  ConsumerState<_TermuxSetupSheet> createState() => _TermuxSetupSheetState();
+  ConsumerState<TermuxSetupPage> createState() => _TermuxSetupPageState();
 }
 
-class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
-  // Generated once and held for the sheet's lifetime: the displayed command and
+class _TermuxSetupPageState extends ConsumerState<TermuxSetupPage> {
+  // Generated once and held for the page's lifetime: the displayed command and
   // the stored private key must come from the same pair.
   late final SshGeneratedKeyPair _keys;
   late final String _oneLiner;
@@ -193,11 +185,11 @@ class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
         params: params,
         fingerprint: result.fingerprint, // localhost: auto-trust on first use.
       );
-      // 同 endpoint 复用时私钥已换新（每次打开 sheet 都重新生成密钥对），
+      // 同 endpoint 复用时私钥已换新（每次打开都重新生成密钥对），
       // 丢掉连接池里的旧通道让下次访问用新钥重连。
       await ref.read(sshBackendPoolProvider).invalidate(connection.id);
       await openAndSwitchSshWorkspace(
-        widget.parentRef,
+        ref,
         connection,
         root: root,
         backendType: WorkspaceBackendType.termux,
@@ -213,84 +205,70 @@ class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
-          ),
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4, left: 4),
-                child: Text(
-                  'Termux 一键接入',
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700),
+    return Scaffold(
+      appBar: AppBar(title: const Text('Termux 一键接入')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12, left: 4),
+              child: Text(
+                '在同机 Termux 里跑一条命令，App 即可像 SSH 一样浏览其文件并执行命令。',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12, left: 4),
-                child: Text(
-                  '在同机 Termux 里跑一条命令，App 即可像 SSH 一样浏览其文件并执行命令。',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+            ),
+            _buildDetectionBanner(theme),
+            const SizedBox(height: 12),
+            _buildSteps(theme),
+            const SizedBox(height: 12),
+            _buildCommandBox(theme),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _busy ? null : _copyCommand,
+                    icon: const Icon(Icons.copy, size: 18),
+                    label: const Text('复制命令'),
                   ),
                 ),
-              ),
-              _buildDetectionBanner(theme),
-              const SizedBox(height: 12),
-              _buildSteps(theme),
-              const SizedBox(height: 12),
-              _buildCommandBox(theme),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _busy ? null : _copyCommand,
-                      icon: const Icon(Icons.copy, size: 18),
-                      label: const Text('复制命令'),
-                    ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _busy ? null : _shareScript,
+                    icon: const Icon(Icons.ios_share, size: 18),
+                    label: const Text('分享脚本'),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _busy ? null : _shareScript,
-                      icon: const Icon(Icons.ios_share, size: 18),
-                      label: const Text('分享脚本'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              _buildAutoRun(theme),
-              const SizedBox(height: 12),
-              _buildTips(theme),
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed: _busy ? null : () => _finish(),
-                child: _busy
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('完成 / 测试连接'),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: _busy
-                    ? null
-                    : () => _finish(root: TermuxSetup.sharedStorageRoot),
-                icon: const Icon(Icons.sd_storage_outlined, size: 18),
-                label: const Text('浏览手机存储 (/sdcard)'),
-              ),
-            ],
-          ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _buildAutoRun(theme),
+            const SizedBox(height: 12),
+            _buildTips(theme),
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed: _busy ? null : () => _finish(),
+              child: _busy
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('完成 / 测试连接'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _busy
+                  ? null
+                  : () => _finish(root: TermuxSetup.sharedStorageRoot),
+              icon: const Icon(Icons.sd_storage_outlined, size: 18),
+              label: const Text('浏览手机存储 (/sdcard)'),
+            ),
+          ],
         ),
       ),
     );

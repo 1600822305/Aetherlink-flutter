@@ -9,8 +9,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
 import 'package:aetherlink_flutter/features/terminal/presentation/mobile/terminal_setup_sheet.dart';
@@ -19,8 +21,6 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_stor
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/proot_folder_picker_sheet.dart';
-import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/ssh_connection_form_sheet.dart';
-import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/termux_setup_sheet.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// Opens the workspace picker sheet (recent list + 「打开本地文件夹」).
@@ -91,13 +91,13 @@ class _OpenWorkspaceSheet extends ConsumerWidget {
                 ),
                 title: const Text('SSH / 远程'),
                 subtitle: const Text('连接远程机器，浏览其文件 (Remote-SSH)'),
-                onTap: () async {
-                  // Capture the navigator before popping this sheet — its own
-                  // context is defunct afterwards but navigator.context stays
-                  // valid for showing the form sheet.
-                  final navigator = Navigator.of(context);
-                  navigator.pop();
-                  await showSshConnectionFormSheet(navigator.context, parentRef);
+                onTap: () {
+                  // Pop this picker sheet, then push the full-screen form on the
+                  // router — its own ref outlives navigation, so no parent-ref
+                  // hand-off is needed.
+                  final router = GoRouter.of(context);
+                  Navigator.of(context).pop();
+                  router.push(AppRouter.sshConnectionPath);
                 },
               ),
             ),
@@ -112,12 +112,10 @@ class _OpenWorkspaceSheet extends ConsumerWidget {
                 ),
                 title: const Text('Termux'),
                 subtitle: const Text('同机 Termux 一键接入，文件 + 终端'),
-                onTap: () async {
-                  // Capture the navigator before popping — this sheet's context
-                  // is defunct afterwards but navigator.context stays valid.
-                  final navigator = Navigator.of(context);
-                  navigator.pop();
-                  await showTermuxSetupSheet(navigator.context, parentRef);
+                onTap: () {
+                  final router = GoRouter.of(context);
+                  Navigator.of(context).pop();
+                  router.push(AppRouter.termuxSetupPath);
                 },
               ),
             ),
