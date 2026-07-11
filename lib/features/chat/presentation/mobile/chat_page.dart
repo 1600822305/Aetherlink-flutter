@@ -943,7 +943,8 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   }
 
   /// One ramp increment per frame, compensating the scroll offset by the
-  /// added extent (same anchoring as [_maybeRevealMore]) — a no-op while the
+  /// added extent during the relayout itself (see
+  /// [ChatAutoFollowScrollController.extentAnchor]) — a no-op while the
   /// entry pin is sticking to the bottom, and keeps the viewport still when
   /// the user has already scrolled away.
   void _rampStep(Duration _) {
@@ -952,9 +953,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       _ramping = false;
       return;
     }
-    final before = _scrollController.hasClients
-        ? _scrollController.position.maxScrollExtent
-        : 0.0;
+    _anchorExtentForReveal();
     setState(() {
       _hiddenRowCount = (_hiddenRowCount - _kRampRowsPerFrame).clamp(
         _rampTargetHidden,
@@ -966,25 +965,30 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         _ramping = false;
         return;
       }
-      if (_scrollController.hasClients) {
-        final position = _scrollController.position;
-        final delta = position.maxScrollExtent - before;
-        if (delta > 0 && position.pixels < position.maxScrollExtent) {
-          _scrollController.jumpTo(
-            (position.pixels + delta).clamp(
-              position.minScrollExtent,
-              position.maxScrollExtent,
-            ),
-          );
-        }
-      }
       _rampStep(Duration.zero);
     });
   }
 
+  /// Arms the layout-time scroll compensation for a history reveal: rows are
+  /// inserted above the viewport, so the offset must shift by the extent
+  /// delta *in the same layout pass* — a post-frame `jumpTo` shows one frame
+  /// of shifted content snapping back (a visible "bounce") and kills any
+  /// in-flight fling.
+  void _anchorExtentForReveal() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    // While pinned to the bottom the auto-follow already keeps the viewport
+    // anchored; compensating too would fight it.
+    if (position.pixels >= position.maxScrollExtent &&
+        _autoScroll.isSticking) {
+      return;
+    }
+    _scrollController.extentAnchor = position.maxScrollExtent;
+  }
+
   /// Reveals another page of hidden history when the user scrolls near the
-  /// top, keeping the viewport anchored on the same content by jumping down
-  /// by the added extent after the relayout (kelivo's history-load pattern).
+  /// top, keeping the viewport anchored on the same content by shifting the
+  /// offset during the relayout (kelivo's history-load pattern).
   void _maybeRevealMore(ScrollMetrics metrics) {
     if (_revealScheduled || _ramping || _effectiveHiddenRows == 0) return;
     if (metrics.pixels > _kRevealThreshold) return;
@@ -1000,9 +1004,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         _revealScheduled = false;
         return;
       }
-      final before = _scrollController.hasClients
-          ? _scrollController.position.maxScrollExtent
-          : 0.0;
+      _anchorExtentForReveal();
       setState(() {
         _hiddenRowCount = (_hiddenRowCount - _kRevealPageRows).clamp(
           0,
@@ -1011,16 +1013,6 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _revealScheduled = false;
-        if (!mounted || !_scrollController.hasClients) return;
-        final position = _scrollController.position;
-        final delta = position.maxScrollExtent - before;
-        if (delta <= 0) return;
-        _scrollController.jumpTo(
-          (position.pixels + delta).clamp(
-            position.minScrollExtent,
-            position.maxScrollExtent,
-          ),
-        );
       });
     });
   }
@@ -1030,25 +1022,11 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   Future<void> _revealDownTo(int targetRow) async {
     if (targetRow >= _effectiveHiddenRows) return;
     _ramping = false;
-    final before = _scrollController.hasClients
-        ? _scrollController.position.maxScrollExtent
-        : 0.0;
+    _anchorExtentForReveal();
     setState(() {
       _hiddenRowCount = targetRow.clamp(0, widget.rows.length);
     });
     await WidgetsBinding.instance.endOfFrame;
-    if (!mounted || !_scrollController.hasClients) return;
-    final position = _scrollController.position;
-    final delta = position.maxScrollExtent - before;
-    if (delta > 0) {
-      _scrollController.jumpTo(
-        (position.pixels + delta).clamp(
-          position.minScrollExtent,
-          position.maxScrollExtent,
-        ),
-      );
-      await WidgetsBinding.instance.endOfFrame;
-    }
   }
 
   /// A user scroll invalidates the chained jump anchor — the next 上一条/
