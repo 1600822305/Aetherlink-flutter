@@ -2,9 +2,10 @@
 //
 // 默认目标是内置终端（PRoot + Alpine 沙箱）；传 `workspace` 参数可指向任何
 // canExec 的工作区（SSH / Termux），在其远端 shell 里执行。只有两个工具：
-// terminal_execute（执行命令，可选 session_id 指定会话，默认复用长驻默认
-// 会话）和 terminal_session（会话管理，用 action 参数区分 create / list /
-// output / write / close），都走 WorkspaceBackend 层的长驻会话池（exec 超时
+// terminal_execute（执行命令，可选 session 指定会话——传名字/ID，存在就
+// 复用、不存在自动新建（tmux new -A 语义），不传则复用长驻默认会话）
+// 和 terminal_session（会话管理，用 action 参数区分 list / output / write /
+// close），都走 WorkspaceBackend 层的长驻会话池（exec 超时
 // 后台继续跑 + tailOutput 回看，见 workspace_session_pool.dart）。命令执行类
 // 工具经聊天层 HITL 审批（见 terminalToolNeedsConfirmation），并统一过命令
 // 黑名单（设计文档 §3.2）。
@@ -119,8 +120,6 @@ Future<McpToolResult> runTerminalTool(
         );
       case 'terminal_session':
         switch (requireString(args, 'action')) {
-          case 'create':
-            return await _sessionCreate(ref, args);
           case 'list':
             return await _sessionList(ref, args);
           case 'output':
@@ -131,7 +130,7 @@ Future<McpToolResult> runTerminalTool(
             return await _sessionClose(ref, args);
         }
         return fileEditorError(
-          '未知的 action: ${args['action']}（支持 create / list / output / write / close）',
+          '未知的 action: ${args['action']}（支持 list / output / write / close）',
         );
     }
     return fileEditorError('未知的工具: $toolName');
@@ -226,8 +225,9 @@ McpToolResult? _guardCommand(String command) {
 }
 
 /// terminal_execute —— 默认跑在长驻默认会话里（IDE 体验：cd / 环境变量跨
-/// 命令保留，终端页可联动围观）。传 session_id 时在指定会话里执行；
-/// 需要隔离环境时 AI 可用 terminal_session action=create 新开会话。
+/// 命令保留，终端页可联动围观）。传 session（名字/ID）时在指定会话里
+/// 执行，不存在则以该名字自动新建（tmux new -A 语义），不需要单独的
+/// create 步骤。
 Future<McpToolResult> _execute(
   Ref ref,
   Map<String, Object?> args, {
@@ -238,13 +238,13 @@ Future<McpToolResult> _execute(
   final blocked = _guardCommand(command);
   if (blocked != null) return blocked;
   final manager = ref.read(workspaceSessionPoolManagerProvider);
-  final sessionId = optionalString(args, 'session_id');
+  // 兼容旧参数名 session_id。
+  final sessionRef =
+      optionalString(args, 'session') ?? optionalString(args, 'session_id');
   final PooledWorkspaceSession session;
-  if (sessionId != null) {
-    session = manager.find(sessionId) ??
-        (throw FileEditorError(
-          '没有找到会话 $sessionId（可用 terminal_session action=list 查看）',
-        ));
+  if (sessionRef != null) {
+    session = _findSession(manager, sessionRef) ??
+        await _createNamedSession(ref, args, sessionRef);
   } else {
     final target = await _resolveTarget(ref, args);
     session = await manager
@@ -289,27 +289,42 @@ Future<McpToolResult> _execute(
   });
 }
 
-Future<McpToolResult> _sessionCreate(
+/// 按 ID 或名称查会话（名称重名时取最近使用的一个）。
+PooledWorkspaceSession? _findSession(
+  WorkspaceSessionPoolManager manager,
+  String ref,
+) {
+  final byId = manager.find(ref);
+  if (byId != null) return byId;
+  PooledWorkspaceSession? match;
+  for (final s in manager.allSessions()) {
+    if (s.name == ref &&
+        (match == null || s.lastUsedAt.isAfter(match.lastUsedAt))) {
+      match = s;
+    }
+  }
+  return match;
+}
+
+/// session 参数指向的会话不存在 → 以该名字自动新建（tmux new -A 语义）。
+Future<PooledWorkspaceSession> _createNamedSession(
   Ref ref,
   Map<String, Object?> args,
+  String name,
 ) async {
   final target = await _resolveTarget(ref, args);
-  final pool = ref.read(workspaceSessionPoolManagerProvider).poolFor(
+  return ref
+      .read(workspaceSessionPoolManagerProvider)
+      .poolFor(
         target.backend,
         workspaceLabel: target.label,
         workspaceId: target.workspaceId,
+      )
+      .create(
+        name: name,
+        workingDirectory: optionalString(args, 'cwd') ?? target.defaultCwd,
+        environment: target.environment,
       );
-  final session = await pool.create(
-    name: optionalString(args, 'name'),
-    workingDirectory: optionalString(args, 'cwd') ?? target.defaultCwd,
-    environment: target.environment,
-  );
-  return fileEditorOk({
-    'sessionId': session.id,
-    'name': session.name,
-    'workspace': session.workspaceLabel,
-    'createdAt': session.createdAt.toIso8601String(),
-  });
 }
 
 Future<McpToolResult> _sessionList(
