@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.d
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_registry.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/open_workspace_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/workspace_file_ops.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/workspace_search_sheet.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// The left page: a lazily-loaded file tree over [WorkspaceBackend], rooted at
@@ -268,9 +269,16 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   // it revealed so repeat builds don't re-run the search.
   Future<void> _revealActive(String target) async {
     if (_revealedPath == target) return;
+    _revealedPath = target;
+    await _revealPath(target);
+  }
+
+  // Expands [target]'s ancestors and scrolls its row to the middle. Also used
+  // to locate a directory picked from the search sheet, so it carries no
+  // active-file dedup guard.
+  Future<void> _revealPath(String target) async {
     final root = _root;
     if (root == null) return;
-    _revealedPath = target;
 
     var chain = _knownChain(target);
     chain ??= await _deriveChain(root, target);
@@ -371,6 +379,27 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
       _loading.clear();
     });
     _load(root);
+  }
+
+  // Opens the search sheet; a picked file opens in an editor tab (the shell
+  // then slides to the middle page), a picked directory is revealed in place.
+  Future<void> _openSearch() async {
+    final backend = _backend;
+    final root = _root;
+    if (backend == null || root == null) return;
+    final entry = await showWorkspaceSearchSheet(
+      context,
+      backend: backend,
+      rootPath: root,
+    );
+    if (entry == null || !mounted) return;
+    if (entry.isDirectory) {
+      await _revealPath(entry.path);
+    } else {
+      ref
+          .read(openWorkspaceFilesProvider.notifier)
+          .open(entry, dirtyPaths: ref.read(dirtyFilesProvider));
+    }
   }
 
   // Collapses everything back to the root. Cached children stay so re-expanding
@@ -485,6 +514,12 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                         fontWeight: FontWeight.w700,
                       ),
                     ),
+                  ),
+                  IconButton(
+                    tooltip: '搜索文件',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(LucideIcons.search, size: 18),
+                    onPressed: root == null ? null : _openSearch,
                   ),
                   IconButton(
                     tooltip: '打开文件夹',
