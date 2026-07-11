@@ -336,20 +336,20 @@ void main() {
       });
     });
 
-    test('file-editor exposes run_command requiring a command (SSH-3)', () {
-      final tool = kBuiltinMcpTools['@aether/file-editor']!
-          .firstWhere((t) => t.name == 'run_command');
-      final schema = tool.inputSchema;
-      expect(schema['required'], contains('command'));
-      final props = schema['properties'] as Map<String, Object?>;
-      expect(props.keys, containsAll(['command', 'workspace', 'cwd', 'timeout_ms']));
+    test('file-editor no longer exposes run_command (终端能力归 @aether/terminal)',
+        () {
+      expect(
+        kBuiltinMcpTools['@aether/file-editor']!
+            .where((t) => t.name == 'run_command'),
+        isEmpty,
+      );
     });
   });
 
   group('file-editor risk classification', () {
-    test('run_command is high-risk and needs HITL confirmation', () {
-      expect(fileEditorRiskLevel('run_command'), FileEditorRisk.high);
-      expect(fileEditorNeedsConfirmation('run_command'), isTrue);
+    test('write tools are high-risk and need HITL confirmation', () {
+      expect(fileEditorRiskLevel('write_to_file'), FileEditorRisk.high);
+      expect(fileEditorNeedsConfirmation('write_to_file'), isTrue);
     });
 
     test('read-only tools need no confirmation', () {

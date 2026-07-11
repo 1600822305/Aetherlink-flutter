@@ -57,13 +57,7 @@ class ChatToolExecutor {
       case SettingsToolRoute():
         return await runSettingsTool(_ref, route.toolName, args);
       case FileEditorToolRoute():
-        return await runFileEditorTool(
-          _ref,
-          route.toolName,
-          args,
-          cancelSignal: cancelSignal,
-          onOutput: onOutput,
-        );
+        return await runFileEditorTool(_ref, route.toolName, args);
       case BuiltinToolRoute(:final serverName, :final env):
         return await runBuiltinTool(
               serverName,
