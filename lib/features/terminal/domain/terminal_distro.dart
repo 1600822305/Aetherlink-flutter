@@ -63,7 +63,8 @@ Uri ubuntuRootfsUrlFor(TerminalMirror mirror, String version, String arch) {
 /// [mirror] 对应的 /etc/apt/sources.list 内容（noble + updates + security）。
 String aptSourcesFor(TerminalMirror mirror, String arch) {
   final bases = arch == 'amd64' ? _kUbuntuArchiveBases : _kUbuntuPortsBases;
-  final base = bases[mirror.id] ?? bases['official']!;
+  // 自定义源（id 不在内置表里）直接用其 baseUrl 作为 apt 仓库根。
+  final base = bases[mirror.id] ?? mirror.baseUrl;
   const components = 'main restricted universe multiverse';
   return 'deb $base $kUbuntuSeries $components\n'
       'deb $base $kUbuntuSeries-updates $components\n'

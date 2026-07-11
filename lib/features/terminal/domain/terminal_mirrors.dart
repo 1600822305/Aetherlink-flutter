@@ -60,6 +60,64 @@ String apkRepositoriesFor(TerminalMirror mirror, String version) {
       '${mirror.baseUrl}/$branch/community\n';
 }
 
+/// pip 可选镜像（index-url）；第一个是官方（默认）。
+const List<TerminalMirror> kPipMirrors = [
+  TerminalMirror(
+    id: 'official',
+    name: '官方 PyPI',
+    baseUrl: 'https://pypi.org/simple',
+  ),
+  TerminalMirror(
+    id: 'tuna',
+    name: '清华 TUNA',
+    baseUrl: 'https://pypi.tuna.tsinghua.edu.cn/simple',
+  ),
+  TerminalMirror(
+    id: 'aliyun',
+    name: '阿里云',
+    baseUrl: 'https://mirrors.aliyun.com/pypi/simple/',
+  ),
+  TerminalMirror(
+    id: 'ustc',
+    name: '中科大',
+    baseUrl: 'https://pypi.mirrors.ustc.edu.cn/simple/',
+  ),
+];
+
+/// npm 可选镜像（registry）；第一个是官方（默认）。
+const List<TerminalMirror> kNpmMirrors = [
+  TerminalMirror(
+    id: 'official',
+    name: '官方 npm',
+    baseUrl: 'https://registry.npmjs.org/',
+  ),
+  TerminalMirror(
+    id: 'npmmirror',
+    name: '淘宝 npmmirror',
+    baseUrl: 'https://registry.npmmirror.com/',
+  ),
+  TerminalMirror(
+    id: 'tencent',
+    name: '腾讯云',
+    baseUrl: 'https://mirrors.cloud.tencent.com/npm/',
+  ),
+  TerminalMirror(
+    id: 'huawei',
+    name: '华为云',
+    baseUrl: 'https://repo.huaweicloud.com/repository/npm/',
+  ),
+];
+
+/// 把 pip index-url 持久化写进 rootfs 的命令（~/.config/pip/pip.conf）。
+String pipMirrorCommand(TerminalMirror mirror) =>
+    'mkdir -p ~/.config/pip && '
+    "printf '[global]\\nindex-url = %s\\n' '${mirror.baseUrl}'"
+    ' > ~/.config/pip/pip.conf';
+
+/// 把 npm registry 持久化写进 rootfs 的命令。
+String npmMirrorCommand(TerminalMirror mirror) =>
+    'npm config set registry ${mirror.baseUrl}';
+
 /// 常用环境一键装：在交互式终端里回放的 apk 命令。
 class TerminalQuickInstall {
   const TerminalQuickInstall({
