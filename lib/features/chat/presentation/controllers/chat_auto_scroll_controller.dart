@@ -20,6 +20,14 @@ class ChatAutoFollowScrollController extends ScrollController {
   /// exactly the keyboard height). Positive pans the content up.
   double pendingAdjust = 0;
 
+  /// When set, the next layout pass compensates the scroll offset by however
+  /// much [ScrollPosition.maxScrollExtent] changed relative to this baseline —
+  /// used when rows are inserted above the viewport (history reveal / entry
+  /// ramp) so the visible content stays anchored within the same frame,
+  /// instead of shifting for one frame and snapping back via a post-frame
+  /// `jumpTo` (which also killed any in-flight fling).
+  double? extentAnchor;
+
   @override
   ScrollPosition createScrollPosition(
     ScrollPhysics physics,
@@ -51,6 +59,25 @@ class _AutoFollowScrollPosition extends ScrollPositionWithSingleContext {
       minScrollExtent,
       maxScrollExtent,
     );
+    // Above-viewport insertion compensation: rows revealed above the viewport
+    // grow maxScrollExtent; shift pixels by the same delta in this layout pass
+    // so the visible content never moves. Returning false re-runs layout and
+    // re-seeds any in-flight ballistic simulation from the corrected offset.
+    final anchor = controller.extentAnchor;
+    if (anchor != null) {
+      controller.extentAnchor = null;
+      final delta = maxScrollExtent - anchor;
+      if (delta.abs() > 0.5) {
+        final target = (pixels + delta).clamp(
+          this.minScrollExtent,
+          this.maxScrollExtent,
+        );
+        if ((target - pixels).abs() > 0.5) {
+          correctPixels(target);
+          return false; // Re-run layout with the corrected position.
+        }
+      }
+    }
     // Keyboard-reserve compensation: shift the content by the reserve delta in
     // the same layout pass, so the messages visible above the composer stay
     // anchored to it while the keyboard shows/hides.
