@@ -119,20 +119,30 @@ CommandRisk evaluateCommandRisk(String command, {required String root}) {
     }
   }
 
-  final allSafe = _splitSegments(command).every((segment) {
+  if (isReadOnlyCommand(command)) return CommandRisk.safeInRoot;
+
+  return CommandRisk.needsApproval;
+}
+
+/// [command] 是否为纯只读：每个管道/连接段的首词都命中只读白名单，
+/// 且无重定向、无 su/sudo/chroot/proot 提权、无 find -delete / -exec /
+/// sort -o 等会写或执行任意命令的旗标。只读命令在 rootfs 沙箱内无
+/// 副作用，AI 通道可免 HITL 审批直接放行。
+bool isReadOnlyCommand(String command) {
+  if (_kScopeEscapePattern.hasMatch(command)) return false;
+  final segments =
+      _splitSegments(command).toList(growable: false);
+  if (segments.isEmpty) return false;
+  final allSafe = segments.every((segment) {
     final words = segment.trim().split(RegExp(r'\s+'));
     if (words.isEmpty || words.first.isEmpty) return false;
     return _kSafeReadOnlyCommands.contains(words.first);
   });
   // 重定向会写文件；find -delete / -exec / -ok、sort -o 等旗标会写或执行
   // 任意命令，同样不算只读。
-  if (allSafe &&
+  return allSafe &&
       !command.contains('>') &&
-      !RegExp(r'\s-(delete|exec|execdir|ok|okdir|o)\b').hasMatch(command)) {
-    return CommandRisk.safeInRoot;
-  }
-
-  return CommandRisk.needsApproval;
+      !RegExp(r'\s-(delete|exec|execdir|ok|okdir|o)\b').hasMatch(command);
 }
 
 bool _pathInsideRoot(String path, String root) {

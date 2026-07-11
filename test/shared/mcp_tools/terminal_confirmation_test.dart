@@ -39,20 +39,58 @@ void main() {
       );
     });
 
-    test('未指定工作区维持全量审批', () {
+    test('未指定工作区：纯只读命令免审批，其余全量审批', () {
       expect(
         terminalToolNeedsConfirmation('terminal_execute', const {
           'command': 'ls',
+        }),
+        isFalse,
+      );
+      expect(
+        terminalToolNeedsConfirmation('terminal_execute', const {
+          'command': 'cat a.txt | grep foo',
+        }),
+        isFalse,
+      );
+      expect(
+        terminalToolNeedsConfirmation('terminal_execute', const {
+          'command': 'npm install',
+        }),
+        isTrue,
+      );
+      expect(
+        terminalToolNeedsConfirmation('terminal_execute', const {
+          'command': 'echo hi > a.txt',
+        }),
+        isTrue,
+      );
+      expect(
+        terminalToolNeedsConfirmation('terminal_execute', const {
+          'command': 'sudo ls',
+        }),
+        isTrue,
+      );
+      expect(
+        terminalToolNeedsConfirmation('terminal_execute', const {
+          'command': 'find . -name "*.log" -delete',
         }),
         isTrue,
       );
     });
 
-    test('full 模式维持全量审批', () {
+    test('full 模式：纯只读命令免审批，其余全量审批', () {
       expect(
         terminalToolNeedsConfirmation(
           'terminal_execute',
           const {'command': 'ls', 'workspace': 'ws-full'},
+          workspaces: workspaces,
+        ),
+        isFalse,
+      );
+      expect(
+        terminalToolNeedsConfirmation(
+          'terminal_execute',
+          const {'command': 'rm -rf build', 'workspace': 'ws-full'},
           workspaces: workspaces,
         ),
         isTrue,
