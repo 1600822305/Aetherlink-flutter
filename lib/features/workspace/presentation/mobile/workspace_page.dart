@@ -15,12 +15,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
-import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
-import 'package:aetherlink_flutter/features/workspace/application/workspace_session_store.dart';
-import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_session_restore.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
-import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_file_tree.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_file_viewer.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_terminal_page.dart';
@@ -66,46 +62,15 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
     });
   }
 
-  // 进工作区自动恢复上次会话(工作区 + 所有打开的文件 tab + 活动 tab),最像 IDE。
-  // SAF 的 content:// 授权可能被系统回收,恢复前先探一下根目录可读;失效则提示
-  // 并停在空文件树,不卡死。
+  // 进工作区自动恢复上次会话（见 restoreLastWorkspaceSession）；授权失效则
+  // 提示并停在空文件树,不卡死。
   Future<void> _autoRestore() async {
     if (_restoreAttempted) return;
     _restoreAttempted = true;
 
-    final settings = ref.read(appSettingsStoreProvider);
-    // 用户可在「工作区管理」里关掉自动恢复;关掉后停在空文件树,由用户手动打开。
-    if (await settings.getSetting(kWorkspaceAutoRestoreKey) == 'false') return;
-
-    final raw = await settings.getSetting(kWorkspaceSessionKey);
-    final session = WorkspaceSession.decode(raw);
-    if (session == null) return;
-
-    final recent = await ref.read(workspaceStoreProvider.future);
-    Workspace? workspace;
-    for (final w in recent) {
-      if (w.id == session.workspaceId) {
-        workspace = w;
-        break;
-      }
-    }
-    if (workspace == null) return;
-
-    try {
-      final backend = ref.read(workspaceBackendProvider(workspace));
-      await backend.listDir(workspace.root);
-    } catch (_) {
-      if (mounted) {
-        AppToast.error(context, '上次授权已失效,请重新打开文件夹');
-      }
-      return;
-    }
-
-    ref.read(currentWorkspaceProvider.notifier).open(workspace);
-    if (session.tabs.isNotEmpty) {
-      ref
-          .read(openWorkspaceFilesProvider.notifier)
-          .restore(session.tabs, session.activePath);
+    final status = await restoreLastWorkspaceSession(ref);
+    if (status == WorkspaceRestoreStatus.authExpired && mounted) {
+      AppToast.error(context, '上次授权已失效,请重新打开文件夹');
     }
   }
 

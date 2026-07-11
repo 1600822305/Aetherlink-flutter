@@ -22,6 +22,7 @@ import 'package:xterm/xterm.dart';
 import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
 import 'package:aetherlink_flutter/features/terminal/presentation/mobile/terminal_env_page.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_session_restore.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
@@ -86,6 +87,42 @@ class _AiSessionView {
   Future<void> detach() async {
     await _sub?.cancel();
     _sub = null;
+  }
+}
+
+/// 独立终端路由（/workspace/terminal）：复用 [WorkspaceTerminalPage]，
+/// 返回直接 pop 回上一页（如聊天）。工作区页的进入流程被跳过了，
+/// 所以先跑一遍上次工作区的自动恢复，再渲染终端页（否则 currentWorkspace
+/// 为空，只会看到「请先打开一个工作区」）。
+class TerminalRoutePage extends ConsumerStatefulWidget {
+  const TerminalRoutePage({super.key});
+
+  @override
+  ConsumerState<TerminalRoutePage> createState() => _TerminalRoutePageState();
+}
+
+class _TerminalRoutePageState extends ConsumerState<TerminalRoutePage> {
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    restoreLastWorkspaceSession(ref).whenComplete(() {
+      if (mounted) setState(() => _ready = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF14161B),
+      body: !_ready
+          ? const Center(child: CircularProgressIndicator())
+          : WorkspaceTerminalPage(
+              topInset: 0,
+              onBack: () => Navigator.of(context).pop(),
+            ),
+    );
   }
 }
 

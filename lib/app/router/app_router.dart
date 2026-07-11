@@ -196,15 +196,8 @@ abstract final class AppRouter {
       GoRoute(
         path: terminalPath,
         name: 'terminal',
-        pageBuilder: (context, state) => _instant(
-          state,
-          Scaffold(
-            body: WorkspaceTerminalPage(
-              topInset: 0,
-              onBack: () => context.pop(),
-            ),
-          ),
-        ),
+        pageBuilder: (context, state) =>
+            _instant(state, const TerminalRoutePage()),
       ),
       GoRoute(
         path: settingsPath,
