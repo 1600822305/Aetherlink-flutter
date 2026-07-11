@@ -292,7 +292,7 @@ class _TerminalSessionBlockViewState
           ('会话', data['sessionId']?.toString()),
           ('名称', data['name']?.toString()),
           ('工作区', data['workspace']?.toString()),
-        ]);
+        ], sessionId: data['sessionId']?.toString());
       case 'terminal_session_list':
         return _sessionListBody(data['sessions']);
       case 'terminal_session_exec':
@@ -304,7 +304,7 @@ class _TerminalSessionBlockViewState
     return null;
   }
 
-  Widget? _metaBody(List<(String, String?)> rows) {
+  Widget? _metaBody(List<(String, String?)> rows, {String? sessionId}) {
     final visible = [
       for (final (label, value) in rows)
         if (value != null && value.isNotEmpty) (label, value),
@@ -317,6 +317,11 @@ class _TerminalSessionBlockViewState
         children: [
           for (final (label, value) in visible)
             CommandMetaRow(label: label, value: value),
+          if (sessionId != null && sessionId.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: OpenInTerminalButton(sessionId: sessionId),
+            ),
         ],
       ),
     );
@@ -382,6 +387,11 @@ class _TerminalSessionBlockViewState
             CommandMetaRow(label: '会话', value: sessionId),
           if (workspace != null && workspace.isNotEmpty)
             CommandMetaRow(label: '工作区', value: workspace),
+          if (sessionId != null && sessionId.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: OpenInTerminalButton(sessionId: sessionId),
+            ),
           if (sessionId != null || workspace != null)
             const SizedBox(height: 8),
           if (hint != null && hint.isNotEmpty)

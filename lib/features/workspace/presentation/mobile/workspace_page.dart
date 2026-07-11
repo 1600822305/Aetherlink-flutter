@@ -56,7 +56,14 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _autoRestore());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _autoRestore();
+      // 从聊天的「在终端中查看」进来：直接落在终端页。
+      if (ref.read(terminalFocusSessionProvider) != null &&
+          _controller.hasClients) {
+        _controller.jumpToPage(_pageCount - 1);
+      }
+    });
   }
 
   // 进工作区自动恢复上次会话(工作区 + 所有打开的文件 tab + 活动 tab),最像 IDE。
