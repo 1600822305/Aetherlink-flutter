@@ -20,7 +20,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:xterm/xterm.dart';
 
 import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
-import 'package:aetherlink_flutter/features/terminal/presentation/mobile/terminal_env_sheet.dart';
+import 'package:aetherlink_flutter/features/terminal/presentation/mobile/terminal_env_page.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
@@ -266,10 +266,10 @@ class _WorkspaceTerminalPageState
                 ),
                 if (tab.connected && isProot)
                   IconButton(
-                    tooltip: '环境（apk 源 / 一键装）',
+                    tooltip: '环境管理（镜像源 / 预设包）',
                     icon: const Icon(LucideIcons.package,
                         size: 18, color: Colors.white70),
-                    onPressed: () => showTerminalEnvSheet(
+                    onPressed: () => showTerminalEnvPage(
                       context,
                       onRunCommand: (command) =>
                           tab.session?.write(utf8.encode('$command\n')),
