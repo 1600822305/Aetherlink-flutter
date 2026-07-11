@@ -1149,19 +1149,19 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '用 action 参数区分操作：'
           'list 列出所有会话（sessionId、名称、所属工作区、是否正忙）；'
           'output 回看会话最近输出（如超时后查看长任务进度）；'
-          'write 往运行中进程写 stdin（交互式输入，如回答 [y/n]、REPL；执行前会请用户确认）；'
-          'close 关闭会话并结束其中进程。',
+          'write 往运行中进程写 stdin（交互式输入，如回答 [y/n]、REPL；执行前会请用户确认）。'
+          '不提供关闭操作：会话空闲自动回收，用户也可在终端页手动关闭。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'action': {
             'type': 'string',
-            'enum': ['list', 'output', 'write', 'close'],
+            'enum': ['list', 'output', 'write'],
             'description': '操作类型',
           },
           'session_id': {
             'type': 'string',
-            'description': '目标会话 ID（output / write / close 必传）',
+            'description': '目标会话 ID（output / write 必传）',
           },
           'workspace': {
             'type': 'string',

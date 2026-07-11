@@ -4,8 +4,8 @@
 // canExec 的工作区（SSH / Termux），在其远端 shell 里执行。只有两个工具：
 // terminal_execute（执行命令，可选 session 指定会话——传名字/ID，存在就
 // 复用、不存在自动新建（tmux new -A 语义），不传则复用长驻默认会话）
-// 和 terminal_session（会话管理，用 action 参数区分 list / output / write /
-// close），都走 WorkspaceBackend 层的长驻会话池（exec 超时
+// 和 terminal_session（会话管理，用 action 参数区分 list / output / write；
+// 不提供关闭——会话由空闲自动回收或用户在终端页手动关），都走 WorkspaceBackend 层的长驻会话池（exec 超时
 // 后台继续跑 + tailOutput 回看，见 workspace_session_pool.dart）。命令执行类
 // 工具经聊天层 HITL 审批（见 terminalToolNeedsConfirmation），并统一过命令
 // 黑名单（设计文档 §3.2）。
@@ -126,11 +126,9 @@ Future<McpToolResult> runTerminalTool(
             return _sessionOutput(ref, args);
           case 'write':
             return _sessionWrite(ref, args);
-          case 'close':
-            return await _sessionClose(ref, args);
         }
         return fileEditorError(
-          '未知的 action: ${args['action']}（支持 list / output / write / close）',
+          '未知的 action: ${args['action']}（支持 list / output / write）',
         );
     }
     return fileEditorError('未知的工具: $toolName');
@@ -399,14 +397,3 @@ McpToolResult _sessionWrite(Ref ref, Map<String, Object?> args) {
   });
 }
 
-Future<McpToolResult> _sessionClose(
-  Ref ref,
-  Map<String, Object?> args,
-) async {
-  final sessionId = requireString(args, 'session_id');
-  final closed =
-      await ref.read(workspaceSessionPoolManagerProvider).close(sessionId);
-  return closed
-      ? fileEditorOk({'sessionId': sessionId, 'closed': true})
-      : fileEditorError('没有找到会话 $sessionId（可能已结束）');
-}
