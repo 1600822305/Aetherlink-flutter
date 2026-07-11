@@ -56,11 +56,13 @@ class _AutoFollowScrollPosition extends ScrollPositionWithSingleContext {
     if (controller.shouldAutoFollow() &&
         userScrollDirection == ScrollDirection.idle) {
       // In the reverse orientation the bottom edge is [minScrollExtent];
-      // content growth never moves pixels away from it, so this only catches
-      // clamps (e.g. the keyboard reserve shrinking past the offset) that
-      // would otherwise settle through a visible ballistic animation.
+      // content growth never moves pixels away from it, so this only closes
+      // the residual gap after a re-stick within the threshold or a clamp
+      // (e.g. the keyboard reserve shrinking past the offset). Only correct
+      // the positive direction: pixels below the bottom edge can only be
+      // overscroll (bouncing physics), which must settle on its own.
       final gap = pixels - this.minScrollExtent;
-      if (gap.abs() > 0.5) {
+      if (gap > 0.5) {
         correctPixels(this.minScrollExtent);
         return false; // Re-run layout with the corrected position.
       }

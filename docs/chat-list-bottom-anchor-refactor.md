@@ -188,8 +188,8 @@ class ChatListIndexMap {
 | 步骤 | 状态 | PR | 备注 |
 |---|---|---|---|
 | PR-1 索引层 | 已实现 | [#667](https://github.com/1600822305/Aetherlink-flutter/pull/667) | 新增 `ChatListIndexMap`（`chat_list_index_map.dart`）+ 单测；`chat_page.dart` 的 itemBuilder / 导航 / mini-map 索引运算全部收拢到该层，`reverse=false` 行为零变化 |
-| PR-2 列表翻转 | 已实现 | — | `reverse: true`；揭示/入场 ramp 改为尾部追加，删除 `extentAnchor` 与三处揭示补偿；贴底判定与 `pinToBottom` 改为 `minScrollExtent` 侧；回顶/回底方向互换；多选 mini-map 展开索引改走索引层 |
-| PR-3 跟底简化 | 未开始 | — | |
+| PR-2 列表翻转 | 已实现 | [#668](https://github.com/1600822305/Aetherlink-flutter/pull/668) | `reverse: true`；揭示/入场 ramp 改为尾部追加，删除 `extentAnchor` 与三处揭示补偿；贴底判定与 `pinToBottom` 改为 `minScrollExtent` 侧；回顶/回底方向互换；多选 mini-map 展开索引改走索引层 |
+| PR-3 跟底简化 | 已实现 | — | 布局期 pin 安全网保留但改为单向修正（不再干扰底部 overscroll 回弹）；新增跟底状态机 9 个 widget 测试锁定 reverse 行为 |
 | PR-4 导航与跳转适配 | 未开始 | — | |
 
 实施备注（相对原计划的偏差）：
@@ -205,3 +205,14 @@ class ChatListIndexMap {
   跳转正确但对齐细节（alignment）留待 PR-4 打磨。
 - 已用 Flutter 3.44.6 跑通 `flutter analyze`（0 issues）与
   `ChatListIndexMap` 全部 8 个单测。
+
+PR-3 验证结论（widget 测试实测）：
+- 流式增长（index 0 行变高）在用户上滑阅读时**不会**移动视口：
+  可见行的 layoutOffset 被 sliver 缓存，index 不变就不重新锚定。
+- 新消息**插入**（全部 list index +1）会使 sliver 按 index 重新锚定，
+  阅读位置会偏移一个新行高度；当前 app 策略是任何 append 都
+  `pinToBottom`（发送/回复即回底），所以用户感知不到；若未来改为
+  「阅读中不打断 + 新消息提示」，需要 center 双 sliver 或插入补偿，
+  属 PR-4 之后的可选项。
+- 底部 overscroll（bouncing 物理）不再被布局期 pin 拉回：
+  修正改为仅正方向（`gap > 0.5`）。
