@@ -21,6 +21,7 @@ import 'package:xterm/xterm.dart';
 
 import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
 import 'package:aetherlink_flutter/features/terminal/presentation/mobile/terminal_env_page.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
@@ -47,6 +48,31 @@ class _TerminalTab {
   }
 }
 
+/// AI 长驻会话的联动视图：接入会话池里的会话，回放历史缓冲 +
+/// 订阅实时输出；键入直接写进会话 stdin（用户可接管）。关闭视图只
+/// 断开订阅，不关会话本身（会话生命周期归会话池 / AI 管）。
+class _AiSessionView {
+  _AiSessionView(this.session) {
+    // 缓冲里就是 PTY 原始字节（含 \r\n 与 ANSI 序列），直接回放。
+    terminal.write(session.snapshot());
+    _sub = session.chunks.listen((chunk) {
+      terminal.write(chunk);
+    });
+    terminal.onOutput = (data) {
+      if (session.alive) session.writeInput(data);
+    };
+  }
+
+  final PooledWorkspaceSession session;
+  final Terminal terminal = Terminal(maxLines: 10000);
+  StreamSubscription<String>? _sub;
+
+  Future<void> detach() async {
+    await _sub?.cancel();
+    _sub = null;
+  }
+}
+
 class WorkspaceTerminalPage extends ConsumerStatefulWidget {
   const WorkspaceTerminalPage({
     required this.topInset,
@@ -68,12 +94,20 @@ class _WorkspaceTerminalPageState
   int _active = 0;
   int _nextTabNumber = 1;
 
+  /// 已接入的 AI 会话视图（按 sessionId）；[_activeAi] 非空时展示 AI 会话。
+  final Map<String, _AiSessionView> _aiViews = {};
+  String? _activeAi;
+  WorkspaceSessionPoolManager? _poolManager;
+
   _TerminalTab get _tab => _tabs[_active];
 
   @override
   void initState() {
     super.initState();
     _tabs.add(_TerminalTab(name: '${_nextTabNumber++}'));
+    final manager = ref.read(workspaceSessionPoolManagerProvider);
+    manager.addListener(_onPoolChanged);
+    _poolManager = manager;
     // 内置终端是本地进程，进页面直接启动；SSH/Termux 保持显式点按，
     // 避免一进工作区就悄悄开远程通道。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -87,10 +121,57 @@ class _WorkspaceTerminalPageState
 
   @override
   void dispose() {
+    _poolManager?.removeListener(_onPoolChanged);
+    for (final view in _aiViews.values) {
+      view.detach();
+    }
     for (final tab in _tabs) {
       tab.dispose();
     }
     super.dispose();
+  }
+
+  /// AI 会话池变化（新建 / 关闭 / 回收）：刷新 chips，剔除已死会话的视图。
+  void _onPoolChanged() {
+    if (!mounted) return;
+    // 会话池的 _prune 可能在本页 build 期间（allSessions）触发通知，
+    // 延到帧末再 setState，避免 build 中重入。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshAiViews());
+  }
+
+  void _refreshAiViews() {
+    if (!mounted) return;
+    setState(() {
+      _aiViews.removeWhere((id, view) {
+        if (view.session.alive) return false;
+        view.detach();
+        return true;
+      });
+      if (_activeAi != null && !_aiViews.containsKey(_activeAi)) {
+        _activeAi = null;
+      }
+    });
+  }
+
+  /// 当前工作区可联动的 AI 会话：本工作区的 + 内置终端默认池的
+  /// （未锚定工作区，workspaceId == null，仅内置终端工作区展示）。
+  List<PooledWorkspaceSession> _aiSessions(Workspace? workspace) {
+    final manager = _poolManager;
+    if (manager == null || workspace == null) return const [];
+    final isProot = workspace.backendType == WorkspaceBackendType.prootLocal;
+    return [
+      for (final s in manager.allSessions())
+        if (s.workspaceId == workspace.id ||
+            (s.workspaceId == null && isProot))
+          s,
+    ];
+  }
+
+  void _openAiSession(PooledWorkspaceSession session) {
+    setState(() {
+      _aiViews.putIfAbsent(session.id, () => _AiSessionView(session));
+      _activeAi = session.id;
+    });
   }
 
   /// 内置终端自动挂载 /sdcard：首次连接时自动申请「所有文件访问」
@@ -178,6 +259,7 @@ class _WorkspaceTerminalPageState
     setState(() {
       _tabs.add(tab);
       _active = _tabs.length - 1;
+      _activeAi = null;
     });
     // 内置终端新 tab 直接启动；远程后端保持显式点按。
     if (workspace?.backendType == WorkspaceBackendType.prootLocal) {
@@ -292,13 +374,18 @@ class _WorkspaceTerminalPageState
               child: Row(
                 children: [
                   Expanded(
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      itemCount: _tabs.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 6),
-                      itemBuilder: (context, index) => _tabChip(index),
-                    ),
+                    child: Builder(builder: (context) {
+                      final aiSessions = _aiSessions(workspace);
+                      return ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        itemCount: _tabs.length + aiSessions.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 6),
+                        itemBuilder: (context, index) => index < _tabs.length
+                            ? _tabChip(index)
+                            : _aiChip(aiSessions[index - _tabs.length]),
+                      );
+                    }),
                   ),
                   IconButton(
                     tooltip: '新建终端',
@@ -318,11 +405,50 @@ class _WorkspaceTerminalPageState
     );
   }
 
+  /// AI 会话的 tab chip：机器人图标 + 会话名，点按接入实时围观。
+  Widget _aiChip(PooledWorkspaceSession session) {
+    final selected = _activeAi == session.id;
+    return GestureDetector(
+      onTap: () => _openAiSession(session),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: selected ? Colors.white12 : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected ? Colors.white38 : Colors.white12,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              LucideIcons.bot,
+              size: 13,
+              color: session.busy ? Colors.amberAccent : Colors.greenAccent,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'AI · ${session.name}',
+              style: TextStyle(
+                fontSize: 13,
+                color: selected ? Colors.white : Colors.white60,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _tabChip(int index) {
     final tab = _tabs[index];
-    final selected = index == _active;
+    final selected = index == _active && _activeAi == null;
     return GestureDetector(
-      onTap: () => setState(() => _active = index),
+      onTap: () => setState(() {
+        _active = index;
+        _activeAi = null;
+      }),
       onLongPress: () => _renameTab(tab),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -372,6 +498,14 @@ class _WorkspaceTerminalPageState
       return const _Hint(
         icon: LucideIcons.terminalSquare,
         text: '终端仅在内置终端 / SSH / Termux 工作区可用',
+      );
+    }
+    // AI 会话围观优先：选中 AI chip 时展示其联动视图。
+    final aiView = _activeAi == null ? null : _aiViews[_activeAi];
+    if (aiView != null) {
+      return TerminalView(
+        aiView.terminal,
+        padding: const EdgeInsets.all(8),
       );
     }
     final tab = _tab;

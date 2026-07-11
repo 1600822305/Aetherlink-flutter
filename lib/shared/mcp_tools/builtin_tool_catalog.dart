@@ -1136,10 +1136,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'terminal_execute',
       description:
-          '在终端里执行一条 shell 命令，返回 stdout / stderr / 退出码。默认目标是内置终端'
+          '在长驻终端会话里执行一条 shell 命令，返回输出和退出码。默认复用同一个持久会话'
+          '（像 IDE 终端：cd、环境变量、venv 等状态跨命令保留）。默认目标是内置终端'
           '（应用内 Alpine Linux 沙箱）；传 workspace 参数可在 SSH / Termux 工作区的远端 shell 里执行。'
-          '适合一次性命令（如 apk add、cat、python 脚本）。每次调用都是独立进程，不保留 shell 状态；'
-          '需要保留状态（cd、环境变量、后台任务）时用 terminal_session_* 系列。执行前会请用户确认。',
+          '需要独立/干净环境或并行多个任务时，用 terminal_session_create 新开会话后配合'
+          ' terminal_session_exec 指定 session_id 执行。执行前会请用户确认。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1150,11 +1151,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'cwd': {
             'type': 'string',
-            'description': '工作目录（可选；内置终端默认 /root，指定工作区时默认其根目录）',
+            'description': '工作目录（可选；不传时延续会话当前目录，传了则先 cd 过去再执行）',
           },
           'timeout_ms': {
             'type': 'number',
-            'description': '超时毫秒数（可选，默认 120000）',
+            'description': '超时毫秒数（可选，默认 120000；超时不杀命令，命令继续在会话里跑）',
           },
         },
         'required': ['command'],
