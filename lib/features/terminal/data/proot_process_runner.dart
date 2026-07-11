@@ -45,10 +45,12 @@ class ProotProcessRunner {
       );
 
   /// 跑一次 [command]（无 PTY，适合 exec 单命令），收齐 stdout/stderr。
+  /// [onOutput] 提供时，每到一块 stdout/stderr 即解码回调（实时输出）。
   Future<ProotExecResult> run(
     ProotCommand command, {
     Duration? timeout,
     Future<void>? cancelSignal,
+    void Function(String chunk)? onOutput,
   }) async {
     final process = await Process.start(
       command.executable,
@@ -58,8 +60,13 @@ class ProotProcessRunner {
 
     final out = BytesBuilder(copy: false);
     final err = BytesBuilder(copy: false);
-    final outDone = process.stdout.forEach(out.add);
-    final errDone = process.stderr.forEach(err.add);
+    void collect(BytesBuilder sink, List<int> chunk) {
+      sink.add(chunk);
+      onOutput?.call(utf8.decode(chunk, allowMalformed: true));
+    }
+
+    final outDone = process.stdout.forEach((c) => collect(out, c));
+    final errDone = process.stderr.forEach((c) => collect(err, c));
 
     var timedOut = false;
     var canceled = false;

@@ -387,12 +387,15 @@ abstract class WorkspaceBackend {
   /// then has `timedOut = true`). [cancelSignal], when supplied, kills the
   /// command as soon as it completes (the result then has `canceled = true`) —
   /// this is how the run_command UI's 中断 button aborts a long-running command.
+  /// [onOutput], when supplied, receives decoded stdout/stderr chunks as they
+  /// arrive so the UI can render live output while the command runs.
   /// Intended for the AI `run_command` tool — see 设计文档 §8.1.
   Future<WorkspaceExecResult> exec(
     String command, {
     String? workingDirectory,
     Duration? timeout,
     Future<void>? cancelSignal,
+    void Function(String chunk)? onOutput,
   }) =>
       throw UnsupportedError('exec is not supported by this backend');
 

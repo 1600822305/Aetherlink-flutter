@@ -22,6 +22,7 @@ Future<McpToolResult> runCommand(
   Ref ref,
   Map<String, Object?> args, {
   Future<void>? cancelSignal,
+  void Function(String chunk)? onOutput,
 }) async {
   final command = requireString(args, 'command');
   final resolved = await _resolveTarget(ref, args);
@@ -42,6 +43,7 @@ Future<McpToolResult> runCommand(
     workingDirectory: cwd,
     timeout: timeout,
     cancelSignal: cancelSignal,
+    onOutput: onOutput,
   );
 
   return fileEditorOk({

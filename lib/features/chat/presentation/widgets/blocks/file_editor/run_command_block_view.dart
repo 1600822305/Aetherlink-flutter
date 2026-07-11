@@ -56,6 +56,13 @@ class _RunCommandBlockViewState extends ConsumerState<RunCommandBlockView> {
         pending == null &&
         ref.watch(runningCommandsProvider).contains(block.id);
 
+    // 运行中的实时输出尾部（命令结束后改读结果 JSON 里的最终输出）。
+    final liveText = isRunning
+        ? ref.watch(
+            commandLiveOutputProvider.select((m) => m[block.id] ?? ''),
+          )
+        : '';
+
     final command = (data?['command'] ?? _args['command'])?.toString() ?? '';
     final body = (!isProcessing && !hasError && data != null)
         ? _body(context, data)
@@ -125,7 +132,7 @@ class _RunCommandBlockViewState extends ConsumerState<RunCommandBlockView> {
                   ],
                   if (isRunning) ...[
                     const SizedBox(width: 8),
-                    _InterruptButton(
+                    CommandInterruptButton(
                       onTap: () => ref
                           .read(runningCommandsProvider.notifier)
                           .cancel(block.id),
@@ -148,6 +155,11 @@ class _RunCommandBlockViewState extends ConsumerState<RunCommandBlockView> {
               ),
             ),
           ),
+          if (isRunning && liveText.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+              child: CommandLiveOutputBox(text: liveText),
+            ),
           if (pending != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
@@ -287,8 +299,9 @@ class _RunCommandBlockViewState extends ConsumerState<RunCommandBlockView> {
 }
 
 /// A compact 中断 pill shown in the header while the command is running.
-class _InterruptButton extends StatelessWidget {
-  const _InterruptButton({required this.onTap});
+/// Shared with the terminal session card (terminal_session_exec).
+class CommandInterruptButton extends StatelessWidget {
+  const CommandInterruptButton({required this.onTap, super.key});
 
   final VoidCallback onTap;
 
@@ -408,6 +421,45 @@ class CommandMetaRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 命令运行期间的实时输出框：高度封顶、反向滚动自动跟随尾部。与终端
+/// 会话卡片共用（两者都通过 commandLiveOutputProvider 拿实时输出）。
+class CommandLiveOutputBox extends StatelessWidget {
+  const CommandLiveOutputBox({required this.text, super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(maxHeight: 180),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.black.withValues(alpha: 0.25)
+            : Colors.black.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      // reverse 滚动默认钉在底部，新输出到来时自动跟随尾部。
+      child: SingleChildScrollView(
+        reverse: true,
+        child: SelectableText(
+          text.trimRight(),
+          style: TextStyle(
+            fontFamily: 'monospace',
+            fontFamilyFallback: const ['monospace'],
+            fontSize: 12,
+            height: 1.5,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
       ),
     );
   }

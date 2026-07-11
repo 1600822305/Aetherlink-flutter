@@ -38,13 +38,22 @@ class WorkspaceSessionExecResult {
     required this.output,
     required this.exitCode,
     this.timedOut = false,
+    this.canceled = false,
   });
 
   final String output;
 
-  /// 命令退出码；超时（命令仍在跑）时为 null。
+  /// 命令退出码；超时 / 被中断（命令可能仍在收尾）时为 null。
   final int? exitCode;
   final bool timedOut;
+
+  /// 用户点了中断：已向会话发 Ctrl-C（SIGINT），会话本身仍存活。
+  final bool canceled;
+}
+
+/// exec 被用户中断（Ctrl-C 已发出）时的内部信号，用于跳出等哨兵的 await。
+class _SessionExecCanceled implements Exception {
+  const _SessionExecCanceled();
 }
 
 /// 池内一个长驻 shell 会话。
@@ -109,10 +118,14 @@ class PooledWorkspaceSession {
   }
 
   /// 在本会话里跑 [command]，等哨兵回来或超时。超时不杀会话——命令继续在
-  /// 后台跑，之后可用 [tailOutput] 回看。
+  /// 后台跑，之后可用 [tailOutput] 回看。[onOutput] 提供时每到一块输出即
+  /// 回调（实时输出）；[cancelSignal] 完成时向会话发 Ctrl-C 中断当前命令
+  /// （会话保活），结果 `canceled = true`。
   Future<WorkspaceSessionExecResult> exec(
     String command, {
     Duration timeout = const Duration(seconds: 120),
+    Future<void>? cancelSignal,
+    void Function(String chunk)? onOutput,
   }) async {
     if (!_alive) {
       throw const WorkspaceSessionException('会话已结束，请新建会话');
@@ -130,8 +143,23 @@ class PooledWorkspaceSession {
     // 哨兵总在输出末尾：先在「上一块尾部 + 新块」的小窗口里做廉价预检，
     // 命中才对全量输出跑 matchSentinel，避免长输出下逐块全量重扫（O(n²)）。
     var windowTail = '';
+    var settled = false;
+    var canceled = false;
+    if (cancelSignal != null) {
+      unawaited(cancelSignal.then((_) {
+        if (settled) return;
+        canceled = true;
+        // Ctrl-C 中断前台命令；shell 回到提示符后哨兵行不会再来，
+        // 直接以当前已收集的输出收尾。
+        _shell.write(utf8.encode('\x03'));
+        if (!done.isCompleted) {
+          done.completeError(const _SessionExecCanceled());
+        }
+      }));
+    }
     final sub = _chunks.stream.listen((chunk) {
       collected.write(chunk);
+      onOutput?.call(chunk);
       final window = windowTail + chunk;
       windowTail = window.length <= 96
           ? window
@@ -152,8 +180,16 @@ class PooledWorkspaceSession {
         output: collected.toString(),
         exitCode: null,
         timedOut: true,
+        canceled: canceled,
+      );
+    } on _SessionExecCanceled {
+      return WorkspaceSessionExecResult(
+        output: collected.toString(),
+        exitCode: null,
+        canceled: true,
       );
     } finally {
+      settled = true;
       _busy = false;
       lastUsedAt = DateTime.now();
       await sub.cancel();

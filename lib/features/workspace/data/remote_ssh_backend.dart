@@ -727,7 +727,10 @@ class RemoteSshBackend extends WorkspaceBackend {
   @override
   Future<WorkspaceExecResult> exec(
     String command,
-    {String? workingDirectory, Duration? timeout, Future<void>? cancelSignal}) async {
+    {String? workingDirectory,
+    Duration? timeout,
+    Future<void>? cancelSignal,
+    void Function(String chunk)? onOutput}) async {
     final client = await _sshClient();
     // Run under the requested cwd via `cd` (dartssh2 has no per-exec cwd); the
     // path is single-quoted so spaces / specials don't break out. The command
@@ -745,8 +748,13 @@ class RemoteSshBackend extends WorkspaceBackend {
 
     final out = BytesBuilder(copy: false);
     final err = BytesBuilder(copy: false);
-    final outSub = session.stdout.listen(out.add);
-    final errSub = session.stderr.listen(err.add);
+    void collect(BytesBuilder sink, List<int> chunk) {
+      sink.add(chunk);
+      onOutput?.call(utf8.decode(chunk, allowMalformed: true));
+    }
+
+    final outSub = session.stdout.listen((c) => collect(out, c));
+    final errSub = session.stderr.listen((c) => collect(err, c));
 
     var timedOut = false;
     var canceled = false;
