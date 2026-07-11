@@ -172,7 +172,7 @@ class PooledWorkspaceSession {
           ? window
           : window.substring(window.length - 96);
       if (!window.contains('__AETHER_DONE_$nonce')) return;
-      final match = matchSentinel(collected.toString(), nonce);
+      final match = matchSentinel(collected.toString(), nonce, command: command);
       if (match != null && !done.isCompleted) done.complete(match);
     });
     try {
@@ -184,14 +184,14 @@ class PooledWorkspaceSession {
       );
     } on TimeoutException {
       return WorkspaceSessionExecResult(
-        output: collected.toString(),
+        output: stripSessionEcho(collected.toString(), command, nonce),
         exitCode: null,
         timedOut: true,
         canceled: canceled,
       );
     } on _SessionExecCanceled {
       return WorkspaceSessionExecResult(
-        output: collected.toString(),
+        output: stripSessionEcho(collected.toString(), command, nonce),
         exitCode: null,
         canceled: true,
       );
