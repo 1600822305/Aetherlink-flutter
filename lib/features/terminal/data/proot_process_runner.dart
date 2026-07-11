@@ -90,7 +90,11 @@ class ProotProcessRunner {
       exitCode = await process.exitCode;
     }
     finished = true;
-    await Future.wait([outDone, errDone]);
+    // proot 死后其子孙进程可能仍握着继承的 stdout/stderr 管道写端
+    // （中断/超时 SIGKILL 只杀 proot 本体），流不会关闭；限时收尾，
+    // 否则这里会永久挂起、工具调用不返回。
+    await Future.wait([outDone, errDone])
+        .timeout(const Duration(seconds: 2), onTimeout: () => const []);
 
     return ProotExecResult(
       stdout: utf8.decode(out.takeBytes(), allowMalformed: true),
