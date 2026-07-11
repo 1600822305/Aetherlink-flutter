@@ -6,6 +6,7 @@
 library;
 
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// The phase of a keyboard visibility change.
@@ -107,6 +108,13 @@ class NativeKeyboardHeight {
   /// Establishes the persistent native connection. Called once from the
   /// constructor — never cancelled.
   void _startListening() {
+    // 只有 Android/iOS 提供了原生实现；桌面端没有软键盘事件，
+    // 订阅会抛 MissingPluginException，直接不建立连接。
+    if (kIsWeb ||
+        !(defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)) {
+      return;
+    }
     _channel.receiveBroadcastStream().listen(
       (dynamic raw) {
         final event = _parse(raw);

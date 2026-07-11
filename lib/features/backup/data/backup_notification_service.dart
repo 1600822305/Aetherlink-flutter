@@ -16,6 +16,10 @@ class BackupNotificationService {
 
   bool _initialized = false;
 
+  /// 本地通知只在移动端有原生实现；桌面端（Windows/Linux/macOS）不注册插件，
+  /// 初始化会抛 MissingPluginException / ArgumentError，直接跳过。
+  static final bool _supported = Platform.isAndroid || Platform.isIOS;
+
   static const int _backupReminderNotificationId = 1001;
   static const String _channelId = 'backup_reminder';
   static const String _channelName = '备份提醒';
@@ -23,7 +27,7 @@ class BackupNotificationService {
 
   /// Initialize the notification plugin. Must be called once at app startup.
   Future<void> initialize() async {
-    if (_initialized) return;
+    if (_initialized || !_supported) return;
 
     tz.initializeTimeZones();
 
@@ -47,6 +51,7 @@ class BackupNotificationService {
 
   /// Request notification permission (Android 13+).
   Future<bool> requestPermission() async {
+    if (!_supported) return false;
     if (Platform.isAndroid) {
       final android = _plugin
           .resolvePlatformSpecificImplementation<
@@ -72,6 +77,7 @@ class BackupNotificationService {
 
   /// Schedule a backup reminder notification at the given [scheduledDate].
   Future<void> scheduleBackupReminder(DateTime scheduledDate) async {
+    if (!_supported) return;
     if (!_initialized) await initialize();
 
     final tzScheduled = tz.TZDateTime.from(scheduledDate, tz.local);
@@ -114,6 +120,7 @@ class BackupNotificationService {
 
   /// Cancel the pending backup reminder notification.
   Future<void> cancelBackupReminder() async {
+    if (!_supported) return;
     if (!_initialized) await initialize();
     await _plugin.cancel(_backupReminderNotificationId);
   }
@@ -121,6 +128,7 @@ class BackupNotificationService {
   /// Show an immediate notification (e.g., when app is in foreground and
   /// reminder is due).
   Future<void> showImmediateReminder() async {
+    if (!_supported) return;
     if (!_initialized) await initialize();
 
     const androidDetails = AndroidNotificationDetails(

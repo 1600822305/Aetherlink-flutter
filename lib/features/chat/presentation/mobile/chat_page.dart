@@ -629,11 +629,11 @@ class _MessageList extends ConsumerWidget {
       chatControllerProvider.select((a) => a.hasValue),
     );
     if (!hasValue) {
-      final hasError = ref.watch(
-        chatControllerProvider.select((a) => a.hasError),
+      final error = ref.watch(
+        chatControllerProvider.select((a) => a.error),
       );
-      return hasError
-          ? const _ErrorNotice()
+      return error != null
+          ? _ErrorNotice(error: error)
           : const Center(child: CircularProgressIndicator());
     }
 
@@ -737,8 +737,12 @@ class _EmptyState extends StatelessWidget {
 }
 
 /// Shown when the read provider fails (e.g. the database cannot be opened).
+/// Displays the underlying exception so the cause is diagnosable in release
+/// builds where the console stack trace is unavailable.
 class _ErrorNotice extends StatelessWidget {
-  const _ErrorNotice();
+  const _ErrorNotice({required this.error});
+
+  final Object error;
 
   @override
   Widget build(BuildContext context) {
@@ -746,12 +750,25 @@ class _ErrorNotice extends StatelessWidget {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Text(
-          '加载消息失败',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: theme.colorScheme.error,
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '加载消息失败',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+            const SizedBox(height: 8),
+            SelectableText(
+              '$error',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
       ),
     );
