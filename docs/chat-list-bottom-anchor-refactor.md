@@ -190,7 +190,7 @@ class ChatListIndexMap {
 | PR-1 索引层 | 已实现 | [#667](https://github.com/1600822305/Aetherlink-flutter/pull/667) | 新增 `ChatListIndexMap`（`chat_list_index_map.dart`）+ 单测；`chat_page.dart` 的 itemBuilder / 导航 / mini-map 索引运算全部收拢到该层，`reverse=false` 行为零变化 |
 | PR-2 列表翻转 | 已实现 | [#668](https://github.com/1600822305/Aetherlink-flutter/pull/668) | `reverse: true`；揭示/入场 ramp 改为尾部追加，删除 `extentAnchor` 与三处揭示补偿；贴底判定与 `pinToBottom` 改为 `minScrollExtent` 侧；回顶/回底方向互换；多选 mini-map 展开索引改走索引层 |
 | PR-3 跟底简化 | 已实现 | — | 布局期 pin 安全网保留但改为单向修正（不再干扰底部 overscroll 回弹）；新增跟底状态机 9 个 widget 测试锁定 reverse 行为 |
-| PR-4 导航与跳转适配 | 未开始 | — | |
+| PR-4 导航与跳转适配 | 已实现 | — | prev/next 锚点改为视觉顶部可见项；导航/mini-map 落点改为「目标行顶边对齐视口顶部」；回顶增加残差 settle 循环 |
 
 实施备注（相对原计划的偏差）：
 - `pendingAdjust`（键盘补偿）在 PR-2 直接删除而非"方向取反保留"：
@@ -216,3 +216,31 @@ PR-3 验证结论（widget 测试实测）：
   属 PR-4 之后的可选项。
 - 底部 overscroll（bouncing 物理）不再被布局期 pin 拉回：
   修正改为仅正方向（`gap > 0.5`）。
+
+PR-4 改动与验证结论（`chat_page.dart`，scrollview_observer 1.27.0 源码逐一核对）：
+- **prev/next 锚点**：reverse 下 observer 的 `firstChild`（屏幕上最小
+  list index）是底部可见项，与翻转前「顶部可见行」的锚点语义相反。
+  改为从 `displayingChildModelList` 取非 edge 的最高 list index（视觉
+  顶部行）再经 `ChatListIndexMap` 换回行号，恢复翻转前的锚点行为。
+- **animateTo 的 alignment 语义**：包内 `targetOffset = childLayoutOffset +
+  childSize * alignment`，基于 sliver 滑动坐标系——reverse 下 item 的
+  leading 边是其**底边**，视口 leading 边是屏幕**底部**，故 `alignment: 0`
+  会把目标行停在视口底部（长消息只露尾部）。新增
+  `_animateToListIndexNearTop`：`alignment: 1`（目标 item 视觉顶边）+
+  `offset` 回调回退一个视口高度，把目标行顶边对齐到视口顶部（即
+  翻转前 `alignment: 0` 的落点）；mini-map 用 `topInsetFraction: 0.1`
+  对应翻转前的 `alignment: 0.1`。包内已将结果 clamp 到可滑动范围，
+  两端目标不会 overscroll。
+- **回顶两段式动画**：近跳 + 短滑的阈值（`viewportDimension * 0.8`，
+  保证短滑距离落在 1 视口的 scrollCacheExtent 内）在 PR-2 已按
+  `maxScrollExtent` 侧换算，本次复核无误；但 reverse 下回顶目标
+  `maxScrollExtent` 是估算值（远端未 build 行参与估算），短滑可能落不到
+  真正的顶，故补一个逐帧 settle 循环（最多 8 帧，gap ≤ 0.5px 即收敛）。
+  回底目标是精确的 `minScrollExtent`，另有 `pinToBottom` 兜底，无需 settle。
+- **mini-map 跳转与多选展开索引**：已确认全部经 `ChatListIndexMap`
+  （多选时 `_indexMapFor(_flatIds.length)`，与 build 的 `allRows` 展开
+  一致），无需改动；落点统一改走 `_animateToListIndexNearTop`。
+- **新消息插入按 index 重新锚定**的已知可选项（见 PR-3 结论）本次未动：
+  append 仍走 `didUpdateWidget → pinToBottom`，行为保持不变。
+- 验证：Flutter 3.44.6 `flutter analyze chat_page.dart` 0 issues；
+  `ChatListIndexMap` 8 个单测 + 跟底状态机 9 个 widget 测试全部通过。

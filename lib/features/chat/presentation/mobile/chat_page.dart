@@ -1097,6 +1097,18 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOutCubic,
         );
+        // In the reverse list maxScrollExtent is only an estimate while
+        // unbuilt rows remain beyond the viewport, so the glide can land
+        // short of the real top. Settle the residual gap frame by frame
+        // until the extent stabilizes (the bottom side needs no such loop:
+        // minScrollExtent is exact).
+        for (var i = 0; i < 8; i++) {
+          if (!mounted || !_scrollController.hasClients) return;
+          final position = _scrollController.position;
+          if (position.maxScrollExtent - position.pixels <= 0.5) break;
+          _scrollController.jumpTo(position.maxScrollExtent);
+          await WidgetsBinding.instance.endOfFrame;
+        }
       case ChatNavigationAction.bottom:
         _navAnchorIndex = null;
         if (_scrollController.hasClients) {
@@ -1132,11 +1144,22 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
             isForce: true,
             isDependObserveCallback: false,
           );
-          final first = result.observeResult?.firstChild?.index;
-          if (first == null || !mounted) return;
+          // In the reverse list the observer's firstChild (lowest list
+          // index on screen) is the *bottom* visible item. The navigation
+          // anchor is the visual-top row — the displaying child with the
+          // highest non-edge list index — matching the forward list's
+          // firstChild semantics.
+          final displaying = result.observeResult?.displayingChildModelList;
+          if (displaying == null || displaying.isEmpty || !mounted) return;
           final map = _rowIndexMap;
-          if (map.isEdge(first)) return;
-          anchorRow = map.rowOfListIndex(first);
+          var topListIndex = -1;
+          for (final child in displaying) {
+            if (!map.isEdge(child.index) && child.index > topListIndex) {
+              topListIndex = child.index;
+            }
+          }
+          if (topListIndex < 0) return;
+          anchorRow = map.rowOfListIndex(topListIndex);
         }
         final delta = action == ChatNavigationAction.prevMessage ? -1 : 1;
         final targetRow = anchorRow + delta;
@@ -1158,11 +1181,8 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         // Smooth scroll like the web's `scrollIntoView({behavior: 'smooth'})`.
         // The enlarged scrollCacheExtent keeps the neighbouring bubbles built
         // ahead of time, so the animation runs without mid-flight builds.
-        await _observerController.animateTo(
-          index: _rowIndexMap.listIndexOfRow(targetRow),
-          alignment: 0,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOutCubic,
+        await _animateToListIndexNearTop(
+          _rowIndexMap.listIndexOfRow(targetRow),
         );
         if (mounted && targetRow < widget.rows.length) {
           ref
@@ -1194,9 +1214,33 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       final expandedRow = expanded + widget.rows[rowIndex].indexOf(messageId);
       listIndex = _indexMapFor(_flatIds.length).listIndexOfRow(expandedRow);
     }
+    await _animateToListIndexNearTop(
+      listIndex,
+      topInsetFraction: 0.1,
+    );
+  }
+
+  /// Animates so [listIndex]'s visual-top edge lands [topInsetFraction] of
+  /// the viewport below the viewport's visual top — the reading position the
+  /// forward list used to get from `alignment: 0` / `alignment: 0.1`.
+  ///
+  /// scrollview_observer's `alignment` offsets by fractions of the *item's*
+  /// leading edge, which in a reverse list is its bottom edge — `alignment: 0`
+  /// would park the target at the viewport bottom. Targeting the trailing
+  /// (visual-top) edge with `alignment: 1` and backing off by the viewport
+  /// extent puts that edge at the visual top instead; the package clamps the
+  /// result into the scrollable range, so targets near the conversation's
+  /// ends land as close as physically possible.
+  Future<void> _animateToListIndexNearTop(
+    int listIndex, {
+    double topInsetFraction = 0,
+  }) async {
+    if (!_scrollController.hasClients) return;
+    final viewportDimension = _scrollController.position.viewportDimension;
     await _observerController.animateTo(
       index: listIndex,
-      alignment: 0.1,
+      alignment: 1,
+      offset: (_) => viewportDimension * (1 - topInsetFraction),
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeOutCubic,
     );
