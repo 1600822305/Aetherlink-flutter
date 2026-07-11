@@ -1,11 +1,13 @@
 // `@aether/terminal` built-in MCP server — 终端 AI 工具。
 //
 // 默认目标是内置终端（PRoot + Alpine 沙箱）；传 `workspace` 参数可指向任何
-// canExec 的工作区（SSH / Termux），在其远端 shell 里执行。terminal_execute
-// 走一次性 exec（stdout/stderr/exit code 干净分离）；terminal_session_* 走
-// WorkspaceBackend 层的长驻会话池（exec 超时后台继续跑 + tailOutput 回看，
-// 见 workspace_session_pool.dart）。命令执行类工具经聊天层 HITL 审批（见
-// terminalToolNeedsConfirmation），并统一过命令黑名单（设计文档 §3.2）。
+// canExec 的工作区（SSH / Termux），在其远端 shell 里执行。只有两个工具：
+// terminal_execute（执行命令，可选 session_id 指定会话，默认复用长驻默认
+// 会话）和 terminal_session（会话管理，用 action 参数区分 create / list /
+// output / write / close），都走 WorkspaceBackend 层的长驻会话池（exec 超时
+// 后台继续跑 + tailOutput 回看，见 workspace_session_pool.dart）。命令执行类
+// 工具经聊天层 HITL 审批（见 terminalToolNeedsConfirmation），并统一过命令
+// 黑名单（设计文档 §3.2）。
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -41,12 +43,11 @@ bool terminalToolNeedsConfirmation(
 }) {
   switch (toolName) {
     case 'terminal_execute':
-    case 'terminal_session_exec':
       break;
     // stdin 写入可驱动会话里的任意程序（shell 提示符下等同执行命令），
-    // 无法静态评级 → 全量审批。
-    case 'terminal_session_write':
-      return true;
+    // 无法静态评级 → 全量审批；其余 action 免审批。
+    case 'terminal_session':
+      return args['action']?.toString() == 'write';
     default:
       return false;
   }
@@ -67,13 +68,7 @@ bool terminalCommandEscapesRoot(
   Map<String, Object?> args, {
   List<Workspace> workspaces = const [],
 }) {
-  switch (toolName) {
-    case 'terminal_execute':
-    case 'terminal_session_exec':
-      break;
-    default:
-      return false;
-  }
+  if (toolName != 'terminal_execute') return false;
   final workspace = _matchWorkspaceArg(args, workspaces);
   if (workspace == null || workspace.scope != WorkspaceScope.project) {
     return false;
@@ -122,23 +117,22 @@ Future<McpToolResult> runTerminalTool(
           cancelSignal: cancelSignal,
           onOutput: onOutput,
         );
-      case 'terminal_session_create':
-        return await _sessionCreate(ref, args);
-      case 'terminal_session_list':
-        return await _sessionList(ref, args);
-      case 'terminal_session_exec':
-        return await _sessionExec(
-          ref,
-          args,
-          cancelSignal: cancelSignal,
-          onOutput: onOutput,
+      case 'terminal_session':
+        switch (requireString(args, 'action')) {
+          case 'create':
+            return await _sessionCreate(ref, args);
+          case 'list':
+            return await _sessionList(ref, args);
+          case 'output':
+            return _sessionOutput(ref, args);
+          case 'write':
+            return _sessionWrite(ref, args);
+          case 'close':
+            return await _sessionClose(ref, args);
+        }
+        return fileEditorError(
+          '未知的 action: ${args['action']}（支持 create / list / output / write / close）',
         );
-      case 'terminal_session_output':
-        return _sessionOutput(ref, args);
-      case 'terminal_session_write':
-        return _sessionWrite(ref, args);
-      case 'terminal_session_close':
-        return await _sessionClose(ref, args);
     }
     return fileEditorError('未知的工具: $toolName');
   } on FileEditorError catch (e) {
@@ -232,8 +226,8 @@ McpToolResult? _guardCommand(String command) {
 }
 
 /// terminal_execute —— 默认跑在长驻默认会话里（IDE 体验：cd / 环境变量跨
-/// 命令保留，终端页可联动围观）。需要隔离环境时 AI 可用
-/// terminal_session_create 新开会话后改用 terminal_session_exec。
+/// 命令保留，终端页可联动围观）。传 session_id 时在指定会话里执行；
+/// 需要隔离环境时 AI 可用 terminal_session action=create 新开会话。
 Future<McpToolResult> _execute(
   Ref ref,
   Map<String, Object?> args, {
@@ -243,18 +237,27 @@ Future<McpToolResult> _execute(
   final command = requireString(args, 'command');
   final blocked = _guardCommand(command);
   if (blocked != null) return blocked;
-  final target = await _resolveTarget(ref, args);
-  final session = await ref
-      .read(workspaceSessionPoolManagerProvider)
-      .poolFor(
-        target.backend,
-        workspaceLabel: target.label,
-        workspaceId: target.workspaceId,
-      )
-      .acquireDefault(
-        workingDirectory: target.defaultCwd,
-        environment: target.environment,
-      );
+  final manager = ref.read(workspaceSessionPoolManagerProvider);
+  final sessionId = optionalString(args, 'session_id');
+  final PooledWorkspaceSession session;
+  if (sessionId != null) {
+    session = manager.find(sessionId) ??
+        (throw FileEditorError(
+          '没有找到会话 $sessionId（可用 terminal_session action=list 查看）',
+        ));
+  } else {
+    final target = await _resolveTarget(ref, args);
+    session = await manager
+        .poolFor(
+          target.backend,
+          workspaceLabel: target.label,
+          workspaceId: target.workspaceId,
+        )
+        .acquireDefault(
+          workingDirectory: target.defaultCwd,
+          environment: target.environment,
+        );
+  }
   // 会话里 cwd 是 shell 状态；显式传 cwd 时先 cd 过去再执行。
   final cwd = optionalString(args, 'cwd');
   final effective = (cwd == null || cwd.isEmpty)
@@ -271,14 +274,14 @@ Future<McpToolResult> _execute(
   );
   return fileEditorOk({
     'command': command,
-    'workspace': target.label,
+    'workspace': session.workspaceLabel,
     'sessionId': session.id,
     if (cwd != null && cwd.isNotEmpty) 'cwd': cwd,
     'exitCode': result.exitCode,
     'timedOut': result.timedOut,
     'canceled': result.canceled,
     if (result.timedOut)
-      'hint': '命令超时未结束，仍在会话里继续跑；可稍后用 terminal_session_output 回看输出。'
+      'hint': '命令超时未结束，仍在会话里继续跑；可稍后用 terminal_session action=output 回看输出。'
     else if (result.canceled)
       'hint': '命令被用户中断（已向会话发 Ctrl-C），会话仍可继续使用。',
     'stdout': result.output,
@@ -338,64 +341,14 @@ Future<McpToolResult> _sessionList(
   });
 }
 
-Future<McpToolResult> _sessionExec(
-  Ref ref,
-  Map<String, Object?> args, {
-  Future<void>? cancelSignal,
-  void Function(String chunk)? onOutput,
-}) async {
-  final command = requireString(args, 'command');
-  final blocked = _guardCommand(command);
-  if (blocked != null) return blocked;
-  final manager = ref.read(workspaceSessionPoolManagerProvider);
-  final sessionId = optionalString(args, 'session_id');
-  final PooledWorkspaceSession session;
-  if (sessionId != null) {
-    session = manager.find(sessionId) ??
-        (throw FileEditorError(
-          '没有找到会话 $sessionId（可用 terminal_session_list 查看）',
-        ));
-  } else {
-    final target = await _resolveTarget(ref, args);
-    session = await manager
-        .poolFor(
-          target.backend,
-          workspaceLabel: target.label,
-          workspaceId: target.workspaceId,
-        )
-        .acquireDefault(
-          workingDirectory: target.defaultCwd,
-          environment: target.environment,
-        );
-  }
-  final timeoutMs = optionalInt(args, 'timeout_ms') ?? _kDefaultTimeoutMs;
-  final result = await session.exec(
-    command,
-    timeout: Duration(milliseconds: timeoutMs > 0 ? timeoutMs : _kDefaultTimeoutMs),
-    cancelSignal: cancelSignal,
-    onOutput: onOutput,
-  );
-  return fileEditorOk({
-    'sessionId': session.id,
-    'workspace': session.workspaceLabel,
-    'command': command,
-    'exitCode': result.exitCode,
-    'timedOut': result.timedOut,
-    'canceled': result.canceled,
-    if (result.timedOut)
-      'hint': '命令超时未结束，仍在会话里继续跑；可稍后用 terminal_session_output 回看输出。'
-    else if (result.canceled)
-      'hint': '命令被用户中断（已向会话发 Ctrl-C），会话仍可继续使用。',
-    'output': result.output,
-  });
-}
-
 McpToolResult _sessionOutput(Ref ref, Map<String, Object?> args) {
   final sessionId = requireString(args, 'session_id');
   final session =
       ref.read(workspaceSessionPoolManagerProvider).find(sessionId);
   if (session == null) {
-    return fileEditorError('没有找到会话 $sessionId（可用 terminal_session_list 查看）');
+    return fileEditorError(
+      '没有找到会话 $sessionId（可用 terminal_session action=list 查看）',
+    );
   }
   final tail = optionalInt(args, 'tail_chars') ?? 4000;
   return fileEditorOk({
@@ -412,7 +365,9 @@ McpToolResult _sessionWrite(Ref ref, Map<String, Object?> args) {
   final session =
       ref.read(workspaceSessionPoolManagerProvider).find(sessionId);
   if (session == null) {
-    return fileEditorError('没有找到会话 $sessionId（可用 terminal_session_list 查看）');
+    return fileEditorError(
+      '没有找到会话 $sessionId（可用 terminal_session action=list 查看）',
+    );
   }
   final input = requireString(args, 'input');
   // stdin 在提示符下等同执行命令，黑名单同样生效，堵住绕过 terminal_execute
@@ -425,7 +380,7 @@ McpToolResult _sessionWrite(Ref ref, Map<String, Object?> args) {
     'sessionId': session.id,
     'workspace': session.workspaceLabel,
     'written': true,
-    'hint': '已写入 stdin；可用 terminal_session_output 回看进程响应。',
+    'hint': '已写入 stdin；可用 terminal_session action=output 回看进程响应。',
   });
 }
 

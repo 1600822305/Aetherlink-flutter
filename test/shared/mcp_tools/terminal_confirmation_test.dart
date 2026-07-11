@@ -24,14 +24,17 @@ void main() {
   group('terminalToolNeedsConfirmation（双作用域设计稿 §3.2）', () {
     test('非执行类工具不需要审批', () {
       expect(
-        terminalToolNeedsConfirmation('terminal_session_list', const {}),
+        terminalToolNeedsConfirmation('terminal_session', const {
+          'action': 'list',
+        }),
         isFalse,
       );
     });
 
     test('stdin 写入全量审批（无法静态评级）', () {
       expect(
-        terminalToolNeedsConfirmation('terminal_session_write', const {
+        terminalToolNeedsConfirmation('terminal_session', const {
+          'action': 'write',
           'session_id': 's1',
           'input': 'y',
         }),
@@ -109,7 +112,7 @@ void main() {
       // 按名称 / 编号解析同样生效。
       expect(
         terminalToolNeedsConfirmation(
-          'terminal_session_exec',
+          'terminal_execute',
           const {'command': 'cat pubspec.yaml', 'workspace': 'demo'},
           workspaces: workspaces,
         ),
@@ -157,7 +160,7 @@ void main() {
       );
       expect(
         terminalCommandEscapesRoot(
-          'terminal_session_exec',
+          'terminal_execute',
           const {'command': 'cd ..', 'workspace': 'ws-proj'},
           workspaces: workspaces,
         ),

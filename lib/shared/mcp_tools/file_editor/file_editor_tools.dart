@@ -9,7 +9,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
-import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_exec_handlers.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_read_handlers.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_write_handlers.dart';
@@ -30,7 +29,6 @@ FileEditorRisk? fileEditorRiskLevel(String toolName) {
     case 'write_to_file':
     case 'apply_diff':
     case 'delete_file':
-    case 'run_command':
       return FileEditorRisk.high;
     case 'create_file':
     case 'create_directory':
@@ -55,10 +53,8 @@ bool fileEditorNeedsConfirmation(String toolName) =>
 Future<McpToolResult> runFileEditorTool(
   Ref ref,
   String toolName,
-  Map<String, Object?> args, {
-  Future<void>? cancelSignal,
-  void Function(String chunk)? onOutput,
-}) async {
+  Map<String, Object?> args,
+) async {
   try {
     switch (toolName) {
       case 'get_workspace_files':
@@ -91,13 +87,6 @@ Future<McpToolResult> runFileEditorTool(
         return await applyDiff(ref, args);
       case 'replace_in_file':
         return await replaceInFile(ref, args);
-      case 'run_command':
-        return await runCommand(
-          ref,
-          args,
-          cancelSignal: cancelSignal,
-          onOutput: onOutput,
-        );
     }
     return fileEditorError('未知的工具: $toolName');
   } on FileEditorError catch (e) {

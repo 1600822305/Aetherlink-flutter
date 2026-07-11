@@ -11,13 +11,15 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/fil
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/running_commands_service.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 
-/// Terminal-style card for the `@aether/terminal` session tools
-/// (terminal_session_create / list / exec / output / close).
+/// Terminal-style card for the `@aether/terminal` `terminal_session` tool
+/// (action = create / list / output / write / close)，也兼容历史消息里的旧
+/// terminal_session_* 工具名。
 ///
-/// `terminal_session_exec` mirrors the run_command card: `$ command` header
-/// with an exit-code badge, expandable output box, and the inline HITL
-/// 确认/拒绝 bar while awaiting approval. The other session tools render as a
-/// compact row (新建/关闭/会话列表) with expandable detail where useful.
+/// 历史消息的 `terminal_session_exec` mirrors the run_command card:
+/// `$ command` header with an exit-code badge, expandable output box, and the
+/// inline HITL 确认/拒绝 bar while awaiting approval. The other session ops
+/// render as a compact row (新建/关闭/会话列表) with expandable detail where
+/// useful.
 class TerminalSessionBlockView extends ConsumerStatefulWidget {
   const TerminalSessionBlockView({required this.block, super.key});
 
@@ -33,8 +35,15 @@ class _TerminalSessionBlockViewState
   bool _expanded = false;
 
   ToolBlock get block => widget.block;
-  String get _tool => block.toolName ?? '';
   Map<String, Object?> get _args => block.arguments ?? const {};
+
+  /// 归一化的操作名：新的 terminal_session 按 action 参数映射到旧工具名，
+  /// 旧名字（历史消息）原样使用，下面的分支逻辑两者通用。
+  String get _tool {
+    final name = block.toolName ?? '';
+    if (name != 'terminal_session') return name;
+    return 'terminal_session_${_args['action'] ?? ''}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -215,6 +224,7 @@ class _TerminalSessionBlockViewState
         'terminal_session_list' => LucideIcons.list,
         'terminal_session_exec' => LucideIcons.squareTerminal,
         'terminal_session_output' => LucideIcons.scrollText,
+        'terminal_session_write' => LucideIcons.keyboard,
         'terminal_session_close' => LucideIcons.squareX,
         _ => LucideIcons.terminal,
       };
@@ -223,6 +233,7 @@ class _TerminalSessionBlockViewState
         'terminal_session_create' => '创建会话中...',
         'terminal_session_exec' => '会话执行中...',
         'terminal_session_output' => '读取输出中...',
+        'terminal_session_write' => '写入输入中...',
         'terminal_session_close' => '关闭会话中...',
         _ => '执行中...',
       };
@@ -276,6 +287,9 @@ class _TerminalSessionBlockViewState
         final id = data?['sessionId'] ?? _args['session_id'] ?? '';
         final busy = data?['busy'] == true ? '（运行中）' : '';
         return '会话输出 · $id$busy';
+      case 'terminal_session_write':
+        final id = data?['sessionId'] ?? _args['session_id'] ?? '';
+        return '会话输入 · $id：${_args['input'] ?? ''}';
       case 'terminal_session_close':
         final id = data?['sessionId'] ?? _args['session_id'] ?? '';
         return '关闭会话 $id';
@@ -298,6 +312,11 @@ class _TerminalSessionBlockViewState
       case 'terminal_session_exec':
       case 'terminal_session_output':
         return _outputBody(data);
+      case 'terminal_session_write':
+        return _metaBody([
+          ('会话', data['sessionId']?.toString()),
+          ('提示', data['hint']?.toString()),
+        ], sessionId: data['sessionId']?.toString());
       case 'terminal_session_close':
         return null;
     }

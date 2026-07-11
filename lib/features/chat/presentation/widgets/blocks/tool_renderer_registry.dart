@@ -41,9 +41,8 @@ const Set<String> _fileEditorReadTools = {
 /// JSON tool card.
 final Map<String, ToolBlockBuilder> _toolRenderers = {
   'builtin_web_search': (b) => WebSearchBlockView(block: b),
+  // run_command 已下线（终端能力归 @aether/terminal），保留渲染以兼容历史消息。
   'run_command': (b) => RunCommandBlockView(block: b),
-  // terminal_execute 的结果字段与 run_command 一致（command/cwd/stdout/stderr/
-  // exitCode），直接复用终端卡片。
   'terminal_execute': (b) => RunCommandBlockView(block: b),
   for (final t in _terminalSessionTools)
     t: (b) => TerminalSessionBlockView(block: b),
@@ -54,8 +53,11 @@ final Map<String, ToolBlockBuilder> _toolRenderers = {
   for (final t in _knowledgeTools) t: (b) => KnowledgeBlockView(block: b),
 };
 
-/// `@aether/terminal` 长驻会话工具，渲染为终端会话卡片。
+/// `@aether/terminal` 长驻会话工具，渲染为终端会话卡片。旧的
+/// terminal_session_*（已合并进 terminal_session 的 action 参数）保留
+/// 渲染以兼容历史消息。
 const Set<String> _terminalSessionTools = {
+  'terminal_session',
   'terminal_session_create',
   'terminal_session_list',
   'terminal_session_exec',

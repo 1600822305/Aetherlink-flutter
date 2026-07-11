@@ -31,14 +31,10 @@ bool toolNeedsConfirmation(
 }
 
 /// Whether this tool call is a command that can be aborted mid-flight
-/// through the tool block's 中断 button (`run_command` / `terminal_execute`
-/// kill the process; `terminal_session_exec` sends Ctrl-C to the session),
-/// so the caller registers a cancel signal before running it.
+/// through the tool block's 中断 button (`terminal_execute` sends Ctrl-C to
+/// the session), so the caller registers a cancel signal before running it.
 bool isCancelableCommandCall(ToolRoute route, String toolName) {
-  return (route is FileEditorToolRoute && toolName == 'run_command') ||
-      (route is TerminalToolRoute &&
-          (toolName == 'terminal_execute' ||
-              toolName == 'terminal_session_exec'));
+  return route is TerminalToolRoute && toolName == 'terminal_execute';
 }
 
 /// Human-readable summary for a confirmation dialog.
@@ -71,9 +67,10 @@ String toolConfirmSummary(String toolName, Map<String, Object?> args) {
       return '对「${_pathTail(args['path'])}」应用 diff 修改';
     case 'replace_in_file':
       return '在「${_pathTail(args['path'])}」中替换「${args['search'] ?? ''}」';
-    case 'run_command':
+    case 'terminal_execute':
       return '在工作区执行命令：${args['command'] ?? ''}';
-    case 'terminal_session_write':
+    // 只有 action=write 会走到确认（见 terminalToolNeedsConfirmation）。
+    case 'terminal_session':
       return '向终端会话 ${args['session_id'] ?? ''} 的进程输入：${args['input'] ?? ''}';
     // @aether/knowledge 写操作（kb_manage）。
     case 'kb_manage':

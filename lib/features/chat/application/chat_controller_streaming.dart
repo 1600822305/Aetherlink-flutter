@@ -635,8 +635,8 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
               workspaces: ref.read(workspaceStoreProvider).value ?? const [],
             );
 
-            // `run_command` / `terminal_execute` / `terminal_session_exec`
-            // can be aborted mid-flight: register a cancel signal
+            // `terminal_execute` can be aborted mid-flight:
+            // register a cancel signal
             // (keyed by this block) before running so the block's 中断 button
             // can kill the remote session, then deregister once it settles.
             // Output chunks stream into commandLiveOutputProvider while the

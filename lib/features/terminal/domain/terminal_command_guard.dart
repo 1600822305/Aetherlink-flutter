@@ -1,7 +1,7 @@
 // AI 发起命令的黑名单拦截（纯 Dart，可单测）。设计文档 §3 安全边界：
 // 「支持命令黑名单（rm -rf / 等模式拦截）」。
 //
-// 只拦 AI 通道（terminal_execute / terminal_session_exec）；用户在交互式
+// 只拦 AI 通道（terminal_execute / terminal_session write）；用户在交互式
 // 终端里手动敲的命令不经过这里。rootfs 本身是沙箱，黑名单的意义是防止
 // AI 误操作把整个 rootfs / 挂载目录清掉，让用户白装一遍环境。
 

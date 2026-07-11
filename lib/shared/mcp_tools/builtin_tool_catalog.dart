@@ -1000,31 +1000,6 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'required': ['path'],
       },
     ),
-    McpToolDefinition(
-      name: 'run_command',
-      description: '在工作区所在机器上执行一条 shell 命令并返回 stdout/stderr/退出码（非交互、非 PTY）。'
-          '仅远程类后端（SSH / Termux）支持；本地 SAF 工作区不支持。属高危操作，会触发用户确认。'
-          '适合跑构建/测试/git/查询等一次性命令；不要用于需要交互输入的程序。',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'command': {'type': 'string', 'description': '要执行的 shell 命令'},
-          'workspace': {
-            'type': 'string',
-            'description': '工作区编号（如 "1"）或 ID 或名称（可选，默认当前工作区）',
-          },
-          'cwd': {
-            'type': 'string',
-            'description': '工作目录绝对路径（可选，默认工作区根目录）',
-          },
-          'timeout_ms': {
-            'type': 'number',
-            'description': '超时毫秒数（可选，默认 60000；超时会终止命令）',
-          },
-        },
-        'required': ['command'],
-      },
-    ),
   ],
   '@aether/knowledge': [
     McpToolDefinition(
@@ -1137,17 +1112,22 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       name: 'terminal_execute',
       description:
           '在长驻终端会话里执行一条 shell 命令，返回输出和退出码。默认复用同一个持久会话'
-          '（像 IDE 终端：cd、环境变量、venv 等状态跨命令保留）。默认目标是内置终端'
-          '（应用内 Alpine Linux 沙箱）；传 workspace 参数可在 SSH / Termux 工作区的远端 shell 里执行。'
-          '需要独立/干净环境或并行多个任务时，用 terminal_session_create 新开会话后配合'
-          ' terminal_session_exec 指定 session_id 执行。执行前会请用户确认。',
+          '（像 IDE 终端：cd、环境变量、venv 等状态跨命令保留）；传 session_id 可在指定会话里执行。'
+          '默认目标是内置终端（应用内 Alpine Linux 沙箱）；传 workspace 参数可在'
+          ' SSH / Termux 工作区的远端 shell 里执行。需要独立/干净环境或并行多个任务时，'
+          '用 terminal_session action=create 新开会话后传 session_id 执行。'
+          '超时不杀命令——命令继续在会话里跑，可用 terminal_session action=output 回看。执行前会请用户确认。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'command': {'type': 'string', 'description': '要执行的 shell 命令'},
+          'session_id': {
+            'type': 'string',
+            'description': '目标会话 ID（可选；不传时复用/新建默认会话）',
+          },
           'workspace': {
             'type': 'string',
-            'description': '目标工作区（序号 / ID / 名称，可选；不传时在内置终端沙箱里执行）',
+            'description': '不传 session_id 时的目标工作区（序号 / ID / 名称，可选；默认内置终端沙箱）',
           },
           'cwd': {
             'type': 'string',
@@ -1162,109 +1142,48 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
-      name: 'terminal_session_create',
+      name: 'terminal_session',
       description:
-          '新建一个长驻终端会话（持久 shell）。默认在内置 Alpine 沙箱里；传 workspace 参数可在'
-          ' SSH / Termux 工作区的远端开会话。会话保留 cd / 环境变量 / 后台进程等状态，'
-          '空闲 10 分钟自动回收。返回 sessionId 供 terminal_session_exec 等使用。',
+          '管理长驻终端会话，用 action 参数区分操作：'
+          'create 新建会话（持久 shell，保留 cd / 环境变量 / 后台进程，空闲 10 分钟自动回收，'
+          '返回 sessionId 供 terminal_execute 使用）；'
+          'list 列出所有会话（sessionId、名称、所属工作区、是否正忙）；'
+          'output 回看会话最近输出（如超时后查看长任务进度）；'
+          'write 往运行中进程写 stdin（交互式输入，如回答 [y/n]、REPL；执行前会请用户确认）；'
+          'close 关闭会话并结束其中进程。',
       inputSchema: {
         'type': 'object',
         'properties': {
-          'name': {'type': 'string', 'description': '会话名称（可选）'},
+          'action': {
+            'type': 'string',
+            'enum': ['create', 'list', 'output', 'write', 'close'],
+            'description': '操作类型',
+          },
+          'session_id': {
+            'type': 'string',
+            'description': '目标会话 ID（output / write / close 必传）',
+          },
+          'name': {'type': 'string', 'description': '会话名称（create 可选）'},
           'workspace': {
             'type': 'string',
-            'description': '目标工作区（序号 / ID / 名称，可选；不传时在内置终端沙箱里开会话）',
+            'description': '目标工作区（序号 / ID / 名称；create 可选，不传时在内置终端沙箱里开会话；'
+                'list 可选，传了只列该工作区的会话）',
           },
           'cwd': {
             'type': 'string',
-            'description': '初始工作目录（可选；内置终端默认 /root，指定工作区时默认其根目录）',
+            'description': '初始工作目录（create 可选；内置终端默认 /root，指定工作区时默认其根目录）',
           },
-        },
-      },
-    ),
-    McpToolDefinition(
-      name: 'terminal_session_list',
-      description: '列出当前所有长驻终端会话（sessionId、名称、所属工作区、是否正忙、最近使用时间）。'
-          '传 workspace 参数可只列该工作区的会话。',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'workspace': {
-            'type': 'string',
-            'description': '只列该工作区的会话（可选；编号/ID/名称）',
-          },
-        },
-      },
-    ),
-    McpToolDefinition(
-      name: 'terminal_session_exec',
-      description:
-          '在指定长驻会话里执行一条命令并等待结束（保留 shell 状态）。不传 session_id 时自动复用/新建'
-          '默认会话（可配合 workspace 参数指定在哪个工作区）。'
-          '超时不杀命令——命令继续在会话里跑，可用 terminal_session_output 回看。执行前会请用户确认。',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'command': {'type': 'string', 'description': '要执行的 shell 命令'},
-          'session_id': {
-            'type': 'string',
-            'description': '目标会话 ID（可选，默认复用空闲会话）',
-          },
-          'workspace': {
-            'type': 'string',
-            'description': '不传 session_id 时的目标工作区（序号 / ID / 名称，可选；默认内置终端）',
-          },
-          'timeout_ms': {
-            'type': 'number',
-            'description': '等待毫秒数（可选，默认 120000）',
-          },
-        },
-        'required': ['command'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'terminal_session_output',
-      description: '回看指定会话最近的输出（如超时后查看长任务进度）。',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'session_id': {'type': 'string', 'description': '目标会话 ID'},
           'tail_chars': {
             'type': 'number',
-            'description': '返回末尾多少个字符（可选，默认 4000）',
+            'description': '返回末尾多少个字符（output 可选，默认 4000）',
           },
-        },
-        'required': ['session_id'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'terminal_session_write',
-      description:
-          '往指定会话的运行中进程写 stdin（交互式程序输入，如回答 [y/n] 提示、REPL 输入）。'
-          '默认在末尾追加回车；press_enter 为 false 时原样写入。写入后可用'
-          ' terminal_session_output 回看进程响应。执行前会请用户确认。',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'session_id': {'type': 'string', 'description': '目标会话 ID'},
-          'input': {'type': 'string', 'description': '要写入 stdin 的内容'},
+          'input': {'type': 'string', 'description': '要写入 stdin 的内容（write 必传）'},
           'press_enter': {
             'type': 'boolean',
-            'description': '是否在末尾追加回车（可选，默认 true）',
+            'description': '是否在末尾追加回车（write 可选，默认 true）',
           },
         },
-        'required': ['session_id', 'input'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'terminal_session_close',
-      description: '关闭指定长驻会话并结束其中的进程。',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'session_id': {'type': 'string', 'description': '目标会话 ID'},
-        },
-        'required': ['session_id'],
+        'required': ['action'],
       },
     ),
   ],
