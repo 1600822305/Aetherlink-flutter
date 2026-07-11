@@ -68,6 +68,10 @@ class ProotCommandBuilder {
       executable: prootPath,
       arguments: [
         '--kill-on-exit',
+        // Android 私有目录（f2fs/SELinux）不允许 link(2)，dpkg 备份
+        // status-old / 替换文件时的硬链接会 EPERM；Termux 版 proot 的
+        // link2symlink 扩展把 link() 模拟成符号链接，包管理器才能工作。
+        '--link2symlink',
         '-r', rootfsPath,
         // 伪 root（uid 0）：apk add 等包管理操作需要。真实权限仍是应用 uid，
         // rootfs 外的系统一律碰不到。

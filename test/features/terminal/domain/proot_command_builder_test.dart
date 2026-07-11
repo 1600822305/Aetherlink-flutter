@@ -17,6 +17,8 @@ void main() {
 
       expect(cmd.executable, '/data/app/lib/arm64/libproot.so');
       expect(cmd.arguments.first, '--kill-on-exit');
+      // dpkg 等包管理器靠硬链接做备份，Android 下必须由 proot 模拟。
+      expect(cmd.arguments, contains('--link2symlink'));
       expect(cmd.arguments, containsAllInOrder([
         '-r', '/data/user/0/app/files/terminal/rootfs',
         '-0',
