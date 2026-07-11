@@ -38,6 +38,20 @@ class CurrentWorkspace extends Notifier<Workspace?> {
   void close() => state = null;
 }
 
+/// 聊天里的终端工具块「在终端中查看」→ 跳转工作区终端页时要聚焦的
+/// AI 会话 ID。终端页消费（打开对应 AI 会话 tab）后清空。
+final terminalFocusSessionProvider =
+    NotifierProvider<TerminalFocusSession, String?>(TerminalFocusSession.new);
+
+class TerminalFocusSession extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void request(String sessionId) => state = sessionId;
+
+  void clear() => state = null;
+}
+
 /// The [WorkspaceBackend] the left tree and middle viewer read from, resolved
 /// from [currentWorkspaceProvider]. `null` until a workspace is opened — both
 /// pages render their empty state in that case. Kept as a provider so the tree

@@ -26,6 +26,7 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_view
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_session_protocol.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 内置终端连接后注入的初始化命令：提示符显示当前路径（busybox ash
 /// 支持 \w / \e 提示符展开），清屏后打印工作区信息横幅。
@@ -127,7 +128,21 @@ class _WorkspaceTerminalPageState
       if (workspace?.backendType == WorkspaceBackendType.prootLocal) {
         _connect(_tabs.first);
       }
+      _consumeFocusRequest();
     });
+  }
+
+  /// 消费聊天「在终端中查看」的请求：找到对应 AI 会话并打开其联动 tab。
+  void _consumeFocusRequest() {
+    final id = ref.read(terminalFocusSessionProvider);
+    if (id == null) return;
+    ref.read(terminalFocusSessionProvider.notifier).clear();
+    final session = _poolManager?.find(id);
+    if (session != null && session.alive) {
+      _openAiSession(session);
+    } else {
+      AppToast.info(context, '该 AI 会话已结束或已回收');
+    }
   }
 
   @override
@@ -334,6 +349,13 @@ class _WorkspaceTerminalPageState
 
   @override
   Widget build(BuildContext context) {
+    // 终端页已在前台时再次点「在终端中查看」：就地切到对应 AI 会话。
+    ref.listen<String?>(terminalFocusSessionProvider, (prev, next) {
+      if (next != null) {
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _consumeFocusRequest());
+      }
+    });
     final theme = Theme.of(context);
     final workspace = ref.watch(currentWorkspaceProvider);
     final backend = ref.watch(workspacePreviewBackendProvider);

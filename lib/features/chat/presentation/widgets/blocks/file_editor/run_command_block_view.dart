@@ -2,11 +2,14 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/file_editor_ui.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/running_commands_service.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 
@@ -231,6 +234,7 @@ class _RunCommandBlockViewState extends ConsumerState<RunCommandBlockView> {
     final theme = Theme.of(context);
     final cwd = data['cwd']?.toString();
     final workspace = data['workspace']?.toString();
+    final sessionId = data['sessionId']?.toString();
     final stdout = data['stdout']?.toString() ?? '';
     final stderr = data['stderr']?.toString() ?? '';
     final hasOutput = stdout.trim().isNotEmpty || stderr.trim().isNotEmpty;
@@ -244,6 +248,11 @@ class _RunCommandBlockViewState extends ConsumerState<RunCommandBlockView> {
             CommandMetaRow(label: '工作区', value: workspace),
           if (cwd != null && cwd.isNotEmpty)
             CommandMetaRow(label: '目录', value: cwd),
+          if (sessionId != null && sessionId.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: OpenInTerminalButton(sessionId: sessionId),
+            ),
           if (workspace != null || cwd != null) const SizedBox(height: 8),
           if (stdout.trim().isNotEmpty) ...[
             CommandOutputSection(label: 'stdout', text: stdout),
@@ -295,6 +304,49 @@ class _RunCommandBlockViewState extends ConsumerState<RunCommandBlockView> {
       return blockErr['message'] as String;
     }
     return null;
+  }
+}
+
+/// 「在终端中查看」：跳到工作区终端页并打开对应的 AI 会话 tab，
+/// 实时围观 / 接管该长驻会话。终端系列工具卡片共用。
+class OpenInTerminalButton extends ConsumerWidget {
+  const OpenInTerminalButton({required this.sessionId, super.key});
+
+  final String sessionId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.primary;
+    return GestureDetector(
+      onTap: () {
+        ref.read(terminalFocusSessionProvider.notifier).request(sessionId);
+        context.push(AppRouter.workspacePath);
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(LucideIcons.terminal, size: 12, color: color),
+            const SizedBox(width: 4),
+            Text(
+              '在终端中查看',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
