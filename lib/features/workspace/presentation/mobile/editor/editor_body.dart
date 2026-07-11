@@ -49,6 +49,8 @@ class EditorContent extends StatelessWidget {
     this.placeholderBuilder,
     this.findMatches = const <TextMatch>[],
     this.findIndex = -1,
+    this.jumpLine,
+    this.jumpToken = 0,
   });
 
   final Future<void> ready;
@@ -64,6 +66,10 @@ class EditorContent extends StatelessWidget {
   /// own selection instead).
   final List<TextMatch> findMatches;
   final int findIndex;
+
+  /// 「跳到某行」请求，透传给只读查看器（见 [ReadOnlyCodeView.jumpLine]）。
+  final int? jumpLine;
+  final int jumpToken;
 
   /// Returns a non-null widget (binary / too-large placeholder) to show instead
   /// of the text area once the load completes; null means "show the editor".
@@ -98,6 +104,8 @@ class EditorContent extends StatelessWidget {
             onFontSize: onFontSize,
             findMatches: findMatches,
             findIndex: findIndex,
+            jumpLine: jumpLine,
+            jumpToken: jumpToken,
           );
         }
         return EditorTextArea(

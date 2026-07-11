@@ -52,6 +52,11 @@ class _FileEditorState extends ConsumerState<FileEditor> {
 
   bool _showFind = false;
   bool _showReplace = false;
+
+  // 「跳到某行」（全局搜索结果）：token 每消费一次请求 +1，驱动只读查看器
+  // 重新滚动（同一行再次跳也能触发）。
+  int? _jumpLine;
+  int _jumpToken = 0;
   double _fontSize = kEditorDefaultFontSize;
   bool _tooManyLinesToEdit = false;
 
@@ -95,6 +100,8 @@ class _FileEditorState extends ConsumerState<FileEditor> {
       ref
           .read(editorRegistryProvider)
           .register(_path, EditorHandle(save: _save, discard: _discard));
+      final jump = ref.read(editorJumpProvider);
+      if (jump != null && jump.path == _path) _consumeJump(jump);
     });
   }
 
@@ -317,6 +324,32 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     }
   }
 
+  // 消费一次跳行请求：等文件加载完再滚动，并把光标放到目标行首
+  // （编辑态下 TextField 也能对上）。
+  Future<void> _consumeJump(EditorJumpRequest req) async {
+    ref.read(editorJumpProvider.notifier).clear();
+    try {
+      await _ready;
+    } catch (_) {
+      return;
+    }
+    if (!mounted) return;
+    final text = _controller.text;
+    var offset = 0;
+    var line = 1;
+    while (line < req.line) {
+      final nl = text.indexOf('\n', offset);
+      if (nl < 0) break;
+      offset = nl + 1;
+      line++;
+    }
+    _controller.selection = TextSelection.collapsed(offset: offset);
+    setState(() {
+      _jumpLine = line;
+      _jumpToken++;
+    });
+  }
+
   static String _fmtBytes(int n) {
     if (n >= 1 << 20) return '${(n / (1 << 20)).toStringAsFixed(1)}MB';
     if (n >= 1 << 10) return '${(n / (1 << 10)).toStringAsFixed(1)}KB';
@@ -326,6 +359,9 @@ class _FileEditorState extends ConsumerState<FileEditor> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    ref.listen<EditorJumpRequest?>(editorJumpProvider, (prev, next) {
+      if (next != null && next.path == _path) _consumeJump(next);
+    });
     // Rebuilds only on a dirty transition (set is deduped), not per keystroke.
     final dirty = ref.watch(
       dirtyFilesProvider.select((s) => s.contains(_path)),
@@ -379,6 +415,8 @@ class _FileEditorState extends ConsumerState<FileEditor> {
               placeholderBuilder: _placeholder,
               findMatches: _showFind ? _find.matches : const [],
               findIndex: _showFind ? _find.index : -1,
+              jumpLine: _jumpLine,
+              jumpToken: _jumpToken,
             ),
           ),
           if (_hasTextBody) EditorStatusBar(controller: _controller),

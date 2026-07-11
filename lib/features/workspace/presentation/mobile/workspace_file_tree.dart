@@ -382,20 +382,26 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   }
 
   // Opens the search sheet; a picked file opens in an editor tab (the shell
-  // then slides to the middle page), a picked directory is revealed in place.
+  // then slides to the middle page — with a 「跳到某行」 request when a content
+  // match line was picked), a picked directory is revealed in place.
   Future<void> _openSearch() async {
     final backend = _backend;
     final root = _root;
     if (backend == null || root == null) return;
-    final entry = await showWorkspaceSearchSheet(
+    final pick = await showWorkspaceSearchSheet(
       context,
       backend: backend,
       rootPath: root,
     );
-    if (entry == null || !mounted) return;
+    if (pick == null || !mounted) return;
+    final entry = pick.entry;
     if (entry.isDirectory) {
       await _revealPath(entry.path);
     } else {
+      final line = pick.line;
+      if (line != null) {
+        ref.read(editorJumpProvider.notifier).request(entry.path, line);
+      }
       ref
           .read(openWorkspaceFilesProvider.notifier)
           .open(entry, dirtyPaths: ref.read(dirtyFilesProvider));

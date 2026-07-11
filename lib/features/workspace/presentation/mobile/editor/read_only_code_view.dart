@@ -30,6 +30,8 @@ class ReadOnlyCodeView extends StatefulWidget {
     required this.onFontSize,
     this.findMatches = const <TextMatch>[],
     this.findIndex = -1,
+    this.jumpLine,
+    this.jumpToken = 0,
   });
 
   /// The same controller the editor owns; the viewer reads its text and
@@ -42,6 +44,11 @@ class ReadOnlyCodeView extends StatefulWidget {
   /// match index, used for per-line highlighting and scroll-to-match.
   final List<TextMatch> findMatches;
   final int findIndex;
+
+  /// 「跳到某行」 (1-based, 全局搜索结果点击)：[jumpToken] 每变一次触发一次
+  /// 滚动居中，[jumpLine] 所在行会画一条高亮带。
+  final int? jumpLine;
+  final int jumpToken;
 
   @override
   State<ReadOnlyCodeView> createState() => _ReadOnlyCodeViewState();
@@ -72,6 +79,7 @@ class _ReadOnlyCodeViewState extends State<ReadOnlyCodeView> {
     _resplit();
     widget.controller.addListener(_onControllerChanged);
     _vScroll.addListener(_syncGutter);
+    if (widget.jumpLine != null) _scrollToLine(widget.jumpLine!);
   }
 
   @override
@@ -86,6 +94,9 @@ class _ReadOnlyCodeViewState extends State<ReadOnlyCodeView> {
     if (oldWidget.findIndex != widget.findIndex ||
         !identical(oldWidget.findMatches, widget.findMatches)) {
       _scrollToCurrentMatch();
+    }
+    if (oldWidget.jumpToken != widget.jumpToken && widget.jumpLine != null) {
+      _scrollToLine(widget.jumpLine!);
     }
   }
 
@@ -151,16 +162,22 @@ class _ReadOnlyCodeViewState extends State<ReadOnlyCodeView> {
   void _scrollToCurrentMatch() {
     final i = widget.findIndex;
     if (i < 0 || i >= widget.findMatches.length) return;
-    final line = _lineOfOffset(widget.findMatches[i].start);
+    _scrollToLine(_lineOfOffset(widget.findMatches[i].start) + 1);
+  }
+
+  // Centers 1-based [line] in the viewport (shared by scroll-to-match and
+  // 「跳到某行」).
+  void _scrollToLine(int line) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_vScroll.hasClients) return;
       final lineHeight = widget.fontSize * _lineHeightFactor;
       final viewport = _vScroll.position.viewportDimension;
-      final target = (_topPad + line * lineHeight - (viewport - lineHeight) / 2)
-          .clamp(
-            _vScroll.position.minScrollExtent,
-            _vScroll.position.maxScrollExtent,
-          );
+      final target =
+          (_topPad + (line - 1) * lineHeight - (viewport - lineHeight) / 2)
+              .clamp(
+                _vScroll.position.minScrollExtent,
+                _vScroll.position.maxScrollExtent,
+              );
       _vScroll.jumpTo(target);
     });
   }
@@ -333,6 +350,7 @@ class _ReadOnlyCodeViewState extends State<ReadOnlyCodeView> {
   ) {
     final line = _lines[i];
     final spans = _spansForLine(i);
+    final jumped = widget.jumpLine != null && i == widget.jumpLine! - 1;
     final Widget text;
     if (spans.isEmpty) {
       text = Text(line, style: style, maxLines: 1, softWrap: false);
@@ -362,7 +380,12 @@ class _ReadOnlyCodeViewState extends State<ReadOnlyCodeView> {
         softWrap: false,
       );
     }
-    return Align(alignment: Alignment.centerLeft, child: text);
+    final row = Align(alignment: Alignment.centerLeft, child: text);
+    if (!jumped) return row;
+    return ColoredBox(
+      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.09),
+      child: row,
+    );
   }
 }
 
