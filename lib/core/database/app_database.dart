@@ -157,10 +157,10 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(memoryHistoryRows);
       }
       if (from < 7) {
-        await m.addColumn(messageRows, messageRows.parentId);
-        await m.addColumn(messageRows, messageRows.role);
-        await m.addColumn(messageRows, messageRows.siblingsGroupId);
-        await m.addColumn(messageRows, messageRows.createdAt);
+        await _addColumnIfAbsent(m, messageRows, messageRows.parentId);
+        await _addColumnIfAbsent(m, messageRows, messageRows.role);
+        await _addColumnIfAbsent(m, messageRows, messageRows.siblingsGroupId);
+        await _addColumnIfAbsent(m, messageRows, messageRows.createdAt);
         // @TableIndex 只在 createTable/createAll 时建；对已存在的表手动建索引。
         await customStatement(
           'CREATE INDEX IF NOT EXISTS idx_messages_parent_id '
@@ -189,12 +189,13 @@ class AppDatabase extends _$AppDatabase {
         // 知识库 P1 向量层（见 docs/知识库功能-设计构想.md §4.3）：新增按
         // embeddingKey 去重的持久向量表，并给 kb_chunk 补 embeddingKey 外键列。
         await m.createTable(kbEmbeddingRows);
-        await m.addColumn(kbChunkRows, kbChunkRows.embeddingKey);
+        await _addColumnIfAbsent(m, kbChunkRows, kbChunkRows.embeddingKey);
       }
       if (from < 12) {
         // 知识库 P3c workspace 目录源（见 docs/知识库功能-设计构想.md §8.1）：给
         // knowledge_item 补来源指纹列，供 workspace 条目做 staleness 检测。
-        await m.addColumn(
+        await _addColumnIfAbsent(
+          m,
           knowledgeItemRows,
           knowledgeItemRows.sourceFingerprint,
         );
@@ -202,25 +203,59 @@ class AppDatabase extends _$AppDatabase {
       if (from < 13) {
         // 知识库 P3e 云端预处理轨（见 docs/知识库功能-设计构想.md §5.2）：给
         // knowledge_base 补库级文件预处理器 id 列，为空走本地解析轨。
-        await m.addColumn(
+        await _addColumnIfAbsent(
+          m,
           knowledgeBaseRows,
           knowledgeBaseRows.fileProcessorId,
         );
       }
       if (from < 14) {
         // 知识库分组（功能缺口⑦）：给 knowledge_base 补分组名列，为空表示未分组。
-        await m.addColumn(knowledgeBaseRows, knowledgeBaseRows.groupName);
+        await _addColumnIfAbsent(
+          m,
+          knowledgeBaseRows,
+          knowledgeBaseRows.groupName,
+        );
       }
       if (from < 15) {
         // 知识库回收站（功能缺口⑩）：给 knowledge_item 补软删除时间戳列。
-        await m.addColumn(knowledgeItemRows, knowledgeItemRows.deletedAt);
+        await _addColumnIfAbsent(
+          m,
+          knowledgeItemRows,
+          knowledgeItemRows.deletedAt,
+        );
       }
       if (from < 16) {
         // 检索结果重排序（功能缺口⑥）：给 knowledge_base 补重排模型 key 列。
-        await m.addColumn(knowledgeBaseRows, knowledgeBaseRows.rerankModelKey);
+        await _addColumnIfAbsent(
+          m,
+          knowledgeBaseRows,
+          knowledgeBaseRows.rerankModelKey,
+        );
       }
     },
   );
+
+  /// 加列前先查 pragma_table_info，列已存在则跳过。迁移不在单个事务里执行，
+  /// 若某次启动在迁移中途被打断，user_version 仍是旧值但部分列已加上，
+  /// 下次重跑同一步时裸 ALTER TABLE 会抛 duplicate column 并永久卡死；
+  /// 按列存在性检查让每一步都幂等、可续跑。
+  Future<void> _addColumnIfAbsent(
+    Migrator m,
+    TableInfo<Table, dynamic> table,
+    GeneratedColumn column,
+  ) async {
+    final exists = await customSelect(
+      'SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2',
+      variables: [
+        Variable<String>(table.actualTableName),
+        Variable<String>(column.name),
+      ],
+    ).get();
+    if (exists.isEmpty) {
+      await m.addColumn(table, column);
+    }
+  }
 
   static QueryExecutor _openConnection() {
     return LazyDatabase(() async {
