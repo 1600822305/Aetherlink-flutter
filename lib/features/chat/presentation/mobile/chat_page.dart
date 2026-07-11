@@ -880,7 +880,6 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     totalRows: totalRows,
     hiddenRows: _effectiveHiddenRows,
     edgeCount: _headerCount + _loaderCount,
-    reverse: true,
   );
 
   /// Index map over [widget.rows] (the normal, non-expanded row space).
@@ -909,10 +908,13 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   @override
   void didUpdateWidget(covariant _MessageListView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Keyboard show/hide (or the composer growing) changes the bottom reserve.
-    // In the reverse list the reserve is start-side padding, so growing it
-    // pans the content up by exactly that delta within the same layout pass —
-    // the WeChat-style whole-content shift needs no manual compensation.
+    // Keyboard show/hide (or the composer growing) changes the bottom reserve;
+    // pan the content by the same delta so what was visible above the composer
+    // stays visible — WeChat-style whole-content shift.
+    final reserveDelta = widget.bottomReserve - oldWidget.bottomReserve;
+    if (reserveDelta.abs() > 0.5) {
+      _scrollController.pendingAdjust += reserveDelta;
+    }
     final ids = _flatIds;
     final firstId = ids.isEmpty ? null : ids.first;
     final count = ids.length;
@@ -952,15 +954,18 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     }
   }
 
-  /// One ramp increment per frame. Revealed rows are appended at the reverse
-  /// list's tail (the conversation's visual top), so the viewport never
-  /// moves — no scroll compensation needed.
+  /// One ramp increment per frame, compensating the scroll offset by the
+  /// added extent during the relayout itself (see
+  /// [ChatAutoFollowScrollController.extentAnchor]) — a no-op while the
+  /// entry pin is sticking to the bottom, and keeps the viewport still when
+  /// the user has already scrolled away.
   void _rampStep(Duration _) {
     if (!mounted || !_ramping) return;
     if (_hiddenRowCount <= _rampTargetHidden) {
       _ramping = false;
       return;
     }
+    _anchorExtentForReveal();
     setState(() {
       _hiddenRowCount = (_hiddenRowCount - _kRampRowsPerFrame).clamp(
         _rampTargetHidden,
@@ -976,13 +981,29 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     });
   }
 
+  /// Arms the layout-time scroll compensation for a history reveal: rows are
+  /// inserted above the viewport, so the offset must shift by the extent
+  /// delta *in the same layout pass* — a post-frame `jumpTo` shows one frame
+  /// of shifted content snapping back (a visible "bounce") and kills any
+  /// in-flight fling.
+  void _anchorExtentForReveal() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    // While pinned to the bottom the auto-follow already keeps the viewport
+    // anchored; compensating too would fight it.
+    if (position.pixels >= position.maxScrollExtent &&
+        _autoScroll.isSticking) {
+      return;
+    }
+    _scrollController.extentAnchor = position.maxScrollExtent;
+  }
+
   /// Reveals another page of hidden history when the user scrolls near the
-  /// top (the reverse list's far end, [ScrollMetrics.maxScrollExtent]). The
-  /// rows are appended at the list's tail, so the viewport stays put without
-  /// any offset compensation.
+  /// top, keeping the viewport anchored on the same content by shifting the
+  /// offset during the relayout (kelivo's history-load pattern).
   void _maybeRevealMore(ScrollMetrics metrics) {
     if (_revealScheduled || _ramping || _effectiveHiddenRows == 0) return;
-    if (metrics.maxScrollExtent - metrics.pixels > _kRevealThreshold) return;
+    if (metrics.pixels > _kRevealThreshold) return;
     final last = _lastRevealAt;
     if (last != null &&
         DateTime.now().difference(last) < const Duration(milliseconds: 120)) {
@@ -995,6 +1016,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         _revealScheduled = false;
         return;
       }
+      _anchorExtentForReveal();
       setState(() {
         _hiddenRowCount = (_hiddenRowCount - _kRevealPageRows).clamp(
           0,
@@ -1007,11 +1029,12 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     });
   }
 
-  /// Reveals hidden history down to (at most) [targetRow]; the rows join the
-  /// reverse list's tail, so the viewport stays on the same content.
+  /// Reveals hidden history down to (at most) [targetRow], compensating the
+  /// scroll offset so the viewport stays on the same content.
   Future<void> _revealDownTo(int targetRow) async {
     if (targetRow >= _effectiveHiddenRows) return;
     _ramping = false;
+    _anchorExtentForReveal();
     setState(() {
       _hiddenRowCount = targetRow.clamp(0, widget.rows.length);
     });
@@ -1072,20 +1095,19 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         // the scrollCacheExtent (1 viewport): everything the glide passes is
         // then already built by the teleport frame, so the animation itself
         // runs completely build-free.
-        // In the reverse list the conversation's top is the scroll extent's
-        // far end (maxScrollExtent). Reveal the whole history first, then
-        // teleport close to the top and finish with a short glide, so the
-        // animation itself runs build-free (same pattern as before the flip).
-        if (_effectiveHiddenRows > 0) {
-          _ramping = false;
-          setState(() => _hiddenRowCount = 0);
-          await WidgetsBinding.instance.endOfFrame;
-          if (!mounted || !_scrollController.hasClients) return;
-        }
         final topPosition = _scrollController.position;
         final topFar = topPosition.viewportDimension * 0.8;
-        if (topPosition.maxScrollExtent - topPosition.pixels > topFar) {
-          _scrollController.jumpTo(topPosition.maxScrollExtent - topFar);
+        if (_effectiveHiddenRows > 0) {
+          // Reveal the whole history and land near the top *in the same
+          // frame*: the relayout then only builds the top screen, never the
+          // hidden rows in between.
+          _ramping = false;
+          setState(() => _hiddenRowCount = 0);
+          _scrollController.jumpTo(topFar);
+          await WidgetsBinding.instance.endOfFrame;
+          if (!mounted || !_scrollController.hasClients) return;
+        } else if (topPosition.pixels > topFar) {
+          _scrollController.jumpTo(topFar);
           // Let the teleport frame's build storm (target screen + cache)
           // finish before starting the glide, so the animation's first
           // frames aren't the ones paying for it.
@@ -1093,25 +1115,24 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           if (!mounted || !_scrollController.hasClients) return;
         }
         await _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
+          0,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOutCubic,
         );
       case ChatNavigationAction.bottom:
         _navAnchorIndex = null;
         if (_scrollController.hasClients) {
-          // Same near-jump + cache-covered short glide as 回顶. The bottom is
-          // the reverse list's scroll start (minScrollExtent).
+          // Same near-jump + cache-covered short glide as 回顶.
           final position = _scrollController.position;
           final far = position.viewportDimension * 0.8;
-          if (position.pixels - position.minScrollExtent > far) {
-            _scrollController.jumpTo(position.minScrollExtent + far);
+          if (position.maxScrollExtent - position.pixels > far) {
+            _scrollController.jumpTo(position.maxScrollExtent - far);
             await WidgetsBinding.instance.endOfFrame;
             if (!mounted) return;
           }
           if (!_scrollController.hasClients) return;
           await _scrollController.animateTo(
-            _scrollController.position.minScrollExtent,
+            _scrollController.position.maxScrollExtent,
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeOutCubic,
           );
@@ -1191,8 +1212,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       for (var i = 0; i < rowIndex; i++) {
         expanded += widget.rows[i].length;
       }
-      final expandedRow = expanded + widget.rows[rowIndex].indexOf(messageId);
-      listIndex = _indexMapFor(_flatIds.length).listIndexOfRow(expandedRow);
+      listIndex = expanded + widget.rows[rowIndex].indexOf(messageId);
     }
     await _observerController.animateTo(
       index: listIndex,
@@ -1268,12 +1288,6 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         controller: _observerController,
         child: ListView.builder(
           controller: _scrollController,
-        // Bottom-anchored orientation: scroll offset 0 is the newest message.
-        // History reveals append at the tail and streaming growth stays at
-        // the offset origin, so neither can move the viewport — the
-        // structural fix for the reveal "bounce" (see
-        // docs/chat-list-bottom-anchor-refactor.md).
-        reverse: true,
         // QQ getExtraLayoutSpace pattern: enlarged only while a navigation
         // jump is in flight (so the glide path is pre-built); the framework
         // default otherwise, keeping off-viewport layout and memory small.

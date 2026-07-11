@@ -2,22 +2,31 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
-/// A [ScrollController] for the *reverse* message list (scroll offset 0 =
-/// the visual bottom / newest message) whose position pins to the bottom
-/// *during layout* (inside [ScrollPosition.applyContentDimensions], before
-/// paint) whenever [shouldAutoFollow] returns true and the user is not
-/// actively scrolling.
+/// A [ScrollController] whose position pins to the bottom *during layout*
+/// (inside [ScrollPosition.applyContentDimensions], before paint) whenever
+/// [shouldAutoFollow] returns true and the user is not actively scrolling.
 ///
-/// With the bottom-anchored orientation most compensation disappears
-/// structurally: history rows are appended at the list's tail (they can
-/// never move the viewport) and the keyboard reserve is start-side padding
-/// (growing it pans the content up within the same layout pass for free).
-/// The layout-time pin only remains as a safety net for clamps that could
-/// nudge the position off the bottom edge. Ported from kelivo's
+/// Following at layout time — rather than via a post-frame `jumpTo` — lets
+/// streaming content grow with zero visible lag and without the one-frame
+/// flicker a post-frame jump leaves behind. Ported from kelivo's
 /// `ChatAutoFollowScrollController`.
 class ChatAutoFollowScrollController extends ScrollController {
   /// Checked during layout to decide whether to pin to the bottom.
   bool Function() shouldAutoFollow = () => false;
+
+  /// Pending scroll compensation (px), applied during the next layout pass —
+  /// used to pan the content in the same frame the keyboard reserve changes
+  /// (WeChat-style: the viewport keeps showing the same content, shifted by
+  /// exactly the keyboard height). Positive pans the content up.
+  double pendingAdjust = 0;
+
+  /// When set, the next layout pass compensates the scroll offset by however
+  /// much [ScrollPosition.maxScrollExtent] changed relative to this baseline —
+  /// used when rows are inserted above the viewport (history reveal / entry
+  /// ramp) so the visible content stays anchored within the same frame,
+  /// instead of shifting for one frame and snapping back via a post-frame
+  /// `jumpTo` (which also killed any in-flight fling).
+  double? extentAnchor;
 
   @override
   ScrollPosition createScrollPosition(
@@ -50,20 +59,52 @@ class _AutoFollowScrollPosition extends ScrollPositionWithSingleContext {
       minScrollExtent,
       maxScrollExtent,
     );
+    // Above-viewport insertion compensation: rows revealed above the viewport
+    // grow maxScrollExtent; shift pixels by the same delta in this layout pass
+    // so the visible content never moves. Returning false re-runs layout and
+    // re-seeds any in-flight ballistic simulation from the corrected offset.
+    final anchor = controller.extentAnchor;
+    if (anchor != null) {
+      controller.extentAnchor = null;
+      final delta = maxScrollExtent - anchor;
+      if (delta.abs() > 0.5) {
+        final target = (pixels + delta).clamp(
+          this.minScrollExtent,
+          this.maxScrollExtent,
+        );
+        if ((target - pixels).abs() > 0.5) {
+          correctPixels(target);
+          return false; // Re-run layout with the corrected position.
+        }
+      }
+    }
+    // Keyboard-reserve compensation: shift the content by the reserve delta in
+    // the same layout pass, so the messages visible above the composer stay
+    // anchored to it while the keyboard shows/hides.
+    if (controller.pendingAdjust != 0) {
+      final target = (pixels + controller.pendingAdjust).clamp(
+        this.minScrollExtent,
+        this.maxScrollExtent,
+      );
+      controller.pendingAdjust = 0;
+      if ((target - pixels).abs() > 0.5) {
+        correctPixels(target);
+        return false; // Re-run layout with the corrected position.
+      }
+    }
     // Guard on userScrollDirection (updated by the scroll activity, earlier than
     // any controller listener): correcting pixels mid-drag would override the
     // user's scroll for one frame and feel "stuck / can't scroll up".
     if (controller.shouldAutoFollow() &&
         userScrollDirection == ScrollDirection.idle) {
-      // In the reverse orientation the bottom edge is [minScrollExtent];
-      // content growth never moves pixels away from it, so this only closes
-      // the residual gap after a re-stick within the threshold or a clamp
-      // (e.g. the keyboard reserve shrinking past the offset). Only correct
-      // the positive direction: pixels below the bottom edge can only be
-      // overscroll (bouncing physics), which must settle on its own.
-      final gap = pixels - this.minScrollExtent;
-      if (gap > 0.5) {
-        correctPixels(this.minScrollExtent);
+      // Correct in *both* directions: content growth leaves pixels above the
+      // bottom (gap > 0), while a shrinking estimated extent (ListView.builder
+      // extrapolates unbuilt children) leaves pixels beyond it (gap < 0) — the
+      // latter would otherwise settle through a visible ballistic clamp
+      // animation instead of staying pinned.
+      final gap = this.maxScrollExtent - pixels;
+      if (gap.abs() > 0.5) {
+        correctPixels(this.maxScrollExtent);
         return false; // Re-run layout with the corrected position.
       }
     }
@@ -136,8 +177,7 @@ class ChatAutoScrollController {
   bool get _isPinned => DateTime.now().isBefore(_pinnedUntil);
 
   /// User scroll is the only input that flips [_stick] (web `handleScroll`):
-  /// within [threshold] of the bottom (the reverse list's scroll start,
-  /// [ScrollMetrics.minScrollExtent]) → follow; an active scroll away → stop.
+  /// within [threshold] → follow; an active scroll away from the bottom → stop.
   ///
   /// Re-sticking requires an active *user* scroll (non-idle direction, which a
   /// drag or its fling keeps until the scroll ends). Programmatic animations
@@ -147,7 +187,7 @@ class ChatAutoScrollController {
   void _onScroll() {
     if (_disposed || !_scrollController.hasClients) return;
     final position = _scrollController.position;
-    final atBottom = position.pixels - position.minScrollExtent <= threshold;
+    final atBottom = position.maxScrollExtent - position.pixels <= threshold;
     if (atBottom) {
       if (position.userScrollDirection != ScrollDirection.idle) _stick = true;
     } else if (position.userScrollDirection != ScrollDirection.idle) {
@@ -179,8 +219,8 @@ class ChatAutoScrollController {
     // route/topic transition.
     if (_scrollController.positions.length != 1) return;
     final position = _scrollController.position;
-    if (position.pixels != position.minScrollExtent) {
-      position.jumpTo(position.minScrollExtent);
+    if (position.pixels != position.maxScrollExtent) {
+      position.jumpTo(position.maxScrollExtent);
     }
   }
 
