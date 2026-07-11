@@ -187,11 +187,21 @@ class ChatListIndexMap {
 
 | 步骤 | 状态 | PR | 备注 |
 |---|---|---|---|
-| PR-1 索引层 | 已实现 | — | 新增 `ChatListIndexMap`（`chat_list_index_map.dart`）+ 单测；`chat_page.dart` 的 itemBuilder / 导航 / mini-map 索引运算全部收拢到该层，`reverse=false` 行为零变化 |
-| PR-2 列表翻转 | 未开始 | — | |
+| PR-1 索引层 | 已实现 | [#667](https://github.com/1600822305/Aetherlink-flutter/pull/667) | 新增 `ChatListIndexMap`（`chat_list_index_map.dart`）+ 单测；`chat_page.dart` 的 itemBuilder / 导航 / mini-map 索引运算全部收拢到该层，`reverse=false` 行为零变化 |
+| PR-2 列表翻转 | 已实现 | — | `reverse: true`；揭示/入场 ramp 改为尾部追加，删除 `extentAnchor` 与三处揭示补偿；贴底判定与 `pinToBottom` 改为 `minScrollExtent` 侧；回顶/回底方向互换；多选 mini-map 展开索引改走索引层 |
 | PR-3 跟底简化 | 未开始 | — | |
 | PR-4 导航与跳转适配 | 未开始 | — | |
 
-实施备注：
-- 多选模式下 mini-map 的「展开索引」计算（`_scrollToMessageFromMiniMap` 的
-  isSelecting 分支）暂未走索引层，PR-2 翻转时需一并适配。
+实施备注（相对原计划的偏差）：
+- `pendingAdjust`（键盘补偿）在 PR-2 直接删除而非"方向取反保留"：
+  reverse 列表里 bottomReserve 是滚动起点侧的 padding，增大它会在同一
+  布局趟里自动把内容上移相同距离（微信式整体平移），无需手动补偿。
+- 原计划 PR-3 才动的贴底判定（`pixels - minScrollExtent <= threshold`）、
+  `_jumpToBottom → jumpTo(minScrollExtent)` 已在 PR-2 一并完成——列表翻转后
+  旧的 `maxScrollExtent` 语义直接失效，不改则功能损坏，无法拆开。
+  PR-3 剩余工作：评估 layout-time pin 安全网是否还需要、精简状态机。
+- 对话导航的 top/bottom 目标方向也因同样原因在 PR-2 互换；
+  prev/next 的锚点观察在 reverse 下 firstChild 变为"底部可见项"，
+  跳转正确但对齐细节（alignment）留待 PR-4 打磨。
+- 已用 Flutter 3.44.6 跑通 `flutter analyze`（0 issues）与
+  `ChatListIndexMap` 全部 8 个单测。
