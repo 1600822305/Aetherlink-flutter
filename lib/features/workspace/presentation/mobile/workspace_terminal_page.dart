@@ -27,6 +27,17 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_session_protocol.dart';
 
+/// 内置终端连接后注入的初始化命令：提示符显示当前路径（busybox ash
+/// 支持 \w / \e 提示符展开），清屏后打印工作区信息横幅。
+String buildProotGreeting(Workspace workspace) {
+  String q(String s) => s.replaceAll("'", r"'\''");
+  final name = q(workspace.name);
+  final root = q(workspace.root);
+  return "export PS1='\\e[1;32m[$name]\\e[0m:\\e[1;34m\\w\\e[0m # '; clear; "
+      "printf '\\e[1;36mAetherlink 内置终端\\e[0m · Alpine Linux\\n"
+      "工作区: \\e[1m$name\\e[0m\\n目录: $root\\n\\n'\n";
+}
+
 /// 单个终端 tab：独立的 xterm 缓冲 + PTY 会话与连接状态。
 class _TerminalTab {
   _TerminalTab({required this.name});
@@ -220,6 +231,17 @@ class _WorkspaceTerminalPageState
       final isolatedHome = workspace.isolatedHomePath;
       if (isolatedHome != null) {
         session.write(utf8.encode(buildSessionEnvSetup({'HOME': isolatedHome})));
+      }
+      if (workspace.backendType == WorkspaceBackendType.prootLocal) {
+        // 内置终端：设置带当前路径的提示符 + 清屏后打印工作区横幅
+        // （clear 顺便抹掉前面注入命令的回显）。
+        session.write(utf8.encode(buildProotGreeting(workspace)));
+      } else {
+        // 远程后端不动对方 shell 配置，只在本地终端视图里写横幅。
+        tab.terminal.write(
+          '\x1b[1;36mAetherlink 终端\x1b[0m · ${workspace.name}\r\n'
+          '目录: ${workspace.root}\r\n\r\n',
+        );
       }
       session.done.whenComplete(() {
         if (!mounted) return;
