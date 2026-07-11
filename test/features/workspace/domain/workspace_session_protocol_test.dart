@@ -47,6 +47,40 @@ void main() {
     test('does not match a different nonce', () {
       expect(matchSentinel('__AETHER_DONE_other_0__', 'abc'), isNull);
     });
+
+    test('with command strips echoed input / sentinel / prompt lines', () {
+      const raw = 'echo "set OK"\r\n'
+          "printf '\\n__AETHER_DONE_abc_%s__\\n' \"\$?\"\r\n"
+          'set OK\r\n'
+          '# \r\n'
+          '__AETHER_DONE_abc_0__\r\n';
+      final match = matchSentinel(raw, 'abc', command: 'echo "set OK"');
+      expect(match!.exitCode, 0);
+      expect(match.output.trim(), 'set OK');
+    });
+
+    test('strips echoed lines even with a colored PS1 prompt prefix', () {
+      const raw = '\x1b[1;32m[demo]\x1b[0m:\x1b[1;34m/root\x1b[0m # ls\r\n'
+          'a.txt\r\n'
+          '\x1b[1;32m[demo]\x1b[0m:\x1b[1;34m/root\x1b[0m # \r\n'
+          '__AETHER_DONE_n1_0__\r\n';
+      final match = matchSentinel(raw, 'n1', command: 'ls');
+      expect(match!.output.trim(), 'a.txt');
+    });
+
+    test('keeps real output that merely resembles a prompt', () {
+      const raw = 'value: 42\r\n__AETHER_DONE_n2_0__\r\n';
+      final match = matchSentinel(raw, 'n2', command: 'get-value');
+      expect(match!.output.trim(), 'value: 42');
+    });
+  });
+
+  group('stripSessionEcho', () {
+    test('strips multi-line command echoes', () {
+      const cmd = 'cd /tmp\necho hi';
+      const head = 'cd /tmp\r\necho hi\r\nhi\r\n';
+      expect(stripSessionEcho(head, cmd, 'x').trim(), 'hi');
+    });
   });
 
   group('buildExportCommand', () {
