@@ -1112,22 +1112,23 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       name: 'terminal_execute',
       description:
           '在长驻终端会话里执行一条 shell 命令，返回输出和退出码。默认复用同一个持久会话'
-          '（像 IDE 终端：cd、环境变量、venv 等状态跨命令保留）；传 session_id 可在指定会话里执行。'
+          '（像 IDE 终端：cd、环境变量、venv 等状态跨命令保留）。'
+          '需要独立环境或并行多个任务时传 session 参数（会话名字）：存在就在该会话里执行，'
+          '不存在自动新建，无需单独的创建步骤。'
           '默认目标是内置终端（应用内 Alpine Linux 沙箱）；传 workspace 参数可在'
-          ' SSH / Termux 工作区的远端 shell 里执行。需要独立/干净环境或并行多个任务时，'
-          '用 terminal_session action=create 新开会话后传 session_id 执行。'
+          ' SSH / Termux 工作区的远端 shell 里执行。'
           '超时不杀命令——命令继续在会话里跑，可用 terminal_session action=output 回看。执行前会请用户确认。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'command': {'type': 'string', 'description': '要执行的 shell 命令'},
-          'session_id': {
+          'session': {
             'type': 'string',
-            'description': '目标会话 ID（可选；不传时复用/新建默认会话）',
+            'description': '目标会话名字或 ID（可选；存在就复用、不存在自动新建；不传时复用默认会话）',
           },
           'workspace': {
             'type': 'string',
-            'description': '不传 session_id 时的目标工作区（序号 / ID / 名称，可选；默认内置终端沙箱）',
+            'description': '目标工作区（序号 / ID / 名称，可选；默认内置终端沙箱）',
           },
           'cwd': {
             'type': 'string',
@@ -1144,9 +1145,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'terminal_session',
       description:
-          '管理长驻终端会话，用 action 参数区分操作：'
-          'create 新建会话（持久 shell，保留 cd / 环境变量 / 后台进程，空闲 10 分钟自动回收，'
-          '返回 sessionId 供 terminal_execute 使用）；'
+          '管理长驻终端会话（新建会话不在这里：给 terminal_execute 传 session 名字即可自动创建），'
+          '用 action 参数区分操作：'
           'list 列出所有会话（sessionId、名称、所属工作区、是否正忙）；'
           'output 回看会话最近输出（如超时后查看长任务进度）；'
           'write 往运行中进程写 stdin（交互式输入，如回答 [y/n]、REPL；执行前会请用户确认）；'
@@ -1156,22 +1156,16 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'properties': {
           'action': {
             'type': 'string',
-            'enum': ['create', 'list', 'output', 'write', 'close'],
+            'enum': ['list', 'output', 'write', 'close'],
             'description': '操作类型',
           },
           'session_id': {
             'type': 'string',
             'description': '目标会话 ID（output / write / close 必传）',
           },
-          'name': {'type': 'string', 'description': '会话名称（create 可选）'},
           'workspace': {
             'type': 'string',
-            'description': '目标工作区（序号 / ID / 名称；create 可选，不传时在内置终端沙箱里开会话；'
-                'list 可选，传了只列该工作区的会话）',
-          },
-          'cwd': {
-            'type': 'string',
-            'description': '初始工作目录（create 可选；内置终端默认 /root，指定工作区时默认其根目录）',
+            'description': '目标工作区（序号 / ID / 名称；list 可选，传了只列该工作区的会话）',
           },
           'tail_chars': {
             'type': 'number',
