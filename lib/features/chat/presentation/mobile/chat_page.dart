@@ -14,6 +14,7 @@ import 'package:aetherlink_flutter/features/chat/application/message_selection_c
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/controllers/chat_auto_scroll_controller.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/controllers/chat_list_index_map.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
@@ -873,6 +874,17 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   /// heuristic and mini-map scroll-to-message lookups.
   List<String> get _flatIds => [for (final row in widget.rows) ...row];
 
+  /// Row ↔ list index conversion for the given conversation length — the
+  /// single place that knows the list's orientation and edge-item layout.
+  ChatListIndexMap _indexMapFor(int totalRows) => ChatListIndexMap(
+    totalRows: totalRows,
+    hiddenRows: _effectiveHiddenRows,
+    edgeCount: _headerCount + _loaderCount,
+  );
+
+  /// Index map over [widget.rows] (the normal, non-expanded row space).
+  ChatListIndexMap get _rowIndexMap => _indexMapFor(widget.rows.length);
+
   @override
   void initState() {
     super.initState();
@@ -1143,8 +1155,9 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           );
           final first = result.observeResult?.firstChild?.index;
           if (first == null || !mounted) return;
-          anchorRow =
-              first - _headerCount - _loaderCount + _effectiveHiddenRows;
+          final map = _rowIndexMap;
+          if (map.isEdge(first)) return;
+          anchorRow = map.rowOfListIndex(first);
         }
         final delta = action == ChatNavigationAction.prevMessage ? -1 : 1;
         final targetRow = anchorRow + delta;
@@ -1167,7 +1180,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         // The enlarged scrollCacheExtent keeps the neighbouring bubbles built
         // ahead of time, so the animation runs without mid-flight builds.
         await _observerController.animateTo(
-          index: targetRow - _effectiveHiddenRows + _headerCount + _loaderCount,
+          index: _rowIndexMap.listIndexOfRow(targetRow),
           alignment: 0,
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOutCubic,
@@ -1192,8 +1205,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     _navAnchorIndex = rowIndex;
     _autoScroll.unstick();
     ref.read(navHighlightMessageIdProvider.notifier).flash(messageId);
-    var listIndex =
-        rowIndex - _effectiveHiddenRows + _headerCount + _loaderCount;
+    var listIndex = _rowIndexMap.listIndexOfRow(rowIndex);
     if (widget.isSelecting) {
       // Multi-select expands 对比 groups into one list item per message.
       var expanded = 0;
@@ -1223,10 +1235,12 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           ]
         : widget.rows;
     // Kelivo-style history window: only the most recent rows are rendered on
-    // entry; older history is revealed page-by-page near the top.
-    final rows = hiddenRows > 0 ? allRows.sublist(hiddenRows) : allRows;
-    final headerCount = _headerCount;
+    // entry; older history is revealed page-by-page near the top. All index
+    // arithmetic goes through the map so the list's orientation is decided in
+    // exactly one place.
+    final indexMap = _indexMapFor(allRows.length);
     final loaderCount = _loaderCount;
+    assert(indexMap.hiddenRows == hiddenRows);
     final selectedIds = isSelecting
         ? ref.watch(messageSelectionProvider.select((s) => s.selectedIds))
         : const <String>{};
@@ -1281,20 +1295,19 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
             ? const ScrollCacheExtent.viewport(1)
             : null,
         padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + widget.bottomReserve),
-        itemCount: rows.length + headerCount + loaderCount,
+        itemCount: indexMap.itemCount,
         itemBuilder: (context, index) {
-          // A slim spinner tops the list while older history is hidden — it
-          // loads in as the user scrolls up (WeChat-style), never eagerly.
-          if (loaderCount == 1 && index == 0) {
-            return const _HistoryLoadingRow();
+          // The single edge item at the conversation's visual top: a slim
+          // spinner while older history is hidden (loads in as the user
+          // scrolls up, WeChat-style), or the system-prompt bubble once the
+          // full history is revealed. Never part of multi-select.
+          if (indexMap.isEdge(index)) {
+            return loaderCount == 1
+                ? const _HistoryLoadingRow()
+                : const SystemPromptBubble();
           }
-          // The system-prompt bubble is the first item when enabled; it scrolls
-          // with the list and is never part of multi-select.
-          if (headerCount == 1 && index == 0) {
-            return const SystemPromptBubble();
-          }
-          final rowIndex = index - headerCount - loaderCount;
-          final row = rows[rowIndex];
+          final rowIndex = indexMap.rowOfListIndex(index);
+          final row = allRows[rowIndex];
           // A multi-member row is a multi-model 对比 group; a single-member row is
           // an ordinary message.
           Widget item;
@@ -1333,7 +1346,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           // Plain style uses its own bottom border; bubble style uses a Divider
           // when the setting is on.
           final needsDivider =
-              isPlain || (showDivider && rowIndex < rows.length - 1);
+              isPlain || (showDivider && !indexMap.isNewestRow(rowIndex));
           if (!needsDivider) return _KeepAliveItem(child: item);
           final dividerColor = Theme.of(context).brightness == Brightness.dark
               ? const Color(0x1AFFFFFF)
