@@ -45,11 +45,13 @@ class ChatToolExecutor {
   /// [RemoteMcpConnectionManager]. A remote failure becomes an error result (fed
   /// back to the model) rather than aborting the whole turn. [exposedName] is the
   /// model-facing name, used only for messages.
+  /// [onOutput]（命令类工具）每到一块 stdout/stderr 即回调，供 UI 实时展示。
   Future<McpToolResult> runTool(
     ToolRoute route,
     String exposedName,
     Map<String, Object?> args, {
     Future<void>? cancelSignal,
+    void Function(String chunk)? onOutput,
   }) async {
     switch (route) {
       case SettingsToolRoute():
@@ -60,6 +62,7 @@ class ChatToolExecutor {
           route.toolName,
           args,
           cancelSignal: cancelSignal,
+          onOutput: onOutput,
         );
       case BuiltinToolRoute(:final serverName, :final env):
         return await runBuiltinTool(
@@ -97,6 +100,7 @@ class ChatToolExecutor {
           route.toolName,
           args,
           cancelSignal: cancelSignal,
+          onOutput: onOutput,
         );
     }
   }

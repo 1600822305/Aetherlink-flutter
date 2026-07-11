@@ -30,13 +30,15 @@ bool toolNeedsConfirmation(
           ));
 }
 
-/// Whether this tool call is a one-shot command that can be aborted
-/// mid-flight through the tool block's 中断 button (`run_command` /
-/// `terminal_execute`), so the caller registers a cancel signal before
-/// running it.
+/// Whether this tool call is a command that can be aborted mid-flight
+/// through the tool block's 中断 button (`run_command` / `terminal_execute`
+/// kill the process; `terminal_session_exec` sends Ctrl-C to the session),
+/// so the caller registers a cancel signal before running it.
 bool isCancelableCommandCall(ToolRoute route, String toolName) {
   return (route is FileEditorToolRoute && toolName == 'run_command') ||
-      (route is TerminalToolRoute && toolName == 'terminal_execute');
+      (route is TerminalToolRoute &&
+          (toolName == 'terminal_execute' ||
+              toolName == 'terminal_session_exec'));
 }
 
 /// Human-readable summary for a confirmation dialog.

@@ -635,10 +635,12 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
               workspaces: ref.read(workspaceStoreProvider).value ?? const [],
             );
 
-            // `run_command` / `terminal_execute` can be aborted mid-flight:
-            // register a cancel signal
+            // `run_command` / `terminal_execute` / `terminal_session_exec`
+            // can be aborted mid-flight: register a cancel signal
             // (keyed by this block) before running so the block's 中断 button
             // can kill the remote session, then deregister once it settles.
+            // Output chunks stream into commandLiveOutputProvider while the
+            // command runs so the block renders live output.
             final isCancelableCommand = isCancelableCommandCall(
               route,
               call.name,
@@ -648,6 +650,8 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
                 return _toolExecutor.runTool(route, call.name, args);
               }
               final running = ref.read(runningCommandsProvider.notifier);
+              final liveOutput =
+                  ref.read(commandLiveOutputProvider.notifier);
               final cancelSignal = running.start(blockId);
               try {
                 return await _toolExecutor.runTool(
@@ -655,9 +659,11 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
                   call.name,
                   args,
                   cancelSignal: cancelSignal,
+                  onOutput: (chunk) => liveOutput.append(blockId, chunk),
                 );
               } finally {
                 running.finish(blockId);
+                liveOutput.clear(blockId);
               }
             }
 

@@ -574,6 +574,7 @@ class ProotLocalBackend extends WorkspaceBackend {
     String? workingDirectory,
     Duration? timeout,
     Future<void>? cancelSignal,
+    void Function(String chunk)? onOutput,
   }) async {
     final builder = await _commandBuilder();
     final result = await _runner.run(
@@ -583,6 +584,7 @@ class ProotLocalBackend extends WorkspaceBackend {
       ),
       timeout: timeout,
       cancelSignal: cancelSignal,
+      onOutput: onOutput,
     );
     return WorkspaceExecResult(
       stdout: result.stdout,

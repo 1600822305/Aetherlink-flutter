@@ -57,3 +57,37 @@ final runningCommandsProvider =
     NotifierProvider<RunningCommandsNotifier, Set<String>>(
       RunningCommandsNotifier.new,
     );
+
+/// 单个工具块保留的实时输出尾部上限（字符），防长输出撑爆 UI/内存。
+const int kLiveOutputTailLimit = 8 * 1024;
+
+/// 运行中命令的实时输出（按工具块 id 键控）。
+///
+/// 命令执行期间后端把 stdout/stderr 分块回调进来（[append]），命令卡片
+/// watch 自己块的条目实时渲染；命令结束后 [clear] 释放（最终输出走工具
+/// 结果 JSON，与实时缓冲无关）。
+class CommandLiveOutputNotifier extends Notifier<Map<String, String>> {
+  @override
+  Map<String, String> build() => const {};
+
+  /// 追加 [blockId] 的一块实时输出，只保留尾部 [kLiveOutputTailLimit] 字符。
+  void append(String blockId, String chunk) {
+    if (chunk.isEmpty) return;
+    var text = (state[blockId] ?? '') + chunk;
+    if (text.length > kLiveOutputTailLimit) {
+      text = text.substring(text.length - kLiveOutputTailLimit);
+    }
+    state = {...state, blockId: text};
+  }
+
+  /// 命令结束（完成 / 出错 / 被中断）后释放 [blockId] 的缓冲。
+  void clear(String blockId) {
+    if (!state.containsKey(blockId)) return;
+    state = {...state}..remove(blockId);
+  }
+}
+
+final commandLiveOutputProvider =
+    NotifierProvider<CommandLiveOutputNotifier, Map<String, String>>(
+      CommandLiveOutputNotifier.new,
+    );

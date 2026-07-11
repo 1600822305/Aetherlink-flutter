@@ -57,6 +57,7 @@ Future<McpToolResult> runFileEditorTool(
   String toolName,
   Map<String, Object?> args, {
   Future<void>? cancelSignal,
+  void Function(String chunk)? onOutput,
 }) async {
   try {
     switch (toolName) {
@@ -91,7 +92,12 @@ Future<McpToolResult> runFileEditorTool(
       case 'replace_in_file':
         return await replaceInFile(ref, args);
       case 'run_command':
-        return await runCommand(ref, args, cancelSignal: cancelSignal);
+        return await runCommand(
+          ref,
+          args,
+          cancelSignal: cancelSignal,
+          onOutput: onOutput,
+        );
     }
     return fileEditorError('未知的工具: $toolName');
   } on FileEditorError catch (e) {

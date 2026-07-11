@@ -64,6 +64,7 @@ class LocalSafBackend implements WorkspaceBackend {
     String? workingDirectory,
     Duration? timeout,
     Future<void>? cancelSignal,
+    void Function(String chunk)? onOutput,
   }) =>
       // SAF has no shell (canExec=false); callers must gate on capabilities.
       throw UnsupportedError('exec is not supported by the SAF backend');

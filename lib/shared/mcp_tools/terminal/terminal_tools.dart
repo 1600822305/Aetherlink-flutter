@@ -105,22 +105,34 @@ Workspace? _matchWorkspaceArg(
 
 /// Runs a `@aether/terminal` [toolName] with [args]. Returns an error
 /// [McpToolResult] for unknown tools or backend failures (never throws).
+/// [onOutput]（命令类工具）每到一块输出即回调，供 UI 实时展示。
 Future<McpToolResult> runTerminalTool(
   Ref ref,
   String toolName,
   Map<String, Object?> args, {
   Future<void>? cancelSignal,
+  void Function(String chunk)? onOutput,
 }) async {
   try {
     switch (toolName) {
       case 'terminal_execute':
-        return await _execute(ref, args, cancelSignal: cancelSignal);
+        return await _execute(
+          ref,
+          args,
+          cancelSignal: cancelSignal,
+          onOutput: onOutput,
+        );
       case 'terminal_session_create':
         return await _sessionCreate(ref, args);
       case 'terminal_session_list':
         return await _sessionList(ref, args);
       case 'terminal_session_exec':
-        return await _sessionExec(ref, args);
+        return await _sessionExec(
+          ref,
+          args,
+          cancelSignal: cancelSignal,
+          onOutput: onOutput,
+        );
       case 'terminal_session_output':
         return _sessionOutput(ref, args);
       case 'terminal_session_write':
@@ -223,6 +235,7 @@ Future<McpToolResult> _execute(
   Ref ref,
   Map<String, Object?> args, {
   Future<void>? cancelSignal,
+  void Function(String chunk)? onOutput,
 }) async {
   final command = requireString(args, 'command');
   final blocked = _guardCommand(command);
@@ -235,6 +248,7 @@ Future<McpToolResult> _execute(
     workingDirectory: cwd,
     timeout: timeoutMs > 0 ? Duration(milliseconds: timeoutMs) : null,
     cancelSignal: cancelSignal,
+    onOutput: onOutput,
   );
   return fileEditorOk({
     'command': command,
@@ -302,8 +316,10 @@ Future<McpToolResult> _sessionList(
 
 Future<McpToolResult> _sessionExec(
   Ref ref,
-  Map<String, Object?> args,
-) async {
+  Map<String, Object?> args, {
+  Future<void>? cancelSignal,
+  void Function(String chunk)? onOutput,
+}) async {
   final command = requireString(args, 'command');
   final blocked = _guardCommand(command);
   if (blocked != null) return blocked;
@@ -332,6 +348,8 @@ Future<McpToolResult> _sessionExec(
   final result = await session.exec(
     command,
     timeout: Duration(milliseconds: timeoutMs > 0 ? timeoutMs : _kDefaultTimeoutMs),
+    cancelSignal: cancelSignal,
+    onOutput: onOutput,
   );
   return fileEditorOk({
     'sessionId': session.id,
@@ -339,8 +357,11 @@ Future<McpToolResult> _sessionExec(
     'command': command,
     'exitCode': result.exitCode,
     'timedOut': result.timedOut,
+    'canceled': result.canceled,
     if (result.timedOut)
-      'hint': '命令超时未结束，仍在会话里继续跑；可稍后用 terminal_session_output 回看输出。',
+      'hint': '命令超时未结束，仍在会话里继续跑；可稍后用 terminal_session_output 回看输出。'
+    else if (result.canceled)
+      'hint': '命令被用户中断（已向会话发 Ctrl-C），会话仍可继续使用。',
     'output': result.output,
   });
 }

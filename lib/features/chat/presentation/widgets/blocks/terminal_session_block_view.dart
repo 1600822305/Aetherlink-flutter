@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.d
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block_status.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/file_editor_ui.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_editor/run_command_block_view.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/running_commands_service.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_confirmation_service.dart';
 
 /// Terminal-style card for the `@aether/terminal` session tools
@@ -51,6 +52,18 @@ class _TerminalSessionBlockViewState
         ? ref.watch(toolConfirmationProvider)[block.id]
         : null;
     final warning = pending != null;
+
+    // terminal_session_exec 正在执行（已过审批）：可中断（向会话发
+    // Ctrl-C），并实时展示输出尾部。
+    final isRunning = _tool == 'terminal_session_exec' &&
+        isProcessing &&
+        pending == null &&
+        ref.watch(runningCommandsProvider).contains(block.id);
+    final liveText = isRunning
+        ? ref.watch(
+            commandLiveOutputProvider.select((m) => m[block.id] ?? ''),
+          )
+        : '';
 
     final body = (!isProcessing && !hasError && data != null)
         ? _body(context, data)
@@ -121,6 +134,14 @@ class _TerminalSessionBlockViewState
                     const SizedBox(width: 8),
                     CommandStatusBadge(data: data),
                   ],
+                  if (isRunning) ...[
+                    const SizedBox(width: 8),
+                    CommandInterruptButton(
+                      onTap: () => ref
+                          .read(runningCommandsProvider.notifier)
+                          .cancel(block.id),
+                    ),
+                  ],
                   if (canExpand)
                     Padding(
                       padding: const EdgeInsets.only(left: 4),
@@ -138,6 +159,11 @@ class _TerminalSessionBlockViewState
               ),
             ),
           ),
+          if (isRunning && liveText.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+              child: CommandLiveOutputBox(text: liveText),
+            ),
           if (pending != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
