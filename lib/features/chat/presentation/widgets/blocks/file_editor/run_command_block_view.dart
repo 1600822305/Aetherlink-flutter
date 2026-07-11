@@ -321,7 +321,7 @@ class OpenInTerminalButton extends ConsumerWidget {
     return GestureDetector(
       onTap: () {
         ref.read(terminalFocusSessionProvider.notifier).request(sessionId);
-        context.push(AppRouter.workspacePath);
+        context.push(AppRouter.terminalPath);
       },
       behavior: HitTestBehavior.opaque,
       child: Container(

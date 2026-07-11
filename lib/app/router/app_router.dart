@@ -1,5 +1,5 @@
 import 'package:aetherlink_devtools/aetherlink_devtools.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
@@ -57,6 +57,7 @@ import 'package:aetherlink_flutter/features/voice/presentation/mobile/voice_sett
 import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_page.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_management_page.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_page.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_terminal_page.dart';
 
 /// Declarative application route table (go_router).
 ///
@@ -126,6 +127,10 @@ abstract final class AppRouter {
   static const String welcomePath = '/welcome';
   static const String translatePath = '/translate';
   static const String workspacePath = '/workspace';
+
+  /// 独立终端页：复用 [WorkspaceTerminalPage]，但作为单独路由压栈，
+  /// 返回直接 pop 回上一页（如聊天），不受工作区 PageView / 两次退出影响。
+  static const String terminalPath = '/workspace/terminal';
   static const String devToolsPath = '/devtools';
 
   /// The model-provider third-level pages (M4.3.1). The detail / edit / advanced
@@ -187,6 +192,19 @@ abstract final class AppRouter {
         path: workspacePath,
         name: 'workspace',
         pageBuilder: (context, state) => _instant(state, const WorkspacePage()),
+      ),
+      GoRoute(
+        path: terminalPath,
+        name: 'terminal',
+        pageBuilder: (context, state) => _instant(
+          state,
+          Scaffold(
+            body: WorkspaceTerminalPage(
+              topInset: 0,
+              onBack: () => context.pop(),
+            ),
+          ),
+        ),
       ),
       GoRoute(
         path: settingsPath,
