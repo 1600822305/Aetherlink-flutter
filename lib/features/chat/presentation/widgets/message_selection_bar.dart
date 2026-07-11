@@ -47,12 +47,7 @@ class MessageSelectionTopBar extends ConsumerWidget
           icon: Icon(LucideIcons.map, size: 20, color: cs.onSurface),
           tooltip: '迷你地图',
           onPressed: () async {
-            await showMiniMapSheet(
-              context,
-              messages,
-              selecting: true,
-              ref: ref,
-            );
+            await showMiniMapSheet(context, messages, selecting: true);
           },
         ),
         TextButton(

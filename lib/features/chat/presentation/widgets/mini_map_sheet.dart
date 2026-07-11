@@ -13,7 +13,6 @@ Future<String?> showMiniMapSheet(
   BuildContext context,
   List<ChatMessageView> messages, {
   bool selecting = false,
-  WidgetRef? ref,
 }) async {
   return await showModalBottomSheet<String>(
     context: context,
@@ -22,27 +21,21 @@ Future<String?> showMiniMapSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
-    builder: (ctx) =>
-        _MiniMapSheet(messages: messages, selecting: selecting, ref: ref),
+    builder: (ctx) => _MiniMapSheet(messages: messages, selecting: selecting),
   );
 }
 
-class _MiniMapSheet extends StatefulWidget {
-  const _MiniMapSheet({
-    required this.messages,
-    this.selecting = false,
-    this.ref,
-  });
+class _MiniMapSheet extends ConsumerStatefulWidget {
+  const _MiniMapSheet({required this.messages, this.selecting = false});
 
   final List<ChatMessageView> messages;
   final bool selecting;
-  final WidgetRef? ref;
 
   @override
-  State<_MiniMapSheet> createState() => _MiniMapSheetState();
+  ConsumerState<_MiniMapSheet> createState() => _MiniMapSheetState();
 }
 
-class _MiniMapSheetState extends State<_MiniMapSheet> {
+class _MiniMapSheetState extends ConsumerState<_MiniMapSheet> {
   late final TextEditingController _searchController;
   late final FocusNode _searchFocusNode;
   late List<_QaPair> _pairs;
@@ -161,7 +154,6 @@ class _MiniMapSheetState extends State<_MiniMapSheet> {
                             return _MiniMapRow(
                               pair: pairs[index],
                               selecting: widget.selecting,
-                              ref: widget.ref,
                             );
                           },
                         ),
@@ -310,12 +302,11 @@ class _QaPair {
   final ChatMessageView? assistant;
 }
 
-class _MiniMapRow extends StatelessWidget {
-  const _MiniMapRow({required this.pair, this.selecting = false, this.ref});
+class _MiniMapRow extends ConsumerWidget {
+  const _MiniMapRow({required this.pair, this.selecting = false});
 
   final _QaPair pair;
   final bool selecting;
-  final WidgetRef? ref;
 
   String _oneLine(String s) {
     return s
@@ -334,15 +325,15 @@ class _MiniMapRow extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final userText = pair.user?.text ?? '';
     final asstText = pair.assistant?.text ?? '';
 
     Set<String>? selectedIds;
-    if (selecting && ref != null) {
-      selectedIds = ref!.watch(
+    if (selecting) {
+      selectedIds = ref.watch(
         messageSelectionProvider.select((s) => s.selectedIds),
       );
     }
@@ -393,8 +384,8 @@ class _MiniMapRow extends StatelessWidget {
                     height: 1.4,
                     color: cs.onSurface,
                   ),
-                  onTap: selecting && ref != null
-                      ? () => ref!
+                  onTap: selecting
+                      ? () => ref
                             .read(messageSelectionProvider.notifier)
                             .toggleMessage(pair.user!.id)
                       : () => Navigator.of(context).pop(pair.user!.id),
@@ -416,8 +407,8 @@ class _MiniMapRow extends StatelessWidget {
                   bg: assistantSelected ? assistantSelectedBg : assistantBg,
                   border: assistantSelected ? assistantBorder : null,
                   style: const TextStyle(fontSize: 15.7, height: 1.5),
-                  onTap: selecting && ref != null
-                      ? () => ref!
+                  onTap: selecting
+                      ? () => ref
                             .read(messageSelectionProvider.notifier)
                             .toggleMessage(pair.assistant!.id)
                       : () => Navigator.of(context).pop(pair.assistant!.id),
