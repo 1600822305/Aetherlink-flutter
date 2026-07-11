@@ -9,13 +9,14 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_edit_ops.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_limits.dart';
 import 'package:aetherlink_flutter/shared/widgets/editor_zoom_pill.dart';
 
 export 'package:aetherlink_flutter/shared/widgets/editor_zoom_pill.dart';
 
 /// Spaces inserted for a Tab key press and continued on auto-indent.
-const String _indentUnit = '  ';
+const String _indentUnit = kIndentUnit;
 
 const double _lineHeightFactor = 1.5;
 const double _topPad = 12;
@@ -145,15 +146,29 @@ class _EditorTextAreaState extends State<EditorTextArea> {
     _lineStarts = starts;
   }
 
-  // Tab inserts spaces (instead of moving focus) while editing; auto-indent on
-  // newline is handled by [_AutoIndentFormatter]. Other keys fall through.
+  // Tab indents (instead of moving focus) while editing: a multi-line
+  // selection is indented as a block, Shift+Tab dedents, a collapsed caret
+  // inserts the indent unit. Auto-indent on newline is handled by
+  // [_AutoIndentFormatter]. Other keys fall through.
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
     if (!widget.editing) return KeyEventResult.ignored;
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
     if (event.logicalKey == LogicalKeyboardKey.tab) {
-      _insertIndent();
+      final shift = HardwareKeyboard.instance.isShiftPressed;
+      final sel = widget.controller.selection;
+      final multiline = sel.isValid &&
+          !sel.isCollapsed &&
+          widget.controller.text.substring(sel.start, sel.end).contains('\n');
+      if (shift || multiline) {
+        widget.controller.value = indentLines(
+          widget.controller.value,
+          dedent: shift,
+        );
+      } else {
+        _insertIndent();
+      }
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -295,7 +310,22 @@ class _EditorTextAreaState extends State<EditorTextArea> {
                     scrollDirection: Axis.horizontal,
                     child: SizedBox(
                       width: width,
-                      child: _field(textStyle, theme),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (widget.editing)
+                            _BracketMatchHighlight(
+                              scroll: _textScroll,
+                              controller: widget.controller,
+                              lineStarts: _lineStarts,
+                              lineHeight: lineHeight,
+                              style: textStyle,
+                              color: theme.colorScheme.primary
+                                  .withValues(alpha: 0.18),
+                            ),
+                          _field(textStyle, theme),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -326,7 +356,7 @@ class _EditorTextAreaState extends State<EditorTextArea> {
       minLines: null,
       textAlignVertical: TextAlignVertical.top,
       keyboardType: TextInputType.multiline,
-      inputFormatters: const [_AutoIndentFormatter()],
+      inputFormatters: const [AutoClosePairsFormatter(), _AutoIndentFormatter()],
       style: textStyle,
       cursorColor: theme.colorScheme.primary,
       decoration: const InputDecoration(
@@ -424,6 +454,131 @@ class _CurrentLineHighlight extends StatelessWidget {
       },
     );
   }
+}
+
+/// Highlights the bracket pair the caret touches (via [matchBracketAt]),
+/// painting a translucent box behind each of the two brackets. Lives inside
+/// the width-sized (horizontally panned) box, so only the vertical scroll
+/// offset needs compensating.
+class _BracketMatchHighlight extends StatelessWidget {
+  const _BracketMatchHighlight({
+    required this.scroll,
+    required this.controller,
+    required this.lineStarts,
+    required this.lineHeight,
+    required this.style,
+    required this.color,
+  });
+
+  final ScrollController scroll;
+  final TextEditingController controller;
+  final List<int> lineStarts;
+  final double lineHeight;
+  final TextStyle style;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: Listenable.merge([scroll, controller]),
+        builder: (context, _) {
+          final sel = controller.selection;
+          if (!sel.isValid || !sel.isCollapsed) {
+            return const SizedBox.shrink();
+          }
+          final match = matchBracketAt(controller.text, sel.baseOffset);
+          if (match == null) return const SizedBox.shrink();
+          return CustomPaint(
+            painter: _BracketPainter(
+              text: controller.text,
+              open: match.open,
+              close: match.close,
+              lineStarts: lineStarts,
+              lineHeight: lineHeight,
+              scrollOffset: scroll.hasClients ? scroll.offset : 0.0,
+              style: style,
+              color: color,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _BracketPainter extends CustomPainter {
+  _BracketPainter({
+    required this.text,
+    required this.open,
+    required this.close,
+    required this.lineStarts,
+    required this.lineHeight,
+    required this.scrollOffset,
+    required this.style,
+    required this.color,
+  });
+
+  final String text;
+  final int open;
+  final int close;
+  final List<int> lineStarts;
+  final double lineHeight;
+  final double scrollOffset;
+  final TextStyle style;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paintBox = Paint()..color = color;
+    for (final offset in [open, close]) {
+      final line = _lineOf(offset);
+      if (line < 0) continue;
+      final y = _topPad + line * lineHeight - scrollOffset;
+      if (y + lineHeight < 0 || y > size.height) continue;
+      final x = _textLeftPad + _measure(text.substring(lineStarts[line], offset));
+      final w = _measure(text[offset]);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(x, y, w, lineHeight),
+          const Radius.circular(3),
+        ),
+        paintBox,
+      );
+    }
+  }
+
+  double _measure(String s) {
+    final tp = TextPainter(
+      text: TextSpan(text: s, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    return tp.width;
+  }
+
+  int _lineOf(int offset) {
+    var lo = 0;
+    var hi = lineStarts.length - 1;
+    while (lo < hi) {
+      final mid = (lo + hi + 1) >> 1;
+      if (lineStarts[mid] <= offset) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return lo;
+  }
+
+  @override
+  bool shouldRepaint(covariant _BracketPainter old) =>
+      old.text != text ||
+      old.open != open ||
+      old.close != close ||
+      old.scrollOffset != scrollOffset ||
+      old.lineHeight != lineHeight ||
+      old.color != color;
 }
 
 /// Continues the previous line's leading whitespace after a newline is typed,
