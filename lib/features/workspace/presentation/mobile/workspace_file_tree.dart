@@ -398,13 +398,11 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     if (entry.isDirectory) {
       await _revealPath(entry.path);
     } else {
-      final line = pick.line;
-      if (line != null) {
-        ref.read(editorJumpProvider.notifier).request(entry.path, line);
-      }
-      ref
-          .read(openWorkspaceFilesProvider.notifier)
-          .open(entry, dirtyPaths: ref.read(dirtyFilesProvider));
+      ref.read(openWorkspaceFilesProvider.notifier).open(
+            entry,
+            dirtyPaths: ref.read(dirtyFilesProvider),
+            line: pick.line,
+          );
     }
   }
 

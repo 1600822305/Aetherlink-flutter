@@ -8,8 +8,8 @@
 //     the tab strip can show a dirty dot.
 //   * [editorRegistryProvider] — a handle registry letting the close handler
 //     save/discard a tab whose editor isn't the visible one.
-//   * [editorJumpProvider] — a one-shot 「跳到某行」 request (全局搜索结果点击),
-//     consumed by the target file's editor once it has loaded.
+// (「打开到指定行」的 editorJumpProvider 住在 application 层的
+// workspace_view_providers.dart 里，由 OpenWorkspaceFiles.open(line:) 发起。)
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -64,24 +64,3 @@ class DirtyFiles extends Notifier<Set<String>> {
   void clear(String path) => set(path, dirty: false);
 }
 
-/// A pending 「打开到指定行」 request ([line] is 1-based). Set alongside
-/// opening the tab; the matching [path]'s editor consumes and clears it.
-class EditorJumpRequest {
-  const EditorJumpRequest(this.path, this.line);
-
-  final String path;
-  final int line;
-}
-
-final editorJumpProvider = NotifierProvider<EditorJump, EditorJumpRequest?>(
-  EditorJump.new,
-);
-
-class EditorJump extends Notifier<EditorJumpRequest?> {
-  @override
-  EditorJumpRequest? build() => null;
-
-  void request(String path, int line) => state = EditorJumpRequest(path, line);
-
-  void clear() => state = null;
-}

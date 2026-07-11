@@ -62,6 +62,29 @@ final workspacePreviewBackendProvider = Provider<WorkspaceBackend?>((ref) {
   return ref.watch(workspaceBackendProvider(workspace));
 });
 
+/// A pending 「打开到指定行」 request ([line] is 1-based). Set by
+/// [OpenWorkspaceFiles.open] when a caller passes `line:`; the matching
+/// [path]'s editor consumes and clears it once the file has loaded.
+class EditorJumpRequest {
+  const EditorJumpRequest(this.path, this.line);
+
+  final String path;
+  final int line;
+}
+
+final editorJumpProvider = NotifierProvider<EditorJump, EditorJumpRequest?>(
+  EditorJump.new,
+);
+
+class EditorJump extends Notifier<EditorJumpRequest?> {
+  @override
+  EditorJumpRequest? build() => null;
+
+  void request(String path, int line) => state = EditorJumpRequest(path, line);
+
+  void clear() => state = null;
+}
+
 /// Whether the three-page horizontal pager is locked. When `true` the shell
 /// disables page swiping so pinch-zoom / drag inside the editor can't
 /// accidentally flip pages. Toggled from the editor header's lock button.
@@ -119,7 +142,17 @@ class OpenWorkspaceFiles extends Notifier<WorkspaceTabsState> {
   /// it and makes it active. Past [kMaxOpenTabs] the oldest clean, non-active
   /// tab is evicted; [dirtyPaths] (from the caller's dirty-files state) marks
   /// tabs that must never be dropped silently.
-  void open(WorkspaceEntry entry, {Set<String> dirtyPaths = const {}}) {
+  ///
+  /// [line]（1 起）：打开后定位到该行（全局搜索 / 报错跳转），已打开的
+  /// tab 也会重新滚动定位。
+  void open(
+    WorkspaceEntry entry, {
+    Set<String> dirtyPaths = const {},
+    int? line,
+  }) {
+    if (line != null) {
+      ref.read(editorJumpProvider.notifier).request(entry.path, line);
+    }
     if (state.tabs.any((t) => t.path == entry.path)) {
       state = state.copyWith(activePath: entry.path);
     } else {
