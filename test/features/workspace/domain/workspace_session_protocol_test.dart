@@ -83,6 +83,39 @@ void main() {
     });
   });
 
+  group('SentinelDisplayFilter', () {
+    test('drops sentinel result and echoed printf lines, keeps output', () {
+      final filter = SentinelDisplayFilter();
+      final visible = filter.feed('# echo hi\r\n'
+          "printf '\\n__AETHER_DONE_abc_%s__\\n' \"\$?\"\r\n"
+          'hi\r\n'
+          '\r\n'
+          '__AETHER_DONE_abc_0__\r\n'
+          '# ');
+      expect(visible, '# echo hi\r\nhi\r\n\r\n# ');
+    });
+
+    test('handles a sentinel line split across chunks', () {
+      final filter = SentinelDisplayFilter();
+      final a = filter.feed('ok\r\n__AETHER_');
+      final b = filter.feed('DONE_abc_0__\r\n# ');
+      expect(a + b, 'ok\r\n# ');
+    });
+
+    test('passes through incomplete non-sentinel tails (prompt) at once', () {
+      final filter = SentinelDisplayFilter();
+      expect(filter.feed('hello\r\n# '), 'hello\r\n# ');
+    });
+  });
+
+  group('buildProotGreeting', () {
+    test('escapes single quotes in name and root', () {
+      final greeting = buildProotGreeting(name: "it's", root: '/root');
+      expect(greeting, contains(r"'\''"));
+      expect(greeting, contains('clear'));
+    });
+  });
+
   group('buildExportCommand', () {
     test('empty map returns empty string', () {
       expect(buildExportCommand(const {}), isEmpty);

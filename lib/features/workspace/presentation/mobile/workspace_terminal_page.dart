@@ -29,21 +29,6 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.d
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_session_protocol.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
-/// 内置终端连接后注入的初始化命令：提示符显示当前路径，清屏后打印工作区
-/// 信息横幅。Alpine 的 busybox ash 编译时关掉了 ASH_EXPAND_PRMT，PS1 里的
-/// bash 风格转义（\e / \w）和 \$PWD 都不会展开，所以颜色用真实 ESC 字节、
-/// 路径靠包一层 cd 在每次切目录时重算 PS1。
-String buildProotGreeting(Workspace workspace) {
-  String q(String s) => s.replaceAll("'", r"'\''");
-  final name = q(workspace.name);
-  final root = q(workspace.root);
-  return "_aether_name='$name'; "
-      '_aether_ps1() { PS1="\x1b[1;32m[\${_aether_name}]\x1b[0m:\x1b[1;34m\${PWD}\x1b[0m # "; }; '
-      'cd() { command cd "\$@" && _aether_ps1; }; _aether_ps1; clear; '
-      "printf '\\e[1;36mAetherlink 内置终端\\e[0m · Alpine Linux\\n"
-      "工作区: \\e[1m$name\\e[0m\\n目录: $root\\n\\n'\n";
-}
-
 /// 单个终端 tab：独立的 xterm 缓冲 + PTY 会话与连接状态。
 class _TerminalTab {
   _TerminalTab({required this.name});
@@ -291,7 +276,9 @@ class _WorkspaceTerminalPageState
       if (workspace.backendType == WorkspaceBackendType.prootLocal) {
         // 内置终端：设置带当前路径的提示符 + 清屏后打印工作区横幅
         // （clear 顺便抹掉前面注入命令的回显）。
-        session.write(utf8.encode(buildProotGreeting(workspace)));
+        session.write(utf8.encode(
+          buildProotGreeting(name: workspace.name, root: workspace.root),
+        ));
       } else {
         // 远程后端不动对方 shell 配置，只在本地终端视图里写横幅。
         tab.terminal.write(

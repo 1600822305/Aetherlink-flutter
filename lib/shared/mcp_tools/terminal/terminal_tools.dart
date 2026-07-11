@@ -19,6 +19,7 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_sess
 import 'package:aetherlink_flutter/features/workspace/data/proot_local_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace_session_protocol.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 
@@ -149,6 +150,7 @@ class _ExecTarget {
     this.defaultCwd,
     this.workspaceId,
     this.environment = const {},
+    this.greeting,
   });
 
   final WorkspaceBackend backend;
@@ -165,6 +167,10 @@ class _ExecTarget {
 
   /// 新建会话时注入的环境变量（项目模式下为 WORKSPACE_ROOT / NAME）。
   final Map<String, String> environment;
+
+  /// 新建会话时注入的初始化命令（内置终端的 PS1 + 横幅，与用户终端
+  /// tab 一致）；远程后端不动对方 shell 配置，为 null。
+  final String? greeting;
 }
 
 /// Resolves the `workspace` arg to an exec-capable backend, defaulting to the
@@ -186,6 +192,9 @@ Future<_ExecTarget> _resolveTarget(Ref ref, Map<String, Object?> args) async {
       label: workspace.name,
       defaultCwd: workspace.root,
       workspaceId: workspace.id,
+      greeting: workspace.backendType == WorkspaceBackendType.prootLocal
+          ? buildProotGreeting(name: workspace.name, root: workspace.root)
+          : null,
       environment: workspace.scope == WorkspaceScope.project
           ? {
               'WORKSPACE_ROOT': workspace.root,
@@ -201,6 +210,7 @@ Future<_ExecTarget> _resolveTarget(Ref ref, Map<String, Object?> args) async {
     target = _ExecTarget(
       backend: ref.read(prootLocalBackendProvider),
       label: '内置终端',
+      greeting: buildProotGreeting(name: '内置终端', root: '/root'),
     );
   }
   if (target.backend is ProotLocalBackend &&
@@ -254,6 +264,7 @@ Future<McpToolResult> _execute(
         .acquireDefault(
           workingDirectory: target.defaultCwd,
           environment: target.environment,
+          greeting: target.greeting,
         );
   }
   // 会话里 cwd 是 shell 状态；显式传 cwd 时先 cd 过去再执行。
@@ -322,6 +333,7 @@ Future<PooledWorkspaceSession> _createNamedSession(
         name: name,
         workingDirectory: optionalString(args, 'cwd') ?? target.defaultCwd,
         environment: target.environment,
+        greeting: target.greeting,
       );
 }
 
