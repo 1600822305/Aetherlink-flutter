@@ -7,9 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/dialogs/sidebar_dialogs.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/sidebar_tokens.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/sidebar_buttons.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/sidebar_group_menu.dart';
 import 'package:aetherlink_flutter/shared/domain/group.dart';
 
 /// A folder header for an assistant/topic group: expand toggle + name + count
@@ -74,38 +74,7 @@ class SidebarGroupHeader extends ConsumerWidget {
                     color: textSecondary,
                   ),
                 ),
-                SidebarOverflowMenuButton<_GroupMenu>(
-                  size: 16,
-                  box: 26,
-                  title: group.name,
-                  actions: const [
-                    SidebarSheetAction(
-                      _GroupMenu.rename,
-                      LucideIcons.edit3,
-                      '重命名分组',
-                    ),
-                    SidebarSheetAction(
-                      _GroupMenu.delete,
-                      LucideIcons.trash,
-                      '删除分组',
-                      danger: true,
-                    ),
-                  ],
-                  onSelected: (m) async {
-                    switch (m) {
-                      case _GroupMenu.rename:
-                        final name = await promptText(
-                          context,
-                          title: '重命名分组',
-                          hint: '分组名称',
-                          initial: group.name,
-                        );
-                        if (name != null) await notifier.rename(group.id, name);
-                      case _GroupMenu.delete:
-                        await notifier.deleteGroup(group.id);
-                    }
-                  },
-                ),
+                SidebarGroupMenuButton(group: group),
               ],
             ),
           ),
@@ -114,8 +83,6 @@ class SidebarGroupHeader extends ConsumerWidget {
     );
   }
 }
-
-enum _GroupMenu { rename, delete }
 
 /// One row in the per-item action sheet opened by [SidebarOverflowMenuButton].
 class SidebarSheetAction<T> {

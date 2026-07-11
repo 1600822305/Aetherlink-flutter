@@ -12,6 +12,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/di
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/sidebar_tokens.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/sidebar_avatar.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/sidebar_buttons.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/sidebar_group_menu.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/sidebar_lists.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/sidebar/widgets/sidebar_menus.dart';
 import 'package:aetherlink_flutter/shared/domain/assistant.dart';
@@ -489,7 +490,7 @@ class _AssistantItem extends ConsumerWidget {
 
 /// A clickable group entry row in the top-level view. Tapping navigates into
 /// the group to show its member assistants.
-class _GroupEntry extends StatelessWidget {
+class _GroupEntry extends ConsumerWidget {
   const _GroupEntry({
     required this.group,
     required this.count,
@@ -505,7 +506,7 @@ class _GroupEntry extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Material(
@@ -543,6 +544,7 @@ class _GroupEntry extends StatelessWidget {
                 ),
                 const SizedBox(width: 4),
                 Icon(LucideIcons.chevronRight, size: 16, color: textSecondary),
+                SidebarGroupMenuButton(group: group),
               ],
             ),
           ),
