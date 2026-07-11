@@ -47,6 +47,8 @@ void main() {
         'PROOT_TMP_DIR': '/data/user/0/app/files/terminal/tmp',
         'PROOT_LOADER': '/data/app/lib/arm64/libproot_loader.so',
         'PROOT_LOADER_32': '/data/app/lib/arm64/libproot_loader32.so',
+        // proot 的动态依赖（libtalloc2 等）与它同目录。
+        'LD_LIBRARY_PATH': '/data/app/lib/arm64',
       });
     });
 

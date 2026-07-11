@@ -91,7 +91,16 @@ class ProotCommandBuilder {
         'PROOT_TMP_DIR': tmpDirPath,
         'PROOT_LOADER': loaderPath,
         if (loader32Path != null) 'PROOT_LOADER_32': loader32Path!,
+        // Termux 构建的 proot 动态链接 libtalloc2.so / libandroid_shmem.so
+        // （随 proot 一起放在 jniLibs），linker 需要 LD_LIBRARY_PATH 指到
+        // nativeLibraryDir 才找得到。
+        'LD_LIBRARY_PATH': _dirOf(prootPath),
       },
     );
+  }
+
+  static String _dirOf(String path) {
+    final idx = path.lastIndexOf('/');
+    return idx <= 0 ? '/' : path.substring(0, idx);
   }
 }
