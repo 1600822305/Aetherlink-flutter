@@ -145,6 +145,27 @@ class WorkspaceStore extends _$WorkspaceStore {
     return updated;
   }
 
+  /// Rewrites workspaces whose [Workspace.connectionId] appears in [idMap]
+  /// （旧连接 id → 合并后的存活连接 id），并把因此变得完全相同
+  /// （backendType + connectionId + root）的条目去重，保留最新（列表头部）。
+  /// SSH 连接档案去重合并时调用，保证工作区不指向已删除的档案。
+  Future<void> remapConnections(Map<String, String> idMap) async {
+    if (idMap.isEmpty) return;
+    final current = state.value ?? const <Workspace>[];
+    final seen = <String>{};
+    final next = <Workspace>[];
+    for (final w in current) {
+      final mapped = idMap[w.connectionId];
+      final entry =
+          mapped == null ? w : w.copyWith(connectionId: mapped);
+      final key = '${entry.backendType.name}|${entry.connectionId}|'
+          '${entry.root}';
+      if (entry.connectionId != null && !seen.add(key)) continue;
+      next.add(entry);
+    }
+    await _persist(next);
+  }
+
   /// Removes a workspace from the "最近打开" list.
   Future<void> remove(String id) async {
     final current = state.value ?? const [];

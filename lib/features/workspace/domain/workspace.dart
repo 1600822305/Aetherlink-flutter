@@ -112,7 +112,11 @@ class Workspace {
       ? '${root.endsWith('/') ? root.substring(0, root.length - 1) : root}/.home'
       : null;
 
-  Workspace copyWith({String? name, DateTime? lastOpenedAt}) {
+  Workspace copyWith({
+    String? name,
+    String? connectionId,
+    DateTime? lastOpenedAt,
+  }) {
     return Workspace(
       id: id,
       name: name ?? this.name,
@@ -121,7 +125,7 @@ class Workspace {
       isolatedHome: isolatedHome,
       root: root,
       displayPath: displayPath,
-      connectionId: connectionId,
+      connectionId: connectionId ?? this.connectionId,
       lastOpenedAt: lastOpenedAt ?? this.lastOpenedAt,
     );
   }

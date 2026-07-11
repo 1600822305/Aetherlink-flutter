@@ -181,6 +181,9 @@ class _TermuxSetupSheetState extends ConsumerState<_TermuxSetupSheet> {
         params: params,
         fingerprint: result.fingerprint, // localhost: auto-trust on first use.
       );
+      // 同 endpoint 复用时私钥已换新（每次打开 sheet 都重新生成密钥对），
+      // 丢掉连接池里的旧通道让下次访问用新钥重连。
+      await ref.read(sshBackendPoolProvider).invalidate(connection.id);
       await openAndSwitchSshWorkspace(
         widget.parentRef,
         connection,
