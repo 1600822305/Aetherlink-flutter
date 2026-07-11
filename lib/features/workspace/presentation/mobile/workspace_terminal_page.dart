@@ -27,6 +27,7 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_view
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_session_protocol.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/terminal_extra_keys.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 单个终端 tab：独立的 xterm 缓冲 + PTY 会话与连接状态。
@@ -54,14 +55,14 @@ class _TerminalTab {
 /// 订阅实时输出；键入直接写进会话 stdin（用户可接管）。关闭视图只
 /// 断开订阅，不关会话本身（会话生命周期归会话池 / AI 管）。
 class _AiSessionView {
-  _AiSessionView(this.session) {
+  _AiSessionView(this.session, {required String Function(String) transform}) {
     // 缓冲里就是 PTY 原始字节（含 \r\n 与 ANSI 序列），直接回放。
     terminal.write(session.snapshot());
     _sub = session.chunks.listen((chunk) {
       terminal.write(chunk);
     });
     terminal.onOutput = (data) {
-      if (session.alive) session.writeInput(data);
+      if (session.alive) session.writeInput(transform(data));
     };
   }
 
@@ -137,6 +138,9 @@ class _WorkspaceTerminalPageState
   String? _activeAi;
   WorkspaceSessionPoolManager? _poolManager;
 
+  // Ctrl / Alt 粘滞键状态，接在每个会话的输入写入路径上（额外按键条）。
+  final TerminalExtraKeysController _extraKeys = TerminalExtraKeysController();
+
   _TerminalTab get _tab => _tabs[_active];
 
   @override
@@ -180,6 +184,7 @@ class _WorkspaceTerminalPageState
     for (final tab in _tabs) {
       tab.dispose();
     }
+    _extraKeys.dispose();
     super.dispose();
   }
 
@@ -221,7 +226,10 @@ class _WorkspaceTerminalPageState
 
   void _openAiSession(PooledWorkspaceSession session) {
     setState(() {
-      _aiViews.putIfAbsent(session.id, () => _AiSessionView(session));
+      _aiViews.putIfAbsent(
+        session.id,
+        () => _AiSessionView(session, transform: _extraKeys.transform),
+      );
       _activeAi = session.id;
     });
   }
@@ -259,7 +267,9 @@ class _WorkspaceTerminalPageState
         workingDirectory: workspace.root,
       );
       // Wire xterm <-> session: keystrokes out, remote bytes in, size changes.
-      tab.terminal.onOutput = (data) => session.write(utf8.encode(data));
+      // 输入先过额外按键条的 Ctrl / Alt 粘滞转换再写进 PTY。
+      tab.terminal.onOutput =
+          (data) => session.write(utf8.encode(_extraKeys.transform(data)));
       tab.terminal.onResize = (w, h, _, __) => session.resize(w, h);
       // cast 到 List<int>：Utf8Decoder 的 StreamTransformer 反化是
       // <List<int>, String>，Stream<Uint8List>.transform 在运行时泛型检查下
@@ -575,23 +585,43 @@ class _WorkspaceTerminalPageState
     // AI 会话围观优先：选中 AI chip 时展示其联动视图。
     final aiView = _activeAi == null ? null : _aiViews[_activeAi];
     if (aiView != null) {
-      return TerminalView(
-        aiView.terminal,
-        padding: const EdgeInsets.all(8),
+      return Column(
+        children: [
+          Expanded(
+            child: TerminalView(
+              aiView.terminal,
+              padding: const EdgeInsets.all(8),
+            ),
+          ),
+          TerminalExtraKeysBar(
+            controller: _extraKeys,
+            terminal: aiView.terminal,
+          ),
+        ],
       );
     }
     final tab = _tab;
     if (tab.connected && tab.session != null) {
       // 不自动聚焦：进终端页不弹输入法；点按终端时 TerminalView 会自行
       // requestFocus 呼出键盘。IndexedStack 保活所有 tab 的渲染状态。
-      return IndexedStack(
-        index: _active,
+      return Column(
         children: [
-          for (final t in _tabs)
-            TerminalView(
-              t.terminal,
-              padding: const EdgeInsets.all(8),
+          Expanded(
+            child: IndexedStack(
+              index: _active,
+              children: [
+                for (final t in _tabs)
+                  TerminalView(
+                    t.terminal,
+                    padding: const EdgeInsets.all(8),
+                  ),
+              ],
             ),
+          ),
+          TerminalExtraKeysBar(
+            controller: _extraKeys,
+            terminal: tab.terminal,
+          ),
         ],
       );
     }
