@@ -9,11 +9,17 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
+import 'package:aetherlink_flutter/shared/utils/haptics.dart';
+
+/// 选中话题底色：与聊天侧边栏 `kSidebarSelectedItemBg` 同值（样式对齐，
+/// 不 import chat 内部）。
+const Color _kSelectedTopicBg = Color(0x141976D2);
 
 class AgentTopicTab extends ConsumerWidget {
   const AgentTopicTab({super.key});
 
   void _openTask(BuildContext context, WidgetRef ref, String taskId) {
+    Haptics.instance.onListItem();
     ref.read(selectedAgentTaskIdProvider.notifier).select(taskId);
     Navigator.of(context).pop();
   }
@@ -130,9 +136,7 @@ class _TaskCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
       child: Material(
-        color: selected
-            ? cs.primary.withValues(alpha: 0.08)
-            : cs.onSurface.withValues(alpha: 0.03),
+        color: selected ? _kSelectedTopicBg : cs.onSurface.withValues(alpha: 0.03),
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: onTap,
