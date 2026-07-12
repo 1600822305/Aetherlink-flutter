@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 
 /// 工具调用详情底部抽屉（UI 稿 §4.1）：完整参数 + 完整输出。
+/// 面板固定屏高 2/3；参数区限高、输出区占满余下高度，各自内部滑动。
 /// 大输出这里只显截断内容；「查看全文」等落盘能力接真引擎时补。
 Future<void> showToolDetailSheet(BuildContext context, ToolCallEvent event) {
   return showModalBottomSheet<void>(
@@ -38,11 +39,9 @@ class _ToolDetailSheet extends StatelessWidget {
       _ => muted,
     };
 
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.55,
-      maxChildSize: 0.9,
-      builder: (context, scrollController) => Column(
+    return FractionallySizedBox(
+      heightFactor: 2 / 3,
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Center(
@@ -85,29 +84,35 @@ class _ToolDetailSheet extends StatelessWidget {
           ),
           const Divider(height: 1),
           Expanded(
-            child: ListView(
-              controller: scrollController,
+            child: Padding(
               padding: EdgeInsets.fromLTRB(
                 16,
                 12,
                 16,
                 bottomPad > 0 ? bottomPad : 12,
               ),
-              children: [
-                _Section(
-                  title: '参数',
-                  body: event.argsDetail ?? event.argSummary,
-                ),
-                const SizedBox(height: 14),
-                _Section(
-                  title: '输出',
-                  body: (event.resultDetail?.isNotEmpty ?? false)
-                      ? event.resultDetail!
-                      : (event.resultSummary.isEmpty
-                            ? '（暂无输出）'
-                            : event.resultSummary),
-                ),
-              ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _Section(
+                    title: '参数',
+                    body: event.argsDetail ?? event.argSummary,
+                    maxHeight: 140,
+                  ),
+                  const SizedBox(height: 14),
+                  Expanded(
+                    child: _Section(
+                      title: '输出',
+                      body: (event.resultDetail?.isNotEmpty ?? false)
+                          ? event.resultDetail!
+                          : (event.resultSummary.isEmpty
+                                ? '（暂无输出）'
+                                : event.resultSummary),
+                      fill: true,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -116,16 +121,48 @@ class _ToolDetailSheet extends StatelessWidget {
   }
 }
 
+/// 内容块：固定高度内部滑动。[fill] 时占满父约束（外层配 Expanded），
+/// 否则按 [maxHeight] 限高，内容不足时自适应。
 class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.body});
+  const _Section({
+    required this.title,
+    required this.body,
+    this.fill = false,
+    this.maxHeight,
+  });
 
   final String title;
   final String body;
+  final bool fill;
+  final double? maxHeight;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    Widget box = Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: cs.onSurface.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(10),
+        child: SelectableText(
+          body,
+          style: theme.textTheme.bodySmall?.copyWith(
+            fontFamily: 'monospace',
+            height: 1.4,
+          ),
+        ),
+      ),
+    );
+    if (!fill && maxHeight != null) {
+      box = ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight!),
+        child: box,
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -137,21 +174,7 @@ class _Section extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 6),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: cs.onSurface.withValues(alpha: 0.04),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: SelectableText(
-            body,
-            style: theme.textTheme.bodySmall?.copyWith(
-              fontFamily: 'monospace',
-              height: 1.4,
-            ),
-          ),
-        ),
+        if (fill) Expanded(child: box) else box,
       ],
     );
   }
