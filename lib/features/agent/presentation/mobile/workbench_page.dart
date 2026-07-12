@@ -16,14 +16,29 @@ class WorkbenchPage extends StatefulWidget {
   State<WorkbenchPage> createState() => _WorkbenchPageState();
 }
 
-class _WorkbenchPageState extends State<WorkbenchPage> {
+class _WorkbenchPageState extends State<WorkbenchPage>
+    with SingleTickerProviderStateMixin {
   int _tab = 0;
+
+  late final TabController _tabController =
+      TabController(length: _tabs.length, vsync: this)
+        ..addListener(() {
+          if (_tab != _tabController.index) {
+            setState(() => _tab = _tabController.index);
+          }
+        });
 
   static const _tabs = [
     (LucideIcons.terminal, '终端'),
-    (LucideIcons.eye, '正在看的文件'),
-    (LucideIcons.gitCompareArrows, '改动 diff'),
+    (LucideIcons.eye, '正在看'),
+    (LucideIcons.gitCompareArrows, 'diff'),
   ];
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,51 +46,59 @@ class _WorkbenchPageState extends State<WorkbenchPage> {
     final cs = theme.colorScheme;
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              for (var i = 0; i < _tabs.length; i++) ...[
-                if (i > 0) const SizedBox(width: 8),
-                Expanded(
-                  child: Material(
-                    color: i == _tab
-                        ? cs.primary.withValues(alpha: 0.12)
-                        : cs.onSurface.withValues(alpha: 0.04),
-                    borderRadius: BorderRadius.circular(10),
-                    child: InkWell(
-                      onTap: () => setState(() => _tab = i),
-                      borderRadius: BorderRadius.circular(10),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 7),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              _tabs[i].$1,
-                              size: 14,
-                              color: i == _tab
-                                  ? cs.primary
-                                  : cs.onSurface.withValues(alpha: 0.6),
-                            ),
-                            const SizedBox(width: 5),
-                            Text(
-                              _tabs[i].$2,
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: i == _tab
-                                    ? cs.primary
-                                    : cs.onSurface.withValues(alpha: 0.7),
-                                fontWeight:
-                                    i == _tab ? FontWeight.w700 : null,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
+        // 项目统一的分段式 tab 条（浅底胶囊 + 白底浮起指示器，
+        // 与侧边栏/聊天侧边栏同款）。
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: cs.onSurface.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: TabBar(
+            controller: _tabController,
+            dividerColor: Colors.transparent,
+            labelColor: cs.onSurface,
+            unselectedLabelColor: cs.onSurface.withValues(alpha: 0.5),
+            labelStyle: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              height: 1.2,
+            ),
+            unselectedLabelStyle: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              height: 1.2,
+            ),
+            indicatorSize: TabBarIndicatorSize.tab,
+            indicator: BoxDecoration(
+              color: cs.surface,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                  color: cs.shadow.withValues(alpha: 0.08),
+                  blurRadius: 2,
+                  offset: const Offset(0, 1),
                 ),
               ],
+            ),
+            splashFactory: NoSplash.splashFactory,
+            overlayColor: WidgetStateProperty.all(Colors.transparent),
+            labelPadding: EdgeInsets.zero,
+            tabs: [
+              for (final (icon, label) in _tabs)
+                Tab(
+                  height: 36,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(icon, size: 14),
+                      const SizedBox(width: 4),
+                      Text(label),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
