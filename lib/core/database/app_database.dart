@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:aetherlink_flutter/core/database/app_settings_dao.dart';
 import 'package:aetherlink_flutter/core/database/app_settings_table.dart';
 
+import 'package:aetherlink_flutter/features/agent/data/datasources/local/agent_converters.dart';
 import 'package:aetherlink_flutter/features/agent/data/datasources/local/agent_dao.dart';
 import 'package:aetherlink_flutter/features/agent/data/datasources/local/agent_tables.dart';
 // 智能体 profile/task 以 JSON blob 存储（converter 值类型），事件解码在 DAO 层。
