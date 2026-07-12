@@ -92,13 +92,15 @@ const Set<String> _kReadOnlyToolNames = {
 
 /// 档案工具分组 → 模型可见工具定义 + 名称到 [ToolRoute] 的分发表。
 /// 控制工具（update_plan/ask_user/finish_task）恒在，由引擎内部处理。
-/// Ask/Plan 模式只保留只读工具（见 [_kReadOnlyToolNames]）。
+/// Ask/Plan 模式只保留只读工具（见 [_kReadOnlyToolNames]）；
+/// Auto 与 Code 同样全能力，差别只在审批门。
 ({List<McpToolDefinition> definitions, Map<String, ToolRoute> routes})
     _catalogFor(
   Set<AgentToolGroup> groups, {
   AgentSessionMode mode = AgentSessionMode.code,
 }) {
-  final readOnly = mode != AgentSessionMode.code;
+  final readOnly =
+      mode == AgentSessionMode.ask || mode == AgentSessionMode.plan;
   final definitions = <McpToolDefinition>[...kAgentControlToolDefinitions];
   final routes = <String, ToolRoute>{};
 
@@ -559,6 +561,12 @@ class _PolicyApprovalGate implements ApprovalGate {
     )) {
       return ApprovalRequirement.allow;
     }
+    // auto 模式：任务绑定工作区内的写/执行免审批直通；未绑定工作区
+    // 或调用越出绑定 root 时不免审（硬约束，与白名单同级）。
+    if (task.mode == AgentSessionMode.auto &&
+        _autoModeBypasses(task, route, call.name, args, workspaces)) {
+      return ApprovalRequirement.allow;
+    }
     // 运行级宽限；越界命令不受宽限覆盖（硬约束）。
     final escapesRoot = route is TerminalToolRoute &&
         terminalCommandEscapesRoot(call.name, args, workspaces: workspaces);
@@ -611,6 +619,32 @@ class _PolicyApprovalGate implements ApprovalGate {
     return decision.approved
         ? const ApprovalVerdict.approved()
         : ApprovalVerdict.denied(decision.reason);
+  }
+
+  /// auto 模式的免审范围：只覆盖文件编辑与终端两组工作区工具，且所有
+  /// 路径/命令必须落在任务绑定工作区 root 内；其余需审批工具照常询问。
+  bool _autoModeBypasses(
+    AgentTask task,
+    ToolRoute route,
+    String toolName,
+    Map<String, Object?> args,
+    List<Workspace> workspaces,
+  ) {
+    final bound =
+        workspaces.where((w) => w.id == task.workspaceId).firstOrNull;
+    if (bound == null) return false;
+    if (route is FileEditorToolRoute) {
+      return fileEditorPathsWithinRoot(args, root: bound.root);
+    }
+    if (route is TerminalToolRoute) {
+      return terminalCommandStaysInBoundRoot(
+        toolName,
+        args,
+        boundWorkspace: bound,
+        workspaces: workspaces,
+      );
+    }
+    return false;
   }
 
   Map<String, Object?> _decodeArgs(String argsJson) {

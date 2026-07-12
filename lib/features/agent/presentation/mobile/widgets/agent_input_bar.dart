@@ -177,6 +177,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
           children: [
             for (final (m, desc) in const [
               (AgentSessionMode.code, '执行模式：写/终端全能力，走审批+白名单'),
+              (AgentSessionMode.auto, '自动模式：工作区内写/执行免审批，越界仍审批'),
               (AgentSessionMode.ask, '只问答：仅只读工具，不改任何东西'),
               (AgentSessionMode.plan, '只读规划：先出完整方案，确认后转 Code'),
             ])
@@ -193,7 +194,40 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
         ),
       ),
     );
-    if (mode != null) setState(() => _mode = mode);
+    if (mode == null) return;
+    // auto 二次确认：选中才生效，取消保持原模式。
+    if (mode == AgentSessionMode.auto && _mode != AgentSessionMode.auto) {
+      final confirmed = await _confirmAutoMode();
+      if (confirmed != true) return;
+    }
+    setState(() => _mode = mode);
+  }
+
+  Future<bool?> _confirmAutoMode() {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('启用 Auto 模式？'),
+        content: const Text(
+          '绑定工作区内的文件写入与命令执行将不再逐条审批，'
+          '越出工作区的操作仍会请求授权。未绑定工作区时不会免审。\n\n'
+          '仅在信任当前任务时启用。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.amber.shade700,
+            ),
+            child: const Text('启用 Auto'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -269,8 +303,13 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                         ),
                         const SizedBox(width: 2),
                         _Chip(
-                          icon: LucideIcons.keyboard,
+                          icon: _mode == AgentSessionMode.auto
+                              ? LucideIcons.zap
+                              : LucideIcons.keyboard,
                           label: '${agentModeLabel(_mode)} ▾',
+                          color: _mode == AgentSessionMode.auto
+                              ? Colors.amber.shade800
+                              : null,
                           onTap: _onModeTap,
                         ),
                         const SizedBox(width: 6),
@@ -377,18 +416,27 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
 }
 
 class _Chip extends StatelessWidget {
-  const _Chip({required this.icon, required this.label, required this.onTap});
+  const _Chip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.color,
+  });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+
+  /// 非空时用作醒目强调色（如 auto 模式的琥珀色）。
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     return Material(
-      color: cs.onSurface.withValues(alpha: 0.05),
+      color: color?.withValues(alpha: 0.14) ??
+          cs.onSurface.withValues(alpha: 0.05),
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: onTap,
@@ -399,12 +447,12 @@ class _Chip extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, size: 13,
-                  color: cs.onSurface.withValues(alpha: 0.7)),
+                  color: color ?? cs.onSurface.withValues(alpha: 0.7)),
               const SizedBox(width: 4),
               Text(
                 label,
                 style: theme.textTheme.labelSmall?.copyWith(
-                  color: cs.onSurface.withValues(alpha: 0.8),
+                  color: color ?? cs.onSurface.withValues(alpha: 0.8),
                   fontWeight: FontWeight.w600,
                 ),
               ),

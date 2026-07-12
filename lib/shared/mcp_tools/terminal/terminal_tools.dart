@@ -80,6 +80,27 @@ bool terminalCommandEscapesRoot(
       CommandRisk.escapesRoot;
 }
 
+/// auto 模式免审判定：terminal_execute 是否明确指向 [boundWorkspace]
+/// （任务绑定的项目工作区）且命令未越出其 root。未带 `workspace` 参数
+/// （落内置终端默认目标）或指向其它工作区时不免审。
+bool terminalCommandStaysInBoundRoot(
+  String toolName,
+  Map<String, Object?> args, {
+  required Workspace boundWorkspace,
+  List<Workspace> workspaces = const [],
+}) {
+  if (toolName != 'terminal_execute') return false;
+  final target = _matchWorkspaceArg(args, workspaces);
+  if (target == null ||
+      target.id != boundWorkspace.id ||
+      target.scope != WorkspaceScope.project) {
+    return false;
+  }
+  final command = args['command']?.toString() ?? '';
+  return evaluateCommandRisk(command, root: target.root) !=
+      CommandRisk.escapesRoot;
+}
+
 /// 同步版的 `workspace` 参数解析（编号 / ID / 名称），解析不到返回 null。
 Workspace? _matchWorkspaceArg(
   Map<String, Object?> args,

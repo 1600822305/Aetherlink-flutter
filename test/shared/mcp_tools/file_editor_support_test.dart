@@ -3,6 +3,69 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 
 void main() {
+  group('fileEditorPathsWithinRoot（auto 模式工作区边界）', () {
+    const root = '/root/projects/demo';
+
+    test('所有路径参数都在 root 内 → true', () {
+      expect(
+        fileEditorPathsWithinRoot(
+          const {'path': '/root/projects/demo/lib/a.dart'},
+          root: root,
+        ),
+        isTrue,
+      );
+      expect(
+        fileEditorPathsWithinRoot(
+          const {
+            'source_path': '/root/projects/demo/a.txt',
+            'destination_path': '/root/projects/demo/sub',
+          },
+          root: root,
+        ),
+        isTrue,
+      );
+    });
+
+    test('任一路径越出 root → false', () {
+      expect(
+        fileEditorPathsWithinRoot(
+          const {'path': '/root/projects/other/a.dart'},
+          root: root,
+        ),
+        isFalse,
+      );
+      expect(
+        fileEditorPathsWithinRoot(
+          const {
+            'source_path': '/root/projects/demo/a.txt',
+            'destination_path': '/tmp',
+          },
+          root: root,
+        ),
+        isFalse,
+      );
+      // 前缀相似的兄弟目录不算 root 内。
+      expect(
+        fileEditorPathsWithinRoot(
+          const {'path': '/root/projects/demo2/a.dart'},
+          root: root,
+        ),
+        isFalse,
+      );
+    });
+
+    test('未携带任何路径参数 → false（保守兜底）', () {
+      expect(fileEditorPathsWithinRoot(const {}, root: root), isFalse);
+      expect(
+        fileEditorPathsWithinRoot(
+          const {'content': 'hello'},
+          root: root,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('processIncomingContent — code fence stripping', () {
     test('strips a fence wrapping the whole payload', () {
       expect(

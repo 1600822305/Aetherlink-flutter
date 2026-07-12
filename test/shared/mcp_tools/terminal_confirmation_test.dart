@@ -148,6 +148,74 @@ void main() {
     });
   });
 
+  group('terminalCommandStaysInBoundRoot（auto 模式免审边界）', () {
+    test('指向绑定工作区且命令不越界 → true', () {
+      expect(
+        terminalCommandStaysInBoundRoot(
+          'terminal_execute',
+          const {'command': 'npm install', 'workspace': 'ws-proj'},
+          boundWorkspace: projectWs,
+          workspaces: workspaces,
+        ),
+        isTrue,
+      );
+    });
+
+    test('越界命令 → false', () {
+      expect(
+        terminalCommandStaysInBoundRoot(
+          'terminal_execute',
+          const {'command': 'cat /etc/passwd', 'workspace': 'ws-proj'},
+          boundWorkspace: projectWs,
+          workspaces: workspaces,
+        ),
+        isFalse,
+      );
+    });
+
+    test('未指定工作区 / 指向其它工作区 / full 模式 → false', () {
+      expect(
+        terminalCommandStaysInBoundRoot(
+          'terminal_execute',
+          const {'command': 'ls'},
+          boundWorkspace: projectWs,
+          workspaces: workspaces,
+        ),
+        isFalse,
+      );
+      expect(
+        terminalCommandStaysInBoundRoot(
+          'terminal_execute',
+          const {'command': 'ls', 'workspace': 'ws-full'},
+          boundWorkspace: projectWs,
+          workspaces: workspaces,
+        ),
+        isFalse,
+      );
+      expect(
+        terminalCommandStaysInBoundRoot(
+          'terminal_execute',
+          const {'command': 'ls', 'workspace': 'ws-full'},
+          boundWorkspace: fullWs,
+          workspaces: workspaces,
+        ),
+        isFalse,
+      );
+    });
+
+    test('非执行类工具 → false', () {
+      expect(
+        terminalCommandStaysInBoundRoot(
+          'terminal_session',
+          const {'action': 'write', 'workspace': 'ws-proj'},
+          boundWorkspace: projectWs,
+          workspaces: workspaces,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('terminalCommandEscapesRoot（免确认窗口不覆盖越界，§4.1）', () {
     test('project 模式越界命令 → true', () {
       expect(

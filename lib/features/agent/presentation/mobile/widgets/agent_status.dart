@@ -30,9 +30,38 @@ String agentStatusLabel(AgentTaskStatus status) => switch (status) {
 
 String agentModeLabel(AgentSessionMode mode) => switch (mode) {
       AgentSessionMode.code => 'Code',
+      AgentSessionMode.auto => 'Auto',
       AgentSessionMode.ask => 'Ask',
       AgentSessionMode.plan => 'Plan',
     };
+
+/// auto 模式醒目徽标（琥珀色胶囊）：提醒当前任务在工作区内
+/// 免审批执行，挂在状态条、输入区等显示位。
+class AgentAutoBadge extends StatelessWidget {
+  const AgentAutoBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.amber.shade700, width: 0.8),
+      ),
+      child: Text(
+        'AUTO',
+        style: TextStyle(
+          fontSize: 9,
+          height: 1.3,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.5,
+          color: Colors.amber.shade800,
+        ),
+      ),
+    );
+  }
+}
 
 String formatTokens(int tokens) => tokens >= 1000
     ? '${(tokens / 1000).toStringAsFixed(1)}k'
@@ -58,6 +87,10 @@ class AgentStatusLine extends StatelessWidget {
       children: [
         _StatusDot(color: color, breathing: task.status == AgentTaskStatus.running),
         const SizedBox(width: 5),
+        if (task.mode == AgentSessionMode.auto) ...[
+          const AgentAutoBadge(),
+          const SizedBox(width: 5),
+        ],
         Text(
           '${agentStatusLabel(task.status)} · 第${task.rounds}轮 · '
           '${formatTokens(task.tokenCount)} · ${formatElapsed(task.elapsed)}',

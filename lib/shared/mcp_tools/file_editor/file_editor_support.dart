@@ -147,6 +147,23 @@ Future<WorkspaceBackend> resolveWorkspaceById(Ref ref, String id) async {
 bool pathUnderRoot(String path, String root) =>
     path == root || path.startsWith('$root/');
 
+/// auto 模式免审判定：file-editor 写调用携带的所有路径参数是否都落在
+/// 工作区 [root] 内。未携带任何路径参数时按越界处理（保守兜底）。
+bool fileEditorPathsWithinRoot(
+  Map<String, Object?> args, {
+  required String root,
+}) {
+  const pathKeys = ['path', 'parent_path', 'source_path', 'destination_path'];
+  var sawPath = false;
+  for (final key in pathKeys) {
+    final value = args[key];
+    if (value is! String || value.trim().isEmpty) continue;
+    sawPath = true;
+    if (!pathUnderRoot(value, root)) return false;
+  }
+  return sawPath;
+}
+
 /// Resolves the backend for an opaque [path] by matching it to the workspace
 /// whose `root` contains [path] (longest match wins). Falls back to the single
 /// available backend when there's exactly one workspace. Shared by the read
