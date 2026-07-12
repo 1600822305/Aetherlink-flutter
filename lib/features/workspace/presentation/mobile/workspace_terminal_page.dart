@@ -14,6 +14,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -21,12 +22,14 @@ import 'package:xterm/xterm.dart';
 
 import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
 import 'package:aetherlink_flutter/features/terminal/presentation/mobile/terminal_env_page.dart';
+import 'package:aetherlink_flutter/features/workspace/application/terminal_output_links.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_restore.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_session_protocol.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_registry.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/terminal_extra_keys.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
@@ -36,6 +39,7 @@ class _TerminalTab {
 
   String name;
   final Terminal terminal = Terminal(maxLines: 10000);
+  final TerminalController controller = TerminalController();
 
   WorkspaceShellSession? session;
   StreamSubscription<String>? outSub;
@@ -68,6 +72,7 @@ class _AiSessionView {
 
   final PooledWorkspaceSession session;
   final Terminal terminal = Terminal(maxLines: 10000);
+  final TerminalController controller = TerminalController();
   StreamSubscription<String>? _sub;
 
   Future<void> detach() async {
@@ -318,6 +323,98 @@ class _WorkspaceTerminalPageState
           tab.connecting = false;
         });
       }
+    }
+  }
+
+  /// 复制当前选区（长按拖拽选中后点复制键）。
+  Future<void> _copySelection(
+    Terminal terminal,
+    TerminalController controller,
+  ) async {
+    final range = controller.selection;
+    if (range == null) {
+      AppToast.info(context, '先长按选中要复制的内容');
+      return;
+    }
+    final text = terminal.buffer.getText(range);
+    controller.clearSelection();
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) AppToast.info(context, '已复制');
+  }
+
+  /// 粘贴剪贴板（走 bracketed paste，多行命令不会被逐行执行）。
+  Future<void> _pasteClipboard(Terminal terminal) async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text;
+    if (text == null || text.isEmpty) {
+      if (mounted) AppToast.info(context, '剪贴板为空');
+      return;
+    }
+    terminal.paste(text);
+  }
+
+  /// 扫描终端缓冲里的 `path:line` 引用（编译报错 / grep -n / 堆栈），
+  /// 弹列表选一个跳到编辑器对应行。
+  Future<void> _jumpToFileLink(Terminal terminal) async {
+    final buffer = terminal.buffer;
+    final lines = <String>[
+      for (var i = 0; i < buffer.height; i++) buffer.lines[i].getText(),
+    ];
+    final links = extractFileLinks(lines);
+    if (links.isEmpty) {
+      AppToast.info(context, '输出中没找到 path:line 引用');
+      return;
+    }
+    final link = await showModalBottomSheet<TerminalFileLink>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            for (final l in links)
+              ListTile(
+                dense: true,
+                leading: const Icon(LucideIcons.fileText, size: 18),
+                title: Text(
+                  '${l.path}:${l.line}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                ),
+                onTap: () => Navigator.pop(context, l),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (link == null || !mounted) return;
+    await _openFileLink(link);
+  }
+
+  /// 把相对路径解析到 workspace root（exec 后端都是真实 POSIX 路径），
+  /// 用 getFileInfo 换成条目后在编辑器打开并跳行。
+  Future<void> _openFileLink(TerminalFileLink link) async {
+    final backend = ref.read(workspacePreviewBackendProvider);
+    final workspace = ref.read(currentWorkspaceProvider);
+    if (backend == null || workspace == null) return;
+    var path = link.path;
+    if (path.startsWith('./')) path = path.substring(2);
+    final abs = path.startsWith('/') ? path : '${workspace.root}/$path';
+    try {
+      final entry = await backend.getFileInfo(abs);
+      if (entry.isDirectory) {
+        if (mounted) AppToast.info(context, '该路径是目录');
+        return;
+      }
+      if (!mounted) return;
+      ref.read(openWorkspaceFilesProvider.notifier).open(
+            entry,
+            dirtyPaths: ref.read(dirtyFilesProvider),
+            line: link.line,
+          );
+    } catch (_) {
+      if (mounted) AppToast.info(context, '打不开 $abs（文件不存在？）');
     }
   }
 
@@ -583,6 +680,8 @@ class _WorkspaceTerminalPageState
       );
     }
     // AI 会话围观优先：选中 AI chip 时展示其联动视图。
+    final fontSize = ref.watch(terminalFontSizeProvider);
+    final textStyle = TerminalStyle(fontSize: fontSize);
     final aiView = _activeAi == null ? null : _aiViews[_activeAi];
     if (aiView != null) {
       return Column(
@@ -590,12 +689,18 @@ class _WorkspaceTerminalPageState
           Expanded(
             child: TerminalView(
               aiView.terminal,
+              controller: aiView.controller,
+              textStyle: textStyle,
               padding: const EdgeInsets.all(8),
             ),
           ),
           TerminalExtraKeysBar(
             controller: _extraKeys,
             terminal: aiView.terminal,
+            onCopy: () => _copySelection(aiView.terminal, aiView.controller),
+            onPaste: () => _pasteClipboard(aiView.terminal),
+            onFontAdjust: ref.read(terminalFontSizeProvider.notifier).adjust,
+            onJumpToFile: () => _jumpToFileLink(aiView.terminal),
           ),
         ],
       );
@@ -613,6 +718,8 @@ class _WorkspaceTerminalPageState
                 for (final t in _tabs)
                   TerminalView(
                     t.terminal,
+                    controller: t.controller,
+                    textStyle: textStyle,
                     padding: const EdgeInsets.all(8),
                   ),
               ],
@@ -621,6 +728,10 @@ class _WorkspaceTerminalPageState
           TerminalExtraKeysBar(
             controller: _extraKeys,
             terminal: tab.terminal,
+            onCopy: () => _copySelection(tab.terminal, tab.controller),
+            onPaste: () => _pasteClipboard(tab.terminal),
+            onFontAdjust: ref.read(terminalFontSizeProvider.notifier).adjust,
+            onJumpToFile: () => _jumpToFileLink(tab.terminal),
           ),
         ],
       );

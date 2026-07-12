@@ -25,6 +25,10 @@ const String kWorkspaceShowHiddenKey = 'workspace_show_hidden';
 /// Absent means sort by name ascending (the default).
 const String kWorkspaceTreeSortKey = 'workspace_tree_sort';
 
+/// Setting key for the terminal font size (a double string). Absent means
+/// the xterm default (13).
+const String kTerminalFontSizeKey = 'workspace_terminal_font_size';
+
 /// The persisted middle-page session: the open file tabs of [workspaceId] and
 /// which one was active.
 class WorkspaceSession {

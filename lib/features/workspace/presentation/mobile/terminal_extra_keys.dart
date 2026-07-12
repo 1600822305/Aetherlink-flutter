@@ -69,10 +69,24 @@ class TerminalExtraKeysBar extends StatelessWidget {
     super.key,
     required this.controller,
     required this.terminal,
+    this.onCopy,
+    this.onPaste,
+    this.onFontAdjust,
+    this.onJumpToFile,
   });
 
   final TerminalExtraKeysController controller;
   final Terminal terminal;
+
+  /// 复制当前选区 / 粘贴剪贴板（页面级回调，需要 TerminalController）。
+  final VoidCallback? onCopy;
+  final VoidCallback? onPaste;
+
+  /// 字体大小调节（±delta）。
+  final void Function(double delta)? onFontAdjust;
+
+  /// 扫描输出里的 `path:line` 并跳转编辑器。
+  final VoidCallback? onJumpToFile;
 
   void _sendKey(TerminalKey key) {
     terminal.keyInput(key, ctrl: controller.ctrl, alt: controller.alt);
@@ -93,6 +107,22 @@ class TerminalExtraKeysBar extends StatelessWidget {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 6),
               children: [
+                if (onCopy != null)
+                  _Key(icon: Icons.copy, onTap: onCopy!),
+                if (onPaste != null)
+                  _Key(icon: Icons.content_paste, onTap: onPaste!),
+                if (onFontAdjust != null) ...[
+                  _Key(
+                    icon: Icons.text_decrease,
+                    onTap: () => onFontAdjust!(-1),
+                  ),
+                  _Key(
+                    icon: Icons.text_increase,
+                    onTap: () => onFontAdjust!(1),
+                  ),
+                ],
+                if (onJumpToFile != null)
+                  _Key(icon: Icons.file_open_outlined, onTap: onJumpToFile!),
                 _Key(label: 'Esc', onTap: () => _sendKey(TerminalKey.escape)),
                 _Key(label: 'Tab', onTap: () => _sendKey(TerminalKey.tab)),
                 _Key(

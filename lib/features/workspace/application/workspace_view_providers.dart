@@ -139,6 +139,39 @@ class TreeSortModeNotifier extends Notifier<TreeSortMode> {
   }
 }
 
+/// 终端字体大小，持久化于 [kTerminalFontSizeKey]；默认 13（xterm 默认），
+/// 范围 [kTerminalFontSizeMin]–[kTerminalFontSizeMax]。
+const double kTerminalFontSizeMin = 8;
+const double kTerminalFontSizeMax = 28;
+
+final terminalFontSizeProvider =
+    NotifierProvider<TerminalFontSizeNotifier, double>(
+  TerminalFontSizeNotifier.new,
+);
+
+class TerminalFontSizeNotifier extends Notifier<double> {
+  @override
+  double build() {
+    ref
+        .read(appSettingsStoreProvider)
+        .getSetting(kTerminalFontSizeKey)
+        .then((raw) {
+      final size = double.tryParse(raw ?? '');
+      if (size != null && size != state) {
+        state = size.clamp(kTerminalFontSizeMin, kTerminalFontSizeMax);
+      }
+    });
+    return 13;
+  }
+
+  void adjust(double delta) {
+    state = (state + delta).clamp(kTerminalFontSizeMin, kTerminalFontSizeMax);
+    ref
+        .read(appSettingsStoreProvider)
+        .saveSetting(kTerminalFontSizeKey, state.toString());
+  }
+}
+
 /// Whether the three-page horizontal pager is locked. When `true` the shell
 /// disables page swiping so pinch-zoom / drag inside the editor can't
 /// accidentally flip pages. Toggled from the editor header's lock button.
