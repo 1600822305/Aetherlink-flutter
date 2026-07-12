@@ -32,6 +32,7 @@ import 'package:aetherlink_flutter/features/workspace/data/local_saf_backend.dar
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/open_workspace_sheet.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/tool_auth_settings_page.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 class WorkspaceManagementPage extends ConsumerStatefulWidget {
@@ -382,6 +383,17 @@ class _WorkspaceManagementPageState
                   onTap: _autoRestore == null
                       ? null
                       : () => _setAutoRestore(!_autoRestore!),
+                ),
+                Divider(height: 1, color: theme.dividerColor),
+                ListTile(
+                  leading: Icon(
+                    LucideIcons.shieldCheck,
+                    color: theme.colorScheme.primary,
+                  ),
+                  title: const Text('工具授权'),
+                  subtitle: const Text('AI 调用文件/终端工具时哪些免确认（白名单）'),
+                  trailing: const Icon(LucideIcons.chevronRight, size: 18),
+                  onTap: () => showToolAuthSettingsPage(context),
                 ),
                 Divider(height: 1, color: theme.dividerColor),
                 ListTile(

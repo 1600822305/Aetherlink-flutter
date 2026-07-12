@@ -3,6 +3,7 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/settings_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_auth_policy.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart';
 
 /// Whether this tool call must pause for user approval (HITL) before running:
@@ -28,6 +29,30 @@ bool toolNeedsConfirmation(
             args,
             workspaces: workspaces,
           ));
+}
+
+/// Whether the user's tool authorization whitelist ([policy], 工作区管理页
+/// → 工具授权) lets this normally-gated call skip the confirmation prompt.
+/// 越出项目工作区 root 的终端命令不受白名单覆盖，仍强制审批
+/// （双作用域设计稿 §4.1 硬要求）。
+bool toolAutoApprovedByPolicy(
+  ToolAuthPolicy policy,
+  ToolRoute route,
+  String toolName,
+  Map<String, Object?> args, {
+  List<Workspace> workspaces = const [],
+}) {
+  final String server;
+  if (route is FileEditorToolRoute) {
+    server = kFileEditorServerName;
+  } else if (route is TerminalToolRoute) {
+    server = kTerminalServerName;
+  } else {
+    return false;
+  }
+  if (!policy.isAutoApproved(server, toolName)) return false;
+  return !(route is TerminalToolRoute &&
+      terminalCommandEscapesRoot(toolName, args, workspaces: workspaces));
 }
 
 /// Whether this tool call is a command that can be aborted mid-flight

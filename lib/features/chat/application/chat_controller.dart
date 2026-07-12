@@ -31,6 +31,9 @@ import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_co
 import 'package:aetherlink_flutter/features/chat/application/streaming_registry.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_confirmation.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_auth_policy.dart'
+    show toolAuthPolicyProvider;
 import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart'
     show terminalCommandEscapesRoot;
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_executor.dart';

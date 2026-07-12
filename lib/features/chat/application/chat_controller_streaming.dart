@@ -627,13 +627,24 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
             final blockId = generateId('block');
             final toolId = call.id.isEmpty ? call.name : call.id;
 
+            final turnWorkspaces =
+                ref.read(workspaceStoreProvider).value ?? const <Workspace>[];
+            // 用户白名单（工作区管理页 → 工具授权）里的工具跳过审批；
+            // 越出项目工作区 root 的终端命令不受白名单覆盖。
             final needsConfirm = toolNeedsConfirmation(
-              route,
-              call.name,
-              args,
-              // 终端工具按目标工作区 scope 分级审批（双作用域设计稿 §3.2）。
-              workspaces: ref.read(workspaceStoreProvider).value ?? const [],
-            );
+                  route,
+                  call.name,
+                  args,
+                  // 终端工具按目标工作区 scope 分级审批（双作用域设计稿 §3.2）。
+                  workspaces: turnWorkspaces,
+                ) &&
+                !toolAutoApprovedByPolicy(
+                  ref.read(toolAuthPolicyProvider),
+                  route,
+                  call.name,
+                  args,
+                  workspaces: turnWorkspaces,
+                );
 
             // `terminal_execute` can be aborted mid-flight:
             // register a cancel signal
