@@ -230,7 +230,13 @@ agent 模式重启 → 恢复上次所在的智能体与话题（各自持久化
   （复用编辑器只读态）、跑命令→该命令实况输出、网搜/知识库→查询与
   结果摘要、思考/空闲→当前步骤说明。工具行点击是回看，这里是实况，
   两入口互补；终端 tab 保留长驻会话全量输出，焦点只跟"当下这一步"；
-- P1：**改动 diff** tab + 改动文件清单；
+- P1：**改动 diff** tab + 改动文件清单——**已实现**（`workbench_diff_tab.dart`）：
+  任务工作区（档案绑定 → 当前打开 → 最近列表首个）的 `git status`
+  未提交改动清单，按状态徽标（M/A/D/R/U/!）+ 相对路径展示，点文件开
+  只读 diff 面板（复用 `showReadOnlyDiffSheet`，HEAD ↔ 工作区当前内容）；
+  下拉/按钮手动刷新；git 能力经 `app/di/agent_workspace_access.dart`
+  seam 暴露（agent 不直接 import workspace application）；无工作区/
+  不支持执行命令（纯 SAF）/非 git 仓库时显示说明空态；
 - 无可跑命令后端（纯 SAF 工作区）时终端 tab 显示说明空态。
 
 ---
