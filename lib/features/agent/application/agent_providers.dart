@@ -68,7 +68,7 @@ class AgentUiSettings {
   /// 工作段完成后自动折叠为摘要块（UI 稿 §4.1）。
   final bool autoCollapseWorkSessions;
 
-  /// 右页工作台跟随 AI 正在看的文件。
+  /// 右页工作台焦点 tab 跟随智能体当前活动。
   final bool followAiFile;
 
   AgentUiSettings copyWith({

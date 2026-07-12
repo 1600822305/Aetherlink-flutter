@@ -4,9 +4,11 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 
 /// 右页：工作台（UI 稿 §4.3）——顶部小 tab 切换
-/// 「终端 / AI 正在看的文件 / 改动 diff」。UI 先行阶段三个 tab 均为占位；
-/// 接真实现时：终端复用工作区终端会话视图、文件跟随复用编辑器只读态、
-/// diff 复用 Git 只读 diff 组件。
+/// 「终端 / 焦点 / 改动 diff」。焦点 = 智能体正在干什么，跟随最新工具
+/// 活动自动切内容（读/改文件→文件只读视图定位相关行、跑命令→该命令
+/// 实况输出、网搜/知识库→查询与结果摘要、思考→当前步骤说明）。
+/// UI 先行阶段三个 tab 均为占位；接真实现时：终端复用工作区终端会话
+/// 视图、焦点由最新 ToolCallEvent 驱动、diff 复用 Git 只读 diff 组件。
 class WorkbenchPage extends StatefulWidget {
   const WorkbenchPage({required this.task, super.key});
 
@@ -30,7 +32,7 @@ class _WorkbenchPageState extends State<WorkbenchPage>
 
   static const _tabs = [
     (LucideIcons.terminal, '终端'),
-    (LucideIcons.eye, '正在看'),
+    (LucideIcons.eye, '焦点'),
     (LucideIcons.gitCompareArrows, 'diff'),
   ];
 
@@ -108,7 +110,9 @@ class _WorkbenchPageState extends State<WorkbenchPage>
             icon: _tabs[_tab].$1,
             label: switch (_tab) {
               0 => '终端实况\n（接真实现时复用工作区终端会话视图）',
-              1 => 'AI 正在看的文件\n（跟随 read_file 实时定位，复用编辑器只读态）',
+              1 =>
+                '焦点：智能体正在干什么\n（跟随最新工具活动自动切换：读/改文件、'
+                    '跑命令、网搜、思考…）',
               _ => '改动 diff（P1）\n（复用 Git 只读 diff 组件）',
             },
           ),

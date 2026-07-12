@@ -76,8 +76,8 @@ class AgentSettingsTab extends ConsumerWidget {
               onChanged: c.setAutoCollapseWorkSessions,
             ),
             _SwitchRow(
-              title: '工作台跟随 AI 文件',
-              description: '右页自动打开 AI 正在查看的文件',
+              title: '焦点跟随智能体活动',
+              description: '右页焦点 tab 自动切到智能体当前在做的事',
               value: s.followAiFile,
               onChanged: c.setFollowAiFile,
             ),
