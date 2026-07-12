@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/plan_panel.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/timeline_blocks.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/agent_event_tile.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/plan_ready_card.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/work_segment_tile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/working_indicator_tile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_input_bar.dart';
@@ -85,6 +86,11 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
     final blocks = buildTimelineBlocks(events, collapse: collapse);
     final showWorking = widget.task.status == AgentTaskStatus.running &&
         needsWorkingIndicator(events);
+    // Plan 模式收尾（方案已出完）→ 事件流末尾出「方案已就绪」卡，
+    // 一键转 Code 继续执行（设计初稿 §七）。
+    final showPlanReady = widget.task.mode == AgentSessionMode.plan &&
+        widget.task.status == AgentTaskStatus.done;
+    final trailing = (showWorking ? 1 : 0) + (showPlanReady ? 1 : 0);
 
     return Column(
       children: [
@@ -100,9 +106,11 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
                 child: ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-                  itemCount: blocks.length + (showWorking ? 1 : 0),
+                  itemCount: blocks.length + trailing,
                   itemBuilder: (context, i) => i >= blocks.length
-                      ? const WorkingIndicatorTile()
+                      ? (showPlanReady
+                          ? PlanReadyCard(task: widget.task)
+                          : const WorkingIndicatorTile())
                       : switch (blocks[i]) {
                           final SegmentBlock b => WorkSegmentTile(
                               block: b,

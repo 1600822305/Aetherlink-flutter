@@ -95,16 +95,23 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     return task;
   }
 
-  /// 给已有任务发消息：执行中排队注入（L3），非执行中落消息并续跑。
+  /// 给已有任务发消息：执行中排队注入（L3），非执行中落消息并续跑；
+  /// [mode] 非空时同步话题模式（输入区 chips 中途切模式）。
   Future<void> sendMessage(
     AgentTask task,
     String text, {
     bool queued = false,
+    AgentSessionMode? mode,
   }) async {
+    if (!queued && mode != null && mode != task.mode) {
+      await _store().appendStatusChange(
+          task.id, '模式切换：${task.mode.name} → ${mode.name}');
+    }
     await _store().appendUserMessage(task.id, text, queued: queued);
     if (!queued) {
       final updated = task.copyWith(
         status: AgentTaskStatus.running,
+        mode: mode,
         updatedAt: DateTime.now(),
         lastEventSummary: text,
       );
@@ -125,6 +132,22 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     final updated = task.copyWith(
       status: AgentTaskStatus.running,
       updatedAt: DateTime.now(),
+    );
+    ref.read(agentTasksProvider.notifier).apply(updated);
+    _run(updated);
+  }
+
+  /// Plan→Code 一键转（设计初稿 §七）：方案确认后切 Code 模式，
+  /// 注入确认消息并续跑执行（切模式出审计事件）。
+  Future<void> convertPlanToCode(AgentTask task) async {
+    if (state.contains(task.id)) return;
+    await _store().appendStatusChange(task.id, '模式切换：plan → code（方案已确认）');
+    await _store().appendUserMessage(task.id, '方案已确认，请按方案开始执行。');
+    final updated = task.copyWith(
+      status: AgentTaskStatus.running,
+      mode: AgentSessionMode.code,
+      updatedAt: DateTime.now(),
+      lastEventSummary: '方案已确认，转 Code 执行',
     );
     ref.read(agentTasksProvider.notifier).apply(updated);
     _run(updated);

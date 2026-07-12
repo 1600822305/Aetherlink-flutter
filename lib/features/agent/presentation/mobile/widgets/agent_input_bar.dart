@@ -39,6 +39,16 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
   }
 
   @override
+  void didUpdateWidget(covariant AgentInputBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 切话题 / 任务模式外部变更（如 Plan→Code 一键转）时同步 chip。
+    final mode = widget.task?.mode;
+    if (mode != null && mode != oldWidget.task?.mode && mode != _mode) {
+      setState(() => _mode = mode);
+    }
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
@@ -77,9 +87,10 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
     final executing = task.status == AgentTaskStatus.running ||
         task.status == AgentTaskStatus.waitingApproval;
     if (!executing) {
-      // paused/waitingInput/done/failed/cancelled：落消息并续跑。
+      // paused/waitingInput/done/failed/cancelled：落消息并续跑（带上
+      // chips 当前模式，中途切模式在这里生效）。
       _controller.clear();
-      await runner.sendMessage(task, text);
+      await runner.sendMessage(task, text, mode: _mode);
       return;
     }
     final action = await showModalBottomSheet<String>(
