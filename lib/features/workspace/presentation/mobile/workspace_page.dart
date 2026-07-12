@@ -17,6 +17,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_restore.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/recent_files_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_file_tree.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_file_viewer.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_terminal_page.dart';
@@ -184,14 +185,14 @@ class _WorkspaceMiddlePage extends ConsumerWidget {
 }
 
 /// Shown on the middle page when no file is open.
-class _EmptyEditor extends StatelessWidget {
+class _EmptyEditor extends ConsumerWidget {
   const _EmptyEditor({required this.topInset, required this.onBack});
 
   final double topInset;
   final VoidCallback onBack;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final topPad = MediaQuery.paddingOf(context).top + topInset + 4;
     return ColoredBox(
@@ -211,11 +212,19 @@ class _EmptyEditor extends StatelessWidget {
                     icon: const Icon(LucideIcons.arrowLeft, size: 20),
                     onPressed: onBack,
                   ),
-                  Text(
-                    '编辑器',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
+                  Expanded(
+                    child: Text(
+                      '编辑器',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
+                  ),
+                  IconButton(
+                    tooltip: '最近打开',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(LucideIcons.history, size: 18),
+                    onPressed: () => showRecentFilesSheet(context, ref),
                   ),
                 ],
               ),

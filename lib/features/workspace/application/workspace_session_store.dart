@@ -33,6 +33,14 @@ const String kTerminalFontSizeKey = 'workspace_terminal_font_size';
 /// Absent means all defaults (font 13, tab width 2, soft wrap off).
 const String kEditorSettingsKey = 'workspace_editor_settings';
 
+/// Setting key for the editor find bar's query history (a JSON string list,
+/// most recent first). Absent means no history yet.
+const String kEditorFindHistoryKey = 'workspace_find_history';
+
+/// Setting key for the per-workspace recent-files map (a JSON object:
+/// workspaceId → list of `WorkspaceEntry.toJson()`, most recent first).
+const String kWorkspaceRecentFilesKey = 'workspace_recent_files';
+
 /// The persisted middle-page session: the open file tabs of [workspaceId] and
 /// which one was active.
 class WorkspaceSession {

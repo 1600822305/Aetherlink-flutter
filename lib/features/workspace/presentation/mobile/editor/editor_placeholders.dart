@@ -17,12 +17,17 @@ class UnsupportedFilePlaceholder extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.message,
+    this.onOpenExternally,
   });
 
   final WorkspaceEntry entry;
   final IconData icon;
   final String title;
   final String message;
+
+  /// When set, shows a 「用其他应用打开」 escape hatch that exports the file
+  /// to the OS share sheet.
+  final VoidCallback? onOpenExternally;
 
   @override
   Widget build(BuildContext context) {
@@ -50,6 +55,14 @@ class UnsupportedFilePlaceholder extends StatelessWidget {
               constraints: const BoxConstraints(maxWidth: 360),
               child: _InfoTable(entry: entry),
             ),
+            if (onOpenExternally != null) ...[
+              const SizedBox(height: 16),
+              FilledButton.tonalIcon(
+                icon: const Icon(LucideIcons.externalLink, size: 16),
+                label: const Text('用其他应用打开'),
+                onPressed: onOpenExternally,
+              ),
+            ],
           ],
         ),
       ),
@@ -141,17 +154,27 @@ String formatMtime(int mtime) {
 class EditorPlaceholders {
   const EditorPlaceholders._();
 
-  static Widget binary(WorkspaceEntry entry) => UnsupportedFilePlaceholder(
+  static Widget binary(
+    WorkspaceEntry entry, {
+    VoidCallback? onOpenExternally,
+  }) =>
+      UnsupportedFilePlaceholder(
         entry: entry,
         icon: LucideIcons.fileX,
         title: '二进制文件',
         message: '该文件包含非文本内容,暂不支持查看/编辑。',
+        onOpenExternally: onOpenExternally,
       );
 
-  static Widget tooLarge(WorkspaceEntry entry) => UnsupportedFilePlaceholder(
+  static Widget tooLarge(
+    WorkspaceEntry entry, {
+    VoidCallback? onOpenExternally,
+  }) =>
+      UnsupportedFilePlaceholder(
         entry: entry,
         icon: LucideIcons.fileWarning,
         title: '文件过大',
         message: '该文件超过可打开上限,暂不支持查看/编辑。',
+        onOpenExternally: onOpenExternally,
       );
 }

@@ -32,6 +32,7 @@ import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_replace_bar.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_session.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/readable_path.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/workspace_file_share.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 class FileEditor extends ConsumerStatefulWidget {
@@ -326,14 +327,23 @@ class _FileEditorState extends ConsumerState<FileEditor> {
   // The placeholder body for non-text files, or null when the editor's text
   // area should be shown.
   Widget? _placeholder() => switch (_openKind) {
-        FileOpenKind.binary => EditorPlaceholders.binary(widget.entry),
-        FileOpenKind.tooLarge => EditorPlaceholders.tooLarge(widget.entry),
+        FileOpenKind.binary => EditorPlaceholders.binary(
+            widget.entry,
+            onOpenExternally: _shareEntry,
+          ),
+        FileOpenKind.tooLarge => EditorPlaceholders.tooLarge(
+            widget.entry,
+            onOpenExternally: _shareEntry,
+          ),
         FileOpenKind.image => ImagePreview(
             entry: widget.entry,
             backend: ref.read(workspacePreviewBackendProvider)!,
           ),
         _ => null,
       };
+
+  void _shareEntry() =>
+      shareWorkspaceFile(context, ref, entry: widget.entry);
 
   // Drops unsaved edits (used when closing a dirty tab via "放弃").
   void _discard() {
@@ -455,6 +465,9 @@ class _FileEditorState extends ConsumerState<FileEditor> {
               onToggleReplace: () =>
                   setState(() => _showReplace = !_showReplace),
               onClose: () => setState(() => _showFind = false),
+              history: ref.watch(findHistoryProvider),
+              onCommitQuery: (q) =>
+                  ref.read(findHistoryProvider.notifier).add(q),
             ),
           if (_readOnlyReason != null) ReadOnlyBanner(text: _readOnlyReason!),
           if (_externalNotice != null)

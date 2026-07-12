@@ -27,6 +27,8 @@ class FindReplaceBar extends StatefulWidget {
     required this.onReplaceAll,
     required this.onToggleReplace,
     required this.onClose,
+    this.history = const [],
+    this.onCommitQuery,
   });
 
   /// Total matches for the current query (0 when none / empty query).
@@ -50,6 +52,13 @@ class FindReplaceBar extends StatefulWidget {
   final VoidCallback onToggleReplace;
   final VoidCallback onClose;
 
+  /// Recent queries (most recent first) offered in the history menu.
+  final List<String> history;
+
+  /// Called with the query when the user commits it (submit / next / prev),
+  /// so the parent can record it into the history.
+  final void Function(String query)? onCommitQuery;
+
   @override
   State<FindReplaceBar> createState() => _FindReplaceBarState();
 }
@@ -71,6 +80,45 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
         _query.text,
         FindOptions(caseSensitive: _caseSensitive, regex: _regex),
       );
+
+  void _commit() {
+    if (_query.text.trim().isEmpty) return;
+    widget.onCommitQuery?.call(_query.text);
+  }
+
+  Future<void> _showHistory() async {
+    final box = context.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (box == null || overlay == null) return;
+    final origin = box.localToGlobal(Offset.zero, ancestor: overlay);
+    final picked = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        origin.dx + 8,
+        origin.dy + box.size.height,
+        overlay.size.width - origin.dx - box.size.width,
+        0,
+      ),
+      items: [
+        for (final q in widget.history)
+          PopupMenuItem<String>(
+            value: q,
+            height: 36,
+            child: Text(
+              q,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    _query.text = picked;
+    _query.selection = TextSelection.collapsed(offset: picked.length);
+    _emit();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -104,6 +152,13 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                     padding: EdgeInsets.symmetric(horizontal: 8),
                     child: Icon(LucideIcons.search, size: 18),
                   ),
+                if (widget.history.isNotEmpty)
+                  IconButton(
+                    tooltip: '查找历史',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(LucideIcons.history, size: 18),
+                    onPressed: _showHistory,
+                  ),
                 Expanded(
                   child: TextField(
                     controller: _query,
@@ -115,6 +170,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                       border: OutlineInputBorder(),
                     ),
                     onChanged: (_) => _emit(),
+                    onSubmitted: (_) => _commit(),
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -141,13 +197,23 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
                   tooltip: '上一个',
                   visualDensity: VisualDensity.compact,
                   icon: const Icon(LucideIcons.chevronUp, size: 18),
-                  onPressed: widget.matchCount == 0 ? null : widget.onPrev,
+                  onPressed: widget.matchCount == 0
+                      ? null
+                      : () {
+                          _commit();
+                          widget.onPrev();
+                        },
                 ),
                 IconButton(
                   tooltip: '下一个',
                   visualDensity: VisualDensity.compact,
                   icon: const Icon(LucideIcons.chevronDown, size: 18),
-                  onPressed: widget.matchCount == 0 ? null : widget.onNext,
+                  onPressed: widget.matchCount == 0
+                      ? null
+                      : () {
+                          _commit();
+                          widget.onNext();
+                        },
                 ),
                 IconButton(
                   tooltip: '关闭',

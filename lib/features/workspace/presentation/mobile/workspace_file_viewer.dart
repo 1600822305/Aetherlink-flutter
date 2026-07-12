@@ -14,6 +14,7 @@ import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_registry.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/file_editor.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/file_tab_strip.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/recent_files_sheet.dart';
 
 class WorkspaceFileViewer extends ConsumerWidget {
   const WorkspaceFileViewer({
@@ -81,6 +82,12 @@ class WorkspaceFileViewer extends ConsumerWidget {
                           .activate(p),
                       onClose: (p) => _close(context, ref, p),
                     ),
+                  ),
+                  IconButton(
+                    tooltip: '最近打开',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(LucideIcons.history, size: 18),
+                    onPressed: () => showRecentFilesSheet(context, ref),
                   ),
                 ],
               ),

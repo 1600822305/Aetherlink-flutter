@@ -287,6 +287,126 @@ class EditorSettingsNotifier extends Notifier<EditorSettings> {
   }
 }
 
+/// 查找栏的历史查询（最近在前，上限 [kMaxFindHistory]），持久化于
+/// [kEditorFindHistoryKey]。在提交查询（回车 / 上一个下一个）时记录。
+const int kMaxFindHistory = 20;
+
+final findHistoryProvider =
+    NotifierProvider<FindHistoryNotifier, List<String>>(
+  FindHistoryNotifier.new,
+);
+
+class FindHistoryNotifier extends Notifier<List<String>> {
+  @override
+  List<String> build() {
+    ref
+        .read(appSettingsStoreProvider)
+        .getSetting(kEditorFindHistoryKey)
+        .then((raw) {
+      if (raw == null || raw.isEmpty) return;
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          state = decoded.whereType<String>().toList();
+        }
+      } catch (_) {}
+    });
+    return const [];
+  }
+
+  void add(String query) {
+    final q = query.trim();
+    if (q.isEmpty) return;
+    final next = [q, ...state.where((e) => e != q)];
+    if (next.length > kMaxFindHistory) next.removeRange(kMaxFindHistory, next.length);
+    if (next.length == state.length &&
+        state.isNotEmpty &&
+        state.first == q) {
+      return;
+    }
+    state = next;
+    ref
+        .read(appSettingsStoreProvider)
+        .saveSetting(kEditorFindHistoryKey, jsonEncode(next));
+  }
+
+  void clear() {
+    state = const [];
+    ref.read(appSettingsStoreProvider).saveSetting(kEditorFindHistoryKey, '[]');
+  }
+}
+
+/// 当前工作区的「最近打开」文件（最近在前，上限 [kMaxRecentFiles]）。
+/// 持久化为 workspaceId → entries 的单个 JSON 对象（[kWorkspaceRecentFilesKey]），
+/// 切换工作区时重新加载对应列表。
+const int kMaxRecentFiles = 20;
+
+final recentFilesProvider =
+    NotifierProvider<RecentFilesNotifier, List<WorkspaceEntry>>(
+  RecentFilesNotifier.new,
+);
+
+class RecentFilesNotifier extends Notifier<List<WorkspaceEntry>> {
+  @override
+  List<WorkspaceEntry> build() {
+    final workspace = ref.watch(currentWorkspaceProvider);
+    if (workspace != null) {
+      ref
+          .read(appSettingsStoreProvider)
+          .getSetting(kWorkspaceRecentFilesKey)
+          .then((raw) {
+        final entries = _decodeMap(raw)[workspace.id];
+        if (entries != null && entries.isNotEmpty) state = entries;
+      });
+    }
+    return const [];
+  }
+
+  /// 记录一次打开（去重提前，超上限丢弃最旧）。
+  void record(WorkspaceEntry entry) {
+    final workspace = ref.read(currentWorkspaceProvider);
+    if (workspace == null) return;
+    final next = [entry, ...state.where((e) => e.path != entry.path)];
+    if (next.length > kMaxRecentFiles) {
+      next.removeRange(kMaxRecentFiles, next.length);
+    }
+    state = next;
+    _persist(workspace.id, next);
+  }
+
+  Future<void> _persist(String workspaceId, List<WorkspaceEntry> entries) async {
+    final store = ref.read(appSettingsStoreProvider);
+    final map = _decodeMap(await store.getSetting(kWorkspaceRecentFilesKey));
+    map[workspaceId] = entries;
+    await store.saveSetting(
+      kWorkspaceRecentFilesKey,
+      jsonEncode({
+        for (final e in map.entries)
+          e.key: [for (final t in e.value) t.toJson()],
+      }),
+    );
+  }
+
+  static Map<String, List<WorkspaceEntry>> _decodeMap(String? raw) {
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return {};
+      return {
+        for (final e in decoded.entries)
+          if (e.key is String && e.value is List)
+            e.key as String: [
+              for (final item in e.value as List)
+                if (item is Map)
+                  WorkspaceEntry.fromJson(Map<String, dynamic>.from(item)),
+            ],
+      };
+    } catch (_) {
+      return {};
+    }
+  }
+}
+
 /// Whether the three-page horizontal pager is locked. When `true` the shell
 /// disables page swiping so pinch-zoom / drag inside the editor can't
 /// accidentally flip pages. Toggled from the editor header's lock button.
@@ -354,6 +474,9 @@ class OpenWorkspaceFiles extends Notifier<WorkspaceTabsState> {
   }) {
     if (line != null) {
       ref.read(editorJumpProvider.notifier).request(entry.path, line);
+    }
+    if (!entry.isDirectory) {
+      ref.read(recentFilesProvider.notifier).record(entry);
     }
     if (state.tabs.any((t) => t.path == entry.path)) {
       state = state.copyWith(activePath: entry.path);
