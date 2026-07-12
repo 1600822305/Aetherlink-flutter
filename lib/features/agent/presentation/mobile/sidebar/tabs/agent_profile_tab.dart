@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_profile_edit_page.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/widgets/agent_sidebar_widgets.dart';
 
 class AgentProfileTab extends ConsumerWidget {
   const AgentProfileTab({required this.onGoToTopics, super.key});
@@ -28,6 +29,20 @@ class AgentProfileTab extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // 标头 + 胶囊新建按钮（与聊天助手 tab 同款布局）。
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+          child: AgentSidebarTabHeader(
+            title: '所有智能体',
+            trailing: [
+              AgentSidebarPillButton(
+                icon: LucideIcons.plus,
+                label: '新建智能体',
+                onPressed: () => showAgentProfileEditPage(context),
+              ),
+            ],
+          ),
+        ),
         Expanded(
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -45,9 +60,6 @@ class AgentProfileTab extends ConsumerWidget {
                     onGoToTopics();
                   },
                 ),
-              _NewProfileRow(
-                onTap: () => showAgentProfileEditPage(context),
-              ),
             ],
           ),
         ),
@@ -86,9 +98,7 @@ class _ProfileItem extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Material(
-        color: selected
-            ? cs.primary.withValues(alpha: 0.08)
-            : Colors.transparent,
+        color: selected ? kAgentSidebarSelectedItemBg : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: onSelect,
@@ -143,38 +153,3 @@ class _ProfileItem extends StatelessWidget {
   }
 }
 
-class _NewProfileRow extends StatelessWidget {
-  const _NewProfileRow({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final muted = theme.colorScheme.onSurface.withValues(alpha: 0.6);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            child: Row(
-              children: [
-                Icon(LucideIcons.plus, size: 18, color: muted),
-                const SizedBox(width: 10),
-                Text(
-                  '新建智能体',
-                  style: theme.textTheme.bodyMedium?.copyWith(color: muted),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

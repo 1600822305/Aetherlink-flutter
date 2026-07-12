@@ -8,12 +8,9 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/widgets/agent_sidebar_widgets.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
-
-/// 选中话题底色：与聊天侧边栏 `kSidebarSelectedItemBg` 同值（样式对齐，
-/// 不 import chat 内部）。
-const Color _kSelectedTopicBg = Color(0x141976D2);
 
 class AgentTopicTab extends ConsumerWidget {
   const AgentTopicTab({super.key});
@@ -43,34 +40,21 @@ class AgentTopicTab extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // 当前智能体标头 + 新建话题（与聊天话题 tab 的助手标头一致定位）。
+        // 标头 + 胶囊新建按钮（与聊天话题 tab 同款布局）。
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
-          child: Row(
-            children: [
-              Text(profile.emoji, style: const TextStyle(fontSize: 15)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  profile.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              IconButton(
-                tooltip: '新建话题',
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+          child: AgentSidebarTabHeader(
+            title: '${profile.emoji} ${profile.name}',
+            trailing: [
+              AgentSidebarPillButton(
+                icon: LucideIcons.plus,
+                label: '新建话题',
                 // 已拍板：新话题是干净空态（像普通聊天），发第一条消息才开始
                 // 任务；工作区继承自当前智能体，不单独选。
                 onPressed: () {
                   ref.read(selectedAgentTaskIdProvider.notifier).select(null);
                   Navigator.of(context).pop();
                 },
-                iconSize: 18,
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(LucideIcons.plus),
               ),
             ],
           ),
@@ -131,24 +115,20 @@ class _TaskCard extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final statusColor = agentStatusColor(context, task.status);
+    // 状态只靠开头状态灯区分，卡片不描边；waitingApproval/Input 另加 ⚠ 图标。
     final needsAttention = task.status == AgentTaskStatus.waitingApproval ||
         task.status == AgentTaskStatus.waitingInput;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
       child: Material(
-        color: selected ? _kSelectedTopicBg : cs.onSurface.withValues(alpha: 0.03),
+        color: selected
+            ? kAgentSidebarSelectedItemBg
+            : cs.onSurface.withValues(alpha: 0.03),
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(12),
-          child: Container(
-            decoration: needsAttention
-                ? BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    border:
-                        Border.all(color: statusColor.withValues(alpha: 0.6)),
-                  )
-                : null,
+          child: Padding(
             padding: const EdgeInsets.all(10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
