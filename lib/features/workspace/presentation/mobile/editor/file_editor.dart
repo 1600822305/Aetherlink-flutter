@@ -44,6 +44,7 @@ class FileEditor extends ConsumerStatefulWidget {
 class _FileEditorState extends ConsumerState<FileEditor> {
   final _controller = TextEditingController();
   final _focus = FocusNode();
+  final _undo = UndoHistoryController();
   late final FindSession _find = FindSession(_controller, _focus);
   late Future<void> _ready;
 
@@ -119,6 +120,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     ref.read(editorRegistryProvider).unregister(_path);
     ref.read(dirtyFilesProvider.notifier).clear(_path);
     _controller.dispose();
+    _undo.dispose();
     _focus.dispose();
     super.dispose();
   }
@@ -373,10 +375,16 @@ class _FileEditorState extends ConsumerState<FileEditor> {
       return;
     }
     if (!mounted) return;
+    _jumpToLine(req.line);
+  }
+
+  // 把光标移到目标行首并请求滚动（同时驱动只读查看器与编辑态 TextField）。
+  // [target] 是 1-based 行号，超出范围会被夹到有效行。
+  void _jumpToLine(int target) {
     final text = _controller.text;
     var offset = 0;
     var line = 1;
-    while (line < req.line) {
+    while (line < target) {
       final nl = text.indexOf('\n', offset);
       if (nl < 0) break;
       offset = nl + 1;
@@ -387,6 +395,13 @@ class _FileEditorState extends ConsumerState<FileEditor> {
       _jumpLine = line;
       _jumpToken++;
     });
+  }
+
+  // 状态栏点击：弹输入框，跳到用户输入的行。
+  Future<void> _promptJumpToLine(int lineCount) async {
+    final target = await showJumpToLineDialog(context, maxLine: lineCount);
+    if (target == null || !mounted) return;
+    _jumpToLine(target);
   }
 
   static String _fmtBytes(int n) {
@@ -464,9 +479,14 @@ class _FileEditorState extends ConsumerState<FileEditor> {
               commentPrefix: lineCommentForLanguage(
                 languageForFileName(widget.entry.name),
               ),
+              undoController: _undo,
             ),
           ),
-          if (_hasTextBody) EditorStatusBar(controller: _controller),
+          if (_hasTextBody)
+            EditorStatusBar(
+              controller: _controller,
+              onTapCaret: _promptJumpToLine,
+            ),
         ],
       ),
     );
@@ -496,6 +516,35 @@ class _FileEditorState extends ConsumerState<FileEditor> {
             setState(() => _editing = true);
             _focus.requestFocus();
           },
+        ),
+      if (_editing)
+        ValueListenableBuilder<UndoHistoryValue>(
+          valueListenable: _undo,
+          builder: (context, value, _) => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: '撤销',
+                icon: const Icon(LucideIcons.undo2, size: 18),
+                onPressed: value.canUndo
+                    ? () {
+                        _undo.undo();
+                        _focus.requestFocus();
+                      }
+                    : null,
+              ),
+              IconButton(
+                tooltip: '重做',
+                icon: const Icon(LucideIcons.redo2, size: 18),
+                onPressed: value.canRedo
+                    ? () {
+                        _undo.redo();
+                        _focus.requestFocus();
+                      }
+                    : null,
+              ),
+            ],
+          ),
         ),
       if (_editing &&
           lineCommentForLanguage(languageForFileName(widget.entry.name)) !=

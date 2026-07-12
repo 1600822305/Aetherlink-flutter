@@ -2,6 +2,7 @@
 // editable), the "too large → preview only" banner, and the read error state.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_text_area.dart';
@@ -35,6 +36,47 @@ Future<LeaveAction?> showUnsavedDialog(BuildContext context, String name) {
   );
 }
 
+/// 「跳到行」输入对话框：返回 1..[maxLine] 的目标行号，取消返回 null。
+Future<int?> showJumpToLineDialog(
+  BuildContext context, {
+  required int maxLine,
+}) {
+  final controller = TextEditingController();
+  int? parse() {
+    final n = int.tryParse(controller.text.trim());
+    if (n == null || n < 1) return null;
+    return n > maxLine ? maxLine : n;
+  }
+
+  return showDialog<int>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('跳转到行'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        keyboardType: TextInputType.number,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        decoration: InputDecoration(
+          hintText: '1 - $maxLine',
+          isDense: true,
+        ),
+        onSubmitted: (_) => Navigator.of(context).pop(parse()),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(parse()),
+          child: const Text('跳转'),
+        ),
+      ],
+    ),
+  ).whenComplete(controller.dispose);
+}
+
 /// The editor's main content: loading spinner, read error, or the text area.
 class EditorContent extends StatelessWidget {
   const EditorContent({
@@ -53,11 +95,16 @@ class EditorContent extends StatelessWidget {
     this.jumpToken = 0,
     this.language,
     this.commentPrefix,
+    this.undoController,
   });
 
   final Future<void> ready;
   final TextEditingController controller;
   final FocusNode focusNode;
+
+  /// Shared undo/redo history for the editable field (drives the header's
+  /// 撤销/重做 buttons and the field's own gestures off one stack).
+  final UndoHistoryController? undoController;
   final bool editing;
   final double fontSize;
   final ValueChanged<double> onFontSize;
@@ -124,6 +171,7 @@ class EditorContent extends StatelessWidget {
           fontSize: fontSize,
           onFontSize: onFontSize,
           commentPrefix: commentPrefix,
+          undoController: undoController,
         );
       },
     );
@@ -136,9 +184,13 @@ class EditorContent extends StatelessWidget {
 /// the whole editor) and recomputes the O(text) line/char counts solely when
 /// the text actually changes — caret-only moves reuse the cached counts.
 class EditorStatusBar extends StatefulWidget {
-  const EditorStatusBar({super.key, required this.controller});
+  const EditorStatusBar({super.key, required this.controller, this.onTapCaret});
 
   final TextEditingController controller;
+
+  /// Tapping the caret label opens the 「跳到行」 prompt; null hides the
+  /// affordance (non-editable / no jump target).
+  final void Function(int lineCount)? onTapCaret;
 
   @override
   State<EditorStatusBar> createState() => _EditorStatusBarState();
@@ -238,7 +290,28 @@ class _EditorStatusBarState extends State<EditorStatusBar> {
         children: [
           Text('$lineCount 行 · $charCount 字符', style: style),
           const Spacer(),
-          Text(caretLabel, style: style),
+          if (widget.onTapCaret != null)
+            InkWell(
+              onTap: () => widget.onTapCaret!(lineCount),
+              borderRadius: BorderRadius.circular(4),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      LucideIcons.cornerDownRight,
+                      size: 13,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(caretLabel, style: style),
+                  ],
+                ),
+              ),
+            )
+          else
+            Text(caretLabel, style: style),
         ],
       ),
     );

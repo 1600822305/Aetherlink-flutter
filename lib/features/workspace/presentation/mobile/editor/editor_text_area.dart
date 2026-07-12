@@ -33,10 +33,15 @@ class EditorTextArea extends StatefulWidget {
     required this.fontSize,
     required this.onFontSize,
     this.commentPrefix,
+    this.undoController,
   });
 
   final TextEditingController controller;
   final FocusNode focusNode;
+
+  /// Shared undo/redo history, so the header's 撤销/重做 buttons drive the same
+  /// stack as the field's built-in gestures.
+  final UndoHistoryController? undoController;
   final bool editing;
   final double fontSize;
   final ValueChanged<double> onFontSize;
@@ -364,6 +369,7 @@ class _EditorTextAreaState extends State<EditorTextArea> {
     return TextField(
       controller: widget.controller,
       focusNode: widget.focusNode,
+      undoController: widget.undoController,
       scrollController: _textScroll,
       readOnly: !widget.editing,
       expands: true,
