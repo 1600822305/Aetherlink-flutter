@@ -4,9 +4,10 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
 
-/// 底部输入区（UI 稿输入区，已拍板）：
-/// 上沿 chips 行 = 模式快切（Code/Ask/Plan）+ 模型选择（复用聊天选择器，
-/// UI 阶段先占位）；下行 = ＋附件、输入框、发送/中断变形按钮（§五打断交互）。
+/// 底部输入区（UI 稿输入区，已拍板）：与普通聊天输入框同款视觉——
+/// 圆角纸面卡片，上层无边框文本区域，下层单独一行按钮工具条
+/// （左：＋附件、模式快切 Code/Ask/Plan、模型 chip；右：发送/中断变形按钮，
+/// §五打断交互）。
 class AgentInputBar extends StatefulWidget {
   const AgentInputBar({required this.task, super.key});
 
@@ -130,89 +131,145 @@ class _AgentInputBarState extends State<AgentInputBar> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     final running = widget.task.status == AgentTaskStatus.running;
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+    // 与普通聊天输入框同款卡片 chrome（InputBoxComposer defaultStyle：
+    // 圆角 8、细边框、轻投影、纸面 surface），外围透明 + 8px gutter。
+    final card = DecoratedBox(
       decoration: BoxDecoration(
         color: cs.surface,
-        border: Border(
-          top: BorderSide(color: cs.onSurface.withValues(alpha: 0.08)),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isDark ? const Color(0xCC3C3C3C) : const Color(0xCCE6E6E6),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 72),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 上层：无边框文本区域。
+              Padding(
+                padding: const EdgeInsets.only(left: 8, right: 2),
+                child: TextField(
+                  controller: _controller,
+                  minLines: 1,
+                  maxLines: 5,
+                  style: const TextStyle(fontSize: 16, height: 1.4),
+                  decoration: const InputDecoration(
+                    hintText: '追加指令…',
+                    hintStyle: TextStyle(fontSize: 16, height: 1.4),
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(vertical: 10),
+                  ),
+                ),
+              ),
+              // 下层：单独一行按钮工具条（space-between，36px 高）。
+              SizedBox(
+                height: 36,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          // TODO(agent): 附件面板（图片/文件/引用工作区文件）
+                          onPressed: () {},
+                          icon: const Icon(LucideIcons.plus, size: 18),
+                          padding: const EdgeInsets.all(6),
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints(
+                              minWidth: 32, minHeight: 32),
+                        ),
+                        const SizedBox(width: 2),
+                        _Chip(
+                          icon: LucideIcons.keyboard,
+                          label: '${agentModeLabel(_mode)} ▾',
+                          onTap: _onModeTap,
+                        ),
+                        const SizedBox(width: 6),
+                        _Chip(
+                          icon: LucideIcons.brain,
+                          label: '${widget.task.modelLabel} ▾',
+                          onTap: () {}, // TODO(agent): 复用聊天模型选择器
+                        ),
+                      ],
+                    ),
+                    if (_hasText)
+                      IconButton(
+                        onPressed: _onSendPressed,
+                        icon: Icon(
+                          LucideIcons.send,
+                          size: 18,
+                          color: isDark
+                              ? const Color(0xFF4CAF50)
+                              : const Color(0xFF09BB07),
+                        ),
+                        padding: const EdgeInsets.all(6),
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(
+                            minWidth: 32, minHeight: 32),
+                      )
+                    else if (running)
+                      GestureDetector(
+                        onLongPress: _onForceStopLongPress,
+                        child: IconButton(
+                          onPressed: _onPausePressed,
+                          icon: const Icon(
+                            LucideIcons.pause,
+                            size: 18,
+                            color: Color(0xFFFF4D4F),
+                          ),
+                          padding: const EdgeInsets.all(6),
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints(
+                              minWidth: 32, minHeight: 32),
+                        ),
+                      )
+                    else
+                      IconButton(
+                        onPressed: null,
+                        icon: Icon(
+                          LucideIcons.send,
+                          size: 18,
+                          color: isDark
+                              ? const Color(0xFF555555)
+                              : const Color(0xFFCCCCCC),
+                        ),
+                        padding: const EdgeInsets.all(6),
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(
+                            minWidth: 32, minHeight: 32),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
+    );
+
+    return Material(
+      type: MaterialType.transparency,
       child: SafeArea(
         top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                _Chip(
-                  icon: LucideIcons.keyboard,
-                  label: '${agentModeLabel(_mode)} ▾',
-                  onTap: _onModeTap,
-                ),
-                const Spacer(),
-                _Chip(
-                  icon: LucideIcons.brain,
-                  label: '${widget.task.modelLabel} ▾',
-                  onTap: () {}, // TODO(agent): 复用聊天模型选择器
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                IconButton(
-                  onPressed: () {}, // TODO(agent): 附件面板（图片/文件/引用工作区文件）
-                  icon: const Icon(LucideIcons.plus, size: 20),
-                  visualDensity: VisualDensity.compact,
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    minLines: 1,
-                    maxLines: 4,
-                    decoration: InputDecoration(
-                      hintText: '追加指令…',
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 9),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        borderSide: BorderSide(
-                          color: cs.onSurface.withValues(alpha: 0.15),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                if (_hasText)
-                  IconButton.filled(
-                    onPressed: _onSendPressed,
-                    icon: const Icon(LucideIcons.send, size: 18),
-                    visualDensity: VisualDensity.compact,
-                  )
-                else if (running)
-                  GestureDetector(
-                    onLongPress: _onForceStopLongPress,
-                    child: IconButton.filledTonal(
-                      onPressed: _onPausePressed,
-                      icon: const Icon(LucideIcons.pause, size: 18),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  )
-                else
-                  const IconButton.filled(
-                    onPressed: null,
-                    icon: Icon(LucideIcons.send, size: 18),
-                    visualDensity: VisualDensity.compact,
-                  ),
-              ],
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: card,
         ),
       ),
     );
