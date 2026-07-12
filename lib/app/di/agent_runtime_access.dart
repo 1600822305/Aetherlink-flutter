@@ -7,6 +7,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_control_tools.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_system_prompt.dart';
@@ -198,6 +199,38 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     );
   }
 
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events,
+  ) async {
+    final ref = _refOf();
+    final current = await ref.read(appCurrentModelProvider.future);
+    if (current == null) return '';
+    final model = effectiveModelFor(current);
+    final gateway = ref.read(appLlmGatewayFactoryProvider).forModel(model);
+
+    final request = LlmChatRequest(
+      model: model,
+      messages: [
+        LlmMessage(
+          role: MessageRole.user,
+          content: _compactionTranscript(events),
+        ),
+      ],
+      system: '你是上下文压缩器。把下面一段智能体执行过程压缩成简洁摘要，'
+          '供后续循环替代原文继续任务。必须保留：用户的目标与约束、已完成的'
+          '关键动作及结果、重要文件路径/命令/数据、当前待办与未解决问题。'
+          '直接输出摘要正文，不要寒暄。',
+    );
+
+    final buffer = StringBuffer();
+    await for (final chunk in gateway.streamChat(request)) {
+      if (chunk is LlmTextDelta) buffer.write(chunk.text);
+    }
+    return buffer.toString();
+  }
+
   /// [2 环境上下文]：平台 + 工作区摘要 + 本轮可用工具清单。
   Future<String> _environmentContext(Ref ref) async {
     String? workspace;
@@ -235,12 +268,13 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   }
 }
 
-/// 事件流 → LLM 消息重放：用户消息/助手叙述原样；每个工具事件展开为
-/// assistant tool_call + 结果回填两条。计划/状态/压缩事件不进消息
-/// （计划走系统提示置尾，压缩属阶段⑤）。
+/// 事件流 → LLM 消息重放：先经 [foldCompactedEvents] 把被压缩覆盖的
+/// 早期事件换成摘要条目，再展开：用户消息/助手叙述原样；每个工具事件
+/// 展开为 assistant tool_call + 结果回填两条；压缩摘要以标记段落进入
+/// 用户消息。计划/状态事件不进消息（计划走系统提示置尾）。
 List<LlmMessage> _replayMessages(List<AgentEvent> events) {
   final messages = <LlmMessage>[];
-  for (final event in events) {
+  for (final event in foldCompactedEvents(events)) {
     switch (event) {
       case UserMessageEvent():
         messages.add(
@@ -274,14 +308,47 @@ List<LlmMessage> _replayMessages(List<AgentEvent> events) {
             toolName: event.toolName,
           ),
         );
+      case CompactionEvent():
+        messages.add(
+          LlmMessage(
+            role: MessageRole.user,
+            content: '[上下文已压缩]更早的执行过程已压缩为以下摘要：\n'
+                '${event.summary}',
+          ),
+        );
       case ReasoningEvent() ||
             PlanUpdateEvent() ||
-            CompactionEvent() ||
             StatusChangeEvent():
         break;
     }
   }
   return messages;
+}
+
+/// 压缩输入的纯文本转录（单条详情截断，控制摘要调用成本）。
+String _compactionTranscript(List<AgentEvent> events) {
+  String clip(String text, [int max = 2000]) =>
+      text.length > max ? '${text.substring(0, max)}…(已截断)' : text;
+  final lines = <String>[];
+  for (final event in events) {
+    switch (event) {
+      case UserMessageEvent():
+        lines.add('[用户] ${clip(event.text)}');
+      case AssistantTextEvent():
+        if (event.text.isNotEmpty) lines.add('[助手] ${clip(event.text)}');
+      case ToolCallEvent():
+        lines.add('[工具 ${event.toolName}] 参数：'
+            '${clip(event.argsDetail ?? event.argSummary, 500)}\n'
+            '结果：${clip(event.resultDetail ?? event.resultSummary)}');
+      case CompactionEvent():
+        lines.add('[早期摘要] ${clip(event.summary)}');
+      case ReasoningEvent() ||
+            PlanUpdateEvent() ||
+            StatusChangeEvent():
+        break;
+    }
+  }
+  return lines.join('\n\n');
 }
 
 String _toolResultText(ToolCallEvent event) => switch (event.state) {

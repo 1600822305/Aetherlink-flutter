@@ -5,11 +5,20 @@ class AgentBudget {
     this.maxRounds = 50,
     this.maxConsecutiveFailures = 5,
     this.toolTimeout = const Duration(minutes: 5),
+    this.compactionTriggerChars = 120000,
+    this.compactionKeepChars = 40000,
   });
 
   final int maxRounds;
   final int maxConsecutiveFailures;
   final Duration toolTimeout;
+
+  /// 上下文重放内容超过该字符量触发 compaction（字符作 token 的
+  /// 粗代理，中文 ≈1 字/token；设计初稿 §5.3 的“窗口 ~70%”的保守取值）。
+  final int compactionTriggerChars;
+
+  /// 压缩后保留给尾部近期事件的字符预算。
+  final int compactionKeepChars;
 
   int _rounds = 0;
   int _consecutiveFailures = 0;

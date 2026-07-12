@@ -70,6 +70,12 @@ abstract class AgentEventStore {
     String taskId,
     String description,
   );
+
+  Future<CompactionEvent> appendCompaction(
+    String taskId, {
+    required int coveredCount,
+    required String summary,
+  });
 }
 
 /// drift 实现：AgentDao 之上的薄封装，seq 从库内最大值续增。
@@ -265,6 +271,23 @@ class DriftAgentEventStore implements AgentEventStore {
       seq: await _nextSeq(taskId),
       at: DateTime.now(),
       description: description,
+    );
+    await _dao.upsertEvents(taskId, [event]);
+    return event;
+  }
+
+  @override
+  Future<CompactionEvent> appendCompaction(
+    String taskId, {
+    required int coveredCount,
+    required String summary,
+  }) async {
+    final event = CompactionEvent(
+      id: _newId('cp'),
+      seq: await _nextSeq(taskId),
+      at: DateTime.now(),
+      coveredCount: coveredCount,
+      summary: summary,
     );
     await _dao.upsertEvents(taskId, [event]);
     return event;

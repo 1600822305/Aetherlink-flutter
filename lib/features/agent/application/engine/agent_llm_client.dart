@@ -51,4 +51,11 @@ abstract class AgentLlmClient {
     void Function(String reasoningSoFar)? onReasoningDelta,
     AgentCancellationToken? cancel,
   });
+
+  /// 上下文压缩（设计初稿 §5.3）：把一段较早的事件压缩成一条摘要文本，
+  /// 供 CompactionEvent 在后续重放中替代被覆盖区间。非流式、不带工具。
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events,
+  );
 }

@@ -4,6 +4,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_cance
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
+import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 
 /// 演示用假 LLM（接真模型前跑通状态机/落库/流式管道）：
 /// 第 1 轮出计划 + 读文件；第 2 轮更新计划 + finish_task。
@@ -80,6 +81,13 @@ class FakeAgentLlmClient implements AgentLlmClient {
       ],
     );
   }
+
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events,
+  ) async =>
+      '（演示摘要）已压缩 ${events.length} 条早期事件。';
 
   Future<void> _streamText(
     String text,

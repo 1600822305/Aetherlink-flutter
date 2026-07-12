@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_budget.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
@@ -218,6 +219,23 @@ class InMemoryAgentEventStore implements AgentEventStore {
     _upsert(taskId, event);
     return event;
   }
+
+  @override
+  Future<CompactionEvent> appendCompaction(
+    String taskId, {
+    required int coveredCount,
+    required String summary,
+  }) async {
+    final event = CompactionEvent(
+      id: _newId(),
+      seq: _nextSeq(taskId),
+      at: DateTime.now(),
+      coveredCount: coveredCount,
+      summary: summary,
+    );
+    _upsert(taskId, event);
+    return event;
+  }
 }
 
 class RecordingTaskGateway implements AgentTaskGateway {
@@ -249,6 +267,69 @@ class AlwaysFailingToolLlm implements AgentLlmClient {
       ],
     );
   }
+
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events,
+  ) async =>
+      '摘要：覆盖 ${events.length} 条';
+}
+
+/// 每轮产出一个大输出工具调用，直到某轮后 finish（测 compaction）。
+class BigOutputLlm implements AgentLlmClient {
+  BigOutputLlm({required this.roundsBeforeFinish});
+
+  final int roundsBeforeFinish;
+  int _round = 0;
+
+  @override
+  Future<AgentLlmTurn> completeTurn(
+    AgentLlmContext context, {
+    void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
+    AgentCancellationToken? cancel,
+  }) async {
+    _round++;
+    if (_round > roundsBeforeFinish) {
+      return AgentLlmTurn(
+        toolCalls: [
+          AgentToolCallRequest(
+            id: 'call-finish',
+            name: kToolFinishTask,
+            argsJson: jsonEncode({'summary': '完成'}),
+            argSummary: '收尾',
+          ),
+        ],
+      );
+    }
+    return AgentLlmTurn(
+      toolCalls: [
+        AgentToolCallRequest(
+          id: 'call-big-$_round',
+          name: 'read_file',
+          argsJson: jsonEncode({'path': 'big-$_round.txt'}),
+          argSummary: 'big-$_round.txt',
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events,
+  ) async =>
+      '摘要：覆盖 ${events.length} 条';
+}
+
+class BigOutputToolExecutor implements AgentToolExecutor {
+  @override
+  Future<AgentToolResult> execute(
+    AgentToolCallRequest call,
+    AgentCancellationToken cancel,
+  ) async =>
+      AgentToolResult(ok: true, summary: 'ok', detail: 'x' * 500);
 }
 
 class FailingToolExecutor implements AgentToolExecutor {
@@ -389,6 +470,54 @@ void main() {
     // 恢复（L7）：重放事件流续跑到 done。
     await buildEngine().run(gateway.last, AgentCancellationToken());
     expect(gateway.last.status, AgentTaskStatus.done);
+  });
+
+  test('上下文超阈值 → 自动 compaction（摘要落库且折叠视图变小）', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    final engine = AgentEngine(
+      llm: BigOutputLlm(roundsBeforeFinish: 12),
+      tools: BigOutputToolExecutor(),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(
+        compactionTriggerChars: 1200,
+        compactionKeepChars: 600,
+      ),
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '连续读大文件');
+
+    await engine.run(task, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.done);
+    final events = await store.getEvents(task.id);
+    final compactions = events.whereType<CompactionEvent>().toList();
+    expect(compactions, isNotEmpty);
+    expect(compactions.first.coveredCount, greaterThan(0));
+    expect(compactions.first.summary, isNotEmpty);
+    // 原始事件不丢（审计），折叠视图被摘要替代且不超预算太多。
+    final folded = foldCompactedEvents(events);
+    expect(folded.length, lessThan(events.whereType<ToolCallEvent>().length +
+        events.whereType<UserMessageEvent>().length + compactions.length));
+    expect(events.whereType<ToolCallEvent>().length, 13);
+  });
+
+  test('foldCompactedEvents：覆盖最早条目并把摘要插到队首', () async {
+    final store = InMemoryAgentEventStore();
+    const taskId = 'task-f';
+    await store.appendUserMessage(taskId, '第一条');
+    await store.appendAssistantText(taskId, '回应一', streaming: false);
+    await store.appendAssistantText(taskId, '回应二', streaming: false);
+    await store.appendCompaction(taskId, coveredCount: 2, summary: '早期摘要');
+    await store.appendUserMessage(taskId, '第二条');
+
+    final folded = foldCompactedEvents(await store.getEvents(taskId));
+    expect(folded.length, 3);
+    expect(folded[0], isA<CompactionEvent>());
+    expect((folded[1] as AssistantTextEvent).text, '回应二');
+    expect((folded[2] as UserMessageEvent).text, '第二条');
   });
 
   test('排队消息在安全点被消费（queued → false）', () async {

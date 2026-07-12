@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_budget.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
@@ -235,6 +236,12 @@ class AgentEngine {
 
           if (cancel.stopRequested) break;
         }
+
+        // ⑦ 自动 compaction（设计初稿 §5.3）：重放视图超阈值时把最早
+        // 一段摘要成 CompactionEvent；失败不阻断任务（下轮再试）。
+        try {
+          await _maybeCompact(current);
+        } catch (_) {}
       }
     } catch (e) {
       await store.appendStatusChange(current.id, '执行出错：$e');
@@ -244,6 +251,24 @@ class AgentEngine {
         lastEventSummary: '执行出错：$e',
       ));
     }
+  }
+
+  Future<void> _maybeCompact(AgentTask task) async {
+    final events = await store.getEvents(task.id);
+    final entries = foldCompactedEvents(events);
+    if (totalContextChars(entries) <= budget.compactionTriggerChars) return;
+    final covered = selectCompactionPrefix(
+      entries,
+      keepChars: budget.compactionKeepChars,
+    );
+    if (covered.isEmpty) return;
+    final summary = await llm.summarizeForCompaction(task, covered);
+    if (summary.trim().isEmpty) return;
+    await store.appendCompaction(
+      task.id,
+      coveredCount: covered.length,
+      summary: summary.trim(),
+    );
   }
 
   List<AgentPlanItem> _parsePlan(AgentToolCallRequest call) {
