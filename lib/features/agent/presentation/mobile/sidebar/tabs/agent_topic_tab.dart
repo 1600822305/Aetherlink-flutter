@@ -1,5 +1,6 @@
-// 话题 tab：当前智能体的话题列表（进行中/历史分组）+ 新建话题
-// （参考聊天侧边栏话题 tab 架构）。
+// 话题 tab：当前智能体的话题单一列表（开头状态灯区分进行中/完成）
+// + 新建话题（参考聊天侧边栏话题 tab 架构）。已完成的话题也能继续
+// 发新指令。
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,8 +33,6 @@ class AgentTopicTab extends ConsumerWidget {
         .watch(agentTasksProvider)
         .where((t) => t.profileId == profile.id)
         .toList();
-    final active = tasks.where((t) => t.isActive).toList();
-    final history = tasks.where((t) => !t.isActive).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -74,24 +73,12 @@ class AgentTopicTab extends ConsumerWidget {
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             children: [
-              if (active.isNotEmpty) ...[
-                _GroupLabel(label: '进行中 (${active.length})'),
-                for (final t in active)
-                  _TaskCard(
-                    task: t,
-                    selected: t.id == selectedTaskId,
-                    onTap: () => _openTask(context, ref, t.id),
-                  ),
-              ],
-              if (history.isNotEmpty) ...[
-                const _GroupLabel(label: '历史'),
-                for (final t in history)
-                  _TaskCard(
-                    task: t,
-                    selected: t.id == selectedTaskId,
-                    onTap: () => _openTask(context, ref, t.id),
-                  ),
-              ],
+              for (final t in tasks)
+                _TaskCard(
+                  task: t,
+                  selected: t.id == selectedTaskId,
+                  onTap: () => _openTask(context, ref, t.id),
+                ),
               if (tasks.isEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 32),
@@ -117,26 +104,6 @@ class AgentTopicTab extends ConsumerWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _GroupLabel extends StatelessWidget {
-  const _GroupLabel({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
-      child: Text(
-        label,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
-        ),
-      ),
     );
   }
 }

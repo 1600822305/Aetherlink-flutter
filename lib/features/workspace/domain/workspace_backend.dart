@@ -1,5 +1,5 @@
 // The capability-layer view of a workspace. Three implementations are
-// planned (see docs/工作区与智能体模式-设计构想.md §2.3):
+// planned (see docs/智能体/工作区与智能体模式-设计构想.md §2.3):
 //
 //   ① LocalSafBackend  — phone-local, Android SAF; canExec=false
 //   ② TermuxBackend    — same-device Termux; canExec=true
