@@ -81,7 +81,35 @@ class AgentTasks extends _$AgentTasks {
 
   Future<void> _hydrate() async {
     await ref.read(agentSeedProvider.future);
-    state = await ref.read(agentDaoProvider).getAllTasks();
+    final tasks = await ref.read(agentDaoProvider).getAllTasks();
+    // 恢复语义（循环设计稿 L7）：上次进程死亡时仍 running 的任务
+    // 标 paused，用户一键「继续」重放续跑。
+    final recovered = [
+      for (final t in tasks)
+        t.status == AgentTaskStatus.running
+            ? t.copyWith(
+                status: AgentTaskStatus.paused,
+                lastEventSummary: '进程中断，可继续',
+              )
+            : t,
+    ];
+    for (var i = 0; i < tasks.length; i++) {
+      if (!identical(tasks[i], recovered[i])) {
+        await ref.read(agentDaoProvider).upsertTask(recovered[i]);
+      }
+    }
+    state = recovered;
+  }
+
+  /// 新增或按 id 覆盖一个话题（引擎写回/新建任务共用），写穿到库。
+  void apply(AgentTask task) {
+    final index = state.indexWhere((t) => t.id == task.id);
+    state = [
+      for (var i = 0; i < state.length; i++)
+        if (i == index) task else state[i],
+      if (index < 0) task,
+    ];
+    ref.read(agentDaoProvider).upsertTask(task);
   }
 
   void rename(String taskId, String title) {

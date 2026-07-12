@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
 
@@ -8,7 +11,7 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/ag
 /// 圆角纸面卡片，上层无边框文本区域，下层单独一行按钮工具条
 /// （左：＋附件、模式快切 Code/Ask/Plan、模型 chip；右：发送/中断变形按钮，
 /// §五打断交互）。
-class AgentInputBar extends StatefulWidget {
+class AgentInputBar extends ConsumerStatefulWidget {
   const AgentInputBar({this.task, super.key});
 
   /// null = 干净新话题（草稿态）：发第一条消息才开始任务，
@@ -16,10 +19,10 @@ class AgentInputBar extends StatefulWidget {
   final AgentTask? task;
 
   @override
-  State<AgentInputBar> createState() => _AgentInputBarState();
+  ConsumerState<AgentInputBar> createState() => _AgentInputBarState();
 }
 
-class _AgentInputBarState extends State<AgentInputBar> {
+class _AgentInputBarState extends ConsumerState<AgentInputBar> {
   final TextEditingController _controller = TextEditingController();
   bool _hasText = false;
   late AgentSessionMode _mode = widget.task?.mode ?? AgentSessionMode.code;
@@ -40,11 +43,34 @@ class _AgentInputBarState extends State<AgentInputBar> {
   }
 
   /// 有文字：任务执行中发送不直接发——弹三选面板（排队/立即打断并
-  /// 发送/继续编辑）；草稿态/非活跃任务直接发。
+  /// 发送/继续编辑）；草稿态/非执行中任务直接发。
   Future<void> _onSendPressed() async {
     final task = widget.task;
-    if (task == null || !task.isActive) {
-      _controller.clear(); // TODO(agent): 接真引擎后创建/继续任务
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+    final runner = ref.read(agentTaskRunnerProvider.notifier);
+
+    if (task == null) {
+      // 草稿态：发第一条消息 = 创建任务 + 启动引擎。
+      final profileId = ref.read(selectedAgentProfileIdProvider);
+      final profile = ref
+          .read(agentProfilesProvider)
+          .where((p) => p.id == profileId)
+          .firstOrNull;
+      if (profile == null) return;
+      _controller.clear();
+      final created = await runner.startNewTask(
+          profile: profile, text: text, mode: _mode);
+      ref.read(selectedAgentTaskIdProvider.notifier).select(created.id);
+      return;
+    }
+
+    final executing = task.status == AgentTaskStatus.running ||
+        task.status == AgentTaskStatus.waitingApproval;
+    if (!executing) {
+      // paused/waitingInput/done/failed/cancelled：落消息并续跑。
+      _controller.clear();
+      await runner.sendMessage(task, text);
       return;
     }
     final action = await showModalBottomSheet<String>(
@@ -75,16 +101,25 @@ class _AgentInputBarState extends State<AgentInputBar> {
         ),
       ),
     );
-    if (action == 'queue' || action == 'interrupt') {
+    if (action == 'queue') {
       _controller.clear();
+      await runner.sendMessage(task, text, queued: true);
+    } else if (action == 'interrupt') {
+      _controller.clear();
+      await runner.interruptAndSend(task, text);
     }
   }
 
   /// 无文字：点一下=暂停；长按=强制终止二次确认。
-  void _onPausePressed() {}
+  void _onPausePressed() {
+    final task = widget.task;
+    if (task != null) {
+      ref.read(agentTaskRunnerProvider.notifier).pause(task.id);
+    }
+  }
 
   Future<void> _onForceStopLongPress() async {
-    await showDialog<bool>(
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('强制终止任务？'),
@@ -104,6 +139,10 @@ class _AgentInputBarState extends State<AgentInputBar> {
         ],
       ),
     );
+    final task = widget.task;
+    if (confirmed == true && task != null) {
+      ref.read(agentTaskRunnerProvider.notifier).forceStop(task.id);
+    }
   }
 
   Future<void> _onModeTap() async {
@@ -246,6 +285,27 @@ class _AgentInputBarState extends State<AgentInputBar> {
                           constraints: const BoxConstraints(
                               minWidth: 32, minHeight: 32),
                         ),
+                      )
+                    else if (widget.task?.status == AgentTaskStatus.paused ||
+                        widget.task?.status == AgentTaskStatus.waitingInput)
+                      IconButton(
+                        onPressed: () {
+                          final task = widget.task;
+                          if (task != null) {
+                            ref
+                                .read(agentTaskRunnerProvider.notifier)
+                                .resume(task);
+                          }
+                        },
+                        icon: Icon(
+                          LucideIcons.play,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        padding: const EdgeInsets.all(6),
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(
+                            minWidth: 32, minHeight: 32),
                       )
                     else
                       IconButton(

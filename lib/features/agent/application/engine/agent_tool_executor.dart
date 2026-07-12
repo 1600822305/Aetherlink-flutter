@@ -1,0 +1,28 @@
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
+
+/// 工具执行结果（失败也是结果，回填给模型继续——循环设计稿 §1.5）。
+class AgentToolResult {
+  const AgentToolResult({
+    required this.ok,
+    required this.summary,
+    this.detail,
+  });
+
+  final bool ok;
+
+  /// 例：`234 行 · 0.4s`、`失败 ✗ 文件不存在`。
+  final String summary;
+
+  /// 完整输出（大输出由引擎截断落盘后回填截断内容）。
+  final String? detail;
+}
+
+/// 工具分发抽象：骨架期用假实现；接真实现时经 app/di 复用 ToolRoute
+/// 分发（下沉共享 helper，初稿 §5.1）。
+abstract class AgentToolExecutor {
+  Future<AgentToolResult> execute(
+    AgentToolCallRequest call,
+    AgentCancellationToken cancel,
+  );
+}

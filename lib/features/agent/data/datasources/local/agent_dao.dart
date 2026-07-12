@@ -98,6 +98,34 @@ class AgentDao extends DatabaseAccessor<AppDatabase> with _$AgentDaoMixin {
         );
   }
 
+  /// 某话题事件流的一次性读取（按 seq 升序，引擎组上下文用）。
+  Future<List<AgentEvent>> getEvents(String taskId) async {
+    final rows = await (select(agentEventRows)
+          ..where((e) => e.taskId.equals(taskId))
+          ..orderBy([(e) => OrderingTerm(expression: e.seq)]))
+        .get();
+    return [
+      for (final row in rows)
+        decodeAgentEvent(
+          id: row.id,
+          seq: row.seq,
+          at: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
+          kind: row.kind,
+          payloadJson: row.payloadJson,
+        ),
+    ];
+  }
+
+  /// 话题内当前最大 seq（无事件时 0），新事件从这里续增。
+  Future<int> maxSeq(String taskId) async {
+    final expr = agentEventRows.seq.max();
+    final row = await (selectOnly(agentEventRows)
+          ..addColumns([expr])
+          ..where(agentEventRows.taskId.equals(taskId)))
+        .getSingle();
+    return row.read(expr) ?? 0;
+  }
+
   /// 追加（或按 id 覆盖，用于流式文本/工具状态原位更新）一批事件。
   Future<void> upsertEvents(String taskId, List<AgentEvent> events) {
     return batch((b) {

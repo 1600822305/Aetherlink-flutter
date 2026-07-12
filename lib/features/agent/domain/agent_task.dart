@@ -74,22 +74,32 @@ class AgentTask {
       status == AgentTaskStatus.waitingInput ||
       status == AgentTaskStatus.paused;
 
-  AgentTask copyWith({String? title}) {
+  AgentTask copyWith({
+    String? title,
+    AgentTaskStatus? status,
+    AgentSessionMode? mode,
+    DateTime? updatedAt,
+    String? modelLabel,
+    int? rounds,
+    int? tokenCount,
+    Duration? elapsed,
+    String? lastEventSummary,
+  }) {
     return AgentTask(
       id: id,
       profileId: profileId,
       title: title ?? this.title,
       workspaceId: workspaceId,
       workspaceName: workspaceName,
-      status: status,
-      mode: mode,
+      status: status ?? this.status,
+      mode: mode ?? this.mode,
       createdAt: createdAt,
-      updatedAt: updatedAt,
-      modelLabel: modelLabel,
-      rounds: rounds,
-      tokenCount: tokenCount,
-      elapsed: elapsed,
-      lastEventSummary: lastEventSummary,
+      updatedAt: updatedAt ?? this.updatedAt,
+      modelLabel: modelLabel ?? this.modelLabel,
+      rounds: rounds ?? this.rounds,
+      tokenCount: tokenCount ?? this.tokenCount,
+      elapsed: elapsed ?? this.elapsed,
+      lastEventSummary: lastEventSummary ?? this.lastEventSummary,
     );
   }
 }
