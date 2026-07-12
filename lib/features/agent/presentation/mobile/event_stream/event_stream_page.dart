@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stre
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/timeline_blocks.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/agent_event_tile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/work_segment_tile.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/working_indicator_tile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_input_bar.dart';
 
 /// 左页：事件流主视图（UI 稿 §4.1）——计划纪要条 + 时间线 + 底部输入区。
@@ -21,6 +22,8 @@ class EventStreamPage extends ConsumerWidget {
         ref.watch(agentTaskEventsProvider(task.id)).value ?? const [];
     final plan = latestPlan(events);
     final blocks = buildTimelineBlocks(events);
+    final showWorking = task.status == AgentTaskStatus.running &&
+        needsWorkingIndicator(events);
 
     return Column(
       children: [
@@ -28,11 +31,13 @@ class EventStreamPage extends ConsumerWidget {
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-            itemCount: blocks.length,
-            itemBuilder: (context, i) => switch (blocks[i]) {
-              final SegmentBlock b => WorkSegmentTile(events: b.events),
-              final SingleBlock b => AgentEventTile(event: b.event),
-            },
+            itemCount: blocks.length + (showWorking ? 1 : 0),
+            itemBuilder: (context, i) => i >= blocks.length
+                ? const WorkingIndicatorTile()
+                : switch (blocks[i]) {
+                    final SegmentBlock b => WorkSegmentTile(events: b.events),
+                    final SingleBlock b => AgentEventTile(event: b.event),
+                  },
           ),
         ),
         AgentInputBar(task: task),
