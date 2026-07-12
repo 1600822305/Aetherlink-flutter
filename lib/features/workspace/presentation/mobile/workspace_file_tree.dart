@@ -475,9 +475,10 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     final rootLoading = root != null && _loading.contains(root) && rows.isEmpty;
 
     final backend = _backend;
-    final ops = (root != null &&
-            backend != null &&
-            backend.capabilities.canWrite)
+    // Ops are built even for read-only backends: the long-press menu still
+    // offers the non-mutating actions (复制路径/详情); write actions are gated
+    // inside by capabilities.canWrite.
+    final ops = (root != null && backend != null)
         ? WorkspaceFileOps(
             context: context,
             backend: backend,
@@ -486,8 +487,14 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
             reloadDir: _reload,
             ensureExpanded: _ensureExpanded,
             parentOf: _parentOf,
+            onFileCreated: (entry) =>
+                ref.read(openWorkspaceFilesProvider.notifier).open(
+                      entry,
+                      dirtyPaths: ref.read(dirtyFilesProvider),
+                    ),
           )
         : null;
+    final canWrite = backend?.capabilities.canWrite ?? false;
 
     return ColoredBox(
       color: theme.colorScheme.surface,
@@ -544,13 +551,13 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                   _ToolbarButton(
                     icon: LucideIcons.filePlus,
                     tooltip: '新建文件',
-                    enabled: ops != null,
+                    enabled: ops != null && canWrite,
                     onTap: () => ops?.newFile(ops.rootPath),
                   ),
                   _ToolbarButton(
                     icon: LucideIcons.folderPlus,
                     tooltip: '新建文件夹',
-                    enabled: ops != null,
+                    enabled: ops != null && canWrite,
                     onTap: () => ops?.newFolder(ops.rootPath),
                   ),
                   const Spacer(),

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_placeholders.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/readable_path.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 import 'directory_picker_sheet.dart';
@@ -23,6 +26,7 @@ class WorkspaceFileOps {
     required this.reloadDir,
     required this.ensureExpanded,
     required this.parentOf,
+    this.onFileCreated,
   });
 
   final BuildContext context;
@@ -39,6 +43,10 @@ class WorkspaceFileOps {
   /// The cached parent directory of an entry, or `null` when unknown (e.g. a
   /// top-level entry whose parent is the root).
   final String? Function(String childPath) parentOf;
+
+  /// Called with the freshly-created file so the tree can open it in an
+  /// editor tab right away (新建后自动打开).
+  final void Function(WorkspaceEntry entry)? onFileCreated;
 
   bool get _writable => backend.capabilities.canWrite;
 
@@ -57,7 +65,11 @@ class WorkspaceFileOps {
     final action = await showModalBottomSheet<_FileAction>(
       context: context,
       showDragHandle: true,
-      builder: (context) => _ActionSheet(entry: entry, protected: protected),
+      builder: (context) => _ActionSheet(
+        entry: entry,
+        protected: protected,
+        writable: _writable,
+      ),
     );
     if (action == null || !context.mounted) return;
     switch (action) {
@@ -71,9 +83,44 @@ class WorkspaceFileOps {
         await move(entry);
       case _FileAction.copy:
         await copy(entry);
+      case _FileAction.copyPath:
+        await copyPath(entry);
+      case _FileAction.details:
+        await showDetails(entry);
       case _FileAction.delete:
         await delete(entry);
     }
+  }
+
+  /// Copies the human-readable path to the clipboard. The opaque token
+  /// (`content://` URI on SAF) is useless to a human, so the readable form is
+  /// what gets copied — it's display-only and must never be fed back to a
+  /// backend.
+  Future<void> copyPath(WorkspaceEntry entry) async {
+    await Clipboard.setData(
+      ClipboardData(text: readableWorkspacePath(entry.path)),
+    );
+    _snack('已复制路径');
+  }
+
+  /// Shows a details dialog (name / type / size / mtime / readable path),
+  /// refreshing the metadata via [WorkspaceBackend.getFileInfo] when the
+  /// backend supports it.
+  Future<void> showDetails(WorkspaceEntry entry) async {
+    var info = entry;
+    try {
+      info = await backend.getFileInfo(entry.path);
+    } catch (_) {
+      // Backend can't stat (or the entry vanished) — show the cached row data.
+    }
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _DetailsDialog(
+        entry: info,
+        onCopyPath: () => copyPath(info),
+      ),
+    );
   }
 
   Future<void> newFile(String parentPath) async {
@@ -86,10 +133,11 @@ class WorkspaceFileOps {
     );
     if (name == null) return;
     try {
-      await backend.createFile(parentPath, name);
+      final newPath = await backend.createFile(parentPath, name);
       ensureExpanded(parentPath);
       await reloadDir(parentPath);
       _snack('已创建 $name');
+      onFileCreated?.call(await _entryForCreated(newPath, name));
     } catch (e) {
       _snack('新建文件失败 · $e');
     }
@@ -198,6 +246,21 @@ class WorkspaceFileOps {
     }
   }
 
+  // Resolves the created file's entry for the auto-open callback; falls back
+  // to a minimal stub when the backend can't stat.
+  Future<WorkspaceEntry> _entryForCreated(String path, String name) async {
+    try {
+      return await backend.getFileInfo(path);
+    } catch (_) {}
+    return WorkspaceEntry(
+      name: name,
+      path: path,
+      isDirectory: false,
+      size: 0,
+      mtime: 0,
+    );
+  }
+
   bool _guardWritable() {
     if (_writable) return true;
     _snack('当前后端不支持写操作');
@@ -213,15 +276,31 @@ class WorkspaceFileOps {
   }
 }
 
-enum _FileAction { newFile, newFolder, rename, move, copy, delete }
+enum _FileAction {
+  newFile,
+  newFolder,
+  rename,
+  move,
+  copy,
+  copyPath,
+  details,
+  delete,
+}
 
 class _ActionSheet extends StatelessWidget {
-  const _ActionSheet({required this.entry, this.protected = false});
+  const _ActionSheet({
+    required this.entry,
+    this.protected = false,
+    this.writable = true,
+  });
 
   final WorkspaceEntry entry;
 
   /// Protected entries (storage mount points) hide the destructive actions.
   final bool protected;
+
+  /// Read-only backends only get the non-mutating actions (复制路径/详情).
+  final bool writable;
 
   @override
   Widget build(BuildContext context) {
@@ -242,7 +321,7 @@ class _ActionSheet extends StatelessWidget {
                   ?.copyWith(fontWeight: FontWeight.w700),
             ),
           ),
-          if (isDir) ...[
+          if (writable && isDir) ...[
             const _ActionTile(
               icon: LucideIcons.filePlus,
               label: '在此新建文件',
@@ -254,7 +333,7 @@ class _ActionSheet extends StatelessWidget {
               action: _FileAction.newFolder,
             ),
           ],
-          if (!protected) ...[
+          if (writable && !protected) ...[
             const _ActionTile(
               icon: LucideIcons.pencil,
               label: '重命名',
@@ -266,12 +345,23 @@ class _ActionSheet extends StatelessWidget {
               action: _FileAction.move,
             ),
           ],
+          if (writable)
+            const _ActionTile(
+              icon: LucideIcons.copy,
+              label: '复制到…',
+              action: _FileAction.copy,
+            ),
           const _ActionTile(
-            icon: LucideIcons.copy,
-            label: '复制到…',
-            action: _FileAction.copy,
+            icon: LucideIcons.clipboardCopy,
+            label: '复制路径',
+            action: _FileAction.copyPath,
           ),
-          if (!protected)
+          const _ActionTile(
+            icon: LucideIcons.info,
+            label: '详情',
+            action: _FileAction.details,
+          ),
+          if (writable && !protected)
             const _ActionTile(
               icon: LucideIcons.trash2,
               label: '删除',
@@ -280,6 +370,72 @@ class _ActionSheet extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// The 「详情」 dialog: name / type / size / mtime / readable path, plus a
+/// copy-path shortcut. The path shown is the display-only readable form.
+class _DetailsDialog extends StatelessWidget {
+  const _DetailsDialog({required this.entry, required this.onCopyPath});
+
+  final WorkspaceEntry entry;
+  final VoidCallback onCopyPath;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final rows = <(String, String)>[
+      ('名称', entry.name),
+      ('类型', fileTypeLabel(entry)),
+      if (!entry.isDirectory) ('大小', formatBytes(entry.size)),
+      ('修改时间', formatMtime(entry.mtime)),
+      ('路径', readableWorkspacePath(entry.path)),
+    ];
+    return AlertDialog(
+      title: const Text('详情'),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final (label, value) in rows)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 64,
+                      child: Text(
+                        label,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(value, style: theme.textTheme.bodySmall),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.of(context).pop();
+            onCopyPath();
+          },
+          child: const Text('复制路径'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('关闭'),
+        ),
+      ],
     );
   }
 }
