@@ -39,6 +39,7 @@ class EditorHeader extends StatelessWidget {
     required this.dirty,
     required this.topPad,
     required this.actions,
+    this.onTapTitle,
   });
 
   final String name;
@@ -48,6 +49,9 @@ class EditorHeader extends StatelessWidget {
   final bool dirty;
   final double topPad;
   final List<Widget> actions;
+
+  /// Tapping the name/path block (e.g. to show a copyable path panel).
+  final VoidCallback? onTapTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -63,26 +67,30 @@ class EditorHeader extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  dirty ? '• $name' : name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
+            child: InkWell(
+              onTap: onTapTitle,
+              borderRadius: BorderRadius.circular(6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    dirty ? '• $name' : name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                Text(
-                  path,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                  Text(
+                    path,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           ...actions,

@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_store.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_tree_sort.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 
@@ -108,6 +109,33 @@ class ShowHiddenFiles extends Notifier<bool> {
     ref
         .read(appSettingsStoreProvider)
         .saveSetting(kWorkspaceShowHiddenKey, state ? 'true' : 'false');
+  }
+}
+
+/// 文件树排序方式，持久化于 [kWorkspaceTreeSortKey]；默认名称升序。
+final treeSortModeProvider =
+    NotifierProvider<TreeSortModeNotifier, TreeSortMode>(
+  TreeSortModeNotifier.new,
+);
+
+class TreeSortModeNotifier extends Notifier<TreeSortMode> {
+  @override
+  TreeSortMode build() {
+    ref
+        .read(appSettingsStoreProvider)
+        .getSetting(kWorkspaceTreeSortKey)
+        .then((raw) {
+      final mode = TreeSortMode.fromName(raw);
+      if (mode != state) state = mode;
+    });
+    return TreeSortMode.nameAsc;
+  }
+
+  void set(TreeSortMode mode) {
+    state = mode;
+    ref
+        .read(appSettingsStoreProvider)
+        .saveSetting(kWorkspaceTreeSortKey, mode.name);
   }
 }
 

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/workspace/application/workspace_tree_sort.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
@@ -417,11 +418,19 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   }
 
   // Walks the cached tree depth-first into flat rows the ListView renders.
-  // Hidden entries are skipped unless the 「显示隐藏文件」 toggle is on.
-  void _appendRows(String path, int depth, List<_TreeRow> out, bool showHidden) {
+  // Hidden entries are skipped unless the 「显示隐藏文件」 toggle is on; each
+  // directory's entries are ordered by the picked sort mode (directories
+  // first) at render time, so switching modes never needs a reload.
+  void _appendRows(
+    String path,
+    int depth,
+    List<_TreeRow> out,
+    bool showHidden,
+    TreeSortMode sortMode,
+  ) {
     final entries = _children[path];
     if (entries == null) return;
-    for (final entry in entries) {
+    for (final entry in sortTreeEntries(entries, sortMode)) {
       if (!showHidden && entry.isHidden) continue;
       final expanded = _expanded.contains(entry.path);
       out.add(_TreeRow(entry: entry, depth: depth, expanded: expanded));
@@ -429,7 +438,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
         if (_loading.contains(entry.path)) {
           out.add(_TreeRow.loading(depth + 1));
         } else {
-          _appendRows(entry.path, depth + 1, out, showHidden);
+          _appendRows(entry.path, depth + 1, out, showHidden, sortMode);
         }
       }
     }
@@ -466,10 +475,11 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     }
 
     final showHidden = ref.watch(showHiddenFilesProvider);
+    final sortMode = ref.watch(treeSortModeProvider);
     final root = _root;
     final rows = <_TreeRow>[];
     if (root != null) {
-      _appendRows(root, 0, rows, showHidden);
+      _appendRows(root, 0, rows, showHidden, sortMode);
     }
     _rows = rows;
     final rootLoading = root != null && _loading.contains(root) && rows.isEmpty;
@@ -561,6 +571,12 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                     onTap: () => ops?.newFolder(ops.rootPath),
                   ),
                   const Spacer(),
+                  _SortMenuButton(
+                    mode: sortMode,
+                    enabled: root != null,
+                    onSelected: (m) =>
+                        ref.read(treeSortModeProvider.notifier).set(m),
+                  ),
                   _ToolbarButton(
                     icon: showHidden ? LucideIcons.eye : LucideIcons.eyeOff,
                     tooltip: showHidden ? '隐藏隐藏文件' : '显示隐藏文件',
@@ -814,6 +830,62 @@ class _ToolbarButton extends StatelessWidget {
       visualDensity: VisualDensity.compact,
       iconSize: 18,
       icon: Icon(icon, color: color),
+    );
+  }
+}
+
+/// 排序方式下拉菜单（名称/修改时间/大小，目录始终优先）。
+class _SortMenuButton extends StatelessWidget {
+  const _SortMenuButton({
+    required this.mode,
+    required this.enabled,
+    required this.onSelected,
+  });
+
+  final TreeSortMode mode;
+  final bool enabled;
+  final ValueChanged<TreeSortMode> onSelected;
+
+  static const _labels = {
+    TreeSortMode.nameAsc: '名称',
+    TreeSortMode.mtimeDesc: '修改时间',
+    TreeSortMode.sizeDesc: '大小',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = enabled
+        ? theme.colorScheme.onSurfaceVariant
+        : theme.colorScheme.onSurface.withValues(alpha: 0.30);
+    return PopupMenuButton<TreeSortMode>(
+      tooltip: '排序：${_labels[mode]}',
+      enabled: enabled,
+      initialValue: mode,
+      onSelected: onSelected,
+      icon: Icon(LucideIcons.arrowDownUp, size: 18, color: color),
+      iconSize: 18,
+      style: const ButtonStyle(visualDensity: VisualDensity.compact),
+      itemBuilder: (context) => [
+        for (final m in TreeSortMode.values)
+          PopupMenuItem(
+            value: m,
+            height: 40,
+            child: Row(
+              children: [
+                Icon(
+                  LucideIcons.check,
+                  size: 16,
+                  color: m == mode
+                      ? theme.colorScheme.primary
+                      : Colors.transparent,
+                ),
+                const SizedBox(width: 8),
+                Text(_labels[m]!),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }

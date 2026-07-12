@@ -11,6 +11,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -431,6 +432,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
             dirty: dirty,
             topPad: 6,
             actions: _headerActions(),
+            onTapTitle: _showPathPanel,
           ),
           if (_hasTextBody) EditorToolbar(children: _toolbarButtons(dirty)),
           Divider(height: 1, color: theme.dividerColor),
@@ -493,18 +495,102 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     );
   }
 
-  // 头部只放非功能性按钮；功能性按钮统一在下方可横向滚动的工具条里。
+  // 头部只放开关型按钮（编辑态切换/锁定页面）；其余功能性按钮统一在
+  // 下方可横向滚动的工具条里。
   List<Widget> _headerActions() {
     final locked = ref.watch(workspacePageLockProvider);
+    final primary = Theme.of(context).colorScheme.primary;
     return [
+      if (_writable)
+        IconButton(
+          tooltip: _editing ? '退出编辑' : '编辑',
+          icon: Icon(
+            _editing ? LucideIcons.pencilOff : LucideIcons.pencil,
+            size: 18,
+          ),
+          color: _editing ? primary : null,
+          onPressed: _toggleEditing,
+        ),
       IconButton(
         tooltip: locked ? '解锁页面(可横向翻页)' : '锁定页面(防止缩放误触翻页)',
         icon: Icon(locked ? LucideIcons.lock : LucideIcons.lockOpen, size: 18),
-        color: locked ? Theme.of(context).colorScheme.primary : null,
+        color: locked ? primary : null,
         onPressed: () =>
             ref.read(workspacePageLockProvider.notifier).toggle(),
       ),
     ];
+  }
+
+  // 编辑态开关：退出时若有未保存修改，先问保存/放弃/取消。
+  Future<void> _toggleEditing() async {
+    if (!_editing) {
+      setState(() => _editing = true);
+      _focus.requestFocus();
+      return;
+    }
+    if (_dirty) {
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('退出编辑'),
+          content: const Text('有未保存的修改，退出前要保存吗？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop('discard'),
+              child: const Text('放弃修改'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop('save'),
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || choice == null) return;
+      if (choice == 'save') {
+        if (!await _save()) return;
+        if (!mounted) return;
+      } else {
+        _controller.text = _original;
+        ref.read(dirtyFilesProvider.notifier).clear(_path);
+      }
+    }
+    setState(() => _editing = false);
+    _focus.unfocus();
+  }
+
+  // 点击头部文件名/路径：弹面板展示完整文件名与可读路径，支持一键复制。
+  Future<void> _showPathPanel() async {
+    final readable = readableWorkspacePath(widget.entry.path);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        top: false,
+        minimum: const EdgeInsets.only(bottom: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _CopyRow(
+              label: '文件名',
+              value: widget.entry.name,
+              onCopied: () => _snack('已复制文件名'),
+            ),
+            const Divider(height: 1, indent: 20, endIndent: 20),
+            _CopyRow(
+              label: '路径',
+              value: readable,
+              onCopied: () => _snack('已复制路径'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   IconButton _toolButton({
@@ -527,15 +613,6 @@ class _FileEditorState extends ConsumerState<FileEditor> {
         icon: const Icon(LucideIcons.search, size: 18),
         onPressed: () => setState(() => _showFind = !_showFind),
       ),
-      if (_writable && !_editing)
-        _toolButton(
-          tooltip: '编辑',
-          icon: const Icon(LucideIcons.pencil, size: 18),
-          onPressed: () {
-            setState(() => _editing = true);
-            _focus.requestFocus();
-          },
-        ),
       if (_editing)
         ValueListenableBuilder<UndoHistoryValue>(
           valueListenable: _undo,
@@ -593,5 +670,56 @@ class _FileEditorState extends ConsumerState<FileEditor> {
           onPressed: (dirty && !_saving) ? () => _save() : null,
         ),
     ];
+  }
+}
+
+/// 路径面板里的一行：标签 + 可换行完整值 + 复制按钮。
+class _CopyRow extends StatelessWidget {
+  const _CopyRow({
+    required this.label,
+    required this.value,
+    required this.onCopied,
+  });
+
+  final String label;
+  final String value;
+  final VoidCallback onCopied;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 8, 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                SelectableText(value, style: theme.textTheme.bodyMedium),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: '复制$label',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(LucideIcons.copy, size: 17),
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: value));
+              onCopied();
+              if (context.mounted) Navigator.of(context).pop();
+            },
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -21,6 +21,10 @@ const String kWorkspaceAutoRestoreKey = 'workspace_auto_restore';
 /// Absent means hidden files are not shown (the default).
 const String kWorkspaceShowHiddenKey = 'workspace_show_hidden';
 
+/// Setting key for the file-tree sort mode (a `TreeSortMode.name` string).
+/// Absent means sort by name ascending (the default).
+const String kWorkspaceTreeSortKey = 'workspace_tree_sort';
+
 /// The persisted middle-page session: the open file tabs of [workspaceId] and
 /// which one was active.
 class WorkspaceSession {
