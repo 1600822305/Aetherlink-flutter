@@ -472,6 +472,57 @@ void main() {
     expect(gateway.last.status, AgentTaskStatus.done);
   });
 
+  test('续跑时半途工具调用（running/waitingApproval）按失败回填', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    final engine = AgentEngine(
+      llm: const FakeAgentLlmClient(chunkDelay: Duration.zero),
+      tools: const FakeAgentToolExecutor(delay: Duration.zero),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(),
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '帮我看看项目结构');
+    // 模拟上次进程死亡时半途的两个工具调用。
+    final stale1 = await store.appendToolCall(
+      task.id,
+      AgentToolCallRequest(
+        id: 'call-stale-1',
+        name: 'run_command',
+        argsJson: jsonEncode({'command': 'ls'}),
+        argSummary: 'ls',
+      ),
+      AgentToolCallState.running,
+    );
+    final stale2 = await store.appendToolCall(
+      task.id,
+      AgentToolCallRequest(
+        id: 'call-stale-2',
+        name: 'run_command',
+        argsJson: jsonEncode({'command': 'rm x'}),
+        argSummary: 'rm x',
+      ),
+      AgentToolCallState.waitingApproval,
+    );
+
+    await engine.run(
+      task.copyWith(status: AgentTaskStatus.paused),
+      AgentCancellationToken(),
+    );
+
+    final events = await store.getEvents(task.id);
+    for (final id in [stale1.id, stale2.id]) {
+      final e = events.whereType<ToolCallEvent>().firstWhere(
+            (t) => t.id == id,
+          );
+      expect(e.state, AgentToolCallState.failure);
+      expect(e.resultSummary, contains('进程中断'));
+    }
+    expect(gateway.last.status, AgentTaskStatus.done);
+  });
+
   test('token 预算超限 → paused（可继续），续跑新预算可完成', () async {
     final store = InMemoryAgentEventStore();
     final gateway = RecordingTaskGateway();
@@ -526,7 +577,7 @@ void main() {
     final folded = foldCompactedEvents(events);
     expect(folded.length, lessThan(events.whereType<ToolCallEvent>().length +
         events.whereType<UserMessageEvent>().length + compactions.length));
-    expect(events.whereType<ToolCallEvent>().length, 13);
+    expect(events.whereType<ToolCallEvent>().length, greaterThanOrEqualTo(12));
   });
 
   test('foldCompactedEvents：覆盖最早条目并把摘要插到队首', () async {

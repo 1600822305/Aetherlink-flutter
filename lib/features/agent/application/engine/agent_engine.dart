@@ -67,6 +67,10 @@ class AgentEngine {
         ));
       }
 
+      // 恢复语义（L7）：上次进程死亡时半途的工具调用（仍 running /
+      // waitingApproval）按失败回填，重放时模型可重新发起并重过审批。
+      await _backfillInterruptedToolCalls(current.id);
+
       while (true) {
         // ① 安全点：排队消息正式进上下文（L3）。
         await store.consumeQueuedUserMessages(current.id);
@@ -251,6 +255,21 @@ class AgentEngine {
         updatedAt: DateTime.now(),
         lastEventSummary: '执行出错：$e',
       ));
+    }
+  }
+
+  Future<void> _backfillInterruptedToolCalls(String taskId) async {
+    final events = await store.getEvents(taskId);
+    for (final event in events.whereType<ToolCallEvent>()) {
+      if (event.state == AgentToolCallState.running ||
+          event.state == AgentToolCallState.waitingApproval) {
+        await store.updateToolCall(
+          taskId,
+          event,
+          state: AgentToolCallState.failure,
+          resultSummary: '进程中断，未执行完成',
+        );
+      }
     }
   }
 

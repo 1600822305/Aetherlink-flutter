@@ -82,11 +82,14 @@ class AgentTasks extends _$AgentTasks {
   Future<void> _hydrate() async {
     await ref.read(agentSeedProvider.future);
     final tasks = await ref.read(agentDaoProvider).getAllTasks();
-    // 恢复语义（循环设计稿 L7）：上次进程死亡时仍 running 的任务
-    // 标 paused，用户一键「继续」重放续跑。
+    // 恢复语义（循环设计稿 L7）：上次进程死亡时仍 running 或
+    // waitingApproval（审批注册表随进程丢失，卡片已无法响应）的任务
+    // 标 paused，用户一键「继续」重放续跑；半途工具由引擎按失败回填，
+    // 待审批工具续跑时由模型重新发起并重过审批。
     final recovered = [
       for (final t in tasks)
-        t.status == AgentTaskStatus.running
+        t.status == AgentTaskStatus.running ||
+                t.status == AgentTaskStatus.waitingApproval
             ? t.copyWith(
                 status: AgentTaskStatus.paused,
                 lastEventSummary: '进程中断，可继续',
