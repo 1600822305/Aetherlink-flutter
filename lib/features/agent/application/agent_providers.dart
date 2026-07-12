@@ -29,6 +29,13 @@ class AgentProfiles extends _$AgentProfiles {
       if (index < 0) profile,
     ];
   }
+
+  void remove(String profileId) {
+    state = [
+      for (final p in state)
+        if (p.id != profileId) p,
+    ];
+  }
 }
 
 /// 全部话题。UI 先行阶段为 mock 数据 + 会话内重命名/删除；
@@ -49,6 +56,14 @@ class AgentTasks extends _$AgentTasks {
     state = [
       for (final t in state)
         if (t.id != taskId) t,
+    ];
+  }
+
+  /// 删除某智能体下的全部话题（删除智能体时联动）。
+  void removeByProfile(String profileId) {
+    state = [
+      for (final t in state)
+        if (t.profileId != profileId) t,
     ];
   }
 }

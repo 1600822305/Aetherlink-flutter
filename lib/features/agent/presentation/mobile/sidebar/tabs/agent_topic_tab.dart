@@ -28,10 +28,20 @@ class AgentTopicTab extends ConsumerWidget {
     final profiles = ref.watch(agentProfilesProvider);
     final selectedProfileId = ref.watch(selectedAgentProfileIdProvider);
     final selectedTaskId = ref.watch(selectedAgentTaskIdProvider);
-    final profile = profiles.firstWhere(
-      (p) => p.id == selectedProfileId,
-      orElse: () => profiles.first,
-    );
+    final profile =
+        profiles.where((p) => p.id == selectedProfileId).firstOrNull ??
+        profiles.firstOrNull;
+    if (profile == null) {
+      return Center(
+        child: Text(
+          '还没有智能体，先到智能体 tab 新建一个',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: cs.onSurface.withValues(alpha: 0.5),
+          ),
+        ),
+      );
+    }
     final tasks = ref
         .watch(agentTasksProvider)
         .where((t) => t.profileId == profile.id)
@@ -98,8 +108,11 @@ class AgentTopicTab extends ConsumerWidget {
   }
 }
 
-/// 话题卡：状态色点 + 标题 + 工作区 chip + 最近事件摘要（UI 稿 §三）。
-class _TaskCard extends StatelessWidget {
+enum _TaskMenu { rename, delete }
+
+/// 话题卡：状态色点 + 标题 + 工作区 chip + 最近事件摘要（UI 稿 §三）
+/// + 右侧「更多」菜单（重命名/删除，对齐聊天话题项）。
+class _TaskCard extends ConsumerWidget {
   const _TaskCard({
     required this.task,
     required this.selected,
@@ -110,13 +123,45 @@ class _TaskCard extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  Future<void> _onMenu(
+    BuildContext context,
+    WidgetRef ref,
+    _TaskMenu value,
+  ) async {
+    switch (value) {
+      case _TaskMenu.rename:
+        final title = await agentPromptText(
+          context,
+          title: '编辑话题',
+          hint: '话题名称',
+          initial: task.title,
+        );
+        if (title != null) {
+          ref.read(agentTasksProvider.notifier).rename(task.id, title);
+        }
+      case _TaskMenu.delete:
+        final ok = await agentConfirmDialog(
+          context,
+          title: '删除话题',
+          message: '确定要删除此话题吗？此操作不可撤销。',
+        );
+        if (ok) {
+          if (ref.read(selectedAgentTaskIdProvider) == task.id) {
+            ref.read(selectedAgentTaskIdProvider.notifier).select(null);
+          }
+          ref.read(agentTasksProvider.notifier).remove(task.id);
+        }
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final statusColor = agentStatusColor(context, task.status);
     // 状态只靠开头状态灯区分，卡片不描边；waitingApproval/Input 另加 ⚠ 图标。
-    final needsAttention = task.status == AgentTaskStatus.waitingApproval ||
+    final needsAttention =
+        task.status == AgentTaskStatus.waitingApproval ||
         task.status == AgentTaskStatus.waitingInput;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
@@ -139,7 +184,9 @@ class _TaskCard extends StatelessWidget {
                       width: 8,
                       height: 8,
                       decoration: BoxDecoration(
-                          color: statusColor, shape: BoxShape.circle),
+                        color: statusColor,
+                        shape: BoxShape.circle,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -156,8 +203,31 @@ class _TaskCard extends StatelessWidget {
                       ),
                     ),
                     if (needsAttention)
-                      Icon(LucideIcons.triangleAlert,
-                          size: 14, color: statusColor),
+                      Icon(
+                        LucideIcons.triangleAlert,
+                        size: 14,
+                        color: statusColor,
+                      ),
+                    const SizedBox(width: 4),
+                    AgentSidebarOverflowMenuButton<_TaskMenu>(
+                      size: 16,
+                      box: 20,
+                      title: task.title,
+                      actions: const [
+                        AgentSidebarSheetAction(
+                          _TaskMenu.rename,
+                          LucideIcons.edit3,
+                          '编辑话题',
+                        ),
+                        AgentSidebarSheetAction(
+                          _TaskMenu.delete,
+                          LucideIcons.trash,
+                          '删除话题',
+                          danger: true,
+                        ),
+                      ],
+                      onSelected: (m) => _onMenu(context, ref, m),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -165,7 +235,9 @@ class _TaskCard extends StatelessWidget {
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: cs.onSurface.withValues(alpha: 0.06),
                         borderRadius: BorderRadius.circular(6),

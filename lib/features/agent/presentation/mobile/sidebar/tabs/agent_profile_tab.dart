@@ -60,6 +60,17 @@ class AgentProfileTab extends ConsumerWidget {
                     onGoToTopics();
                   },
                 ),
+              if (profiles.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  child: Text(
+                    '还没有智能体，点右上角 + 新建',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -78,7 +89,9 @@ class AgentProfileTab extends ConsumerWidget {
   }
 }
 
-class _ProfileItem extends StatelessWidget {
+enum _ProfileMenu { edit, delete }
+
+class _ProfileItem extends ConsumerWidget {
   const _ProfileItem({
     required this.profile,
     required this.selected,
@@ -91,8 +104,37 @@ class _ProfileItem extends StatelessWidget {
   final int topicCount;
   final VoidCallback onSelect;
 
+  Future<void> _onMenu(
+    BuildContext context,
+    WidgetRef ref,
+    _ProfileMenu value,
+  ) async {
+    switch (value) {
+      case _ProfileMenu.edit:
+        await showAgentProfileEditPage(context, profile: profile);
+      case _ProfileMenu.delete:
+        final ok = await agentConfirmDialog(
+          context,
+          title: '删除智能体',
+          message:
+              '确定要删除智能体「${profile.name}」吗？'
+              '其所有话题也会被删除，此操作不可撤销。',
+        );
+        if (!ok) return;
+        ref.read(agentTasksProvider.notifier).removeByProfile(profile.id);
+        ref.read(agentProfilesProvider.notifier).remove(profile.id);
+        if (ref.read(selectedAgentProfileIdProvider) == profile.id) {
+          final remaining = ref.read(agentProfilesProvider);
+          ref
+              .read(selectedAgentProfileIdProvider.notifier)
+              .select(remaining.isEmpty ? '' : remaining.first.id);
+          ref.read(selectedAgentTaskIdProvider.notifier).select(null);
+        }
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     return Padding(
@@ -127,8 +169,9 @@ class _ProfileItem extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          fontWeight:
-                              selected ? FontWeight.w600 : FontWeight.w400,
+                          fontWeight: selected
+                              ? FontWeight.w600
+                              : FontWeight.w400,
                         ),
                       ),
                       Text(
@@ -144,6 +187,26 @@ class _ProfileItem extends StatelessWidget {
                 ),
                 if (selected)
                   Icon(LucideIcons.check, size: 16, color: cs.primary),
+                const SizedBox(width: 4),
+                AgentSidebarOverflowMenuButton<_ProfileMenu>(
+                  size: 16,
+                  box: 20,
+                  title: '${profile.emoji} ${profile.name}',
+                  actions: const [
+                    AgentSidebarSheetAction(
+                      _ProfileMenu.edit,
+                      LucideIcons.edit3,
+                      '编辑智能体',
+                    ),
+                    AgentSidebarSheetAction(
+                      _ProfileMenu.delete,
+                      LucideIcons.trash,
+                      '删除智能体',
+                      danger: true,
+                    ),
+                  ],
+                  onSelected: (m) => _onMenu(context, ref, m),
+                ),
               ],
             ),
           ),
@@ -152,4 +215,3 @@ class _ProfileItem extends StatelessWidget {
     );
   }
 }
-

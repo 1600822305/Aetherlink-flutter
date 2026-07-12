@@ -20,33 +20,35 @@ class AgentSettingsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profiles = ref.watch(agentProfilesProvider);
     final profileId = ref.watch(selectedAgentProfileIdProvider);
-    final profile = profiles.firstWhere(
-      (p) => p.id == profileId,
-      orElse: () => profiles.first,
-    );
+    final profile =
+        profiles.where((p) => p.id == profileId).firstOrNull ??
+        profiles.firstOrNull;
     final s = ref.watch(agentUiSettingsControllerProvider);
     final c = ref.read(agentUiSettingsControllerProvider.notifier);
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 10),
       children: [
-        _Group(
-          title: '当前智能体',
-          subtitle: '${profile.emoji} ${profile.name}',
-          children: [
-            _StaticRow(title: '绑定工作区', value: profile.workspaceName ?? '未绑定'),
-            _StaticRow(
-              title: '工具集',
-              value: profile.tools.map(_toolGroupLabel).join(' / '),
-            ),
-            _EntryRow(
-              title: '编辑智能体',
-              description: '名称 / 提示词 / 工具集 / 绑定工作区',
-              onTap: () => showAgentProfileEditPage(context, profile: profile),
-            ),
-          ],
-        ),
-        const _GroupDivider(),
+        if (profile != null) ...[
+          _Group(
+            title: '当前智能体',
+            subtitle: '${profile.emoji} ${profile.name}',
+            children: [
+              _StaticRow(title: '绑定工作区', value: profile.workspaceName ?? '未绑定'),
+              _StaticRow(
+                title: '工具集',
+                value: profile.tools.map(_toolGroupLabel).join(' / '),
+              ),
+              _EntryRow(
+                title: '编辑智能体',
+                description: '名称 / 提示词 / 工具集 / 绑定工作区',
+                onTap: () =>
+                    showAgentProfileEditPage(context, profile: profile),
+              ),
+            ],
+          ),
+          const _GroupDivider(),
+        ],
         _Group(
           title: '执行设置',
           subtitle: '默认模式: ${_modeLabel(s.defaultMode)}',

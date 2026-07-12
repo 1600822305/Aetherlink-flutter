@@ -21,15 +21,14 @@ class AgentHomePage extends ConsumerWidget {
     final theme = Theme.of(context);
     final profiles = ref.watch(agentProfilesProvider);
     final profileId = ref.watch(selectedAgentProfileIdProvider);
-    final profile = profiles.firstWhere(
-      (p) => p.id == profileId,
-      orElse: () => profiles.first,
-    );
+    final profile =
+        profiles.where((p) => p.id == profileId).firstOrNull ??
+        profiles.firstOrNull;
     final tasks = ref.watch(agentTasksProvider);
     final taskId = ref.watch(selectedAgentTaskIdProvider);
     AgentTask? task;
     for (final t in tasks) {
-      if (t.id == taskId && t.profileId == profile.id) task = t;
+      if (t.id == taskId && t.profileId == profile?.id) task = t;
     }
 
     // 顶栏 chrome 与主聊天同款：纸面 surface、无阴影、1px 底分隔线。
@@ -51,7 +50,7 @@ class AgentHomePage extends ConsumerWidget {
         ),
         title: task == null
             ? Text(
-                '${profile.emoji} ${profile.name}',
+                profile == null ? '智能体' : '${profile.emoji} ${profile.name}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -78,109 +77,19 @@ class AgentHomePage extends ConsumerWidget {
                   AgentStatusLine(task: task),
                 ],
               ),
-        actions: task == null
-            ? null
-            : [_TaskMenuButton(task: task), const SizedBox(width: 4)],
       ),
-      body: task == null
+      body: task != null
+          ? AgentTaskShell(task: task)
+          : profile != null
           ? _DraftTopicView(profile: profile)
-          : AgentTaskShell(task: task),
-    );
-  }
-}
-
-/// 话题顶栏「…」菜单：重命名 / 删除话题（UI 先行阶段写会话内 provider）。
-class _TaskMenuButton extends ConsumerWidget {
-  const _TaskMenuButton({required this.task});
-
-  final AgentTask task;
-
-  Future<void> _rename(BuildContext context, WidgetRef ref) async {
-    final controller = TextEditingController(text: task.title);
-    final title = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('重命名话题'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('确定'),
-          ),
-        ],
-      ),
-    );
-    if (title != null && title.isNotEmpty) {
-      ref.read(agentTasksProvider.notifier).rename(task.id, title);
-    }
-  }
-
-  Future<void> _delete(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('删除话题'),
-        content: Text('确定删除「${task.title}」？事件流记录将一并删除。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed ?? false) {
-      ref.read(selectedAgentTaskIdProvider.notifier).select(null);
-      ref.read(agentTasksProvider.notifier).remove(task.id);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return PopupMenuButton<String>(
-      icon: const Icon(LucideIcons.ellipsis, size: 20),
-      onSelected: (value) => switch (value) {
-        'rename' => _rename(context, ref),
-        'delete' => _delete(context, ref),
-        _ => null,
-      },
-      itemBuilder: (context) => const [
-        PopupMenuItem(
-          value: 'rename',
-          child: Row(
-            children: [
-              Icon(LucideIcons.pencil, size: 16),
-              SizedBox(width: 10),
-              Text('重命名话题'),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          value: 'delete',
-          child: Row(
-            children: [
-              Icon(LucideIcons.trash2, size: 16),
-              SizedBox(width: 10),
-              Text('删除话题'),
-            ],
-          ),
-        ),
-      ],
+          : Center(
+              child: Text(
+                '还没有智能体，去侧边栏新建一个',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
     );
   }
 }
