@@ -59,8 +59,11 @@ class AgentRuntime {
   final Ref Function() _refOf;
 
   ({AgentLlmClient llm, AgentToolExecutor tools, ApprovalGate approval})
-      forProfile(AgentProfile profile) {
-    final catalog = _catalogFor(profile.tools);
+      forProfile(
+    AgentProfile profile, {
+    AgentSessionMode mode = AgentSessionMode.code,
+  }) {
+    final catalog = _catalogFor(profile.tools, mode: mode);
     return (
       llm: _GatewayAgentLlmClient(_refOf, profile, catalog.definitions),
       tools: _McpAgentToolExecutor(_refOf, catalog.routes),
@@ -75,15 +78,33 @@ class AgentRuntime {
   }
 }
 
+/// 只读硬约束（Ask/Plan 模式，参考 Roo Code 模式×工具组 /
+/// Claude Code plan 模式）：副作用工具从源头不暴露给模型（不占
+/// 上下文、不会被尝试调用），幻觉调用时由执行器「不在工具集内」
+/// 拒绝。终端命令无法静态判定副作用，整个组不暴露。
+const Set<String> _kReadOnlyToolNames = {
+  // 文件编辑器：只读子集
+  'get_workspace_files', 'list_files', 'read_file', 'get_file_info',
+  'search_files',
+  // 知识库：只读子集（kb_manage 有写操作，排除）
+  'kb_list', 'kb_search', 'kb_read',
+};
+
 /// 档案工具分组 → 模型可见工具定义 + 名称到 [ToolRoute] 的分发表。
 /// 控制工具（update_plan/ask_user/finish_task）恒在，由引擎内部处理。
+/// Ask/Plan 模式只保留只读工具（见 [_kReadOnlyToolNames]）。
 ({List<McpToolDefinition> definitions, Map<String, ToolRoute> routes})
-    _catalogFor(Set<AgentToolGroup> groups) {
+    _catalogFor(
+  Set<AgentToolGroup> groups, {
+  AgentSessionMode mode = AgentSessionMode.code,
+}) {
+  final readOnly = mode != AgentSessionMode.code;
   final definitions = <McpToolDefinition>[...kAgentControlToolDefinitions];
   final routes = <String, ToolRoute>{};
 
   void addServer(String server, ToolRoute Function(String name) routeOf) {
     for (final def in builtinToolsFor(server)) {
+      if (readOnly && !_kReadOnlyToolNames.contains(def.name)) continue;
       definitions.add(def);
       routes[def.name] = routeOf(def.name);
     }
@@ -92,7 +113,7 @@ class AgentRuntime {
   if (groups.contains(AgentToolGroup.fileEditor)) {
     addServer(kFileEditorServerName, FileEditorToolRoute.new);
   }
-  if (groups.contains(AgentToolGroup.terminal)) {
+  if (groups.contains(AgentToolGroup.terminal) && !readOnly) {
     addServer(kTerminalServerName, TerminalToolRoute.new);
   }
   if (groups.contains(AgentToolGroup.knowledgeBase)) {

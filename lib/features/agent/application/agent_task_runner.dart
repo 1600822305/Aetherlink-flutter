@@ -110,7 +110,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           systemPrompt: '',
           tools: AgentToolGroup.values.toSet(),
         );
-    final runtime = ref.read(agentRuntimeProvider).forProfile(profile);
+    final runtime =
+        ref.read(agentRuntimeProvider).forProfile(profile, mode: task.mode);
     final engine = AgentEngine(
       llm: runtime.llm,
       tools: runtime.tools,

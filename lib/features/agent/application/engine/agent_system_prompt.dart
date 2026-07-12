@@ -34,8 +34,8 @@ const String kAgentBaseGuide = '''
 /// 各会话模式的附加说明（Code/Ask/Plan，设计初稿 §3）。
 String _modeGuide(AgentSessionMode mode) => switch (mode) {
       AgentSessionMode.code => '当前为 Code 模式：可以直接修改文件、执行命令来完成任务。',
-      AgentSessionMode.ask => '当前为 Ask 模式：只做调研与解答，不要修改任何文件或执行有副作用的命令。',
-      AgentSessionMode.plan => '当前为 Plan 模式：只做分析并产出计划（用 update_plan 维护），不要实际修改文件。',
+      AgentSessionMode.ask => '当前为 Ask 模式：只做调研与解答。写类工具与终端已不可用，不要尝试修改文件或执行命令。',
+      AgentSessionMode.plan => '当前为 Plan 模式：只做分析并产出计划（用 update_plan 维护）。写类工具与终端已不可用，不要尝试修改文件。',
     };
 
 /// 组装完整 system prompt。[environmentContext] 为运行时生成的
