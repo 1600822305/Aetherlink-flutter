@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/workspace/application/workspace_name_conflicts.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_placeholders.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/readable_path.dart';
@@ -229,11 +230,35 @@ class WorkspaceFileOps {
       return;
     }
     try {
-      await backend.move(entry.path, dest);
+      var srcPath = entry.path;
+      var name = entry.name;
+      final existing = await _findConflict(dest, entry.name);
+      if (existing != null) {
+        final action = await _promptConflict(existing);
+        if (action == null) return;
+        if (action == ConflictAction.overwrite) {
+          await backend.delete(
+            existing.path,
+            isDirectory: existing.isDirectory,
+            recursive: existing.isDirectory,
+          );
+        } else {
+          // 保留两者：先在源目录里改成一个两边都不冲突的名字再移动
+          // （move 不支持改名，改名发生在源目录，所以两边都要查）。
+          final taken = <String>{
+            ...await _siblingNames(dest),
+            ...await _siblingNames(source),
+          };
+          name = resolveDuplicateName(entry.name, taken);
+          srcPath = await backend.rename(entry.path, name);
+        }
+        if (!context.mounted) return;
+      }
+      await backend.move(srcPath, dest);
       ensureExpanded(dest);
       await reloadDir(source);
       await reloadDir(dest);
-      _snack('已移动 ${entry.name}');
+      _snack('已移动 $name');
     } catch (e) {
       _snack('移动失败 · $e');
     }
@@ -249,13 +274,60 @@ class WorkspaceFileOps {
     );
     if (dest == null) return;
     try {
-      await backend.copy(entry.path, dest);
+      String? newName;
+      final existing = await _findConflict(dest, entry.name);
+      if (existing != null) {
+        final action = await _promptConflict(existing);
+        if (action == null) return;
+        if (action == ConflictAction.overwrite) {
+          await backend.delete(
+            existing.path,
+            isDirectory: existing.isDirectory,
+            recursive: existing.isDirectory,
+          );
+        } else {
+          newName = resolveDuplicateName(
+            entry.name,
+            await _siblingNames(dest),
+          );
+        }
+        if (!context.mounted) return;
+      }
+      await backend.copy(entry.path, dest, newName: newName);
       ensureExpanded(dest);
       await reloadDir(dest);
-      _snack('已复制 ${entry.name}');
+      _snack('已复制 ${newName ?? entry.name}');
     } catch (e) {
       _snack('复制失败 · $e');
     }
+  }
+
+  // The destination's same-name entry, or null when the name is free (or the
+  // destination can't be listed — the op then proceeds and may still throw).
+  Future<WorkspaceEntry?> _findConflict(String dest, String name) async {
+    try {
+      for (final e in await backend.listDir(dest)) {
+        if (e.name == name) return e;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<Set<String>> _siblingNames(String dir) async {
+    try {
+      return (await backend.listDir(dir)).map((e) => e.name).toSet();
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  Future<ConflictAction?> _promptConflict(WorkspaceEntry existing) {
+    if (!context.mounted) return Future.value();
+    return promptNameConflict(
+      context,
+      name: existing.name,
+      existingIsDirectory: existing.isDirectory,
+    );
   }
 
   // Resolves the created file's entry for the auto-open callback; falls back

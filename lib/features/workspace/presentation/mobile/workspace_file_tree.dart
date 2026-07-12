@@ -860,23 +860,121 @@ class _FileRow extends StatelessWidget {
     );
   }
 
+  static const Map<String, IconData> _extIcons = {
+    // 代码
+    'dart': LucideIcons.code,
+    'js': LucideIcons.fileCode,
+    'mjs': LucideIcons.fileCode,
+    'cjs': LucideIcons.fileCode,
+    'ts': LucideIcons.fileCode,
+    'tsx': LucideIcons.fileCode,
+    'jsx': LucideIcons.fileCode,
+    'py': LucideIcons.fileCode,
+    'java': LucideIcons.fileCode,
+    'kt': LucideIcons.fileCode,
+    'swift': LucideIcons.fileCode,
+    'c': LucideIcons.fileCode,
+    'h': LucideIcons.fileCode,
+    'cpp': LucideIcons.fileCode,
+    'hpp': LucideIcons.fileCode,
+    'cs': LucideIcons.fileCode,
+    'go': LucideIcons.fileCode,
+    'rs': LucideIcons.fileCode,
+    'rb': LucideIcons.fileCode,
+    'php': LucideIcons.fileCode,
+    'lua': LucideIcons.fileCode,
+    // 网页/样式
+    'html': LucideIcons.globe,
+    'htm': LucideIcons.globe,
+    'css': LucideIcons.palette,
+    'scss': LucideIcons.palette,
+    'less': LucideIcons.palette,
+    // 脚本/终端
+    'sh': LucideIcons.fileTerminal,
+    'bash': LucideIcons.fileTerminal,
+    'zsh': LucideIcons.fileTerminal,
+    'bat': LucideIcons.fileTerminal,
+    'ps1': LucideIcons.fileTerminal,
+    // 配置/数据
+    'yaml': LucideIcons.settings,
+    'yml': LucideIcons.settings,
+    'toml': LucideIcons.settings,
+    'ini': LucideIcons.settings,
+    'env': LucideIcons.settings,
+    'properties': LucideIcons.settings,
+    'gradle': LucideIcons.settings,
+    'json': LucideIcons.fileJson,
+    'jsonc': LucideIcons.fileJson,
+    'xml': LucideIcons.fileCode2,
+    'csv': LucideIcons.fileSpreadsheet,
+    'tsv': LucideIcons.fileSpreadsheet,
+    'xls': LucideIcons.fileSpreadsheet,
+    'xlsx': LucideIcons.fileSpreadsheet,
+    'sql': LucideIcons.database,
+    'db': LucideIcons.database,
+    'sqlite': LucideIcons.database,
+    // 文档
+    'md': LucideIcons.fileText,
+    'txt': LucideIcons.fileText,
+    'rst': LucideIcons.fileText,
+    'log': LucideIcons.fileText,
+    'pdf': LucideIcons.fileText,
+    'doc': LucideIcons.fileText,
+    'docx': LucideIcons.fileText,
+    // 图片
+    'png': LucideIcons.image,
+    'jpg': LucideIcons.image,
+    'jpeg': LucideIcons.image,
+    'gif': LucideIcons.image,
+    'svg': LucideIcons.image,
+    'webp': LucideIcons.image,
+    'bmp': LucideIcons.image,
+    'ico': LucideIcons.image,
+    // 音视频
+    'mp3': LucideIcons.fileAudio,
+    'wav': LucideIcons.fileAudio,
+    'flac': LucideIcons.fileAudio,
+    'ogg': LucideIcons.fileAudio,
+    'm4a': LucideIcons.fileAudio,
+    'mp4': LucideIcons.fileVideo,
+    'mkv': LucideIcons.fileVideo,
+    'avi': LucideIcons.fileVideo,
+    'mov': LucideIcons.fileVideo,
+    'webm': LucideIcons.fileVideo,
+    // 压缩包/安装包
+    'zip': LucideIcons.fileArchive,
+    'rar': LucideIcons.fileArchive,
+    '7z': LucideIcons.fileArchive,
+    'tar': LucideIcons.fileArchive,
+    'gz': LucideIcons.fileArchive,
+    'bz2': LucideIcons.fileArchive,
+    'xz': LucideIcons.fileArchive,
+    'apk': LucideIcons.package2,
+    'aab': LucideIcons.package2,
+    'jar': LucideIcons.package2,
+    'deb': LucideIcons.package2,
+    // 证书/密钥
+    'pem': LucideIcons.fileKey,
+    'key': LucideIcons.fileKey,
+    'crt': LucideIcons.fileKey,
+    'keystore': LucideIcons.fileKey,
+    'jks': LucideIcons.fileKey,
+    // 字体
+    'ttf': LucideIcons.fileType,
+    'otf': LucideIcons.fileType,
+    'woff': LucideIcons.fileType,
+    'woff2': LucideIcons.fileType,
+  };
+
   IconData _fileIcon(String name) {
     final lower = name.toLowerCase();
-    if (lower.endsWith('.dart')) return LucideIcons.code;
-    if (lower.endsWith('.md')) return LucideIcons.fileText;
-    if (lower.endsWith('.yaml') ||
-        lower.endsWith('.yml') ||
-        lower.endsWith('.json')) {
-      return LucideIcons.settings;
+    if (lower == 'dockerfile' || lower == 'makefile') {
+      return LucideIcons.fileCog;
     }
-    if (lower.endsWith('.png') ||
-        lower.endsWith('.jpg') ||
-        lower.endsWith('.jpeg') ||
-        lower.endsWith('.svg') ||
-        lower.endsWith('.webp')) {
-      return LucideIcons.image;
-    }
-    return LucideIcons.file;
+    if (lower.startsWith('.git')) return LucideIcons.gitBranch;
+    final dot = lower.lastIndexOf('.');
+    if (dot < 0 || dot == lower.length - 1) return LucideIcons.file;
+    return _extIcons[lower.substring(dot + 1)] ?? LucideIcons.file;
   }
 }
 

@@ -50,6 +50,48 @@ Future<String?> promptName(
   return name;
 }
 
+/// User's choice when a move/copy destination already has a same-name entry.
+enum ConflictAction { overwrite, keepBoth }
+
+/// Asks how to handle a name conflict at the destination: 覆盖（先删除既有
+/// 项再执行）、保留两者（自动改成「name (2).ext」）或取消（返回 null）。
+Future<ConflictAction?> promptNameConflict(
+  BuildContext context, {
+  required String name,
+  required bool existingIsDirectory,
+}) {
+  return showDialog<ConflictAction>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('目标已存在'),
+      content: Text(
+        existingIsDirectory
+            ? '目标位置已有同名文件夹「$name」。覆盖将删除该文件夹及其全部内容。'
+            : '目标位置已有同名文件「$name」。',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: () =>
+              Navigator.of(context).pop(ConflictAction.keepBoth),
+          child: const Text('保留两者'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+          onPressed: () =>
+              Navigator.of(context).pop(ConflictAction.overwrite),
+          child: const Text('覆盖'),
+        ),
+      ],
+    ),
+  );
+}
+
 /// Confirms deletion of [name]. Directories warn that contents go too.
 Future<bool> confirmDelete(
   BuildContext context, {
