@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:aetherlink_flutter/app/di/app_main_mode.dart';
 import 'package:aetherlink_flutter/app/di/behavior_settings_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme.dart';
@@ -107,9 +108,15 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
     // we land on the right page without flashing the welcome page (mirrors the
     // web's loading gate). On error, default to the chat home like the web did.
     final onboarding = ref.watch(onboardingControllerProvider);
-    if (_router == null && (onboarding.hasValue || onboarding.hasError)) {
+    // 主界面模式（聊天/智能体）同样在建路由前解析：退出前在智能体模式，
+    // 冷启动就直接落 /agent（welcome 优先）。
+    final mainMode = ref.watch(appMainModeControllerProvider);
+    final settled = (onboarding.hasValue || onboarding.hasError) &&
+        (mainMode.hasValue || mainMode.hasError);
+    if (_router == null && settled) {
       _router = AppRouter.create(
         startAtWelcome: onboarding.value ?? false,
+        startAtAgent: mainMode.value == AppMainMode.agent,
       );
       // Feed the active route to the performance monitor so jank events can be
       // attributed to a screen (e.g. "/chat"). setRoute is a no-op while the

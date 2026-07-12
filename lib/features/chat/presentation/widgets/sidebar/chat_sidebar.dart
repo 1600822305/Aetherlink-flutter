@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/app_main_mode.dart';
 import 'package:aetherlink_flutter/app/di/notes_sidebar_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
@@ -248,8 +249,8 @@ class _SidebarTab extends StatelessWidget {
   }
 }
 
-/// Bottom action row: 工作区 + 翻译 入口，并排居中。整行随 [showTranslate]
-/// 一起在设置 tab 时隐藏。
+/// Bottom action row: 工作区 + 翻译 + 智能体 入口，并排居中。整行随
+/// [showTranslate] 一起在设置 tab 时隐藏。
 class _BottomActionRow extends StatelessWidget {
   const _BottomActionRow();
 
@@ -269,7 +270,38 @@ class _BottomActionRow extends StatelessWidget {
             icon: LucideIcons.languages,
             destination: AppRouter.translatePath,
           ),
+          SizedBox(width: 8),
+          _AgentModeButton(),
         ],
+      ),
+    );
+  }
+}
+
+/// 智能体模式入口：切换主界面模式并持久化（冷启动回到退出前的模式），
+/// 用 go 而非 push：两个主界面是同级平行关系，不压栈。
+class _AgentModeButton extends ConsumerWidget {
+  const _AgentModeButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final textPrimary = Theme.of(context).colorScheme.onSurface;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: () {
+          ref
+              .read(appMainModeControllerProvider.notifier)
+              .use(AppMainMode.agent);
+          context.go(AppRouter.agentPath);
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(LucideIcons.bot, size: 22, color: textPrimary),
+        ),
       ),
     );
   }

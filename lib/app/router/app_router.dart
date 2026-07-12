@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_home_page.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/translate_page.dart';
 import 'package:aetherlink_flutter/features/backup/presentation/backup_settings_page.dart';
@@ -131,6 +132,10 @@ abstract final class AppRouter {
   static const String translatePath = '/translate';
   static const String workspacePath = '/workspace';
 
+  /// 智能体模式主界面：与聊天同级，侧栏底部按钮互切；冷启动落点由
+  /// `app_main_mode` 持久化决定（智能体架构稿 §三）。
+  static const String agentPath = '/agent';
+
   /// 独立终端页：复用 [WorkspaceTerminalPage]，但作为单独路由压栈，
   /// 返回直接 pop 回上一页（如聊天），不受工作区 PageView / 两次退出影响。
   static const String terminalPath = '/workspace/terminal';
@@ -178,9 +183,14 @@ abstract final class AppRouter {
   /// Builds the router. [startAtWelcome] decides the first landing page: M4.1
   /// passes the in-memory onboarding state (first-time user → [welcomePath],
   /// otherwise → [chatPath]). It defaults to `false` so existing callers keep
-  /// landing on the chat home.
-  static GoRouter create({bool startAtWelcome = false}) => GoRouter(
-    initialLocation: startAtWelcome ? welcomePath : chatPath,
+  /// landing on the chat home. [startAtAgent] restores the persisted 主界面
+  /// 模式（退出前在智能体模式 → 冷启动直接落 [agentPath]）；welcome 优先。
+  static GoRouter create({bool startAtWelcome = false, bool startAtAgent = false}) => GoRouter(
+    initialLocation: startAtWelcome
+        ? welcomePath
+        : startAtAgent
+            ? agentPath
+            : chatPath,
     observers: [_HapticNavObserver()],
     routes: [
       GoRoute(
@@ -202,6 +212,11 @@ abstract final class AppRouter {
         path: workspacePath,
         name: 'workspace',
         pageBuilder: (context, state) => _instant(state, const WorkspacePage()),
+      ),
+      GoRoute(
+        path: agentPath,
+        name: 'agent',
+        pageBuilder: (context, state) => _instant(state, const AgentHomePage()),
       ),
       GoRoute(
         path: terminalPath,

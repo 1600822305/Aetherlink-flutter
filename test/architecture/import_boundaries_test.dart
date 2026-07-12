@@ -62,6 +62,33 @@ void main() {
     }
   }
 
+  // 智能体模块隔离（智能体架构稿 §决策记录 13）：agent 与 chat 互不引用——
+  // agent 是与聊天同级的全新主界面，禁止 import features/chat 的任何内容
+  // （含 domain/presentation）；chat 侧也不得依赖 agent 内部（模式切换按钮
+  // 经由 app/di + 路由完成）。
+  final agentChatViolations = <String>[];
+  for (final file in dartFiles) {
+    final libPath = _toPosix(file.path);
+    final feature = _featureOf(libPath.split('/'));
+    if (feature != 'agent' && feature != 'chat') continue;
+    final forbidden = feature == 'agent' ? 'chat' : 'agent';
+    for (final import in _importsOf(file)) {
+      if (!import.startsWith(packagePrefix)) continue;
+      final internalPath = 'lib/${import.substring(packagePrefix.length)}';
+      if (_featureOf(internalPath.split('/')) == forbidden) {
+        agentChatViolations.add('[agent↔chat] $libPath imports $import');
+      }
+    }
+  }
+
+  test('agent and chat never import each other', () {
+    expect(
+      agentChatViolations,
+      isEmpty,
+      reason: 'agent↔chat imports found:\n${agentChatViolations.join('\n')}',
+    );
+  });
+
   test('features do not import other features\' application/data', () {
     expect(
       dartFiles,
