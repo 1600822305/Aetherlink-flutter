@@ -13,10 +13,23 @@ part 'agent_providers.g.dart';
 const String kLastActiveAgentProfileKey = 'agent_last_profile';
 const String kLastActiveAgentTaskKey = 'agent_last_task';
 
-/// 智能体档案列表。UI 先行阶段返回内置预设；接真实现时替换为
-/// drift 读取（内置+自建）。
+/// 智能体档案列表。UI 先行阶段为内置预设 + 会话内可编辑/新建
+/// （编辑页写这里，重启丢失）；接真实现时替换为 drift 读取与写入。
 @Riverpod(keepAlive: true)
-List<AgentProfile> agentProfiles(Ref ref) => kBuiltinAgentProfiles;
+class AgentProfiles extends _$AgentProfiles {
+  @override
+  List<AgentProfile> build() => kBuiltinAgentProfiles;
+
+  /// 新增或按 id 覆盖一个档案（编辑页保存）。
+  void upsert(AgentProfile profile) {
+    final index = state.indexWhere((p) => p.id == profile.id);
+    state = [
+      for (var i = 0; i < state.length; i++)
+        if (i == index) profile else state[i],
+      if (index < 0) profile,
+    ];
+  }
+}
 
 /// 全部话题（mock）。接真实现时替换为 drift 查询。
 @Riverpod(keepAlive: true)

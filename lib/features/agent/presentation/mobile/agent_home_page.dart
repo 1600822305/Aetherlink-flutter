@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_profile_edit_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_task_shell.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/agent_sidebar.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_input_bar.dart';
@@ -88,31 +89,37 @@ class _DraftTopicView extends StatelessWidget {
               children: [
                 Text(profile.emoji, style: const TextStyle(fontSize: 40)),
                 const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: cs.onSurface.withValues(alpha: 0.05),
+                Material(
+                  color: cs.onSurface.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(8),
+                  child: InkWell(
+                    // 点工作区 chip 直达智能体编辑页（绑定/换绑工作区）。
+                    onTap: () =>
+                        showAgentProfileEditPage(context, profile: profile),
                     borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        LucideIcons.folderTree,
-                        size: 14,
-                        color: cs.onSurface.withValues(alpha: 0.6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            LucideIcons.folderTree,
+                            size: 14,
+                            color: cs.onSurface.withValues(alpha: 0.6),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            bound
+                                ? profile.workspaceName!
+                                : '未绑定工作区 · 点这里去绑定',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: cs.onSurface.withValues(alpha: 0.7),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        bound
-                            ? profile.workspaceName!
-                            : '未绑定工作区 · 去智能体设置选择',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: cs.onSurface.withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),

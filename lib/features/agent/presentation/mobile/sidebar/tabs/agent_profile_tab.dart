@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_profile_edit_page.dart';
 
 class AgentProfileTab extends ConsumerWidget {
   const AgentProfileTab({required this.onGoToTopics, super.key});
@@ -44,7 +45,9 @@ class AgentProfileTab extends ConsumerWidget {
                     onGoToTopics();
                   },
                 ),
-              _NewProfileRow(onTap: () {}), // TODO(agent): 新建/编辑智能体页
+              _NewProfileRow(
+                onTap: () => showAgentProfileEditPage(context),
+              ),
             ],
           ),
         ),

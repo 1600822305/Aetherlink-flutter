@@ -8,6 +8,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_profile_edit_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 
 class AgentSettingsTab extends ConsumerWidget {
@@ -42,7 +43,8 @@ class AgentSettingsTab extends ConsumerWidget {
             _EntryRow(
               title: '编辑智能体',
               description: '名称 / 提示词 / 工具集 / 绑定工作区',
-              onTap: () {}, // TODO(agent): 智能体编辑页（复用助手设置页方案）
+              onTap: () =>
+                  showAgentProfileEditPage(context, profile: profile),
             ),
           ],
         ),

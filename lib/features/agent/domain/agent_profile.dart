@@ -37,4 +37,30 @@ class AgentProfile {
   final String? workspaceName;
 
   final bool builtin;
+
+  static const Object _unset = Object();
+
+  AgentProfile copyWith({
+    String? name,
+    String? emoji,
+    String? systemPrompt,
+    Set<AgentToolGroup>? tools,
+    Object? workspaceId = _unset,
+    Object? workspaceName = _unset,
+  }) {
+    return AgentProfile(
+      id: id,
+      name: name ?? this.name,
+      emoji: emoji ?? this.emoji,
+      systemPrompt: systemPrompt ?? this.systemPrompt,
+      tools: tools ?? this.tools,
+      workspaceId: identical(workspaceId, _unset)
+          ? this.workspaceId
+          : workspaceId as String?,
+      workspaceName: identical(workspaceName, _unset)
+          ? this.workspaceName
+          : workspaceName as String?,
+      builtin: builtin,
+    );
+  }
 }
