@@ -50,6 +50,64 @@ Future<String?> promptName(
   return name;
 }
 
+/// Prompts for a new file's name plus whether to seed it with a starter
+/// template matched by extension. Returns `null` on cancel/empty input.
+Future<({String name, bool useTemplate})?> promptNewFile(
+  BuildContext context,
+) async {
+  final controller = TextEditingController();
+  final result = await showDialog<({String name, bool useTemplate})>(
+    context: context,
+    builder: (context) {
+      var useTemplate = true;
+      return StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('新建文件'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(hintText: '文件名,如 notes.md'),
+                onSubmitted: (v) => Navigator.of(context)
+                    .pop((name: v.trim(), useTemplate: useTemplate)),
+              ),
+              const SizedBox(height: 4),
+              CheckboxListTile(
+                value: useTemplate,
+                onChanged: (v) => setState(() => useTemplate = v ?? true),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text(
+                  '按扩展名填入起始模板(.md/.py/.sh/.html 等)',
+                  style: TextStyle(fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(
+                (name: controller.text.trim(), useTemplate: useTemplate),
+              ),
+              child: const Text('创建'),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+  controller.dispose();
+  if (result == null || result.name.isEmpty) return null;
+  return result;
+}
+
 /// User's choice when a move/copy destination already has a same-name entry.
 enum ConflictAction { overwrite, keepBoth }
 

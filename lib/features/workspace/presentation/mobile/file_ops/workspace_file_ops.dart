@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/workspace/application/workspace_file_templates.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_name_conflicts.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_placeholders.dart';
@@ -30,6 +31,7 @@ class WorkspaceFileOps {
     this.onFileCreated,
     this.canGitDiff,
     this.onGitDiff,
+    this.onShare,
   });
 
   final BuildContext context;
@@ -58,6 +60,10 @@ class WorkspaceFileOps {
   /// Shows the git working-tree diff for [entry]。
   final Future<void> Function(WorkspaceEntry entry)? onGitDiff;
 
+  /// Exports [entry]'s bytes to the OS share sheet (用其他应用打开/分享).
+  /// Null ⇒ the action is hidden.
+  final Future<void> Function(WorkspaceEntry entry)? onShare;
+
   bool get _writable => backend.capabilities.canWrite;
 
   void _snack(String message) {
@@ -80,6 +86,7 @@ class WorkspaceFileOps {
         protected: protected,
         writable: _writable,
         showGitDiff: canGitDiff?.call(entry) ?? false,
+        showShare: onShare != null && !entry.isDirectory,
       ),
     );
     if (action == null || !context.mounted) return;
@@ -100,6 +107,8 @@ class WorkspaceFileOps {
         await showDetails(entry);
       case _FileAction.gitDiff:
         await onGitDiff?.call(entry);
+      case _FileAction.share:
+        await onShare?.call(entry);
       case _FileAction.delete:
         await delete(entry);
     }
@@ -138,15 +147,15 @@ class WorkspaceFileOps {
 
   Future<void> newFile(String parentPath) async {
     if (!_guardWritable()) return;
-    final name = await promptName(
-      context,
-      title: '新建文件',
-      confirmLabel: '创建',
-      hint: '文件名,如 notes.md',
-    );
-    if (name == null) return;
+    final req = await promptNewFile(context);
+    if (req == null) return;
+    final name = req.name;
     try {
-      final newPath = await backend.createFile(parentPath, name);
+      final newPath = await backend.createFile(
+        parentPath,
+        name,
+        content: req.useTemplate ? fileTemplateFor(name) : null,
+      );
       ensureExpanded(parentPath);
       await reloadDir(parentPath);
       _snack('已创建 $name');
@@ -193,8 +202,95 @@ class WorkspaceFileOps {
     }
   }
 
+  /// 回收站目录名（工作区根下的隐藏目录）。删除默认是「移入回收站 + 可撤销」；
+  /// 回收站内的条目（或回收站本身）才真正删除。
+  static const String kTrashDirName = '.aetherlink_trash';
+
+  // The trash directory's opaque path when it already exists under the root.
+  Future<String?> _findTrashPath() async {
+    try {
+      for (final e in await backend.listDir(rootPath)) {
+        if (e.name == kTrashDirName && e.isDirectory) return e.path;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  // Whether [ancestor] appears in [path]'s cached parent chain. Paths are
+  // opaque, so this only knows about directories already loaded in the tree.
+  bool _hasAncestor(String path, String ancestor) {
+    var cursor = parentOf(path);
+    while (cursor != null) {
+      if (cursor == ancestor) return true;
+      if (cursor == rootPath) return false;
+      cursor = parentOf(cursor);
+    }
+    return false;
+  }
+
   Future<void> delete(WorkspaceEntry entry) async {
     if (!_guardWritable() || !_guardNotProtected(entry)) return;
+    final trashPath = await _findTrashPath();
+    if (!context.mounted) return;
+    final inTrash = trashPath != null &&
+        (entry.path == trashPath || _hasAncestor(entry.path, trashPath));
+    if (inTrash) {
+      await _deleteForever(entry);
+      return;
+    }
+    try {
+      final undo = await _moveToTrash(entry, trashPath);
+      if (undo == null) return;
+      if (!context.mounted) return;
+      AppToast.success(
+        context,
+        '已移入回收站 ${entry.name}',
+        duration: const Duration(seconds: 6),
+        action: AppToastAction(label: '撤销', onPressed: undo),
+      );
+    } catch (e) {
+      _snack('删除失败 · $e');
+    }
+  }
+
+  // Moves [entry] into the trash dir (creating it if needed, keep-both on
+  // name conflicts) and returns an undo closure, or null when it failed.
+  Future<VoidCallback?> _moveToTrash(
+    WorkspaceEntry entry,
+    String? trashPath,
+  ) async {
+    final source = _parentDirOf(entry);
+    final trash = trashPath ??
+        await backend.createDirectory(rootPath, kTrashDirName);
+    var srcPath = entry.path;
+    var name = entry.name;
+    final trashNames = await _siblingNames(trash);
+    if (trashNames.contains(name)) {
+      final taken = {
+        ...trashNames,
+        ...await _siblingNames(source),
+      }..remove(entry.name);
+      name = resolveDuplicateName(entry.name, taken);
+      srcPath = await backend.rename(entry.path, name);
+    }
+    final trashedPath = await backend.move(srcPath, trash);
+    await reloadDir(source);
+    return () async {
+      try {
+        var restored = await backend.move(trashedPath, source);
+        if (name != entry.name) {
+          restored = await backend.rename(restored, entry.name);
+        }
+        await reloadDir(source);
+        _snack('已恢复 ${entry.name}');
+      } catch (e) {
+        _snack('撤销失败 · $e');
+      }
+    };
+  }
+
+  // Permanent deletion (used inside the trash dir), with the hard confirm.
+  Future<void> _deleteForever(WorkspaceEntry entry) async {
     final ok = await confirmDelete(
       context,
       name: entry.name,
@@ -212,6 +308,137 @@ class WorkspaceFileOps {
     } catch (e) {
       _snack('删除失败 · $e');
     }
+  }
+
+  // ===== 多选批量操作 =====
+
+  /// Batch soft-delete: every entry is moved to the trash; a single toast
+  /// undoes all of them. Protected mounts and entries already in the trash
+  /// are skipped.
+  Future<void> deleteMany(List<WorkspaceEntry> entries) async {
+    if (!_guardWritable()) return;
+    var trashPath = await _findTrashPath();
+    final undos = <VoidCallback>[];
+    var skipped = 0;
+    for (final entry in entries) {
+      final inTrash = trashPath != null &&
+          (entry.path == trashPath || _hasAncestor(entry.path, trashPath));
+      if (backend.isProtectedPath(entry.path) || inTrash) {
+        skipped++;
+        continue;
+      }
+      try {
+        final undo = await _moveToTrash(entry, trashPath);
+        trashPath ??= await _findTrashPath();
+        if (undo != null) undos.add(undo);
+      } catch (_) {
+        skipped++;
+      }
+    }
+    if (!context.mounted) return;
+    if (undos.isEmpty) {
+      _snack('没有可删除的项（跳过 $skipped 项）');
+      return;
+    }
+    AppToast.success(
+      context,
+      '已移入回收站 ${undos.length} 项${skipped > 0 ? '，跳过 $skipped 项' : ''}',
+      duration: const Duration(seconds: 6),
+      action: AppToastAction(
+        label: '撤销',
+        onPressed: () {
+          for (final undo in undos) {
+            undo();
+          }
+        },
+      ),
+    );
+  }
+
+  /// Batch move to a picked destination. Name conflicts resolve as keep-both
+  /// (「name (2).ext」) — no per-item dialogs. Protected mounts, entries
+  /// already in the destination and moves into themselves are skipped.
+  Future<void> moveMany(List<WorkspaceEntry> entries) async {
+    if (!_guardWritable()) return;
+    final dest = await pickDestinationDirectory(
+      context,
+      backend: backend,
+      rootPath: rootPath,
+      rootName: rootName,
+    );
+    if (dest == null) return;
+    var moved = 0;
+    var skipped = 0;
+    final touched = <String>{dest};
+    for (final entry in entries) {
+      final source = _parentDirOf(entry);
+      if (backend.isProtectedPath(entry.path) ||
+          source == dest ||
+          entry.path == dest ||
+          (entry.isDirectory && _hasAncestor(dest, entry.path))) {
+        skipped++;
+        continue;
+      }
+      try {
+        var srcPath = entry.path;
+        var name = entry.name;
+        if ((await _siblingNames(dest)).contains(name)) {
+          final taken = {
+            ...await _siblingNames(dest),
+            ...await _siblingNames(source),
+          }..remove(entry.name);
+          name = resolveDuplicateName(entry.name, taken);
+          srcPath = await backend.rename(entry.path, name);
+        }
+        await backend.move(srcPath, dest);
+        touched.add(source);
+        moved++;
+      } catch (_) {
+        skipped++;
+      }
+    }
+    ensureExpanded(dest);
+    for (final dir in touched) {
+      await reloadDir(dir);
+    }
+    _snack('已移动 $moved 项${skipped > 0 ? '，跳过 $skipped 项' : ''}');
+  }
+
+  /// Batch copy to a picked destination; keep-both on name conflicts.
+  Future<void> copyMany(List<WorkspaceEntry> entries) async {
+    if (!_guardWritable()) return;
+    final dest = await pickDestinationDirectory(
+      context,
+      backend: backend,
+      rootPath: rootPath,
+      rootName: rootName,
+    );
+    if (dest == null) return;
+    var copied = 0;
+    var skipped = 0;
+    for (final entry in entries) {
+      if (entry.path == dest ||
+          (entry.isDirectory && _hasAncestor(dest, entry.path))) {
+        skipped++;
+        continue;
+      }
+      try {
+        String? newName;
+        if ((await _siblingNames(dest)).contains(entry.name)) {
+          newName = resolveDuplicateName(
+            entry.name,
+            await _siblingNames(dest),
+          );
+        }
+        await backend.copy(entry.path, dest, newName: newName);
+        copied++;
+      } catch (_) {
+        skipped++;
+      }
+    }
+    ensureExpanded(dest);
+    await reloadDir(dest);
+    _snack('已复制 $copied 项${skipped > 0 ? '，跳过 $skipped 项' : ''}');
   }
 
   Future<void> move(WorkspaceEntry entry) async {
@@ -369,6 +596,7 @@ enum _FileAction {
   copyPath,
   details,
   gitDiff,
+  share,
   delete,
 }
 
@@ -378,6 +606,7 @@ class _ActionSheet extends StatelessWidget {
     this.protected = false,
     this.writable = true,
     this.showGitDiff = false,
+    this.showShare = false,
   });
 
   final WorkspaceEntry entry;
@@ -390,6 +619,9 @@ class _ActionSheet extends StatelessWidget {
 
   /// Whether to offer 「Git 对比」 (the entry has a git working-tree status).
   final bool showGitDiff;
+
+  /// Whether to offer 「用其他应用打开/分享」 (files only).
+  final bool showShare;
 
   @override
   Widget build(BuildContext context) {
@@ -461,6 +693,12 @@ class _ActionSheet extends StatelessWidget {
               icon: LucideIcons.fileDiff,
               label: 'Git 对比',
               action: _FileAction.gitDiff,
+            ),
+          if (showShare)
+            const _ActionTile(
+              icon: LucideIcons.share2,
+              label: '用其他应用打开/分享',
+              action: _FileAction.share,
             ),
           if (writable && !protected) ...[
             const _MenuDivider(),

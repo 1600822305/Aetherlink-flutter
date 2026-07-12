@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_diff_view.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_registry.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/workspace_file_share.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/open_workspace_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/workspace_file_ops.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/workspace_search_sheet.dart';
@@ -92,6 +93,11 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   Timer? _watchDebounce;
   final Set<String> _pendingReload = {};
 
+  // 多选模式：选中集合按路径索引，退出时清空。选择中点击行只切换勾选，
+  // 不展开目录/不打开文件；长按菜单也禁用。
+  bool _selecting = false;
+  final Map<String, WorkspaceEntry> _selected = {};
+
   // Guards against re-revealing the same active file repeatedly and lets the
   // first build trigger an initial reveal (no change event fires for the
   // already-set active tab on entry).
@@ -115,6 +121,8 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   // Resets the tree to a new workspace root (or none) and loads the root.
   void _bindWorkspace(Workspace? workspace) {
     _root = workspace?.root;
+    _selecting = false;
+    _selected.clear();
     _expanded.clear();
     _children.clear();
     _parentIndex.clear();
@@ -465,6 +473,29 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     }
   }
 
+  void _toggleSelected(WorkspaceEntry entry) {
+    setState(() {
+      if (_selected.containsKey(entry.path)) {
+        _selected.remove(entry.path);
+      } else {
+        _selected[entry.path] = entry;
+      }
+    });
+  }
+
+  // Runs a batch op over the current selection, then exits select mode.
+  Future<void> _batch(
+    Future<void> Function(List<WorkspaceEntry> sel) op,
+  ) async {
+    final sel = _selected.values.toList();
+    if (sel.isEmpty) return;
+    setState(() {
+      _selecting = false;
+      _selected.clear();
+    });
+    await op(sel);
+  }
+
   // Collapses everything back to the root. Cached children stay so re-expanding
   // is instant.
   void _collapseAll() {
@@ -566,6 +597,8 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                       entry,
                       dirtyPaths: ref.read(dirtyFilesProvider),
                     ),
+            onShare: (entry) =>
+                shareWorkspaceFile(context, ref, entry: entry),
           )
         : null;
     final canWrite = backend?.capabilities.canWrite ?? false;
@@ -620,48 +653,98 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
-              child: Row(
-                children: [
-                  _ToolbarButton(
-                    icon: LucideIcons.filePlus,
-                    tooltip: '新建文件',
-                    enabled: ops != null && canWrite,
-                    onTap: () => ops?.newFile(ops.rootPath),
-                  ),
-                  _ToolbarButton(
-                    icon: LucideIcons.folderPlus,
-                    tooltip: '新建文件夹',
-                    enabled: ops != null && canWrite,
-                    onTap: () => ops?.newFolder(ops.rootPath),
-                  ),
-                  const Spacer(),
-                  _SortMenuButton(
-                    mode: sortMode,
-                    enabled: root != null,
-                    onSelected: (m) =>
-                        ref.read(treeSortModeProvider.notifier).set(m),
-                  ),
-                  _ToolbarButton(
-                    icon: showHidden ? LucideIcons.eye : LucideIcons.eyeOff,
-                    tooltip: showHidden ? '隐藏隐藏文件' : '显示隐藏文件',
-                    enabled: root != null,
-                    onTap: () =>
-                        ref.read(showHiddenFilesProvider.notifier).toggle(),
-                  ),
-                  _ToolbarButton(
-                    icon: LucideIcons.refreshCw,
-                    tooltip: '刷新',
-                    enabled: root != null,
-                    onTap: _refresh,
-                  ),
-                  _ToolbarButton(
-                    icon: LucideIcons.chevronsDownUp,
-                    tooltip: '全部折叠',
-                    enabled: root != null,
-                    onTap: _collapseAll,
-                  ),
-                ],
-              ),
+              child: _selecting
+                  ? Row(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: Text(
+                            '已选 ${_selected.length} 项',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        _ToolbarButton(
+                          icon: LucideIcons.cornerUpRight,
+                          tooltip: '移动到…',
+                          enabled: canWrite && _selected.isNotEmpty,
+                          onTap: () => _batch((sel) => ops!.moveMany(sel)),
+                        ),
+                        _ToolbarButton(
+                          icon: LucideIcons.copy,
+                          tooltip: '复制到…',
+                          enabled: canWrite && _selected.isNotEmpty,
+                          onTap: () => _batch((sel) => ops!.copyMany(sel)),
+                        ),
+                        _ToolbarButton(
+                          icon: LucideIcons.trash2,
+                          tooltip: '删除（移入回收站）',
+                          enabled: canWrite && _selected.isNotEmpty,
+                          onTap: () => _batch((sel) => ops!.deleteMany(sel)),
+                        ),
+                        _ToolbarButton(
+                          icon: LucideIcons.x,
+                          tooltip: '退出多选',
+                          onTap: () => setState(() {
+                            _selecting = false;
+                            _selected.clear();
+                          }),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        _ToolbarButton(
+                          icon: LucideIcons.filePlus,
+                          tooltip: '新建文件',
+                          enabled: ops != null && canWrite,
+                          onTap: () => ops?.newFile(ops.rootPath),
+                        ),
+                        _ToolbarButton(
+                          icon: LucideIcons.folderPlus,
+                          tooltip: '新建文件夹',
+                          enabled: ops != null && canWrite,
+                          onTap: () => ops?.newFolder(ops.rootPath),
+                        ),
+                        _ToolbarButton(
+                          icon: LucideIcons.squareCheck,
+                          tooltip: '多选',
+                          enabled: root != null && canWrite,
+                          onTap: () => setState(() => _selecting = true),
+                        ),
+                        const Spacer(),
+                        _SortMenuButton(
+                          mode: sortMode,
+                          enabled: root != null,
+                          onSelected: (m) =>
+                              ref.read(treeSortModeProvider.notifier).set(m),
+                        ),
+                        _ToolbarButton(
+                          icon: showHidden
+                              ? LucideIcons.eye
+                              : LucideIcons.eyeOff,
+                          tooltip: showHidden ? '隐藏隐藏文件' : '显示隐藏文件',
+                          enabled: root != null,
+                          onTap: () => ref
+                              .read(showHiddenFilesProvider.notifier)
+                              .toggle(),
+                        ),
+                        _ToolbarButton(
+                          icon: LucideIcons.refreshCw,
+                          tooltip: '刷新',
+                          enabled: root != null,
+                          onTap: _refresh,
+                        ),
+                        _ToolbarButton(
+                          icon: LucideIcons.chevronsDownUp,
+                          tooltip: '全部折叠',
+                          enabled: root != null,
+                          onTap: _collapseAll,
+                        ),
+                      ],
+                    ),
             ),
             Divider(height: 1, color: theme.dividerColor),
             Expanded(
@@ -695,8 +778,13 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                           expanded: row.expanded,
                           selected: selectedPath == entry.path,
                           gitStatus: _gitStatusOf(gitSnap, entry),
+                          checked: _selecting
+                              ? _selected.containsKey(entry.path)
+                              : null,
                           onTap: () {
-                            if (entry.isDirectory) {
+                            if (_selecting) {
+                              _toggleSelected(entry);
+                            } else if (entry.isDirectory) {
                               _toggleDir(entry);
                             } else {
                               ref
@@ -707,7 +795,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                                   );
                             }
                           },
-                          onLongPress: ops == null
+                          onLongPress: ops == null || _selecting
                               ? null
                               : () => ops.showEntryMenu(entry),
                         );
@@ -753,6 +841,7 @@ class _FileRow extends StatelessWidget {
     required this.onTap,
     this.gitStatus,
     this.onLongPress,
+    this.checked,
   });
 
   final WorkspaceEntry entry;
@@ -764,6 +853,10 @@ class _FileRow extends StatelessWidget {
   /// Git working-tree state for the badge / name tint (null ⇒ clean).
   final GitFileStatus? gitStatus;
   final VoidCallback? onLongPress;
+
+  /// Multi-select state: null ⇒ not selecting; true/false ⇒ the row shows a
+  /// trailing check indicator.
+  final bool? checked;
 
   @override
   Widget build(BuildContext context) {
@@ -851,6 +944,18 @@ class _FileRow extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                     color: gitColor,
                   ),
+                ),
+              ],
+              if (checked != null) ...[
+                const SizedBox(width: 8),
+                Icon(
+                  checked!
+                      ? LucideIcons.squareCheck
+                      : LucideIcons.square,
+                  size: 17,
+                  color: checked!
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant.withValues(alpha: 0.6),
                 ),
               ],
             ],
