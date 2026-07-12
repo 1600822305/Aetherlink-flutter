@@ -88,9 +88,28 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
     final workspaces = ref.watch(recentWorkspacesViewProvider);
     final canSave = _name.text.trim().isNotEmpty;
 
+    // 顶栏 chrome 与主聊天同款：纸面 surface、无阴影、1px 底分隔线。
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isNew ? '新建智能体' : '编辑智能体'),
+        backgroundColor: cs.surface,
+        foregroundColor: cs.onSurface,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        shape: Border(bottom: BorderSide(color: theme.dividerColor)),
+        titleSpacing: 0,
+        leading: IconButton(
+          tooltip: '返回',
+          icon: const Icon(LucideIcons.arrowLeft, size: 20),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text(
+          _isNew ? '新建智能体' : '编辑智能体',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w500,
+            color: cs.onSurface,
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: canSave ? _save : null,

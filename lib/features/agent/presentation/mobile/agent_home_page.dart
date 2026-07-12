@@ -32,34 +32,62 @@ class AgentHomePage extends ConsumerWidget {
       if (t.id == taskId && t.profileId == profile.id) task = t;
     }
 
+    // 顶栏 chrome 与主聊天同款：纸面 surface、无阴影、1px 底分隔线。
     return Scaffold(
       drawer: const AgentSidebar(),
-      appBar: task == null
-          ? AppBar(
-              title: Text('${profile.emoji} ${profile.name}'),
-              titleTextStyle: theme.textTheme.titleMedium,
-            )
-          : AppBar(
-              title: Column(
+      appBar: AppBar(
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.onSurface,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        shape: Border(bottom: BorderSide(color: theme.dividerColor)),
+        titleSpacing: 0,
+        leading: Builder(
+          builder: (context) => IconButton(
+            tooltip: '打开侧边栏',
+            icon: const Icon(LucideIcons.menu, size: 20),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
+        title: task == null
+            ? Text(
+                '${profile.emoji} ${profile.name}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w500,
+                  color: theme.colorScheme.onSurface,
+                ),
+              )
+            : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
                     task.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleSmall,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: theme.colorScheme.onSurface,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   AgentStatusLine(task: task),
                 ],
               ),
-              actions: [
+        actions: task == null
+            ? null
+            : [
                 IconButton(
                   icon: const Icon(LucideIcons.ellipsis, size: 20),
                   onPressed: () {},
                 ),
+                const SizedBox(width: 4),
               ],
-            ),
+      ),
       body: task == null
           ? _DraftTopicView(profile: profile)
           : AgentTaskShell(task: task),
