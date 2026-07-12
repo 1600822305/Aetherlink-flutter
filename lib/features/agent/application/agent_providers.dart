@@ -1,5 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/app/di/agent_data_access.dart';
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_mock_data.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
@@ -13,12 +14,40 @@ part 'agent_providers.g.dart';
 const String kLastActiveAgentProfileKey = 'agent_last_profile';
 const String kLastActiveAgentTaskKey = 'agent_last_task';
 
-/// 智能体档案列表。UI 先行阶段为内置预设 + 会话内可编辑/新建
-/// （编辑页写这里，重启丢失）；接真实现时替换为 drift 读取与写入。
+/// 一次性种子数据标记：首次启动把内置预设档案 + 演示话题/事件流写入
+/// drift，之后一律以库为准（删光不会重新种入）。
+const String kAgentSeededKey = 'agent_seeded_v1';
+
+/// 首次运行时的一次性种子写入（档案/话题/事件三表）。keepAlive 保证
+/// 多个 hydrate 入口共享同一次 Future，不会重复种入。
+@Riverpod(keepAlive: true)
+Future<void> agentSeed(Ref ref) async {
+  final store = ref.read(appSettingsStoreProvider);
+  if (await store.getSetting(kAgentSeededKey) == '1') return;
+  final dao = ref.read(agentDaoProvider);
+  for (final profile in kBuiltinAgentProfiles) {
+    await dao.upsertProfile(profile);
+  }
+  for (final task in kMockAgentTasks) {
+    await dao.upsertTask(task);
+    await dao.upsertEvents(task.id, mockEventsForTask(task.id));
+  }
+  await store.saveSetting(kAgentSeededKey, '1');
+}
+
+/// 智能体档案列表（drift 持久化）：冷启动从库 hydrate，增删改写穿。
 @Riverpod(keepAlive: true)
 class AgentProfiles extends _$AgentProfiles {
   @override
-  List<AgentProfile> build() => kBuiltinAgentProfiles;
+  List<AgentProfile> build() {
+    _hydrate();
+    return const [];
+  }
+
+  Future<void> _hydrate() async {
+    await ref.read(agentSeedProvider.future);
+    state = await ref.read(agentDaoProvider).getAllProfiles();
+  }
 
   /// 新增或按 id 覆盖一个档案（编辑页保存）。
   void upsert(AgentProfile profile) {
@@ -28,6 +57,7 @@ class AgentProfiles extends _$AgentProfiles {
         if (i == index) profile else state[i],
       if (index < 0) profile,
     ];
+    ref.read(agentDaoProvider).upsertProfile(profile);
   }
 
   void remove(String profileId) {
@@ -35,21 +65,34 @@ class AgentProfiles extends _$AgentProfiles {
       for (final p in state)
         if (p.id != profileId) p,
     ];
+    ref.read(agentDaoProvider).deleteProfile(profileId);
   }
 }
 
-/// 全部话题。UI 先行阶段为 mock 数据 + 会话内重命名/删除；
-/// 接真实现时替换为 drift 查询与写入。
+/// 全部话题（drift 持久化）：冷启动从库 hydrate，重命名/删除写穿；
+/// 删话题联动删其事件流（DAO 事务内完成）。
 @Riverpod(keepAlive: true)
 class AgentTasks extends _$AgentTasks {
   @override
-  List<AgentTask> build() => kMockAgentTasks;
+  List<AgentTask> build() {
+    _hydrate();
+    return const [];
+  }
+
+  Future<void> _hydrate() async {
+    await ref.read(agentSeedProvider.future);
+    state = await ref.read(agentDaoProvider).getAllTasks();
+  }
 
   void rename(String taskId, String title) {
     state = [
       for (final t in state)
         if (t.id == taskId) t.copyWith(title: title) else t,
     ];
+    final renamed = state.where((t) => t.id == taskId).firstOrNull;
+    if (renamed != null) {
+      ref.read(agentDaoProvider).upsertTask(renamed);
+    }
   }
 
   void remove(String taskId) {
@@ -57,6 +100,7 @@ class AgentTasks extends _$AgentTasks {
       for (final t in state)
         if (t.id != taskId) t,
     ];
+    ref.read(agentDaoProvider).deleteTask(taskId);
   }
 
   /// 删除某智能体下的全部话题（删除智能体时联动）。
@@ -65,13 +109,16 @@ class AgentTasks extends _$AgentTasks {
       for (final t in state)
         if (t.profileId != profileId) t,
     ];
+    ref.read(agentDaoProvider).deleteTasksByProfile(profileId);
   }
 }
 
-/// 某话题的事件流（mock）。接真实现时替换为 drift 事件表 watch。
+/// 某话题的事件流：drift 事件表实时 watch（append 即推增量）。
 @riverpod
-List<AgentEvent> agentTaskEvents(Ref ref, String taskId) =>
-    mockEventsForTask(taskId);
+Stream<List<AgentEvent>> agentTaskEvents(Ref ref, String taskId) async* {
+  await ref.watch(agentSeedProvider.future);
+  yield* ref.watch(agentDaoProvider).watchEvents(taskId);
+}
 
 /// 侧边栏当前 tab（0 智能体 / 1 话题 / 2 设置）。与聊天侧边栏同款策略：
 /// 仅会话内记忆（内存态）——重开抽屉保持在上次 tab，重启回默认智能体 tab。
@@ -147,7 +194,9 @@ class SelectedAgentProfileId extends _$SelectedAgentProfileId {
         .read(appSettingsStoreProvider)
         .getSetting(kLastActiveAgentProfileKey);
     if (stored == null || stored.isEmpty) return;
-    if (kBuiltinAgentProfiles.any((p) => p.id == stored)) state = stored;
+    // 不在这里验存在性（档案列表可能尚未 hydrate 完）；UI 侧用
+    // firstOrNull 回退，档案已删时自动落到第一个/空态。
+    state = stored;
   }
 
   void select(String id) {
@@ -173,7 +222,10 @@ class SelectedAgentTaskId extends _$SelectedAgentTaskId {
         .read(appSettingsStoreProvider)
         .getSetting(kLastActiveAgentTaskKey);
     if (stored == null || stored.isEmpty) return;
-    if (ref.read(agentTasksProvider).any((t) => t.id == stored)) {
+    // 先等话题列表 hydrate 完再验存在性，避免和空列表竞态误判。
+    await ref.read(agentSeedProvider.future);
+    final tasks = await ref.read(agentDaoProvider).getAllTasks();
+    if (tasks.any((t) => t.id == stored)) {
       state = stored;
     }
   }

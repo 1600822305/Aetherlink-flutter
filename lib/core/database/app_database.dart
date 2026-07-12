@@ -8,6 +8,11 @@ import 'package:path_provider/path_provider.dart';
 import 'package:aetherlink_flutter/core/database/app_settings_dao.dart';
 import 'package:aetherlink_flutter/core/database/app_settings_table.dart';
 
+import 'package:aetherlink_flutter/features/agent/data/datasources/local/agent_dao.dart';
+import 'package:aetherlink_flutter/features/agent/data/datasources/local/agent_tables.dart';
+// 智能体 profile/task 以 JSON blob 存储（converter 值类型），事件解码在 DAO 层。
+import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
+import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/local/assistant_dao.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/local/assistants_table.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/local/group_dao.dart';
@@ -74,6 +79,9 @@ part 'app_database.g.dart';
     KnowledgeContentRows,
     KbChunkRows,
     KbEmbeddingRows,
+    AgentProfileRows,
+    AgentTaskRows,
+    AgentEventRows,
   ],
   daos: [
     TopicDao,
@@ -85,6 +93,7 @@ part 'app_database.g.dart';
     AppSettingDao,
     MemoryDao,
     KnowledgeDao,
+    AgentDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -95,7 +104,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.open() : super(_openConnection());
 
   @override
-  int get schemaVersion => 16;
+  int get schemaVersion => 17;
 
   // SQLite can't ALTER a table-level CHECK/FK onto an existing table, but a
   // partial UNIQUE index CAN be created on one. This enforces the single-root
@@ -231,6 +240,22 @@ class AppDatabase extends _$AppDatabase {
           m,
           knowledgeBaseRows,
           knowledgeBaseRows.rerankModelKey,
+        );
+      }
+      if (from < 17) {
+        // 智能体模式落库（docs/智能体/智能体模式-设计初稿.md §4.3）：
+        // 档案/话题/事件流三表，独立于 chat 表。索引对已存在库手动建
+        // （@TableIndex 只在 createAll 时建，同 v7 的做法）。
+        await m.createTable(agentProfileRows);
+        await m.createTable(agentTaskRows);
+        await m.createTable(agentEventRows);
+        await customStatement(
+          'CREATE INDEX IF NOT EXISTS idx_agent_tasks_profile_id '
+          'ON agent_task_rows (profile_id)',
+        );
+        await customStatement(
+          'CREATE INDEX IF NOT EXISTS idx_agent_events_task_seq '
+          'ON agent_event_rows (task_id, seq)',
         );
       }
     },

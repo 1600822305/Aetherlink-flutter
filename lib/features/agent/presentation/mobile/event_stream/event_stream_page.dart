@@ -17,7 +17,8 @@ class EventStreamPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final events = ref.watch(agentTaskEventsProvider(task.id));
+    final events =
+        ref.watch(agentTaskEventsProvider(task.id)).value ?? const [];
     final plan = latestPlan(events);
     final blocks = buildTimelineBlocks(events);
 
