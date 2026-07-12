@@ -148,6 +148,8 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
   }
 
   Future<void> _onModeTap() async {
+    // 先释放焦点，面板关闭后不自动顶起输入法。
+    FocusManager.instance.primaryFocus?.unfocus();
     final mode = await showModalBottomSheet<AgentSessionMode>(
       context: context,
       showDragHandle: true,
@@ -256,7 +258,10 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                           // chip 实时显示选中项而非任务创建时的快照。
                           label:
                               '${ref.watch(appCurrentModelProvider).value?.model.name ?? '选择模型'} ▾',
-                          onTap: () => showAppModelSelectorDialog(context),
+                          onTap: () {
+                            FocusManager.instance.primaryFocus?.unfocus();
+                            showAppModelSelectorDialog(context);
+                          },
                         ),
                       ],
                     ),

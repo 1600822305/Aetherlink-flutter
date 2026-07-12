@@ -7,6 +7,8 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 /// 面板固定屏高 2/3；参数区限高、输出区占满余下高度，各自内部滑动。
 /// 大输出这里只显截断内容；「查看全文」等落盘能力接真引擎时补。
 Future<void> showToolDetailSheet(BuildContext context, ToolCallEvent event) {
+  // 先释放输入框焦点，避免面板关闭时焦点恢复自动顶起输入法。
+  FocusManager.instance.primaryFocus?.unfocus();
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
