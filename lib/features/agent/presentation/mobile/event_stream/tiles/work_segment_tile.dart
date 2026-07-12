@@ -3,14 +3,15 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/agent_event_tile.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/timeline_blocks.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
 
-/// 已完成工作段的折叠摘要块：「▸ 工作了 36s · 14 个操作」，
-/// 点开可回看每一行（UI 稿 §4.1 工作段折叠）。
+/// 已完成工作段的折叠摘要块：「▸ 检索查看 · 36s · 14 个操作」，
+/// 点开可回看每一行（含夹在其间的思考，UI 稿 §4.1 工作段折叠）。
 class WorkSegmentTile extends StatefulWidget {
-  const WorkSegmentTile({required this.events, required this.taskId, super.key});
+  const WorkSegmentTile({required this.block, required this.taskId, super.key});
 
-  final List<ToolCallEvent> events;
+  final SegmentBlock block;
   final String taskId;
 
   @override
@@ -24,11 +25,12 @@ class _WorkSegmentTileState extends State<WorkSegmentTile> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final hasFailure = widget.events.any(
+    final tools = widget.block.toolCalls.toList();
+    final hasFailure = tools.any(
       (e) => e.state == AgentToolCallState.failure,
     );
     var totalMs = 0;
-    for (final e in widget.events) {
+    for (final e in tools) {
       totalMs += e.elapsed?.inMilliseconds ?? 500;
     }
     final elapsed = formatElapsed(Duration(milliseconds: totalMs));
@@ -61,7 +63,7 @@ class _WorkSegmentTileState extends State<WorkSegmentTile> {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  '工作了 $elapsed · ${widget.events.length} 个操作'
+                  '${segmentSummary(widget.block)} · $elapsed · ${tools.length} 个操作'
                   '${hasFailure ? ' · ✗' : ''}',
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: summaryColor,
@@ -72,7 +74,7 @@ class _WorkSegmentTileState extends State<WorkSegmentTile> {
           ),
         ),
         if (_expanded)
-          for (final e in widget.events)
+          for (final e in widget.block.events)
             AgentEventTile(event: e, taskId: widget.taskId),
       ],
     );
