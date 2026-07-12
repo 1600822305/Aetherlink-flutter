@@ -306,13 +306,18 @@ class _ActionSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDir = entry.isDirectory;
+    // 写操作组（新建/重命名/移动/复制到…）与「复制路径/详情」信息组之间加
+    // 分隔线；有写操作时才需要分隔。
+    final hasWriteGroup = writable && (isDir || !protected);
     return SafeArea(
+      top: false,
+      minimum: const EdgeInsets.only(bottom: 8),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
             child: Text(
               entry.name,
               maxLines: 1,
@@ -351,6 +356,7 @@ class _ActionSheet extends StatelessWidget {
               label: '复制到…',
               action: _FileAction.copy,
             ),
+          if (hasWriteGroup) const _MenuDivider(),
           const _ActionTile(
             icon: LucideIcons.clipboardCopy,
             label: '复制路径',
@@ -361,17 +367,28 @@ class _ActionSheet extends StatelessWidget {
             label: '详情',
             action: _FileAction.details,
           ),
-          if (writable && !protected)
+          if (writable && !protected) ...[
+            const _MenuDivider(),
             const _ActionTile(
               icon: LucideIcons.trash2,
               label: '删除',
               action: _FileAction.delete,
               destructive: true,
             ),
+          ],
         ],
       ),
     );
   }
+}
+
+/// Thin inset divider between the action-sheet's groups.
+class _MenuDivider extends StatelessWidget {
+  const _MenuDivider();
+
+  @override
+  Widget build(BuildContext context) =>
+      const Divider(height: 1, indent: 20, endIndent: 20);
 }
 
 /// The 「详情」 dialog: name / type / size / mtime / readable path, plus a
@@ -458,7 +475,11 @@ class _ActionTile extends StatelessWidget {
     final theme = Theme.of(context);
     final color = destructive ? theme.colorScheme.error : null;
     return ListTile(
-      leading: Icon(icon, size: 20, color: color),
+      dense: true,
+      visualDensity: VisualDensity.compact,
+      minLeadingWidth: 0,
+      horizontalTitleGap: 12,
+      leading: Icon(icon, size: 19, color: color),
       title: Text(label, style: TextStyle(color: color)),
       onTap: () => Navigator.of(context).pop(action),
     );
