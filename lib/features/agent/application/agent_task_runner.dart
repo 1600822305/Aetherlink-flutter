@@ -26,7 +26,49 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   @override
   Set<String> build() => const {};
 
-  /// 草稿态发第一条消息：创建任务 + 落用户消息 + 启动引擎。
+  /// 新建话题（对齐聊天 handleCreateTopic）：立即创建一条空白草稿话题
+  /// 占位到列表顶部，发第一条消息才定标题并启动引擎。
+  Future<AgentTask> createDraft({
+    required AgentProfile profile,
+    required AgentSessionMode mode,
+  }) async {
+    final now = DateTime.now();
+    final task = AgentTask(
+      id: 'task-${now.millisecondsSinceEpoch}',
+      profileId: profile.id,
+      title: '新话题',
+      workspaceId: profile.workspaceId ?? '',
+      workspaceName: profile.workspaceName ?? '未绑定工作区',
+      status: AgentTaskStatus.draft,
+      mode: mode,
+      createdAt: now,
+      updatedAt: now,
+      modelLabel:
+          await ref.read(agentRuntimeProvider).currentModelLabel() ?? '未配置模型',
+    );
+    ref.read(agentTasksProvider.notifier).apply(task);
+    return task;
+  }
+
+  /// 草稿话题发第一条消息：用消息定标题 + 落用户消息 + 启动引擎。
+  Future<void> startDraft(
+    AgentTask task,
+    String text, {
+    required AgentSessionMode mode,
+  }) async {
+    final updated = task.copyWith(
+      title: _titleFrom(text),
+      status: AgentTaskStatus.running,
+      mode: mode,
+      updatedAt: DateTime.now(),
+      lastEventSummary: text,
+    );
+    ref.read(agentTasksProvider.notifier).apply(updated);
+    await _store().appendUserMessage(updated.id, text);
+    _run(updated);
+  }
+
+  /// 无话题选中时发第一条消息：创建任务 + 落用户消息 + 启动引擎。
   Future<AgentTask> startNewTask({
     required AgentProfile profile,
     required String text,
@@ -36,7 +78,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     final task = AgentTask(
       id: 'task-${now.millisecondsSinceEpoch}',
       profileId: profile.id,
-      title: text.length > 24 ? '${text.substring(0, 24)}…' : text,
+      title: _titleFrom(text),
       workspaceId: profile.workspaceId ?? '',
       workspaceName: profile.workspaceName ?? '未绑定工作区',
       status: AgentTaskStatus.running,
@@ -128,6 +170,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       };
     });
   }
+
+  static String _titleFrom(String text) =>
+      text.length > 24 ? '${text.substring(0, 24)}…' : text;
 
   AgentEventStore _store() =>
       _storeInstance ??= DriftAgentEventStore(ref.read(agentDaoProvider));

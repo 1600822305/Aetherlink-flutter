@@ -2,10 +2,13 @@
 /// 状态机见 docs/智能体/智能体模式-设计初稿.md §四。
 library;
 
-/// 任务状态。色板（全局统一，UI 稿 §三）：running=primary（呼吸）、
+/// 任务状态。色板（全局统一，UI 稿 §三）：draft=灰、running=primary（呼吸）、
 /// waitingApproval=橙、waitingInput=蓝、paused=灰、done=绿、failed=红、
 /// cancelled=灰删除线。
 enum AgentTaskStatus {
+  /// 空白新话题（对齐聊天「新的对话」）：已在列表里占位，
+  /// 发第一条消息才定标题并启动引擎。
+  draft,
   running,
   waitingApproval,
   waitingInput,

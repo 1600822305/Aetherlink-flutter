@@ -78,10 +78,12 @@ class AgentHomePage extends ConsumerWidget {
                 ],
               ),
       ),
-      body: task != null
+      body: task != null && task.status != AgentTaskStatus.draft
           ? AgentTaskShell(task: task)
           : profile != null
-          ? _DraftTopicView(profile: profile)
+          // 空白草稿话题与无话题选中同款空态；草稿把 task 传给输入栏，
+          // 第一条消息落在该话题上而不是另建新任务。
+          ? _DraftTopicView(profile: profile, task: task)
           : Center(
               child: Text(
                 '还没有智能体，去侧边栏新建一个',
@@ -98,9 +100,12 @@ class AgentHomePage extends ConsumerWidget {
 /// 工作区继承自当前智能体（已拍板：工作区绑在智能体上，在智能体
 /// 设置里改），未绑定时在这里提醒去设置。
 class _DraftTopicView extends StatelessWidget {
-  const _DraftTopicView({required this.profile});
+  const _DraftTopicView({required this.profile, this.task});
 
   final AgentProfile profile;
+
+  /// 非空 = 已在列表占位的草稿话题；空 = 无话题选中。
+  final AgentTask? task;
 
   @override
   Widget build(BuildContext context) {
@@ -160,7 +165,7 @@ class _DraftTopicView extends StatelessWidget {
             ),
           ),
         ),
-        const AgentInputBar(),
+        AgentInputBar(task: task),
       ],
     );
   }

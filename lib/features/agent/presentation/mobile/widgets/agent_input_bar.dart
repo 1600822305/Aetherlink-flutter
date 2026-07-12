@@ -67,6 +67,13 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       return;
     }
 
+    if (task.status == AgentTaskStatus.draft) {
+      // 空白草稿话题：发第一条消息 = 定标题 + 启动引擎。
+      _controller.clear();
+      await runner.startDraft(task, text, mode: _mode);
+      return;
+    }
+
     final executing = task.status == AgentTaskStatus.running ||
         task.status == AgentTaskStatus.waitingApproval;
     if (!executing) {
@@ -218,12 +225,16 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                   minLines: 1,
                   maxLines: 5,
                   style: const TextStyle(fontSize: 16, height: 1.4),
-                  decoration: const InputDecoration(
-                    hintText: '追加指令…',
-                    hintStyle: TextStyle(fontSize: 16, height: 1.4),
+                  decoration: InputDecoration(
+                    hintText: widget.task == null ||
+                            widget.task!.status == AgentTaskStatus.draft
+                        ? '输入指令开始任务…'
+                        : '追加指令…',
+                    hintStyle: const TextStyle(fontSize: 16, height: 1.4),
                     border: InputBorder.none,
                     isDense: true,
-                    contentPadding: EdgeInsets.symmetric(vertical: 10),
+                    contentPadding:
+                        const EdgeInsets.symmetric(vertical: 10),
                   ),
                 ),
               ),

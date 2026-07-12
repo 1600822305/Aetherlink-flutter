@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 Color agentStatusColor(BuildContext context, AgentTaskStatus status) {
   final cs = Theme.of(context).colorScheme;
   return switch (status) {
+    AgentTaskStatus.draft => cs.onSurface.withValues(alpha: 0.25),
     AgentTaskStatus.running => cs.primary,
     AgentTaskStatus.waitingApproval => Colors.orange,
     AgentTaskStatus.waitingInput => Colors.blue,
@@ -17,6 +18,7 @@ Color agentStatusColor(BuildContext context, AgentTaskStatus status) {
 }
 
 String agentStatusLabel(AgentTaskStatus status) => switch (status) {
+      AgentTaskStatus.draft => '未开始',
       AgentTaskStatus.running => '运行中',
       AgentTaskStatus.waitingApproval => '等待授权',
       AgentTaskStatus.waitingInput => '等待回答',

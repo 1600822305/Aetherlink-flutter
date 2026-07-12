@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
+import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/widgets/agent_sidebar_widgets.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
@@ -19,6 +21,28 @@ class AgentTopicTab extends ConsumerWidget {
     Haptics.instance.onListItem();
     ref.read(selectedAgentTaskIdProvider.notifier).select(taskId);
     Navigator.of(context).pop();
+  }
+
+  /// 新建话题（对齐聊天 TopicsController.create）：立即创建一条空白
+  /// 草稿话题并选中，列表按最近活跃排序自然浮到顶部；当前已有
+  /// 空白草稿时直接复用，不堆重复空话题。
+  Future<void> _createTopic(
+    BuildContext context,
+    WidgetRef ref,
+    AgentProfile profile,
+    List<AgentTask> tasks,
+  ) async {
+    final navigator = Navigator.of(context);
+    final existingDraft = tasks
+        .where((t) => t.status == AgentTaskStatus.draft)
+        .firstOrNull;
+    final task = existingDraft ??
+        await ref.read(agentTaskRunnerProvider.notifier).createDraft(
+              profile: profile,
+              mode: ref.read(agentUiSettingsControllerProvider).defaultMode,
+            );
+    ref.read(selectedAgentTaskIdProvider.notifier).select(task.id);
+    navigator.pop();
   }
 
   @override
@@ -42,10 +66,13 @@ class AgentTopicTab extends ConsumerWidget {
         ),
       );
     }
+    // 与聊天话题 tab 同款排序：按最近活跃（updatedAt）降序，
+    // 新建/刚活跃的话题自然浮在顶部。
     final tasks = ref
         .watch(agentTasksProvider)
         .where((t) => t.profileId == profile.id)
-        .toList();
+        .toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -59,12 +86,9 @@ class AgentTopicTab extends ConsumerWidget {
               AgentSidebarPillButton(
                 icon: LucideIcons.plus,
                 label: '新建话题',
-                // 已拍板：新话题是干净空态（像普通聊天），发第一条消息才开始
-                // 任务；工作区继承自当前智能体，不单独选。
-                onPressed: () {
-                  ref.read(selectedAgentTaskIdProvider.notifier).select(null);
-                  Navigator.of(context).pop();
-                },
+                // 对齐聊天：立即创建空白草稿话题并选中（发第一条消息
+                // 才启动任务）；工作区继承自当前智能体，不单独选。
+                onPressed: () => _createTopic(context, ref, profile, tasks),
               ),
             ],
           ),
