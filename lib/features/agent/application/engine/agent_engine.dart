@@ -152,6 +152,7 @@ class AgentEngine {
                   turn.text.isEmpty ? textEvent!.text : turn.text,
                   streaming: false);
         }
+        budget.recordTokens(turn.tokensUsed);
         current = await save(current.copyWith(
           tokenCount: current.tokenCount + turn.tokensUsed,
           updatedAt: DateTime.now(),

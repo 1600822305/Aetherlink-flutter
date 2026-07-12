@@ -5,6 +5,7 @@ class AgentBudget {
     this.maxRounds = 50,
     this.maxConsecutiveFailures = 5,
     this.toolTimeout = const Duration(minutes: 5),
+    this.maxTokens = 500000,
     this.compactionTriggerChars = 120000,
     this.compactionKeepChars = 40000,
   });
@@ -12,6 +13,10 @@ class AgentBudget {
   final int maxRounds;
   final int maxConsecutiveFailures;
   final Duration toolTimeout;
+
+  /// 本次运行（启动/续跑一次）的 token 预算；超限 paused，用户点
+  /// 「继续」新建预算实例即续批一份额度（与轮数预算同款语义）。
+  final int maxTokens;
 
   /// 上下文重放内容超过该字符量触发 compaction（字符作 token 的
   /// 粗代理，中文 ≈1 字/token；设计初稿 §5.3 的“窗口 ~70%”的保守取值）。
@@ -22,8 +27,11 @@ class AgentBudget {
 
   int _rounds = 0;
   int _consecutiveFailures = 0;
+  int _tokens = 0;
 
   void recordRound() => _rounds++;
+
+  void recordTokens(int tokens) => _tokens += tokens;
 
   void recordToolResult({required bool ok}) {
     if (ok) {
@@ -40,6 +48,9 @@ class AgentBudget {
     }
     if (_consecutiveFailures >= maxConsecutiveFailures) {
       return '连续 $maxConsecutiveFailures 次工具失败，任务暂停，请检查后继续';
+    }
+    if (_tokens >= maxTokens) {
+      return '本次运行 token 用量已达预算上限（$maxTokens），任务暂停，可继续';
     }
     return null;
   }

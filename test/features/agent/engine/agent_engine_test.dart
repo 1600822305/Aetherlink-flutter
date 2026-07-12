@@ -472,6 +472,31 @@ void main() {
     expect(gateway.last.status, AgentTaskStatus.done);
   });
 
+  test('token 预算超限 → paused（可继续），续跑新预算可完成', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    AgentEngine buildEngine(AgentBudget budget) => AgentEngine(
+          llm: const FakeAgentLlmClient(chunkDelay: Duration.zero),
+          tools: const FakeAgentToolExecutor(delay: Duration.zero),
+          approval: const AutoApprovalGate(),
+          store: store,
+          gateway: gateway,
+          budget: budget,
+        );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '帮我看看项目结构');
+
+    // 第 1 轮用掉 120 tokens 即超预算 → 安全点 paused。
+    await buildEngine(AgentBudget(maxTokens: 100))
+        .run(task, AgentCancellationToken());
+    expect(gateway.last.status, AgentTaskStatus.paused);
+    expect(gateway.last.lastEventSummary, contains('token'));
+
+    // 续跑发新预算，任务可完成。
+    await buildEngine(AgentBudget()).run(gateway.last, AgentCancellationToken());
+    expect(gateway.last.status, AgentTaskStatus.done);
+  });
+
   test('上下文超阈值 → 自动 compaction（摘要落库且折叠视图变小）', () async {
     final store = InMemoryAgentEventStore();
     final gateway = RecordingTaskGateway();
