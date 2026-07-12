@@ -8,12 +8,15 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/app_main_mode.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/tabs/agent_profile_tab.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/tabs/agent_settings_tab.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/tabs/agent_topic_tab.dart';
 import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
 const String _profileTabLabel = '智能体';
 const String _topicTabLabel = '话题';
+const String _settingsTabLabel = '设置';
 
 class AgentSidebar extends ConsumerStatefulWidget {
   const AgentSidebar({super.key});
@@ -24,12 +27,26 @@ class AgentSidebar extends ConsumerStatefulWidget {
 
 class _AgentSidebarState extends ConsumerState<AgentSidebar>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabController =
-      TabController(length: 2, vsync: this);
+  // 与聊天侧边栏同款的 tab 记忆：会话内内存态（AgentSidebarTabIndex），
+  // 重开抽屉保持上次 tab，重启回默认智能体 tab。
+  late final TabController _tabController = TabController(
+    length: 3,
+    vsync: this,
+    initialIndex: ref.read(agentSidebarTabIndexProvider).clamp(0, 2),
+  )..addListener(_onTabChanged);
+
+  void _onTabChanged() {
+    final index = _tabController.index;
+    if (ref.read(agentSidebarTabIndexProvider) != index) {
+      ref.read(agentSidebarTabIndexProvider.notifier).set(index);
+    }
+  }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _tabController
+      ..removeListener(_onTabChanged)
+      ..dispose();
     super.dispose();
   }
 
@@ -61,6 +78,7 @@ class _AgentSidebarState extends ConsumerState<AgentSidebar>
                     onGoToTopics: () => _tabController.animateTo(1),
                   ),
                   const AgentTopicTab(),
+                  const AgentSettingsTab(),
                 ],
               ),
             ),
@@ -146,6 +164,7 @@ class _SidebarTabBar extends StatelessWidget {
         tabs: const [
           _SidebarTab(icon: LucideIcons.bot, label: _profileTabLabel),
           _SidebarTab(icon: LucideIcons.messagesSquare, label: _topicTabLabel),
+          _SidebarTab(icon: LucideIcons.sliders, label: _settingsTabLabel),
         ],
       ),
     );

@@ -27,6 +27,66 @@ List<AgentTask> agentTasks(Ref ref) => kMockAgentTasks;
 List<AgentEvent> agentTaskEvents(Ref ref, String taskId) =>
     mockEventsForTask(taskId);
 
+/// 侧边栏当前 tab（0 智能体 / 1 话题 / 2 设置）。与聊天侧边栏同款策略：
+/// 仅会话内记忆（内存态）——重开抽屉保持在上次 tab，重启回默认智能体 tab。
+@Riverpod(keepAlive: true)
+class AgentSidebarTabIndex extends _$AgentSidebarTabIndex {
+  @override
+  int build() => 0;
+
+  void set(int index) {
+    if (index < 0 || index > 2) return;
+    state = index;
+  }
+}
+
+/// 智能体界面偏好（UI 先行阶段：会话内记忆；接真实现时走
+/// appSettingsStore 持久化）。
+class AgentUiSettings {
+  const AgentUiSettings({
+    this.defaultMode = AgentSessionMode.code,
+    this.autoCollapseWorkSessions = true,
+    this.followAiFile = true,
+  });
+
+  /// 新话题的默认模式（Code/Ask/Plan）。
+  final AgentSessionMode defaultMode;
+
+  /// 工作段完成后自动折叠为摘要块（UI 稿 §4.1）。
+  final bool autoCollapseWorkSessions;
+
+  /// 右页工作台跟随 AI 正在看的文件。
+  final bool followAiFile;
+
+  AgentUiSettings copyWith({
+    AgentSessionMode? defaultMode,
+    bool? autoCollapseWorkSessions,
+    bool? followAiFile,
+  }) {
+    return AgentUiSettings(
+      defaultMode: defaultMode ?? this.defaultMode,
+      autoCollapseWorkSessions:
+          autoCollapseWorkSessions ?? this.autoCollapseWorkSessions,
+      followAiFile: followAiFile ?? this.followAiFile,
+    );
+  }
+}
+
+@Riverpod(keepAlive: true)
+class AgentUiSettingsController extends _$AgentUiSettingsController {
+  @override
+  AgentUiSettings build() => const AgentUiSettings();
+
+  void setDefaultMode(AgentSessionMode mode) =>
+      state = state.copyWith(defaultMode: mode);
+
+  void setAutoCollapseWorkSessions(bool value) =>
+      state = state.copyWith(autoCollapseWorkSessions: value);
+
+  void setFollowAiFile(bool value) =>
+      state = state.copyWith(followAiFile: value);
+}
+
 /// 当前选中的智能体档案 id；冷启动从 KV 恢复，切换写穿。
 @Riverpod(keepAlive: true)
 class SelectedAgentProfileId extends _$SelectedAgentProfileId {
