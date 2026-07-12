@@ -13,7 +13,7 @@ import 'package:aetherlink_flutter/features/chat/application/chat_state.dart';
 import 'package:aetherlink_flutter/features/chat/application/message_selection_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/controllers/chat_auto_scroll_controller.dart';
+import 'package:aetherlink_flutter/shared/widgets/auto_scroll_controller.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
@@ -780,13 +780,13 @@ class _ErrorNotice extends StatelessWidget {
 /// fresh database this list is empty, so the empty state shows instead.
 ///
 /// 自动下滑 (设置 tab 常规设置 → [SidebarSettings.autoScrollToBottom]) lives in
-/// [ChatAutoScrollController] (the port of the web `ChatScrollController`); this
-/// widget only owns the [ChatAutoFollowScrollController] and tells the state
+/// [AutoScrollController] (the port of the web `ChatScrollController`); this
+/// widget only owns the [AutoFollowScrollController] and tells the state
 /// machine which message change is an explicit pin:
 /// * initial entry / switching topics (first-message id changes) / the user
-///   sending (message count grows) → [ChatAutoScrollController.pinToBottom].
+///   sending (message count grows) → [AutoScrollController.pinToBottom].
 /// In-place growth such as streaming needs nothing here — the custom
-/// [ChatAutoFollowScrollController] follows it during layout when sticking.
+/// [AutoFollowScrollController] follows it during layout when sticking.
 class _MessageListView extends ConsumerStatefulWidget {
   const _MessageListView(
     this.rows, {
@@ -839,10 +839,10 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
   /// Distance (px) from the top that triggers revealing another page.
   static const double _kRevealThreshold = 200;
 
-  final ChatAutoFollowScrollController _scrollController =
-      ChatAutoFollowScrollController();
+  final AutoFollowScrollController _scrollController =
+      AutoFollowScrollController();
   late final ListObserverController _observerController;
-  late final ChatAutoScrollController _autoScroll;
+  late final AutoScrollController _autoScroll;
 
   /// Identifies the loaded conversation so a topic switch (first-message change)
   /// can be told apart from appends / in-place content growth. Tracked over the
@@ -895,7 +895,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     super.initState();
     _observerController = ListObserverController(controller: _scrollController)
       ..cacheJumpIndexOffset = false;
-    _autoScroll = ChatAutoScrollController(
+    _autoScroll = AutoScrollController(
       scrollController: _scrollController,
       isEnabled: () =>
           ref.read(sidebarSettingsControllerProvider).autoScrollToBottom,
@@ -961,7 +961,7 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
 
   /// One ramp increment per frame, compensating the scroll offset by the
   /// added extent during the relayout itself (see
-  /// [ChatAutoFollowScrollController.extentAnchor]) — a no-op while the
+  /// [AutoFollowScrollController.extentAnchor]) — a no-op while the
   /// entry pin is sticking to the bottom, and keeps the viewport still when
   /// the user has already scrolled away.
   void _rampStep(Duration _) {

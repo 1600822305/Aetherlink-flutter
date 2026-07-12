@@ -9,8 +9,8 @@ import 'package:flutter/widgets.dart';
 /// Following at layout time — rather than via a post-frame `jumpTo` — lets
 /// streaming content grow with zero visible lag and without the one-frame
 /// flicker a post-frame jump leaves behind. Ported from kelivo's
-/// `ChatAutoFollowScrollController`.
-class ChatAutoFollowScrollController extends ScrollController {
+/// `AutoFollowScrollController`.
+class AutoFollowScrollController extends ScrollController {
   /// Checked during layout to decide whether to pin to the bottom.
   bool Function() shouldAutoFollow = () => false;
 
@@ -51,7 +51,7 @@ class _AutoFollowScrollPosition extends ScrollPositionWithSingleContext {
     required this.controller,
   });
 
-  final ChatAutoFollowScrollController controller;
+  final AutoFollowScrollController controller;
 
   @override
   bool applyContentDimensions(double minScrollExtent, double maxScrollExtent) {
@@ -112,7 +112,7 @@ class _AutoFollowScrollPosition extends ScrollPositionWithSingleContext {
   }
 }
 
-/// Stick-to-bottom state machine over a [ChatAutoFollowScrollController] — the
+/// Stick-to-bottom state machine over a [AutoFollowScrollController] — the
 /// Flutter analogue of the web `ChatScrollController`
 /// (`src/shared/services/chat/ChatScrollController.ts`), following kelivo's
 /// design.
@@ -122,7 +122,7 @@ class _AutoFollowScrollPosition extends ScrollPositionWithSingleContext {
 /// of the bottom → follow, an active scroll away from the bottom → stop. The
 /// actual following is done by the controller's custom [ScrollPosition] during
 /// layout; this class only decides *whether* to follow through
-/// [ChatAutoFollowScrollController.shouldAutoFollow] — it never reacts to scroll
+/// [AutoFollowScrollController.shouldAutoFollow] — it never reacts to scroll
 /// notifications, so plain scrolling can no longer drag the list back down.
 ///
 /// Explicit intents — initial entry, switching topics, the user sending — call
@@ -131,9 +131,9 @@ class _AutoFollowScrollPosition extends ScrollPositionWithSingleContext {
 ///
 /// The controller never owns the [ScrollController]; the host widget creates and
 /// disposes it. [dispose] only detaches this controller's own listener.
-class ChatAutoScrollController {
-  ChatAutoScrollController({
-    required ChatAutoFollowScrollController scrollController,
+class AutoScrollController {
+  AutoScrollController({
+    required AutoFollowScrollController scrollController,
     required this.isEnabled,
     this.threshold = _kDefaultThreshold,
     this.pinWindow = _kDefaultPinWindow,
@@ -151,7 +151,7 @@ class ChatAutoScrollController {
   /// when the setting is off (web `DEFAULT_PIN_WINDOW_MS`).
   static const Duration _kDefaultPinWindow = Duration(milliseconds: 500);
 
-  final ChatAutoFollowScrollController _scrollController;
+  final AutoFollowScrollController _scrollController;
 
   /// Reads the live 自动下滑 setting (`SidebarSettings.autoScrollToBottom`); the
   /// web equivalent is `options.isEnabled`.
