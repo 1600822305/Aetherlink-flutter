@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/file_editor.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/file_tab_strip.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/recent_files_sheet.dart';
+import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 class WorkspaceFileViewer extends ConsumerWidget {
   const WorkspaceFileViewer({
@@ -44,6 +45,29 @@ class WorkspaceFileViewer extends ConsumerWidget {
       }
     }
     ref.read(openWorkspaceFilesProvider.notifier).close(path);
+  }
+
+  // 保存所有脏 tab（逐个走各自编辑器的 save 钩子，静默），结果统一 toast。
+  Future<void> _saveAll(BuildContext context, WidgetRef ref) async {
+    final registry = ref.read(editorRegistryProvider);
+    final dirty = ref.read(dirtyFilesProvider).toList();
+    var saved = 0;
+    var failed = 0;
+    for (final path in dirty) {
+      final handle = registry[path];
+      if (handle == null) continue;
+      if (await handle.save(notify: false)) {
+        saved++;
+      } else {
+        failed++;
+      }
+    }
+    if (!context.mounted) return;
+    if (failed > 0) {
+      AppToast.error(context, '已保存 $saved 个文件，$failed 个失败');
+    } else if (saved > 0) {
+      AppToast.info(context, '已保存 $saved 个文件');
+    }
   }
 
   @override
@@ -83,6 +107,13 @@ class WorkspaceFileViewer extends ConsumerWidget {
                       onClose: (p) => _close(context, ref, p),
                     ),
                   ),
+                  if (dirtyPaths.length > 1)
+                    IconButton(
+                      tooltip: '全部保存',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(LucideIcons.saveAll, size: 18),
+                      onPressed: () => _saveAll(context, ref),
+                    ),
                   IconButton(
                     tooltip: '最近打开',
                     visualDensity: VisualDensity.compact,

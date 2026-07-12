@@ -17,8 +17,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 class EditorHandle {
   const EditorHandle({required this.save, required this.discard});
 
-  /// Persists the file; returns `true` on success.
-  final Future<bool> Function() save;
+  /// Persists the file; returns `true` on success. [notify] 为 false 时
+  /// 不弹单文件的「已保存」toast（全部保存 / 自动保存统一报结果）。
+  final Future<bool> Function({bool notify}) save;
 
   /// Drops unsaved edits (clears the dirty flag without writing).
   final void Function() discard;

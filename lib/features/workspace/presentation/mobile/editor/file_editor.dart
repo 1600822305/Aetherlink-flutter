@@ -15,6 +15,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/workspace/application/editor_auto_save.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_body.dart';
@@ -44,7 +45,8 @@ class FileEditor extends ConsumerStatefulWidget {
   ConsumerState<FileEditor> createState() => _FileEditorState();
 }
 
-class _FileEditorState extends ConsumerState<FileEditor> {
+class _FileEditorState extends ConsumerState<FileEditor>
+    with WidgetsBindingObserver {
   final _controller = TextEditingController();
   final _focus = FocusNode();
   final _undo = UndoHistoryController();
@@ -69,6 +71,9 @@ class _FileEditorState extends ConsumerState<FileEditor> {
 
   // Debounces the O(text) find recompute while typing with the find bar open.
   Timer? _findDebounce;
+
+  // 自动保存防抖（编辑停顿后触发）；延时改变时重建。
+  AutoSaveDebouncer? _autoSave;
 
   // Live external-change watch (in-app mutations from file-ops / agent tools).
   StreamSubscription<WorkspaceChangeEvent>? _watchSub;
@@ -96,10 +101,15 @@ class _FileEditorState extends ConsumerState<FileEditor> {
   bool get _hasTextBody =>
       _openKind == FileOpenKind.editable ||
       _openKind == FileOpenKind.rangedReadOnly;
+  // 自动保存的前提：可写且不处于外部修改冲突（冲突时静默写盘会
+  // 覆盖磁盘版本，必须等用户在 banner 里做决定）。
+  bool get _canAutoSave =>
+      _writable && _externalNotice == null && _conflictDisk == null;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _fontSize = ref.read(editorSettingsProvider).fontSize;
     _ready = _load();
     _controller.addListener(_onTextChanged);
@@ -118,6 +128,8 @@ class _FileEditorState extends ConsumerState<FileEditor> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _autoSave?.dispose();
     _findDebounce?.cancel();
     _watchSub?.cancel();
     _controller.removeListener(_onTextChanged);
@@ -246,6 +258,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     // needed here for typing. The find recompute is an O(text) scan, so it is
     // debounced instead of running per keystroke while the find bar is open.
     ref.read(dirtyFilesProvider.notifier).set(_path, dirty: _dirty);
+    _scheduleAutoSave();
     if (_find.query.isEmpty) return;
     _findDebounce?.cancel();
     _findDebounce = Timer(const Duration(milliseconds: 150), () {
@@ -351,15 +364,16 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     ref.read(dirtyFilesProvider.notifier).clear(_path);
   }
 
-  Future<bool> _save() async {
+  Future<bool> _save({bool notify = true}) async {
     final backend = ref.read(workspacePreviewBackendProvider);
     if (backend == null || !backend.capabilities.canWrite) return false;
+    _autoSave?.cancel();
     setState(() => _saving = true);
     try {
       await backend.writeFile(widget.entry.path, _controller.text);
       _original = _controller.text;
       ref.read(dirtyFilesProvider.notifier).clear(_path);
-      _snack('已保存');
+      if (notify) _snack('已保存');
       return true;
     } catch (e) {
       _snack('保存失败:$e', error: true);
@@ -367,6 +381,40 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  // 编辑时排一次自动保存（开关关闭 / 不可写 / 冲突中则取消待触发项）。
+  void _scheduleAutoSave() {
+    final settings = ref.read(editorSettingsProvider);
+    if (!settings.autoSave || !_editing || !_dirty || !_canAutoSave) {
+      _autoSave?.cancel();
+      return;
+    }
+    final delay = Duration(seconds: settings.autoSaveDelaySecs);
+    if (_autoSave == null || _autoSave!.delay != delay) {
+      _autoSave?.cancel();
+      _autoSave = AutoSaveDebouncer(delay: delay, onFire: _fireAutoSave);
+    }
+    _autoSave!.notifyEdit();
+  }
+
+  void _fireAutoSave() {
+    if (!mounted || _saving) return;
+    if (!_editing || !_dirty || !_canAutoSave) return;
+    if (!ref.read(editorSettingsProvider).autoSave) return;
+    _save(notify: false);
+  }
+
+  // app 切后台时兼顾未触发的自动保存，避免手机上切走丢编辑。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.hidden &&
+        state != AppLifecycleState.paused) {
+      return;
+    }
+    if (!_dirty || _saving || !_canAutoSave) return;
+    if (!ref.read(editorSettingsProvider).autoSave) return;
+    _save(notify: false);
   }
 
   void _snack(String message, {bool error = false}) {

@@ -13,6 +13,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
+import 'package:aetherlink_flutter/features/workspace/application/editor_auto_save.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_store.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_tree_sort.dart';
@@ -185,6 +186,8 @@ class EditorSettings {
     this.autoClosePairs = true,
     this.autoIndent = true,
     this.currentLineHighlight = true,
+    this.autoSave = false,
+    this.autoSaveDelaySecs = kAutoSaveDefaultDelaySecs,
   });
 
   /// 新打开文件的初始字体大小（缩放仍可临时调整单个文件）。
@@ -208,6 +211,12 @@ class EditorSettings {
   /// 编辑态当前行背景高亮。
   final bool currentLineHighlight;
 
+  /// 自动保存：编辑停顿 [autoSaveDelaySecs] 秒后自动写盘，app 切后台也保存。
+  final bool autoSave;
+
+  /// 自动保存的停顿延时（秒），取值见 [kAutoSaveDelayOptions]。
+  final int autoSaveDelaySecs;
+
   String get indentUnit => ' ' * tabWidth;
 
   EditorSettings copyWith({
@@ -218,6 +227,8 @@ class EditorSettings {
     bool? autoClosePairs,
     bool? autoIndent,
     bool? currentLineHighlight,
+    bool? autoSave,
+    int? autoSaveDelaySecs,
   }) =>
       EditorSettings(
         fontSize: fontSize ?? this.fontSize,
@@ -227,6 +238,8 @@ class EditorSettings {
         autoClosePairs: autoClosePairs ?? this.autoClosePairs,
         autoIndent: autoIndent ?? this.autoIndent,
         currentLineHighlight: currentLineHighlight ?? this.currentLineHighlight,
+        autoSave: autoSave ?? this.autoSave,
+        autoSaveDelaySecs: autoSaveDelaySecs ?? this.autoSaveDelaySecs,
       );
 
   String encode() => jsonEncode({
@@ -237,6 +250,8 @@ class EditorSettings {
         'autoClosePairs': autoClosePairs,
         'autoIndent': autoIndent,
         'currentLineHighlight': currentLineHighlight,
+        'autoSave': autoSave,
+        'autoSaveDelaySecs': autoSaveDelaySecs,
       });
 
   static EditorSettings? decode(String? raw) {
@@ -246,6 +261,8 @@ class EditorSettings {
       if (map is! Map<String, dynamic>) return null;
       final fontSize = (map['fontSize'] as num?)?.toDouble() ?? 13;
       final tabWidth = (map['tabWidth'] as num?)?.toInt() ?? 2;
+      final autoSaveDelay = (map['autoSaveDelaySecs'] as num?)?.toInt() ??
+          kAutoSaveDefaultDelaySecs;
       return EditorSettings(
         fontSize: fontSize.clamp(8, 32).toDouble(),
         tabWidth: const [2, 4, 8].contains(tabWidth) ? tabWidth : 2,
@@ -254,6 +271,10 @@ class EditorSettings {
         autoClosePairs: map['autoClosePairs'] != false,
         autoIndent: map['autoIndent'] != false,
         currentLineHighlight: map['currentLineHighlight'] != false,
+        autoSave: map['autoSave'] == true,
+        autoSaveDelaySecs: kAutoSaveDelayOptions.contains(autoSaveDelay)
+            ? autoSaveDelay
+            : kAutoSaveDefaultDelaySecs,
       );
     } catch (_) {
       return null;

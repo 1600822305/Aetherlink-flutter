@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/workspace/application/editor_auto_save.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/shared/widgets/editor_zoom_pill.dart';
 
@@ -112,6 +113,21 @@ class EditorSettingsPage extends ConsumerWidget {
                   onChanged: (v) =>
                       update(settings.copyWith(currentLineHighlight: v)),
                 ),
+                Divider(height: 1, indent: 16, color: theme.dividerColor),
+                SwitchListTile(
+                  title: const Text('自动保存'),
+                  subtitle: const Text('编辑停顿后自动写盘，切到后台也会保存'),
+                  value: settings.autoSave,
+                  onChanged: (v) => update(settings.copyWith(autoSave: v)),
+                ),
+                if (settings.autoSave) ...[
+                  Divider(height: 1, indent: 16, color: theme.dividerColor),
+                  _AutoSaveDelayRow(
+                    value: settings.autoSaveDelaySecs,
+                    onChanged: (v) =>
+                        update(settings.copyWith(autoSaveDelaySecs: v)),
+                  ),
+                ],
               ],
             ),
           ),
@@ -207,6 +223,52 @@ class _TabWidthRow extends StatelessWidget {
               ButtonSegment(value: 2, label: Text('2')),
               ButtonSegment(value: 4, label: Text('4')),
               ButtonSegment(value: 8, label: Text('8')),
+            ],
+            selected: {value},
+            onSelectionChanged: (s) => onChanged(s.first),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 自动保存延时：停顿多久后写盘，档位见 [kAutoSaveDelayOptions]。
+class _AutoSaveDelayRow extends StatelessWidget {
+  const _AutoSaveDelayRow({required this.value, required this.onChanged});
+
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('自动保存延时', style: theme.textTheme.bodyLarge),
+                Text(
+                  '停止输入多少秒后写盘',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SegmentedButton<int>(
+            showSelectedIcon: false,
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+            ),
+            segments: [
+              for (final secs in kAutoSaveDelayOptions)
+                ButtonSegment(value: secs, label: Text('$secs秒')),
             ],
             selected: {value},
             onSelectionChanged: (s) => onChanged(s.first),
