@@ -89,7 +89,7 @@ class AgentSettingsTab extends ConsumerWidget {
             _EntryRow(
               title: '工具授权白名单',
               description: '与工作区共用（工作区管理页 → 偏好 → 工具授权）',
-              onTap: () {}, // TODO(agent): 跳工具授权设置页
+              onTap: () => context.push(AppRouter.workspaceManagementPath),
             ),
             const _StaticRow(title: '越界命令', value: '永远强制审批（不可关闭）'),
           ],

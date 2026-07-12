@@ -73,4 +73,23 @@ class AgentTask {
       status == AgentTaskStatus.waitingApproval ||
       status == AgentTaskStatus.waitingInput ||
       status == AgentTaskStatus.paused;
+
+  AgentTask copyWith({String? title}) {
+    return AgentTask(
+      id: id,
+      profileId: profileId,
+      title: title ?? this.title,
+      workspaceId: workspaceId,
+      workspaceName: workspaceName,
+      status: status,
+      mode: mode,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      modelLabel: modelLabel,
+      rounds: rounds,
+      tokenCount: tokenCount,
+      elapsed: elapsed,
+      lastEventSummary: lastEventSummary,
+    );
+  }
 }

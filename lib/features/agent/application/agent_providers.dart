@@ -31,9 +31,27 @@ class AgentProfiles extends _$AgentProfiles {
   }
 }
 
-/// 全部话题（mock）。接真实现时替换为 drift 查询。
+/// 全部话题。UI 先行阶段为 mock 数据 + 会话内重命名/删除；
+/// 接真实现时替换为 drift 查询与写入。
 @Riverpod(keepAlive: true)
-List<AgentTask> agentTasks(Ref ref) => kMockAgentTasks;
+class AgentTasks extends _$AgentTasks {
+  @override
+  List<AgentTask> build() => kMockAgentTasks;
+
+  void rename(String taskId, String title) {
+    state = [
+      for (final t in state)
+        if (t.id == taskId) t.copyWith(title: title) else t,
+    ];
+  }
+
+  void remove(String taskId) {
+    state = [
+      for (final t in state)
+        if (t.id != taskId) t,
+    ];
+  }
+}
 
 /// 某话题的事件流（mock）。接真实现时替换为 drift 事件表 watch。
 @riverpod

@@ -80,17 +80,107 @@ class AgentHomePage extends ConsumerWidget {
               ),
         actions: task == null
             ? null
-            : [
-                IconButton(
-                  icon: const Icon(LucideIcons.ellipsis, size: 20),
-                  onPressed: () {},
-                ),
-                const SizedBox(width: 4),
-              ],
+            : [_TaskMenuButton(task: task), const SizedBox(width: 4)],
       ),
       body: task == null
           ? _DraftTopicView(profile: profile)
           : AgentTaskShell(task: task),
+    );
+  }
+}
+
+/// 话题顶栏「…」菜单：重命名 / 删除话题（UI 先行阶段写会话内 provider）。
+class _TaskMenuButton extends ConsumerWidget {
+  const _TaskMenuButton({required this.task});
+
+  final AgentTask task;
+
+  Future<void> _rename(BuildContext context, WidgetRef ref) async {
+    final controller = TextEditingController(text: task.title);
+    final title = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('重命名话题'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (title != null && title.isNotEmpty) {
+      ref.read(agentTasksProvider.notifier).rename(task.id, title);
+    }
+  }
+
+  Future<void> _delete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除话题'),
+        content: Text('确定删除「${task.title}」？事件流记录将一并删除。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed ?? false) {
+      ref.read(selectedAgentTaskIdProvider.notifier).select(null);
+      ref.read(agentTasksProvider.notifier).remove(task.id);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PopupMenuButton<String>(
+      icon: const Icon(LucideIcons.ellipsis, size: 20),
+      onSelected: (value) => switch (value) {
+        'rename' => _rename(context, ref),
+        'delete' => _delete(context, ref),
+        _ => null,
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: 'rename',
+          child: Row(
+            children: [
+              Icon(LucideIcons.pencil, size: 16),
+              SizedBox(width: 10),
+              Text('重命名话题'),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'delete',
+          child: Row(
+            children: [
+              Icon(LucideIcons.trash2, size: 16),
+              SizedBox(width: 10),
+              Text('删除话题'),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -127,7 +217,9 @@ class _DraftTopicView extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -138,9 +230,7 @@ class _DraftTopicView extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            bound
-                                ? profile.workspaceName!
-                                : '未绑定工作区 · 点这里去绑定',
+                            bound ? profile.workspaceName! : '未绑定工作区 · 点这里去绑定',
                             style: theme.textTheme.labelSmall?.copyWith(
                               color: cs.onSurface.withValues(alpha: 0.7),
                             ),
