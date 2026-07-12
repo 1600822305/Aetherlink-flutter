@@ -3,10 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/agent_sidebar.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_task_shell.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/new_topic_sheet.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/agent_sidebar.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_input_bar.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
 
 /// 智能体模式主界面壳（/agent）：侧栏宿主 + 当前话题的任务工作台。
@@ -59,44 +60,74 @@ class AgentHomePage extends ConsumerWidget {
               ],
             ),
       body: task == null
-          ? _EmptyState(profileName: profile.name)
+          ? _DraftTopicView(profile: profile)
           : AgentTaskShell(task: task),
     );
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.profileName});
+/// 干净新话题（草稿态）：像普通聊天一样空白，发第一条消息才开始任务。
+/// 工作区继承自当前智能体（已拍板：工作区绑在智能体上，在智能体
+/// 设置里改），未绑定时在这里提醒去设置。
+class _DraftTopicView extends StatelessWidget {
+  const _DraftTopicView({required this.profile});
 
-  final String profileName;
+  final AgentProfile profile;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            LucideIcons.bot,
-            size: 48,
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            '「$profileName」还没有任务',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+    final cs = theme.colorScheme;
+    final bound = profile.workspaceName != null;
+    return Column(
+      children: [
+        Expanded(
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(profile.emoji, style: const TextStyle(fontSize: 40)),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: cs.onSurface.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        LucideIcons.folderTree,
+                        size: 14,
+                        color: cs.onSurface.withValues(alpha: 0.6),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        bound
+                            ? profile.workspaceName!
+                            : '未绑定工作区 · 去智能体设置选择',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: cs.onSurface.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  bound ? '发送第一条消息开始任务' : '绑定工作区后即可开始任务',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: cs.onSurface.withValues(alpha: 0.5),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: () => showNewTopicSheet(context),
-            icon: const Icon(LucideIcons.plus, size: 18),
-            label: const Text('新建话题'),
-          ),
-        ],
-      ),
+        ),
+        const AgentInputBar(),
+      ],
     );
   }
 }

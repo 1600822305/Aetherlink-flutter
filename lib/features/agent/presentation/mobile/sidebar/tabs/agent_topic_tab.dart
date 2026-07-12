@@ -7,7 +7,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/new_topic_sheet.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
 
 class AgentTopicTab extends ConsumerWidget {
@@ -58,9 +57,11 @@ class AgentTopicTab extends ConsumerWidget {
               ),
               IconButton(
                 tooltip: '新建话题',
+                // 已拍板：新话题是干净空态（像普通聊天），发第一条消息才开始
+                // 任务；工作区继承自当前智能体，不单独选。
                 onPressed: () {
+                  ref.read(selectedAgentTaskIdProvider.notifier).select(null);
                   Navigator.of(context).pop();
-                  showNewTopicSheet(context);
                 },
                 iconSize: 18,
                 visualDensity: VisualDensity.compact,

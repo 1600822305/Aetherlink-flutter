@@ -119,7 +119,9 @@ class _ProfileItem extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '$topicCount 个话题${profile.builtin ? ' · 内置' : ''}',
+                        '$topicCount 个话题'
+                        ' · ${profile.workspaceName ?? '未绑定工作区'}'
+                        '${profile.builtin ? ' · 内置' : ''}',
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: cs.onSurface.withValues(alpha: 0.5),
                         ),

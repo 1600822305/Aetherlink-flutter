@@ -9,9 +9,11 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/ag
 /// （左：＋附件、模式快切 Code/Ask/Plan、模型 chip；右：发送/中断变形按钮，
 /// §五打断交互）。
 class AgentInputBar extends StatefulWidget {
-  const AgentInputBar({required this.task, super.key});
+  const AgentInputBar({this.task, super.key});
 
-  final AgentTask task;
+  /// null = 干净新话题（草稿态）：发第一条消息才开始任务，
+  /// 此时发送直接发（没有可打断的执行，不弹三选面板）。
+  final AgentTask? task;
 
   @override
   State<AgentInputBar> createState() => _AgentInputBarState();
@@ -20,7 +22,7 @@ class AgentInputBar extends StatefulWidget {
 class _AgentInputBarState extends State<AgentInputBar> {
   final TextEditingController _controller = TextEditingController();
   bool _hasText = false;
-  late AgentSessionMode _mode = widget.task.mode;
+  late AgentSessionMode _mode = widget.task?.mode ?? AgentSessionMode.code;
 
   @override
   void initState() {
@@ -37,8 +39,14 @@ class _AgentInputBarState extends State<AgentInputBar> {
     super.dispose();
   }
 
-  /// 有文字：发送不直接发——弹三选面板（排队/立即打断并发送/继续编辑）。
+  /// 有文字：任务执行中发送不直接发——弹三选面板（排队/立即打断并
+  /// 发送/继续编辑）；草稿态/非活跃任务直接发。
   Future<void> _onSendPressed() async {
+    final task = widget.task;
+    if (task == null || !task.isActive) {
+      _controller.clear(); // TODO(agent): 接真引擎后创建/继续任务
+      return;
+    }
     final action = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
@@ -132,7 +140,7 @@ class _AgentInputBarState extends State<AgentInputBar> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
-    final running = widget.task.status == AgentTaskStatus.running;
+    final running = widget.task?.status == AgentTaskStatus.running;
 
     // 与普通聊天输入框同款卡片 chrome（InputBoxComposer defaultStyle：
     // 圆角 8、细边框、轻投影、纸面 surface），外围透明 + 8px gutter。
@@ -203,7 +211,7 @@ class _AgentInputBarState extends State<AgentInputBar> {
                         const SizedBox(width: 6),
                         _Chip(
                           icon: LucideIcons.brain,
-                          label: '${widget.task.modelLabel} ▾',
+                          label: '${widget.task?.modelLabel ?? 'GLM-4.6'} ▾',
                           onTap: () {}, // TODO(agent): 复用聊天模型选择器
                         ),
                       ],

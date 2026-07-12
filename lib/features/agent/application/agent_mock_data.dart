@@ -18,6 +18,8 @@ const List<AgentProfile> kBuiltinAgentProfiles = [
       AgentToolGroup.terminal,
       AgentToolGroup.skills,
     },
+    workspaceId: 'ws-1',
+    workspaceName: 'aetherlink-app',
     builtin: true,
   ),
   AgentProfile(
@@ -30,6 +32,8 @@ const List<AgentProfile> kBuiltinAgentProfiles = [
       AgentToolGroup.knowledgeBase,
       AgentToolGroup.fileEditor,
     },
+    workspaceId: 'ws-2',
+    workspaceName: 'research-notes',
     builtin: true,
   ),
   AgentProfile(
