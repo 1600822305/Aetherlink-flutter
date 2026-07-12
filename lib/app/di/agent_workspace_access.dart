@@ -58,7 +58,7 @@ class AgentChangesResult {
 /// 指定档案工作区（可空）的未提交改动清单。UI 用 `ref.refresh` 手动刷新。
 final agentWorkspaceChangesProvider = FutureProvider.autoDispose
     .family<AgentChangesResult, String?>((ref, workspaceId) async {
-  final resolved = await _resolveWorkspace(ref, workspaceId);
+  final resolved = await resolveAgentWorkspace(ref, workspaceId);
   if (resolved == null) {
     return const AgentChangesResult.unavailable(
       '尚未打开任何工作区\n在工作区页面「打开文件夹」后这里会显示未提交改动',
@@ -121,7 +121,7 @@ Future<({String oldText, String newText})> loadAgentFileDiff(
   AgentChangesSnapshot snapshot,
   AgentFileChange change,
 ) async {
-  final resolved = await _resolveWorkspace(ref, workspaceId);
+  final resolved = await resolveAgentWorkspace(ref, workspaceId);
   if (resolved == null) throw StateError('工作区不可用');
   final (_, backend) = resolved;
 
@@ -143,7 +143,9 @@ Future<({String oldText, String newText})> loadAgentFileDiff(
   return (oldText: oldText, newText: newText);
 }
 
-Future<(Workspace, WorkspaceBackend)?> _resolveWorkspace(
+/// 按任务/档案绑定解析工作区及其后端（绑定 → 当前打开 → 最近第一个），
+/// diff 面板与检查点回滚共用同一套规则。
+Future<(Workspace, WorkspaceBackend)?> resolveAgentWorkspace(
   Ref ref,
   String? workspaceId,
 ) async {

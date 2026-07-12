@@ -24,7 +24,10 @@ List<AgentEvent> foldCompactedEvents(List<AgentEvent> events) {
         final n = event.coveredCount.clamp(0, entries.length);
         entries.removeRange(0, n);
         entries.insert(0, event);
-      case ReasoningEvent() || PlanUpdateEvent() || StatusChangeEvent():
+      case ReasoningEvent() ||
+            PlanUpdateEvent() ||
+            CheckpointEvent() ||
+            StatusChangeEvent():
         break;
     }
   }

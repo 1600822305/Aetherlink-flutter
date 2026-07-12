@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/app/di/agent_checkpoint_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_data_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_runtime_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
@@ -9,6 +10,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_budge
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
+import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/shared/services/streaming_keepalive_service.dart';
@@ -24,6 +26,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
 
   /// 共享单例：seq 缓存在 store 内，多入口（引擎/插队消息）必须同一份。
   AgentEventStore? _storeInstance;
+
+  /// 检查点不可用的提示每个任务只出一次（避免每条消息刷屏）。
+  final Set<String> _checkpointHintShown = {};
 
   /// 正在运行的任务 id 集合（UI 可 watch）。
   @override
@@ -67,6 +72,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       lastEventSummary: text,
     );
     ref.read(agentTasksProvider.notifier).apply(updated);
+    await _checkpoint(updated, text);
     await _store().appendUserMessage(updated.id, text);
     _run(updated);
   }
@@ -93,6 +99,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       lastEventSummary: text,
     );
     ref.read(agentTasksProvider.notifier).apply(task);
+    await _checkpoint(task, text);
     await _store().appendUserMessage(task.id, text);
     _run(task);
     return task;
@@ -109,6 +116,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     if (!queued && mode != null && mode != task.mode) {
       await _store().appendStatusChange(
           task.id, '模式切换：${task.mode.name} → ${mode.name}');
+    }
+    if (!queued) {
+      await _checkpoint(task.copyWith(mode: mode), text);
     }
     await _store().appendUserMessage(task.id, text, queued: queued);
     if (!queued) {
@@ -145,6 +155,10 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   Future<void> convertPlanToCode(AgentTask task) async {
     if (state.contains(task.id)) return;
     await _store().appendStatusChange(task.id, '模式切换：plan → code（方案已确认）');
+    await _checkpoint(
+      task.copyWith(mode: AgentSessionMode.code),
+      '方案已确认，转 Code 执行',
+    );
     await _store().appendUserMessage(task.id, '方案已确认，请按方案开始执行。');
     final updated = task.copyWith(
       status: AgentTaskStatus.running,
@@ -155,6 +169,69 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     ref.read(agentTasksProvider.notifier).apply(updated);
     _run(updated);
   }
+
+  /// 回滚到检查点（初稿 §5.5 P2）：仅限非运行态；回滚前自动把当前
+  /// 状态落为新检查点（可再回滚回来），只还原文件不动对话。
+  /// 失败抛带可读原因的 [StateError]。
+  Future<void> rollbackToCheckpoint(
+    AgentTask task,
+    CheckpointEvent checkpoint,
+  ) async {
+    if (state.contains(task.id)) {
+      throw StateError('任务正在运行，先暂停/终止后再回滚');
+    }
+    final result = await rollbackAgentCheckpoint(
+      ref,
+      task.id,
+      task.workspaceId.isEmpty ? null : task.workspaceId,
+      checkpoint.commit,
+    );
+    await _store().appendCheckpoint(
+      task.id,
+      commit: result.safetyCommit,
+      label: '回滚前自动快照',
+    );
+    await _store().appendStatusChange(
+      task.id,
+      '已回滚工作区到检查点 ${_shortCommit(checkpoint.commit)}'
+      '（回滚前状态已保存为新检查点，可再回滚回来）',
+    );
+  }
+
+  /// 用户消息落地前落检查点（仅写入模式）；不可用/失败降级为
+  /// 一次性状态提示，不阻断任务启动。
+  Future<void> _checkpoint(AgentTask task, String text) async {
+    if (task.mode != AgentSessionMode.code &&
+        task.mode != AgentSessionMode.auto) {
+      return;
+    }
+    try {
+      final result = await createAgentCheckpoint(
+        ref,
+        task.id,
+        task.workspaceId.isEmpty ? null : task.workspaceId,
+      );
+      if (result.commit != null) {
+        await _store().appendCheckpoint(
+          task.id,
+          commit: result.commit!,
+          label: _titleFrom(text),
+        );
+      } else if (_checkpointHintShown.add(task.id)) {
+        await _store().appendStatusChange(
+          task.id,
+          '检查点不可用：${result.unavailableReason}',
+        );
+      }
+    } catch (e) {
+      if (_checkpointHintShown.add(task.id)) {
+        await _store().appendStatusChange(task.id, '检查点创建失败：$e');
+      }
+    }
+  }
+
+  static String _shortCommit(String commit) =>
+      commit.length > 8 ? commit.substring(0, 8) : commit;
 
   void pause(String taskId) => _tokens[taskId]?.requestPause();
 

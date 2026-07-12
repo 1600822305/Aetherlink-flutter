@@ -223,6 +223,23 @@ class InMemoryAgentEventStore implements AgentEventStore {
   }
 
   @override
+  Future<CheckpointEvent> appendCheckpoint(
+    String taskId, {
+    required String commit,
+    String label = '',
+  }) async {
+    final event = CheckpointEvent(
+      id: _newId(),
+      seq: _nextSeq(taskId),
+      at: DateTime.now(),
+      commit: commit,
+      label: label,
+    );
+    _upsert(taskId, event);
+    return event;
+  }
+
+  @override
   Future<CompactionEvent> appendCompaction(
     String taskId, {
     required int coveredCount,

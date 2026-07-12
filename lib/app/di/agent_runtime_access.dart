@@ -341,6 +341,7 @@ List<LlmMessage> _replayMessages(List<AgentEvent> events) {
         );
       case ReasoningEvent() ||
             PlanUpdateEvent() ||
+            CheckpointEvent() ||
             StatusChangeEvent():
         break;
     }
@@ -367,6 +368,7 @@ String _compactionTranscript(List<AgentEvent> events) {
         lines.add('[早期摘要] ${clip(event.summary)}');
       case ReasoningEvent() ||
             PlanUpdateEvent() ||
+            CheckpointEvent() ||
             StatusChangeEvent():
         break;
     }

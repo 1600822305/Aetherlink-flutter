@@ -107,6 +107,7 @@ String agentEventKind(AgentEvent event) => switch (event) {
       ToolCallEvent() => 'tool_call',
       PlanUpdateEvent() => 'plan_update',
       CompactionEvent() => 'compaction',
+      CheckpointEvent() => 'checkpoint',
       StatusChangeEvent() => 'status_change',
     };
 
@@ -154,6 +155,10 @@ String encodeAgentEventPayload(AgentEvent event) {
     CompactionEvent(:final coveredCount, :final summary) => {
         'coveredCount': coveredCount,
         'summary': summary,
+      },
+    CheckpointEvent(:final commit, :final label) => {
+        'commit': commit,
+        'label': label,
       },
     StatusChangeEvent(:final description) => {'description': description},
   };
@@ -231,6 +236,14 @@ AgentEvent decodeAgentEvent({
         at: at,
         coveredCount: p['coveredCount'] as int? ?? 0,
         summary: p['summary'] as String? ?? '',
+      );
+    case 'checkpoint':
+      return CheckpointEvent(
+        id: id,
+        seq: seq,
+        at: at,
+        commit: p['commit'] as String? ?? '',
+        label: p['label'] as String? ?? '',
       );
     case 'status_change':
       return StatusChangeEvent(

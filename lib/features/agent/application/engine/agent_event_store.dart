@@ -72,6 +72,12 @@ abstract class AgentEventStore {
     String description,
   );
 
+  Future<CheckpointEvent> appendCheckpoint(
+    String taskId, {
+    required String commit,
+    String label = '',
+  });
+
   Future<CompactionEvent> appendCompaction(
     String taskId, {
     required int coveredCount,
@@ -274,6 +280,23 @@ class DriftAgentEventStore implements AgentEventStore {
       seq: await _nextSeq(taskId),
       at: DateTime.now(),
       description: description,
+    );
+    await _dao.upsertEvents(taskId, [event]);
+    return event;
+  }
+
+  @override
+  Future<CheckpointEvent> appendCheckpoint(
+    String taskId, {
+    required String commit,
+    String label = '',
+  }) async {
+    final event = CheckpointEvent(
+      id: _newId('ck'),
+      seq: await _nextSeq(taskId),
+      at: DateTime.now(),
+      commit: commit,
+      label: label,
     );
     await _dao.upsertEvents(taskId, [event]);
     return event;

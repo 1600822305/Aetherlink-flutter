@@ -140,6 +140,24 @@ class CompactionEvent extends AgentEvent {
   final String summary;
 }
 
+/// 检查点（初稿 §5.5 P2）：用户消息落地前对 git 工作区做的基线快照，
+/// 事件流上渲染为可「回滚」的标记行。仅 git 工作区产生。
+class CheckpointEvent extends AgentEvent {
+  const CheckpointEvent({
+    required super.id,
+    required super.seq,
+    required super.at,
+    required this.commit,
+    this.label = '',
+  });
+
+  /// 基线 commit 哈希（由 refs/aetherlink/checkpoints/… 保活，防 gc）。
+  final String commit;
+
+  /// 触发检查点的用户消息摘要（UI 标记行展示）。
+  final String label;
+}
+
 /// 状态迁移记录（出错/用户暂停/超限……）。
 class StatusChangeEvent extends AgentEvent {
   const StatusChangeEvent({
