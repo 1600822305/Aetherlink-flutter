@@ -430,8 +430,9 @@ class _FileEditorState extends ConsumerState<FileEditor> {
             path: readableWorkspacePath(widget.entry.path),
             dirty: dirty,
             topPad: 6,
-            actions: _headerActions(dirty),
+            actions: _headerActions(),
           ),
+          if (_hasTextBody) EditorToolbar(children: _toolbarButtons(dirty)),
           Divider(height: 1, color: theme.dividerColor),
           if (_hasTextBody && _showFind)
             FindReplaceBar(
@@ -492,7 +493,8 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     );
   }
 
-  List<Widget> _headerActions(bool dirty) {
+  // 头部只放非功能性按钮；功能性按钮统一在下方可横向滚动的工具条里。
+  List<Widget> _headerActions() {
     final locked = ref.watch(workspacePageLockProvider);
     return [
       IconButton(
@@ -502,14 +504,31 @@ class _FileEditorState extends ConsumerState<FileEditor> {
         onPressed: () =>
             ref.read(workspacePageLockProvider.notifier).toggle(),
       ),
-      if (_hasTextBody)
-        IconButton(
-          tooltip: '查找',
-          icon: const Icon(LucideIcons.search, size: 18),
-          onPressed: () => setState(() => _showFind = !_showFind),
-        ),
+    ];
+  }
+
+  IconButton _toolButton({
+    required String tooltip,
+    required Widget icon,
+    VoidCallback? onPressed,
+  }) {
+    return IconButton(
+      tooltip: tooltip,
+      visualDensity: VisualDensity.compact,
+      icon: icon,
+      onPressed: onPressed,
+    );
+  }
+
+  List<Widget> _toolbarButtons(bool dirty) {
+    return [
+      _toolButton(
+        tooltip: '查找',
+        icon: const Icon(LucideIcons.search, size: 18),
+        onPressed: () => setState(() => _showFind = !_showFind),
+      ),
       if (_writable && !_editing)
-        IconButton(
+        _toolButton(
           tooltip: '编辑',
           icon: const Icon(LucideIcons.pencil, size: 18),
           onPressed: () {
@@ -523,7 +542,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
           builder: (context, value, _) => Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              IconButton(
+              _toolButton(
                 tooltip: '撤销',
                 icon: const Icon(LucideIcons.undo2, size: 18),
                 onPressed: value.canUndo
@@ -533,7 +552,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
                       }
                     : null,
               ),
-              IconButton(
+              _toolButton(
                 tooltip: '重做',
                 icon: const Icon(LucideIcons.redo2, size: 18),
                 onPressed: value.canRedo
@@ -549,7 +568,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
       if (_editing &&
           lineCommentForLanguage(languageForFileName(widget.entry.name)) !=
               null)
-        IconButton(
+        _toolButton(
           tooltip: '注释切换 (Ctrl+/)',
           icon: const Icon(LucideIcons.squareSlash, size: 18),
           onPressed: () {
@@ -562,7 +581,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
           },
         ),
       if (_editing)
-        IconButton(
+        _toolButton(
           tooltip: '保存',
           icon: _saving
               ? const SizedBox(

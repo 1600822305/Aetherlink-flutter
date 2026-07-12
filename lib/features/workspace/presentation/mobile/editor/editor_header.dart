@@ -6,6 +6,31 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+/// Horizontally scrollable action row below the header: holds the editor's
+/// functional buttons (find / edit / undo / save / …) so the header row stays
+/// clean and new buttons can be appended without fighting for space.
+class EditorToolbar extends StatelessWidget {
+  const EditorToolbar({super.key, required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      height: 38,
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: theme.dividerColor)),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(children: children),
+      ),
+    );
+  }
+}
+
 class EditorHeader extends StatelessWidget {
   const EditorHeader({
     super.key,
