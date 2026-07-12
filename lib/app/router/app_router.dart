@@ -185,12 +185,15 @@ abstract final class AppRouter {
   /// otherwise → [chatPath]). It defaults to `false` so existing callers keep
   /// landing on the chat home. [startAtAgent] restores the persisted 主界面
   /// 模式（退出前在智能体模式 → 冷启动直接落 [agentPath]）；welcome 优先。
-  static GoRouter create({bool startAtWelcome = false, bool startAtAgent = false}) => GoRouter(
+  static GoRouter create({
+    bool startAtWelcome = false,
+    bool startAtAgent = false,
+  }) => GoRouter(
     initialLocation: startAtWelcome
         ? welcomePath
         : startAtAgent
-            ? agentPath
-            : chatPath,
+        ? agentPath
+        : chatPath,
     observers: [_HapticNavObserver()],
     routes: [
       GoRoute(
@@ -229,9 +232,7 @@ abstract final class AppRouter {
         name: 'ssh-connection',
         pageBuilder: (context, state) => _instant(
           state,
-          SshConnectionFormPage(
-            editConnection: state.extra as SshConnection?,
-          ),
+          SshConnectionFormPage(editConnection: state.extra as SshConnection?),
         ),
       ),
       GoRoute(
@@ -243,7 +244,12 @@ abstract final class AppRouter {
       GoRoute(
         path: settingsPath,
         name: 'settings',
-        pageBuilder: (context, state) => _instant(state, const SettingsPage()),
+        pageBuilder: (context, state) => _instant(
+          state,
+          SettingsPage(
+            initialAgentMode: state.uri.queryParameters['mode'] == 'agent',
+          ),
+        ),
       ),
       GoRoute(
         path: aboutPath,

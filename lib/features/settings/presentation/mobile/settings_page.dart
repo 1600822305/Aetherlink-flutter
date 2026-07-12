@@ -25,7 +25,10 @@ import 'package:aetherlink_flutter/features/settings/presentation/widgets/settin
 /// compact/detailed toggle. All colors are theme tokens (ADR-0008); icons are
 /// lucide (ADR-0009).
 class SettingsPage extends ConsumerStatefulWidget {
-  const SettingsPage({super.key});
+  const SettingsPage({this.initialAgentMode = false, super.key});
+
+  /// 为 true 时打开即落在「智能体设置」视图（智能体侧入口直达）。
+  final bool initialAgentMode;
 
   static const double _groupSpacing = 24;
 
@@ -36,7 +39,7 @@ class SettingsPage extends ConsumerStatefulWidget {
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   /// 顶栏切换：聊天（通用）设置 ↔ 智能体设置。两侧正文完全独立，
   /// 智能体侧正文由 agent 模块提供（[AgentAppSettingsBody]）。
-  bool _agentMode = false;
+  late bool _agentMode = widget.initialAgentMode;
 
   @override
   Widget build(BuildContext context) {

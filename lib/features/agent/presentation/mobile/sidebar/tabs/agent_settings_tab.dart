@@ -3,8 +3,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
@@ -32,10 +34,7 @@ class AgentSettingsTab extends ConsumerWidget {
           title: '当前智能体',
           subtitle: '${profile.emoji} ${profile.name}',
           children: [
-            _StaticRow(
-              title: '绑定工作区',
-              value: profile.workspaceName ?? '未绑定',
-            ),
+            _StaticRow(title: '绑定工作区', value: profile.workspaceName ?? '未绑定'),
             _StaticRow(
               title: '工具集',
               value: profile.tools.map(_toolGroupLabel).join(' / '),
@@ -43,8 +42,7 @@ class AgentSettingsTab extends ConsumerWidget {
             _EntryRow(
               title: '编辑智能体',
               description: '名称 / 提示词 / 工具集 / 绑定工作区',
-              onTap: () =>
-                  showAgentProfileEditPage(context, profile: profile),
+              onTap: () => showAgentProfileEditPage(context, profile: profile),
             ),
           ],
         ),
@@ -93,30 +91,83 @@ class AgentSettingsTab extends ConsumerWidget {
               description: '与工作区共用（工作区管理页 → 偏好 → 工具授权）',
               onTap: () {}, // TODO(agent): 跳工具授权设置页
             ),
-            const _StaticRow(
-              title: '越界命令',
-              value: '永远强制审批（不可关闭）',
-            ),
+            const _StaticRow(title: '越界命令', value: '永远强制审批（不可关闭）'),
           ],
+        ),
+        const _GroupDivider(),
+        // App 级设置入口（对齐聊天设置 tab 底部的「设置」行）：
+        // 直达设置页的智能体视图。
+        _SettingsEntryRow(
+          onTap: () => context.push('${AppRouter.settingsPath}?mode=agent'),
         ),
       ],
     );
   }
 }
 
+class _SettingsEntryRow extends StatelessWidget {
+  const _SettingsEntryRow({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(6, 10, 6, 10),
+        child: Row(
+          children: [
+            Icon(LucideIcons.cog, size: 20, color: cs.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '设置',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '进入完整设置页面（智能体视图）',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cs.onSurface.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              LucideIcons.chevronRight,
+              size: 16,
+              color: cs.onSurface.withValues(alpha: 0.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 String _modeLabel(AgentSessionMode mode) => switch (mode) {
-      AgentSessionMode.code => 'Code',
-      AgentSessionMode.ask => 'Ask',
-      AgentSessionMode.plan => 'Plan',
-    };
+  AgentSessionMode.code => 'Code',
+  AgentSessionMode.ask => 'Ask',
+  AgentSessionMode.plan => 'Plan',
+};
 
 String _toolGroupLabel(AgentToolGroup g) => switch (g) {
-      AgentToolGroup.fileEditor => '文件',
-      AgentToolGroup.terminal => '终端',
-      AgentToolGroup.webSearch => '网搜',
-      AgentToolGroup.knowledgeBase => '知识库',
-      AgentToolGroup.skills => '技能',
-    };
+  AgentToolGroup.fileEditor => '文件',
+  AgentToolGroup.terminal => '终端',
+  AgentToolGroup.webSearch => '网搜',
+  AgentToolGroup.knowledgeBase => '知识库',
+  AgentToolGroup.skills => '技能',
+};
 
 /// 可折叠分组（对齐聊天设置 tab 的手风琴分组形态）。
 class _Group extends StatefulWidget {
@@ -174,9 +225,7 @@ class _GroupState extends State<_Group> {
                   ),
                 ),
                 Icon(
-                  _expanded
-                      ? LucideIcons.chevronUp
-                      : LucideIcons.chevronDown,
+                  _expanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
                   size: 16,
                   color: cs.onSurface.withValues(alpha: 0.5),
                 ),
@@ -222,7 +271,9 @@ class _SwitchRow extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 4, 6, 4),
       child: Row(
         children: [
-          Expanded(child: _RowText(title: title, description: description)),
+          Expanded(
+            child: _RowText(title: title, description: description),
+          ),
           CustomSwitch(value: value, onChanged: onChanged),
         ],
       ),
@@ -295,7 +346,9 @@ class _EntryRow extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
         child: Row(
           children: [
-            Expanded(child: _RowText(title: title, description: description)),
+            Expanded(
+              child: _RowText(title: title, description: description),
+            ),
             Icon(
               LucideIcons.chevronRight,
               size: 16,
@@ -322,9 +375,7 @@ class _StaticRow extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 6, 10, 6),
       child: Row(
         children: [
-          Expanded(
-            child: Text(title, style: theme.textTheme.bodySmall),
-          ),
+          Expanded(child: Text(title, style: theme.textTheme.bodySmall)),
           Flexible(
             child: Text(
               value,
