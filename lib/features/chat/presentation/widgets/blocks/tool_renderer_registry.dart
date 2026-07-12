@@ -12,21 +12,27 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/web
 typedef ToolBlockBuilder = Widget Function(ToolBlock block);
 
 /// `@aether/file-editor` tools that mutate the workspace (and run behind HITL
-/// confirmation). Rendered as Cursor/Windsurf-style edit cards.
+/// confirmation). Rendered as Cursor/Windsurf-style edit cards. 旧名（已合并
+/// 进 write / edit / move）保留渲染以兼容历史消息。
 const Set<String> _fileEditorWriteTools = {
+  'write',
+  'edit',
+  'move',
+  'create_directory',
+  'copy_file',
+  'delete_file',
+  // 历史消息兼容：
   'write_to_file',
   'apply_diff',
   'create_file',
-  'create_directory',
   'rename_file',
   'move_file',
-  'copy_file',
-  'delete_file',
   'insert_content',
   'replace_in_file',
 };
 
 /// `@aether/file-editor` read-only tools, rendered as compact read/list rows.
+/// get_workspace_files 已并入 list_files，保留渲染以兼容历史消息。
 const Set<String> _fileEditorReadTools = {
   'get_workspace_files',
   'list_files',

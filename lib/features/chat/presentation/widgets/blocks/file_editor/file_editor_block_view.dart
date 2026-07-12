@@ -121,10 +121,11 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
     );
   }
 
-  /// The diff/preview body. `write_to_file` reads the current file to render a
-  /// real old→new diff; the other edit tools derive their diff from the args.
+  /// The diff/preview body. Overwrite-style tools read the current file to
+  /// render a real old→new diff; the other edit tools derive their diff from
+  /// the args.
   Widget _buildDiffBody(BuildContext context, {String? language}) {
-    if (_tool == 'write_to_file') {
+    if (_isOverwrite) {
       final path = _args['path']?.toString() ?? '';
       final newContent = _args['content']?.toString() ?? '';
       final current = ref.watch(fileEditorCurrentContentProvider(path));
@@ -170,8 +171,13 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
     );
   }
 
-  /// Derives a [LineDiff] from the tool args (everything except write_to_file,
-  /// which needs an async read of the current file).
+  /// Whether this call overwrites an existing file (needs an async read of the
+  /// current content to render a real diff).
+  bool get _isOverwrite =>
+      _tool == 'write_to_file' || (_tool == 'write' && _args['path'] != null);
+
+  /// Derives a [LineDiff] from the tool args (everything except the overwrite
+  /// branch, which needs an async read of the current file).
   LineDiff? _deriveDiff() {
     switch (_tool) {
       case 'apply_diff':
@@ -180,6 +186,11 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
             _args['strategy']?.toString().toLowerCase() == 'unified';
         return parseDiffPayload(diff, unified: unified);
       case 'create_file':
+        return computeLineDiff('', _args['content']?.toString() ?? '');
+      case 'write':
+        // Creation branch only; the overwrite branch renders async in
+        // [_buildDiffBody].
+        if (_args['path'] != null) return null;
         return computeLineDiff('', _args['content']?.toString() ?? '');
       case 'insert_content':
         final content = _args['content']?.toString() ?? '';
@@ -191,6 +202,7 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
         final after = _args['position']?.toString().toLowerCase() == 'after';
         return computeLineDiff('', content, newStart: after ? line + 1 : line);
       case 'replace_in_file':
+      case 'edit':
         // Position in the file is unknown, so suppress the line-number gutter.
         return computeLineDiff(
           _args['search']?.toString() ?? '',
@@ -206,6 +218,8 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
   String _editFileName() {
     final raw = switch (_tool) {
       'create_file' => _args['name']?.toString(),
+      'write' =>
+        _args['path']?.toString() ?? _args['name']?.toString(),
       _ => _args['path']?.toString(),
     };
     return fileNameFromPath(raw);
@@ -214,6 +228,8 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
   String _editSubtitle() {
     final result = parseFileEditorResult(block);
     return switch (_tool) {
+      'write' => _args['path'] != null ? '覆盖写入' : '新建文件',
+      'edit' => '查找替换',
       'write_to_file' => '覆盖写入',
       'apply_diff' => result.error == null ? '应用 diff' : 'diff',
       'create_file' => '新建文件',
@@ -226,6 +242,11 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
   String _opLabel() {
     String tail(Object? p) => fileNameFromPath(p?.toString());
     return switch (_tool) {
+      'move' => _args['destination_path'] == null
+          ? '重命名 ${tail(_args['path'])} → ${_args['new_name'] ?? ''}'
+          : (_args['new_name'] != null
+              ? '移动 ${tail(_args['path'] ?? _args['source_path'])} → ${tail(_args['destination_path'])}/${_args['new_name']}'
+              : '移动 ${tail(_args['path'] ?? _args['source_path'])} → ${tail(_args['destination_path'])}/'),
       'rename_file' =>
         '重命名 ${tail(_args['path'])} → ${_args['new_name'] ?? ''}',
       'move_file' => _args['new_name'] != null
@@ -242,13 +263,12 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
 
   String? _resultError() => parseFileEditorResult(block).error;
 
-  /// Surfaces an actionable "use the other tool" hint for common failures, most
-  /// importantly write_to_file failing because the target doesn't exist yet.
+  /// Surfaces an actionable hint for common failures, most importantly an
+  /// overwrite failing because the target doesn't exist yet.
   String? _errorSuggestion(String? error) {
     if (error == null) return null;
-    if (_tool == 'write_to_file' &&
-        (error.contains('不存在') || error.contains('create_file'))) {
-      return '该文件不存在。新建文件请改用 create_file（参数：parent_path + name）。';
+    if (_isOverwrite && error.contains('不存在')) {
+      return '该文件不存在。新建文件请改传 parent_path + name。';
     }
     return null;
   }
@@ -269,6 +289,7 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
   }
 
   IconData _opIcon(String tool) => switch (tool) {
+        'move' => LucideIcons.cornerUpRight,
         'rename_file' => LucideIcons.pencil,
         'move_file' => LucideIcons.cornerUpRight,
         'copy_file' => LucideIcons.copy,
@@ -278,6 +299,7 @@ class _FileEditorBlockViewState extends ConsumerState<FileEditorBlockView> {
       };
 
   static bool _isLightOp(String tool) => const {
+        'move',
         'rename_file',
         'move_file',
         'copy_file',

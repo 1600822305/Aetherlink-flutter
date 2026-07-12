@@ -74,23 +74,19 @@ String toolConfirmSummary(String toolName, Map<String, Object?> args) {
     case 'delete_model':
       return '从供应商删除模型「${args['modelId'] ?? ''}」';
     // @aether/file-editor write tools.
-    case 'write_to_file':
-      return '覆盖写入文件「${_pathTail(args['path'])}」的全部内容';
-    case 'create_file':
-      return '在「${_pathTail(args['parent_path'])}」下新建文件「${args['name'] ?? ''}」';
-    case 'rename_file':
-      return '将「${_pathTail(args['path'])}」重命名为「${args['new_name'] ?? ''}」';
-    case 'move_file':
-      return '移动「${_pathTail(args['source_path'])}」到「${_pathTail(args['destination_path'])}」';
+    case 'write':
+      return args['path'] != null
+          ? '覆盖写入文件「${_pathTail(args['path'])}」的全部内容'
+          : '在「${_pathTail(args['parent_path'])}」下新建文件「${args['name'] ?? ''}」';
+    case 'move':
+      return args['destination_path'] != null
+          ? '移动「${_pathTail(args['path'] ?? args['source_path'])}」到「${_pathTail(args['destination_path'])}」'
+          : '将「${_pathTail(args['path'])}」重命名为「${args['new_name'] ?? ''}」';
     case 'copy_file':
       return '复制「${_pathTail(args['source_path'])}」到「${_pathTail(args['destination_path'])}」';
     case 'delete_file':
       return '删除「${_pathTail(args['path'])}」';
-    case 'insert_content':
-      return '在「${_pathTail(args['path'])}」第 ${args['line'] ?? '?'} 行插入内容';
-    case 'apply_diff':
-      return '对「${_pathTail(args['path'])}」应用 diff 修改';
-    case 'replace_in_file':
+    case 'edit':
       return '在「${_pathTail(args['path'])}」中替换「${args['search'] ?? ''}」';
     case 'terminal_execute':
       return '在工作区执行命令：${args['command'] ?? ''}';

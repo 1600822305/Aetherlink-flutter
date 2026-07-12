@@ -61,7 +61,7 @@ final List<AgentTask> kMockAgentTasks = [
     rounds: 12,
     tokenCount: 8400,
     elapsed: const Duration(minutes: 6),
-    lastEventSummary: '等待授权 write_to_file login.dart',
+    lastEventSummary: '等待授权 write login.dart',
   ),
   AgentTask(
     id: 'task-2',
@@ -210,7 +210,7 @@ List<AgentEvent> mockEventsForTask(String taskId) {
       id: 'e-t-4',
       seq: next(),
       at: t(6),
-      toolName: 'write_to_file',
+      toolName: 'write',
       argSummary: 'lib/login.dart',
       state: AgentToolCallState.waitingApproval,
     ),

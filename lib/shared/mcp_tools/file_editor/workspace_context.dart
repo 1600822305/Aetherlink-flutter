@@ -1,6 +1,6 @@
 // 工作区上下文注入 — 启用 @aether/file-editor 工具时，把当前工作区的基本
 // 信息（名称/后端/根路径/顶层内容）直接拼进系统提示，AI 开局即知工作范围，
-// 不必每轮先调 get_workspace_files 探路。
+// 不必每轮先调 list_files 探路。
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -49,7 +49,7 @@ Future<String?> buildWorkspaceContextSection(Ref ref) async {
       final more = entries.length - shown.length;
       buf.writeln(
         '顶层内容（${entries.length} 项）：${names.join('、')}'
-        '${more > 0 ? '（另有 $more 项，可用 get_workspace_files 查看）' : ''}',
+        '${more > 0 ? '（另有 $more 项，可用 list_files 查看）' : ''}',
       );
     }
   } catch (_) {

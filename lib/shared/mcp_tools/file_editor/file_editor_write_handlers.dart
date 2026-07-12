@@ -1,9 +1,8 @@
 // Write/edit handlers for the `@aether/file-editor` built-in MCP server.
 //
 // Each handler maps a write tool call to the workspace `WorkspaceBackend`
-// (SAF on Android), mirroring the original AetherLink file-editor tool set
-// (write_to_file / create_file / rename_file / move_file / copy_file /
-// delete_file / insert_content / apply_diff / replace_in_file).
+// (SAF on Android): write / edit / move / copy_file / delete_file /
+// create_directory.
 //
 // SAF caveat: a workspace entry's `path` is an **opaque** `content://` URI —
 // never split or build it by string. New files are addressed by an opaque
@@ -17,12 +16,12 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace_text_ops.
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 
-/// `write_to_file` — overwrite the full content of an existing file.
-///
-/// On SAF a brand-new file can't be addressed by an arbitrary path, so this
-/// tool only overwrites an existing file; use `create_file` to make a new one.
-Future<McpToolResult> writeToFile(Ref ref, Map<String, Object?> args) async {
-  final path = requireString(args, 'path');
+/// `write` — overwrite an existing file (`path`) or create a new one
+/// (`parent_path` + `name`). On SAF a brand-new file can't be addressed by an
+/// arbitrary path, so creation always goes through an opaque parent dir.
+Future<McpToolResult> writeFile(Ref ref, Map<String, Object?> args) async {
+  final path = optionalString(args, 'path');
+  if (path == null) return _createFile(ref, args);
   final raw = args['content'];
   if (raw == null) throw const FileEditorError('缺少必需参数: content');
   final processed = processIncomingContent(raw is String ? raw : raw.toString());
@@ -31,7 +30,7 @@ Future<McpToolResult> writeToFile(Ref ref, Map<String, Object?> args) async {
   // is well under the model's own declared `line_count`, OR when it carries a
   // "// rest of code unchanged"-style omission marker (which is suspicious at
   // any length). Either way the model is told to send full content or use
-  // apply_diff instead of overwriting with a partial file.
+  // `edit` instead of overwriting with a partial file.
   final expected = optionalInt(args, 'line_count');
   final actual = countLines(processed);
   final wayShort = expected != null && expected > 0 && actual < expected * 0.8;
@@ -45,7 +44,7 @@ Future<McpToolResult> writeToFile(Ref ref, Map<String, Object?> args) async {
         : '（实际 $actual 行）';
     throw FileEditorError(
       '内容可能被截断$hint：${omitted ? '检测到代码省略标记（如 "// rest of code unchanged"）；' : ''}'
-      '请提供完整文件内容，或改用 apply_diff / insert_content 做增量修改。',
+      '请提供完整文件内容，或改用 edit 做增量修改。',
     );
   }
 
@@ -56,7 +55,7 @@ Future<McpToolResult> writeToFile(Ref ref, Map<String, Object?> args) async {
     info = await backend.getFileInfo(path);
   } catch (_) {
     throw const FileEditorError(
-      '目标文件不存在或无法访问。新建文件请用 create_file（传 parent_path + name）。',
+      '目标文件不存在或无法访问。新建文件请改传 parent_path + name。',
     );
   }
   if (info.isDirectory) {
@@ -71,8 +70,8 @@ Future<McpToolResult> writeToFile(Ref ref, Map<String, Object?> args) async {
   });
 }
 
-/// `create_file` — create a new file under an opaque [parent_path] directory.
-Future<McpToolResult> createFile(Ref ref, Map<String, Object?> args) async {
+/// `write` (creation branch) — new file under an opaque [parent_path] dir.
+Future<McpToolResult> _createFile(Ref ref, Map<String, Object?> args) async {
   final parentPath = requireString(args, 'parent_path');
   final name = requireString(args, 'name');
   final content = processIncomingContent(optionalString(args, 'content') ?? '');
@@ -105,29 +104,31 @@ Future<McpToolResult> createFile(Ref ref, Map<String, Object?> args) async {
   });
 }
 
-/// `rename_file` — rename a file or directory in place.
-Future<McpToolResult> renameFile(Ref ref, Map<String, Object?> args) async {
-  final path = requireString(args, 'path');
-  final newName = requireString(args, 'new_name');
-  final backend = await backendForPath(ref, path);
-  final newPath = await backend.rename(path, newName);
-  return fileEditorOk({'message': '重命名成功', 'path': newPath, 'newName': newName});
-}
-
-/// `move_file` — move a file/dir into the opaque [destination_path] directory,
-/// optionally renaming it to [new_name] in the same call.
+/// `move` — rename in place (only [new_name]) or move a file/dir into the
+/// opaque [destination_path] directory, optionally renaming in the same call.
 ///
 /// The destination is checked for a collision against the *final* name (the
 /// [new_name] when given, otherwise the source's own name); when one exists the
 /// move is refused unless `overwrite=true`. With a rename the move is done as
 /// copy-as-new-name then delete-source (not atomic — a failed delete keeps the
 /// copy and reports both locations); a plain move uses the backend's move.
-Future<McpToolResult> moveFile(Ref ref, Map<String, Object?> args) async {
-  final sourcePath = requireString(args, 'source_path');
-  final destParent = requireString(args, 'destination_path');
+Future<McpToolResult> moveEntry(Ref ref, Map<String, Object?> args) async {
+  final sourcePath = optionalString(args, 'path') ??
+      requireString(args, 'source_path'); // 兼容旧参数名
+  final destParent = optionalString(args, 'destination_path');
   final newName = optionalString(args, 'new_name');
   final overwrite = optionalBool(args, 'overwrite');
   final backend = await backendForPath(ref, sourcePath);
+
+  if (destParent == null) {
+    if (newName == null) {
+      throw const FileEditorError(
+        '缺少参数：destination_path（移动）与 new_name（改名）至少传一个。',
+      );
+    }
+    final newPath = await backend.rename(sourcePath, newName);
+    return fileEditorOk({'message': '重命名成功', 'path': newPath, 'newName': newName});
+  }
 
   if (newName == null) {
     // Resolve the source name so the collision check (and overwrite) targets
@@ -228,102 +229,7 @@ Future<McpToolResult> deleteFile(Ref ref, Map<String, Object?> args) async {
   });
 }
 
-/// `insert_content` — insert [content] relative to a 1-based [line].
-///
-/// `position` selects `before` (default) or `after` the line; `at_end=true`
-/// appends to the file and needs no [line] at all.
-Future<McpToolResult> insertContent(Ref ref, Map<String, Object?> args) async {
-  final path = requireString(args, 'path');
-  final raw = args['content'];
-  if (raw == null) throw const FileEditorError('缺少必需参数: content');
-  final content = processIncomingContent(raw is String ? raw : raw.toString());
-  final backend = await backendForPath(ref, path);
-  final linesInserted = countLines(content);
-
-  // at_end — append without a line number.
-  if (optionalBool(args, 'at_end')) {
-    await backend.writeFile(path, content, append: true);
-    return fileEditorOk({
-      'message': '已在文件末尾追加内容',
-      'path': path,
-      'appended': true,
-      'linesInserted': linesInserted,
-    });
-  }
-
-  final line = optionalInt(args, 'line');
-  if (line == null || line < 1) {
-    throw const FileEditorError(
-      '缺少或无效参数: line（必须是正整数）；如需追加到文件末尾请传 at_end=true。',
-    );
-  }
-  final position = optionalString(args, 'position')?.toLowerCase() ?? 'before';
-  if (position != 'before' && position != 'after') {
-    throw FileEditorError('无效的 position: "$position"（应为 before 或 after）');
-  }
-  // "after line N" == insert before line N+1.
-  final target = position == 'after' ? line + 1 : line;
-
-  await backend.insertContent(path, target, content);
-  return fileEditorOk({
-    'message': position == 'after' ? '已在第 $line 行之后插入内容' : '已在第 $line 行插入内容',
-    'path': path,
-    'insertedAt': target,
-    'position': position,
-    'linesInserted': linesInserted,
-  });
-}
-
-/// `apply_diff` — apply a SEARCH/REPLACE (or unified) diff with optimistic
-/// locking. When [start_line]/[end_line] + [expected_range_hash] are supplied
-/// (from a prior read_file range), the backend re-hashes that range to detect
-/// concurrent edits before applying.
-Future<McpToolResult> applyDiff(Ref ref, Map<String, Object?> args) async {
-  final path = requireString(args, 'path');
-  final diff = requireString(args, 'diff');
-  final strategy = optionalString(args, 'strategy')?.toLowerCase();
-  final format = switch (strategy) {
-    'unified' => WorkspaceDiffFormat.unified,
-    _ => WorkspaceDiffFormat.searchReplace,
-  };
-  final expectedRangeHash = optionalString(args, 'expected_range_hash');
-  final backend = await backendForPath(ref, path);
-  final result = await backend.applyDiff(
-    path,
-    diff,
-    format: format,
-    createBackup: optionalBool(args, 'create_backup'),
-    expectedRangeHash: expectedRangeHash,
-    rangeStartLine: optionalInt(args, 'start_line'),
-    rangeEndLine: optionalInt(args, 'end_line'),
-  );
-  if (!result.success) {
-    // With a range hash the failure is most likely a concurrent-edit conflict;
-    // without one it's a SEARCH block that no longer matches the file. Tailor
-    // the guidance so the model knows exactly how to recover.
-    throw FileEditorError(
-      expectedRangeHash != null
-          ? 'Diff 应用失败：范围哈希校验冲突（该范围已被改动）或 SEARCH 内容不匹配。'
-            '请用 read_file 重新读取相同行范围，拿到最新 rangeHash 后再带上重试。'
-          : 'Diff 应用失败：未能在文件中定位到 SEARCH 内容。请用 read_file 读取最新内容，'
-            '确认 SEARCH 块与文件完全一致（含缩进/空白）后重试；大范围改动可携带 '
-            'start_line/end_line + expected_range_hash 启用乐观锁。',
-    );
-  }
-  return fileEditorOk({
-    'message': 'Diff 应用成功',
-    'path': path,
-    'strategy': format == WorkspaceDiffFormat.unified ? 'unified' : 'search-replace',
-    'diffStats': {
-      'added': result.linesAdded,
-      'removed': result.linesDeleted,
-      'changed': result.linesChanged,
-    },
-    if (result.backupPath != null) 'backupPath': result.backupPath,
-  });
-}
-
-/// `replace_in_file` — search-and-replace literal or regex text, one pair
+/// `edit` — search-and-replace literal or regex text, one pair
 /// (`search`/`replace`) or a batch (`edits` array). The whole call is atomic:
 /// every edit is applied in memory in order and the file is written once —
 /// any failure leaves the file untouched.
@@ -334,7 +240,7 @@ Future<McpToolResult> applyDiff(Ref ref, Map<String, Object?> args) async {
 ///   change the wrong occurrence — it must add context or opt into
 ///   `replace_all=true`.
 /// - a search with zero hits is an error (not a silent no-op).
-Future<McpToolResult> replaceInFile(Ref ref, Map<String, Object?> args) async {
+Future<McpToolResult> editFile(Ref ref, Map<String, Object?> args) async {
   final path = requireString(args, 'path');
   final isRegex = optionalBool(args, 'is_regex');
   final replaceAll = optionalBool(args, 'replace_all');
@@ -386,8 +292,8 @@ Future<McpToolResult> replaceInFile(Ref ref, Map<String, Object?> args) async {
     );
     if (counted.replacements == 0) {
       throw FileEditorError(
-        '${label}search 内容未在文件中命中，未做任何修改。'
-        '请用 read_file 确认最新内容（含缩进/空白）后重试。',
+        '${label}search 内容命中 0 处，未做任何修改。'
+        '请用 read_file 确认最新内容（含缩进/空白，不含行号前缀）后重试。',
       );
     }
     if (!replaceAll && counted.replacements > 1) {
@@ -419,9 +325,8 @@ Future<McpToolResult> replaceInFile(Ref ref, Map<String, Object?> args) async {
   });
 }
 
-/// `create_directory` — create a directory under an opaque [parent_path],
-/// mirroring `create_file`'s addressing (SAF paths are opaque URIs, so new
-/// entries are always parent + name).
+/// `create_directory` — create a directory under an opaque [parent_path]
+/// (SAF paths are opaque URIs, so new entries are always parent + name).
 Future<McpToolResult> createDirectory(Ref ref, Map<String, Object?> args) async {
   final parentPath = requireString(args, 'parent_path');
   final name = requireString(args, 'name');

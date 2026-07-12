@@ -629,51 +629,40 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
   ],
   '@aether/file-editor': [
     McpToolDefinition(
-      name: 'get_workspace_files',
-      description: '获取指定工作区中的文件和目录列表。支持浅层（只看当前目录）或递归（获取所有子目录内容）两种模式。',
+      name: 'list_files',
+      description: '列出目录内容。两种寻址方式二选一：传 workspace（可配 sub_path）从工作区入口列出；'
+          '或传 path（已知目录的不透明句柄，来自之前的列表结果）。支持浅层或递归。',
       inputSchema: {
         'type': 'object',
         'properties': {
           'workspace': {
             'type': 'string',
-            'description': '工作区编号（如 "1"）或工作区 ID 或工作区名称',
+            'description': '工作区编号（如 "1"）或工作区 ID 或工作区名称（与 path 二选一）',
           },
           'sub_path': {
             'type': 'string',
-            'description': '子目录相对路径（可选，默认根目录）。例如 "src/components"',
+            'description': '配合 workspace 使用的子目录相对路径（可选，默认根目录）。例如 "src/components"',
+          },
+          'path': {
+            'type': 'string',
+            'description': '目录的完整路径（不透明句柄，与 workspace 二选一）',
           },
           'recursive': {
             'type': 'boolean',
-            'description': '是否递归获取所有子目录。false=只看当前目录（默认），true=递归',
+            'description': '是否递归列出所有子目录，默认 false',
           },
           'max_depth': {
             'type': 'number',
             'description': '递归时的最大深度（可选，默认 3）。仅当 recursive=true 时有效',
           },
         },
-        'required': ['workspace'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'list_files',
-      description: '列出指定目录的内容。path 为 get_workspace_files 返回的目录路径（不透明句柄）。',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'path': {'type': 'string', 'description': '目录的完整路径（不透明句柄）'},
-          'recursive': {
-            'type': 'boolean',
-            'description': '是否递归列出子目录内容，默认 false',
-          },
-        },
-        'required': ['path'],
       },
     ),
     McpToolDefinition(
       name: 'read_file',
       description: '读取文件内容。支持单文件(path)或批量(files 数组)读取。大文件建议指定行范围（1-based，含端点）：'
           'start_line/end_line 可单独使用——只给 start_line 表示读到文件末尾，只给 end_line 表示从第 1 行开始。'
-          '范围读取会返回 rangeHash，可配合 apply_diff 的乐观锁。'
+          '超长行会被截断、超大内容会提示改用行范围分段读取。'
           '返回内容默认每行带「N | 」行号前缀（仅供定位，不是文件内容）；'
           '需要原始文本时传 line_numbers=false。',
       inputSchema: {
@@ -770,43 +759,35 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
-      name: 'write_to_file',
+      name: 'write',
       description:
-          '覆盖写入已有文件的全部内容（不能用于新建文件，新建请用 create_file）。会触发用户确认。'
+          '写文件：传 path 覆盖写入已有文件全部内容；传 parent_path + name 新建文件。会触发用户确认。'
           '务必传入完整内容，不要用 "// rest unchanged" 之类的省略标记（会被拒绝）。'
-          '建议传 line_count 以校验内容是否被截断；大文件的增量修改请优先用 apply_diff / insert_content。'
+          '覆盖写入时建议传 line_count 以校验内容是否被截断；已有文件的增量修改请优先用 edit。'
           '若整段内容被代码围栏(```)包裹会自动去除；整体 HTML 转义的内容会自动还原。',
       inputSchema: {
         'type': 'object',
         'properties': {
-          'path': {'type': 'string', 'description': '目标文件的完整路径（不透明句柄）'},
+          'path': {
+            'type': 'string',
+            'description': '覆盖写入：已有文件的完整路径（与 parent_path+name 二选一）',
+          },
+          'parent_path': {
+            'type': 'string',
+            'description': '新建文件：父目录的完整路径（不透明句柄，来自 list_files）',
+          },
+          'name': {'type': 'string', 'description': '新建文件：文件名（含扩展名）'},
           'content': {'type': 'string', 'description': '要写入的完整文件内容'},
           'line_count': {
             'type': 'number',
             'description': '内容的预期行数（可选），用于检测内容是否被意外截断',
           },
-        },
-        'required': ['path', 'content'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'create_file',
-      description: '在指定父目录下新建文件。会触发用户确认。',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'parent_path': {
-            'type': 'string',
-            'description': '父目录的完整路径（不透明句柄，来自 list_files / get_workspace_files）',
-          },
-          'name': {'type': 'string', 'description': '新文件名（含扩展名）'},
-          'content': {'type': 'string', 'description': '初始内容（可选，默认空）'},
           'overwrite': {
             'type': 'boolean',
-            'description': '同名文件已存在时是否覆盖，默认 false',
+            'description': '新建时同名文件已存在是否覆盖，默认 false',
           },
         },
-        'required': ['parent_path', 'name'],
+        'required': ['content'],
       },
     ),
     McpToolDefinition(
@@ -817,7 +798,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'properties': {
           'parent_path': {
             'type': 'string',
-            'description': '父目录的完整路径（不透明句柄，来自 list_files / get_workspace_files）',
+            'description': '父目录的完整路径（不透明句柄，来自 list_files）',
           },
           'name': {'type': 'string', 'description': '新目录名'},
         },
@@ -825,38 +806,27 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
-      name: 'rename_file',
-      description: '重命名文件或目录（仅改名，不移动）。会触发用户确认。',
+      name: 'move',
+      description: '移动/重命名文件或目录：只传 new_name 为原地改名；传 destination_path 移动到目标父目录下，'
+          '可同时改名。会触发用户确认。',
       inputSchema: {
         'type': 'object',
         'properties': {
-          'path': {'type': 'string', 'description': '要重命名的文件/目录完整路径'},
-          'new_name': {'type': 'string', 'description': '新名称（不含路径）'},
-        },
-        'required': ['path', 'new_name'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'move_file',
-      description: '将文件或目录移动到目标父目录下，可同时改名（传 new_name）。会触发用户确认。',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'source_path': {'type': 'string', 'description': '要移动的文件/目录完整路径'},
+          'path': {'type': 'string', 'description': '要移动/重命名的文件或目录完整路径'},
           'destination_path': {
             'type': 'string',
-            'description': '目标父目录的完整路径（不透明句柄）',
+            'description': '目标父目录的完整路径（不透明句柄）。省略则仅原地改名（需传 new_name）',
           },
           'new_name': {
             'type': 'string',
-            'description': '移动后的新名称（可选，默认沿用原名）',
+            'description': '新名称（不含路径）。与 destination_path 至少传一个',
           },
           'overwrite': {
             'type': 'boolean',
-            'description': '目标目录已存在同名时是否覆盖，默认 false',
+            'description': '目标已存在同名时是否覆盖，默认 false',
           },
         },
-        'required': ['source_path', 'destination_path'],
+        'required': ['path'],
       },
     ),
     McpToolDefinition(
@@ -895,74 +865,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
-      name: 'insert_content',
-      description: '在文件指定行的前/后插入内容，或追加到文件末尾（不覆盖原有内容）。会触发用户确认。',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'path': {'type': 'string', 'description': '目标文件的完整路径'},
-          'line': {
-            'type': 'number',
-            'description': '插入位置的行号 (1-based)。at_end=true 时可省略',
-          },
-          'position': {
-            'type': 'string',
-            'enum': ['before', 'after'],
-            'description': '相对 line 在其之前还是之后插入，默认 before',
-          },
-          'at_end': {
-            'type': 'boolean',
-            'description': '为 true 时追加到文件末尾，无需 line，默认 false',
-          },
-          'content': {'type': 'string', 'description': '要插入的内容'},
-        },
-        'required': ['path', 'content'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'apply_diff',
-      description:
-          '对文件应用 SEARCH/REPLACE（或 unified）diff，做增量精确修改。会触发用户确认。'
-          '一个 diff 可包含多个 SEARCH/REPLACE 块，按顺序应用且原子生效：'
-          '任一块定位失败则整个 diff 不写入——同一文件的多处修改优先合并到一次调用。'
-          '传入由 read_file 行范围读取得到的 start_line/end_line 与 expected_range_hash 可启用乐观锁，'
-          '在应用前校验该范围未被并发改动。',
-      inputSchema: {
-        'type': 'object',
-        'properties': {
-          'path': {'type': 'string', 'description': '目标文件的完整路径'},
-          'diff': {
-            'type': 'string',
-            'description': 'diff 内容。默认 SEARCH/REPLACE 格式（<<<<<<< SEARCH … ======= … >>>>>>> REPLACE）',
-          },
-          'strategy': {
-            'type': 'string',
-            'enum': ['auto', 'search-replace', 'unified'],
-            'description': 'diff 策略，默认 auto（按 search-replace 解析）',
-          },
-          'start_line': {
-            'type': 'number',
-            'description': '乐观锁：read_file 时读取范围的起始行 (1-based)',
-          },
-          'end_line': {
-            'type': 'number',
-            'description': '乐观锁：read_file 时读取范围的结束行 (1-based)',
-          },
-          'expected_range_hash': {
-            'type': 'string',
-            'description': '乐观锁：read_file 范围返回的 rangeHash，用于检测并发修改',
-          },
-          'create_backup': {
-            'type': 'boolean',
-            'description': '是否在修改前创建备份，默认 false',
-          },
-        },
-        'required': ['path', 'diff'],
-      },
-    ),
-    McpToolDefinition(
-      name: 'replace_in_file',
-      description: '在文件中查找并替换文本，支持字面量或正则。会触发用户确认。'
+      name: 'edit',
+      description: '在文件中精确查找并替换文本（增量修改首选），支持字面量或正则。会触发用户确认。'
+          'search 需与文件内容完全一致（含缩进/空白，不含 read_file 的行号前缀）。'
           '默认只替换一处：search 命中多处时报错不修改（防改错位置），需在 search 中加上下文使其唯一，'
           '或传 replace_all=true 全部替换；命中 0 处也报错。'
           '支持 edits 数组对同一文件做多处替换，整体原子生效：任一 edit 失败则文件不会被修改。',

@@ -85,8 +85,7 @@ class AgentRuntime {
 /// 拒绝。终端命令无法静态判定副作用，整个组不暴露。
 const Set<String> _kReadOnlyToolNames = {
   // 文件编辑器：只读子集
-  'get_workspace_files', 'list_files', 'read_file', 'get_file_info',
-  'search_files',
+  'list_files', 'read_file', 'get_file_info', 'search_files',
   // 知识库：只读子集（kb_manage 有写操作，排除）
   'kb_list', 'kb_search', 'kb_read',
 };

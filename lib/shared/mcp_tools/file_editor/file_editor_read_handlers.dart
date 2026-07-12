@@ -12,23 +12,35 @@ import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_search.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 
-/// `get_workspace_files` — list a workspace's files, resolving `sub_path` by
-/// name and optionally recursing up to `max_depth` levels.
-Future<McpToolResult> getWorkspaceFiles(
-  Ref ref,
-  Map<String, Object?> args,
-) async {
-  final resolved = await resolveWorkspace(ref, args);
-  final backend = resolved.backend;
-  final subPath = optionalString(args, 'sub_path');
-  final dir = await navigateSubPath(backend, resolved.workspace.root, subPath);
+/// `list_files` — list a directory, addressed either by workspace (+
+/// optional `sub_path`) or by an opaque `path`; optionally recursive up to
+/// `max_depth` levels.
+Future<McpToolResult> listFiles(Ref ref, Map<String, Object?> args) async {
+  final String dir;
+  final WorkspaceBackend backend;
+  String? workspaceName;
+  final rawPath = optionalString(args, 'path');
+  if (rawPath != null) {
+    dir = rawPath;
+    backend = await backendForPath(ref, rawPath);
+  } else if (args['workspace'] != null) {
+    final resolved = await resolveWorkspace(ref, args);
+    backend = resolved.backend;
+    workspaceName = resolved.workspace.name;
+    dir = await navigateSubPath(
+      backend,
+      resolved.workspace.root,
+      optionalString(args, 'sub_path'),
+    );
+  } else {
+    throw const FileEditorError('缺少参数：workspace 与 path 二选一。');
+  }
 
-  final recursive = optionalBool(args, 'recursive');
-  if (recursive) {
+  if (optionalBool(args, 'recursive')) {
     final maxDepth = (optionalInt(args, 'max_depth') ?? 3).clamp(1, 10);
     final listing = await listRecursive(backend, dir, maxDepth);
     return fileEditorOk({
-      'workspace': resolved.workspace.name,
+      if (workspaceName != null) 'workspace': workspaceName,
       'path': dir,
       'recursive': true,
       'maxDepth': maxDepth,
@@ -37,37 +49,11 @@ Future<McpToolResult> getWorkspaceFiles(
       'files': listing.entries,
     });
   }
-
   final entries = await backend.listDir(dir);
   entries.sort(_dirsFirst);
   return fileEditorOk({
-    'workspace': resolved.workspace.name,
+    if (workspaceName != null) 'workspace': workspaceName,
     'path': dir,
-    'recursive': false,
-    'count': entries.length,
-    'files': [for (final e in entries) entryJson(e)],
-  });
-}
-
-/// `list_files` — list the directory at an opaque `path`, optionally recursive.
-Future<McpToolResult> listFiles(Ref ref, Map<String, Object?> args) async {
-  final path = requireString(args, 'path');
-  final backend = await backendForPath(ref, path);
-  if (optionalBool(args, 'recursive')) {
-    final maxDepth = (optionalInt(args, 'max_depth') ?? 5).clamp(1, 10);
-    final listing = await listRecursive(backend, path, maxDepth);
-    return fileEditorOk({
-      'path': path,
-      'maxDepth': maxDepth,
-      'count': listing.entries.length,
-      if (listing.truncated) 'truncated': true,
-      'files': listing.entries,
-    });
-  }
-  final entries = await backend.listDir(path);
-  entries.sort(_dirsFirst);
-  return fileEditorOk({
-    'path': path,
     'count': entries.length,
     'files': [for (final e in entries) entryJson(e)],
   });
@@ -76,7 +62,7 @@ Future<McpToolResult> listFiles(Ref ref, Map<String, Object?> args) async {
 /// `read_file` — read one (`path`) or many (`files`) files, optionally limited
 /// to a `start_line`..`end_line` range (1-based, inclusive). Content lines are
 /// prefixed `N | ` by default (`line_numbers=false` for raw text) so the model
-/// can reference exact lines in insert_content / apply_diff without counting.
+/// can reference exact line ranges without counting.
 Future<McpToolResult> readFile(Ref ref, Map<String, Object?> args) async {
   final withLineNumbers = optionalBool(args, 'line_numbers', fallback: true);
   final files = args['files'];
@@ -275,7 +261,44 @@ int _dirsFirst(WorkspaceEntry a, WorkspaceEntry b) {
 
 /// 行号输出时附在 payload 里的提醒：行号前缀仅供定位，不是文件内容。
 const String _kLineNumbersNote =
-    '每行前的「N | 」是行号前缀，不属于文件内容；写入/SEARCH 块/替换时请用不含行号的原始文本。';
+    '每行前的「N | 」是行号前缀，不属于文件内容；写入/edit 的 search 块请用不含行号的原始文本。';
+
+/// 单行超过此长度会被截断（防压缩文件/长 JSON 单行炸上下文）。
+const int _kMaxLineChars = 2000;
+
+/// 单次读取的内容字符上限；超出时截断并提示改用行范围分段读。
+const int _kMaxReadChars = 60000;
+
+/// 对读到的内容做保护：超长行截断 + 总量封顶。返回处理后的文本与提示。
+({String content, String? note}) _guardContent(String content) {
+  var truncatedLines = 0;
+  var lines = content.split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i].length > _kMaxLineChars) {
+      lines[i] = '${lines[i].substring(0, _kMaxLineChars)}…[该行过长已截断]';
+      truncatedLines++;
+    }
+  }
+  var text = truncatedLines > 0 ? lines.join('\n') : content;
+  String? note;
+  if (text.length > _kMaxReadChars) {
+    // 按行对齐到上限内，告知模型用行范围继续读。
+    var kept = 0;
+    var chars = 0;
+    lines = text.split('\n');
+    for (; kept < lines.length; kept++) {
+      final next = chars + lines[kept].length + 1;
+      if (next > _kMaxReadChars) break;
+      chars = next;
+    }
+    text = lines.take(kept).join('\n');
+    note = '内容过大，仅返回前 $kept 行（共 ${lines.length} 行）；'
+        '请用 start_line=${kept + 1} 继续分段读取。';
+  } else if (truncatedLines > 0) {
+    note = '有 $truncatedLines 行超过 $_kMaxLineChars 字符已被截断。';
+  }
+  return (content: text, note: note);
+}
 
 Future<Map<String, Object?>> _readOne(
   Ref ref,
@@ -298,22 +321,26 @@ Future<Map<String, Object?>> _readOne(
       throw FileEditorError('无效的行范围: start_line=$start 大于 end_line=$end');
     }
     final range = await backend.readFileRange(path, start, end);
+    final guarded = _guardContent(range.content);
     return {
       'path': path,
       'startLine': start,
       'endLine': end,
       'totalLines': range.totalLines,
       'content': withLineNumbers
-          ? numberLines(range.content, startAt: start)
-          : range.content,
+          ? numberLines(guarded.content, startAt: start)
+          : guarded.content,
       'rangeHash': range.rangeHash,
+      if (guarded.note != null) 'truncation': guarded.note,
       if (withLineNumbers) 'note': _kLineNumbersNote,
     };
   }
   final content = await backend.readFile(path);
+  final guarded = _guardContent(content);
   return {
     'path': path,
-    'content': withLineNumbers ? numberLines(content) : content,
+    'content': withLineNumbers ? numberLines(guarded.content) : guarded.content,
+    if (guarded.note != null) 'truncation': guarded.note,
     if (withLineNumbers) 'note': _kLineNumbersNote,
   };
 }

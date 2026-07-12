@@ -3,7 +3,7 @@
 // Lets the chat model browse and read the user's workspace through the
 // `WorkspaceBackend` (SAF on Android). Tool names/params mirror the original
 // AetherLink `@aether/file-editor` server. Read tools run unguarded; write
-// tools (write_to_file / apply_diff / …) are gated behind the chat layer's
+// tools (write / edit / …) are gated behind the chat layer's
 // HITL confirmation gateway (see `fileEditorRiskLevel`).
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,17 +26,13 @@ enum FileEditorRisk { medium, high }
 /// rest of the mutating ops are [FileEditorRisk.medium].
 FileEditorRisk? fileEditorRiskLevel(String toolName) {
   switch (toolName) {
-    case 'write_to_file':
-    case 'apply_diff':
+    case 'write':
     case 'delete_file':
       return FileEditorRisk.high;
-    case 'create_file':
     case 'create_directory':
-    case 'rename_file':
-    case 'move_file':
+    case 'move':
     case 'copy_file':
-    case 'insert_content':
-    case 'replace_in_file':
+    case 'edit':
       return FileEditorRisk.medium;
   }
   return null;
@@ -57,8 +53,6 @@ Future<McpToolResult> runFileEditorTool(
 ) async {
   try {
     switch (toolName) {
-      case 'get_workspace_files':
-        return await getWorkspaceFiles(ref, args);
       case 'list_files':
         return await listFiles(ref, args);
       case 'read_file':
@@ -67,26 +61,18 @@ Future<McpToolResult> runFileEditorTool(
         return await getFileInfo(ref, args);
       case 'search_files':
         return await searchFiles(ref, args);
-      case 'write_to_file':
-        return await writeToFile(ref, args);
-      case 'create_file':
-        return await createFile(ref, args);
+      case 'write':
+        return await writeFile(ref, args);
       case 'create_directory':
         return await createDirectory(ref, args);
-      case 'rename_file':
-        return await renameFile(ref, args);
-      case 'move_file':
-        return await moveFile(ref, args);
+      case 'move':
+        return await moveEntry(ref, args);
       case 'copy_file':
         return await copyFile(ref, args);
       case 'delete_file':
         return await deleteFile(ref, args);
-      case 'insert_content':
-        return await insertContent(ref, args);
-      case 'apply_diff':
-        return await applyDiff(ref, args);
-      case 'replace_in_file':
-        return await replaceInFile(ref, args);
+      case 'edit':
+        return await editFile(ref, args);
     }
     return fileEditorError('未知的工具: $toolName');
   } on FileEditorError catch (e) {

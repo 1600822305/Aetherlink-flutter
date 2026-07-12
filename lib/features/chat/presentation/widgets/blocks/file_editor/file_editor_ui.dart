@@ -432,7 +432,7 @@ class FileEditorProcessingRow extends StatelessWidget {
 }
 
 /// Red error row shown when a tool failed, with an optional highlighted
-/// [suggestion] (e.g. "改用 create_file 新建") rendered as an amber call-out.
+/// [suggestion] (e.g. "改传 parent_path + name 新建") rendered as an amber call-out.
 class FileEditorErrorRow extends StatelessWidget {
   const FileEditorErrorRow({required this.message, this.suggestion, super.key});
 

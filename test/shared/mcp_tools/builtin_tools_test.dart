@@ -348,8 +348,10 @@ void main() {
 
   group('file-editor risk classification', () {
     test('write tools are high-risk and need HITL confirmation', () {
-      expect(fileEditorRiskLevel('write_to_file'), FileEditorRisk.high);
-      expect(fileEditorNeedsConfirmation('write_to_file'), isTrue);
+      expect(fileEditorRiskLevel('write'), FileEditorRisk.high);
+      expect(fileEditorNeedsConfirmation('write'), isTrue);
+      expect(fileEditorRiskLevel('edit'), FileEditorRisk.medium);
+      expect(fileEditorNeedsConfirmation('edit'), isTrue);
     });
 
     test('read-only tools need no confirmation', () {

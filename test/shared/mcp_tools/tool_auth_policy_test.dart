@@ -15,7 +15,7 @@ void main() {
         expect(fileEditorNeedsConfirmation(name), isTrue,
             reason: '$name 应是需审批的写工具');
       }
-      expect(fileEditorNames.length, 10);
+      expect(fileEditorNames.length, 6);
 
       final terminalNames = kToolAuthCatalog
           .where((m) => m.server == kTerminalServerName)
@@ -50,12 +50,12 @@ void main() {
 
     test('encode/decode 往返', () {
       final policy = const ToolAuthPolicy()
-          .withTool(kFileEditorServerName, 'create_file', autoApprove: true)
+          .withTool(kFileEditorServerName, 'write', autoApprove: true)
           .withTool(kTerminalServerName, 'terminal_execute',
               autoApprove: true);
       final decoded = ToolAuthPolicy.decode(policy.encode());
       expect(decoded, isNotNull);
-      expect(decoded!.isAutoApproved(kFileEditorServerName, 'create_file'),
+      expect(decoded!.isAutoApproved(kFileEditorServerName, 'write'),
           isTrue);
       expect(decoded.isAutoApproved(kTerminalServerName, 'terminal_execute'),
           isTrue);
@@ -65,11 +65,11 @@ void main() {
 
     test('decode 丢弃未知/非法条目', () {
       final decoded = ToolAuthPolicy.decode(
-        '["$kFileEditorServerName::create_file", "bogus::tool", 42]',
+        '["$kFileEditorServerName::write", "bogus::tool", 42]',
       );
       expect(decoded, isNotNull);
       expect(decoded!.autoApproved,
-          {'$kFileEditorServerName::create_file'});
+          {'$kFileEditorServerName::write'});
 
       expect(ToolAuthPolicy.decode(null), isNull);
       expect(ToolAuthPolicy.decode(''), isNull);

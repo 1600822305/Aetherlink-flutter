@@ -47,13 +47,6 @@ const List<ToolAuthMeta> kToolAuthCatalog = [
   // ── @aether/file-editor 写工具 ──
   ToolAuthMeta(
     server: kFileEditorServerName,
-    name: 'create_file',
-    label: '新建文件',
-    description: '在指定目录下创建新文件',
-    risk: ToolAuthRisk.medium,
-  ),
-  ToolAuthMeta(
-    server: kFileEditorServerName,
     name: 'create_directory',
     label: '新建目录',
     description: '在指定目录下创建子目录',
@@ -61,16 +54,9 @@ const List<ToolAuthMeta> kToolAuthCatalog = [
   ),
   ToolAuthMeta(
     server: kFileEditorServerName,
-    name: 'rename_file',
-    label: '重命名',
-    description: '重命名文件或目录',
-    risk: ToolAuthRisk.medium,
-  ),
-  ToolAuthMeta(
-    server: kFileEditorServerName,
-    name: 'move_file',
-    label: '移动',
-    description: '把文件或目录移动到其他位置',
+    name: 'move',
+    label: '移动/重命名',
+    description: '把文件或目录移动到其他位置或改名',
     risk: ToolAuthRisk.medium,
   ),
   ToolAuthMeta(
@@ -82,30 +68,16 @@ const List<ToolAuthMeta> kToolAuthCatalog = [
   ),
   ToolAuthMeta(
     server: kFileEditorServerName,
-    name: 'insert_content',
-    label: '插入内容',
-    description: '在文件的指定行插入内容',
-    risk: ToolAuthRisk.medium,
-  ),
-  ToolAuthMeta(
-    server: kFileEditorServerName,
-    name: 'replace_in_file',
+    name: 'edit',
     label: '查找替换',
-    description: '在文件中按查找串替换内容',
+    description: '在文件中按查找串精确替换内容',
     risk: ToolAuthRisk.medium,
   ),
   ToolAuthMeta(
     server: kFileEditorServerName,
-    name: 'write_to_file',
-    label: '覆盖写入',
-    description: '用新内容覆盖整个文件',
-    risk: ToolAuthRisk.high,
-  ),
-  ToolAuthMeta(
-    server: kFileEditorServerName,
-    name: 'apply_diff',
-    label: '应用 diff',
-    description: '对文件应用 diff 补丁修改',
+    name: 'write',
+    label: '写入文件',
+    description: '新建文件或用新内容覆盖整个文件',
     risk: ToolAuthRisk.high,
   ),
   ToolAuthMeta(
