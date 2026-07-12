@@ -131,15 +131,19 @@ List<AgentEvent> mockEventsForTask(String taskId) {
       at: t(0),
       items: const [
         AgentPlanItem(
-            content: '复现崩溃并定位根因', status: AgentPlanItemStatus.completed),
+          content: '复现崩溃并定位根因',
+          status: AgentPlanItemStatus.completed,
+        ),
         AgentPlanItem(
-            content: '阅读 login.dart 与相关校验逻辑',
-            status: AgentPlanItemStatus.completed),
+          content: '阅读 login.dart 与相关校验逻辑',
+          status: AgentPlanItemStatus.completed,
+        ),
         AgentPlanItem(
-            content: '修复空密码分支', status: AgentPlanItemStatus.inProgress),
+          content: '修复空密码分支',
+          status: AgentPlanItemStatus.inProgress,
+        ),
         AgentPlanItem(content: '补充单元测试', status: AgentPlanItemStatus.pending),
-        AgentPlanItem(
-            content: '运行全部测试验证', status: AgentPlanItemStatus.pending),
+        AgentPlanItem(content: '运行全部测试验证', status: AgentPlanItemStatus.pending),
       ],
     ),
     AssistantTextEvent(
@@ -157,6 +161,10 @@ List<AgentEvent> mockEventsForTask(String taskId) {
       state: AgentToolCallState.success,
       resultSummary: '234 行 · 0.4s',
       elapsed: const Duration(milliseconds: 400),
+      argsDetail: '{"path": "lib/login.dart"}',
+      resultDetail:
+          'class LoginPage extends StatefulWidget {\n'
+          '  const LoginPage({super.key});\n  ...\n（共 234 行，截断展示）',
     ),
     ToolCallEvent(
       id: 'e-t-2',
@@ -175,13 +183,20 @@ List<AgentEvent> mockEventsForTask(String taskId) {
       argSummary: r'$ flutter test test/login_test.dart',
       state: AgentToolCallState.failure,
       resultSummary: '失败 ✗ · 2 用例崩溃',
+      argsDetail: r'$ flutter test test/login_test.dart',
+      resultDetail:
+          '00:21 +3 -2: login validates empty password [E]\n'
+          '  Null check operator used on a null value\n'
+          '  package:aetherlink/login.dart 87:21  _validate\n'
+          '（完整输出接真引擎后落盘，这里为截断内容）',
       elapsed: const Duration(seconds: 21),
     ),
     AssistantTextEvent(
       id: 'e-a-2',
       seq: next(),
       at: t(4),
-      text: '定位到了：`validatePassword` 对 null/空串直接解引用导致崩溃。'
+      text:
+          '定位到了：`validatePassword` 对 null/空串直接解引用导致崩溃。'
           '我准备修改 login.dart 增加空值守卫，然后补测试。',
     ),
     CompactionEvent(

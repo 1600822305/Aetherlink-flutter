@@ -67,6 +67,8 @@ class ToolCallEvent extends AgentEvent {
     required this.state,
     this.resultSummary = '',
     this.elapsed,
+    this.argsDetail,
+    this.resultDetail,
   });
 
   /// 例：`read_file` / `terminal_execute`。
@@ -81,6 +83,12 @@ class ToolCallEvent extends AgentEvent {
   final String resultSummary;
 
   final Duration? elapsed;
+
+  /// 完整参数（底部抽屉展示；null 时抽屉回退显示 [argSummary]）。
+  final String? argsDetail;
+
+  /// 完整输出（底部抽屉展示，大输出截断落盘后这里存截断内容）。
+  final String? resultDetail;
 }
 
 /// update_plan 产生的计划快照（全量覆盖）。
