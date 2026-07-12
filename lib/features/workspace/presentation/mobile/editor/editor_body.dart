@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_edit_ops.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_text_area.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_replace_engine.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/read_only_code_view.dart';
@@ -96,6 +97,8 @@ class EditorContent extends StatelessWidget {
     this.language,
     this.commentPrefix,
     this.undoController,
+    this.indentUnit = kIndentUnit,
+    this.softWrap = false,
   });
 
   final Future<void> ready;
@@ -125,6 +128,10 @@ class EditorContent extends StatelessWidget {
 
   /// 行注释前缀（见 [EditorTextArea.commentPrefix]）。
   final String? commentPrefix;
+
+  /// 缩进单位与软换行（见 [EditorTextArea.indentUnit] / [EditorTextArea.softWrap]）。
+  final String indentUnit;
+  final bool softWrap;
 
   /// Returns a non-null widget (binary / too-large placeholder) to show instead
   /// of the text area once the load completes; null means "show the editor".
@@ -172,6 +179,8 @@ class EditorContent extends StatelessWidget {
           onFontSize: onFontSize,
           commentPrefix: commentPrefix,
           undoController: undoController,
+          indentUnit: indentUnit,
+          softWrap: softWrap,
         );
       },
     );

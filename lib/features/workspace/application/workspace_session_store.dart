@@ -29,6 +29,10 @@ const String kWorkspaceTreeSortKey = 'workspace_tree_sort';
 /// the xterm default (13).
 const String kTerminalFontSizeKey = 'workspace_terminal_font_size';
 
+/// Setting key for the editor settings (a JSON object, see `EditorSettings`).
+/// Absent means all defaults (font 13, tab width 2, soft wrap off).
+const String kEditorSettingsKey = 'workspace_editor_settings';
+
 /// The persisted middle-page session: the open file tabs of [workspaceId] and
 /// which one was active.
 class WorkspaceSession {

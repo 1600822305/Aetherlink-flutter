@@ -7,11 +7,15 @@ import 'package:flutter/services.dart';
 /// Spaces inserted per indent level (matches the Tab key / auto-indent unit).
 const String kIndentUnit = '  ';
 
-/// Indents (or dedents) every line touched by the selection by [kIndentUnit],
+/// Indents (or dedents) every line touched by the selection by [indentUnit],
 /// preserving the selection over the same text. A dedent removes up to one
 /// indent unit (or a single leading tab) per line. Collapsed selections
 /// operate on the caret's line.
-TextEditingValue indentLines(TextEditingValue value, {bool dedent = false}) {
+TextEditingValue indentLines(
+  TextEditingValue value, {
+  bool dedent = false,
+  String indentUnit = kIndentUnit,
+}) {
   final text = value.text;
   final sel = value.selection;
   if (!sel.isValid) return value;
@@ -40,7 +44,7 @@ TextEditingValue indentLines(TextEditingValue value, {bool dedent = false}) {
       if (line.startsWith('\t')) {
         remove = 1;
       } else {
-        while (remove < kIndentUnit.length &&
+        while (remove < indentUnit.length &&
             remove < line.length &&
             line[remove] == ' ') {
           remove++;
@@ -53,9 +57,9 @@ TextEditingValue indentLines(TextEditingValue value, {bool dedent = false}) {
       }
     } else {
       if (line.isNotEmpty) {
-        buf.write(kIndentUnit);
-        if (selStart >= lineStart) newStart += kIndentUnit.length;
-        if (selEnd >= lineStart) newEnd += kIndentUnit.length;
+        buf.write(indentUnit);
+        if (selStart >= lineStart) newStart += indentUnit.length;
+        if (selEnd >= lineStart) newEnd += indentUnit.length;
       }
       buf.write(line);
     }

@@ -8,6 +8,8 @@
 // [WorkspaceBackend] so the tree and the viewer share one instance;
 // [openWorkspaceFilesProvider] holds the IDE-style open file tabs.
 
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
@@ -169,6 +171,83 @@ class TerminalFontSizeNotifier extends Notifier<double> {
     ref
         .read(appSettingsStoreProvider)
         .saveSetting(kTerminalFontSizeKey, state.toString());
+  }
+}
+
+/// 编辑器偏好（默认字体大小 / Tab 缩进宽度 / 软换行），持久化于
+/// [kEditorSettingsKey]（单个 JSON 对象）。
+class EditorSettings {
+  const EditorSettings({
+    this.fontSize = 13,
+    this.tabWidth = 2,
+    this.softWrap = false,
+  });
+
+  /// 新打开文件的初始字体大小（缩放仍可临时调整单个文件）。
+  final double fontSize;
+
+  /// Tab 键 / 块缩进插入的空格数（2 / 4 / 8）。
+  final int tabWidth;
+
+  /// 编辑态强制软换行（无行号栏，不横向滚动）。
+  final bool softWrap;
+
+  String get indentUnit => ' ' * tabWidth;
+
+  EditorSettings copyWith({double? fontSize, int? tabWidth, bool? softWrap}) =>
+      EditorSettings(
+        fontSize: fontSize ?? this.fontSize,
+        tabWidth: tabWidth ?? this.tabWidth,
+        softWrap: softWrap ?? this.softWrap,
+      );
+
+  String encode() => jsonEncode({
+        'fontSize': fontSize,
+        'tabWidth': tabWidth,
+        'softWrap': softWrap,
+      });
+
+  static EditorSettings? decode(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final map = jsonDecode(raw);
+      if (map is! Map<String, dynamic>) return null;
+      final fontSize = (map['fontSize'] as num?)?.toDouble() ?? 13;
+      final tabWidth = (map['tabWidth'] as num?)?.toInt() ?? 2;
+      return EditorSettings(
+        fontSize: fontSize.clamp(8, 32).toDouble(),
+        tabWidth: const [2, 4, 8].contains(tabWidth) ? tabWidth : 2,
+        softWrap: map['softWrap'] == true,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+final editorSettingsProvider =
+    NotifierProvider<EditorSettingsNotifier, EditorSettings>(
+  EditorSettingsNotifier.new,
+);
+
+class EditorSettingsNotifier extends Notifier<EditorSettings> {
+  @override
+  EditorSettings build() {
+    ref
+        .read(appSettingsStoreProvider)
+        .getSetting(kEditorSettingsKey)
+        .then((raw) {
+      final settings = EditorSettings.decode(raw);
+      if (settings != null) state = settings;
+    });
+    return const EditorSettings();
+  }
+
+  void update(EditorSettings settings) {
+    state = settings;
+    ref
+        .read(appSettingsStoreProvider)
+        .saveSetting(kEditorSettingsKey, settings.encode());
   }
 }
 

@@ -15,8 +15,6 @@ import 'package:aetherlink_flutter/shared/widgets/editor_zoom_pill.dart';
 
 export 'package:aetherlink_flutter/shared/widgets/editor_zoom_pill.dart';
 
-/// Spaces inserted for a Tab key press and continued on auto-indent.
-const String _indentUnit = kIndentUnit;
 
 const double _lineHeightFactor = 1.5;
 const double _topPad = 12;
@@ -34,6 +32,8 @@ class EditorTextArea extends StatefulWidget {
     required this.onFontSize,
     this.commentPrefix,
     this.undoController,
+    this.indentUnit = kIndentUnit,
+    this.softWrap = false,
   });
 
   final TextEditingController controller;
@@ -48,6 +48,12 @@ class EditorTextArea extends StatefulWidget {
 
   /// 当前语言的行注释前缀（Ctrl+/ 注释切换用）；null 时不提供切换。
   final String? commentPrefix;
+
+  /// Tab 键 / 块缩进插入的缩进单位（编辑器设置的 Tab 宽度）。
+  final String indentUnit;
+
+  /// 强制软换行（无行号栏）；病态长行时即使为 false 也会降级换行。
+  final bool softWrap;
 
   @override
   State<EditorTextArea> createState() => _EditorTextAreaState();
@@ -185,6 +191,7 @@ class _EditorTextAreaState extends State<EditorTextArea> {
         widget.controller.value = indentLines(
           widget.controller.value,
           dedent: shift,
+          indentUnit: widget.indentUnit,
         );
       } else {
         _insertIndent();
@@ -200,8 +207,9 @@ class _EditorTextAreaState extends State<EditorTextArea> {
     final start = sel.isValid ? sel.start : value.text.length;
     final end = sel.isValid ? sel.end : value.text.length;
     widget.controller.value = TextEditingValue(
-      text: value.text.replaceRange(start, end, _indentUnit),
-      selection: TextSelection.collapsed(offset: start + _indentUnit.length),
+      text: value.text.replaceRange(start, end, widget.indentUnit),
+      selection:
+          TextSelection.collapsed(offset: start + widget.indentUnit.length),
     );
   }
 
@@ -269,7 +277,7 @@ class _EditorTextAreaState extends State<EditorTextArea> {
           // Long-line guard: a single multi-megabyte line would make the
           // non-wrapping layout below measure an enormous canvas and freeze the
           // UI. Fall back to a soft-wrapping, gutterless view in that case.
-          if (_softWrap)
+          if (_softWrap || widget.softWrap)
             _wrapLayout(textStyle, theme)
           else
             _columnLayout(

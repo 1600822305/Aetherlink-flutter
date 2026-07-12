@@ -24,6 +24,7 @@ import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_limits.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_placeholders.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_registry.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_settings_page.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_text_area.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_header.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/file_open_policy.dart';
@@ -98,6 +99,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
   @override
   void initState() {
     super.initState();
+    _fontSize = ref.read(editorSettingsProvider).fontSize;
     _ready = _load();
     _controller.addListener(_onTextChanged);
     final backend = ref.read(workspacePreviewBackendProvider);
@@ -421,6 +423,7 @@ class _FileEditorState extends ConsumerState<FileEditor> {
     final dirty = ref.watch(
       dirtyFilesProvider.select((s) => s.contains(_path)),
     );
+    final editorSettings = ref.watch(editorSettingsProvider);
     return ColoredBox(
       color: theme.colorScheme.surface,
       child: Column(
@@ -483,6 +486,8 @@ class _FileEditorState extends ConsumerState<FileEditor> {
                 languageForFileName(widget.entry.name),
               ),
               undoController: _undo,
+              indentUnit: editorSettings.indentUnit,
+              softWrap: editorSettings.softWrap,
             ),
           ),
           if (_hasTextBody)
@@ -517,6 +522,24 @@ class _FileEditorState extends ConsumerState<FileEditor> {
         color: locked ? primary : null,
         onPressed: () =>
             ref.read(workspacePageLockProvider.notifier).toggle(),
+      ),
+      PopupMenuButton<String>(
+        tooltip: '更多',
+        icon: const Icon(LucideIcons.ellipsisVertical, size: 18),
+        onSelected: (value) {
+          if (value == 'settings') showEditorSettingsPage(context);
+        },
+        itemBuilder: (context) => const [
+          PopupMenuItem(
+            value: 'settings',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(LucideIcons.settings2, size: 18),
+              title: Text('编辑器设置'),
+            ),
+          ),
+        ],
       ),
     ];
   }
