@@ -12,9 +12,10 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stre
 /// 时间线事件行分发器（UI 稿 §4.1）：按事件类型路由到对应小件
 /// （●助手文字 ○工具 ⚠审批 ✂压缩 ◆状态变化）。
 class AgentEventTile extends StatelessWidget {
-  const AgentEventTile({required this.event, super.key});
+  const AgentEventTile({required this.event, required this.taskId, super.key});
 
   final AgentEvent event;
+  final String taskId;
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +25,7 @@ class AgentEventTile extends StatelessWidget {
       final ReasoningEvent e => ReasoningTile(event: e),
       final ToolCallEvent e
           when e.state == AgentToolCallState.waitingApproval =>
-        ApprovalCard(event: e),
+        ApprovalCard(event: e, taskId: taskId),
       final ToolCallEvent e => ToolRow(event: e),
       final CompactionEvent e => CompactionDivider(event: e),
       final StatusChangeEvent e => StatusChangeTile(event: e),

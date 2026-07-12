@@ -7,7 +7,6 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_budge
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/approval_gate.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 
@@ -15,8 +14,7 @@ part 'agent_task_runner.g.dart';
 
 /// 任务执行编排：组装引擎依赖、持有每任务的取消 token、
 /// 把引擎的任务写回同步到 [AgentTasks]。
-/// 落地顺序 ②③：真 LLM/真工具经 app/di 的 [agentRuntime] 组装注入；
-/// 审批仍是直通门（阶段④接三层策略）。
+/// 真 LLM/真工具/三层审批门均经 app/di 的 [agentRuntime] 组装注入。
 @Riverpod(keepAlive: true)
 class AgentTaskRunner extends _$AgentTaskRunner {
   final Map<String, AgentCancellationToken> _tokens = {};
@@ -116,7 +114,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     final engine = AgentEngine(
       llm: runtime.llm,
       tools: runtime.tools,
-      approval: const AutoApprovalGate(),
+      approval: runtime.approval,
       store: _store(),
       gateway: _ProviderTaskGateway(this),
       budget: AgentBudget(),

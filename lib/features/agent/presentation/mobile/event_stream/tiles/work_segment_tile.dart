@@ -8,9 +8,10 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/ag
 /// 已完成工作段的折叠摘要块：「▸ 工作了 36s · 14 个操作」，
 /// 点开可回看每一行（UI 稿 §4.1 工作段折叠）。
 class WorkSegmentTile extends StatefulWidget {
-  const WorkSegmentTile({required this.events, super.key});
+  const WorkSegmentTile({required this.events, required this.taskId, super.key});
 
   final List<ToolCallEvent> events;
+  final String taskId;
 
   @override
   State<WorkSegmentTile> createState() => _WorkSegmentTileState();
@@ -71,7 +72,8 @@ class _WorkSegmentTileState extends State<WorkSegmentTile> {
           ),
         ),
         if (_expanded)
-          for (final e in widget.events) AgentEventTile(event: e),
+          for (final e in widget.events)
+            AgentEventTile(event: e, taskId: widget.taskId),
       ],
     );
   }

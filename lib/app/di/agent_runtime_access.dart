@@ -5,13 +5,17 @@ import 'dart:io';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_control_tools.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_system_prompt.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/approval_gate.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
+import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/features/chat/application/tools/tool_confirmation.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_executor.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
@@ -23,12 +27,14 @@ import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.d
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/workspace_context.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_auth_policy.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart';
 
@@ -51,13 +57,13 @@ class AgentRuntime {
 
   final Ref Function() _refOf;
 
-  ({AgentLlmClient llm, AgentToolExecutor tools}) forProfile(
-    AgentProfile profile,
-  ) {
+  ({AgentLlmClient llm, AgentToolExecutor tools, ApprovalGate approval})
+      forProfile(AgentProfile profile) {
     final catalog = _catalogFor(profile.tools);
     return (
       llm: _GatewayAgentLlmClient(_refOf, profile, catalog.definitions),
       tools: _McpAgentToolExecutor(_refOf, catalog.routes),
+      approval: _PolicyApprovalGate(_refOf, catalog.routes),
     );
   }
 
@@ -384,5 +390,109 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
     final head =
         firstLine.length > 40 ? '${firstLine.substring(0, 40)}…' : firstLine;
     return result.isError ? '失败 ✗ $head' : head;
+  }
+}
+
+/// 真实审批门（三层策略，初稿 §七）：
+/// ① 工具风险分级——只读直通（`toolNeedsConfirmation`，终端命令按
+///    root 内风险评级）；② 运行级宽限——本任务内用户点过「此工具不再
+///    询问」；③ 持久白名单——工具授权白名单命中免审。
+/// 越出工作区 root 的终端命令为硬约束：宽限/白名单均不可覆盖。
+/// 挂起走 [agentApprovalRegistryProvider]，无超时（用户可能锁屏离场）；
+/// 任务被暂停/终止时挂起按拒绝回填，循环在下一个安全点收敛。
+class _PolicyApprovalGate implements ApprovalGate {
+  _PolicyApprovalGate(this._refOf, this._routes);
+
+  final Ref Function() _refOf;
+  final Map<String, ToolRoute> _routes;
+
+  @override
+  Future<ApprovalRequirement> evaluate(
+    AgentToolCallRequest call,
+    AgentTask task,
+  ) async {
+    final route = _routes[call.name];
+    if (route == null) return ApprovalRequirement.allow; // 未知工具由执行器兜底
+    final args = _decodeArgs(call.argsJson);
+    final ref = _refOf();
+    List<Workspace> workspaces;
+    try {
+      workspaces = await loadWorkspaces(ref);
+    } catch (_) {
+      workspaces = const [];
+    }
+    if (!toolNeedsConfirmation(route, call.name, args,
+        workspaces: workspaces)) {
+      return ApprovalRequirement.allow;
+    }
+    if (toolAutoApprovedByPolicy(
+      ref.read(toolAuthPolicyProvider),
+      route,
+      call.name,
+      args,
+      workspaces: workspaces,
+    )) {
+      return ApprovalRequirement.allow;
+    }
+    // 运行级宽限；越界命令不受宽限覆盖（硬约束）。
+    final escapesRoot = route is TerminalToolRoute &&
+        terminalCommandEscapesRoot(call.name, args, workspaces: workspaces);
+    if (!escapesRoot &&
+        ref
+            .read(agentApprovalRegistryProvider.notifier)
+            .hasTaskGrace(task.id, call.name)) {
+      return ApprovalRequirement.allow;
+    }
+    return ApprovalRequirement.needsUser;
+  }
+
+  @override
+  Future<ApprovalVerdict> waitForVerdict(
+    AgentToolCallRequest call,
+    AgentTask task,
+    AgentCancellationToken cancel,
+  ) async {
+    final registry = _refOf().read(agentApprovalRegistryProvider.notifier);
+    final future = registry.request(task.id, call);
+    // 挂起期间任务被暂停/终止 → 按拒绝回填，循环在安全点收敛。
+    final poller = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      if (cancel.stopRequested) {
+        registry.respond(
+          task.id,
+          const AgentApprovalDecision(approved: false, reason: '任务已暂停/终止'),
+        );
+      }
+    });
+    final AgentApprovalDecision decision;
+    try {
+      decision = await future;
+    } finally {
+      poller.cancel();
+    }
+    if (decision.approved &&
+        decision.scope == AgentApprovalScope.whitelist) {
+      final route = _routes[call.name];
+      final server = switch (route) {
+        FileEditorToolRoute() => kFileEditorServerName,
+        TerminalToolRoute() => kTerminalServerName,
+        _ => null,
+      };
+      if (server != null) {
+        _refOf()
+            .read(toolAuthPolicyProvider.notifier)
+            .setTool(server, call.name, autoApprove: true);
+      }
+    }
+    return decision.approved
+        ? const ApprovalVerdict.approved()
+        : ApprovalVerdict.denied(decision.reason);
+  }
+
+  Map<String, Object?> _decodeArgs(String argsJson) {
+    try {
+      final decoded = jsonDecode(argsJson);
+      if (decoded is Map<String, dynamic>) return decoded;
+    } catch (_) {}
+    return const <String, Object?>{};
   }
 }

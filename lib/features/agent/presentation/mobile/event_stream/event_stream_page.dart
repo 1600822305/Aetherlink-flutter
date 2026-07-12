@@ -35,8 +35,10 @@ class EventStreamPage extends ConsumerWidget {
             itemBuilder: (context, i) => i >= blocks.length
                 ? const WorkingIndicatorTile()
                 : switch (blocks[i]) {
-                    final SegmentBlock b => WorkSegmentTile(events: b.events),
-                    final SingleBlock b => AgentEventTile(event: b.event),
+                    final SegmentBlock b =>
+                      WorkSegmentTile(events: b.events, taskId: task.id),
+                    final SingleBlock b =>
+                      AgentEventTile(event: b.event, taskId: task.id),
                   },
           ),
         ),
