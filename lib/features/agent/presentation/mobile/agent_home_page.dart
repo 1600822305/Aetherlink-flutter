@@ -4,7 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_sidebar.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/agent_sidebar.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_task_shell.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/new_topic_sheet.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
