@@ -1,14 +1,13 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/agent_data_access.dart';
+import 'package:aetherlink_flutter/app/di/agent_runtime_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_budget.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/approval_gate.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/fakes/fake_agent_llm_client.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/fakes/fake_agent_tool_executor.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 
@@ -16,7 +15,8 @@ part 'agent_task_runner.g.dart';
 
 /// 任务执行编排：组装引擎依赖、持有每任务的取消 token、
 /// 把引擎的任务写回同步到 [AgentTasks]。
-/// 骨架期（落地顺序 ①）注入假 LLM/假工具/直通审批，管道全真。
+/// 落地顺序 ②③：真 LLM/真工具经 app/di 的 [agentRuntime] 组装注入；
+/// 审批仍是直通门（阶段④接三层策略）。
 @Riverpod(keepAlive: true)
 class AgentTaskRunner extends _$AgentTaskRunner {
   final Map<String, AgentCancellationToken> _tokens = {};
@@ -45,7 +45,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       mode: mode,
       createdAt: now,
       updatedAt: now,
-      modelLabel: 'GLM-4.6',
+      modelLabel:
+          await ref.read(agentRuntimeProvider).currentModelLabel() ?? '未配置模型',
       lastEventSummary: text,
     );
     ref.read(agentTasksProvider.notifier).apply(task);
@@ -99,9 +100,22 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     _tokens[task.id] = token;
     state = {...state, task.id};
 
+    // 档案已删的孤儿话题兜底：空专长 + 全工具组，任务仍可继续。
+    final profile = ref
+            .read(agentProfilesProvider)
+            .where((p) => p.id == task.profileId)
+            .firstOrNull ??
+        AgentProfile(
+          id: task.profileId,
+          name: '',
+          emoji: '🤖',
+          systemPrompt: '',
+          tools: AgentToolGroup.values.toSet(),
+        );
+    final runtime = ref.read(agentRuntimeProvider).forProfile(profile);
     final engine = AgentEngine(
-      llm: const FakeAgentLlmClient(),
-      tools: const FakeAgentToolExecutor(),
+      llm: runtime.llm,
+      tools: runtime.tools,
       approval: const AutoApprovalGate(),
       store: _store(),
       gateway: _ProviderTaskGateway(this),
