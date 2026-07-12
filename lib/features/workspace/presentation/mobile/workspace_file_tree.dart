@@ -15,6 +15,9 @@ import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/open_workspace_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/workspace_file_ops.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/workspace_search_sheet.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_tree/file_tree_empty.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_tree/file_tree_row.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_tree/file_tree_toolbar.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// The left page: a lazily-loaded file tree over [WorkspaceBackend], rooted at
@@ -25,6 +28,10 @@ import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 /// file opens it in a middle-page tab ([openWorkspaceFilesProvider]); the shell
 /// then animates over to the editor. The 「打开文件夹」 button in the header opens
 /// or switches workspaces (the old start screen lived here before).
+///
+/// 拆分：行组件/加载行在 `file_tree/file_tree_row.dart`，工具条（普通/多选）与
+/// 排序菜单在 `file_tree/file_tree_toolbar.dart`，空状态在
+/// `file_tree/file_tree_empty.dart`；本文件只保留树状态机与页面骨架。
 ///
 /// The tree follows the active tab like an IDE: whenever the active file changes
 /// (tab switch, session restore) its ancestor folders are expanded and the row
@@ -654,102 +661,40 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
               child: _selecting
-                  ? Row(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.only(left: 6),
-                          child: Text(
-                            '已选 ${_selected.length} 项',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
-                        _ToolbarButton(
-                          icon: LucideIcons.cornerUpRight,
-                          tooltip: '移动到…',
-                          enabled: canWrite && _selected.isNotEmpty,
-                          onTap: () => _batch((sel) => ops!.moveMany(sel)),
-                        ),
-                        _ToolbarButton(
-                          icon: LucideIcons.copy,
-                          tooltip: '复制到…',
-                          enabled: canWrite && _selected.isNotEmpty,
-                          onTap: () => _batch((sel) => ops!.copyMany(sel)),
-                        ),
-                        _ToolbarButton(
-                          icon: LucideIcons.trash2,
-                          tooltip: '删除（移入回收站）',
-                          enabled: canWrite && _selected.isNotEmpty,
-                          onTap: () => _batch((sel) => ops!.deleteMany(sel)),
-                        ),
-                        _ToolbarButton(
-                          icon: LucideIcons.x,
-                          tooltip: '退出多选',
-                          onTap: () => setState(() {
-                            _selecting = false;
-                            _selected.clear();
-                          }),
-                        ),
-                      ],
+                  ? FileTreeSelectionToolbar(
+                      selectedCount: _selected.length,
+                      actionsEnabled: canWrite && _selected.isNotEmpty,
+                      onMove: () => _batch((sel) => ops!.moveMany(sel)),
+                      onCopy: () => _batch((sel) => ops!.copyMany(sel)),
+                      onDelete: () => _batch((sel) => ops!.deleteMany(sel)),
+                      onExit: () => setState(() {
+                        _selecting = false;
+                        _selected.clear();
+                      }),
                     )
-                  : Row(
-                      children: [
-                        _ToolbarButton(
-                          icon: LucideIcons.filePlus,
-                          tooltip: '新建文件',
-                          enabled: ops != null && canWrite,
-                          onTap: () => ops?.newFile(ops.rootPath),
-                        ),
-                        _ToolbarButton(
-                          icon: LucideIcons.folderPlus,
-                          tooltip: '新建文件夹',
-                          enabled: ops != null && canWrite,
-                          onTap: () => ops?.newFolder(ops.rootPath),
-                        ),
-                        _ToolbarButton(
-                          icon: LucideIcons.squareCheck,
-                          tooltip: '多选',
-                          enabled: root != null && canWrite,
-                          onTap: () => setState(() => _selecting = true),
-                        ),
-                        const Spacer(),
-                        _SortMenuButton(
-                          mode: sortMode,
-                          enabled: root != null,
-                          onSelected: (m) =>
-                              ref.read(treeSortModeProvider.notifier).set(m),
-                        ),
-                        _ToolbarButton(
-                          icon: showHidden
-                              ? LucideIcons.eye
-                              : LucideIcons.eyeOff,
-                          tooltip: showHidden ? '隐藏隐藏文件' : '显示隐藏文件',
-                          enabled: root != null,
-                          onTap: () => ref
-                              .read(showHiddenFilesProvider.notifier)
-                              .toggle(),
-                        ),
-                        _ToolbarButton(
-                          icon: LucideIcons.refreshCw,
-                          tooltip: '刷新',
-                          enabled: root != null,
-                          onTap: _refresh,
-                        ),
-                        _ToolbarButton(
-                          icon: LucideIcons.chevronsDownUp,
-                          tooltip: '全部折叠',
-                          enabled: root != null,
-                          onTap: _collapseAll,
-                        ),
-                      ],
+                  : FileTreeToolbar(
+                      hasRoot: root != null,
+                      canWrite: canWrite,
+                      canCreate: ops != null && canWrite,
+                      showHidden: showHidden,
+                      sortMode: sortMode,
+                      onNewFile: () => ops?.newFile(ops.rootPath),
+                      onNewFolder: () => ops?.newFolder(ops.rootPath),
+                      onEnterSelect: () =>
+                          setState(() => _selecting = true),
+                      onSortSelected: (m) =>
+                          ref.read(treeSortModeProvider.notifier).set(m),
+                      onToggleHidden: () => ref
+                          .read(showHiddenFilesProvider.notifier)
+                          .toggle(),
+                      onRefresh: _refresh,
+                      onCollapseAll: _collapseAll,
                     ),
             ),
             Divider(height: 1, color: theme.dividerColor),
             Expanded(
               child: root == null
-                  ? _EmptyTree(
+                  ? FileTreeEmpty(
                       theme: theme,
                       onOpen: () => showOpenWorkspaceSheet(context, ref),
                     )
@@ -769,10 +714,10 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                       itemBuilder: (context, i) {
                         final row = rows[i];
                         if (row.isLoading) {
-                          return _LoadingRow(depth: row.depth);
+                          return FileTreeLoadingRow(depth: row.depth);
                         }
                         final entry = row.entry!;
-                        return _FileRow(
+                        return FileTreeRow(
                           entry: entry,
                           depth: row.depth,
                           expanded: row.expanded,
@@ -832,406 +777,3 @@ class _TreeRow {
   final bool isLoading;
 }
 
-class _FileRow extends StatelessWidget {
-  const _FileRow({
-    required this.entry,
-    required this.depth,
-    required this.expanded,
-    required this.selected,
-    required this.onTap,
-    this.gitStatus,
-    this.onLongPress,
-    this.checked,
-  });
-
-  final WorkspaceEntry entry;
-  final int depth;
-  final bool expanded;
-  final bool selected;
-  final VoidCallback onTap;
-
-  /// Git working-tree state for the badge / name tint (null ⇒ clean).
-  final GitFileStatus? gitStatus;
-  final VoidCallback? onLongPress;
-
-  /// Multi-select state: null ⇒ not selecting; true/false ⇒ the row shows a
-  /// trailing check indicator.
-  final bool? checked;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDir = entry.isDirectory;
-
-    final scheme = theme.colorScheme;
-    final accent = selected ? scheme.primary : Colors.transparent;
-    final gitColor = switch (gitStatus) {
-      null => null,
-      GitFileStatus.modified => Colors.orange,
-      GitFileStatus.added || GitFileStatus.untracked => Colors.green,
-      GitFileStatus.renamed => Colors.blue,
-      GitFileStatus.deleted || GitFileStatus.conflicted => scheme.error,
-    };
-    final gitLetter = switch (gitStatus) {
-      null => '',
-      GitFileStatus.modified => 'M',
-      GitFileStatus.added => 'A',
-      GitFileStatus.untracked => 'U',
-      GitFileStatus.deleted => 'D',
-      GitFileStatus.renamed => 'R',
-      GitFileStatus.conflicted => 'C',
-    };
-    return InkWell(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: selected
-              ? scheme.primary.withValues(alpha: 0.14)
-              : Colors.transparent,
-          border: Border(left: BorderSide(color: accent, width: 3)),
-        ),
-        child: Padding(
-          padding: EdgeInsets.only(
-            left: 9.0 + depth * 16,
-            right: 12,
-            top: 8,
-            bottom: 8,
-          ),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 18,
-                child: isDir
-                    ? Icon(
-                        expanded
-                            ? LucideIcons.chevronDown
-                            : LucideIcons.chevronRight,
-                        size: 16,
-                        color: scheme.onSurfaceVariant,
-                      )
-                    : null,
-              ),
-              Icon(
-                isDir
-                    ? (expanded ? LucideIcons.folderOpen : LucideIcons.folder)
-                    : _fileIcon(entry.name),
-                size: 18,
-                color: isDir || selected
-                    ? scheme.primary
-                    : scheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  entry.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: selected ? scheme.primary : gitColor,
-                    fontWeight: isDir || selected
-                        ? FontWeight.w600
-                        : FontWeight.w400,
-                  ),
-                ),
-              ),
-              if (gitColor != null) ...[
-                const SizedBox(width: 6),
-                Text(
-                  isDir ? '•' : gitLetter,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: gitColor,
-                  ),
-                ),
-              ],
-              if (checked != null) ...[
-                const SizedBox(width: 8),
-                Icon(
-                  checked!
-                      ? LucideIcons.squareCheck
-                      : LucideIcons.square,
-                  size: 17,
-                  color: checked!
-                      ? scheme.primary
-                      : scheme.onSurfaceVariant.withValues(alpha: 0.6),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  static const Map<String, IconData> _extIcons = {
-    // 代码
-    'dart': LucideIcons.code,
-    'js': LucideIcons.fileCode,
-    'mjs': LucideIcons.fileCode,
-    'cjs': LucideIcons.fileCode,
-    'ts': LucideIcons.fileCode,
-    'tsx': LucideIcons.fileCode,
-    'jsx': LucideIcons.fileCode,
-    'py': LucideIcons.fileCode,
-    'java': LucideIcons.fileCode,
-    'kt': LucideIcons.fileCode,
-    'swift': LucideIcons.fileCode,
-    'c': LucideIcons.fileCode,
-    'h': LucideIcons.fileCode,
-    'cpp': LucideIcons.fileCode,
-    'hpp': LucideIcons.fileCode,
-    'cs': LucideIcons.fileCode,
-    'go': LucideIcons.fileCode,
-    'rs': LucideIcons.fileCode,
-    'rb': LucideIcons.fileCode,
-    'php': LucideIcons.fileCode,
-    'lua': LucideIcons.fileCode,
-    // 网页/样式
-    'html': LucideIcons.globe,
-    'htm': LucideIcons.globe,
-    'css': LucideIcons.palette,
-    'scss': LucideIcons.palette,
-    'less': LucideIcons.palette,
-    // 脚本/终端
-    'sh': LucideIcons.fileTerminal,
-    'bash': LucideIcons.fileTerminal,
-    'zsh': LucideIcons.fileTerminal,
-    'bat': LucideIcons.fileTerminal,
-    'ps1': LucideIcons.fileTerminal,
-    // 配置/数据
-    'yaml': LucideIcons.settings,
-    'yml': LucideIcons.settings,
-    'toml': LucideIcons.settings,
-    'ini': LucideIcons.settings,
-    'env': LucideIcons.settings,
-    'properties': LucideIcons.settings,
-    'gradle': LucideIcons.settings,
-    'json': LucideIcons.fileJson,
-    'jsonc': LucideIcons.fileJson,
-    'xml': LucideIcons.fileCode2,
-    'csv': LucideIcons.fileSpreadsheet,
-    'tsv': LucideIcons.fileSpreadsheet,
-    'xls': LucideIcons.fileSpreadsheet,
-    'xlsx': LucideIcons.fileSpreadsheet,
-    'sql': LucideIcons.database,
-    'db': LucideIcons.database,
-    'sqlite': LucideIcons.database,
-    // 文档
-    'md': LucideIcons.fileText,
-    'txt': LucideIcons.fileText,
-    'rst': LucideIcons.fileText,
-    'log': LucideIcons.fileText,
-    'pdf': LucideIcons.fileText,
-    'doc': LucideIcons.fileText,
-    'docx': LucideIcons.fileText,
-    // 图片
-    'png': LucideIcons.image,
-    'jpg': LucideIcons.image,
-    'jpeg': LucideIcons.image,
-    'gif': LucideIcons.image,
-    'svg': LucideIcons.image,
-    'webp': LucideIcons.image,
-    'bmp': LucideIcons.image,
-    'ico': LucideIcons.image,
-    // 音视频
-    'mp3': LucideIcons.fileAudio,
-    'wav': LucideIcons.fileAudio,
-    'flac': LucideIcons.fileAudio,
-    'ogg': LucideIcons.fileAudio,
-    'm4a': LucideIcons.fileAudio,
-    'mp4': LucideIcons.fileVideo,
-    'mkv': LucideIcons.fileVideo,
-    'avi': LucideIcons.fileVideo,
-    'mov': LucideIcons.fileVideo,
-    'webm': LucideIcons.fileVideo,
-    // 压缩包/安装包
-    'zip': LucideIcons.fileArchive,
-    'rar': LucideIcons.fileArchive,
-    '7z': LucideIcons.fileArchive,
-    'tar': LucideIcons.fileArchive,
-    'gz': LucideIcons.fileArchive,
-    'bz2': LucideIcons.fileArchive,
-    'xz': LucideIcons.fileArchive,
-    'apk': LucideIcons.package2,
-    'aab': LucideIcons.package2,
-    'jar': LucideIcons.package2,
-    'deb': LucideIcons.package2,
-    // 证书/密钥
-    'pem': LucideIcons.fileKey,
-    'key': LucideIcons.fileKey,
-    'crt': LucideIcons.fileKey,
-    'keystore': LucideIcons.fileKey,
-    'jks': LucideIcons.fileKey,
-    // 字体
-    'ttf': LucideIcons.fileType,
-    'otf': LucideIcons.fileType,
-    'woff': LucideIcons.fileType,
-    'woff2': LucideIcons.fileType,
-  };
-
-  IconData _fileIcon(String name) {
-    final lower = name.toLowerCase();
-    if (lower == 'dockerfile' || lower == 'makefile') {
-      return LucideIcons.fileCog;
-    }
-    if (lower.startsWith('.git')) return LucideIcons.gitBranch;
-    final dot = lower.lastIndexOf('.');
-    if (dot < 0 || dot == lower.length - 1) return LucideIcons.file;
-    return _extIcons[lower.substring(dot + 1)] ?? LucideIcons.file;
-  }
-}
-
-class _LoadingRow extends StatelessWidget {
-  const _LoadingRow({required this.depth});
-
-  final int depth;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(left: 12.0 + depth * 16 + 18, top: 8, bottom: 8),
-      child: const Align(
-        alignment: Alignment.centerLeft,
-        child: SizedBox(
-          width: 14,
-          height: 14,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      ),
-    );
-  }
-}
-
-class _ToolbarButton extends StatelessWidget {
-  const _ToolbarButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-    this.enabled = true,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = enabled
-        ? theme.colorScheme.onSurfaceVariant
-        : theme.colorScheme.onSurface.withValues(alpha: 0.30);
-    return IconButton(
-      onPressed: enabled ? onTap : null,
-      tooltip: tooltip,
-      visualDensity: VisualDensity.compact,
-      iconSize: 18,
-      icon: Icon(icon, color: color),
-    );
-  }
-}
-
-/// 排序方式下拉菜单（名称/修改时间/大小，目录始终优先）。
-class _SortMenuButton extends StatelessWidget {
-  const _SortMenuButton({
-    required this.mode,
-    required this.enabled,
-    required this.onSelected,
-  });
-
-  final TreeSortMode mode;
-  final bool enabled;
-  final ValueChanged<TreeSortMode> onSelected;
-
-  static const _labels = {
-    TreeSortMode.nameAsc: '名称',
-    TreeSortMode.mtimeDesc: '修改时间',
-    TreeSortMode.sizeDesc: '大小',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = enabled
-        ? theme.colorScheme.onSurfaceVariant
-        : theme.colorScheme.onSurface.withValues(alpha: 0.30);
-    return PopupMenuButton<TreeSortMode>(
-      tooltip: '排序：${_labels[mode]}',
-      enabled: enabled,
-      initialValue: mode,
-      onSelected: onSelected,
-      icon: Icon(LucideIcons.arrowDownUp, size: 18, color: color),
-      iconSize: 18,
-      style: const ButtonStyle(visualDensity: VisualDensity.compact),
-      itemBuilder: (context) => [
-        for (final m in TreeSortMode.values)
-          PopupMenuItem(
-            value: m,
-            height: 40,
-            child: Row(
-              children: [
-                Icon(
-                  LucideIcons.check,
-                  size: 16,
-                  color: m == mode
-                      ? theme.colorScheme.primary
-                      : Colors.transparent,
-                ),
-                const SizedBox(width: 8),
-                Text(_labels[m]!),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _EmptyTree extends StatelessWidget {
-  const _EmptyTree({required this.theme, required this.onOpen});
-
-  final ThemeData theme;
-  final VoidCallback onOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              LucideIcons.folderOpen,
-              size: 40,
-              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '还没有打开工作区',
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '点下方按钮，打开一个本地文件夹',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 16),
-            FilledButton.tonalIcon(
-              onPressed: onOpen,
-              icon: const Icon(LucideIcons.folderOpen, size: 18),
-              label: const Text('打开文件夹'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
