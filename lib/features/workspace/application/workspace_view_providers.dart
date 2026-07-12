@@ -181,6 +181,10 @@ class EditorSettings {
     this.fontSize = 13,
     this.tabWidth = 2,
     this.softWrap = false,
+    this.syntaxHighlight = true,
+    this.autoClosePairs = true,
+    this.autoIndent = true,
+    this.currentLineHighlight = true,
   });
 
   /// 新打开文件的初始字体大小（缩放仍可临时调整单个文件）。
@@ -192,19 +196,47 @@ class EditorSettings {
   /// 编辑态强制软换行（无行号栏，不横向滚动）。
   final bool softWrap;
 
+  /// 只读视图语法高亮（按文件名推断语言）。
+  final bool syntaxHighlight;
+
+  /// 括号/引号自动补全（含跳过右括号、成对删除）。
+  final bool autoClosePairs;
+
+  /// 回车后继承上一行缩进。
+  final bool autoIndent;
+
+  /// 编辑态当前行背景高亮。
+  final bool currentLineHighlight;
+
   String get indentUnit => ' ' * tabWidth;
 
-  EditorSettings copyWith({double? fontSize, int? tabWidth, bool? softWrap}) =>
+  EditorSettings copyWith({
+    double? fontSize,
+    int? tabWidth,
+    bool? softWrap,
+    bool? syntaxHighlight,
+    bool? autoClosePairs,
+    bool? autoIndent,
+    bool? currentLineHighlight,
+  }) =>
       EditorSettings(
         fontSize: fontSize ?? this.fontSize,
         tabWidth: tabWidth ?? this.tabWidth,
         softWrap: softWrap ?? this.softWrap,
+        syntaxHighlight: syntaxHighlight ?? this.syntaxHighlight,
+        autoClosePairs: autoClosePairs ?? this.autoClosePairs,
+        autoIndent: autoIndent ?? this.autoIndent,
+        currentLineHighlight: currentLineHighlight ?? this.currentLineHighlight,
       );
 
   String encode() => jsonEncode({
         'fontSize': fontSize,
         'tabWidth': tabWidth,
         'softWrap': softWrap,
+        'syntaxHighlight': syntaxHighlight,
+        'autoClosePairs': autoClosePairs,
+        'autoIndent': autoIndent,
+        'currentLineHighlight': currentLineHighlight,
       });
 
   static EditorSettings? decode(String? raw) {
@@ -218,6 +250,10 @@ class EditorSettings {
         fontSize: fontSize.clamp(8, 32).toDouble(),
         tabWidth: const [2, 4, 8].contains(tabWidth) ? tabWidth : 2,
         softWrap: map['softWrap'] == true,
+        syntaxHighlight: map['syntaxHighlight'] != false,
+        autoClosePairs: map['autoClosePairs'] != false,
+        autoIndent: map['autoIndent'] != false,
+        currentLineHighlight: map['currentLineHighlight'] != false,
       );
     } catch (_) {
       return null;

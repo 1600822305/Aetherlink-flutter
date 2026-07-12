@@ -99,6 +99,9 @@ class EditorContent extends StatelessWidget {
     this.undoController,
     this.indentUnit = kIndentUnit,
     this.softWrap = false,
+    this.autoClosePairs = true,
+    this.autoIndent = true,
+    this.currentLineHighlight = true,
   });
 
   final Future<void> ready;
@@ -129,9 +132,12 @@ class EditorContent extends StatelessWidget {
   /// 行注释前缀（见 [EditorTextArea.commentPrefix]）。
   final String? commentPrefix;
 
-  /// 缩进单位与软换行（见 [EditorTextArea.indentUnit] / [EditorTextArea.softWrap]）。
+  /// 编辑器设置透传（见 [EditorTextArea] 同名参数）。
   final String indentUnit;
   final bool softWrap;
+  final bool autoClosePairs;
+  final bool autoIndent;
+  final bool currentLineHighlight;
 
   /// Returns a non-null widget (binary / too-large placeholder) to show instead
   /// of the text area once the load completes; null means "show the editor".
@@ -181,6 +187,9 @@ class EditorContent extends StatelessWidget {
           undoController: undoController,
           indentUnit: indentUnit,
           softWrap: softWrap,
+          autoClosePairs: autoClosePairs,
+          autoIndent: autoIndent,
+          currentLineHighlight: currentLineHighlight,
         );
       },
     );

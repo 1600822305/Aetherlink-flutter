@@ -481,13 +481,18 @@ class _FileEditorState extends ConsumerState<FileEditor> {
               findIndex: _showFind ? _find.index : -1,
               jumpLine: _jumpLine,
               jumpToken: _jumpToken,
-              language: languageForFileName(widget.entry.name),
+              language: editorSettings.syntaxHighlight
+                  ? languageForFileName(widget.entry.name)
+                  : null,
               commentPrefix: lineCommentForLanguage(
                 languageForFileName(widget.entry.name),
               ),
               undoController: _undo,
               indentUnit: editorSettings.indentUnit,
               softWrap: editorSettings.softWrap,
+              autoClosePairs: editorSettings.autoClosePairs,
+              autoIndent: editorSettings.autoIndent,
+              currentLineHighlight: editorSettings.currentLineHighlight,
             ),
           ),
           if (_hasTextBody)

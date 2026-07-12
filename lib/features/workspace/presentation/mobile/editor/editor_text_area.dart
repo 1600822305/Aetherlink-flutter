@@ -34,6 +34,9 @@ class EditorTextArea extends StatefulWidget {
     this.undoController,
     this.indentUnit = kIndentUnit,
     this.softWrap = false,
+    this.autoClosePairs = true,
+    this.autoIndent = true,
+    this.currentLineHighlight = true,
   });
 
   final TextEditingController controller;
@@ -54,6 +57,15 @@ class EditorTextArea extends StatefulWidget {
 
   /// 强制软换行（无行号栏）；病态长行时即使为 false 也会降级换行。
   final bool softWrap;
+
+  /// 括号/引号自动补全开关。
+  final bool autoClosePairs;
+
+  /// 回车自动缩进开关。
+  final bool autoIndent;
+
+  /// 当前行背景高亮开关。
+  final bool currentLineHighlight;
 
   @override
   State<EditorTextArea> createState() => _EditorTextAreaState();
@@ -325,7 +337,7 @@ class _EditorTextAreaState extends State<EditorTextArea> {
               final width = _contentWidth(textStyle, c.maxWidth);
               return Stack(
                 children: [
-                  if (widget.editing)
+                  if (widget.editing && widget.currentLineHighlight)
                     _CurrentLineHighlight(
                       scroll: _textScroll,
                       controller: widget.controller,
@@ -385,7 +397,10 @@ class _EditorTextAreaState extends State<EditorTextArea> {
       minLines: null,
       textAlignVertical: TextAlignVertical.top,
       keyboardType: TextInputType.multiline,
-      inputFormatters: const [AutoClosePairsFormatter(), _AutoIndentFormatter()],
+      inputFormatters: [
+        if (widget.autoClosePairs) const AutoClosePairsFormatter(),
+        if (widget.autoIndent) const _AutoIndentFormatter(),
+      ],
       style: textStyle,
       cursorColor: theme.colorScheme.primary,
       decoration: const InputDecoration(

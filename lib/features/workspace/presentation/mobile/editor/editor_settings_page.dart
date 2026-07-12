@@ -81,6 +81,37 @@ class EditorSettingsPage extends ConsumerWidget {
                   value: settings.softWrap,
                   onChanged: (v) => update(settings.copyWith(softWrap: v)),
                 ),
+                Divider(height: 1, indent: 16, color: theme.dividerColor),
+                SwitchListTile(
+                  title: const Text('语法高亮'),
+                  subtitle: const Text('只读视图按文件类型着色（超大文件自动跳过）'),
+                  value: settings.syntaxHighlight,
+                  onChanged: (v) =>
+                      update(settings.copyWith(syntaxHighlight: v)),
+                ),
+                Divider(height: 1, indent: 16, color: theme.dividerColor),
+                SwitchListTile(
+                  title: const Text('括号自动补全'),
+                  subtitle: const Text('输入括号/引号自动补右半，成对删除'),
+                  value: settings.autoClosePairs,
+                  onChanged: (v) =>
+                      update(settings.copyWith(autoClosePairs: v)),
+                ),
+                Divider(height: 1, indent: 16, color: theme.dividerColor),
+                SwitchListTile(
+                  title: const Text('回车自动缩进'),
+                  subtitle: const Text('换行时继承上一行缩进'),
+                  value: settings.autoIndent,
+                  onChanged: (v) => update(settings.copyWith(autoIndent: v)),
+                ),
+                Divider(height: 1, indent: 16, color: theme.dividerColor),
+                SwitchListTile(
+                  title: const Text('当前行高亮'),
+                  subtitle: const Text('编辑态光标所在行背景着色'),
+                  value: settings.currentLineHighlight,
+                  onChanged: (v) =>
+                      update(settings.copyWith(currentLineHighlight: v)),
+                ),
               ],
             ),
           ),
