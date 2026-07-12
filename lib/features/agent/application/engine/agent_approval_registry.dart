@@ -7,7 +7,9 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
+import 'package:aetherlink_flutter/features/agent/data/agent_notification_service.dart';
 
 /// 用户批准时的授权范围（审批卡三档，初稿 §6.3）。
 enum AgentApprovalScope {
@@ -50,7 +52,12 @@ class AgentApprovalRegistryNotifier
   final Map<String, Set<String>> _taskGrace = {};
 
   @override
-  Map<String, PendingAgentApproval> build() => const {};
+  Map<String, PendingAgentApproval> build() {
+    // 审批通知点击 → 选中对应话题（审批卡就在事件流里）。
+    AgentNotificationService().onSelectTask = (taskId) =>
+        ref.read(selectedAgentTaskIdProvider.notifier).select(taskId);
+    return const {};
+  }
 
   /// 引擎挂起等待用户裁决（同任务旧挂起先按拒绝清掉，防御性兜底）。
   Future<AgentApprovalDecision> request(
@@ -63,6 +70,16 @@ class AgentApprovalRegistryNotifier
     );
     final pending = PendingAgentApproval(taskId: taskId, call: call);
     state = {...state, taskId: pending};
+    // App 在后台时发系统通知提醒审批（初稿 §6.3）。
+    final task = ref
+        .read(agentTasksProvider)
+        .where((t) => t.id == taskId)
+        .firstOrNull;
+    unawaited(AgentNotificationService().showApprovalRequest(
+      taskId: taskId,
+      taskTitle: task?.title ?? '智能体任务',
+      toolName: call.name,
+    ));
     return pending.completer.future;
   }
 
@@ -71,6 +88,7 @@ class AgentApprovalRegistryNotifier
     final pending = state[taskId];
     if (pending == null) return;
     state = Map.of(state)..remove(taskId);
+    unawaited(AgentNotificationService().cancelApprovalRequest(taskId));
     if (decision.approved && decision.scope == AgentApprovalScope.taskTool) {
       (_taskGrace[taskId] ??= <String>{}).add(pending.call.name);
     }

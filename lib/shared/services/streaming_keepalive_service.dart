@@ -17,6 +17,10 @@ class StreamingKeepAliveService {
 
   static bool _initialized = false;
 
+  /// 持有方引用计数（chat 流式 / agent 任务共用同一个前台服务）：
+  /// 全部释放才真正停服务，防一方结束把另一方的保活拆掉。
+  static final Set<String> _holders = {};
+
   static bool get _supported => Platform.isAndroid || Platform.isIOS;
 
   /// Configure the notification channel + task options. Idempotent.
@@ -43,8 +47,24 @@ class StreamingKeepAliveService {
 
   /// Start keeping the process alive. No-op when not running on a mobile
   /// platform or when the service is already running.
-  static Future<void> begin() async {
+  static Future<void> begin() => acquire(
+        'chat',
+        title: '正在生成回复…',
+        text: 'AetherLink 正在后台继续生成 AI 回复',
+      );
+
+  /// Stop keeping the process alive. No-op when nothing is running.
+  static Future<void> end() => release('chat');
+
+  /// [holder] 声明需要保活；服务未跑时以给定通知文案启动，已跑则只记数
+  /// （先到者的文案保留）。
+  static Future<void> acquire(
+    String holder, {
+    required String title,
+    required String text,
+  }) async {
     if (!_supported) return;
+    _holders.add(holder);
     _ensureInit();
     if (await FlutterForegroundTask.isRunningService) return;
     final permission = await FlutterForegroundTask.checkNotificationPermission();
@@ -54,14 +74,16 @@ class StreamingKeepAliveService {
     await FlutterForegroundTask.startService(
       serviceId: _serviceId,
       serviceTypes: [ForegroundServiceTypes.dataSync],
-      notificationTitle: '正在生成回复…',
-      notificationText: 'AetherLink 正在后台继续生成 AI 回复',
+      notificationTitle: title,
+      notificationText: text,
     );
   }
 
-  /// Stop keeping the process alive. No-op when nothing is running.
-  static Future<void> end() async {
+  /// [holder] 释放保活；所有持有方都释放后才停服务。
+  static Future<void> release(String holder) async {
     if (!_supported) return;
+    _holders.remove(holder);
+    if (_holders.isNotEmpty) return;
     if (!await FlutterForegroundTask.isRunningService) return;
     await FlutterForegroundTask.stopService();
   }

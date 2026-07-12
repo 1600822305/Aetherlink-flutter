@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/agent_data_access.dart';
@@ -9,6 +11,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_engin
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/shared/services/streaming_keepalive_service.dart';
 
 part 'agent_task_runner.g.dart';
 
@@ -161,7 +164,16 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     if (state.contains(task.id)) return;
     final token = AgentCancellationToken();
     _tokens[task.id] = token;
+    final wasIdle = state.isEmpty;
     state = {...state, task.id};
+    // 前台服务保活（初稿 §5.5 P1）：切后台任务继续跑，常驻通知展示运行中。
+    if (wasIdle) {
+      unawaited(StreamingKeepAliveService.acquire(
+        'agent',
+        title: '智能体任务运行中…',
+        text: 'AetherLink 在后台继续执行任务，需要授权时会通知你',
+      ));
+    }
 
     // 档案已删的孤儿话题兜底：空专长 + 全工具组，任务仍可继续。
     final profile = ref
@@ -191,6 +203,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         for (final id in state)
           if (id != task.id) id,
       };
+      if (state.isEmpty) {
+        unawaited(StreamingKeepAliveService.release('agent'));
+      }
     });
   }
 
