@@ -34,6 +34,10 @@ class _WorkSegmentTileState extends State<WorkSegmentTile> {
       totalMs += e.elapsed?.inMilliseconds ?? 500;
     }
     final elapsed = formatElapsed(Duration(milliseconds: totalMs));
+    final stats = segmentLineStats(widget.block);
+    final statsLabel = stats.added + stats.removed > 0
+        ? ' · +${stats.added} −${stats.removed}'
+        : '';
     final summaryColor = hasFailure
         ? cs.error
         : cs.onSurface.withValues(alpha: 0.6);
@@ -64,7 +68,7 @@ class _WorkSegmentTileState extends State<WorkSegmentTile> {
                 const SizedBox(width: 6),
                 Text(
                   '${segmentSummary(widget.block)} · $elapsed · ${tools.length} 个操作'
-                  '${hasFailure ? ' · ✗' : ''}',
+                  '$statsLabel${hasFailure ? ' · ✗' : ''}',
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: summaryColor,
                   ),

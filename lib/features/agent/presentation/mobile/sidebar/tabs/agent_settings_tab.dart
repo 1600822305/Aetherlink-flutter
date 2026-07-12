@@ -71,7 +71,7 @@ class AgentSettingsTab extends ConsumerWidget {
           children: [
             _SwitchRow(
               title: '自动折叠工作段',
-              description: '一段工作完成后折叠为「工作了 Ns · N 个操作」摘要块',
+              description: '已完结过程折叠为摘要块（含时长与 +/− 行数），点段头展开',
               value: s.autoCollapseWorkSessions,
               onChanged: c.setAutoCollapseWorkSessions,
             ),

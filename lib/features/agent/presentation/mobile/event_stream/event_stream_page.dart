@@ -35,9 +35,6 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
   /// 「回到最新」按钮可见性（解除跟随时显示），随滚动通知刷新。
   bool _showJumpToLatest = false;
 
-  /// 「折叠全部过程」：开启后所有已完结工具/思考都收进工作段。
-  bool _collapseAll = false;
-
   @override
   void initState() {
     super.initState();
@@ -82,38 +79,16 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
     final events =
         ref.watch(agentTaskEventsProvider(widget.task.id)).value ?? const [];
     final plan = latestPlan(events);
-    final blocks = buildTimelineBlocks(events, collapseAll: _collapseAll);
+    // 工作段折叠由侧边栏设置控制（默认折叠，用户点段头展开）。
+    final collapse = ref.watch(agentUiSettingsControllerProvider
+        .select((s) => s.autoCollapseWorkSessions));
+    final blocks = buildTimelineBlocks(events, collapse: collapse);
     final showWorking = widget.task.status == AgentTaskStatus.running &&
         needsWorkingIndicator(events);
-    final hasProcess = events.any((e) => e is ToolCallEvent);
 
     return Column(
       children: [
         if (plan != null) PlanPanel(task: widget.task, plan: plan),
-        if (hasProcess)
-          Align(
-            alignment: Alignment.centerRight,
-            child: Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: TextButton.icon(
-                onPressed: () => setState(() => _collapseAll = !_collapseAll),
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-                icon: Icon(
-                  _collapseAll
-                      ? Icons.unfold_more_rounded
-                      : Icons.unfold_less_rounded,
-                  size: 14,
-                ),
-                label: Text(
-                  _collapseAll ? '展开过程' : '折叠全部过程',
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
-              ),
-            ),
-          ),
         Expanded(
           child: Stack(
             children: [
