@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/workspace/application/workspace_git_status.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_tree_sort.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_diff_view.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_registry.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/open_workspace_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/workspace_file_ops.dart';
@@ -125,6 +127,10 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
       _expanded.add(root);
       _load(root);
     }
+    // Defer: _bindWorkspace can run inside build (workspace switch).
+    Future.microtask(() {
+      if (mounted) ref.read(gitStatusProvider.notifier).refresh();
+    });
   }
 
   // (Re)subscribes to the backend's change stream for the current workspace.
@@ -163,6 +169,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     for (final dir in dirs) {
       if (_children.containsKey(dir)) _reload(dir);
     }
+    ref.read(gitStatusProvider.notifier).refresh();
   }
 
   // ===== reveal active file (IDE follow mode) =====
@@ -369,6 +376,56 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   // URIs, so the parent can only be recovered from the loaded tree structure.
   String? _parentOf(String childPath) => _parentIndex[childPath];
 
+  // A row's git badge: the file's own status, or a roll-up marker when a
+  // directory contains changed descendants.
+  GitFileStatus? _gitStatusOf(GitStatusSnapshot? snap, WorkspaceEntry entry) {
+    if (snap == null) return null;
+    final direct = snap.statusOf(entry.path);
+    if (direct != null) return direct;
+    if (entry.isDirectory && snap.dirHasChanges(entry.path)) {
+      return GitFileStatus.modified;
+    }
+    return null;
+  }
+
+  // 「Git 对比」：HEAD 版本 vs 当前工作区内容，只读 diff 面板。仅 exec 后端
+  // 可用，此时路径是真实 POSIX 路径，可以安全地剪出仓内相对路径。
+  Future<void> _showGitDiff(WorkspaceEntry entry) async {
+    final backend = _backend;
+    final snap = ref.read(gitStatusProvider);
+    final status = snap?.statusOf(entry.path);
+    if (backend == null || snap == null || status == null) return;
+    final prefix = '${snap.repoRoot}/';
+    if (!entry.path.startsWith(prefix)) return;
+    final rel = entry.path.substring(prefix.length);
+    try {
+      var oldText = '';
+      if (status != GitFileStatus.untracked &&
+          status != GitFileStatus.added) {
+        final show = await backend.exec(
+          'git -c core.quotepath=off show ${shellQuoteArg('HEAD:$rel')}',
+          workingDirectory: snap.repoRoot,
+          timeout: const Duration(seconds: 20),
+        );
+        if (show.exitCode == 0) oldText = show.stdout;
+      }
+      var newText = '';
+      if (status != GitFileStatus.deleted) {
+        newText = await backend.readFile(entry.path);
+      }
+      if (!mounted) return;
+      await showReadOnlyDiffSheet(
+        context,
+        fileName: entry.name,
+        subtitle: '红色 - 为 HEAD 版本，绿色 + 为当前工作区内容（$rel）',
+        oldText: oldText,
+        newText: newText,
+      );
+    } catch (e) {
+      if (mounted) AppToast.error(context, 'Git 对比失败 · $e');
+    }
+  }
+
   // Drops every cached listing and reloads the root, so the tree reflects any
   // out-of-band changes. Expand state for still-present directories is kept.
   void _refresh() {
@@ -380,6 +437,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
       _loading.clear();
     });
     _load(root);
+    ref.read(gitStatusProvider.notifier).refresh();
   }
 
   // Opens the search sheet; a picked file opens in an editor tab (the shell
@@ -476,6 +534,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
 
     final showHidden = ref.watch(showHiddenFilesProvider);
     final sortMode = ref.watch(treeSortModeProvider);
+    final gitSnap = ref.watch(gitStatusProvider);
     final root = _root;
     final rows = <_TreeRow>[];
     if (root != null) {
@@ -497,6 +556,11 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
             reloadDir: _reload,
             ensureExpanded: _ensureExpanded,
             parentOf: _parentOf,
+            canGitDiff: (entry) =>
+                !entry.isDirectory &&
+                backend.capabilities.canExec &&
+                ref.read(gitStatusProvider)?.statusOf(entry.path) != null,
+            onGitDiff: _showGitDiff,
             onFileCreated: (entry) =>
                 ref.read(openWorkspaceFilesProvider.notifier).open(
                       entry,
@@ -630,6 +694,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                           depth: row.depth,
                           expanded: row.expanded,
                           selected: selectedPath == entry.path,
+                          gitStatus: _gitStatusOf(gitSnap, entry),
                           onTap: () {
                             if (entry.isDirectory) {
                               _toggleDir(entry);
@@ -686,6 +751,7 @@ class _FileRow extends StatelessWidget {
     required this.expanded,
     required this.selected,
     required this.onTap,
+    this.gitStatus,
     this.onLongPress,
   });
 
@@ -694,6 +760,9 @@ class _FileRow extends StatelessWidget {
   final bool expanded;
   final bool selected;
   final VoidCallback onTap;
+
+  /// Git working-tree state for the badge / name tint (null ⇒ clean).
+  final GitFileStatus? gitStatus;
   final VoidCallback? onLongPress;
 
   @override
@@ -703,6 +772,22 @@ class _FileRow extends StatelessWidget {
 
     final scheme = theme.colorScheme;
     final accent = selected ? scheme.primary : Colors.transparent;
+    final gitColor = switch (gitStatus) {
+      null => null,
+      GitFileStatus.modified => Colors.orange,
+      GitFileStatus.added || GitFileStatus.untracked => Colors.green,
+      GitFileStatus.renamed => Colors.blue,
+      GitFileStatus.deleted || GitFileStatus.conflicted => scheme.error,
+    };
+    final gitLetter = switch (gitStatus) {
+      null => '',
+      GitFileStatus.modified => 'M',
+      GitFileStatus.added => 'A',
+      GitFileStatus.untracked => 'U',
+      GitFileStatus.deleted => 'D',
+      GitFileStatus.renamed => 'R',
+      GitFileStatus.conflicted => 'C',
+    };
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
@@ -750,13 +835,24 @@ class _FileRow extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: selected ? scheme.primary : null,
+                    color: selected ? scheme.primary : gitColor,
                     fontWeight: isDir || selected
                         ? FontWeight.w600
                         : FontWeight.w400,
                   ),
                 ),
               ),
+              if (gitColor != null) ...[
+                const SizedBox(width: 6),
+                Text(
+                  isDir ? '•' : gitLetter,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: gitColor,
+                  ),
+                ),
+              ],
             ],
           ),
         ),

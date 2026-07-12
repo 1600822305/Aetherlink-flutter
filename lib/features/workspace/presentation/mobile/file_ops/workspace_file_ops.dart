@@ -27,6 +27,8 @@ class WorkspaceFileOps {
     required this.ensureExpanded,
     required this.parentOf,
     this.onFileCreated,
+    this.canGitDiff,
+    this.onGitDiff,
   });
 
   final BuildContext context;
@@ -47,6 +49,13 @@ class WorkspaceFileOps {
   /// Called with the freshly-created file so the tree can open it in an
   /// editor tab right away (新建后自动打开).
   final void Function(WorkspaceEntry entry)? onFileCreated;
+
+  /// Whether the 「Git 对比」 action applies to [entry]（exec-capable backend
+  /// and the file has a git status）. Both null ⇒ the action is hidden.
+  final bool Function(WorkspaceEntry entry)? canGitDiff;
+
+  /// Shows the git working-tree diff for [entry]。
+  final Future<void> Function(WorkspaceEntry entry)? onGitDiff;
 
   bool get _writable => backend.capabilities.canWrite;
 
@@ -69,6 +78,7 @@ class WorkspaceFileOps {
         entry: entry,
         protected: protected,
         writable: _writable,
+        showGitDiff: canGitDiff?.call(entry) ?? false,
       ),
     );
     if (action == null || !context.mounted) return;
@@ -87,6 +97,8 @@ class WorkspaceFileOps {
         await copyPath(entry);
       case _FileAction.details:
         await showDetails(entry);
+      case _FileAction.gitDiff:
+        await onGitDiff?.call(entry);
       case _FileAction.delete:
         await delete(entry);
     }
@@ -284,6 +296,7 @@ enum _FileAction {
   copy,
   copyPath,
   details,
+  gitDiff,
   delete,
 }
 
@@ -292,6 +305,7 @@ class _ActionSheet extends StatelessWidget {
     required this.entry,
     this.protected = false,
     this.writable = true,
+    this.showGitDiff = false,
   });
 
   final WorkspaceEntry entry;
@@ -301,6 +315,9 @@ class _ActionSheet extends StatelessWidget {
 
   /// Read-only backends only get the non-mutating actions (复制路径/详情).
   final bool writable;
+
+  /// Whether to offer 「Git 对比」 (the entry has a git working-tree status).
+  final bool showGitDiff;
 
   @override
   Widget build(BuildContext context) {
@@ -367,6 +384,12 @@ class _ActionSheet extends StatelessWidget {
             label: '详情',
             action: _FileAction.details,
           ),
+          if (showGitDiff)
+            const _ActionTile(
+              icon: LucideIcons.fileDiff,
+              label: 'Git 对比',
+              action: _FileAction.gitDiff,
+            ),
           if (writable && !protected) ...[
             const _MenuDivider(),
             const _ActionTile(

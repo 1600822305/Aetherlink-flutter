@@ -168,6 +168,109 @@ List<(int, String)> _lcsOps(List<String> a, List<String> b) {
   return ops;
 }
 
+/// Read-only diff bottom sheet (e.g. Git 工作区 diff)：[oldText]（红 `-`）→
+/// [newText]（绿 `+`），无底部动作条，只看不选。
+Future<void> showReadOnlyDiffSheet(
+  BuildContext context, {
+  required String fileName,
+  required String subtitle,
+  required String oldText,
+  required String newText,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (context) => _ReadOnlyDiffSheet(
+      fileName: fileName,
+      subtitle: subtitle,
+      oldText: oldText,
+      newText: newText,
+    ),
+  );
+}
+
+class _ReadOnlyDiffSheet extends StatelessWidget {
+  const _ReadOnlyDiffSheet({
+    required this.fileName,
+    required this.subtitle,
+    required this.oldText,
+    required this.newText,
+  });
+
+  final String fileName;
+  final String subtitle;
+  final String oldText;
+  final String newText;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final rows = computeLineDiff(oldText, newText);
+    final numStyle = TextStyle(
+      fontFamily: 'monospace',
+      fontSize: 11,
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.85,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 8, 4),
+            child: Row(
+              children: [
+                Icon(LucideIcons.fileDiff,
+                    size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    fileName,
+                    style: theme.textTheme.titleSmall,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(LucideIcons.x, size: 18),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              subtitle,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Divider(height: 1, color: theme.dividerColor),
+          Expanded(
+            child: rows.isEmpty
+                ? Center(
+                    child: Text(
+                      '两个版本内容一致',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: rows.length,
+                    itemBuilder: (context, i) =>
+                        _diffRow(theme, rows[i], numStyle),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// What the user chose in the conflict diff sheet.
 enum DiffResolution { reloadDisk, keepMine }
 
@@ -297,55 +400,56 @@ class _ConflictDiffSheet extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _diffRow(ThemeData theme, DiffLine row, TextStyle numStyle) {
-    if (row.kind == DiffLineKind.skip) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-        child: Text('⋯', style: numStyle),
-      );
-    }
-    final (bg, fg, sign) = switch (row.kind) {
-      DiffLineKind.removed => (
-          theme.colorScheme.errorContainer.withValues(alpha: 0.45),
-          theme.colorScheme.onErrorContainer,
-          '-',
-        ),
-      DiffLineKind.added => (
-          Colors.green.withValues(alpha: 0.18),
-          theme.colorScheme.onSurface,
-          '+',
-        ),
-      _ => (Colors.transparent, theme.colorScheme.onSurfaceVariant, ' '),
-    };
-    final lineNo = row.kind == DiffLineKind.added ? row.newLine : row.oldLine;
+// One rendered diff row, shared by the conflict sheet and the read-only sheet.
+Widget _diffRow(ThemeData theme, DiffLine row, TextStyle numStyle) {
+  if (row.kind == DiffLineKind.skip) {
     return Container(
-      color: bg,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 44,
-            child: Text('$lineNo', style: numStyle, textAlign: TextAlign.right),
-          ),
-          const SizedBox(width: 8),
-          Text(sign,
-              style: numStyle.copyWith(color: fg, fontWeight: FontWeight.bold)),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              row.text,
-              style: TextStyle(
-                fontFamily: 'monospace',
-                fontSize: 12,
-                color: fg,
-              ),
-            ),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+      child: Text('⋯', style: numStyle),
     );
   }
+  final (bg, fg, sign) = switch (row.kind) {
+    DiffLineKind.removed => (
+        theme.colorScheme.errorContainer.withValues(alpha: 0.45),
+        theme.colorScheme.onErrorContainer,
+        '-',
+      ),
+    DiffLineKind.added => (
+        Colors.green.withValues(alpha: 0.18),
+        theme.colorScheme.onSurface,
+        '+',
+      ),
+    _ => (Colors.transparent, theme.colorScheme.onSurfaceVariant, ' '),
+  };
+  final lineNo = row.kind == DiffLineKind.added ? row.newLine : row.oldLine;
+  return Container(
+    color: bg,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 44,
+          child: Text('$lineNo', style: numStyle, textAlign: TextAlign.right),
+        ),
+        const SizedBox(width: 8),
+        Text(sign,
+            style: numStyle.copyWith(color: fg, fontWeight: FontWeight.bold)),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            row.text,
+            style: TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 12,
+              color: fg,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }
