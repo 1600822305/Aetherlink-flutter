@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_auth_policy.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart';
@@ -78,7 +79,7 @@ class ToolAuthSettingsPage extends ConsumerWidget {
                 '读取类工具（浏览目录 / 读文件 / 搜索等）本来就无需确认。'
                 '越出项目工作区目录的终端命令无论如何设置都会要求确认。',
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _SectionHeader(theme: theme, title: '文件工具（@aether/file-editor）'),
           _ToolCard(
             theme: theme,
@@ -88,7 +89,7 @@ class ToolAuthSettingsPage extends ConsumerWidget {
                 .read(toolAuthPolicyProvider.notifier)
                 .setTool(meta.server, meta.name, autoApprove: v),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _SectionHeader(theme: theme, title: '终端工具（@aether/terminal）'),
           _ToolCard(
             theme: theme,
@@ -113,7 +114,7 @@ class _HintCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(
           alpha: 0.5,
@@ -153,7 +154,7 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      padding: const EdgeInsets.only(left: 4, bottom: 6),
       child: Text(
         title,
         style: theme.textTheme.titleSmall?.copyWith(
@@ -191,21 +192,73 @@ class _ToolCard extends StatelessWidget {
         children: [
           for (var i = 0; i < tools.length; i++) ...[
             if (i > 0)
-              Divider(height: 1, indent: 16, color: theme.dividerColor),
-            SwitchListTile(
-              title: Row(
-                children: [
-                  Flexible(child: Text(tools[i].label)),
-                  const SizedBox(width: 8),
-                  _RiskBadge(theme: theme, risk: tools[i].risk),
-                ],
-              ),
-              subtitle: Text(tools[i].description),
+              Divider(height: 1, indent: 12, color: theme.dividerColor),
+            _ToolRow(
+              theme: theme,
+              meta: tools[i],
               value: policy.isAutoApproved(tools[i].server, tools[i].name),
               onChanged: (v) => onChanged(tools[i], v),
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _ToolRow extends StatelessWidget {
+  const _ToolRow({
+    required this.theme,
+    required this.meta,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final ThemeData theme;
+  final ToolAuthMeta meta;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => onChanged(!value),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          meta.label,
+                          style: theme.textTheme.bodyMedium,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      _RiskBadge(theme: theme, risk: meta.risk),
+                    ],
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    meta.description,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            CustomSwitch(value: value, onChanged: onChanged),
+          ],
+        ),
       ),
     );
   }
