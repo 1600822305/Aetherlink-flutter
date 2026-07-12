@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/app/di/model_selector_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
@@ -250,8 +252,11 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                         const SizedBox(width: 6),
                         _Chip(
                           icon: LucideIcons.brain,
-                          label: '${widget.task?.modelLabel ?? 'GLM-4.6'} ▾',
-                          onTap: () {}, // TODO(agent): 复用聊天模型选择器
+                          // 智能体跟随 App 级当前模型（引擎每轮现取），
+                          // chip 实时显示选中项而非任务创建时的快照。
+                          label:
+                              '${ref.watch(appCurrentModelProvider).value?.model.name ?? '选择模型'} ▾',
+                          onTap: () => showAppModelSelectorDialog(context),
                         ),
                       ],
                     ),
