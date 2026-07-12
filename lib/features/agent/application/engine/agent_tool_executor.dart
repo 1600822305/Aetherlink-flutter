@@ -7,6 +7,7 @@ class AgentToolResult {
     required this.ok,
     required this.summary,
     this.detail,
+    this.overflowPath,
   });
 
   final bool ok;
@@ -14,8 +15,11 @@ class AgentToolResult {
   /// 例：`234 行 · 0.4s`、`失败 ✗ 文件不存在`。
   final String summary;
 
-  /// 完整输出（大输出由引擎截断落盘后回填截断内容）。
+  /// 回填内容（大输出已截断：头尾保留 + 落盘路径提示）。
   final String? detail;
+
+  /// 大输出全文落盘路径（未截断时为 null；详情面板「查看全文」用）。
+  final String? overflowPath;
 }
 
 /// 工具分发抽象：骨架期用假实现；接真实现时经 app/di 复用 ToolRoute

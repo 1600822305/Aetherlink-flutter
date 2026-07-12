@@ -133,6 +133,7 @@ String encodeAgentEventPayload(AgentEvent event) {
       :final elapsed,
       :final argsDetail,
       :final resultDetail,
+      :final resultOverflowPath,
     ) =>
       {
         'toolName': toolName,
@@ -142,6 +143,7 @@ String encodeAgentEventPayload(AgentEvent event) {
         'elapsedMs': elapsed?.inMilliseconds,
         'argsDetail': argsDetail,
         'resultDetail': resultDetail,
+        'resultOverflowPath': resultOverflowPath,
       },
     PlanUpdateEvent(:final items) => {
         'items': [
@@ -206,6 +208,7 @@ AgentEvent decodeAgentEvent({
         elapsed: elapsedMs == null ? null : Duration(milliseconds: elapsedMs),
         argsDetail: p['argsDetail'] as String?,
         resultDetail: p['resultDetail'] as String?,
+        resultOverflowPath: p['resultOverflowPath'] as String?,
       );
     case 'plan_update':
       return PlanUpdateEvent(

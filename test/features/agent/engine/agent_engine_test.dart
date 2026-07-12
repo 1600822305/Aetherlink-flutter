@@ -172,6 +172,7 @@ class InMemoryAgentEventStore implements AgentEventStore {
     required AgentToolCallState state,
     String? resultSummary,
     String? resultDetail,
+    String? resultOverflowPath,
     Duration? elapsed,
   }) async {
     final updated = ToolCallEvent(
@@ -185,6 +186,7 @@ class InMemoryAgentEventStore implements AgentEventStore {
       elapsed: elapsed ?? event.elapsed,
       argsDetail: event.argsDetail,
       resultDetail: resultDetail ?? event.resultDetail,
+      resultOverflowPath: resultOverflowPath ?? event.resultOverflowPath,
     );
     _upsert(taskId, updated);
     return updated;

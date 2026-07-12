@@ -186,6 +186,7 @@ class AgentEngine {
                   : AgentToolCallState.failure,
               resultSummary: result.summary,
               resultDetail: result.detail,
+              resultOverflowPath: result.overflowPath,
               elapsed: stopwatch.elapsed);
           budget.recordToolResult(ok: result.ok);
 

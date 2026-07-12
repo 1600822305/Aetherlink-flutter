@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -5,7 +7,7 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 
 /// 工具调用详情底部抽屉（UI 稿 §4.1）：完整参数 + 完整输出。
 /// 面板固定屏高 2/3；参数区限高、输出区占满余下高度，各自内部滑动。
-/// 大输出这里只显截断内容；「查看全文」等落盘能力接真引擎时补。
+/// 大输出默认显截断内容，「查看全文」从落盘文件回读。
 Future<void> showToolDetailSheet(BuildContext context, ToolCallEvent event) {
   // 先释放输入框焦点，避免面板关闭时焦点恢复自动顶起输入法。
   FocusManager.instance.primaryFocus?.unfocus();
@@ -16,10 +18,38 @@ Future<void> showToolDetailSheet(BuildContext context, ToolCallEvent event) {
   );
 }
 
-class _ToolDetailSheet extends StatelessWidget {
+class _ToolDetailSheet extends StatefulWidget {
   const _ToolDetailSheet({required this.event});
 
   final ToolCallEvent event;
+
+  @override
+  State<_ToolDetailSheet> createState() => _ToolDetailSheetState();
+}
+
+class _ToolDetailSheetState extends State<_ToolDetailSheet> {
+  ToolCallEvent get event => widget.event;
+
+  /// 落盘全文（点「查看全文」后加载，替换输出区内容）。
+  String? _fullText;
+  bool _loadingFull = false;
+
+  Future<void> _loadFullText() async {
+    final path = event.resultOverflowPath;
+    if (path == null || _loadingFull) return;
+    setState(() => _loadingFull = true);
+    String text;
+    try {
+      text = await File(path).readAsString();
+    } catch (e) {
+      text = '读取全文失败（$path）：$e';
+    }
+    if (!mounted) return;
+    setState(() {
+      _fullText = text;
+      _loadingFull = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -105,12 +135,29 @@ class _ToolDetailSheet extends StatelessWidget {
                   Expanded(
                     child: _Section(
                       title: '输出',
-                      body: (event.resultDetail?.isNotEmpty ?? false)
-                          ? event.resultDetail!
-                          : (event.resultSummary.isEmpty
-                                ? '（暂无输出）'
-                                : event.resultSummary),
+                      body: _fullText ??
+                          ((event.resultDetail?.isNotEmpty ?? false)
+                              ? event.resultDetail!
+                              : (event.resultSummary.isEmpty
+                                    ? '（暂无输出）'
+                                    : event.resultSummary)),
                       fill: true,
+                      trailing: event.resultOverflowPath != null &&
+                              _fullText == null
+                          ? TextButton(
+                              onPressed: _loadingFull ? null : _loadFullText,
+                              style: TextButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                              ),
+                              child: Text(
+                                _loadingFull ? '加载中…' : '查看全文',
+                                style: theme.textTheme.labelSmall,
+                              ),
+                            )
+                          : null,
                     ),
                   ),
                 ],
@@ -131,12 +178,16 @@ class _Section extends StatelessWidget {
     required this.body,
     this.fill = false,
     this.maxHeight,
+    this.trailing,
   });
 
   final String title;
   final String body;
   final bool fill;
   final double? maxHeight;
+
+  /// 标题行右侧动作（如「查看全文」）。
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -168,12 +219,19 @@ class _Section extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: theme.textTheme.labelSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-            color: cs.onSurface.withValues(alpha: 0.55),
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: cs.onSurface.withValues(alpha: 0.55),
+                ),
+              ),
+            ),
+            if (trailing != null) trailing!,
+          ],
         ),
         const SizedBox(height: 6),
         if (fill) Expanded(child: box) else box,

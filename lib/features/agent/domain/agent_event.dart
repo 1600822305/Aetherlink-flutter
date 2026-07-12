@@ -88,6 +88,7 @@ class ToolCallEvent extends AgentEvent {
     this.elapsed,
     this.argsDetail,
     this.resultDetail,
+    this.resultOverflowPath,
   });
 
   /// 例：`read_file` / `terminal_execute`。
@@ -108,6 +109,9 @@ class ToolCallEvent extends AgentEvent {
 
   /// 完整输出（底部抽屉展示，大输出截断落盘后这里存截断内容）。
   final String? resultDetail;
+
+  /// 大输出全文落盘路径（详情面板「查看全文」数据源；未截断为 null）。
+  final String? resultOverflowPath;
 }
 
 /// update_plan 产生的计划快照（全量覆盖）。

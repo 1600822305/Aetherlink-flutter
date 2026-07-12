@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:path_provider/path_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
@@ -461,16 +462,53 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
         args,
         cancelSignal: interrupted.future,
       );
+      final spilled = await _spillLargeOutput(call.name, result.text);
       return AgentToolResult(
         ok: !result.isError,
         summary: _resultSummary(result),
-        detail: result.text,
+        detail: spilled.detail,
+        overflowPath: spilled.path,
       );
     } on Object catch (e) {
       return AgentToolResult(ok: false, summary: '执行异常 ✗', detail: '$e');
     } finally {
       poller.cancel();
     }
+  }
+
+  /// 大输出截断落盘（循环设计稿 §5.2）：超阈值时头尾保留、砍中间，
+  /// 全文写应用文档目录 agent_tool_outputs/，回填文本附落盘路径
+  /// 提示模型用 read_file 按行范围回读；上下文/事件库只存截断版。
+  Future<({String detail, String? path})> _spillLargeOutput(
+    String toolName,
+    String text,
+  ) async {
+    const limit = 8000, head = 4000, tail = 2000;
+    if (text.length <= limit) return (detail: text, path: null);
+
+    String? path;
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory('${docs.path}/agent_tool_outputs');
+      await dir.create(recursive: true);
+      final safeName = toolName.replaceAll(RegExp(r'[^\w-]'), '_');
+      path =
+          '${dir.path}/${DateTime.now().millisecondsSinceEpoch}_$safeName.txt';
+      await File(path).writeAsString(text);
+    } catch (_) {
+      path = null;
+    }
+
+    final omitted = text.length - head - tail;
+    final note = path != null
+        ? '\n\n…[输出过长已截断：中间省略 $omitted 字符。'
+            '全文共 ${text.length} 字符已保存到 $path，'
+            '需要时用 read_file 指定 start_line/end_line 分段回读]…\n\n'
+        : '\n\n…[输出过长已截断：中间省略 $omitted 字符]…\n\n';
+    return (
+      detail: text.substring(0, head) + note + text.substring(text.length - tail),
+      path: path,
+    );
   }
 
   String _resultSummary(McpToolResult result) {
