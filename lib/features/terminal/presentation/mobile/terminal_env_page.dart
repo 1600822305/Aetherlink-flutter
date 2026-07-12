@@ -17,6 +17,7 @@ import 'package:aetherlink_flutter/features/terminal/domain/terminal_distro.dart
 import 'package:aetherlink_flutter/features/terminal/domain/terminal_env_presets.dart';
 import 'package:aetherlink_flutter/features/terminal/domain/terminal_mirrors.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
+import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
 /// 打开终端环境管理页。[onRunCommand] 把一条命令送进当前终端会话。
 Future<void> showTerminalEnvPage(
@@ -39,8 +40,14 @@ class TerminalEnvPage extends StatefulWidget {
   State<TerminalEnvPage> createState() => _TerminalEnvPageState();
 }
 
-class _TerminalEnvPageState extends State<TerminalEnvPage> {
+class _TerminalEnvPageState extends State<TerminalEnvPage>
+    with SingleTickerProviderStateMixin {
   TerminalDistro _distro = TerminalDistro.alpine;
+
+  late final TabController _tabController = TabController(
+    length: 2,
+    vsync: this,
+  );
 
   @override
   void initState() {
@@ -48,6 +55,12 @@ class _TerminalEnvPageState extends State<TerminalEnvPage> {
     TerminalEngineManager.instance.installedDistro().then((distro) {
       if (mounted && distro != null) setState(() => _distro = distro);
     });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   /// 回放命令进终端并退回终端页，让用户实时看到执行过程。
@@ -58,23 +71,145 @@ class _TerminalEnvPageState extends State<TerminalEnvPage> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('终端环境管理'),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: '镜像源'),
-              Tab(text: '环境 / 包'),
-            ],
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.onSurface,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        toolbarHeight: 56,
+        centerTitle: false,
+        titleSpacing: 0,
+        shape: Border(bottom: BorderSide(color: theme.dividerColor)),
+        leadingWidth: 44,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 4),
+          child: IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            icon: const Icon(LucideIcons.arrowLeft, size: 24),
+            color: theme.colorScheme.primary,
+            onPressed: () => Navigator.of(context).pop(),
           ),
         ),
-        body: TabBarView(
-          children: [
-            _MirrorTab(distro: _distro, runInTerminal: _runInTerminal),
-            _PackagesTab(distro: _distro, runInTerminal: _runInTerminal),
+        titleTextStyle: theme.textTheme.titleLarge?.copyWith(
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onSurface,
+        ),
+        title: const Text('终端环境管理'),
+      ),
+      body: Column(
+        children: [
+          _TabBarHeader(controller: _tabController),
+          Expanded(
+            child: InstantSwitchTabView(
+              controller: _tabController,
+              children: [
+                _MirrorTab(distro: _distro, runInTerminal: _runInTerminal),
+                _PackagesTab(distro: _distro, runInTerminal: _runInTerminal),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 设置页同款分段 tab 条（外观设置页 `_TabBarHeader` 的圆角描边轨道 +
+/// 主色淡底胶囊指示器）。
+class _TabBarHeader extends StatelessWidget {
+  const _TabBarHeader({required this.controller});
+
+  final TabController controller;
+
+  static const List<(IconData, String)> _tabs = [
+    (LucideIcons.databaseZap, '镜像源'),
+    (LucideIcons.package, '环境 / 包'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: theme.dividerColor),
+          color: theme.colorScheme.surface,
+        ),
+        padding: const EdgeInsets.all(3),
+        child: TabBar(
+          controller: controller,
+          indicator: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            color: theme.colorScheme.primary.withValues(alpha: 0.12),
+          ),
+          indicatorSize: TabBarIndicatorSize.tab,
+          dividerHeight: 0,
+          labelColor: theme.colorScheme.primary,
+          unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+          labelStyle: theme.textTheme.labelLarge?.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+          unselectedLabelStyle: theme.textTheme.labelLarge?.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+          labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+          tabs: [
+            for (final (icon, label) in _tabs)
+              Tab(
+                height: 34,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 15),
+                    const SizedBox(width: 5),
+                    Text(label),
+                  ],
+                ),
+              ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 设置页同款卡片：圆角 16 + 描边 + 软阴影，内容裁切圆角。
+class _EnvCard extends StatelessWidget {
+  const _EnvCard({required this.child});
+
+  final Widget child;
+
+  static const double _radius = 16;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(_radius),
+        border: Border.all(color: theme.dividerColor),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(_radius),
+        child: Material(
+          type: MaterialType.transparency,
+          child: child,
         ),
       ),
     );
@@ -167,18 +302,25 @@ class _MirrorTabState extends State<_MirrorTab> {
     final systemTitle =
         widget.distro == TerminalDistro.ubuntu ? 'apt 软件源' : 'apk 软件源';
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        12 + MediaQuery.paddingOf(context).bottom,
+      ),
       children: [
         _section(
           kind: TerminalMirrorKind.system,
           title: systemTitle,
           subtitle: '系统包管理器的软件源，选中后立即写入 rootfs 并刷新索引。',
         ),
+        const SizedBox(height: 12),
         _section(
           kind: TerminalMirrorKind.pip,
           title: 'pip 源',
           subtitle: '写入 ~/.config/pip/pip.conf，需已安装 Python/pip。',
         ),
+        const SizedBox(height: 12),
         _section(
           kind: TerminalMirrorKind.npm,
           title: 'npm 源',
@@ -196,65 +338,67 @@ class _MirrorTabState extends State<_MirrorTab> {
     final theme = Theme.of(context);
     final selectedId = _selected[kind] ?? 'official';
     final mirrors = [..._builtIn(kind), ...?_custom[kind]];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 8, bottom: 2),
-          child: Text(
-            title,
-            style: theme.textTheme.titleSmall
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
+    return _EnvCard(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: theme.textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 4),
+            RadioGroup<String>(
+              groupValue: selectedId,
+              onChanged: (id) {
+                if (_applying || id == null) return;
+                final mirror = mirrors.firstWhere((m) => m.id == id);
+                _apply(kind, mirror);
+              },
+              child: Column(
+                children: [
+                  for (final mirror in mirrors)
+                    RadioListTile<String>(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      value: mirror.id,
+                      enabled: !_applying,
+                      title: Text(mirror.name),
+                      subtitle: Text(
+                        mirror.baseUrl,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      secondary: mirror.id.startsWith('custom_')
+                          ? IconButton(
+                              tooltip: '删除',
+                              icon: const Icon(LucideIcons.trash2, size: 18),
+                              onPressed: () => _removeCustom(kind, mirror.id),
+                            )
+                          : null,
+                    ),
+                ],
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => _addCustom(kind),
+                icon: const Icon(LucideIcons.plus, size: 16),
+                label: const Text('添加自定义源'),
+              ),
+            ),
+          ],
         ),
-        Text(
-          subtitle,
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ),
-        const SizedBox(height: 4),
-        RadioGroup<String>(
-          groupValue: selectedId,
-          onChanged: (id) {
-            if (_applying || id == null) return;
-            final mirror = mirrors.firstWhere((m) => m.id == id);
-            _apply(kind, mirror);
-          },
-          child: Column(
-            children: [
-              for (final mirror in mirrors)
-                RadioListTile<String>(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  value: mirror.id,
-                  enabled: !_applying,
-                  title: Text(mirror.name),
-                  subtitle: Text(
-                    mirror.baseUrl,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  secondary: mirror.id.startsWith('custom_')
-                      ? IconButton(
-                          tooltip: '删除',
-                          icon: const Icon(LucideIcons.trash2, size: 18),
-                          onPressed: () => _removeCustom(kind, mirror.id),
-                        )
-                      : null,
-                ),
-            ],
-          ),
-        ),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: () => _addCustom(kind),
-            icon: const Icon(LucideIcons.plus, size: 16),
-            label: const Text('添加自定义源'),
-          ),
-        ),
-        const Divider(height: 16),
-      ],
+      ),
     );
   }
 }
@@ -420,11 +564,16 @@ class _PackagesTabState extends State<_PackagesTab> {
             ),
           ),
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-            children: [
-              for (final category in _categories)
-                ExpansionTile(
+          child: ListView.separated(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            itemCount: _categories.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemBuilder: (context, i) {
+              final category = _categories[i];
+              return _EnvCard(
+                child: ExpansionTile(
+                  shape: const Border(),
+                  collapsedShape: const Border(),
                   title: Text(category.name),
                   subtitle: Text(
                     category.description,
@@ -454,7 +603,8 @@ class _PackagesTabState extends State<_PackagesTab> {
                       ),
                   ],
                 ),
-            ],
+              );
+            },
           ),
         ),
         SafeArea(
