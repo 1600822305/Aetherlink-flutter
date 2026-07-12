@@ -56,6 +56,25 @@ class AssistantTextEvent extends AgentEvent {
   final bool streaming;
 }
 
+/// 模型思考过程（reasoning/thinking，流式渲染为可折叠的"思考了 Xs"块，
+/// 默认收起，点开看全文；不进后续上下文，仅供用户观察）。
+class ReasoningEvent extends AgentEvent {
+  const ReasoningEvent({
+    required super.id,
+    required super.seq,
+    required super.at,
+    required this.text,
+    this.streaming = false,
+    this.elapsed,
+  });
+
+  final String text;
+  final bool streaming;
+
+  /// 思考耗时（流式结束时定格，驱动"思考了 Xs"标题）。
+  final Duration? elapsed;
+}
+
 /// 工具调用（含审批状态与结果摘要；完整参数/输出走底部抽屉查看）。
 class ToolCallEvent extends AgentEvent {
   const ToolCallEvent({

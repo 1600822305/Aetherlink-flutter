@@ -31,6 +31,21 @@ abstract class AgentEventStore {
     required bool streaming,
   });
 
+  Future<ReasoningEvent> appendReasoning(
+    String taskId,
+    String text, {
+    required bool streaming,
+  });
+
+  /// 流式原位覆盖（id/seq 不变）；[elapsed] 在收尾时定格思考耗时。
+  Future<ReasoningEvent> updateReasoning(
+    String taskId,
+    ReasoningEvent event,
+    String text, {
+    required bool streaming,
+    Duration? elapsed,
+  });
+
   Future<ToolCallEvent> appendToolCall(
     String taskId,
     AgentToolCallRequest call,
@@ -139,6 +154,43 @@ class DriftAgentEventStore implements AgentEventStore {
       at: event.at,
       text: text,
       streaming: streaming,
+    );
+    await _dao.upsertEvents(taskId, [updated]);
+    return updated;
+  }
+
+  @override
+  Future<ReasoningEvent> appendReasoning(
+    String taskId,
+    String text, {
+    required bool streaming,
+  }) async {
+    final event = ReasoningEvent(
+      id: _newId('rs'),
+      seq: await _nextSeq(taskId),
+      at: DateTime.now(),
+      text: text,
+      streaming: streaming,
+    );
+    await _dao.upsertEvents(taskId, [event]);
+    return event;
+  }
+
+  @override
+  Future<ReasoningEvent> updateReasoning(
+    String taskId,
+    ReasoningEvent event,
+    String text, {
+    required bool streaming,
+    Duration? elapsed,
+  }) async {
+    final updated = ReasoningEvent(
+      id: event.id,
+      seq: event.seq,
+      at: event.at,
+      text: text,
+      streaming: streaming,
+      elapsed: elapsed ?? event.elapsed,
     );
     await _dao.upsertEvents(taskId, [updated]);
     return updated;

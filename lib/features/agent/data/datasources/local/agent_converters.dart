@@ -103,6 +103,7 @@ class AgentTaskConverter extends TypeConverter<AgentTask, String> {
 String agentEventKind(AgentEvent event) => switch (event) {
       UserMessageEvent() => 'user_message',
       AssistantTextEvent() => 'assistant_text',
+      ReasoningEvent() => 'reasoning',
       ToolCallEvent() => 'tool_call',
       PlanUpdateEvent() => 'plan_update',
       CompactionEvent() => 'compaction',
@@ -118,6 +119,11 @@ String encodeAgentEventPayload(AgentEvent event) {
     AssistantTextEvent(:final text, :final streaming) => {
         'text': text,
         'streaming': streaming,
+      },
+    ReasoningEvent(:final text, :final streaming, :final elapsed) => {
+        'text': text,
+        'streaming': streaming,
+        'elapsedMs': elapsed?.inMilliseconds,
       },
     ToolCallEvent(
       :final toolName,
@@ -176,6 +182,16 @@ AgentEvent decodeAgentEvent({
         at: at,
         text: p['text'] as String? ?? '',
         streaming: p['streaming'] as bool? ?? false,
+      );
+    case 'reasoning':
+      final elapsedMs = p['elapsedMs'] as int?;
+      return ReasoningEvent(
+        id: id,
+        seq: seq,
+        at: at,
+        text: p['text'] as String? ?? '',
+        streaming: p['streaming'] as bool? ?? false,
+        elapsed: elapsedMs == null ? null : Duration(milliseconds: elapsedMs),
       );
     case 'tool_call':
       final elapsedMs = p['elapsedMs'] as int?;

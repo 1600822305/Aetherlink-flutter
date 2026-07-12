@@ -93,13 +93,36 @@ class AgentEngine {
         ));
         final events = await store.getEvents(current.id);
         AssistantTextEvent? textEvent;
+        ReasoningEvent? reasoningEvent;
+        DateTime? reasoningStart;
         // 增量落库串行化（同一事件 id 原位覆盖，避免乱序）。
         var pendingWrite = Future<void>.value();
         final turn = await llm.completeTurn(
           AgentLlmContext(task: current, events: events),
           cancel: cancel,
+          onReasoningDelta: (reasoningSoFar) {
+            reasoningStart ??= DateTime.now();
+            pendingWrite = pendingWrite.then((_) async {
+              reasoningEvent = reasoningEvent == null
+                  ? await store.appendReasoning(current.id, reasoningSoFar,
+                      streaming: true)
+                  : await store.updateReasoning(
+                      current.id, reasoningEvent!, reasoningSoFar,
+                      streaming: true);
+            });
+          },
           onTextDelta: (textSoFar) {
             pendingWrite = pendingWrite.then((_) async {
+              // 文本开始 → 思考定格（收起为"思考了 Xs"）。
+              if (reasoningEvent != null && reasoningEvent!.streaming) {
+                reasoningEvent = await store.updateReasoning(
+                  current.id, reasoningEvent!, reasoningEvent!.text,
+                  streaming: false,
+                  elapsed: reasoningStart == null
+                      ? null
+                      : DateTime.now().difference(reasoningStart!),
+                );
+              }
               textEvent = textEvent == null
                   ? await store.appendAssistantText(current.id, textSoFar,
                       streaming: true)
@@ -110,6 +133,16 @@ class AgentEngine {
           },
         );
         await pendingWrite;
+        // 只有思考、没有正文时也要把思考定格。
+        if (reasoningEvent != null && reasoningEvent!.streaming) {
+          reasoningEvent = await store.updateReasoning(
+            current.id, reasoningEvent!, reasoningEvent!.text,
+            streaming: false,
+            elapsed: reasoningStart == null
+                ? null
+                : DateTime.now().difference(reasoningStart!),
+          );
+        }
         if (textEvent != null || turn.text.isNotEmpty) {
           textEvent = textEvent == null
               ? await store.appendAssistantText(current.id, turn.text,

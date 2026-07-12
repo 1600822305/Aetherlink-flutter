@@ -4,6 +4,7 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/approval_card.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/assistant_text_tile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/compaction_divider.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/reasoning_tile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/status_change_tile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/tool_row.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/user_message_tile.dart';
@@ -20,6 +21,7 @@ class AgentEventTile extends StatelessWidget {
     return switch (event) {
       final UserMessageEvent e => UserMessageTile(event: e),
       final AssistantTextEvent e => AssistantTextTile(event: e),
+      final ReasoningEvent e => ReasoningTile(event: e),
       final ToolCallEvent e
           when e.state == AgentToolCallState.waitingApproval =>
         ApprovalCard(event: e),

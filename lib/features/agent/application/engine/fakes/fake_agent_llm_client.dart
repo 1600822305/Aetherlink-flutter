@@ -16,6 +16,7 @@ class FakeAgentLlmClient implements AgentLlmClient {
   Future<AgentLlmTurn> completeTurn(
     AgentLlmContext context, {
     void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
     AgentCancellationToken? cancel,
   }) async {
     final hasToolResult = context.events.any(
@@ -23,6 +24,8 @@ class FakeAgentLlmClient implements AgentLlmClient {
     );
 
     if (!hasToolResult) {
+      const reasoning = '用户想了解项目现状。先读入口文件确认结构，再更新计划逐步推进。';
+      await _streamText(reasoning, onReasoningDelta, cancel);
       const text = '收到任务。我先读取工作区文件了解现状，然后按计划推进。'
           '（演示引擎：假模型/假工具，仅验证循环与落库）';
       await _streamText(text, onTextDelta, cancel);

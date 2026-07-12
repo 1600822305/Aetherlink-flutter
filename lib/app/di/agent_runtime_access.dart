@@ -115,6 +115,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   Future<AgentLlmTurn> completeTurn(
     AgentLlmContext context, {
     void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
     AgentCancellationToken? cancel,
   }) async {
     final ref = _refOf();
@@ -147,6 +148,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     });
 
     final buffer = StringBuffer();
+    final reasoning = StringBuffer();
     final calls = <LlmToolCall>[];
     var totalTokens = 0;
     try {
@@ -156,8 +158,9 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
           case LlmTextDelta(:final text):
             buffer.write(text);
             onTextDelta?.call(buffer.toString());
-          case LlmReasoningDelta():
-            break;
+          case LlmReasoningDelta(:final text):
+            reasoning.write(text);
+            onReasoningDelta?.call(reasoning.toString());
           case LlmToolCallChunk(:final call):
             calls.add(call);
           case LlmDone(usage: final usage):
@@ -265,7 +268,10 @@ List<LlmMessage> _replayMessages(List<AgentEvent> events) {
             toolName: event.toolName,
           ),
         );
-      case PlanUpdateEvent() || CompactionEvent() || StatusChangeEvent():
+      case ReasoningEvent() ||
+            PlanUpdateEvent() ||
+            CompactionEvent() ||
+            StatusChangeEvent():
         break;
     }
   }

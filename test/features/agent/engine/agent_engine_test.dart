@@ -109,6 +109,43 @@ class InMemoryAgentEventStore implements AgentEventStore {
   }
 
   @override
+  Future<ReasoningEvent> appendReasoning(
+    String taskId,
+    String text, {
+    required bool streaming,
+  }) async {
+    final event = ReasoningEvent(
+      id: _newId(),
+      seq: _nextSeq(taskId),
+      at: DateTime.now(),
+      text: text,
+      streaming: streaming,
+    );
+    _upsert(taskId, event);
+    return event;
+  }
+
+  @override
+  Future<ReasoningEvent> updateReasoning(
+    String taskId,
+    ReasoningEvent event,
+    String text, {
+    required bool streaming,
+    Duration? elapsed,
+  }) async {
+    final updated = ReasoningEvent(
+      id: event.id,
+      seq: event.seq,
+      at: event.at,
+      text: text,
+      streaming: streaming,
+      elapsed: elapsed ?? event.elapsed,
+    );
+    _upsert(taskId, updated);
+    return updated;
+  }
+
+  @override
   Future<ToolCallEvent> appendToolCall(
     String taskId,
     AgentToolCallRequest call,
@@ -198,6 +235,7 @@ class AlwaysFailingToolLlm implements AgentLlmClient {
   Future<AgentLlmTurn> completeTurn(
     AgentLlmContext context, {
     void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
     AgentCancellationToken? cancel,
   }) async {
     return AgentLlmTurn(
@@ -270,6 +308,12 @@ void main() {
       events.whereType<AssistantTextEvent>().every((e) => !e.streaming),
       isTrue,
     );
+    // 思考事件已流式原位落库并定格（非流式 + 有耗时）。
+    final reasoning = events.whereType<ReasoningEvent>();
+    expect(reasoning, isNotEmpty);
+    expect(reasoning.every((e) => !e.streaming), isTrue);
+    expect(reasoning.every((e) => e.elapsed != null), isTrue);
+    expect(reasoning.first.text, isNotEmpty);
     // seq 严格递增无重复。
     final seqs = [for (final e in events) e.seq];
     expect(seqs.toSet().length, seqs.length);

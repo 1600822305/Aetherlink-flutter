@@ -48,6 +48,7 @@ abstract class AgentLlmClient {
   Future<AgentLlmTurn> completeTurn(
     AgentLlmContext context, {
     void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
     AgentCancellationToken? cancel,
   });
 }
