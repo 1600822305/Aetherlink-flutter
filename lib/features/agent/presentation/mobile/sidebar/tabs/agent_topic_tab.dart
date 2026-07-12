@@ -134,7 +134,7 @@ class AgentTopicTab extends ConsumerWidget {
 
 enum _TaskMenu { rename, delete }
 
-/// 话题卡：状态色点 + 标题 + 工作区 chip + 最近事件摘要（UI 稿 §三）
+/// 话题卡：状态色点 + 标题 + 工作区 chip（UI 稿 §三）
 /// + 右侧「更多」菜单（重命名/删除，对齐聊天话题项）。
 class _TaskCard extends ConsumerWidget {
   const _TaskCard({
@@ -282,17 +282,6 @@ class _TaskCard extends ConsumerWidget {
                     ),
                   ],
                 ),
-                if (task.lastEventSummary.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    task.lastEventSummary,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: cs.onSurface.withValues(alpha: 0.5),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
