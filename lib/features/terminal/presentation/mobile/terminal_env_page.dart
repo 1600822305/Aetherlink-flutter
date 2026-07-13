@@ -78,33 +78,40 @@ class _TerminalEnvPageState extends ConsumerState<TerminalEnvPage>
   /// 清理内置终端环境：二次确认后先关掉所有 PRoot 会话，再删除
   /// rootfs 目录（只动应用私有目录，/sdcard 是绑定挂载的手机存储，
   /// 不受影响）。清理后退回终端页，下次进入会重新引导安装。
-  Future<void> _cleanEngine({bool reinstall = false}) async {
-    final confirmed = await showDialog<bool>(
+  Future<void> _cleanEngine() async {
+    // true = 清理并重装，false = 仅清理，null = 取消。
+    final reinstall = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(reinstall ? '重装内置终端环境' : '清理内置终端环境'),
-        content: Text(
+        title: const Text('清理内置终端环境'),
+        content: const Text(
           '将删除已安装的 Alpine/Ubuntu 环境（rootfs、已装的软件包、'
           '/root 主目录里的文件）并关闭所有内置终端会话。\n\n'
           '/sdcard 是绑定挂载的手机存储，里面的文件不会被删除。\n'
-          '${reinstall ? '清理完成后立即弹出安装面板重新下载。' : '清理后可随时重新下载安装。'}',
+          '「清理并重装」会在清理后立即弹出安装面板重新下载。',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
+            onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('取消'),
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(
+              '仅清理',
+              style: TextStyle(
+                color: Theme.of(dialogContext).colorScheme.error,
+              ),
             ),
+          ),
+          FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(reinstall ? '清理并重装' : '清理'),
+            child: const Text('清理并重装'),
           ),
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (reinstall == null || !mounted) return;
     try {
       await ref.read(prootSessionsCloserProvider)();
       await TerminalEngineManager.instance.uninstall();
@@ -160,11 +167,6 @@ class _TerminalEnvPageState extends ConsumerState<TerminalEnvPage>
         ),
         title: const Text('终端环境管理'),
         actions: [
-          IconButton(
-            tooltip: '重装内置终端环境',
-            icon: const Icon(LucideIcons.refreshCcw, size: 20),
-            onPressed: () => _cleanEngine(reinstall: true),
-          ),
           IconButton(
             tooltip: '清理内置终端环境',
             icon: const Icon(LucideIcons.trash2, size: 20),
