@@ -111,6 +111,45 @@ bool _isTerminalTool(String toolName) {
   return n.contains('terminal') || n.contains('command');
 }
 
+/// 工具结果多为 `{success, data}` JSON，直接贴原文不可读；这里提取
+/// data 里的正文字段（content/stdout/output/…）还原换行后展示，
+/// 解不出时回退原文。
+String _readableResult(String raw) {
+  Object? decoded;
+  try {
+    decoded = jsonDecode(raw);
+  } catch (_) {
+    return raw;
+  }
+  if (decoded is! Map) return raw;
+  final error = decoded['error'];
+  if (error is String && error.isNotEmpty) return error;
+  final data = decoded['data'];
+  if (data is String) return data;
+  if (data is Map) {
+    for (final key in const [
+      'content',
+      'stdout',
+      'output',
+      'text',
+      'message',
+    ]) {
+      final v = data[key];
+      if (v is String && v.isNotEmpty) {
+        final stderr = data['stderr'];
+        final hint = data['hint'];
+        return [
+          v,
+          if (stderr is String && stderr.trim().isNotEmpty)
+            'stderr:\n$stderr',
+          if (hint is String && hint.isNotEmpty) hint,
+        ].join('\n');
+      }
+    }
+  }
+  return raw;
+}
+
 /// 从 argsDetail（参数 JSON）里解析编辑类工具的 search/replace 对
 /// （单对或 edits 数组）；写入类工具的全文内容返回 (null, content)。
 List<({String? search, String replace})> _editPairsOf(ToolCallEvent e) {
@@ -245,9 +284,11 @@ class _ToolFocus extends StatelessWidget {
 
     Widget body;
     if (_isTerminalTool(event.toolName)) {
+      final out = event.resultDetail == null
+          ? event.resultSummary
+          : _readableResult(event.resultDetail!);
       body = _MonoPane(
-        text: '\$ ${event.argSummary}\n'
-            '${event.resultDetail ?? event.resultSummary}',
+        text: '\$ ${event.argSummary}\n$out',
         dark: true,
       );
     } else {
@@ -268,7 +309,9 @@ class _ToolFocus extends StatelessWidget {
           ),
         );
       } else {
-        final detail = event.resultDetail ?? event.resultSummary;
+        final detail = event.resultDetail == null
+            ? event.resultSummary
+            : _readableResult(event.resultDetail!);
         body = _MonoPane(text: detail.isEmpty ? '（暂无输出）' : detail);
       }
     }

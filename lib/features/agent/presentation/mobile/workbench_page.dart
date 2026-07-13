@@ -23,15 +23,21 @@ class WorkbenchPage extends StatefulWidget {
 
 class _WorkbenchPageState extends State<WorkbenchPage>
     with SingleTickerProviderStateMixin {
-  int _tab = 0;
+  /// 各任务上次选中的 tab（内存级记忆：切回聊天再进工作台不丢选中态）。
+  static final Map<String, int> _lastTabByTask = {};
 
-  late final TabController _tabController =
-      TabController(length: _tabs.length, vsync: this)
-        ..addListener(() {
-          if (_tab != _tabController.index) {
-            setState(() => _tab = _tabController.index);
-          }
-        });
+  late int _tab = _lastTabByTask[widget.task.id] ?? 0;
+
+  late final TabController _tabController = TabController(
+    length: _tabs.length,
+    initialIndex: _tab,
+    vsync: this,
+  )..addListener(() {
+      if (_tab != _tabController.index) {
+        setState(() => _tab = _tabController.index);
+        _lastTabByTask[widget.task.id] = _tabController.index;
+      }
+    });
 
   static const _tabs = [
     (LucideIcons.terminal, '终端'),
