@@ -17,7 +17,15 @@ const int kWorkspaceContextMaxEntries = 30;
 /// (name / backend / root / top-level entries) plus the other opened
 /// workspaces by name. Returns null when no workspace is opened, and never
 /// throws — a failing backend just omits the listing.
-Future<String?> buildWorkspaceContextSection(Ref ref) async {
+///
+/// [workspace] 锁定锚点工作区（智能体任务绑定的工作区），缺省取当前
+/// 工作区；[listOthers] 为 false 时不向模型暴露其他已打开的工作区
+/// （绑定工作区的任务硬隔离）。
+Future<String?> buildWorkspaceContextSection(
+  Ref ref, {
+  Workspace? workspace,
+  bool listOthers = true,
+}) async {
   final List<Workspace> workspaces;
   try {
     workspaces = await loadWorkspaces(ref);
@@ -26,7 +34,8 @@ Future<String?> buildWorkspaceContextSection(Ref ref) async {
   }
   if (workspaces.isEmpty) return null;
 
-  final current = ref.read(currentWorkspaceProvider) ?? workspaces.first;
+  final current =
+      workspace ?? ref.read(currentWorkspaceProvider) ?? workspaces.first;
   final buf = StringBuffer()
     ..writeln('[工作区上下文]')
     ..writeln(
@@ -57,8 +66,9 @@ Future<String?> buildWorkspaceContextSection(Ref ref) async {
   }
 
   final others = [
-    for (final w in workspaces)
-      if (w.id != current.id) w.name,
+    if (listOthers)
+      for (final w in workspaces)
+        if (w.id != current.id) w.name,
   ];
   if (others.isNotEmpty) {
     buf.writeln('其他已打开的工作区：${others.join('、')}（可通过 workspace 参数指定）。');

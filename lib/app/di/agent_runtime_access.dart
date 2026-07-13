@@ -69,6 +69,7 @@ class AgentRuntime {
     AgentProfile profile, {
     AgentSessionMode mode = AgentSessionMode.code,
     bool enableSubagents = true,
+    String? boundWorkspaceId,
   }) {
     final catalog = _catalogFor(
       profile.tools,
@@ -77,7 +78,11 @@ class AgentRuntime {
     );
     return (
       llm: _GatewayAgentLlmClient(_refOf, profile, catalog.definitions),
-      tools: _McpAgentToolExecutor(_refOf, catalog.routes),
+      tools: _McpAgentToolExecutor(
+        _refOf,
+        catalog.routes,
+        boundWorkspaceId: boundWorkspaceId,
+      ),
       approval: _PolicyApprovalGate(_refOf, catalog.routes),
     );
   }
@@ -178,8 +183,8 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
       task: context.task,
       profile: _profile,
       events: context.events,
-      environmentContext: await _environmentContext(ref),
-      projectInstructions: await _projectInstructions(ref),
+      environmentContext: await _environmentContext(ref, context.task),
+      projectInstructions: await _projectInstructions(ref, context.task),
     );
 
     final request = LlmChatRequest(
@@ -274,10 +279,19 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
 
   /// [2 环境上下文]：平台 + 工作区摘要 + 本轮可用工具清单
   /// （+ spawn_subagent 可用时的自定义子代理档案清单）。
-  Future<String> _environmentContext(Ref ref) async {
+  /// 工作区摘要锚定任务绑定的工作区，且不列其他工作区（绑定即
+  /// 隔离，双作用域设计稿 §3.1）；找不到绑定工作区时退回当前工作区。
+  Future<String> _environmentContext(Ref ref, AgentTask task) async {
     String? workspace;
     try {
-      workspace = await buildWorkspaceContextSection(ref);
+      final bound = (await loadWorkspaces(ref))
+          .where((w) => w.id == task.workspaceId)
+          .firstOrNull;
+      workspace = await buildWorkspaceContextSection(
+        ref,
+        workspace: bound,
+        listOthers: bound == null,
+      );
     } catch (_) {
       workspace = null;
     }
@@ -333,14 +347,18 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     ];
   }
 
-  /// [5 项目指令]：档案绑定工作区（缺省取当前工作区）根目录的 AGENTS.md。
-  Future<String?> _projectInstructions(Ref ref) async {
+  /// [5 项目指令]：任务绑定工作区（缺省取档案绑定/当前工作区）
+  /// 根目录的 AGENTS.md。
+  Future<String?> _projectInstructions(Ref ref, AgentTask task) async {
     try {
       final workspaces = await loadWorkspaces(ref);
       if (workspaces.isEmpty) return null;
       final bound = workspaces
-          .where((w) => w.id == _profile.workspaceId)
-          .firstOrNull;
+              .where((w) => w.id == task.workspaceId)
+              .firstOrNull ??
+          workspaces
+              .where((w) => w.id == _profile.workspaceId)
+              .firstOrNull;
       final workspace =
           bound ?? ref.read(currentWorkspaceProvider) ?? workspaces.first;
       final backend = ref.read(workspaceBackendProvider(workspace));
@@ -479,10 +497,19 @@ String _truncate(String value) =>
 /// 真实工具执行器：按 [ToolRoute] 分发到既有 shared handler
 /// （文件编辑/终端/知识库/网络搜索/技能），工具失败转为结果回填而非抛错。
 class _McpAgentToolExecutor implements AgentToolExecutor {
-  _McpAgentToolExecutor(Ref Function() refOf, this._routes)
-      : _executor = ChatToolExecutor(refOf, assistantId: () => '');
+  _McpAgentToolExecutor(
+    Ref Function() refOf,
+    this._routes, {
+    String? boundWorkspaceId,
+  })  : _boundWorkspaceId = boundWorkspaceId,
+        _executor = ChatToolExecutor(refOf, assistantId: () => '');
 
   final Map<String, ToolRoute> _routes;
+
+  /// 任务绑定的工作区 ID：终端/文件工具未显式传 `workspace` 时缺省
+  /// 锚定它（而不是内置终端/当前工作区），避免智能体越出绑定工作区
+  /// 看到/操作其他终端会话。
+  final String? _boundWorkspaceId;
   final ChatToolExecutor _executor;
 
   @override
@@ -511,6 +538,12 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
         summary: '参数解析失败 ✗',
         detail: '工具参数不是合法 JSON：$e',
       );
+    }
+    if (_boundWorkspaceId != null &&
+        (route is TerminalToolRoute || route is FileEditorToolRoute) &&
+        (args['workspace'] == null ||
+            args['workspace'].toString().trim().isEmpty)) {
+      args = {...args, 'workspace': _boundWorkspaceId};
     }
 
     // 协作取消 → runTool 的 cancelSignal（terminal_execute 可被中途打断）。
@@ -605,7 +638,14 @@ class _PolicyApprovalGate implements ApprovalGate {
   ) async {
     final route = _routes[call.name];
     if (route == null) return ApprovalRequirement.allow; // 未知工具由执行器兜底
-    final args = _decodeArgs(call.argsJson);
+    var args = _decodeArgs(call.argsJson);
+    // 与执行器一致：缺省 workspace 参数按任务绑定工作区评估（执行时
+    // 也会注入同一缺省，审批与实际执行目标不错位）。
+    if ((route is TerminalToolRoute || route is FileEditorToolRoute) &&
+        (args['workspace'] == null ||
+            args['workspace'].toString().trim().isEmpty)) {
+      args = {...args, 'workspace': task.workspaceId};
+    }
     final ref = _refOf();
     List<Workspace> workspaces;
     try {

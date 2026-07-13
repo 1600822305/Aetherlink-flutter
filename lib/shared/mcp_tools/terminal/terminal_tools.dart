@@ -145,9 +145,9 @@ Future<McpToolResult> runTerminalTool(
           case 'list':
             return await _sessionList(ref, args);
           case 'output':
-            return _sessionOutput(ref, args);
+            return await _sessionOutput(ref, args);
           case 'write':
-            return _sessionWrite(ref, args);
+            return await _sessionWrite(ref, args);
         }
         return fileEditorError(
           '未知的 action: ${args['action']}（支持 list / output / write）',
@@ -272,7 +272,11 @@ Future<McpToolResult> _execute(
       optionalString(args, 'session') ?? optionalString(args, 'session_id');
   final PooledWorkspaceSession session;
   if (sessionRef != null) {
-    session = _findSession(manager, sessionRef) ??
+    session = _findSession(
+          manager,
+          sessionRef,
+          workspaceId: await _scopedWorkspaceId(ref, args),
+        ) ??
         await _createNamedSession(ref, args, sessionRef);
   } else {
     final target = await _resolveTarget(ref, args);
@@ -319,21 +323,38 @@ Future<McpToolResult> _execute(
   });
 }
 
-/// 按 ID 或名称查会话（名称重名时取最近使用的一个）。
+/// 按 ID 或名称查会话（名称重名时取最近使用的一个）。传
+/// [workspaceId] 时只在该工作区的会话里找（双作用域设计稿 §3.1，
+/// 避免指定 workspace 时命中其它工作区的同名会话）。
 PooledWorkspaceSession? _findSession(
   WorkspaceSessionPoolManager manager,
-  String ref,
-) {
+  String ref, {
+  String? workspaceId,
+}) {
   final byId = manager.find(ref);
-  if (byId != null) return byId;
+  if (byId != null) {
+    if (workspaceId != null && byId.workspaceId != workspaceId) return null;
+    return byId;
+  }
   PooledWorkspaceSession? match;
   for (final s in manager.allSessions()) {
+    if (workspaceId != null && s.workspaceId != workspaceId) continue;
     if (s.name == ref &&
         (match == null || s.lastUsedAt.isAfter(match.lastUsedAt))) {
       match = s;
     }
   }
   return match;
+}
+
+/// `workspace` 参数存在时解析为工作区 ID（会话级工具的隔离边界），
+/// 未传时返回 null（不限定）。
+Future<String?> _scopedWorkspaceId(
+  Ref ref,
+  Map<String, Object?> args,
+) async {
+  if (optionalString(args, 'workspace') == null) return null;
+  return (await resolveWorkspace(ref, args)).workspace.id;
 }
 
 /// session 参数指向的会话不存在 → 以该名字自动新建（tmux new -A 语义）。
@@ -387,10 +408,14 @@ Future<McpToolResult> _sessionList(
   });
 }
 
-McpToolResult _sessionOutput(Ref ref, Map<String, Object?> args) {
+Future<McpToolResult> _sessionOutput(
+  Ref ref,
+  Map<String, Object?> args,
+) async {
   final sessionId = requireString(args, 'session_id');
-  final session =
-      ref.read(workspaceSessionPoolManagerProvider).find(sessionId);
+  final scope = await _scopedWorkspaceId(ref, args);
+  var session = ref.read(workspaceSessionPoolManagerProvider).find(sessionId);
+  if (scope != null && session?.workspaceId != scope) session = null;
   if (session == null) {
     return fileEditorError(
       '没有找到会话 $sessionId（可用 terminal_session action=list 查看）',
@@ -406,10 +431,14 @@ McpToolResult _sessionOutput(Ref ref, Map<String, Object?> args) {
 }
 
 /// 往长驻会话的运行中进程写 stdin（交互式程序输入，设计稿 §3.4）。
-McpToolResult _sessionWrite(Ref ref, Map<String, Object?> args) {
+Future<McpToolResult> _sessionWrite(
+  Ref ref,
+  Map<String, Object?> args,
+) async {
   final sessionId = requireString(args, 'session_id');
-  final session =
-      ref.read(workspaceSessionPoolManagerProvider).find(sessionId);
+  final scope = await _scopedWorkspaceId(ref, args);
+  var session = ref.read(workspaceSessionPoolManagerProvider).find(sessionId);
+  if (scope != null && session?.workspaceId != scope) session = null;
   if (session == null) {
     return fileEditorError(
       '没有找到会话 $sessionId（可用 terminal_session action=list 查看）',
