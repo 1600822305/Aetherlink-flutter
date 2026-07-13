@@ -319,6 +319,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                           // chip 实时显示选中项而非任务创建时的快照。
                           label:
                               '${ref.watch(appCurrentModelProvider).value?.model.name ?? '选择模型'} ▾',
+                          maxWidth: 150,
                           onTap: () {
                             FocusManager.instance.primaryFocus?.unfocus();
                             showAppModelSelectorDialog(context);
@@ -421,6 +422,7 @@ class _Chip extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.color,
+    this.maxWidth,
   });
 
   final IconData icon;
@@ -430,11 +432,14 @@ class _Chip extends StatelessWidget {
   /// 非空时用作醒目强调色（如 auto 模式的琥珀色）。
   final Color? color;
 
+  /// 非空时限制 chip 总宽，超长标签省略号截断（如模型名）。
+  final double? maxWidth;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    return Material(
+    final chip = Material(
       color: color?.withValues(alpha: 0.14) ??
           cs.onSurface.withValues(alpha: 0.05),
       borderRadius: BorderRadius.circular(8),
@@ -449,17 +454,27 @@ class _Chip extends StatelessWidget {
               Icon(icon, size: 13,
                   color: color ?? cs.onSurface.withValues(alpha: 0.7)),
               const SizedBox(width: 4),
-              Text(
-                label,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: color ?? cs.onSurface.withValues(alpha: 0.8),
-                  fontWeight: FontWeight.w600,
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: color ?? cs.onSurface.withValues(alpha: 0.8),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
           ),
         ),
       ),
+    );
+    final limit = maxWidth;
+    if (limit == null) return chip;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: limit),
+      child: chip,
     );
   }
 }
