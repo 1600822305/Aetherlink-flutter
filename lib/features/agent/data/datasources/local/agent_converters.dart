@@ -120,9 +120,20 @@ String agentEventKind(AgentEvent event) => switch (event) {
 
 String encodeAgentEventPayload(AgentEvent event) {
   final payload = switch (event) {
-    UserMessageEvent(:final text, :final queued) => {
+    UserMessageEvent(:final text, :final queued, :final attachments) => {
         'text': text,
         'queued': queued,
+        if (attachments.isNotEmpty)
+          'attachments': [
+            for (final a in attachments)
+              {
+                'kind': a.kind.name,
+                'name': a.name,
+                if (a.text != null) 'text': a.text,
+                if (a.mimeType != null) 'mimeType': a.mimeType,
+                if (a.base64Data != null) 'base64Data': a.base64Data,
+              },
+          ],
       },
     UserQuestionEvent(:final question, :final options) => {
         'question': question,
@@ -186,12 +197,27 @@ AgentEvent decodeAgentEvent({
   final p = jsonDecode(payloadJson) as Map<String, dynamic>;
   switch (kind) {
     case 'user_message':
+      final attachments = [
+        for (final raw in p['attachments'] as List<dynamic>? ?? const [])
+          if (raw is Map<String, dynamic>)
+            AgentUserAttachment(
+              kind: AgentAttachmentKind.values
+                      .where((k) => k.name == raw['kind'])
+                      .firstOrNull ??
+                  AgentAttachmentKind.snippet,
+              name: raw['name'] as String? ?? '',
+              text: raw['text'] as String?,
+              mimeType: raw['mimeType'] as String?,
+              base64Data: raw['base64Data'] as String?,
+            ),
+      ];
       return UserMessageEvent(
         id: id,
         seq: seq,
         at: at,
         text: p['text'] as String? ?? '',
         queued: p['queued'] as bool? ?? false,
+        attachments: attachments,
       );
     case 'user_question':
       return UserQuestionEvent(

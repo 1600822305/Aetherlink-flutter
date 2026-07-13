@@ -28,6 +28,7 @@ import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.d
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_cancel_token.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_content_image.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
@@ -452,7 +453,11 @@ List<LlmMessage> _replayMessages(List<AgentEvent> events) {
     switch (event) {
       case UserMessageEvent():
         messages.add(
-          LlmMessage(role: MessageRole.user, content: event.text),
+          LlmMessage(
+            role: MessageRole.user,
+            content: _userMessageContent(event),
+            images: _userMessageImages(event),
+          ),
         );
       case UserQuestionEvent():
         messages.add(
@@ -505,6 +510,30 @@ List<LlmMessage> _replayMessages(List<AgentEvent> events) {
     }
   }
   return messages;
+}
+
+/// 用户消息正文：文本类附件（文件片段/引用）以标记段落拼在
+/// 正文之后，模型无需再发一轮读文件工具。
+String _userMessageContent(UserMessageEvent event) {
+  final parts = [event.text];
+  for (final a in event.attachments) {
+    final text = a.text;
+    if (text == null || text.isEmpty) continue;
+    parts.add('[附件 ${a.name}]\n$text');
+  }
+  return parts.join('\n\n');
+}
+
+List<LlmContentImage>? _userMessageImages(UserMessageEvent event) {
+  final images = [
+    for (final a in event.attachments)
+      if (a.kind == AgentAttachmentKind.image && a.base64Data != null)
+        LlmContentImage(
+          mimeType: a.mimeType ?? 'image/jpeg',
+          base64Data: a.base64Data!,
+        ),
+  ];
+  return images.isEmpty ? null : images;
 }
 
 /// 压缩输入的纯文本转录（单条详情截断，控制摘要调用成本）。

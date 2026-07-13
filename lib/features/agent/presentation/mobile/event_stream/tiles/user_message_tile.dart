@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 
@@ -42,9 +45,73 @@ class UserMessageTile extends StatelessWidget {
                   ),
                 ),
               Text(event.text, style: theme.textTheme.bodyMedium),
+              if (event.attachments.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    alignment: WrapAlignment.end,
+                    children: [
+                      for (final a in event.attachments)
+                        if (a.kind == AgentAttachmentKind.image &&
+                            a.base64Data != null)
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: Image.memory(
+                              base64Decode(a.base64Data!),
+                              width: 120,
+                              height: 120,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  _chip(theme, a),
+                            ),
+                          )
+                        else
+                          _chip(theme, a),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _chip(ThemeData theme, AgentUserAttachment a) {
+    final cs = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: cs.onSurface.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            switch (a.kind) {
+              AgentAttachmentKind.image => LucideIcons.image,
+              AgentAttachmentKind.file => LucideIcons.fileText,
+              AgentAttachmentKind.snippet => LucideIcons.quote,
+            },
+            size: 13,
+            color: cs.onSurface.withValues(alpha: 0.7),
+          ),
+          const SizedBox(width: 4),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 180),
+            child: Text(
+              a.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: cs.onSurface.withValues(alpha: 0.8),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -26,6 +26,39 @@ sealed class AgentEvent {
   final DateTime at;
 }
 
+/// 用户消息附件种类（输入栏＋菜单 / @ 引用注入）。
+enum AgentAttachmentKind {
+  /// 图片：base64 随多模态请求发送。
+  image,
+
+  /// 文件文本片段（工作区 @ 引用 / 设备文件）。
+  file,
+
+  /// 即时引用片段（Diff 改动清单、终端输出等）。
+  snippet,
+}
+
+/// 用户消息附件：文本类附件走 [text]（随消息拼进上下文），
+/// 图片走 [base64Data] + [mimeType]（多模态图片分部分）。
+class AgentUserAttachment {
+  const AgentUserAttachment({
+    required this.kind,
+    required this.name,
+    this.text,
+    this.mimeType,
+    this.base64Data,
+  });
+
+  final AgentAttachmentKind kind;
+
+  /// 展示名（文件相对路径 / 图片文件名 / 引用标题）。
+  final String name;
+
+  final String? text;
+  final String? mimeType;
+  final String? base64Data;
+}
+
 /// 用户指令（含排队追加的指令与附件）。
 class UserMessageEvent extends AgentEvent {
   const UserMessageEvent({
@@ -34,12 +67,15 @@ class UserMessageEvent extends AgentEvent {
     required super.at,
     required this.text,
     this.queued = false,
+    this.attachments = const [],
   });
 
   final String text;
 
   /// true = 执行中排队注入的追加指令（事件流回显"已排队"态）。
   final bool queued;
+
+  final List<AgentUserAttachment> attachments;
 }
 
 /// ask_user 提问（引擎控制工具落地）：问题 + 可选的预设选项，

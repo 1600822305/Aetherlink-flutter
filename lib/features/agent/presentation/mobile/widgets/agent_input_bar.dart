@@ -6,7 +6,9 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/model_selector_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
+import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_attachment_menu.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
 
 /// 底部输入区（UI 稿输入区，已拍板）：与普通聊天输入框同款视觉——
@@ -28,13 +30,26 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
   final TextEditingController _controller = TextEditingController();
   bool _hasText = false;
   late AgentSessionMode _mode = widget.task?.mode ?? AgentSessionMode.code;
+  final List<AgentUserAttachment> _attachments = [];
+  String _lastText = '';
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(() {
-      final has = _controller.text.trim().isNotEmpty;
+      final text = _controller.text;
+      final has = text.trim().isNotEmpty || _attachments.isNotEmpty;
       if (has != _hasText) setState(() => _hasText = has);
+      // 刚敲出一个 @（光标处新增字符）→ 弹工作区文件搜索浮层。
+      if (text.length == _lastText.length + 1) {
+        final sel = _controller.selection;
+        if (sel.isCollapsed &&
+            sel.baseOffset > 0 &&
+            text[sel.baseOffset - 1] == '@') {
+          _onAtTyped(sel.baseOffset);
+        }
+      }
+      _lastText = text;
     });
   }
 
@@ -54,13 +69,73 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
     super.dispose();
   }
 
+  String? get _workspaceId {
+    final task = widget.task;
+    if (task != null) return task.workspaceId;
+    final profileId = ref.read(selectedAgentProfileIdProvider);
+    return ref
+        .read(agentProfilesProvider)
+        .where((p) => p.id == profileId)
+        .firstOrNull
+        ?.workspaceId;
+  }
+
+  void _addAttachment(AgentUserAttachment? attachment) {
+    if (attachment == null) return;
+    setState(() {
+      _attachments.add(attachment);
+      _hasText = true;
+    });
+  }
+
+  Future<void> _onAttachmentPressed() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final attachment = await showAgentAttachmentMenu(
+      context,
+      ref,
+      workspaceId: _workspaceId,
+    );
+    _addAttachment(attachment);
+  }
+
+  /// 输入框内敲 @：弹工作区文件搜索，选中后把相对路径接在 @ 后，
+  /// 并把文件内容作为附件随消息发送。
+  Future<void> _onAtTyped(int atEnd) async {
+    final attachment = await showAgentWorkspaceFilePicker(
+      context,
+      ref,
+      workspaceId: _workspaceId,
+    );
+    if (attachment == null) return;
+    final text = _controller.text;
+    if (atEnd <= text.length && atEnd > 0 && text[atEnd - 1] == '@') {
+      final inserted = '${attachment.name} ';
+      _controller.value = TextEditingValue(
+        text: text.replaceRange(atEnd, atEnd, inserted),
+        selection:
+            TextSelection.collapsed(offset: atEnd + inserted.length),
+      );
+    }
+    _addAttachment(attachment);
+  }
+
   /// 有文字：任务执行中发送不直接发——弹三选面板（排队/立即打断并
   /// 发送/继续编辑）；草稿态/非执行中任务直接发。
   Future<void> _onSendPressed() async {
     final task = widget.task;
-    final text = _controller.text.trim();
-    if (text.isEmpty) return;
+    var text = _controller.text.trim();
+    final attachments = List<AgentUserAttachment>.unmodifiable(_attachments);
+    if (text.isEmpty && attachments.isEmpty) return;
+    if (text.isEmpty) text = '请查看附件';
     final runner = ref.read(agentTaskRunnerProvider.notifier);
+
+    void clearInput() {
+      _controller.clear();
+      setState(() {
+        _attachments.clear();
+        _hasText = false;
+      });
+    }
 
     if (task == null) {
       // 草稿态：发第一条消息 = 创建任务 + 启动引擎。
@@ -70,17 +145,17 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
           .where((p) => p.id == profileId)
           .firstOrNull;
       if (profile == null) return;
-      _controller.clear();
+      clearInput();
       final created = await runner.startNewTask(
-          profile: profile, text: text, mode: _mode);
+          profile: profile, text: text, mode: _mode, attachments: attachments);
       ref.read(selectedAgentTaskIdProvider.notifier).select(created.id);
       return;
     }
 
     if (task.status == AgentTaskStatus.draft) {
       // 空白草稿话题：发第一条消息 = 定标题 + 启动引擎。
-      _controller.clear();
-      await runner.startDraft(task, text, mode: _mode);
+      clearInput();
+      await runner.startDraft(task, text, mode: _mode, attachments: attachments);
       return;
     }
 
@@ -89,8 +164,8 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
     if (!executing) {
       // paused/waitingInput/done/failed/cancelled：落消息并续跑（带上
       // chips 当前模式，中途切模式在这里生效）。
-      _controller.clear();
-      await runner.sendMessage(task, text, mode: _mode);
+      clearInput();
+      await runner.sendMessage(task, text, mode: _mode, attachments: attachments);
       return;
     }
     final action = await showModalBottomSheet<String>(
@@ -122,11 +197,12 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       ),
     );
     if (action == 'queue') {
-      _controller.clear();
-      await runner.sendMessage(task, text, queued: true);
+      clearInput();
+      await runner.sendMessage(task, text,
+          queued: true, attachments: attachments);
     } else if (action == 'interrupt') {
-      _controller.clear();
-      await runner.interruptAndSend(task, text);
+      clearInput();
+      await runner.interruptAndSend(task, text, attachments: attachments);
     }
   }
 
@@ -262,6 +338,47 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // 已选附件 chips（可删）。
+              if (_attachments.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, top: 4),
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      for (var i = 0; i < _attachments.length; i++)
+                        InputChip(
+                          avatar: Icon(
+                            switch (_attachments[i].kind) {
+                              AgentAttachmentKind.image =>
+                                LucideIcons.image,
+                              AgentAttachmentKind.file =>
+                                LucideIcons.fileText,
+                              AgentAttachmentKind.snippet =>
+                                LucideIcons.quote,
+                            },
+                            size: 14,
+                          ),
+                          label: ConstrainedBox(
+                            constraints:
+                                const BoxConstraints(maxWidth: 160),
+                            child: Text(
+                              _attachments[i].name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelSmall,
+                            ),
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          onDeleted: () => setState(() {
+                            _attachments.removeAt(i);
+                            _hasText = _controller.text.trim().isNotEmpty ||
+                                _attachments.isNotEmpty;
+                          }),
+                        ),
+                    ],
+                  ),
+                ),
               // 上层：无边框文本区域。
               Padding(
                 padding: const EdgeInsets.only(left: 8, right: 2),
@@ -293,8 +410,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          // TODO(agent): 附件面板（图片/文件/引用工作区文件）
-                          onPressed: () {},
+                          onPressed: _onAttachmentPressed,
                           icon: const Icon(LucideIcons.plus, size: 18),
                           padding: const EdgeInsets.all(6),
                           visualDensity: VisualDensity.compact,

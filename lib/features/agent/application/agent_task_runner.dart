@@ -77,6 +77,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     AgentTask task,
     String text, {
     required AgentSessionMode mode,
+    List<AgentUserAttachment> attachments = const [],
   }) async {
     final updated = task.copyWith(
       title: _titleFrom(text),
@@ -87,7 +88,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     );
     await ref.read(agentTasksProvider.notifier).apply(updated);
     await _checkpoint(updated, text);
-    await _store().appendUserMessage(updated.id, text);
+    await _store()
+        .appendUserMessage(updated.id, text, attachments: attachments);
     _run(updated);
   }
 
@@ -96,6 +98,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     required AgentProfile profile,
     required String text,
     required AgentSessionMode mode,
+    List<AgentUserAttachment> attachments = const [],
   }) async {
     final now = DateTime.now();
     final task = AgentTask(
@@ -114,7 +117,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     );
     await ref.read(agentTasksProvider.notifier).apply(task);
     await _checkpoint(task, text);
-    await _store().appendUserMessage(task.id, text);
+    await _store().appendUserMessage(task.id, text, attachments: attachments);
     _run(task);
     return task;
   }
@@ -126,6 +129,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     String text, {
     bool queued = false,
     AgentSessionMode? mode,
+    List<AgentUserAttachment> attachments = const [],
   }) async {
     if (!queued && mode != null && mode != task.mode) {
       await _store().appendStatusChange(
@@ -136,7 +140,12 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     if (!queued) {
       await _checkpoint(task.copyWith(mode: mode), text);
     }
-    await _store().appendUserMessage(task.id, text, queued: queued);
+    await _store().appendUserMessage(
+      task.id,
+      text,
+      queued: queued,
+      attachments: attachments,
+    );
     if (!queued) {
       final updated = task.copyWith(
         status: AgentTaskStatus.running,
@@ -151,8 +160,17 @@ class AgentTaskRunner extends _$AgentTaskRunner {
 
   /// 立即打断并发送：排队消息 + 打断当前执行（LLM 流/工具/审批挂起
   /// 都生效），循环继续，下一个安全点先消费排队消息。
-  Future<void> interruptAndSend(AgentTask task, String text) async {
-    await _store().appendUserMessage(task.id, text, queued: true);
+  Future<void> interruptAndSend(
+    AgentTask task,
+    String text, {
+    List<AgentUserAttachment> attachments = const [],
+  }) async {
+    await _store().appendUserMessage(
+      task.id,
+      text,
+      queued: true,
+      attachments: attachments,
+    );
     _tokens[task.id]?.requestToolInterrupt();
     // waitingApproval 时引擎阻塞在审批挂起，不消费打断标记：
     // 把挂起审批按拒绝回填让循环继续，否则消息会一直排队

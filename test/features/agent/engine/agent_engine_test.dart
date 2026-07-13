@@ -49,6 +49,7 @@ class InMemoryAgentEventStore implements AgentEventStore {
     String taskId,
     String text, {
     bool queued = false,
+    List<AgentUserAttachment> attachments = const [],
   }) async {
     final event = UserMessageEvent(
       id: _newId(),
@@ -56,6 +57,7 @@ class InMemoryAgentEventStore implements AgentEventStore {
       at: DateTime.now(),
       text: text,
       queued: queued,
+      attachments: attachments,
     );
     _upsert(taskId, event);
     return event;

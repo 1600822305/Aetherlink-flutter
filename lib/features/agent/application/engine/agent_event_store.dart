@@ -12,6 +12,7 @@ abstract class AgentEventStore {
     String taskId,
     String text, {
     bool queued = false,
+    List<AgentUserAttachment> attachments = const [],
   });
 
   /// 安全点消费排队消息：queued=true → false，正式进上下文（L3）。
@@ -134,6 +135,7 @@ class DriftAgentEventStore implements AgentEventStore {
     String taskId,
     String text, {
     bool queued = false,
+    List<AgentUserAttachment> attachments = const [],
   }) async {
     final event = UserMessageEvent(
       id: _newId('um'),
@@ -141,6 +143,7 @@ class DriftAgentEventStore implements AgentEventStore {
       at: DateTime.now(),
       text: text,
       queued: queued,
+      attachments: attachments,
     );
     await _dao.upsertEvents(taskId, [event]);
     return event;
