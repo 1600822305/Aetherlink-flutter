@@ -7,6 +7,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/agent_subagent_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
@@ -34,6 +35,7 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_back
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
+import 'package:aetherlink_flutter/shared/domain/skill.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
@@ -284,8 +286,30 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
       '平台：${Platform.operatingSystem}',
       if (workspace != null) workspace,
       '可用工具：$toolNames',
+      ...await _skillsSection(ref),
       ...await _customSubagentsSection(ref),
     ].join('\n');
+  }
+
+  /// 已启用技能清单：read_skill 可读的技能名 + 一句话描述，
+  /// 模型按需读取正文（决策 29 skills 联动 / 决策 30）。
+  Future<List<String>> _skillsSection(Ref ref) async {
+    if (!_definitions.any((d) => d.name == kReadSkillToolName)) {
+      return const [];
+    }
+    List<Skill> skills;
+    try {
+      skills = await ref.read(skillsProvider.future);
+    } catch (_) {
+      return const [];
+    }
+    final enabled = skills.where((s) => s.enabled).toList();
+    if (enabled.isEmpty) return const [];
+    return [
+      '可用技能（read_skill 按名称读取正文）：',
+      for (final s in enabled)
+        '- ${s.name}${s.description.isNotEmpty ? '：${_truncate(s.description)}' : ''}',
+    ];
   }
 
   /// 自定义子代理档案清单（工作区 .aetherlink/agents / .cursor/agents 的

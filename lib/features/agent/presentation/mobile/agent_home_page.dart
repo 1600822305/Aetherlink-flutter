@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/features/agent/application/agent_providers.da
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_profile_edit_page.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_skills_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_task_shell.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/agent_sidebar.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_input_bar.dart';
@@ -77,6 +78,36 @@ class AgentHomePage extends ConsumerWidget {
                   AgentStatusLine(task: task),
                 ],
               ),
+        // 三点下拉菜单（决策 30）：智能体专属能力入口。当前只有
+        // 「技能」，记忆/MCP/工作流/rules 后续逐项加入。
+        actions: [
+          PopupMenuButton<String>(
+            tooltip: '更多',
+            icon: const Icon(LucideIcons.ellipsisVertical, size: 20),
+            position: PopupMenuPosition.under,
+            onSelected: (value) {
+              if (value == 'skills') showAgentSkillsPage(context);
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'skills',
+                child: Row(
+                  children: [
+                    Icon(
+                      LucideIcons.sparkles,
+                      size: 16,
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: 0.7,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text('技能'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
       body: task != null && task.status != AgentTaskStatus.draft
           ? AgentTaskShell(task: task)

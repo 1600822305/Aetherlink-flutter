@@ -13,4 +13,4 @@
 library;
 
 export 'package:aetherlink_flutter/features/settings/application/skills_controller.dart'
-    show Skills, skillsProvider;
+    show Skills, skillsProvider, kMaxEnabledSkills;
