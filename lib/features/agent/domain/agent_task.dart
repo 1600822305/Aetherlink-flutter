@@ -52,6 +52,7 @@ class AgentTask {
     this.elapsed = Duration.zero,
     this.lastEventSummary = '',
     this.parentTaskId = '',
+    this.pinned = false,
   });
 
   final String id;
@@ -86,6 +87,9 @@ class AgentTask {
   /// 只通过父时间线的子任务行展开查看。
   final String parentTaskId;
 
+  /// 固定在侧栏话题列表顶部（对齐聊天话题的固定语义）。
+  final bool pinned;
+
   bool get isSubtask => parentTaskId.isNotEmpty;
 
   bool get isActive =>
@@ -105,6 +109,7 @@ class AgentTask {
     int? contextTokens,
     Duration? elapsed,
     String? lastEventSummary,
+    bool? pinned,
   }) {
     return AgentTask(
       id: id,
@@ -123,6 +128,7 @@ class AgentTask {
       elapsed: elapsed ?? this.elapsed,
       lastEventSummary: lastEventSummary ?? this.lastEventSummary,
       parentTaskId: parentTaskId,
+      pinned: pinned ?? this.pinned,
     );
   }
 }

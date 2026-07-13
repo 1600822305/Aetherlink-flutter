@@ -76,6 +76,7 @@ class AgentTaskConverter extends TypeConverter<AgentTask, String> {
       elapsed: Duration(milliseconds: json['elapsedMs'] as int? ?? 0),
       lastEventSummary: json['lastEventSummary'] as String? ?? '',
       parentTaskId: json['parentTaskId'] as String? ?? '',
+      pinned: json['pinned'] as bool? ?? false,
     );
   }
 
@@ -97,6 +98,7 @@ class AgentTaskConverter extends TypeConverter<AgentTask, String> {
         'elapsedMs': value.elapsed.inMilliseconds,
         'lastEventSummary': value.lastEventSummary,
         'parentTaskId': value.parentTaskId,
+        'pinned': value.pinned,
       });
 }
 
@@ -106,6 +108,7 @@ class AgentTaskConverter extends TypeConverter<AgentTask, String> {
 
 String agentEventKind(AgentEvent event) => switch (event) {
       UserMessageEvent() => 'user_message',
+      UserQuestionEvent() => 'user_question',
       AssistantTextEvent() => 'assistant_text',
       ReasoningEvent() => 'reasoning',
       ToolCallEvent() => 'tool_call',
@@ -120,6 +123,10 @@ String encodeAgentEventPayload(AgentEvent event) {
     UserMessageEvent(:final text, :final queued) => {
         'text': text,
         'queued': queued,
+      },
+    UserQuestionEvent(:final question, :final options) => {
+        'question': question,
+        'options': options,
       },
     AssistantTextEvent(:final text, :final streaming) => {
         'text': text,
@@ -185,6 +192,17 @@ AgentEvent decodeAgentEvent({
         at: at,
         text: p['text'] as String? ?? '',
         queued: p['queued'] as bool? ?? false,
+      );
+    case 'user_question':
+      return UserQuestionEvent(
+        id: id,
+        seq: seq,
+        at: at,
+        question: p['question'] as String? ?? '',
+        options: [
+          for (final o in (p['options'] as List<dynamic>? ?? const []))
+            o as String,
+        ],
       );
     case 'assistant_text':
       return AssistantTextEvent(

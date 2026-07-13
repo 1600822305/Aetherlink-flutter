@@ -2,6 +2,8 @@
 // 样式对齐聊天侧边栏的 SidebarTabHeader / SidebarPillButton（复制实现，
 // 不 import chat 内部）。
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -78,6 +80,151 @@ class AgentSidebarPillButton extends StatelessWidget {
         minimumSize: Size.zero,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+}
+
+/// 紧凑弱化图标按钮（对齐聊天 `SidebarMutedIconButton`）：
+/// `box` = 方形点击区，`size` = 图标字形。
+class AgentSidebarMutedIconButton extends StatelessWidget {
+  const AgentSidebarMutedIconButton({
+    super.key,
+    required this.icon,
+    required this.size,
+    required this.box,
+    this.color = kAgentSidebarMutedIcon,
+    this.onPressed,
+  });
+
+  final IconData icon;
+  final double size;
+  final double box;
+  final Color color;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onPressed ?? () {},
+      iconSize: size,
+      color: color,
+      padding: EdgeInsets.all((box - size) / 2),
+      constraints: BoxConstraints.tightFor(width: box, height: box),
+      splashRadius: box / 2,
+      icon: Icon(icon),
+    );
+  }
+}
+
+/// 话题 tab 的搜索框（对齐聊天 `SidebarSearchField`）：40px 高、
+/// radius 8、前置搜索图标。
+class AgentSidebarSearchField extends StatelessWidget {
+  const AgentSidebarSearchField({
+    super.key,
+    required this.controller,
+    required this.hint,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final String hint;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+      child: TextField(
+        controller: controller,
+        autofocus: true,
+        onChanged: onChanged,
+        style: const TextStyle(fontSize: 14, height: 1.43),
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: hint,
+          prefixIcon: const Icon(LucideIcons.search, size: 18),
+          prefixIconConstraints: const BoxConstraints(minWidth: 40),
+          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: theme.dividerColor),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: theme.dividerColor),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 话题删除按钮：两次点击确认（1.5s 超时，对齐聊天
+/// `SidebarConfirmDeleteButton`）。确认态变红色警告图标。
+class AgentSidebarConfirmDeleteButton extends StatefulWidget {
+  const AgentSidebarConfirmDeleteButton({
+    super.key,
+    required this.size,
+    required this.box,
+    required this.color,
+    required this.onConfirm,
+  });
+
+  final double size;
+  final double box;
+  final Color color;
+  final VoidCallback onConfirm;
+
+  @override
+  State<AgentSidebarConfirmDeleteButton> createState() =>
+      _AgentConfirmDeleteButtonState();
+}
+
+class _AgentConfirmDeleteButtonState
+    extends State<AgentSidebarConfirmDeleteButton> {
+  bool _pending = false;
+  Timer? _timer;
+
+  void _handleTap() {
+    if (_pending) {
+      _reset();
+      widget.onConfirm();
+    } else {
+      setState(() => _pending = true);
+      _timer = Timer(const Duration(milliseconds: 1500), _reset);
+    }
+  }
+
+  void _reset() {
+    _timer?.cancel();
+    _timer = null;
+    if (mounted) setState(() => _pending = false);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final danger = _pending;
+    return IconButton(
+      onPressed: _handleTap,
+      iconSize: widget.size,
+      color: danger ? kAgentSidebarDanger : widget.color,
+      padding: EdgeInsets.all((widget.box - widget.size) / 2),
+      constraints: BoxConstraints.tightFor(
+        width: widget.box,
+        height: widget.box,
+      ),
+      splashRadius: widget.box / 2,
+      icon: Opacity(
+        opacity: danger ? 1 : 0.6,
+        child: Icon(danger ? LucideIcons.alertTriangle : LucideIcons.trash),
       ),
     );
   }

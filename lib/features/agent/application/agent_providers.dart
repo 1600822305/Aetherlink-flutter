@@ -129,6 +129,18 @@ class AgentTasks extends _$AgentTasks {
     }
   }
 
+  /// 固定/取消固定（对齐聊天 TopicsController.togglePin），写穿到库。
+  void togglePin(String taskId) {
+    state = [
+      for (final t in state)
+        if (t.id == taskId) t.copyWith(pinned: !t.pinned) else t,
+    ];
+    final toggled = state.where((t) => t.id == taskId).firstOrNull;
+    if (toggled != null) {
+      ref.read(agentDaoProvider).upsertTask(toggled);
+    }
+  }
+
   /// 删话题级联删其派生的子任务（子代理隐藏话题）。
   void remove(String taskId) {
     final childIds = [

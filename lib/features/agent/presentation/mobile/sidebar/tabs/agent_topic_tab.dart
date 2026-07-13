@@ -1,6 +1,6 @@
 // 话题 tab：当前智能体的话题单一列表（开头状态灯区分进行中/完成）
-// + 新建话题（参考聊天侧边栏话题 tab 架构）。已完成的话题也能继续
-// 发新指令。
+// + 搜索 / 固定 / 新建话题（对齐聊天侧边栏话题 tab 架构）。
+// 已完成的话题也能继续发新指令。
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,10 +14,35 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/wi
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 
-class AgentTopicTab extends ConsumerWidget {
+class AgentTopicTab extends ConsumerStatefulWidget {
   const AgentTopicTab({super.key});
 
-  void _openTask(BuildContext context, WidgetRef ref, String taskId) {
+  @override
+  ConsumerState<AgentTopicTab> createState() => _AgentTopicTabState();
+}
+
+class _AgentTopicTabState extends ConsumerState<AgentTopicTab> {
+  final TextEditingController _searchController = TextEditingController();
+  bool _searchOpen = false;
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _searchOpen = !_searchOpen;
+      if (!_searchOpen) {
+        _searchController.clear();
+        _query = '';
+      }
+    });
+  }
+
+  void _openTask(String taskId) {
     Haptics.instance.onListItem();
     ref.read(selectedAgentTaskIdProvider.notifier).select(taskId);
     Navigator.of(context).pop();
@@ -26,12 +51,7 @@ class AgentTopicTab extends ConsumerWidget {
   /// 新建话题（对齐聊天 TopicsController.create）：立即创建一条空白
   /// 草稿话题并选中，列表按最近活跃排序自然浮到顶部；当前已有
   /// 空白草稿时直接复用，不堆重复空话题。
-  Future<void> _createTopic(
-    BuildContext context,
-    WidgetRef ref,
-    AgentProfile profile,
-    List<AgentTask> tasks,
-  ) async {
+  Future<void> _createTopic(AgentProfile profile, List<AgentTask> tasks) async {
     final navigator = Navigator.of(context);
     final existingDraft = tasks
         .where((t) => t.status == AgentTaskStatus.draft)
@@ -46,7 +66,7 @@ class AgentTopicTab extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final profiles = ref.watch(agentProfilesProvider);
@@ -66,48 +86,71 @@ class AgentTopicTab extends ConsumerWidget {
         ),
       );
     }
-    // 与聊天话题 tab 同款排序：按最近活跃（updatedAt）降序，
-    // 新建/刚活跃的话题自然浮在顶部。
+    // 与聊天话题 tab 同款排序：固定的话题置顶，其余按最近活跃
+    // （updatedAt）降序，新建/刚活跃的话题自然浮在顶部。
     final tasks = ref
         .watch(agentTasksProvider)
         .where((t) => t.profileId == profile.id && !t.isSubtask)
         .toList()
-      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      ..sort((a, b) {
+        if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
+        return b.updatedAt.compareTo(a.updatedAt);
+      });
+
+    final query = _query.trim().toLowerCase();
+    final searching = query.isNotEmpty;
+    final visible = searching
+        ? tasks.where((t) => t.title.toLowerCase().contains(query)).toList()
+        : tasks;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // 标头 + 胶囊新建按钮（与聊天话题 tab 同款布局）。
+        // 标头 + 搜索开关 + 胶囊新建按钮（与聊天话题 tab 同款布局）。
         Padding(
           padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
           child: AgentSidebarTabHeader(
             title: '${profile.emoji} ${profile.name}',
             trailing: [
+              AgentSidebarMutedIconButton(
+                icon: LucideIcons.search,
+                size: 18,
+                box: 28,
+                color: _searchOpen ? cs.primary : kAgentSidebarMutedIcon,
+                onPressed: _toggleSearch,
+              ),
+              const SizedBox(width: 8),
               AgentSidebarPillButton(
                 icon: LucideIcons.plus,
                 label: '新建话题',
                 // 对齐聊天：立即创建空白草稿话题并选中（发第一条消息
                 // 才启动任务）；工作区继承自当前智能体，不单独选。
-                onPressed: () => _createTopic(context, ref, profile, tasks),
+                onPressed: () => _createTopic(profile, tasks),
               ),
             ],
           ),
         ),
+        if (_searchOpen)
+          AgentSidebarSearchField(
+            controller: _searchController,
+            hint: '搜索话题...',
+            onChanged: (v) => setState(() => _query = v),
+          ),
         Expanded(
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             children: [
-              for (final t in tasks)
+              for (final t in visible)
                 _TaskCard(
                   task: t,
                   selected: t.id == selectedTaskId,
-                  onTap: () => _openTask(context, ref, t.id),
+                  onTap: () => _openTask(t.id),
                 ),
-              if (tasks.isEmpty)
+              if (visible.isEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 32),
                   child: Text(
-                    '还没有话题，点右上角 + 新建',
+                    searching ? '没有找到话题' : '还没有话题，点右上角 + 新建',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: cs.onSurface.withValues(alpha: 0.5),
@@ -132,10 +175,11 @@ class AgentTopicTab extends ConsumerWidget {
   }
 }
 
-enum _TaskMenu { rename, delete }
+enum _TaskMenu { rename, togglePin, delete }
 
-/// 话题卡：状态色点 + 标题 + 工作区 chip（UI 稿 §三）
-/// + 右侧「更多」菜单（重命名/删除，对齐聊天话题项）。
+/// 话题卡：状态色点 + 标题 + 最近事件摘要 + 工作区 chip + 活跃时间
+/// （UI 稿 §三）+ 右侧「更多」菜单（重命名/固定/删除）
+/// + 两击确认快速删除（对齐聊天话题项）。
 class _TaskCard extends ConsumerWidget {
   const _TaskCard({
     required this.task,
@@ -163,19 +207,23 @@ class _TaskCard extends ConsumerWidget {
         if (title != null) {
           ref.read(agentTasksProvider.notifier).rename(task.id, title);
         }
+      case _TaskMenu.togglePin:
+        ref.read(agentTasksProvider.notifier).togglePin(task.id);
       case _TaskMenu.delete:
         final ok = await agentConfirmDialog(
           context,
           title: '删除话题',
           message: '确定要删除此话题吗？此操作不可撤销。',
         );
-        if (ok) {
-          if (ref.read(selectedAgentTaskIdProvider) == task.id) {
-            ref.read(selectedAgentTaskIdProvider.notifier).select(null);
-          }
-          ref.read(agentTasksProvider.notifier).remove(task.id);
-        }
+        if (ok) _delete(ref);
     }
+  }
+
+  void _delete(WidgetRef ref) {
+    if (ref.read(selectedAgentTaskIdProvider) == task.id) {
+      ref.read(selectedAgentTaskIdProvider.notifier).select(null);
+    }
+    ref.read(agentTasksProvider.notifier).remove(task.id);
   }
 
   @override
@@ -213,6 +261,14 @@ class _TaskCard extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
+                    if (task.pinned) ...[
+                      const Icon(
+                        LucideIcons.pin,
+                        size: 12,
+                        color: kAgentSidebarMutedIcon,
+                      ),
+                      const SizedBox(width: 4),
+                    ],
                     Expanded(
                       child: Text(
                         task.title,
@@ -237,13 +293,18 @@ class _TaskCard extends ConsumerWidget {
                       size: 16,
                       box: 20,
                       title: task.title,
-                      actions: const [
-                        AgentSidebarSheetAction(
+                      actions: [
+                        const AgentSidebarSheetAction(
                           _TaskMenu.rename,
                           LucideIcons.edit3,
                           '编辑话题',
                         ),
                         AgentSidebarSheetAction(
+                          _TaskMenu.togglePin,
+                          task.pinned ? LucideIcons.pinOff : LucideIcons.pin,
+                          task.pinned ? '取消固定' : '固定话题',
+                        ),
+                        const AgentSidebarSheetAction(
                           _TaskMenu.delete,
                           LucideIcons.trash,
                           '删除话题',
@@ -252,8 +313,31 @@ class _TaskCard extends ConsumerWidget {
                       ],
                       onSelected: (m) => _onMenu(context, ref, m),
                     ),
+                    const SizedBox(width: 2),
+                    // 两击变红即确认（对齐聊天 pendingDelete 交互），
+                    // 不再弹确认框。
+                    AgentSidebarConfirmDeleteButton(
+                      size: 16,
+                      box: 20,
+                      color: cs.onSurface,
+                      onConfirm: () => _delete(ref),
+                    ),
                   ],
                 ),
+                if (task.lastEventSummary.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 16),
+                    child: Text(
+                      task.lastEventSummary,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 6),
                 Row(
                   children: [
@@ -274,8 +358,18 @@ class _TaskCard extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '第${task.rounds}轮 · ${formatElapsed(task.elapsed)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: cs.onSurface.withValues(alpha: 0.45),
+                        ),
+                      ),
+                    ),
                     Text(
-                      '第${task.rounds}轮 · ${formatElapsed(task.elapsed)}',
+                      _formatTaskTime(task.updatedAt),
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: cs.onSurface.withValues(alpha: 0.45),
                       ),
@@ -289,4 +383,10 @@ class _TaskCard extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// `MM/DD HH:mm`（对齐聊天话题项的时间格式）。
+String _formatTaskTime(DateTime dt) {
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(dt.month)}/${two(dt.day)} ${two(dt.hour)}:${two(dt.minute)}';
 }
