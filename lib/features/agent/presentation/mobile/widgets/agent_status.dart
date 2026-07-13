@@ -101,8 +101,8 @@ class AgentStatusLine extends ConsumerWidget {
           const SizedBox(width: 5),
         ],
         Text(
-          '${agentStatusLabel(task.status)} · 第${task.rounds}轮 · '
-          '累计${formatTokens(task.tokenCount)}$contextInfo · '
+          '${agentStatusLabel(task.status)} · 第${task.rounds}轮'
+          '$contextInfo · '
           '${formatElapsed(task.elapsed)}',
           style: theme.textTheme.labelSmall?.copyWith(
             color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
