@@ -172,6 +172,7 @@ Stream<ComboStreamEvent> executeSequentialCombo({
       case LlmReasoningDelta(:final text):
         reasoning.write(text);
         yield ComboReasoningDelta(text);
+      case LlmToolCallDelta():
       case LlmToolCallChunk():
         break;
       case LlmDone():
@@ -218,6 +219,7 @@ Stream<ComboStreamEvent> executeSequentialCombo({
         yield ComboTextDelta(text);
       case LlmReasoningDelta(:final text):
         yield ComboTextDelta(text);
+      case LlmToolCallDelta():
       case LlmToolCallChunk():
         break;
       case LlmDone():

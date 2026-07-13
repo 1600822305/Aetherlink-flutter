@@ -82,6 +82,7 @@ class _TranslatePageState extends ConsumerState<TranslatePage> {
             setState(() => _output = buffer.toString());
           case LlmReasoningDelta():
             break;
+          case LlmToolCallDelta():
           case LlmToolCallChunk():
             break;
           case LlmDone():

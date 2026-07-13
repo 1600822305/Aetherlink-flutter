@@ -467,6 +467,8 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
                 thinking.write(text);
                 scheduleUpdate();
                 checkpoint();
+              case LlmToolCallDelta():
+                break;
               case LlmToolCallChunk(:final call):
                 committed = true;
                 if (thinking.isNotEmpty) thinkingEndAt ??= DateTime.now();

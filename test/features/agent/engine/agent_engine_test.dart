@@ -170,6 +170,8 @@ class InMemoryAgentEventStore implements AgentEventStore {
     String taskId,
     ToolCallEvent event, {
     required AgentToolCallState state,
+    String? argSummary,
+    String? argsDetail,
     String? resultSummary,
     String? resultDetail,
     String? resultOverflowPath,
@@ -180,11 +182,11 @@ class InMemoryAgentEventStore implements AgentEventStore {
       seq: event.seq,
       at: event.at,
       toolName: event.toolName,
-      argSummary: event.argSummary,
+      argSummary: argSummary ?? event.argSummary,
       state: state,
       resultSummary: resultSummary ?? event.resultSummary,
       elapsed: elapsed ?? event.elapsed,
-      argsDetail: event.argsDetail,
+      argsDetail: argsDetail ?? event.argsDetail,
       resultDetail: resultDetail ?? event.resultDetail,
       resultOverflowPath: resultOverflowPath ?? event.resultOverflowPath,
     );
@@ -278,7 +280,13 @@ class AlwaysFailingToolLlm implements AgentLlmClient {
     AgentLlmContext context, {
     void Function(String textSoFar)? onTextDelta,
     void Function(String reasoningSoFar)? onReasoningDelta,
-    Future<void> Function(AgentToolCallRequest call)? onToolCall,
+    Future<void> Function(
+      String streamKey,
+      String? toolName,
+      String argsTextSoFar,
+    )? onToolCallDelta,
+    Future<void> Function(AgentToolCallRequest call, String? streamKey)?
+        onToolCall,
     AgentCancellationToken? cancel,
   }) async {
     return AgentLlmTurn(
@@ -313,7 +321,13 @@ class BigOutputLlm implements AgentLlmClient {
     AgentLlmContext context, {
     void Function(String textSoFar)? onTextDelta,
     void Function(String reasoningSoFar)? onReasoningDelta,
-    Future<void> Function(AgentToolCallRequest call)? onToolCall,
+    Future<void> Function(
+      String streamKey,
+      String? toolName,
+      String argsTextSoFar,
+    )? onToolCallDelta,
+    Future<void> Function(AgentToolCallRequest call, String? streamKey)?
+        onToolCall,
     AgentCancellationToken? cancel,
   }) async {
     _round++;

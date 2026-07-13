@@ -155,10 +155,14 @@ class AnthropicAdapter implements LlmGateway {
               final partial = delta?['partial_json'];
               if (partial is String) {
                 final index = (json['index'] as num?)?.toInt() ?? 0;
-                toolCalls
-                    .putIfAbsent(index, _ToolCallBuilder.new)
-                    .arguments
-                    .write(partial);
+                final b = toolCalls.putIfAbsent(index, _ToolCallBuilder.new)
+                  ..arguments.write(partial);
+                yield LlmStreamChunk.toolCallDelta(
+                  key: 'anthropic-$index',
+                  id: b.id.isEmpty ? null : b.id,
+                  name: b.name.isEmpty ? null : b.name,
+                  argsTextSoFar: b.arguments.toString(),
+                );
               }
           }
         case 'message_delta':

@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/devin_diff_lines.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tool_detail_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_diff_view.dart';
 
@@ -151,8 +152,56 @@ String _readableResult(String raw) {
   return raw;
 }
 
+/// 从（可能未闭合的）参数 JSON 里提取 [key] 字符串值的已生成前缀，
+/// 用于工具参数仍在流式生成时的实时预览；找不到该字段返回 null。
+String? _partialStringField(String raw, String key) {
+  final marker = '"$key"';
+  var i = raw.indexOf(marker);
+  if (i < 0) return null;
+  i = raw.indexOf(':', i + marker.length);
+  if (i < 0) return null;
+  i = raw.indexOf('"', i + 1);
+  if (i < 0) return null;
+  final sb = StringBuffer();
+  var j = i + 1;
+  while (j < raw.length) {
+    final c = raw[j];
+    if (c == r'\') {
+      if (j + 1 >= raw.length) break; // 尾部未完成的转义序列
+      final n = raw[j + 1];
+      switch (n) {
+        case 'n':
+          sb.write('\n');
+        case 't':
+          sb.write('\t');
+        case 'r':
+          sb.write('\r');
+        case 'u':
+          if (j + 6 <= raw.length) {
+            final code =
+                int.tryParse(raw.substring(j + 2, j + 6), radix: 16);
+            if (code != null) sb.writeCharCode(code);
+            j += 4;
+          } else {
+            j = raw.length;
+          }
+        default:
+          sb.write(n);
+      }
+      j += 2;
+    } else if (c == '"') {
+      break;
+    } else {
+      sb.write(c);
+      j++;
+    }
+  }
+  return sb.toString();
+}
+
 /// 从 argsDetail（参数 JSON）里解析编辑类工具的 search/replace 对
 /// （单对或 edits 数组）；写入类工具的全文内容返回 (null, content)。
+/// 参数 JSON 未闭合（仍在流式生成）时按前缀提取，供实时预览。
 List<({String? search, String replace})> _editPairsOf(ToolCallEvent e) {
   final raw = e.argsDetail;
   if (raw == null || raw.isEmpty) return const [];
@@ -160,7 +209,12 @@ List<({String? search, String replace})> _editPairsOf(ToolCallEvent e) {
   try {
     decoded = jsonDecode(raw);
   } catch (_) {
-    return const [];
+    final search = _partialStringField(raw, 'search');
+    final replace = _partialStringField(raw, 'replace') ??
+        _partialStringField(raw, 'content') ??
+        _partialStringField(raw, 'file_text');
+    if (search == null && replace == null) return const [];
+    return [(search: search, replace: replace ?? '')];
   }
   if (decoded is! Map) return const [];
   final pairs = <({String? search, String replace})>[];
@@ -280,27 +334,28 @@ class _ToolFocus extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final cs = theme.colorScheme;
     final (label, color) = _stateLabel(context, event.state);
 
     Widget body;
     if (_isTerminalTool(event.toolName)) {
+      var cmd = event.argSummary;
+      final args = event.argsDetail;
+      if (args != null) {
+        final c = _partialStringField(args, 'command');
+        if (c != null && c.isNotEmpty) cmd = c;
+      }
       final out = event.resultDetail == null
           ? event.resultSummary
           : _readableResult(event.resultDetail!);
       body = _MonoPane(
-        text: '\$ ${event.argSummary}\n$out',
+        text: '\$ $cmd\n$out',
         dark: true,
       );
     } else {
       final pairs = _editPairsOf(event);
       if (pairs.isNotEmpty) {
-        // IDE 式行级红绿 diff（与 Git diff 面板同款行渲染）。
-        final numStyle = TextStyle(
-          fontFamily: 'monospace',
-          fontSize: 11,
-          color: cs.onSurfaceVariant,
-        );
+        // IDE 式行级红绿 diff（与 Changes tab 同款 Devin 风格行渲染）；
+        // 参数仍在流式生成时随内容增长实时更新。
         body = SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Column(
@@ -314,13 +369,8 @@ class _ToolFocus extends StatelessWidget {
                     border: Border.all(color: theme.dividerColor),
                   ),
                   clipBehavior: Clip.antiAlias,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (final row
-                          in computeLineDiff(p.search ?? '', p.replace))
-                        buildDiffLineRow(theme, row, numStyle),
-                    ],
+                  child: DevinDiffLines(
+                    rows: computeLineDiff(p.search ?? '', p.replace),
                   ),
                 ),
               ],

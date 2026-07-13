@@ -17,6 +17,18 @@ sealed class LlmStreamChunk with _$LlmStreamChunk {
   /// Incremental reasoning / thinking text (→ `thinking`).
   const factory LlmStreamChunk.reasoningDelta(String text) = LlmReasoningDelta;
 
+  /// Incremental progress of a streaming tool call's arguments: [key] is a
+  /// stable per-call key within the stream, [name] the tool name once known
+  /// and [argsTextSoFar] the (possibly incomplete JSON) arguments accumulated
+  /// so far. Purely informational for live UI; the authoritative call is
+  /// still the [LlmToolCallChunk] emitted when the call completes.
+  const factory LlmStreamChunk.toolCallDelta({
+    required String key,
+    String? id,
+    String? name,
+    required String argsTextSoFar,
+  }) = LlmToolCallDelta;
+
   /// A fully-accumulated function-calling tool invocation. Adapters merge the
   /// streamed fragments (OpenAI per-`index` arg chunks, Anthropic
   /// `input_json_delta`, Gemini `functionCall`) and emit one event per call

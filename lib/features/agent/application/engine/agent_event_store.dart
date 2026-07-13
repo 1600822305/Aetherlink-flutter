@@ -56,6 +56,8 @@ abstract class AgentEventStore {
     String taskId,
     ToolCallEvent event, {
     required AgentToolCallState state,
+    String? argSummary,
+    String? argsDetail,
     String? resultSummary,
     String? resultDetail,
     String? resultOverflowPath,
@@ -235,6 +237,8 @@ class DriftAgentEventStore implements AgentEventStore {
     String taskId,
     ToolCallEvent event, {
     required AgentToolCallState state,
+    String? argSummary,
+    String? argsDetail,
     String? resultSummary,
     String? resultDetail,
     String? resultOverflowPath,
@@ -245,11 +249,11 @@ class DriftAgentEventStore implements AgentEventStore {
       seq: event.seq,
       at: event.at,
       toolName: event.toolName,
-      argSummary: event.argSummary,
+      argSummary: argSummary ?? event.argSummary,
       state: state,
       resultSummary: resultSummary ?? event.resultSummary,
       elapsed: elapsed ?? event.elapsed,
-      argsDetail: event.argsDetail,
+      argsDetail: argsDetail ?? event.argsDetail,
       resultDetail: resultDetail ?? event.resultDetail,
       resultOverflowPath: resultOverflowPath ?? event.resultOverflowPath,
     );

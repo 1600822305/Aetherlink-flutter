@@ -107,24 +107,72 @@ class AgentEngine {
         // 工具调用参数一流完就先落「执行中」事件（不等整轮结束），
         // UI 实时看到块；后续执行循环按 id 复用预建事件。
         const engineTools = {kToolUpdatePlan, kToolAskUser, kToolFinishTask};
+        bool internalTool(String name) =>
+            engineTools.contains(name) || name == kToolSpawnSubagent;
         final preCreated = <String, List<ToolCallEvent>>{};
+        // 参数仍在流式生成中的调用：streamKey → 事件（节流落库更新）。
+        final streamingEvents = <String, ToolCallEvent>{};
+        final streamingWriteAt = <String, DateTime>{};
         final turn = await llm.completeTurn(
           AgentLlmContext(task: current, events: events),
           cancel: cancel,
           onReasoningDelta: writer.onReasoningDelta,
           onTextDelta: writer.onTextDelta,
-          onToolCall: (call) async {
-            if (engineTools.contains(call.name) ||
-                call.name == kToolSpawnSubagent) {
+          onToolCallDelta: (streamKey, toolName, argsTextSoFar) async {
+            if (toolName == null || internalTool(toolName)) return;
+            final existing = streamingEvents[streamKey];
+            if (existing == null) {
+              streamingEvents[streamKey] = await store.appendToolCall(
+                current.id,
+                AgentToolCallRequest(
+                  id: streamKey,
+                  name: toolName,
+                  argsJson: argsTextSoFar,
+                  argSummary: '生成参数中…',
+                ),
+                AgentToolCallState.running,
+              );
+              streamingWriteAt[streamKey] = DateTime.now();
               return;
             }
-            final event = await store.appendToolCall(
-                current.id, call, AgentToolCallState.running);
+            final now = DateTime.now();
+            final last = streamingWriteAt[streamKey];
+            if (last != null &&
+                now.difference(last) < const Duration(milliseconds: 150)) {
+              return;
+            }
+            streamingWriteAt[streamKey] = now;
+            streamingEvents[streamKey] = await store.updateToolCall(
+              current.id,
+              existing,
+              state: AgentToolCallState.running,
+              argsDetail: argsTextSoFar,
+            );
+          },
+          onToolCall: (call, streamKey) async {
+            if (internalTool(call.name)) return;
+            final streamed =
+                streamKey == null ? null : streamingEvents.remove(streamKey);
+            final event = streamed != null
+                ? await store.updateToolCall(
+                    current.id,
+                    streamed,
+                    state: AgentToolCallState.running,
+                    argSummary: call.argSummary,
+                    argsDetail: call.argsJson,
+                  )
+                : await store.appendToolCall(
+                    current.id, call, AgentToolCallState.running);
             preCreated.putIfAbsent(call.id, () => []).add(event);
           },
         );
         await writer.finish(turn.text);
-        // 流中断时未回到 turn 的预建事件按失败回填，避免永久 running。
+        // 流中断时未闭合/未回到 turn 的预建事件按失败回填，避免永久 running。
+        for (final event in streamingEvents.values) {
+          await store.updateToolCall(current.id, event,
+              state: AgentToolCallState.failure, resultSummary: '已中断 ✗');
+        }
+        streamingEvents.clear();
         final returnedIds = {for (final c in turn.toolCalls) c.id};
         for (final entry in preCreated.entries) {
           if (returnedIds.contains(entry.key)) continue;

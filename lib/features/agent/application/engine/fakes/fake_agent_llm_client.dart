@@ -18,7 +18,13 @@ class FakeAgentLlmClient implements AgentLlmClient {
     AgentLlmContext context, {
     void Function(String textSoFar)? onTextDelta,
     void Function(String reasoningSoFar)? onReasoningDelta,
-    Future<void> Function(AgentToolCallRequest call)? onToolCall,
+    Future<void> Function(
+      String streamKey,
+      String? toolName,
+      String argsTextSoFar,
+    )? onToolCallDelta,
+    Future<void> Function(AgentToolCallRequest call, String? streamKey)?
+        onToolCall,
     AgentCancellationToken? cancel,
   }) async {
     final hasToolResult = context.events.any(

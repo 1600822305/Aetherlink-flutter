@@ -781,6 +781,7 @@ class _SkillDetailSheetState extends ConsumerState<_SkillDetailSheet> {
             buffer.write(text);
             setState(() => _translatedDescription = buffer.toString());
           case LlmReasoningDelta():
+          case LlmToolCallDelta():
           case LlmToolCallChunk():
           case LlmDone():
             break;

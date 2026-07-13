@@ -36,6 +36,7 @@ Future<(String text, String reasoning)> _collect(
         text.write(delta);
       case LlmReasoningDelta(text: final delta):
         reasoning.write(delta);
+      case LlmToolCallDelta():
       case LlmToolCallChunk():
       case LlmDone():
         break;

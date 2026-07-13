@@ -135,7 +135,17 @@ class OpenAiCompatibleAdapter implements LlmGateway {
             yield LlmStreamChunk.textDelta(content);
           }
           final calls = delta['tool_calls'];
-          if (calls is List) _accumulateToolCalls(toolCalls, calls);
+          if (calls is List) {
+            for (final index in _accumulateToolCalls(toolCalls, calls)) {
+              final b = toolCalls[index]!;
+              yield LlmStreamChunk.toolCallDelta(
+                key: 'cc-$index',
+                id: b.id.isEmpty ? null : b.id,
+                name: b.name.isEmpty ? null : b.name,
+                argsTextSoFar: b.arguments.toString(),
+              );
+            }
+          }
         } else {
           // No `delta` in this chunk. Some compatible gateways instead send a
           // non-stream-shaped `message` object (or content parts), or a legacy
@@ -289,10 +299,15 @@ class OpenAiCompatibleAdapter implements LlmGateway {
         case 'response.function_call_arguments.delta':
           final delta = json['delta'];
           if (delta is String) {
-            toolCalls
-                .putIfAbsent(_responsesItemKey(json), _ToolCallBuilder.new)
-                .arguments
-                .write(delta);
+            final key = _responsesItemKey(json);
+            final b = toolCalls.putIfAbsent(key, _ToolCallBuilder.new)
+              ..arguments.write(delta);
+            yield LlmStreamChunk.toolCallDelta(
+              key: 'resp-$key',
+              id: b.id.isEmpty ? null : b.id,
+              name: b.name.isEmpty ? null : b.name,
+              argsTextSoFar: b.arguments.toString(),
+            );
           }
         case 'response.function_call_arguments.done':
           final args = json['arguments'];
@@ -603,13 +618,16 @@ class OpenAiCompatibleAdapter implements LlmGateway {
   }
 
   /// Merges one delta's `tool_calls` fragments into [acc] by their `index`.
-  static void _accumulateToolCalls(
+  /// Returns the indices touched by this delta (for live progress events).
+  static List<int> _accumulateToolCalls(
     Map<int, _ToolCallBuilder> acc,
     List<dynamic> calls,
   ) {
+    final touched = <int>[];
     for (final raw in calls) {
       if (raw is! Map<String, dynamic>) continue;
       final index = (raw['index'] as num?)?.toInt() ?? 0;
+      touched.add(index);
       final builder = acc.putIfAbsent(index, _ToolCallBuilder.new);
       final id = raw['id'];
       if (id is String && id.isNotEmpty) builder.id = id;
@@ -621,6 +639,7 @@ class OpenAiCompatibleAdapter implements LlmGateway {
         if (args is String) builder.arguments.write(args);
       }
     }
+    return touched;
   }
 
   static String _roleValue(MessageRole role) => switch (role) {

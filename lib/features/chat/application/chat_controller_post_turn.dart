@@ -152,6 +152,7 @@ mixin _ChatPostTurn on _$ChatController {
           case LlmTextDelta(:final text):
             buffer.write(text);
           case LlmReasoningDelta():
+          case LlmToolCallDelta():
           case LlmToolCallChunk():
           case LlmDone():
             break;

@@ -169,7 +169,13 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     AgentLlmContext context, {
     void Function(String textSoFar)? onTextDelta,
     void Function(String reasoningSoFar)? onReasoningDelta,
-    Future<void> Function(AgentToolCallRequest call)? onToolCall,
+    Future<void> Function(
+      String streamKey,
+      String? toolName,
+      String argsTextSoFar,
+    )? onToolCallDelta,
+    Future<void> Function(AgentToolCallRequest call, String? streamKey)?
+        onToolCall,
     AgentCancellationToken? cancel,
   }) async {
     final ref = _refOf();
@@ -204,6 +210,9 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     final buffer = StringBuffer();
     final reasoning = StringBuffer();
     final calls = <LlmToolCall>[];
+    // 流式工具参数 delta 的 key → 该调用的 id/name，用于把最终
+    // LlmToolCallChunk 对回到同一个流 key（复用同一条事件）。
+    final deltaKeys = <String, ({String? id, String? name})>{};
     var totalTokens = 0;
     try {
       await for (final chunk
@@ -215,15 +224,35 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
           case LlmReasoningDelta(:final text):
             reasoning.write(text);
             onReasoningDelta?.call(reasoning.toString());
+          case LlmToolCallDelta(:final key, :final id, :final name, :final argsTextSoFar):
+            deltaKeys[key] = (id: id, name: name);
+            if (onToolCallDelta != null) {
+              await onToolCallDelta(key, name, argsTextSoFar);
+            }
           case LlmToolCallChunk(:final call):
             calls.add(call);
             if (onToolCall != null) {
-              await onToolCall(AgentToolCallRequest(
-                id: call.id.isEmpty ? call.name : call.id,
-                name: call.name,
-                argsJson: call.arguments,
-                argSummary: _summarizeArgs(call.name, call.arguments),
-              ));
+              String? streamKey;
+              for (final entry in deltaKeys.entries) {
+                final matchesId =
+                    call.id.isNotEmpty && entry.value.id == call.id;
+                final matchesName = entry.value.id == null &&
+                    entry.value.name == call.name;
+                if (matchesId || matchesName) {
+                  streamKey = entry.key;
+                  break;
+                }
+              }
+              if (streamKey != null) deltaKeys.remove(streamKey);
+              await onToolCall(
+                AgentToolCallRequest(
+                  id: call.id.isEmpty ? call.name : call.id,
+                  name: call.name,
+                  argsJson: call.arguments,
+                  argSummary: _summarizeArgs(call.name, call.arguments),
+                ),
+                streamKey,
+              );
             }
           case LlmDone(usage: final usage):
             if (usage != null) totalTokens = usage.totalTokens;

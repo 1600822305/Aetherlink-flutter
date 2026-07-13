@@ -94,6 +94,7 @@ mixin _ChatTranslate on _$ChatController {
             );
           case LlmReasoningDelta():
             break;
+          case LlmToolCallDelta():
           case LlmToolCallChunk():
             break;
           case LlmDone():
