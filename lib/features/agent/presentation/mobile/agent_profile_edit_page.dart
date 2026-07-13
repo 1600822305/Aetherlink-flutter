@@ -16,8 +16,10 @@ Future<void> showAgentProfileEditPage(
   AgentProfile? profile,
 }) {
   return Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => AgentProfileEditPage(profile: profile),
+    PageRouteBuilder<void>(
+      pageBuilder: (_, _, _) => AgentProfileEditPage(profile: profile),
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
     ),
   );
 }

@@ -25,8 +25,10 @@ Future<void> showTerminalEnvPage(
   required void Function(String command) onRunCommand,
 }) {
   return Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => TerminalEnvPage(onRunCommand: onRunCommand),
+    PageRouteBuilder<void>(
+      pageBuilder: (_, _, _) => TerminalEnvPage(onRunCommand: onRunCommand),
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
     ),
   );
 }

@@ -18,7 +18,11 @@ import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart
 /// 打开工具授权设置页。
 Future<void> showToolAuthSettingsPage(BuildContext context) {
   return Navigator.of(context).push(
-    MaterialPageRoute<void>(builder: (_) => const ToolAuthSettingsPage()),
+    PageRouteBuilder<void>(
+      pageBuilder: (_, _, _) => const ToolAuthSettingsPage(),
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+    ),
   );
 }
 

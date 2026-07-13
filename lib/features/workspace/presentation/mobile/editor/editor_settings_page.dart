@@ -12,7 +12,11 @@ import 'package:aetherlink_flutter/shared/widgets/editor_zoom_pill.dart';
 /// 打开编辑器设置页。
 Future<void> showEditorSettingsPage(BuildContext context) {
   return Navigator.of(context).push(
-    MaterialPageRoute<void>(builder: (_) => const EditorSettingsPage()),
+    PageRouteBuilder<void>(
+      pageBuilder: (_, _, _) => const EditorSettingsPage(),
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+    ),
   );
 }
 
