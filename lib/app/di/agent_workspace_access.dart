@@ -23,11 +23,18 @@ class AgentFileChange {
     required this.relPath,
     required this.absPath,
     required this.status,
+    this.additions,
+    this.deletions,
   });
 
   final String relPath;
   final String absPath;
   final GitFileStatus status;
+
+  /// +增/-删行数（git diff --numstat；未跟踪文件用 wc -l），
+  /// 二进制文件或统计失败时为 null。
+  final int? additions;
+  final int? deletions;
 }
 
 /// 一次 git status 快照 + 取 diff 所需的仓库上下文。
@@ -96,15 +103,23 @@ final agentWorkspaceChangesProvider = FutureProvider.autoDispose
 
   final files = parseGitPorcelainZ(repoRoot, status.stdout);
   final prefix = '$repoRoot/';
-  final changes = [
+  final entries = [
     for (final MapEntry(key: abs, value: st) in files.entries)
       if (abs.startsWith(prefix))
-        AgentFileChange(
-          relPath: abs.substring(prefix.length),
-          absPath: abs,
-          status: st,
-        ),
+        (relPath: abs.substring(prefix.length), absPath: abs, status: st),
   ]..sort((a, b) => a.relPath.compareTo(b.relPath));
+
+  final stats = await _loadChangeStats(backend, repoRoot, entries);
+  final changes = [
+    for (final e in entries)
+      AgentFileChange(
+        relPath: e.relPath,
+        absPath: e.absPath,
+        status: e.status,
+        additions: stats[e.relPath]?.$1,
+        deletions: stats[e.relPath]?.$2,
+      ),
+  ];
 
   return AgentChangesResult.ok(AgentChangesSnapshot(
     workspaceName: workspace.name,
@@ -112,6 +127,73 @@ final agentWorkspaceChangesProvider = FutureProvider.autoDispose
     changes: changes,
   ));
 });
+
+/// 逐文件 +增/-删行数：已跟踪改动一次 `git diff HEAD --numstat -z`
+/// 全量拿到；未跟踪文件批量 `wc -l`。任一步失败只丢行数不丢清单。
+Future<Map<String, (int?, int?)>> _loadChangeStats(
+  WorkspaceBackend backend,
+  String repoRoot,
+  List<({String relPath, String absPath, GitFileStatus status})> entries,
+) async {
+  final stats = <String, (int?, int?)>{};
+  if (entries.isEmpty) return stats;
+
+  try {
+    final numstat = await backend.exec(
+      'git -c core.quotepath=off diff HEAD --numstat -z',
+      workingDirectory: repoRoot,
+      timeout: const Duration(seconds: 20),
+    );
+    if (numstat.exitCode == 0) {
+      // -z 格式：`added TAB deleted TAB path NUL`；重命名时 path 为空，
+      // 后跟两个 NUL 分隔的旧/新路径。二进制文件行数为 `-`。
+      final tokens = numstat.stdout.split('\x00');
+      for (var i = 0; i < tokens.length; i++) {
+        final parts = tokens[i].split('\t');
+        if (parts.length < 3) continue;
+        final add = int.tryParse(parts[0]);
+        final del = int.tryParse(parts[1]);
+        var path = parts.sublist(2).join('\t');
+        if (path.isEmpty && i + 2 < tokens.length) {
+          path = tokens[i + 2]; // 重命名：取新路径
+          i += 2;
+        }
+        if (path.isNotEmpty) stats[path] = (add, del);
+      }
+    }
+  } catch (_) {
+    // 忽略，行数缺失不影响清单。
+  }
+
+  final untracked = [
+    for (final e in entries)
+      if (e.status == GitFileStatus.untracked) e.relPath,
+  ];
+  if (untracked.isNotEmpty) {
+    try {
+      final wc = await backend.exec(
+        'wc -l ${untracked.map(shellQuoteArg).join(' ')}',
+        workingDirectory: repoRoot,
+        timeout: const Duration(seconds: 20),
+      );
+      if (wc.exitCode == 0) {
+        for (final line in wc.stdout.split('\n')) {
+          final t = line.trim();
+          final sp = t.indexOf(' ');
+          if (sp <= 0) continue;
+          final count = int.tryParse(t.substring(0, sp));
+          final path = t.substring(sp + 1).trim();
+          if (count != null && untracked.contains(path)) {
+            stats[path] = (count, 0);
+          }
+        }
+      }
+    } catch (_) {
+      // 忽略。
+    }
+  }
+  return stats;
+}
 
 /// 单文件对比内容：HEAD 版本（新增/未跟踪为空） vs 工作区当前内容
 /// （删除为空）。供只读 diff 面板展示。

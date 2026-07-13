@@ -168,6 +168,10 @@ List<(int, String)> _lcsOps(List<String> a, List<String> b) {
   return ops;
 }
 
+/// 只读单行 diff 渲染（行内 diff 面板与底部抽屉共用同一份行样式）。
+Widget buildDiffLineRow(ThemeData theme, DiffLine row, TextStyle numStyle) =>
+    _diffRow(theme, row, numStyle);
+
 /// Read-only diff bottom sheet (e.g. Git 工作区 diff)：[oldText]（红 `-`）→
 /// [newText]（绿 `+`），无底部动作条，只看不选。
 Future<void> showReadOnlyDiffSheet(
