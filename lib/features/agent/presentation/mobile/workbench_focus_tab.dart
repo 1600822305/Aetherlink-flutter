@@ -245,6 +245,23 @@ List<({String? search, String replace})> _editPairsOf(ToolCallEvent e) {
   return const [];
 }
 
+/// 流式生成期间 diff 预览只保留的尾部行数（跟随最新内容，控制重建成本）。
+const int _kStreamingTailLines = 300;
+
+/// 单个 search/replace 对的 diff 行。整文件写入（search 为空）时全部是
+/// 新增行，直接构造，不跑 LCS diff 算法（流式高频重建下省掉无谓开销）。
+List<DiffLine> _diffRowsOf(({String? search, String replace}) p) {
+  final search = p.search;
+  if (search == null || search.isEmpty) {
+    final lines = p.replace.split('\n');
+    return [
+      for (var i = 0; i < lines.length; i++)
+        DiffLine(DiffLineKind.added, lines[i], newLine: i + 1),
+    ];
+  }
+  return computeLineDiff(search, p.replace);
+}
+
 /// 当前活动的单一全屏视图：头部（活动类型/状态）+ 占满余下高度的产物区。
 class _FocusView extends StatelessWidget {
   const _FocusView({required this.event});
@@ -355,27 +372,29 @@ class _ToolFocus extends StatelessWidget {
       final pairs = _editPairsOf(event);
       if (pairs.isNotEmpty) {
         // IDE 式行级红绿 diff（与 Changes tab 同款 Devin 风格行渲染）；
-        // 参数仍在流式生成时随内容增长实时更新。
-        body = SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (final p in pairs) ...[
-                Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: theme.dividerColor),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: DevinDiffLines(
-                    rows: computeLineDiff(p.search ?? '', p.replace),
-                  ),
-                ),
-              ],
-            ],
+        // 参数仍在流式生成时随内容增长实时更新。行懒加载 + 流式期间
+        // 只保留尾部窗口，避免高频重建整树拖死主线程。
+        final streaming = event.state == AgentToolCallState.running;
+        var rows = <DiffLine>[
+          for (var i = 0; i < pairs.length; i++) ...[
+            if (i > 0) const DiffLine(DiffLineKind.skip, ''),
+            ..._diffRowsOf(pairs[i]),
+          ],
+        ];
+        if (streaming && rows.length > _kStreamingTailLines) {
+          rows = [
+            const DiffLine(DiffLineKind.skip, ''),
+            ...rows.sublist(rows.length - _kStreamingTailLines),
+          ];
+        }
+        body = Container(
+          margin: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: theme.dividerColor),
           ),
+          clipBehavior: Clip.antiAlias,
+          child: DevinDiffLinesLazy(rows: rows),
         );
       } else {
         final detail = event.resultDetail == null
