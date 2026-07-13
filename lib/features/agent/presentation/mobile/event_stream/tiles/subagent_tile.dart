@@ -18,7 +18,7 @@ class SubagentTile extends StatelessWidget {
 
   final ToolCallEvent event;
 
-  ({String type, String title}) _parseArgs() {
+  ({String type, String title, bool background}) _parseArgs() {
     try {
       final args = jsonDecode(event.argsDetail ?? '') as Map<String, dynamic>;
       final type = args['type'] as String? ?? '';
@@ -27,9 +27,13 @@ class SubagentTile extends StatelessWidget {
       final title = desc.isNotEmpty
           ? desc
           : (prompt.length > 40 ? '${prompt.substring(0, 40)}…' : prompt);
-      return (type: type, title: title);
+      return (
+        type: type,
+        title: title,
+        background: args['background'] as bool? ?? false,
+      );
     } catch (_) {
-      return (type: '', title: event.argSummary);
+      return (type: '', title: event.argSummary, background: false);
     }
   }
 
@@ -97,6 +101,25 @@ class SubagentTile extends StatelessWidget {
                         ),
                       ),
                     ),
+                  if (args.background) ...[
+                    const SizedBox(width: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: cs.tertiary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '后台',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: cs.tertiary,
+                        ),
+                      ),
+                    ),
+                  ],
                   const Spacer(),
                   Icon(LucideIcons.chevronRight, size: 14, color: muted),
                 ],

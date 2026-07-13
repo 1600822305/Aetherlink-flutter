@@ -26,15 +26,17 @@ const kSpawnSubagentToolDefinition = McpToolDefinition(
   description: '派生一个子代理在独立上下文里完成专项子任务，只把最终结论带回。'
       '适合会产生大量中间输出的活（大范围搜索/调研、跑一串命令看结果），'
       '避免噪音挤爆主上下文。type=explore 为只读探索（搜索/读文件/调研），'
-      'type=bash 为终端执行（Ask/Plan 模式下不可用）。子代理没有本对话的'
-      '记忆，prompt 必须自带全部必要上下文。同一轮发多个调用即并行执行。',
+      'type=bash 为终端执行（Ask/Plan 模式下不可用）；也可填系统提示里列出的'
+      '自定义子代理档案名。子代理没有本对话的记忆，prompt 必须自带全部必要'
+      '上下文。同一轮发多个调用即并行执行。background=true 时不阻塞当前循环：'
+      '立即返回「已启动」，子代理完成后结论回填本工具结果并以消息注入对话。',
   inputSchema: {
     'type': 'object',
     'properties': {
       'type': {
         'type': 'string',
-        'enum': ['explore', 'bash'],
-        'description': '子代理类型：explore 只读探索 / bash 终端执行',
+        'description': '子代理类型：explore 只读探索 / bash 终端执行 / '
+            '自定义档案名（系统提示的「自定义子代理档案」清单里列出的 name）',
       },
       'prompt': {
         'type': 'string',
@@ -44,6 +46,11 @@ const kSpawnSubagentToolDefinition = McpToolDefinition(
       'description': {
         'type': 'string',
         'description': '子任务的一句话标题（3~8 个词，展示用）',
+      },
+      'background': {
+        'type': 'boolean',
+        'description': '后台运行（默认 false）：不阻塞当前循环，'
+            '完成后结论以消息注入对话',
       },
     },
     'required': ['type', 'prompt'],

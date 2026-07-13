@@ -118,12 +118,11 @@ void main() {
     expect(kSpawnSubagentToolDefinition.name, kToolSpawnSubagent);
     final schema = kSpawnSubagentToolDefinition.inputSchema;
     final props = schema['properties'] as Map<String, dynamic>;
-    expect(props.keys, containsAll(['type', 'prompt', 'description']));
-    expect(schema['required'], containsAll(['type', 'prompt']));
     expect(
-      (props['type'] as Map<String, dynamic>)['enum'],
-      ['explore', 'bash'],
+      props.keys,
+      containsAll(['type', 'prompt', 'description', 'background']),
     );
+    expect(schema['required'], containsAll(['type', 'prompt']));
   });
 
   test('子任务 id 派生规则稳定', () {

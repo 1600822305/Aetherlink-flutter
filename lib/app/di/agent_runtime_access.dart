@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/app/di/agent_subagent_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
@@ -18,6 +19,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/approval_ga
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/features/agent/domain/subagent_profile.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_confirmation.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_executor.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
@@ -266,7 +268,8 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     return buffer.toString();
   }
 
-  /// [2 环境上下文]：平台 + 工作区摘要 + 本轮可用工具清单。
+  /// [2 环境上下文]：平台 + 工作区摘要 + 本轮可用工具清单
+  /// （+ spawn_subagent 可用时的自定义子代理档案清单）。
   Future<String> _environmentContext(Ref ref) async {
     String? workspace;
     try {
@@ -279,7 +282,29 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
       '平台：${Platform.operatingSystem}',
       if (workspace != null) workspace,
       '可用工具：$toolNames',
+      ...await _customSubagentsSection(ref),
     ].join('\n');
+  }
+
+  /// 自定义子代理档案清单（工作区 .aetherlink/agents / .cursor/agents 的
+  /// markdown 定义）：spawn_subagent 的 type 可填档案名按需委派。
+  Future<List<String>> _customSubagentsSection(Ref ref) async {
+    if (!_definitions.any((d) => d.name == kToolSpawnSubagent)) {
+      return const [];
+    }
+    List<AgentSubagentProfile> profiles;
+    try {
+      profiles = await loadCustomSubagentProfiles(ref, _profile.workspaceId);
+    } catch (_) {
+      return const [];
+    }
+    if (profiles.isEmpty) return const [];
+    return [
+      '自定义子代理档案（spawn_subagent 的 type 可填档案名）：',
+      for (final p in profiles)
+        '- ${p.name}（${p.readonly ? '只读' : '可写'}）'
+            '${p.description.isNotEmpty ? '：${p.description}' : ''}',
+    ];
   }
 
   /// [5 项目指令]：档案绑定工作区（缺省取当前工作区）根目录的 AGENTS.md。
