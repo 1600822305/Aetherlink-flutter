@@ -22,6 +22,7 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/domain/subagent_profile.dart';
+import 'package:aetherlink_flutter/features/chat/application/parameter_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_confirmation.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_executor.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
@@ -158,6 +159,31 @@ const Set<String> _kReadOnlyToolNames = {
   return (definitions: definitions, routes: routes);
 }
 
+/// 全局思考强度参数（与聊天共用 参数设置 里的档位）：仅取启用中的
+/// reasoningEffort / thinkingBudget / includeThoughts，未启用为 null。
+({String? effort, int? budget, bool? includeThoughts}) _reasoningParams(
+  Ref ref,
+) {
+  final ps = ref.read(parameterSettingsControllerProvider);
+  String? effort;
+  if (ps.isParameterEnabled('reasoningEffort')) {
+    final v = ps.getParameterValue('reasoningEffort');
+    if (v is String) effort = v;
+  }
+  int? budget;
+  if (ps.isParameterEnabled('thinkingBudget')) {
+    final v = ps.getParameterValue('thinkingBudget');
+    if (v is int) budget = v;
+    if (v is num) budget = v.toInt();
+  }
+  bool? includeThoughts;
+  if (ps.isParameterEnabled('includeThoughts')) {
+    final v = ps.getParameterValue('includeThoughts');
+    if (v is bool) includeThoughts = v;
+  }
+  return (effort: effort, budget: budget, includeThoughts: includeThoughts);
+}
+
 /// 真实 LLM adapter：把 agent 事件流重放为 provider 中立的
 /// [LlmMessage] 列表，经 [appLlmGatewayFactory] 流式调用当前默认模型。
 class _GatewayAgentLlmClient implements AgentLlmClient {
@@ -208,11 +234,15 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
       projectInstructions: await _projectInstructions(ref, context.task),
     );
 
+    final thinkParams = _reasoningParams(ref);
     final request = LlmChatRequest(
       model: model,
       messages: _replayMessages(context.events),
       system: system,
       tools: _definitions,
+      reasoningEffort: thinkParams.effort,
+      thinkingBudget: thinkParams.budget,
+      includeThoughts: thinkParams.includeThoughts,
     );
 
     // agent 侧协作取消 → 域层 LlmCancelToken（真正中断底层 HTTP 流）。

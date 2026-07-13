@@ -441,6 +441,17 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                             showAppModelSelectorDialog(context);
                           },
                         ),
+                        const SizedBox(width: 6),
+                        _Chip(
+                          icon: LucideIcons.lightbulb,
+                          // 与聊天共用全局思考档位（参数设置
+                          // reasoningEffort），引擎每轮现取。
+                          label: '思考 ${appReasoningEffortLabel(ref)} ▾',
+                          onTap: () {
+                            FocusManager.instance.primaryFocus?.unfocus();
+                            showAppReasoningEffortPicker(context, ref);
+                          },
+                        ),
                       ],
                     ),
                     if (_hasText)
