@@ -96,15 +96,23 @@ Future<int> dedupeSshConnections({
 /// and switches into it (clearing open tabs so the shell lands on the tree).
 /// Shared by the SSH form (create / reuse) and the Termux flow; [backendType]
 /// distinguishes a Termux workspace from a plain SSH one for display.
+/// [name] overrides the display name (defaults to the connection label) and
+/// [scope] / [isolatedHome] carry the 项目模式 picker's choices（双作用域
+/// 设计稿 §2.1）。
 Future<Workspace> openAndSwitchSshWorkspace(
   WidgetRef ref,
   SshConnection connection, {
   required String root,
   WorkspaceBackendType backendType = WorkspaceBackendType.ssh,
+  WorkspaceScope scope = WorkspaceScope.project,
+  bool isolatedHome = false,
+  String? name,
 }) async {
   final workspace = await ref.read(workspaceStoreProvider.notifier).open(
-        name: connection.label,
+        name: name ?? connection.label,
         backendType: backendType,
+        scope: scope,
+        isolatedHome: isolatedHome,
         root: root,
         displayPath: '${connection.username}@${connection.host}:$root',
         connectionId: connection.id,

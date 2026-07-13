@@ -38,6 +38,7 @@ import 'package:aetherlink_flutter/features/workspace/domain/ssh_connection.dart
 import 'package:aetherlink_flutter/features/workspace/domain/ssh_keygen.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/termux_setup.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/proot_folder_picker_sheet.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// F-Droid page for the supported Termux build (Play build is deprecated).
@@ -147,6 +148,42 @@ class _TermuxSetupPageState extends ConsumerState<TermuxSetupPage> {
     }
   }
 
+  // Probes the freshly configured sshd (stat'ing [rootToStat]) and persists
+  // the SshConnection profile. Returns null (after surfacing the error) when
+  // the probe fails. Shared by the three 完成 entries below.
+  Future<SshConnection?> _probeAndPersist({
+    required String rootToStat,
+    required String label,
+    required String failureHint,
+  }) async {
+    final params = SshConnectParams(
+      host: '127.0.0.1',
+      port: TermuxSetup.defaultPort,
+      username: 'termux', // Termux sshd ignores the username; key auth decides.
+      authType: SshAuthType.privateKey,
+      privateKeyPem: _keys.privateKeyPem,
+    );
+    final result = await ref
+        .read(sshBackendPoolProvider)
+        .probe(params, rootToStat: rootToStat);
+    if (!mounted) return null;
+    if (!result.ok) {
+      _snack('${result.error ?? '未知错误'}\n$failureHint');
+      return null;
+    }
+    final connection = await persistSshConnection(
+      connections: ref.read(sshConnectionStoreProvider.notifier),
+      credentials: ref.read(sshCredentialStoreProvider.notifier),
+      label: label,
+      params: params,
+      fingerprint: result.fingerprint, // localhost: auto-trust on first use.
+    );
+    // 同 endpoint 复用时私钥已换新（每次打开都重新生成密钥对），
+    // 丢掉连接池里的旧通道让下次访问用新钥重连。
+    await ref.read(sshBackendPoolProvider).invalidate(connection.id);
+    return connection;
+  }
+
   // Probe the freshly configured sshd, then persist a Termux workspace rooted
   // at [root] and switch into it. Reuses the shared SSH persist/open helpers.
   // [root] is '.' (Termux home) for the default entry, or the shared-storage
@@ -156,43 +193,68 @@ class _TermuxSetupPageState extends ConsumerState<TermuxSetupPage> {
   Future<void> _finish({String root = '.'}) async {
     setState(() => _busy = true);
     final isSharedStorage = root == TermuxSetup.sharedStorageRoot;
-    final params = SshConnectParams(
-      host: '127.0.0.1',
-      port: TermuxSetup.defaultPort,
-      username: 'termux', // Termux sshd ignores the username; key auth decides.
-      authType: SshAuthType.privateKey,
-      privateKeyPem: _keys.privateKeyPem,
-    );
     try {
-      final result = await ref
-          .read(sshBackendPoolProvider)
-          .probe(params, rootToStat: root);
-      if (!mounted) return;
-      if (!result.ok) {
-        if (isSharedStorage) {
-          _snack('打不开手机存储 · ${result.error ?? '未知错误'}\n'
-              '请在 Termux 里执行 termux-setup-storage 并同意授权后重试。');
-        } else {
-          _snack('连接失败 · ${result.error ?? '未知错误'}\n'
-              '请确认已在 Termux 里跑完命令并看到「完成」提示。');
-        }
-        return;
-      }
-      final connection = await persistSshConnection(
-        connections: ref.read(sshConnectionStoreProvider.notifier),
-        credentials: ref.read(sshCredentialStoreProvider.notifier),
+      final connection = await _probeAndPersist(
+        rootToStat: root,
         label: isSharedStorage ? 'Termux · 手机存储' : 'Termux',
-        params: params,
-        fingerprint: result.fingerprint, // localhost: auto-trust on first use.
+        failureHint: isSharedStorage
+            ? '请在 Termux 里执行 termux-setup-storage 并同意授权后重试。'
+            : '请确认已在 Termux 里跑完命令并看到「完成」提示。',
       );
-      // 同 endpoint 复用时私钥已换新（每次打开都重新生成密钥对），
-      // 丢掉连接池里的旧通道让下次访问用新钥重连。
-      await ref.read(sshBackendPoolProvider).invalidate(connection.id);
+      if (connection == null) return;
       await openAndSwitchSshWorkspace(
         ref,
         connection,
         root: root,
         backendType: WorkspaceBackendType.termux,
+      );
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      _snack('连接失败 · $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  // 项目模式入口（对齐内置终端的「打开项目文件夹」）：探活 sshd 后用
+  // IDE 式文件夹浏览器在 Termux $HOME 下选一个目录，工作区锚定到它
+  //（双作用域设计稿 §2.2）。
+  Future<void> _finishProject() async {
+    setState(() => _busy = true);
+    try {
+      final connection = await _probeAndPersist(
+        rootToStat: '.',
+        label: 'Termux',
+        failureHint: '请确认已在 Termux 里跑完命令并看到「完成」提示。',
+      );
+      if (connection == null) return;
+      final backend =
+          ref.read(sshBackendPoolProvider).backendFor(connection.id);
+      // 浏览器需要绝对路径才能逐级进出，先把 '.' 解析成 $HOME。
+      final home =
+          (await backend.exec(r'printf %s "$HOME"')).stdout.trim();
+      if (home.isEmpty || !home.startsWith('/')) {
+        _snack('取不到 Termux 主目录，请重试');
+        return;
+      }
+      if (!mounted) return;
+      final pick = await showProotFolderPickerSheet(
+        context,
+        backend: backend,
+        initialPath: home,
+      );
+      if (pick == null) return;
+      final root = pick.path;
+      final name =
+          root == '/' ? '/' : root.substring(root.lastIndexOf('/') + 1);
+      await openAndSwitchSshWorkspace(
+        ref,
+        connection,
+        root: root,
+        backendType: WorkspaceBackendType.termux,
+        scope: WorkspaceScope.project,
+        isolatedHome: pick.isolatedHome,
+        name: name,
       );
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
@@ -259,6 +321,12 @@ class _TermuxSetupPageState extends ConsumerState<TermuxSetupPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Text('完成 / 测试连接'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _busy ? null : _finishProject,
+              icon: const Icon(Icons.folder_open_outlined, size: 18),
+              label: const Text('选择项目文件夹（IDE 式）'),
             ),
             const SizedBox(height: 8),
             OutlinedButton.icon(
