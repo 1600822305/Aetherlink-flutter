@@ -36,6 +36,9 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
   /// 「回到最新」按钮可见性（解除跟随时显示），随滚动通知刷新。
   bool _showJumpToLatest = false;
 
+  /// 上次键盘 inset，用于换算滚动补偿（与聊天页 bottomReserve 同一机制）。
+  double _lastKeyboardInset = 0;
+
   @override
   void initState() {
     super.initState();
@@ -76,6 +79,15 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
       final after = next.value?.whereType<UserMessageEvent>().length ?? 0;
       if (after > before) _autoScroll.pinToBottom();
     });
+
+    // 键盘弹出/收起时 Scaffold 会缩放 body（adjustResize），普通列表锚点在
+    // 顶部，视口底部内容会被键盘盖住。这里按 inset 变化量做同帧滚动补偿
+    // （聊天页 bottomReserve 同一机制）：整体内容跟着键盘顶起/落下。
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    if ((keyboardInset - _lastKeyboardInset).abs() > 0.5) {
+      _scrollController.pendingAdjust += keyboardInset - _lastKeyboardInset;
+      _lastKeyboardInset = keyboardInset;
+    }
 
     final events =
         ref.watch(agentTaskEventsProvider(widget.task.id)).value ?? const [];
