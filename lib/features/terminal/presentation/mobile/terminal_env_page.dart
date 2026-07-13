@@ -12,12 +12,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/terminal_env_access.dart';
+import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
 import 'package:aetherlink_flutter/features/terminal/application/terminal_mirror_store.dart';
 import 'package:aetherlink_flutter/features/terminal/application/terminal_silent_exec.dart';
 import 'package:aetherlink_flutter/features/terminal/domain/terminal_distro.dart';
 import 'package:aetherlink_flutter/features/terminal/domain/terminal_env_presets.dart';
 import 'package:aetherlink_flutter/features/terminal/domain/terminal_mirrors.dart';
+import 'package:aetherlink_flutter/features/terminal/presentation/mobile/terminal_setup_sheet.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
@@ -76,16 +78,16 @@ class _TerminalEnvPageState extends ConsumerState<TerminalEnvPage>
   /// 清理内置终端环境：二次确认后先关掉所有 PRoot 会话，再删除
   /// rootfs 目录（只动应用私有目录，/sdcard 是绑定挂载的手机存储，
   /// 不受影响）。清理后退回终端页，下次进入会重新引导安装。
-  Future<void> _cleanEngine() async {
+  Future<void> _cleanEngine({bool reinstall = false}) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('清理内置终端环境'),
-        content: const Text(
+        title: Text(reinstall ? '重装内置终端环境' : '清理内置终端环境'),
+        content: Text(
           '将删除已安装的 Alpine/Ubuntu 环境（rootfs、已装的软件包、'
-          '/root 主目录里的文件）并关闭所有内置终端会话，释放存储空间。\n\n'
+          '/root 主目录里的文件）并关闭所有内置终端会话。\n\n'
           '/sdcard 是绑定挂载的手机存储，里面的文件不会被删除。\n'
-          '清理后可随时重新下载安装。',
+          '${reinstall ? '清理完成后立即弹出安装面板重新下载。' : '清理后可随时重新下载安装。'}',
         ),
         actions: [
           TextButton(
@@ -97,7 +99,7 @@ class _TerminalEnvPageState extends ConsumerState<TerminalEnvPage>
               backgroundColor: Theme.of(dialogContext).colorScheme.error,
             ),
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('清理'),
+            child: Text(reinstall ? '清理并重装' : '清理'),
           ),
         ],
       ),
@@ -106,13 +108,25 @@ class _TerminalEnvPageState extends ConsumerState<TerminalEnvPage>
     try {
       await ref.read(prootSessionsCloserProvider)();
       await TerminalEngineManager.instance.uninstall();
-      if (!mounted) return;
-      AppToast.success(context, '已清理内置终端环境');
-      Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
       AppToast.error(context, '清理失败：$e');
+      return;
     }
+    if (!mounted) return;
+    if (reinstall) {
+      final installed = await showTerminalSetupSheet(
+        context,
+        ref.read(fileSystemApiProvider),
+      );
+      if (!mounted) return;
+      if (installed) {
+        AppToast.success(context, '内置终端环境已重装');
+      }
+      return;
+    }
+    AppToast.success(context, '已清理内置终端环境');
+    Navigator.of(context).pop();
   }
 
   @override
@@ -146,6 +160,11 @@ class _TerminalEnvPageState extends ConsumerState<TerminalEnvPage>
         ),
         title: const Text('终端环境管理'),
         actions: [
+          IconButton(
+            tooltip: '重装内置终端环境',
+            icon: const Icon(LucideIcons.refreshCcw, size: 20),
+            onPressed: () => _cleanEngine(reinstall: true),
+          ),
           IconButton(
             tooltip: '清理内置终端环境',
             icon: const Icon(LucideIcons.trash2, size: 20),

@@ -5,6 +5,7 @@
 // rootfs 不随安装包内置（约 3~4MB 下载、解压后 ~10MB）；首次进入内置终端
 // 工作区时经 terminal_setup_sheet 在这里下载安装，只装一次。
 
+import 'dart:async';
 import 'dart:ffi' show Abi;
 import 'dart:io';
 
@@ -230,11 +231,29 @@ class TerminalEngineManager {
   ///
   /// rootfs 里不少目录保留了 tar 里的只读权限（如 /var/empty、ssh 宿主
   /// 密钥目录），父目录不可写时 delete 会抛 PathAccessException——先整树
-  /// 加回属主写权限再删。
+  /// 加回属主写权限再删；仍删不掉时把整目录改名挪到 .trash 目录（同分区
+  /// 改名必定成功，环境立即失效、可直接重装），后台再尽力删。
   Future<void> uninstall() async {
     final base = Directory(await baseDirPath());
+    // 顺手清掉历史挪走未删净的残留。
+    await for (final e in base.parent.list(followLinks: false)) {
+      if (p.basename(e.path).startsWith('terminal.trash.')) {
+        await Process.run('chmod', ['-R', 'u+rwX', e.path]);
+        await Process.run('rm', ['-rf', e.path]);
+      }
+    }
     if (!await base.exists()) return;
     await Process.run('chmod', ['-R', 'u+rwX', base.path]);
-    await base.delete(recursive: true);
+    await Process.run('rm', ['-rf', base.path]);
+    if (!await base.exists()) return;
+    try {
+      await base.delete(recursive: true);
+      return;
+    } on FileSystemException {
+      final trash =
+          '${base.path}.trash.${DateTime.now().millisecondsSinceEpoch}';
+      await base.rename(trash);
+      unawaited(Process.run('rm', ['-rf', trash]));
+    }
   }
 }
