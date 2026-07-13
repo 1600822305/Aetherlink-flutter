@@ -16,10 +16,12 @@ import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
 import 'package:aetherlink_flutter/features/terminal/presentation/mobile/terminal_setup_sheet.dart';
+import 'package:aetherlink_flutter/features/workspace/application/primary_terminal_store.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/primary_terminal_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/proot_folder_picker_sheet.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
@@ -60,6 +62,18 @@ class _OpenWorkspaceSheet extends ConsumerWidget {
                 '打开文件夹',
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            _PrimaryTerminalTile(parentRef: parentRef),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 4),
+              child: Text(
+                '其他方式',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -191,6 +205,57 @@ class _OpenWorkspaceSheet extends ConsumerWidget {
   }
 }
 
+/// 顶部「主终端」卡片：点击直接在默认主终端上 IDE 式选目录（未设置
+/// 时先弹选择器并记为默认）；右侧按钮随时切换默认主终端。
+class _PrimaryTerminalTile extends ConsumerWidget {
+  const _PrimaryTerminalTile({required this.parentRef});
+
+  final WidgetRef parentRef;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final terminal = ref.watch(primaryTerminalStoreProvider).value;
+    final label = terminal == null ? null : primaryTerminalLabel(ref, terminal);
+    return Material(
+      color: theme.colorScheme.primaryContainer.withValues(alpha: 0.45),
+      borderRadius: BorderRadius.circular(12),
+      child: ListTile(
+        leading: Icon(
+          LucideIcons.squareTerminal,
+          color: theme.colorScheme.primary,
+        ),
+        title: Text(label == null ? '主终端' : '主终端 · $label'),
+        subtitle: Text(label == null ? '选一个默认终端，直接 IDE 式选目录' : '直接浏览目录并在此打开'),
+        trailing: IconButton(
+          tooltip: '切换主终端',
+          icon: const Icon(LucideIcons.arrowLeftRight, size: 18),
+          onPressed: () async {
+            final navigator = Navigator.of(context);
+            final hostContext = navigator.context;
+            navigator.pop();
+            final picked = await showPrimaryTerminalPickerSheet(
+              hostContext,
+              parentRef,
+            );
+            if (picked == null) return;
+            await parentRef
+                .read(primaryTerminalStoreProvider.notifier)
+                .set(picked);
+            if (!hostContext.mounted) return;
+            await openPrimaryTerminalFolder(hostContext, parentRef, picked);
+          },
+        ),
+        onTap: () async {
+          final navigator = Navigator.of(context);
+          navigator.pop();
+          await browseWithPrimaryTerminal(navigator.context, parentRef);
+        },
+      ),
+    );
+  }
+}
+
 /// Picks a folder via SAF, records it and opens it as the current workspace.
 Future<void> openLocalFolder(BuildContext context, WidgetRef ref) async {
   try {
@@ -306,12 +371,15 @@ Future<void> openProotWorkspace(BuildContext context, WidgetRef ref) async {
 /// Opens a 项目模式 workspace in the PRoot rootfs: shows an IDE-style folder
 /// browser（默认锚在 [kProotProjectsDir]，可逐级浏览 / 新建）, then anchors the
 /// workspace root to the picked directory（双作用域设计稿 §2.2）。
-Future<void> openProotProjectWorkspace(
+/// [switchTo] 为 false 时只落库返回，不切换当前工作区（智能体绑定选
+/// 目录用）。返回创建/复用的工作区，用户取消或失败时 null。
+Future<Workspace?> openProotProjectWorkspace(
   BuildContext context,
-  WidgetRef ref,
-) async {
+  WidgetRef ref, {
+  bool switchTo = true,
+}) async {
   try {
-    if (!await _ensureProotInstalled(context, ref)) return;
+    if (!await _ensureProotInstalled(context, ref)) return null;
     final backend = ref.read(prootLocalBackendProvider);
     // 保证默认项目目录存在，浏览器一进来就有地方落脚。
     final projectsDir = await backend.createDirectory(
@@ -319,13 +387,13 @@ Future<void> openProotProjectWorkspace(
       'projects',
       recursive: true,
     );
-    if (!context.mounted) return;
+    if (!context.mounted) return null;
     final pick = await showProotFolderPickerSheet(
       context,
       backend: backend,
       initialPath: projectsDir,
     );
-    if (pick == null) return;
+    if (pick == null) return null;
     final root = pick.path;
     final name = root == '/' ? '/' : root.substring(root.lastIndexOf('/') + 1);
     final workspace = await ref
@@ -338,10 +406,11 @@ Future<void> openProotProjectWorkspace(
           root: root,
           displayPath: '内置终端 · $root',
         );
-    _switchTo(ref, workspace);
+    if (switchTo) _switchTo(ref, workspace);
+    return workspace;
   } catch (e) {
-    if (!context.mounted) return;
-    AppToast.error(context, '打开失败 · $e');
+    if (context.mounted) AppToast.error(context, '打开失败 · $e');
+    return null;
   }
 }
 

@@ -98,7 +98,8 @@ Future<int> dedupeSshConnections({
 /// distinguishes a Termux workspace from a plain SSH one for display.
 /// [name] overrides the display name (defaults to the connection label) and
 /// [scope] / [isolatedHome] carry the 项目模式 picker's choices（双作用域
-/// 设计稿 §2.1）。
+/// 设计稿 §2.1）。[switchTo] 为 false 时只落库不切换当前工作区
+///（智能体绑定选目录用，不打断编辑器里正在开的工作区）。
 Future<Workspace> openAndSwitchSshWorkspace(
   WidgetRef ref,
   SshConnection connection, {
@@ -107,8 +108,11 @@ Future<Workspace> openAndSwitchSshWorkspace(
   WorkspaceScope scope = WorkspaceScope.project,
   bool isolatedHome = false,
   String? name,
+  bool switchTo = true,
 }) async {
-  final workspace = await ref.read(workspaceStoreProvider.notifier).open(
+  final workspace = await ref
+      .read(workspaceStoreProvider.notifier)
+      .open(
         name: name ?? connection.label,
         backendType: backendType,
         scope: scope,
@@ -117,7 +121,9 @@ Future<Workspace> openAndSwitchSshWorkspace(
         displayPath: '${connection.username}@${connection.host}:$root',
         connectionId: connection.id,
       );
-  ref.read(currentWorkspaceProvider.notifier).open(workspace);
-  ref.read(openWorkspaceFilesProvider.notifier).reset();
+  if (switchTo) {
+    ref.read(currentWorkspaceProvider.notifier).open(workspace);
+    ref.read(openWorkspaceFilesProvider.notifier).reset();
+  }
   return workspace;
 }

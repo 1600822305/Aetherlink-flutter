@@ -9,6 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/app/di/workspace_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/primary_terminal_sheet.dart';
 
 /// [profile] 为 null 时是新建智能体。
 Future<void> showAgentProfileEditPage(
@@ -35,18 +36,37 @@ class AgentProfileEditPage extends ConsumerStatefulWidget {
 }
 
 class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
-  late final TextEditingController _name =
-      TextEditingController(text: widget.profile?.name ?? '');
-  late final TextEditingController _emoji =
-      TextEditingController(text: widget.profile?.emoji ?? '🤖');
-  late final TextEditingController _prompt =
-      TextEditingController(text: widget.profile?.systemPrompt ?? '');
-  late Set<AgentToolGroup> _tools =
-      {...widget.profile?.tools ?? {AgentToolGroup.fileEditor}};
+  late final TextEditingController _name = TextEditingController(
+    text: widget.profile?.name ?? '',
+  );
+  late final TextEditingController _emoji = TextEditingController(
+    text: widget.profile?.emoji ?? '🤖',
+  );
+  late final TextEditingController _prompt = TextEditingController(
+    text: widget.profile?.systemPrompt ?? '',
+  );
+  late Set<AgentToolGroup> _tools = {
+    ...widget.profile?.tools ?? {AgentToolGroup.fileEditor},
+  };
   late String? _workspaceId = widget.profile?.workspaceId;
   late String? _workspaceName = widget.profile?.workspaceName;
 
   bool get _isNew => widget.profile == null;
+
+  /// 用主终端选择器 + IDE 式目录浏览器新建一个工作区并绑定到本档案；
+  /// 不切换当前工作区，各档案可各自绑不同终端并行使用。
+  Future<void> _pickWorkspaceViaTerminal() async {
+    final workspace = await pickFolderWithTerminalPicker(
+      context,
+      ref,
+      switchTo: false,
+    );
+    if (workspace == null || !mounted) return;
+    setState(() {
+      _workspaceId = workspace.id;
+      _workspaceName = workspace.name;
+    });
+  }
 
   @override
   void dispose() {
@@ -59,7 +79,8 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
   void _save() {
     final name = _name.text.trim();
     if (name.isEmpty) return;
-    final base = widget.profile ??
+    final base =
+        widget.profile ??
         AgentProfile(
           id: 'agent-${DateTime.now().millisecondsSinceEpoch}',
           name: name,
@@ -67,7 +88,9 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
           systemPrompt: _prompt.text.trim(),
           tools: _tools,
         );
-    ref.read(agentProfilesProvider.notifier).upsert(
+    ref
+        .read(agentProfilesProvider.notifier)
+        .upsert(
           base.copyWith(
             name: name,
             emoji: _emoji.text.trim().isEmpty ? '🤖' : _emoji.text.trim(),
@@ -184,6 +207,15 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
                     _workspaceName = ws.name;
                   }),
                 ),
+              ActionChip(
+                avatar: Icon(
+                  LucideIcons.folderPlus,
+                  size: 14,
+                  color: cs.primary,
+                ),
+                label: const Text('选目录新建绑定…'),
+                onPressed: _pickWorkspaceViaTerminal,
+              ),
             ],
           ),
           if (workspaces.isEmpty)
@@ -197,10 +229,7 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
               ),
             ),
           const SizedBox(height: 16),
-          const _SectionTitle(
-            title: '工具集',
-            subtitle: '决定该智能体每轮可见的工具清单',
-          ),
+          const _SectionTitle(title: '工具集', subtitle: '决定该智能体每轮可见的工具清单'),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -249,12 +278,12 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
 }
 
 String _toolGroupLabel(AgentToolGroup g) => switch (g) {
-      AgentToolGroup.fileEditor => '文件编辑',
-      AgentToolGroup.terminal => '终端',
-      AgentToolGroup.webSearch => '网络搜索',
-      AgentToolGroup.knowledgeBase => '知识库',
-      AgentToolGroup.skills => '技能',
-    };
+  AgentToolGroup.fileEditor => '文件编辑',
+  AgentToolGroup.terminal => '终端',
+  AgentToolGroup.webSearch => '网络搜索',
+  AgentToolGroup.knowledgeBase => '知识库',
+  AgentToolGroup.skills => '技能',
+};
 
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle({required this.title, required this.subtitle});

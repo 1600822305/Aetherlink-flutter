@@ -11,14 +11,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/terminal_env_access.dart';
 import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
 import 'package:aetherlink_flutter/features/terminal/application/terminal_mirror_store.dart';
 import 'package:aetherlink_flutter/features/terminal/application/terminal_silent_exec.dart';
 import 'package:aetherlink_flutter/features/terminal/domain/terminal_distro.dart';
 import 'package:aetherlink_flutter/features/terminal/domain/terminal_env_presets.dart';
 import 'package:aetherlink_flutter/features/terminal/domain/terminal_mirrors.dart';
-import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
-import 'package:aetherlink_flutter/features/workspace/data/proot_local_backend.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
@@ -105,9 +104,7 @@ class _TerminalEnvPageState extends ConsumerState<TerminalEnvPage>
     );
     if (confirmed != true || !mounted) return;
     try {
-      await ref
-          .read(workspaceSessionPoolManagerProvider)
-          .closeBackends((b) => b is ProotLocalBackend);
+      await ref.read(prootSessionsCloserProvider)();
       await TerminalEngineManager.instance.uninstall();
       if (!mounted) return;
       AppToast.success(context, '已清理内置终端环境');
@@ -265,10 +262,7 @@ class _EnvCard extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(_radius),
-        child: Material(
-          type: MaterialType.transparency,
-          child: child,
-        ),
+        child: Material(type: MaterialType.transparency, child: child),
       ),
     );
   }
@@ -309,10 +303,10 @@ class _MirrorTabState extends State<_MirrorTab> {
   }
 
   List<TerminalMirror> _builtIn(TerminalMirrorKind kind) => switch (kind) {
-        TerminalMirrorKind.system => kTerminalMirrors,
-        TerminalMirrorKind.pip => kPipMirrors,
-        TerminalMirrorKind.npm => kNpmMirrors,
-      };
+    TerminalMirrorKind.system => kTerminalMirrors,
+    TerminalMirrorKind.pip => kPipMirrors,
+    TerminalMirrorKind.npm => kNpmMirrors,
+  };
 
   Future<void> _apply(TerminalMirrorKind kind, TerminalMirror mirror) async {
     if (_applying) return;
@@ -357,8 +351,9 @@ class _MirrorTabState extends State<_MirrorTab> {
   @override
   Widget build(BuildContext context) {
     if (!_loaded) return const Center(child: CircularProgressIndicator());
-    final systemTitle =
-        widget.distro == TerminalDistro.ubuntu ? 'apt 软件源' : 'apk 软件源';
+    final systemTitle = widget.distro == TerminalDistro.ubuntu
+        ? 'apt 软件源'
+        : 'apk 软件源';
     return ListView(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -404,14 +399,16 @@ class _MirrorTabState extends State<_MirrorTab> {
           children: [
             Text(
               title,
-              style: theme.textTheme.titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w700),
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 2),
             Text(
               subtitle,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 4),
             RadioGroup<String>(
@@ -483,12 +480,13 @@ class _AddMirrorDialogState extends State<_AddMirrorDialog> {
   }
 
   String get _hint => switch (widget.kind) {
-        TerminalMirrorKind.system => widget.distro == TerminalDistro.ubuntu
-            ? '仓库根 URL，如 https://mirrors.xxx.com/ubuntu-ports'
-            : '仓库根 URL，如 https://mirrors.xxx.com/alpine',
-        TerminalMirrorKind.pip => 'index-url，如 https://mirrors.xxx.com/pypi/simple',
-        TerminalMirrorKind.npm => 'registry，如 https://mirrors.xxx.com/npm/',
-      };
+    TerminalMirrorKind.system =>
+      widget.distro == TerminalDistro.ubuntu
+          ? '仓库根 URL，如 https://mirrors.xxx.com/ubuntu-ports'
+          : '仓库根 URL，如 https://mirrors.xxx.com/alpine',
+    TerminalMirrorKind.pip => 'index-url，如 https://mirrors.xxx.com/pypi/simple',
+    TerminalMirrorKind.npm => 'registry，如 https://mirrors.xxx.com/npm/',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -575,8 +573,9 @@ class _PackagesTabState extends State<_PackagesTab> {
       _selected.clear();
     });
     try {
-      final result = await const TerminalSilentExec()
-          .run(batchCheckCommandFor(packages));
+      final result = await const TerminalSilentExec().run(
+        batchCheckCommandFor(packages),
+      );
       if (!mounted) return;
       final installed = parseBatchCheckOutput(result.stdout);
       setState(() {
@@ -617,8 +616,9 @@ class _PackagesTabState extends State<_PackagesTab> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Text(
               '已装状态检测失败（终端未安装或探测超时），可直接勾选安装。',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.error),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
             ),
           ),
         Expanded(
@@ -643,16 +643,17 @@ class _PackagesTabState extends State<_PackagesTab> {
                     for (final pkg in category.packages)
                       CheckboxListTile(
                         dense: true,
-                        value: _status[pkg.id] == _PkgStatus.installed ||
+                        value:
+                            _status[pkg.id] == _PkgStatus.installed ||
                             _selected.contains(pkg.id),
                         onChanged: _status[pkg.id] == _PkgStatus.notInstalled
                             ? (checked) => setState(() {
-                                  if (checked == true) {
-                                    _selected.add(pkg.id);
-                                  } else {
-                                    _selected.remove(pkg.id);
-                                  }
-                                })
+                                if (checked == true) {
+                                  _selected.add(pkg.id);
+                                } else {
+                                  _selected.remove(pkg.id);
+                                }
+                              })
                             : null,
                         title: Text(pkg.name),
                         subtitle: Text(pkg.description),
@@ -685,20 +686,22 @@ class _PackagesTabState extends State<_PackagesTab> {
     final theme = Theme.of(context);
     return switch (status) {
       _PkgStatus.checking => const SizedBox(
-          width: 14,
-          height: 14,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
+        width: 14,
+        height: 14,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
       _PkgStatus.installed => Text(
-          '已装',
-          style: theme.textTheme.labelSmall
-              ?.copyWith(color: theme.colorScheme.primary),
+        '已装',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.primary,
         ),
+      ),
       _ => Text(
-          '未装',
-          style: theme.textTheme.labelSmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        '未装',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
         ),
+      ),
     };
   }
 }
