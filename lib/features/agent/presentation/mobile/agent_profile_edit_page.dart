@@ -287,30 +287,22 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
                 spacing: 6,
                 runSpacing: 0,
                 children: [
-                  ChoiceChip(
-                    label: const Text('不绑定'),
-                    labelStyle: const TextStyle(fontSize: 12),
-                    visualDensity: VisualDensity.compact,
+                  _selectChip(
+                    cs,
+                    label: '不绑定',
                     selected: _workspaceId == null,
-                    selectedColor: cs.primary.withValues(alpha: 0.12),
-                    onSelected: (_) => setState(() {
+                    onSelected: () => setState(() {
                       _workspaceId = null;
                       _workspaceName = null;
                     }),
                   ),
                   for (final ws in workspaces)
-                    ChoiceChip(
-                      avatar: Icon(
-                        LucideIcons.folderTree,
-                        size: 13,
-                        color: cs.onSurface.withValues(alpha: 0.6),
-                      ),
-                      label: Text(ws.name),
-                      labelStyle: const TextStyle(fontSize: 12),
-                      visualDensity: VisualDensity.compact,
+                    _selectChip(
+                      cs,
+                      label: ws.name,
+                      icon: LucideIcons.folderTree,
                       selected: _workspaceId == ws.id,
-                      selectedColor: cs.primary.withValues(alpha: 0.12),
-                      onSelected: (_) => setState(() {
+                      onSelected: () => setState(() {
                         _workspaceId = ws.id;
                         _workspaceName = ws.name;
                       }),
@@ -356,14 +348,12 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
             runSpacing: 0,
             children: [
               for (final g in AgentToolGroup.values)
-                FilterChip(
-                  label: Text(_toolGroupLabel(g)),
-                  labelStyle: const TextStyle(fontSize: 12),
-                  visualDensity: VisualDensity.compact,
+                _selectChip(
+                  cs,
+                  label: _toolGroupLabel(g),
                   selected: _tools.contains(g),
-                  selectedColor: cs.primary.withValues(alpha: 0.12),
-                  onSelected: (v) => setState(() {
-                    v ? _tools.add(g) : _tools.remove(g);
+                  onSelected: () => setState(() {
+                    _tools.contains(g) ? _tools.remove(g) : _tools.add(g);
                     _tools = {..._tools};
                   }),
                 ),
@@ -391,6 +381,38 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
           ),
         ),
       ],
+    );
+  }
+
+  /// 选中态醒目化的勾选 chip：选中时 ✓ + 主色描边/字色/加粗，
+  /// 一眼分清当前绑定项（工作区/工具集共用）。
+  Widget _selectChip(
+    ColorScheme cs, {
+    required String label,
+    required bool selected,
+    required VoidCallback onSelected,
+    IconData? icon,
+  }) {
+    return ChoiceChip(
+      avatar: selected
+          ? Icon(LucideIcons.check, size: 14, color: cs.primary)
+          : icon != null
+              ? Icon(icon, size: 13, color: cs.onSurface.withValues(alpha: 0.6))
+              : null,
+      label: Text(label),
+      labelStyle: TextStyle(
+        fontSize: 12,
+        color: selected ? cs.primary : null,
+        fontWeight: selected ? FontWeight.w600 : null,
+      ),
+      visualDensity: VisualDensity.compact,
+      showCheckmark: false,
+      selected: selected,
+      selectedColor: cs.primary.withValues(alpha: 0.15),
+      side: selected
+          ? BorderSide(color: cs.primary)
+          : BorderSide(color: cs.outline.withValues(alpha: 0.4)),
+      onSelected: (_) => onSelected(),
     );
   }
 
