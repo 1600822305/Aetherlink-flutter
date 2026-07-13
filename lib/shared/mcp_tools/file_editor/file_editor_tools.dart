@@ -61,6 +61,8 @@ Future<McpToolResult> runFileEditorTool(
         return await getFileInfo(ref, args);
       case 'search_files':
         return await searchFiles(ref, args);
+      case 'get_diagnostics':
+        return await getDiagnostics(ref, args);
       case 'write':
         return await writeFile(ref, args);
       case 'create_directory':

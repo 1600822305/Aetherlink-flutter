@@ -760,6 +760,27 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
+      name: 'get_diagnostics',
+      description: '运行项目静态分析并回读诊断（错误/告警清单）。按项目根目录自动选择只读分析命令：'
+          'pubspec.yaml→dart analyze、tsconfig.json→npx tsc --noEmit、'
+          'go.mod→go vet ./...、Cargo.toml→cargo check。'
+          '改完代码后调用以自检，避免把编译错误留给用户。'
+          '仅支持可执行命令的工作区后端（本地容器 / SSH）。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'workspace': {
+            'type': 'string',
+            'description': '工作区编号（如 "1"）或工作区 ID 或工作区名称（可选，默认当前工作区）',
+          },
+          'sub_path': {
+            'type': 'string',
+            'description': '项目所在子目录相对路径（可选，默认工作区根目录）。monorepo 时指定具体项目目录',
+          },
+        },
+      },
+    ),
+    McpToolDefinition(
       name: 'write',
       description:
           '写文件：传 path 覆盖写入已有文件全部内容；传 parent_path + name 新建文件。会触发用户确认。'

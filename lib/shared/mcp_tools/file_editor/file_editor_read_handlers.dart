@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_diagnostics.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_search.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 
@@ -373,4 +374,44 @@ Future<Map<String, Object?>> _readOne(
     if (guarded.note != null) 'truncation': guarded.note,
     if (withLineNumbers) 'note': _kLineNumbersNote,
   };
+}
+
+/// `get_diagnostics` — 运行项目静态分析并回读诊断（改完代码自检）。
+/// 按根目录内容自动探测项目类型（见 [diagnosticsCommandFor]，命令固定
+/// 白名单、只读），经工作区后端 exec 执行；SAF 等不可执行后端直接报错。
+Future<McpToolResult> getDiagnostics(Ref ref, Map<String, Object?> args) async {
+  final resolved = await resolveWorkspace(ref, args);
+  final backend = resolved.backend;
+  if (!backend.capabilities.canExec) {
+    return fileEditorError(
+      '当前工作区后端不支持执行命令，无法运行静态分析；'
+      '请改用可执行命令的工作区（如本地容器 / SSH）。',
+    );
+  }
+  final dir = await navigateSubPath(
+    backend,
+    resolved.workspace.root,
+    optionalString(args, 'sub_path'),
+  );
+  final entries = await backend.listDir(dir);
+  final detected = diagnosticsCommandFor({for (final e in entries) e.name});
+  if (detected == null) {
+    return fileEditorError(
+      '未识别的项目类型：目录下没有 pubspec.yaml / tsconfig.json / '
+      'go.mod / Cargo.toml，无法选择分析命令。可传 sub_path 指定项目子目录。',
+    );
+  }
+  final result = await backend.exec(
+    detected.command,
+    workingDirectory: dir,
+    timeout: const Duration(seconds: 180),
+  );
+  return fileEditorOk({
+    'projectType': detected.projectType,
+    'command': detected.command,
+    'exitCode': result.exitCode,
+    'clean': result.exitCode == 0 && !result.timedOut,
+    if (result.timedOut) 'timedOut': true,
+    'output': combineDiagnosticsOutput(result.stdout, result.stderr),
+  });
 }
