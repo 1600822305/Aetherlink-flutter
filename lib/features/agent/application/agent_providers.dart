@@ -21,6 +21,11 @@ const String kAgentSeededKey = 'agent_seeded_v1';
 /// 会话上下文长度上限（token）的持久化键。
 const String kAgentContextLimitKey = 'agent_context_limit';
 
+/// 智能体界面偏好的持久化键（执行设置/事件流显示）。
+const String kAgentDefaultModeKey = 'agent_default_mode';
+const String kAgentAutoCollapseKey = 'agent_auto_collapse_work_sessions';
+const String kAgentFollowAiFileKey = 'agent_follow_ai_file';
+
 /// 首次运行时的一次性种子写入（档案/话题/事件三表）。keepAlive 保证
 /// 多个 hydrate 入口共享同一次 Future，不会重复种入。
 @Riverpod(keepAlive: true)
@@ -187,8 +192,7 @@ class AgentSidebarTabIndex extends _$AgentSidebarTabIndex {
   }
 }
 
-/// 智能体界面偏好（UI 先行阶段：会话内记忆；接真实现时走
-/// appSettingsStore 持久化）。
+/// 智能体界面偏好（appSettingsStore 持久化，冷启动 hydrate 恢复）。
 class AgentUiSettings {
   const AgentUiSettings({
     this.defaultMode = AgentSessionMode.code,
@@ -235,23 +239,54 @@ class AgentUiSettingsController extends _$AgentUiSettingsController {
   }
 
   Future<void> _hydrate() async {
-    final stored = await ref
-        .read(appSettingsStoreProvider)
-        .getSetting(kAgentContextLimitKey);
-    final limit = int.tryParse(stored ?? '');
-    if (limit != null && limit > 0) {
-      state = state.copyWith(contextLimit: limit);
-    }
+    final store = ref.read(appSettingsStoreProvider);
+    final storedLimit = await store.getSetting(kAgentContextLimitKey);
+    final storedMode = await store.getSetting(kAgentDefaultModeKey);
+    final storedCollapse = await store.getSetting(kAgentAutoCollapseKey);
+    final storedFollow = await store.getSetting(kAgentFollowAiFileKey);
+
+    final limit = int.tryParse(storedLimit ?? '');
+    final mode = AgentSessionMode.values
+        .where((m) => m.name == storedMode && m != AgentSessionMode.auto)
+        .firstOrNull;
+    state = state.copyWith(
+      contextLimit: (limit != null && limit > 0) ? limit : null,
+      defaultMode: mode,
+      autoCollapseWorkSessions: switch (storedCollapse) {
+        '1' => true,
+        '0' => false,
+        _ => null,
+      },
+      followAiFile: switch (storedFollow) {
+        '1' => true,
+        '0' => false,
+        _ => null,
+      },
+    );
   }
 
-  void setDefaultMode(AgentSessionMode mode) =>
-      state = state.copyWith(defaultMode: mode);
+  void setDefaultMode(AgentSessionMode mode) {
+    // 默认模式不提供 auto（决策 26：进 auto 必经话题内二次确认）。
+    if (mode == AgentSessionMode.auto) return;
+    state = state.copyWith(defaultMode: mode);
+    ref
+        .read(appSettingsStoreProvider)
+        .saveSetting(kAgentDefaultModeKey, mode.name);
+  }
 
-  void setAutoCollapseWorkSessions(bool value) =>
-      state = state.copyWith(autoCollapseWorkSessions: value);
+  void setAutoCollapseWorkSessions(bool value) {
+    state = state.copyWith(autoCollapseWorkSessions: value);
+    ref
+        .read(appSettingsStoreProvider)
+        .saveSetting(kAgentAutoCollapseKey, value ? '1' : '0');
+  }
 
-  void setFollowAiFile(bool value) =>
-      state = state.copyWith(followAiFile: value);
+  void setFollowAiFile(bool value) {
+    state = state.copyWith(followAiFile: value);
+    ref
+        .read(appSettingsStoreProvider)
+        .saveSetting(kAgentFollowAiFileKey, value ? '1' : '0');
+  }
 
   void setContextLimit(int value) {
     if (value <= 0) return;
