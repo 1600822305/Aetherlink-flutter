@@ -137,7 +137,7 @@ class DriftAgentEventStore implements AgentEventStore {
 
   @override
   Future<void> consumeQueuedUserMessages(String taskId) async {
-    final events = await _dao.getEvents(taskId);
+    final events = await _dao.getEventsOfKind(taskId, 'user_message');
     final consumed = [
       for (final e in events)
         if (e is UserMessageEvent && e.queued)

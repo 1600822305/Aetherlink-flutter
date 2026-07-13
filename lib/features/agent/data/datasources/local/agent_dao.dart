@@ -118,6 +118,26 @@ class AgentDao extends DatabaseAccessor<AppDatabase> with _$AgentDaoMixin {
     ];
   }
 
+  /// 某话题指定 kind 事件的一次性读取（按 seq 升序）：安全点消费排队
+  /// 消息等定向场景用，避免全表读取+解码。
+  Future<List<AgentEvent>> getEventsOfKind(String taskId, String kind) async {
+    final rows =
+        await (select(agentEventRows)
+              ..where((e) => e.taskId.equals(taskId) & e.kind.equals(kind))
+              ..orderBy([(e) => OrderingTerm(expression: e.seq)]))
+            .get();
+    return [
+      for (final row in rows)
+        decodeAgentEvent(
+          id: row.id,
+          seq: row.seq,
+          at: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
+          kind: row.kind,
+          payloadJson: row.payloadJson,
+        ),
+    ];
+  }
+
   /// 话题内当前最大 seq（无事件时 0），新事件从这里续增。
   Future<int> maxSeq(String taskId) async {
     final expr = agentEventRows.seq.max();

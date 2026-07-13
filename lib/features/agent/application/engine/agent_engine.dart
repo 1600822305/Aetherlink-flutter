@@ -285,9 +285,12 @@ class AgentEngine {
           final stopwatch = Stopwatch()..start();
           final result = await tools
               .execute(call, cancel)
-              .timeout(budget.toolTimeout,
-                  onTimeout: () => const AgentToolResult(
-                      ok: false, summary: '超时 ✗'));
+              .timeout(budget.toolTimeout, onTimeout: () {
+            // 同时中止仍在运行的底层工具，避免模型重发同一命令时
+            // 与旧命令并发（双重执行）。
+            cancel.requestToolInterrupt();
+            return const AgentToolResult(ok: false, summary: '超时 ✗');
+          });
           stopwatch.stop();
           await store.updateToolCall(current.id, event,
               state: result.ok
@@ -304,8 +307,10 @@ class AgentEngine {
 
         // ⑦ 自动 compaction（设计初稿 §5.3）：重放视图超阈值时把最早
         // 一段摘要成 CompactionEvent；失败不阻断任务（下轮再试）。
+        // 复用本轮开头读的事件列表（事件只在尾部追加，前缀选择
+        // 不受影响），避免每轮额外一次全表读取+解码。
         try {
-          await _maybeCompact(current);
+          await _maybeCompact(current, events);
         } catch (_) {}
       }
     } catch (e) {
@@ -386,8 +391,7 @@ class AgentEngine {
     }
   }
 
-  Future<void> _maybeCompact(AgentTask task) async {
-    final events = await store.getEvents(task.id);
+  Future<void> _maybeCompact(AgentTask task, List<AgentEvent> events) async {
     final entries = foldCompactedEvents(events);
     if (totalContextChars(entries) <= budget.compactionTriggerChars) return;
     final covered = selectCompactionPrefix(

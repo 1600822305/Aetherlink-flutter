@@ -35,6 +35,7 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_back
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
+import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/builtin_tool_catalog.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
@@ -164,6 +165,21 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   final AgentProfile _profile;
   final List<McpToolDefinition> _definitions;
 
+  /// 运行内锁定的模型：首轮解析后本次运行（含压缩）不再跟随默认模型
+  /// 切换——重放历史里的 tool_call 结构与 provider 绑定，中途换
+  /// provider 会整轮报错把任务打成 failed。暂停/续跑是新运行，会重新解析。
+  Model? _lockedModel;
+
+  Future<Model> _resolveModel(Ref ref) async {
+    final locked = _lockedModel;
+    if (locked != null) return locked;
+    final current = await ref.read(appCurrentModelProvider.future);
+    if (current == null) {
+      throw StateError('未配置模型：请先在 设置 → 模型服务 里添加并选中默认模型');
+    }
+    return _lockedModel = effectiveModelFor(current);
+  }
+
   @override
   Future<AgentLlmTurn> completeTurn(
     AgentLlmContext context, {
@@ -179,11 +195,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     AgentCancellationToken? cancel,
   }) async {
     final ref = _refOf();
-    final current = await ref.read(appCurrentModelProvider.future);
-    if (current == null) {
-      throw StateError('未配置模型：请先在 设置 → 模型服务 里添加并选中默认模型');
-    }
-    final model = effectiveModelFor(current);
+    final model = await _resolveModel(ref);
     final gateway = ref.read(appLlmGatewayFactoryProvider).forModel(model);
 
     final system = buildAgentSystemPrompt(
@@ -294,9 +306,12 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     List<AgentEvent> events,
   ) async {
     final ref = _refOf();
-    final current = await ref.read(appCurrentModelProvider.future);
-    if (current == null) return '';
-    final model = effectiveModelFor(current);
+    final Model model;
+    try {
+      model = await _resolveModel(ref);
+    } on StateError {
+      return '';
+    }
     final gateway = ref.read(appLlmGatewayFactoryProvider).forModel(model);
 
     final request = LlmChatRequest(

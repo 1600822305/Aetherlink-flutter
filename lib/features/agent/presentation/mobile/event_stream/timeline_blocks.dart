@@ -60,10 +60,11 @@ String segmentSummary(SegmentBlock block) {
   return '调用工具';
 }
 
-/// 段内代码行变更统计（Devin 风格段头 +N −N）：从写类工具的
-/// 完整参数里估算——content/replace 行数计增、search 行数计减，
-/// diff 文本按 +/− 前缀行计。仅统计成功的调用。
-({int added, int removed}) segmentLineStats(SegmentBlock block) {
+/// 单条工具的行统计缓存（按事件 id）：成功后参数不再变，避免每次
+/// 重建都对全量 argsJson 重复 jsonDecode。
+final Map<String, ({int added, int removed})> _lineStatsCache = {};
+
+({int added, int removed}) _eventLineStats(String raw) {
   var added = 0, removed = 0;
   int lines(String s) => s.isEmpty ? 0 : '\n'.allMatches(s).length + 1;
 
@@ -89,16 +90,28 @@ String segmentSummary(SegmentBlock block) {
     }
   }
 
+  try {
+    final decoded = jsonDecode(raw);
+    if (decoded is Map<String, dynamic>) countArgs(decoded);
+  } on FormatException {
+    // 非 JSON 参数不参与统计。
+  }
+  return (added: added, removed: removed);
+}
+
+/// 段内代码行变更统计（Devin 风格段头 +N −N）：从写类工具的
+/// 完整参数里估算——content/replace 行数计增、search 行数计减，
+/// diff 文本按 +/− 前缀行计。仅统计成功的调用。
+({int added, int removed}) segmentLineStats(SegmentBlock block) {
+  if (_lineStatsCache.length > 4096) _lineStatsCache.clear();
+  var added = 0, removed = 0;
   for (final e in block.toolCalls) {
     if (e.state != AgentToolCallState.success) continue;
     final raw = e.argsDetail;
     if (raw == null || raw.isEmpty) continue;
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is Map<String, dynamic>) countArgs(decoded);
-    } on FormatException {
-      // 非 JSON 参数不参与统计。
-    }
+    final stats = _lineStatsCache[e.id] ??= _eventLineStats(raw);
+    added += stats.added;
+    removed += stats.removed;
   }
   return (added: added, removed: removed);
 }

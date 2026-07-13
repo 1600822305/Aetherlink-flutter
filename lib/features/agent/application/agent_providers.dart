@@ -57,23 +57,23 @@ class AgentProfiles extends _$AgentProfiles {
     state = await ref.read(agentDaoProvider).getAllProfiles();
   }
 
-  /// 新增或按 id 覆盖一个档案（编辑页保存）。
-  void upsert(AgentProfile profile) {
+  /// 新增或按 id 覆盖一个档案（编辑页保存），等待落库完成。
+  Future<void> upsert(AgentProfile profile) async {
     final index = state.indexWhere((p) => p.id == profile.id);
     state = [
       for (var i = 0; i < state.length; i++)
         if (i == index) profile else state[i],
       if (index < 0) profile,
     ];
-    ref.read(agentDaoProvider).upsertProfile(profile);
+    await ref.read(agentDaoProvider).upsertProfile(profile);
   }
 
-  void remove(String profileId) {
+  Future<void> remove(String profileId) async {
     state = [
       for (final p in state)
         if (p.id != profileId) p,
     ];
-    ref.read(agentDaoProvider).deleteProfile(profileId);
+    await ref.read(agentDaoProvider).deleteProfile(profileId);
   }
 }
 
@@ -112,42 +112,43 @@ class AgentTasks extends _$AgentTasks {
     state = recovered;
   }
 
-  /// 新增或按 id 覆盖一个话题（引擎写回/新建任务共用），写穿到库。
-  void apply(AgentTask task) {
+  /// 新增或按 id 覆盖一个话题（引擎写回/新建任务共用），写穿到库
+  /// 并等待落库完成（保证状态迁移的落库顺序，失败向上抛）。
+  Future<void> apply(AgentTask task) async {
     final index = state.indexWhere((t) => t.id == task.id);
     state = [
       for (var i = 0; i < state.length; i++)
         if (i == index) task else state[i],
       if (index < 0) task,
     ];
-    ref.read(agentDaoProvider).upsertTask(task);
+    await ref.read(agentDaoProvider).upsertTask(task);
   }
 
-  void rename(String taskId, String title) {
+  Future<void> rename(String taskId, String title) async {
     state = [
       for (final t in state)
         if (t.id == taskId) t.copyWith(title: title) else t,
     ];
     final renamed = state.where((t) => t.id == taskId).firstOrNull;
     if (renamed != null) {
-      ref.read(agentDaoProvider).upsertTask(renamed);
+      await ref.read(agentDaoProvider).upsertTask(renamed);
     }
   }
 
   /// 固定/取消固定（对齐聊天 TopicsController.togglePin），写穿到库。
-  void togglePin(String taskId) {
+  Future<void> togglePin(String taskId) async {
     state = [
       for (final t in state)
         if (t.id == taskId) t.copyWith(pinned: !t.pinned) else t,
     ];
     final toggled = state.where((t) => t.id == taskId).firstOrNull;
     if (toggled != null) {
-      ref.read(agentDaoProvider).upsertTask(toggled);
+      await ref.read(agentDaoProvider).upsertTask(toggled);
     }
   }
 
   /// 删话题级联删其派生的子任务（子代理隐藏话题）。
-  void remove(String taskId) {
+  Future<void> remove(String taskId) async {
     final childIds = [
       for (final t in state)
         if (t.parentTaskId == taskId) t.id,
@@ -156,19 +157,19 @@ class AgentTasks extends _$AgentTasks {
       for (final t in state)
         if (t.id != taskId && t.parentTaskId != taskId) t,
     ];
-    ref.read(agentDaoProvider).deleteTask(taskId);
+    await ref.read(agentDaoProvider).deleteTask(taskId);
     for (final id in childIds) {
-      ref.read(agentDaoProvider).deleteTask(id);
+      await ref.read(agentDaoProvider).deleteTask(id);
     }
   }
 
   /// 删除某智能体下的全部话题（删除智能体时联动）。
-  void removeByProfile(String profileId) {
+  Future<void> removeByProfile(String profileId) async {
     state = [
       for (final t in state)
         if (t.profileId != profileId) t,
     ];
-    ref.read(agentDaoProvider).deleteTasksByProfile(profileId);
+    await ref.read(agentDaoProvider).deleteTasksByProfile(profileId);
   }
 }
 

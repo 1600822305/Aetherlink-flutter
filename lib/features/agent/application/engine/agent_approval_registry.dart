@@ -97,6 +97,10 @@ class AgentApprovalRegistryNotifier
 
   bool hasTaskGrace(String taskId, String toolName) =>
       _taskGrace[taskId]?.contains(toolName) ?? false;
+
+  /// 任务终态（done/cancelled/failed）时清掉运行级宽限，
+  /// 保证「随任务结束失效」的语义并避免 map 只增不减。
+  void clearTaskGrace(String taskId) => _taskGrace.remove(taskId);
 }
 
 final agentApprovalRegistryProvider = NotifierProvider<

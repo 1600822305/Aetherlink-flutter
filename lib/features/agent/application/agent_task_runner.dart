@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/app/di/agent_data_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_runtime_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_subagent_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_budget.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart';
@@ -67,7 +68,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       modelLabel:
           await ref.read(agentRuntimeProvider).currentModelLabel() ?? '未配置模型',
     );
-    ref.read(agentTasksProvider.notifier).apply(task);
+    await ref.read(agentTasksProvider.notifier).apply(task);
     return task;
   }
 
@@ -84,7 +85,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       updatedAt: DateTime.now(),
       lastEventSummary: text,
     );
-    ref.read(agentTasksProvider.notifier).apply(updated);
+    await ref.read(agentTasksProvider.notifier).apply(updated);
     await _checkpoint(updated, text);
     await _store().appendUserMessage(updated.id, text);
     _run(updated);
@@ -111,7 +112,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           await ref.read(agentRuntimeProvider).currentModelLabel() ?? '未配置模型',
       lastEventSummary: text,
     );
-    ref.read(agentTasksProvider.notifier).apply(task);
+    await ref.read(agentTasksProvider.notifier).apply(task);
     await _checkpoint(task, text);
     await _store().appendUserMessage(task.id, text);
     _run(task);
@@ -143,7 +144,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         updatedAt: DateTime.now(),
         lastEventSummary: text,
       );
-      ref.read(agentTasksProvider.notifier).apply(updated);
+      await ref.read(agentTasksProvider.notifier).apply(updated);
       _run(updated);
     }
   }
@@ -155,13 +156,13 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   }
 
   /// 续跑 paused/waitingInput 的任务（恢复语义 L7：重放上下文接着跑）。
-  void resume(AgentTask task) {
+  Future<void> resume(AgentTask task) async {
     if (state.contains(task.id)) return;
     final updated = task.copyWith(
       status: AgentTaskStatus.running,
       updatedAt: DateTime.now(),
     );
-    ref.read(agentTasksProvider.notifier).apply(updated);
+    await ref.read(agentTasksProvider.notifier).apply(updated);
     _run(updated);
   }
 
@@ -181,7 +182,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       updatedAt: DateTime.now(),
       lastEventSummary: '方案已确认，转 Code 执行',
     );
-    ref.read(agentTasksProvider.notifier).apply(updated);
+    await ref.read(agentTasksProvider.notifier).apply(updated);
     _run(updated);
   }
 
@@ -348,6 +349,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     );
     engine.run(task, token).whenComplete(() {
       _tokens.remove(task.id);
+      _clearGraceIfFinished(task.id);
       state = {
         for (final id in state)
           if (id != task.id) id,
@@ -498,7 +500,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       lastEventSummary: prompt,
       parentTaskId: parent.id,
     );
-    ref.read(agentTasksProvider.notifier).apply(child);
+    await ref.read(agentTasksProvider.notifier).apply(child);
     await _store().appendUserMessage(childId, prompt);
 
     if (background) {
@@ -572,6 +574,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           .whereType<ToolCallEvent>()
           .where((e) => e.id == toolEventId)
           .firstOrNull;
+      // 原工具事件已被回滚对话截断删除时跳过回填/注入，
+      // 避免把"幽灵"事件按旧 seq 重新插回被截断区间。
       if (event != null) {
         await _store().updateToolCall(
           parent.id,
@@ -582,17 +586,17 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           resultSummary: result.summary,
           resultDetail: result.detail,
         );
+        await _store().appendUserMessage(
+          parent.id,
+          '[后台子代理「${child.title}」${result.ok ? '已完成' : '已结束'}：'
+          '${result.summary}]（完整结论已回填到对应工具结果）',
+          queued: true,
+        );
       }
-      await _store().appendUserMessage(
-        parent.id,
-        '[后台子代理「${child.title}」${result.ok ? '已完成' : '已结束'}：'
-        '${result.summary}]（完整结论已回填到对应工具结果）',
-        queued: true,
-      );
     } catch (e) {
       // 异常也要回填父工具事件并通知，否则事件永久停在 running。
       try {
-        ref.read(agentTasksProvider.notifier).apply(child.copyWith(
+        await ref.read(agentTasksProvider.notifier).apply(child.copyWith(
               status: AgentTaskStatus.failed,
               updatedAt: DateTime.now(),
               lastEventSummary: '执行出错：$e',
@@ -610,12 +614,12 @@ class AgentTaskRunner extends _$AgentTaskRunner {
             resultSummary: '子代理执行出错 ✗',
             resultDetail: '$e',
           );
+          await _store().appendUserMessage(
+            parent.id,
+            '[后台子代理「${child.title}」执行出错：$e]',
+            queued: true,
+          );
         }
-        await _store().appendUserMessage(
-          parent.id,
-          '[后台子代理「${child.title}」执行出错：$e]',
-          queued: true,
-        );
       } catch (_) {}
     } finally {
       _tokens.remove(child.id);
@@ -693,7 +697,22 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   AgentEventStore _store() =>
       _storeInstance ??= DriftAgentEventStore(ref.read(agentDaoProvider));
 
-  void _applyTask(AgentTask task) =>
+  /// 任务进终态后清掉运行级审批宽限（「随任务结束失效」）；
+  /// 暂停/等待输入等可续跑状态保留宽限。
+  void _clearGraceIfFinished(String taskId) {
+    final task =
+        ref.read(agentTasksProvider).where((t) => t.id == taskId).firstOrNull;
+    const finished = {
+      AgentTaskStatus.done,
+      AgentTaskStatus.cancelled,
+      AgentTaskStatus.failed,
+    };
+    if (task == null || finished.contains(task.status)) {
+      ref.read(agentApprovalRegistryProvider.notifier).clearTaskGrace(taskId);
+    }
+  }
+
+  Future<void> _applyTask(AgentTask task) =>
       ref.read(agentTasksProvider.notifier).apply(task);
 }
 
@@ -722,5 +741,5 @@ class _ProviderTaskGateway implements AgentTaskGateway {
   final AgentTaskRunner _runner;
 
   @override
-  Future<void> save(AgentTask task) async => _runner._applyTask(task);
+  Future<void> save(AgentTask task) => _runner._applyTask(task);
 }
