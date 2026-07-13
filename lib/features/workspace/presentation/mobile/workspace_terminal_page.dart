@@ -541,15 +541,22 @@ class _WorkspaceTerminalPageState
                     ),
                   ),
                 ),
-                if (tab.connected && isProot)
+                // 始终可进环境管理页：环境残缺连不上时也要能清理/重装。
+                if (isProot)
                   IconButton(
-                    tooltip: '环境管理（镜像源 / 预设包）',
+                    tooltip: '环境管理（镜像源 / 预设包 / 清理重装）',
                     icon: const Icon(LucideIcons.package,
                         size: 18, color: Colors.white70),
                     onPressed: () => showTerminalEnvPage(
                       context,
-                      onRunCommand: (command) =>
-                          tab.session?.write(utf8.encode('$command\n')),
+                      onRunCommand: (command) {
+                        final session = tab.session;
+                        if (session == null) {
+                          AppToast.info(context, '终端未连接，无法执行命令');
+                          return;
+                        }
+                        session.write(utf8.encode('$command\n'));
+                      },
                     ),
                   ),
                 if (tab.connected)
