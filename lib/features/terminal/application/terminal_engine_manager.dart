@@ -91,8 +91,18 @@ class TerminalEngineManager {
   Future<String> _markerPath() async =>
       p.join(await baseDirPath(), '.setup_done');
 
-  /// rootfs 是否已完整安装（解压完成并写入标记）。
-  Future<bool> isInstalled() async => File(await _markerPath()).exists();
+  /// rootfs 是否已完整安装。标记之外还探测 rootfs 的关键二进制：清理/删除
+  /// 中途失败可能剩下标记但 rootfs 已残缺，此时视为未安装，走重新引导。
+  Future<bool> isInstalled() async {
+    if (!await File(await _markerPath()).exists()) return false;
+    final distro = await installedDistro() ?? TerminalDistro.alpine;
+    final rootfs = await rootfsPath();
+    final probe = switch (distro) {
+      TerminalDistro.alpine => p.join(rootfs, 'bin', 'busybox'),
+      TerminalDistro.ubuntu => p.join(rootfs, 'usr', 'bin', 'dpkg'),
+    };
+    return File(probe).exists();
+  }
 
   /// 已安装的发行版；未安装返回 null。旧版标记只写了 Alpine 版本号（无
   /// 发行版段），视为 Alpine。

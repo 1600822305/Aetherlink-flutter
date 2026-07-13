@@ -20,8 +20,10 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:xterm/xterm.dart';
 
+import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
 import 'package:aetherlink_flutter/features/terminal/presentation/mobile/terminal_env_page.dart';
+import 'package:aetherlink_flutter/features/terminal/presentation/mobile/terminal_setup_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/application/terminal_output_links.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_restore.dart';
@@ -316,6 +318,20 @@ class _WorkspaceTerminalPageState
         tab.connected = true;
         tab.connecting = false;
       });
+    } on TerminalEngineMissingException {
+      // 环境被清理/残缺：弹安装引导，装好后自动重连。
+      if (!mounted) return;
+      setState(() => tab.connecting = false);
+      final installed = await showTerminalSetupSheet(
+        context,
+        ref.read(fileSystemApiProvider),
+      );
+      if (!mounted || !_tabs.contains(tab)) return;
+      if (installed) {
+        await _connect(tab);
+      } else {
+        setState(() => tab.error = '内置终端环境尚未安装');
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
