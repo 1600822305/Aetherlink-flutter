@@ -83,6 +83,9 @@ abstract class AgentEventStore {
     required int coveredCount,
     required String summary,
   });
+
+  /// 删除话题内 seq 大于 [seq] 的全部事件（回滚对话到检查点）。
+  Future<void> truncateEventsAfter(String taskId, int seq);
 }
 
 /// drift 实现：AgentDao 之上的薄封装，seq 从库内最大值续增。
@@ -104,8 +107,7 @@ class DriftAgentEventStore implements AgentEventStore {
   }
 
   @override
-  Future<List<AgentEvent>> getEvents(String taskId) =>
-      _dao.getEvents(taskId);
+  Future<List<AgentEvent>> getEvents(String taskId) => _dao.getEvents(taskId);
 
   @override
   Future<UserMessageEvent> appendUserMessage(
@@ -300,6 +302,13 @@ class DriftAgentEventStore implements AgentEventStore {
     );
     await _dao.upsertEvents(taskId, [event]);
     return event;
+  }
+
+  @override
+  Future<void> truncateEventsAfter(String taskId, int seq) async {
+    await _dao.deleteEventsAfterSeq(taskId, seq);
+    // 后续事件从检查点处续增，不能沿用截断前的缓存。
+    _seqCache[taskId] = seq;
   }
 
   @override

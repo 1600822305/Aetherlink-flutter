@@ -34,13 +34,14 @@ class AgentDao extends DatabaseAccessor<AppDatabase> with _$AgentDaoMixin {
 
   /// 全部话题，按最近活动倒序（侧栏排序）。
   Future<List<AgentTask>> getAllTasks() async {
-    final rows = await (select(agentTaskRows)..orderBy([
-          (t) => OrderingTerm(
+    final rows =
+        await (select(agentTaskRows)..orderBy([
+              (t) => OrderingTerm(
                 expression: t.updatedAtNum,
                 mode: OrderingMode.desc,
               ),
-        ]))
-        .get();
+            ]))
+            .get();
     return rows.map((row) => row.data).toList();
   }
 
@@ -57,25 +58,25 @@ class AgentDao extends DatabaseAccessor<AppDatabase> with _$AgentDaoMixin {
 
   /// 删除话题及其全部事件。
   Future<void> deleteTask(String id) => transaction(() async {
-        await (delete(agentEventRows)..where((e) => e.taskId.equals(id))).go();
-        await (delete(agentTaskRows)..where((t) => t.id.equals(id))).go();
-      });
+    await (delete(agentEventRows)..where((e) => e.taskId.equals(id))).go();
+    await (delete(agentTaskRows)..where((t) => t.id.equals(id))).go();
+  });
 
   /// 删除某智能体下全部话题及事件（删智能体联动）。
   Future<void> deleteTasksByProfile(String profileId) => transaction(() async {
-        final ids = await (selectOnly(agentTaskRows)
+    final ids =
+        await (selectOnly(agentTaskRows)
               ..addColumns([agentTaskRows.id])
               ..where(agentTaskRows.profileId.equals(profileId)))
             .map((row) => row.read(agentTaskRows.id)!)
             .get();
-        if (ids.isNotEmpty) {
-          await (delete(agentEventRows)..where((e) => e.taskId.isIn(ids)))
-              .go();
-        }
-        await (delete(agentTaskRows)
-              ..where((t) => t.profileId.equals(profileId)))
-            .go();
-      });
+    if (ids.isNotEmpty) {
+      await (delete(agentEventRows)..where((e) => e.taskId.isIn(ids))).go();
+    }
+    await (delete(
+      agentTaskRows,
+    )..where((t) => t.profileId.equals(profileId))).go();
+  });
 
   // ---- 事件流 ----
 
@@ -85,25 +86,26 @@ class AgentDao extends DatabaseAccessor<AppDatabase> with _$AgentDaoMixin {
       ..where((e) => e.taskId.equals(taskId))
       ..orderBy([(e) => OrderingTerm(expression: e.seq)]);
     return query.watch().map(
-          (rows) => [
-            for (final row in rows)
-              decodeAgentEvent(
-                id: row.id,
-                seq: row.seq,
-                at: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
-                kind: row.kind,
-                payloadJson: row.payloadJson,
-              ),
-          ],
-        );
+      (rows) => [
+        for (final row in rows)
+          decodeAgentEvent(
+            id: row.id,
+            seq: row.seq,
+            at: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
+            kind: row.kind,
+            payloadJson: row.payloadJson,
+          ),
+      ],
+    );
   }
 
   /// 某话题事件流的一次性读取（按 seq 升序，引擎组上下文用）。
   Future<List<AgentEvent>> getEvents(String taskId) async {
-    final rows = await (select(agentEventRows)
-          ..where((e) => e.taskId.equals(taskId))
-          ..orderBy([(e) => OrderingTerm(expression: e.seq)]))
-        .get();
+    final rows =
+        await (select(agentEventRows)
+              ..where((e) => e.taskId.equals(taskId))
+              ..orderBy([(e) => OrderingTerm(expression: e.seq)]))
+            .get();
     return [
       for (final row in rows)
         decodeAgentEvent(
@@ -119,12 +121,18 @@ class AgentDao extends DatabaseAccessor<AppDatabase> with _$AgentDaoMixin {
   /// 话题内当前最大 seq（无事件时 0），新事件从这里续增。
   Future<int> maxSeq(String taskId) async {
     final expr = agentEventRows.seq.max();
-    final row = await (selectOnly(agentEventRows)
-          ..addColumns([expr])
-          ..where(agentEventRows.taskId.equals(taskId)))
-        .getSingle();
+    final row =
+        await (selectOnly(agentEventRows)
+              ..addColumns([expr])
+              ..where(agentEventRows.taskId.equals(taskId)))
+            .getSingle();
     return row.read(expr) ?? 0;
   }
+
+  /// 删除话题内 seq 大于 [seq] 的全部事件（回滚对话到检查点用）。
+  Future<void> deleteEventsAfterSeq(String taskId, int seq) => (delete(
+    agentEventRows,
+  )..where((e) => e.taskId.equals(taskId) & e.seq.isBiggerThanValue(seq))).go();
 
   /// 追加（或按 id 覆盖，用于流式文本/工具状态原位更新）一批事件。
   Future<void> upsertEvents(String taskId, List<AgentEvent> events) {

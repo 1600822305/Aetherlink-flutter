@@ -8,8 +8,9 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 
 /// 检查点标记行（初稿 §5.5 P2）：🏳 节点 + 弱化文字 + 「回滚」按钮。
 /// 点回滚先弹预览面板：列出会被还原/删除/恢复的文件（可点开看 diff），
-/// 确认后才执行。回滚只还原工作区文件，对话记录不受影响；
-/// 回滚前当前状态会自动落为新检查点（可再回滚回来）。
+/// 并可选回滚范围：仅对话 / 仅文件 / 文件+对话。回滚文件前
+/// 当前状态会自动落为新检查点（可再回滚回来）；回滚对话会
+/// 删除检查点之后的全部消息。
 class CheckpointTile extends ConsumerStatefulWidget {
   const CheckpointTile({required this.event, required this.taskId, super.key});
 
@@ -88,7 +89,7 @@ class _CheckpointTileState extends ConsumerState<CheckpointTile> {
     if (!mounted) return;
     setState(() => _busy = false);
 
-    final confirmed = await showModalBottomSheet<bool>(
+    final mode = await showModalBottomSheet<AgentRollbackMode>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -100,7 +101,7 @@ class _CheckpointTileState extends ConsumerState<CheckpointTile> {
             .rollbackFileDiff(task, widget.event, path),
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (mode == null || !mounted) return;
 
     setState(() => _busy = true);
     String? error;
@@ -108,7 +109,7 @@ class _CheckpointTileState extends ConsumerState<CheckpointTile> {
     try {
       result = await ref
           .read(agentTaskRunnerProvider.notifier)
-          .rollbackToCheckpoint(task, widget.event);
+          .rollbackToCheckpoint(task, widget.event, mode: mode);
     } catch (e) {
       error = '$e';
     } finally {
@@ -116,7 +117,15 @@ class _CheckpointTileState extends ConsumerState<CheckpointTile> {
     }
     if (!mounted) return;
     _snack(
-      error == null ? '已回滚到检查点，还原 ${result!.files.length} 个文件' : '回滚失败：$error',
+      error != null
+          ? '回滚失败：$error'
+          : switch (mode) {
+              AgentRollbackMode.messagesOnly => '已回滚对话到检查点',
+              AgentRollbackMode.filesOnly =>
+                '已回滚文件到检查点，还原 ${result!.files.length} 个文件',
+              AgentRollbackMode.filesAndMessages =>
+                '已回滚对话与文件，还原 ${result!.files.length} 个文件',
+            },
     );
   }
 
@@ -125,8 +134,9 @@ class _CheckpointTileState extends ConsumerState<CheckpointTile> {
   }
 }
 
-/// 回滚预览面板：列出会被触达的文件（可点开看 diff），底部确认/取消。
-class _RollbackPreviewSheet extends StatelessWidget {
+/// 回滚预览面板：列出会被触达的文件（可点开看 diff），底部选回滚
+/// 范围（仅对话 / 仅文件 / 文件+对话）后确认，pop 选中的模式。
+class _RollbackPreviewSheet extends StatefulWidget {
   const _RollbackPreviewSheet({
     required this.label,
     required this.files,
@@ -138,10 +148,20 @@ class _RollbackPreviewSheet extends StatelessWidget {
   final Future<String> Function(String path) loadDiff;
 
   @override
+  State<_RollbackPreviewSheet> createState() => _RollbackPreviewSheetState();
+}
+
+class _RollbackPreviewSheetState extends State<_RollbackPreviewSheet> {
+  AgentRollbackMode _mode = AgentRollbackMode.filesAndMessages;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurface.withValues(alpha: 0.6);
     final maxHeight = MediaQuery.of(context).size.height * 0.75;
+    final label = widget.label;
+    final files = widget.files;
+    final loadDiff = widget.loadDiff;
     return SafeArea(
       child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: maxHeight),
@@ -184,28 +204,52 @@ class _RollbackPreviewSheet extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: 12),
-              Row(
+              Text(
+                '回滚范围：',
+                style: theme.textTheme.labelSmall?.copyWith(color: muted),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
                 children: [
-                  Text(
-                    '对话记录不受影响；回滚前会自动保存当前状态',
-                    style: theme.textTheme.labelSmall?.copyWith(color: muted),
-                  ),
+                  for (final (m, text) in const [
+                    (AgentRollbackMode.filesAndMessages, '文件+对话'),
+                    (AgentRollbackMode.filesOnly, '仅文件'),
+                    (AgentRollbackMode.messagesOnly, '仅对话'),
+                  ])
+                    ChoiceChip(
+                      label: Text(text),
+                      selected: _mode == m,
+                      onSelected: (_) => setState(() => _mode = m),
+                    ),
                 ],
               ),
+              const SizedBox(height: 8),
+              Text(switch (_mode) {
+                AgentRollbackMode.filesAndMessages =>
+                  '检查点之后的消息将被删除，文件还原；回滚前会自动保存当前文件状态',
+                AgentRollbackMode.filesOnly => '对话记录不受影响；回滚前会自动保存当前文件状态',
+                AgentRollbackMode.messagesOnly => '仅删除检查点之后的消息，工作区文件不变',
+              }, style: theme.textTheme.labelSmall?.copyWith(color: muted)),
               const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: () => Navigator.of(context).pop(false),
+                    onPressed: () => Navigator.of(context).pop(),
                     child: const Text('取消'),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    child: Text(
-                      files.isEmpty ? '回滚' : '回滚 ${files.length} 个文件',
-                    ),
+                    onPressed: () => Navigator.of(context).pop(_mode),
+                    child: Text(switch (_mode) {
+                      AgentRollbackMode.messagesOnly => '回滚对话',
+                      AgentRollbackMode.filesOnly =>
+                        files.isEmpty ? '回滚文件' : '回滚 ${files.length} 个文件',
+                      AgentRollbackMode.filesAndMessages =>
+                        files.isEmpty ? '回滚对话与文件' : '回滚对话与 ${files.length} 个文件',
+                    }),
                   ),
                 ],
               ),
@@ -262,6 +306,27 @@ class _FileRow extends StatelessWidget {
                 style: theme.textTheme.bodySmall,
               ),
             ),
+            if (file.insertions != null || file.deletions != null) ...[
+              const SizedBox(width: 8),
+              if ((file.insertions ?? 0) > 0)
+                Text(
+                  '+${file.insertions}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: Colors.green,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              if ((file.insertions ?? 0) > 0 && (file.deletions ?? 0) > 0)
+                const SizedBox(width: 4),
+              if ((file.deletions ?? 0) > 0)
+                Text(
+                  '-${file.deletions}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: Colors.red,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+            ],
             const SizedBox(width: 8),
             Text(
               action,

@@ -26,6 +26,9 @@ export 'package:aetherlink_flutter/app/di/agent_checkpoint_access.dart'
 
 part 'agent_task_runner.g.dart';
 
+/// 回滚范围：仅对话、仅工作区文件，或两者一起回到检查点。
+enum AgentRollbackMode { messagesOnly, filesOnly, filesAndMessages }
+
 /// 任务执行编排：组装引擎依赖、持有每任务的取消 token、
 /// 把引擎的任务写回同步到 [AgentTasks]。
 /// 真 LLM/真工具/三层审批门均经 app/di 的 [agentRuntime] 组装注入。
@@ -124,7 +127,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   }) async {
     if (!queued && mode != null && mode != task.mode) {
       await _store().appendStatusChange(
-          task.id, '模式切换：${task.mode.name} → ${mode.name}');
+        task.id,
+        '模式切换：${task.mode.name} → ${mode.name}',
+      );
     }
     if (!queued) {
       await _checkpoint(task.copyWith(mode: mode), text);
@@ -179,33 +184,52 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     _run(updated);
   }
 
-  /// 回滚到检查点（初稿 §5.5 P2）：仅限非运行态；回滚前自动把当前
-  /// 状态落为新检查点（可再回滚回来），只还原文件不动对话。
-  /// 失败抛带可读原因的 [StateError]。返回结果含实际还原的文件清单。
-  Future<AgentRollbackResult> rollbackToCheckpoint(
+  /// 回滚到检查点（初稿 §5.5 P2）：仅限非运行态；按 [mode] 决定回滚
+  /// 文件、对话，还是两者。回滚文件前自动把当前状态落为新检查点
+  ///（可再回滚回来）；回滚对话把检查点之后的事件全部删除。
+  /// 失败抛带可读原因的 [StateError]。返回结果含实际还原的文件清单
+  ///（仅回滚对话时为 null）。
+  Future<AgentRollbackResult?> rollbackToCheckpoint(
     AgentTask task,
-    CheckpointEvent checkpoint,
-  ) async {
+    CheckpointEvent checkpoint, {
+    AgentRollbackMode mode = AgentRollbackMode.filesAndMessages,
+  }) async {
     if (state.contains(task.id)) {
       throw StateError('任务正在运行，先暂停/终止后再回滚');
     }
-    final result = await rollbackAgentCheckpoint(
-      ref,
-      task.id,
-      task.workspaceId.isEmpty ? null : task.workspaceId,
-      checkpoint.commit,
-    );
-    await _store().appendCheckpoint(
-      task.id,
-      commit: result.safetyCommit,
-      label: '回滚前自动快照',
-    );
-    await _store().appendStatusChange(
-      task.id,
-      '已回滚工作区到检查点 ${_shortCommit(checkpoint.commit)}'
-      '${_fileSummary(result.files)}'
-      '（回滚前状态已保存为新检查点，可再回滚回来）',
-    );
+    AgentRollbackResult? result;
+    if (mode != AgentRollbackMode.messagesOnly) {
+      result = await rollbackAgentCheckpoint(
+        ref,
+        task.id,
+        task.workspaceId.isEmpty ? null : task.workspaceId,
+        checkpoint.commit,
+      );
+    }
+    // 文件回滚成功后再截断对话（失败时对话保持原样）；保留检查点
+    // 事件本身作为锚点，之后追加的快照/状态事件从这里续增。
+    if (mode != AgentRollbackMode.filesOnly) {
+      await _store().truncateEventsAfter(task.id, checkpoint.seq);
+    }
+    if (result != null) {
+      await _store().appendCheckpoint(
+        task.id,
+        commit: result.safetyCommit,
+        label: '回滚前自动快照',
+      );
+    }
+    await _store().appendStatusChange(task.id, switch (mode) {
+      AgentRollbackMode.messagesOnly =>
+        '已回滚对话到检查点 ${_shortCommit(checkpoint.commit)}（工作区文件未变）',
+      AgentRollbackMode.filesOnly =>
+        '已回滚工作区到检查点 ${_shortCommit(checkpoint.commit)}'
+            '${_fileSummary(result!.files)}'
+            '（回滚前状态已保存为新检查点，可再回滚回来）',
+      AgentRollbackMode.filesAndMessages =>
+        '已回滚对话与工作区到检查点 ${_shortCommit(checkpoint.commit)}'
+            '${_fileSummary(result!.files)}'
+            '（回滚前状态已保存为新检查点，可再回滚回来）',
+    });
     return result;
   }
 
@@ -213,25 +237,23 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   Future<List<RollbackFileChange>> previewRollback(
     AgentTask task,
     CheckpointEvent checkpoint,
-  ) =>
-      previewAgentRollback(
-        ref,
-        task.workspaceId.isEmpty ? null : task.workspaceId,
-        checkpoint.commit,
-      );
+  ) => previewAgentRollback(
+    ref,
+    task.workspaceId.isEmpty ? null : task.workspaceId,
+    checkpoint.commit,
+  );
 
   /// 预览面板里单文件的文本 diff（检查点 vs 当前工作区）。
   Future<String> rollbackFileDiff(
     AgentTask task,
     CheckpointEvent checkpoint,
     String path,
-  ) =>
-      loadRollbackFileDiff(
-        ref,
-        task.workspaceId.isEmpty ? null : task.workspaceId,
-        checkpoint.commit,
-        path,
-      );
+  ) => loadRollbackFileDiff(
+    ref,
+    task.workspaceId.isEmpty ? null : task.workspaceId,
+    checkpoint.commit,
+    path,
+  );
 
   static String _fileSummary(List<RollbackFileChange> files) {
     if (files.isEmpty) return '';
@@ -284,15 +306,18 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     state = {...state, task.id};
     // 前台服务保活（初稿 §5.5 P1）：切后台任务继续跑，常驻通知展示运行中。
     if (wasIdle) {
-      unawaited(StreamingKeepAliveService.acquire(
-        'agent',
-        title: '智能体任务运行中…',
-        text: 'AetherLink 在后台继续执行任务，需要授权时会通知你',
-      ));
+      unawaited(
+        StreamingKeepAliveService.acquire(
+          'agent',
+          title: '智能体任务运行中…',
+          text: 'AetherLink 在后台继续执行任务，需要授权时会通知你',
+        ),
+      );
     }
 
     // 档案已删的孤儿话题兜底：空专长 + 全工具组，任务仍可继续。
-    final profile = ref
+    final profile =
+        ref
             .read(agentProfilesProvider)
             .where((p) => p.id == task.profileId)
             .firstOrNull ??
@@ -303,7 +328,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           systemPrompt: '',
           tools: AgentToolGroup.values.toSet(),
         );
-    final runtime = ref.read(agentRuntimeProvider).forProfile(
+    final runtime = ref
+        .read(agentRuntimeProvider)
+        .forProfile(
           profile,
           mode: task.mode,
           boundWorkspaceId: task.workspaceId,
@@ -372,7 +399,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     if (prompt.isEmpty) {
       return const AgentToolResult(ok: false, summary: '缺少 prompt ✗');
     }
-    final parentReadOnly = parent.mode == AgentSessionMode.ask ||
+    final parentReadOnly =
+        parent.mode == AgentSessionMode.ask ||
         parent.mode == AgentSessionMode.plan;
     final baseProfile = ref
         .read(agentProfilesProvider)
@@ -387,9 +415,10 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     if (builtin != null) {
       if (builtin == AgentSubagentType.bash && parentReadOnly) {
         return const AgentToolResult(
-            ok: false,
-            summary: 'bash 子代理不可用 ✗',
-            detail: '当前为只读模式（Ask/Plan），只能派 explore 子代理');
+          ok: false,
+          summary: 'bash 子代理不可用 ✗',
+          detail: '当前为只读模式（Ask/Plan），只能派 explore 子代理',
+        );
       }
       childMode = builtin == AgentSubagentType.explore
           ? AgentSessionMode.ask
@@ -417,8 +446,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       } catch (_) {
         customs = const [];
       }
-      final custom =
-          customs.where((p) => p.name == typeName).firstOrNull;
+      final custom = customs.where((p) => p.name == typeName).firstOrNull;
       if (custom == null) {
         final names = [
           'explore',
@@ -426,15 +454,17 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           for (final p in customs) p.name,
         ].join('、');
         return AgentToolResult(
-            ok: false,
-            summary: '未知子代理类型 ✗',
-            detail: 'type 必须是以下之一：$names');
+          ok: false,
+          summary: '未知子代理类型 ✗',
+          detail: 'type 必须是以下之一：$names',
+        );
       }
       if (!custom.readonly && parentReadOnly) {
         return AgentToolResult(
-            ok: false,
-            summary: '子代理「${custom.name}」不可用 ✗',
-            detail: '当前为只读模式（Ask/Plan），只能派只读子代理');
+          ok: false,
+          summary: '子代理「${custom.name}」不可用 ✗',
+          detail: '当前为只读模式（Ask/Plan），只能派只读子代理',
+        );
       }
       childMode = custom.readonly ? AgentSessionMode.ask : parent.mode;
       childProfile = AgentProfile(
@@ -470,17 +500,20 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     await _store().appendUserMessage(childId, prompt);
 
     if (background) {
-      unawaited(_runBackgroundSubagent(
-        parent: parent,
-        child: child,
-        childProfile: childProfile,
-        childMode: childMode,
-        toolEventId: toolEventId,
-      ));
+      unawaited(
+        _runBackgroundSubagent(
+          parent: parent,
+          child: child,
+          childProfile: childProfile,
+          childMode: childMode,
+          toolEventId: toolEventId,
+        ),
+      );
       return AgentToolResult(
         ok: true,
         summary: '后台子代理已启动',
-        detail: '子代理「${child.title}」已在后台运行；完成后结论会更新到'
+        detail:
+            '子代理「${child.title}」已在后台运行；完成后结论会更新到'
             '本工具结果，并以消息注入对话。',
       );
     }
@@ -517,11 +550,13 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     final wasIdle = state.isEmpty;
     state = {...state, child.id};
     if (wasIdle) {
-      unawaited(StreamingKeepAliveService.acquire(
-        'agent',
-        title: '智能体任务运行中…',
-        text: 'AetherLink 在后台继续执行任务，需要授权时会通知你',
-      ));
+      unawaited(
+        StreamingKeepAliveService.acquire(
+          'agent',
+          title: '智能体任务运行中…',
+          text: 'AetherLink 在后台继续执行任务，需要授权时会通知你',
+        ),
+      );
     }
     try {
       final result = await _runChildEngine(
@@ -536,12 +571,15 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           .where((e) => e.id == toolEventId)
           .firstOrNull;
       if (event != null) {
-        await _store().updateToolCall(parent.id, event,
-            state: result.ok
-                ? AgentToolCallState.success
-                : AgentToolCallState.failure,
-            resultSummary: result.summary,
-            resultDetail: result.detail);
+        await _store().updateToolCall(
+          parent.id,
+          event,
+          state: result.ok
+              ? AgentToolCallState.success
+              : AgentToolCallState.failure,
+          resultSummary: result.summary,
+          resultDetail: result.detail,
+        );
       }
       await _store().appendUserMessage(
         parent.id,
@@ -570,7 +608,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     required AgentSessionMode childMode,
     required AgentCancellationToken childToken,
   }) async {
-    final runtime = ref.read(agentRuntimeProvider).forProfile(
+    final runtime = ref
+        .read(agentRuntimeProvider)
+        .forProfile(
           childProfile,
           mode: childMode,
           enableSubagents: false,
@@ -586,7 +626,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     );
     await engine.run(child, childToken);
 
-    final finalChild = ref
+    final finalChild =
+        ref
             .read(agentTasksProvider)
             .where((t) => t.id == child.id)
             .firstOrNull ??
@@ -611,9 +652,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     ].join('\n\n');
     return AgentToolResult(
       ok: ok,
-      summary: ok
-          ? '子代理完成 · ${finalChild.rounds} 轮'
-          : '子代理$statusLabel ✗',
+      summary: ok ? '子代理完成 · ${finalChild.rounds} 轮' : '子代理$statusLabel ✗',
       detail: detail.isNotEmpty ? detail : '（子代理未返回结论，状态：$statusLabel）',
     );
   }
@@ -639,13 +678,12 @@ class _RunnerSubagentLauncher implements AgentSubagentLauncher {
     required AgentToolCallRequest call,
     required String toolEventId,
     required AgentCancellationToken cancel,
-  }) =>
-      _runner._launchSubagent(
-        parent: parent,
-        call: call,
-        toolEventId: toolEventId,
-        cancel: cancel,
-      );
+  }) => _runner._launchSubagent(
+    parent: parent,
+    call: call,
+    toolEventId: toolEventId,
+    cancel: cancel,
+  );
 }
 
 class _ProviderTaskGateway implements AgentTaskGateway {

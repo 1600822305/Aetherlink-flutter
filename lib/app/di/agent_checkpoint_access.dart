@@ -14,11 +14,10 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_git_
 
 /// 检查点创建结果：成功给 [commit]，不可用给 [unavailableReason]。
 class AgentCheckpointResult {
-  const AgentCheckpointResult.ok(String this.commit)
-      : unavailableReason = null;
+  const AgentCheckpointResult.ok(String this.commit) : unavailableReason = null;
 
   const AgentCheckpointResult.unavailable(String this.unavailableReason)
-      : commit = null;
+    : commit = null;
 
   final String? commit;
   final String? unavailableReason;
@@ -27,10 +26,7 @@ class AgentCheckpointResult {
 /// 回滚结果：[safetyCommit] 是回滚前自动落的安全快照（可再回滚回来），
 /// [files] 是本次回滚实际触达的文件清单（检查点 vs 回滚前状态）。
 class AgentRollbackResult {
-  const AgentRollbackResult({
-    required this.safetyCommit,
-    required this.files,
-  });
+  const AgentRollbackResult({required this.safetyCommit, required this.files});
 
   final String safetyCommit;
   final List<RollbackFileChange> files;
@@ -38,12 +34,29 @@ class AgentRollbackResult {
 
 /// 回滚会触达的一个文件（检查点与当前状态的差异条目）。
 class RollbackFileChange {
-  const RollbackFileChange({required this.path, required this.kind});
+  const RollbackFileChange({
+    required this.path,
+    required this.kind,
+    this.insertions,
+    this.deletions,
+  });
 
   /// 仓库根相对路径。
   final String path;
 
   final RollbackFileKind kind;
+
+  /// 检查点之后新增/删除的行数（numstat）；二进制或取不到时 null。
+  final int? insertions;
+  final int? deletions;
+
+  RollbackFileChange withStats({int? insertions, int? deletions}) =>
+      RollbackFileChange(
+        path: path,
+        kind: kind,
+        insertions: insertions ?? this.insertions,
+        deletions: deletions ?? this.deletions,
+      );
 }
 
 /// 回滚对文件的动作：检查点之后新增的会被删除，被改的会还原，
@@ -117,8 +130,9 @@ Future<AgentRollbackResult> rollbackAgentCheckpoint(
     workingDirectory: repoRoot,
     timeout: const Duration(minutes: 1),
   );
-  final files =
-      diff.exitCode == 0 ? parseNameStatusZ(diff.stdout) : <RollbackFileChange>[];
+  final files = diff.exitCode == 0
+      ? parseNameStatusZ(diff.stdout)
+      : <RollbackFileChange>[];
 
   // 删掉检查点之后新增的文件（安全快照已保住它们），再整树还原。
   // --worktree 只动工作树，不碰用户的 index/暂存区。
@@ -131,8 +145,10 @@ Future<AgentRollbackResult> rollbackAgentCheckpoint(
     timeout: const Duration(minutes: 2),
   );
   if (restore.exitCode != 0) {
-    throw StateError('还原失败：${restore.stderr.trim()}\n'
-        '当前状态已保存为安全快照 ${_short(safetyCommit)}');
+    throw StateError(
+      '还原失败：${restore.stderr.trim()}\n'
+      '当前状态已保存为安全快照 ${_short(safetyCommit)}',
+    );
   }
   return AgentRollbackResult(safetyCommit: safetyCommit, files: files);
 }
@@ -181,14 +197,54 @@ Future<List<RollbackFileChange>> previewAgentRollback(
     final known = files.map((f) => f.path).toSet();
     for (final path in untracked.stdout.split('\x00')) {
       if (path.isEmpty || known.contains(path)) continue;
-      files.add(RollbackFileChange(
-        path: path,
-        kind: checkpointPaths.contains(path)
-            ? RollbackFileKind.modified
-            : RollbackFileKind.added,
-      ));
+      files.add(
+        RollbackFileChange(
+          path: path,
+          kind: checkpointPaths.contains(path)
+              ? RollbackFileKind.modified
+              : RollbackFileKind.added,
+        ),
+      );
     }
   }
+  // 逐文件行数统计：已跟踪差异用 numstat；未跟踪新文件 git diff
+  // 看不到，用 wc -l 补一个新增行数（回滚将删除这些行）。
+  final stats = <String, (int?, int?)>{};
+  final numstat = await backend.exec(
+    'git -c core.quotepath=off diff --numstat --no-renames $quotedCommit',
+    workingDirectory: repoRoot,
+    timeout: const Duration(minutes: 1),
+  );
+  if (numstat.exitCode == 0) {
+    for (final line in numstat.stdout.split('\n')) {
+      final parts = line.split('\t');
+      if (parts.length < 3) continue;
+      stats[parts.sublist(2).join('\t')] = (
+        int.tryParse(parts[0]),
+        int.tryParse(parts[1]),
+      );
+    }
+  }
+  final wc = await backend.exec(
+    'git -c core.quotepath=off ls-files --others --exclude-standard -z '
+    '| xargs -0 -r -n 50 wc -l',
+    workingDirectory: repoRoot,
+    timeout: const Duration(seconds: 30),
+  );
+  if (wc.exitCode == 0) {
+    for (final line in wc.stdout.split('\n')) {
+      final m = RegExp(r'^\s*(\d+)\s+(.+)$').firstMatch(line);
+      if (m == null || m.group(2) == 'total') continue;
+      stats.putIfAbsent(m.group(2)!, () => (int.tryParse(m.group(1)!), 0));
+    }
+  }
+  for (var i = 0; i < files.length; i++) {
+    final s = stats[files[i].path];
+    if (s != null) {
+      files[i] = files[i].withStats(insertions: s.$1, deletions: s.$2);
+    }
+  }
+
   files.sort((a, b) => a.path.compareTo(b.path));
   return files;
 }
@@ -227,14 +283,16 @@ List<RollbackFileChange> parseNameStatusZ(String raw) {
     final status = parts[i].trim();
     final path = parts[i + 1];
     if (status.isEmpty || path.isEmpty) continue;
-    files.add(RollbackFileChange(
-      path: path,
-      kind: switch (status[0]) {
-        'A' => RollbackFileKind.added,
-        'D' => RollbackFileKind.deleted,
-        _ => RollbackFileKind.modified,
-      },
-    ));
+    files.add(
+      RollbackFileChange(
+        path: path,
+        kind: switch (status[0]) {
+          'A' => RollbackFileKind.added,
+          'D' => RollbackFileKind.deleted,
+          _ => RollbackFileKind.modified,
+        },
+      ),
+    );
   }
   return files;
 }
@@ -250,11 +308,11 @@ class _GitFailure implements Exception {
 
 class _RepoContext {
   const _RepoContext.ok(WorkspaceBackend this.backend, String this.repoRoot)
-      : unavailableReason = null;
+    : unavailableReason = null;
 
   const _RepoContext.unavailable(String this.unavailableReason)
-      : backend = null,
-        repoRoot = null;
+    : backend = null,
+      repoRoot = null;
 
   final WorkspaceBackend? backend;
   final String? repoRoot;
@@ -279,9 +337,7 @@ Future<_RepoContext> _repoContext(Ref ref, String? workspaceId) async {
   );
   final repoRoot = top.stdout.trim();
   if (top.exitCode != 0 || repoRoot.isEmpty) {
-    return const _RepoContext.unavailable(
-      '工作区不在 git 仓库内，初始化 git 后可用检查点',
-    );
+    return const _RepoContext.unavailable('工作区不在 git 仓库内，初始化 git 后可用检查点');
   }
   return _RepoContext.ok(backend, repoRoot);
 }
@@ -295,9 +351,11 @@ Future<String> _snapshot(
   String taskId,
 ) async {
   final safeTask = taskId.replaceAll(RegExp(r'[^\w-]'), '_');
-  final refName = 'refs/aetherlink/checkpoints/$safeTask/'
+  final refName =
+      'refs/aetherlink/checkpoints/$safeTask/'
       '${DateTime.now().millisecondsSinceEpoch}';
-  const author = '-c user.name=AetherLink '
+  const author =
+      '-c user.name=AetherLink '
       '-c user.email=checkpoint@aetherlink.local';
   final result = await backend.exec(
     'idx=.git/aetherlink-ckpt-index && '
@@ -317,9 +375,9 @@ Future<String> _snapshot(
     timeout: const Duration(minutes: 2),
   );
   // 用标记行定位 commit，不受 profile/警告等无关输出干扰。
-  final commit = RegExp(r'AETHER_CKPT_OK:([0-9a-f]{7,40})')
-      .firstMatch(result.stdout)
-      ?.group(1);
+  final commit = RegExp(
+    r'AETHER_CKPT_OK:([0-9a-f]{7,40})',
+  ).firstMatch(result.stdout)?.group(1);
   if (result.timedOut) {
     throw const _GitFailure('git 快照超时（仓库过大或存储过慢）');
   }
@@ -331,7 +389,9 @@ Future<String> _snapshot(
       if (stderr.isEmpty && stdout.isNotEmpty)
         'stdout: ${stdout.length > 200 ? stdout.substring(stdout.length - 200) : stdout}',
     ].join('\n');
-    throw _GitFailure(detail.isEmpty ? '未知错误（exit ${result.exitCode}）' : detail);
+    throw _GitFailure(
+      detail.isEmpty ? '未知错误（exit ${result.exitCode}）' : detail,
+    );
   }
   return commit;
 }

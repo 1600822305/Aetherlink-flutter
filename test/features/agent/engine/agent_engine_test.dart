@@ -240,6 +240,11 @@ class InMemoryAgentEventStore implements AgentEventStore {
   }
 
   @override
+  Future<void> truncateEventsAfter(String taskId, int seq) async {
+    _events[taskId]?.removeWhere((e) => e.seq > seq);
+  }
+
+  @override
   Future<CompactionEvent> appendCompaction(
     String taskId, {
     required int coveredCount,
