@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/devin_diff_lines.dart';
@@ -46,7 +47,7 @@ class WorkbenchFocusTab extends ConsumerWidget {
         if (focus == null) return const _EmptyFocus();
         return SafeArea(
           top: false,
-          child: _FocusView(event: focus),
+          child: _FocusView(event: focus, taskId: task.id),
         );
       },
     );
@@ -199,11 +200,10 @@ String? _partialStringField(String raw, String key) {
   return sb.toString();
 }
 
-/// 从 argsDetail（参数 JSON）里解析编辑类工具的 search/replace 对
+/// 从参数 JSON 里解析编辑类工具的 search/replace 对
 /// （单对或 edits 数组）；写入类工具的全文内容返回 (null, content)。
 /// 参数 JSON 未闭合（仍在流式生成）时按前缀提取，供实时预览。
-List<({String? search, String replace})> _editPairsOf(ToolCallEvent e) {
-  final raw = e.argsDetail;
+List<({String? search, String replace})> _editPairsOf(String? raw) {
   if (raw == null || raw.isEmpty) return const [];
   Object? decoded;
   try {
@@ -264,15 +264,16 @@ List<DiffLine> _diffRowsOf(({String? search, String replace}) p) {
 
 /// 当前活动的单一全屏视图：头部（活动类型/状态）+ 占满余下高度的产物区。
 class _FocusView extends StatelessWidget {
-  const _FocusView({required this.event});
+  const _FocusView({required this.event, required this.taskId});
 
   final AgentEvent event;
+  final String taskId;
 
   @override
   Widget build(BuildContext context) {
     final e = event;
     return switch (e) {
-      final ToolCallEvent t => _ToolFocus(event: t),
+      final ToolCallEvent t => _ToolFocus(event: t, taskId: taskId),
       final ReasoningEvent r => _TextFocus(
           icon: LucideIcons.brain,
           title: r.streaming
@@ -342,21 +343,26 @@ class _FocusHeader extends StatelessWidget {
 }
 
 /// 工具活动：终端→命令+输出、编辑→红绿 diff、其他→输出内容。
-/// 点头部打开完整详情抽屉。
-class _ToolFocus extends StatelessWidget {
-  const _ToolFocus({required this.event});
+/// 参数仍在流式生成时直接消费内存实时通道（每个 delta 都刷新），
+/// 不依赖落库节流。点头部打开完整详情抽屉。
+class _ToolFocus extends ConsumerWidget {
+  const _ToolFocus({required this.event, required this.taskId});
 
   final ToolCallEvent event;
+  final String taskId;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final (label, color) = _stateLabel(context, event.state);
+    final live = ref.watch(
+      agentToolStreamProvider.select((m) => m[event.id]),
+    );
+    final args = live?.argsText ?? event.argsDetail;
 
     Widget body;
     if (_isTerminalTool(event.toolName)) {
       var cmd = event.argSummary;
-      final args = event.argsDetail;
       if (args != null) {
         final c = _partialStringField(args, 'command');
         if (c != null && c.isNotEmpty) cmd = c;
@@ -369,12 +375,13 @@ class _ToolFocus extends StatelessWidget {
         dark: true,
       );
     } else {
-      final pairs = _editPairsOf(event);
+      final pairs = _editPairsOf(args);
       if (pairs.isNotEmpty) {
         // IDE 式行级红绿 diff（与 Changes tab 同款 Devin 风格行渲染）；
         // 参数仍在流式生成时随内容增长实时更新。行懒加载 + 流式期间
         // 只保留尾部窗口，避免高频重建整树拖死主线程。
-        final streaming = event.state == AgentToolCallState.running;
+        final streaming =
+            live != null || event.state == AgentToolCallState.running;
         var rows = <DiffLine>[
           for (var i = 0; i < pairs.length; i++) ...[
             if (i > 0) const DiffLine(DiffLineKind.skip, ''),
@@ -416,7 +423,7 @@ class _ToolFocus extends StatelessWidget {
             label,
             style: theme.textTheme.labelSmall?.copyWith(color: color),
           ),
-          onTap: () => showToolDetailSheet(context, event),
+          onTap: () => showToolDetailSheet(context, event, taskId: taskId),
         ),
         Expanded(child: body),
         const SizedBox(height: 12),

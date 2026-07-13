@@ -243,6 +243,10 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
                   break;
                 }
               }
+              // 兜底：id/name 都对不上但只剩一个流 key（个别网关 id 在
+              // delta 与最终块间不一致），仍复用该预建事件，避免出现
+              // 一条永远停在部分参数的孤儿事件 + 一条重复事件。
+              streamKey ??= deltaKeys.length == 1 ? deltaKeys.keys.first : null;
               if (streamKey != null) deltaKeys.remove(streamKey);
               await onToolCall(
                 AgentToolCallRequest(
