@@ -662,7 +662,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       name: 'read_file',
       description: '读取文件内容。支持单文件(path)或批量(files 数组)读取。大文件建议指定行范围（1-based，含端点）：'
           'start_line/end_line 可单独使用——只给 start_line 表示读到文件末尾，只给 end_line 表示从第 1 行开始。'
-          '超长行会被截断、超大内容会提示改用行范围分段读取。'
+          '超长行会被截断、超大内容会提示改用行范围分段读取；'
+          '批量读取有总量上限，超出后剩余文件会被标记 skipped，需分批调用。'
           '返回内容默认每行带「N | 」行号前缀（仅供定位，不是文件内容）；'
           '需要原始文本时传 line_numbers=false。',
       inputSchema: {
@@ -867,10 +868,12 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'edit',
       description: '在文件中精确查找并替换文本（增量修改首选），支持字面量或正则。会触发用户确认。'
-          'search 需与文件内容完全一致（含缩进/空白，不含 read_file 的行号前缀）。'
+          'search 需与文件内容完全一致（含缩进/空白，不含 read_file 的行号前缀），'
+          'replace 必须与 search 不同。'
           '默认只替换一处：search 命中多处时报错不修改（防改错位置），需在 search 中加上下文使其唯一，'
           '或传 replace_all=true 全部替换；命中 0 处也报错。'
-          '支持 edits 数组对同一文件做多处替换，整体原子生效：任一 edit 失败则文件不会被修改。',
+          '支持 edits 数组对同一文件做多处替换（每个元素可单独指定 replace_all），'
+          '整体原子生效：任一 edit 失败则文件不会被修改。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -883,7 +886,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
               'type': 'object',
               'properties': {
                 'search': {'type': 'string', 'description': '要查找的文本或正则'},
-                'replace': {'type': 'string', 'description': '替换后的文本'},
+                'replace': {'type': 'string', 'description': '替换后的文本（需与 search 不同）'},
+                'replace_all': {
+                  'type': 'boolean',
+                  'description': '本条 edit 是否替换所有匹配（省略时沿用顶层 replace_all）',
+                },
               },
               'required': ['search', 'replace'],
             },
@@ -895,7 +902,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'replace_all': {
             'type': 'boolean',
-            'description': '是否替换所有匹配，默认 false（命中多处会报错）',
+            'description': '是否替换所有匹配，默认 false（命中多处会报错）；edits 元素可用自己的 replace_all 覆盖',
           },
           'case_sensitive': {
             'type': 'boolean',

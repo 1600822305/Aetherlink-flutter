@@ -44,7 +44,8 @@ Future<McpToolResult> writeFile(Ref ref, Map<String, Object?> args) async {
         : '（实际 $actual 行）';
     throw FileEditorError(
       '内容可能被截断$hint：${omitted ? '检测到代码省略标记（如 "// rest of code unchanged"）；' : ''}'
-      '请提供完整文件内容，或改用 edit 做增量修改。',
+      '请提供完整文件内容，或改用 edit 做增量修改。'
+      '${!omitted && wayShort ? '如确认内容完整、只是 line_count 估计有误，可去掉 line_count 重试。' : ''}',
     );
   }
 
@@ -252,15 +253,18 @@ Future<McpToolResult> deleteFile(Ref ref, Map<String, Object?> args) async {
 /// - `replace_all` defaults to **false**; a single-replacement edit whose
 ///   search hits more than once is rejected, so the model can't silently
 ///   change the wrong occurrence — it must add context or opt into
-///   `replace_all=true`.
+///   `replace_all=true`. Each `edits` element may carry its own
+///   `replace_all`, falling back to the top-level flag.
 /// - a search with zero hits is an error (not a silent no-op).
+/// - a literal edit whose `replace` equals `search` is rejected up front —
+///   it would report "替换完成" while changing nothing.
 Future<McpToolResult> editFile(Ref ref, Map<String, Object?> args) async {
   final path = requireString(args, 'path');
   final isRegex = optionalBool(args, 'is_regex');
-  final replaceAll = optionalBool(args, 'replace_all');
+  final globalReplaceAll = optionalBool(args, 'replace_all');
   final caseSensitive = optionalBool(args, 'case_sensitive', fallback: true);
 
-  final edits = <({String search, String replace})>[];
+  final edits = <({String search, String replace, bool replaceAll})>[];
   final rawEdits = args['edits'];
   if (rawEdits is List && rawEdits.isNotEmpty) {
     for (final item in rawEdits) {
@@ -279,13 +283,30 @@ Future<McpToolResult> editFile(Ref ref, Map<String, Object?> args) async {
       edits.add((
         search: search,
         replace: rawReplace is String ? rawReplace : rawReplace.toString(),
+        replaceAll: m.containsKey('replace_all')
+            ? optionalBool(m, 'replace_all')
+            : globalReplaceAll,
       ));
     }
   } else {
     final search = requireString(args, 'search');
     final raw = args['replace'];
     if (raw == null) throw const FileEditorError('缺少必需参数: replace');
-    edits.add((search: search, replace: raw is String ? raw : raw.toString()));
+    edits.add((
+      search: search,
+      replace: raw is String ? raw : raw.toString(),
+      replaceAll: globalReplaceAll,
+    ));
+  }
+
+  for (var i = 0; i < edits.length; i++) {
+    if (!isRegex && edits[i].search == edits[i].replace) {
+      final label = edits.length > 1 ? '第 ${i + 1} 个 edit 的 ' : '';
+      throw FileEditorError(
+        '${label}replace 与 search 完全相同，替换不会改变文件，未做任何修改。'
+        '请提供与原文不同的 replace 内容。',
+      );
+    }
   }
 
   final resolved = await resolvePathArg(ref, args, path);
@@ -298,6 +319,8 @@ Future<McpToolResult> editFile(Ref ref, Map<String, Object?> args) async {
   for (var i = 0; i < edits.length; i++) {
     final edit = edits[i];
     final label = edits.length > 1 ? '第 ${i + 1} 个 edit 的 ' : '';
+    // 单次全量扫描同时完成计数与替换：命中 1 处时全量替换结果与单处
+    // 替换结果相同；命中多处且未开 replace_all 时直接报错，无需重跑。
     final counted = text_ops.replaceInFile(
       content,
       edit.search,
@@ -312,24 +335,14 @@ Future<McpToolResult> editFile(Ref ref, Map<String, Object?> args) async {
         '请用 read_file 确认最新内容（含缩进/空白，不含行号前缀）后重试。',
       );
     }
-    if (!replaceAll && counted.replacements > 1) {
+    if (!edit.replaceAll && counted.replacements > 1) {
       throw FileEditorError(
         '${label}search 内容命中 ${counted.replacements} 处，无法确定要替换哪一处，未做任何修改。'
         '请在 search 里加入更多上下文使其唯一，或明确传 replace_all=true 全部替换。',
       );
     }
-    final applied = replaceAll
-        ? counted
-        : text_ops.replaceInFile(
-            content,
-            edit.search,
-            edit.replace,
-            isRegex: isRegex,
-            replaceAll: false,
-            caseSensitive: caseSensitive,
-          );
-    content = applied.newContent;
-    total += applied.replacements;
+    content = counted.newContent;
+    total += counted.replacements;
   }
 
   if (content != original) await backend.writeFile(resolvedPath, content);
