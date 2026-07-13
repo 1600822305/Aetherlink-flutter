@@ -344,6 +344,33 @@ Future<_RepoContext> _repoContext(Ref ref, String? workspaceId) async {
   return _RepoContext.ok(backend, repoRoot);
 }
 
+/// 删除某任务在其工作区下的全部检查点 ref（删任务时联动），
+/// 释放 checkpoint commit 交给 gc 回收。失败静默忽略（尽力而为，
+/// 不阻断删除流程）。
+Future<void> cleanupAgentCheckpointRefs(
+  Ref ref,
+  String taskId,
+  String? workspaceId,
+) async {
+  try {
+    final context = await _repoContext(ref, workspaceId);
+    if (context.unavailableReason != null) return;
+    final (backend, repoRoot) = (context.backend!, context.repoRoot!);
+    final safeTask = taskId.replaceAll(RegExp(r'[^\w-]'), '_');
+    final prefix = 'refs/aetherlink/checkpoints/$safeTask/';
+    await backend.exec(
+      'git for-each-ref --format="%(refname)" ${shellQuoteArg(prefix)} '
+      '| while read -r r; do git update-ref -d "\$r"; done',
+      workingDirectory: repoRoot,
+      timeout: const Duration(minutes: 1),
+    );
+  } catch (_) {}
+}
+
+/// 每个任务保留的检查点 ref 上限；新快照落地后把更早的修剪掉，
+/// 长期使用不会让 .git 无限膨胀。
+const int kMaxCheckpointRefsPerTask = 50;
+
 /// 临时索引快照：不碰用户 index/HEAD/分支；含未跟踪文件（尊重
 /// .gitignore）。commit 挂到 `refs/aetherlink/checkpoints/任务/时间戳`
 /// 防 gc。返回 commit 哈希。
@@ -400,5 +427,17 @@ Future<String> _snapshot(
       detail.isEmpty ? '未知错误（exit ${result.exitCode}）' : detail,
     );
   }
+  // 修剪本任务超出保留上限的旧 ref（ref 名是毫秒时间戳，字典序即
+  // 时间序）；失败静默忽略，不影响快照结果。
+  try {
+    await backend.exec(
+      'git for-each-ref --format="%(refname)" --sort=-refname '
+      '${shellQuoteArg('refs/aetherlink/checkpoints/$safeTask/')} '
+      '| tail -n +${kMaxCheckpointRefsPerTask + 1} '
+      '| while read -r r; do git update-ref -d "\$r"; done',
+      workingDirectory: repoRoot,
+      timeout: const Duration(seconds: 30),
+    );
+  } catch (_) {}
   return commit;
 }

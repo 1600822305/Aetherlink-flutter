@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -679,8 +680,12 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
       final dir = Directory('${docs.path}/agent_tool_outputs');
       await dir.create(recursive: true);
       final safeName = toolName.replaceAll(RegExp(r'[^\w-]'), '_');
+      // 文件名附随机后缀：并行子代理/父任务同毫秒调同名工具时
+      // 不互相覆盖，一方删任务清理也不会误删另一方仍引用的文件。
+      final suffix = Random().nextInt(0xffffff).toRadixString(16);
       path =
-          '${dir.path}/${DateTime.now().millisecondsSinceEpoch}_$safeName.txt';
+          '${dir.path}/${DateTime.now().microsecondsSinceEpoch}'
+          '_${safeName}_$suffix.txt';
       await File(path).writeAsString(text);
     } catch (_) {
       path = null;

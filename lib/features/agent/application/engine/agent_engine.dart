@@ -309,19 +309,21 @@ class AgentEngine {
           }
 
           final stopwatch = Stopwatch()..start();
-          var timedOut = false;
+          var timeoutInterruptGen = 0;
           final result = await tools
               .execute(call, cancel)
               .timeout(budget.toolTimeout, onTimeout: () {
             // 同时中止仍在运行的底层工具，避免模型重发同一命令时
             // 与旧命令并发（双重执行）。
-            timedOut = true;
-            cancel.requestToolInterrupt();
+            timeoutInterruptGen = cancel.requestToolInterrupt();
             return const AgentToolResult(ok: false, summary: '超时 ✗');
           });
           stopwatch.stop();
-          // 超时自己发出的中断信号在此回收，不影响同轮后续工具。
-          if (timedOut) cancel.consumeToolInterrupt();
+          // 超时自己发出的中断信号按代号定向回收：不影响同轮后续工具，
+          // 也不吞掉窗口内用户发起的新打断。
+          if (timeoutInterruptGen > 0) {
+            cancel.consumeToolInterruptOf(timeoutInterruptGen);
+          }
           await store.updateToolCall(current.id, event,
               state: result.ok
                   ? AgentToolCallState.success

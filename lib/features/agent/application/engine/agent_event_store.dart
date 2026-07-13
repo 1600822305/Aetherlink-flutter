@@ -344,10 +344,17 @@ class DriftAgentEventStore implements AgentEventStore {
   }
 
   @override
-  Future<void> truncateEventsAfter(String taskId, int seq) async {
-    await _dao.deleteEventsAfterSeq(taskId, seq);
-    // 后续事件从检查点处续增，不能沿用截断前的缓存。
-    _seqCache[taskId] = seq;
+  Future<void> truncateEventsAfter(String taskId, int seq) {
+    // 挂进同任务的 seq 尾链：与在途 _nextSeq 串行化，缓存重置不会
+    // 与并发分配交错产生重复 seq。
+    final prev = _seqLocks[taskId] ?? Future<void>.value();
+    final next = prev.then((_) async {
+      await _dao.deleteEventsAfterSeq(taskId, seq);
+      // 后续事件从检查点处续增，不能沿用截断前的缓存。
+      _seqCache[taskId] = seq;
+    });
+    _seqLocks[taskId] = next.then<void>((_) {}, onError: (_) {});
+    return next;
   }
 
   @override

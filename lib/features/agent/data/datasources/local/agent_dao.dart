@@ -45,6 +45,14 @@ class AgentDao extends DatabaseAccessor<AppDatabase> with _$AgentDaoMixin {
     return rows.map((row) => row.data).toList();
   }
 
+  /// 单个话题的一次性读取（行不存在返回 null）。
+  Future<AgentTask?> getTask(String id) async {
+    final row = await (select(
+      agentTaskRows,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
+    return row?.data;
+  }
+
   Future<void> upsertTask(AgentTask task) {
     return into(agentTaskRows).insertOnConflictUpdate(
       AgentTaskRowsCompanion.insert(
@@ -81,22 +89,40 @@ class AgentDao extends DatabaseAccessor<AppDatabase> with _$AgentDaoMixin {
   // ---- 事件流 ----
 
   /// 某话题事件流的实时查询（按 seq 升序，UI watch 即得增量更新）。
+  /// drift 的 watch 每次变更都全表读回；长任务（数千事件）流式期间
+  /// 逐条 jsonDecode 的开销很大，这里按行缓存已解码对象：payload
+  /// 未变的行直接复用上一次的事件，只重解码新增/变更行。
   Stream<List<AgentEvent>> watchEvents(String taskId) {
     final query = select(agentEventRows)
       ..where((e) => e.taskId.equals(taskId))
       ..orderBy([(e) => OrderingTerm(expression: e.seq)]);
-    return query.watch().map(
-      (rows) => [
-        for (final row in rows)
-          decodeAgentEvent(
+    var cache = <String, (int, int, String, AgentEvent)>{};
+    return query.watch().map((rows) {
+      final next = <String, (int, int, String, AgentEvent)>{};
+      final events = <AgentEvent>[];
+      for (final row in rows) {
+        final hit = cache[row.id];
+        final AgentEvent event;
+        if (hit != null &&
+            hit.$1 == row.seq &&
+            hit.$2 == row.createdAt &&
+            hit.$3 == row.payloadJson) {
+          event = hit.$4;
+        } else {
+          event = decodeAgentEvent(
             id: row.id,
             seq: row.seq,
             at: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
             kind: row.kind,
             payloadJson: row.payloadJson,
-          ),
-      ],
-    );
+          );
+        }
+        next[row.id] = (row.seq, row.createdAt, row.payloadJson, event);
+        events.add(event);
+      }
+      cache = next;
+      return events;
+    });
   }
 
   /// 某话题事件流的一次性读取（按 seq 升序，引擎组上下文用）。

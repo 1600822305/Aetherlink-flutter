@@ -210,6 +210,15 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     if (state.contains(task.id)) {
       throw StateError('任务正在运行，先暂停/终止后再回滚');
     }
+    // 后台子代理（独立任务 id）仍在跑时一并挡掉：它们完成后会
+    // 回填父任务事件，与截断竞态会把幽灵事件写回被截断区间。
+    final runningChildren = [
+      for (final t in ref.read(agentTasksProvider))
+        if (t.parentTaskId == task.id && state.contains(t.id)) t,
+    ];
+    if (runningChildren.isNotEmpty) {
+      throw StateError('有后台子代理仍在运行，先终止后再回滚');
+    }
     AgentRollbackResult? result;
     if (mode != AgentRollbackMode.messagesOnly) {
       result = await rollbackAgentCheckpoint(
@@ -501,7 +510,13 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           detail: '当前为只读模式（Ask/Plan），只能派只读子代理',
         );
       }
-      childMode = custom.readonly ? AgentSessionMode.ask : parent.mode;
+      // 工作区内的自定义档案属外来内容（提示注入面）：非只读档案
+      // 不继承父任务的 auto 免审，降为 Code 模式走完整审批链。
+      childMode = custom.readonly
+          ? AgentSessionMode.ask
+          : parent.mode == AgentSessionMode.auto
+              ? AgentSessionMode.code
+              : parent.mode;
       childProfile = AgentProfile(
         id: parent.profileId,
         name: custom.name,

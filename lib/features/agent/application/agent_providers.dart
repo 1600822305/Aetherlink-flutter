@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/app/di/agent_checkpoint_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_data_access.dart';
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_mock_data.dart';
@@ -113,7 +114,12 @@ class AgentTasks extends _$AgentTasks {
 
   Future<void> _hydrate() async {
     await ref.read(agentSeedProvider.future);
-    final tasks = await ref.read(agentDaoProvider).getAllTasks();
+    final dao = ref.read(agentDaoProvider);
+    // 对照 tombstone：hydrate 窗口内已被删除的任务不再合并回来。
+    final tasks = [
+      for (final t in await dao.getAllTasks())
+        if (!_removed.contains(t.id)) t,
+    ];
     // 恢复语义（循环设计稿 L7）：上次进程死亡时仍 running 或
     // waitingApproval（审批注册表随进程丢失，卡片已无法响应）的任务
     // 标 paused，用户一键「继续」重放续跑；半途工具由引擎按失败回填，
@@ -129,9 +135,13 @@ class AgentTasks extends _$AgentTasks {
             : t,
     ];
     for (var i = 0; i < tasks.length; i++) {
-      if (!identical(tasks[i], recovered[i])) {
-        await ref.read(agentDaoProvider).upsertTask(recovered[i]);
-      }
+      if (identical(tasks[i], recovered[i])) continue;
+      // 恢复写库前重验：行仍存在、未被删除且 updatedAt 未前进
+      //（引擎/用户已更新过的不覆盖）。
+      if (_removed.contains(tasks[i].id)) continue;
+      final row = await dao.getTask(tasks[i].id);
+      if (row == null || row.updatedAt.isAfter(tasks[i].updatedAt)) continue;
+      await dao.upsertTask(recovered[i]);
     }
     // hydrate 窗口内用户已创建/更新的任务优先（按 updatedAt 新者胜），
     // 不被整表读回结果覆盖。
@@ -188,42 +198,52 @@ class AgentTasks extends _$AgentTasks {
   /// 删话题级联删其派生的子任务（子代理隐藏话题），并清理
   /// 各自事件引用的大输出落盘文件。
   Future<void> remove(String taskId) async {
-    final childIds = [
+    final removedTasks = [
       for (final t in state)
-        if (t.parentTaskId == taskId) t.id,
+        if (t.id == taskId || t.parentTaskId == taskId) t,
     ];
     final runner = ref.read(agentTaskRunnerProvider.notifier);
-    for (final id in [taskId, ...childIds]) {
-      _removed.add(id);
-      runner.forceStop(id);
+    for (final t in removedTasks) {
+      _removed.add(t.id);
+      runner.forceStop(t.id);
     }
     state = [
       for (final t in state)
         if (t.id != taskId && t.parentTaskId != taskId) t,
     ];
-    for (final id in [taskId, ...childIds]) {
-      await _deleteOverflowFilesOf(id);
-      await ref.read(agentDaoProvider).deleteTask(id);
+    for (final t in removedTasks) {
+      await _deleteOverflowFilesOf(t.id);
+      await cleanupAgentCheckpointRefs(
+        ref,
+        t.id,
+        t.workspaceId.isEmpty ? null : t.workspaceId,
+      );
+      await ref.read(agentDaoProvider).deleteTask(t.id);
     }
   }
 
   /// 删除某智能体下的全部话题（删除智能体时联动）。
   Future<void> removeByProfile(String profileId) async {
-    final removedIds = [
+    final removedTasks = [
       for (final t in state)
-        if (t.profileId == profileId) t.id,
+        if (t.profileId == profileId) t,
     ];
     final runner = ref.read(agentTaskRunnerProvider.notifier);
-    for (final id in removedIds) {
-      _removed.add(id);
-      runner.forceStop(id);
+    for (final t in removedTasks) {
+      _removed.add(t.id);
+      runner.forceStop(t.id);
     }
     state = [
       for (final t in state)
         if (t.profileId != profileId) t,
     ];
-    for (final id in removedIds) {
-      await _deleteOverflowFilesOf(id);
+    for (final t in removedTasks) {
+      await _deleteOverflowFilesOf(t.id);
+      await cleanupAgentCheckpointRefs(
+        ref,
+        t.id,
+        t.workspaceId.isEmpty ? null : t.workspaceId,
+      );
     }
     await ref.read(agentDaoProvider).deleteTasksByProfile(profileId);
   }
