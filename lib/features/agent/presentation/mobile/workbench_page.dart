@@ -4,12 +4,14 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench_diff_tab.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench_focus_tab.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench_terminal_tab.dart';
 
 /// 右页：工作台（UI 稿 §4.3）——顶部小 tab 切换
-/// 「终端 / 焦点 / 改动 diff」。焦点已接真（[WorkbenchFocusTab]）：由事件流
-/// 驱动，跟随最新工具/思考/叙述活动自动切内容，附最近工具列表；
-/// diff 已接真：任务工作区的未提交改动清单 + 复用 Git 只读 diff 组件
-/// （[WorkbenchDiffTab]）。终端仍为占位（接真实现时复用工作区终端会话视图）。
+/// 「终端 / 焦点 / 改动 diff」，三个 tab 均已接真：终端实时围观任务工作区
+/// 的 AI 会话（[WorkbenchTerminalTab]）；焦点由事件流驱动，跟随最新
+/// 工具/思考/叙述活动自动切内容，附最近工具列表（[WorkbenchFocusTab]）；
+/// diff 为任务工作区的未提交改动清单 + 复用 Git 只读 diff 组件
+/// （[WorkbenchDiffTab]）。
 class WorkbenchPage extends StatefulWidget {
   const WorkbenchPage({required this.task, super.key});
 
@@ -108,10 +110,7 @@ class _WorkbenchPageState extends State<WorkbenchPage>
         const Divider(height: 1),
         Expanded(
           child: switch (_tab) {
-            0 => const _Placeholder(
-                icon: LucideIcons.terminal,
-                label: '终端实况\n（接真实现时复用工作区终端会话视图）',
-              ),
+            0 => WorkbenchTerminalTab(task: widget.task),
             1 => WorkbenchFocusTab(task: widget.task),
             _ => WorkbenchDiffTab(task: widget.task),
           },
@@ -121,29 +120,3 @@ class _WorkbenchPageState extends State<WorkbenchPage>
   }
 }
 
-class _Placeholder extends StatelessWidget {
-  const _Placeholder({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final muted = theme.colorScheme.onSurface.withValues(alpha: 0.35);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 40, color: muted),
-          const SizedBox(height: 12),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(color: muted),
-          ),
-        ],
-      ),
-    );
-  }
-}
