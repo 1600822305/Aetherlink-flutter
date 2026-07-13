@@ -16,9 +16,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: Column(
-            children: [
-              Expanded(child: DevinDiffLinesLazy(rows: rows)),
-            ],
+            children: [Expanded(child: DevinDiffLinesLazy(rows: rows))],
           ),
         ),
       ),
@@ -26,6 +24,28 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('final x1 = 1;'), findsOneWidget);
     expect(find.text('final x20 = 20;'), findsOneWidget);
+  });
+
+  testWidgets('DevinDiffLinesLazy followTail 黏底显示最新行', (tester) async {
+    final rows = <DiffLine>[
+      for (var i = 1; i <= 200; i++)
+        DiffLine(DiffLineKind.added, 'final x$i = $i;', newLine: i),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              Expanded(child: DevinDiffLinesLazy(rows: rows, followTail: true)),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    // 锚定底部：最后一行可见，第一行不在视口内。
+    expect(find.text('final x200 = 200;'), findsOneWidget);
+    expect(find.text('final x1 = 1;'), findsNothing);
   });
 
   testWidgets('DevinDiffLines 在可滚动 Column 里渲染全部行', (tester) async {

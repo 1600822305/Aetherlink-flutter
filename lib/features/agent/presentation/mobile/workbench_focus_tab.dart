@@ -401,7 +401,7 @@ class _ToolFocus extends ConsumerWidget {
             border: Border.all(color: theme.dividerColor),
           ),
           clipBehavior: Clip.antiAlias,
-          child: DevinDiffLinesLazy(rows: rows),
+          child: DevinDiffLinesLazy(rows: rows, followTail: streaming),
         );
       } else {
         final detail = event.resultDetail == null

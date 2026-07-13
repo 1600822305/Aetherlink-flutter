@@ -61,11 +61,17 @@ class DevinDiffLines extends StatelessWidget {
 /// 懒加载版 diff 行渲染：行按需构建（ListView.builder），不做整体横向
 /// 滚动（超宽行直接裁剪）。用于行数大 / 高频重建的场景（如工具参数
 /// 流式生成时的实时预览），避免一次性构建全部行 + 全行宽度测量拖死
-/// 主线程。需放在有界高度里。
+/// 主线程。需放在有界高度里。[followTail] 为 true 时列表锚定底部（reverse），
+/// 内容增长时始终黏底跟随最新行，用于流式生成中的实时预览。
 class DevinDiffLinesLazy extends StatelessWidget {
-  const DevinDiffLinesLazy({required this.rows, super.key});
+  const DevinDiffLinesLazy({
+    required this.rows,
+    this.followTail = false,
+    super.key,
+  });
 
   final List<DiffLine> rows;
+  final bool followTail;
 
   @override
   Widget build(BuildContext context) {
@@ -89,9 +95,12 @@ class DevinDiffLinesLazy extends StatelessWidget {
 
     return ListView.builder(
       padding: EdgeInsets.zero,
+      // reverse + 倒序取行：视觉顺序不变，但滚动锚点在底部，
+      // 新行追加时自动黏底。
+      reverse: followTail,
       itemCount: rows.length,
       itemBuilder: (context, i) {
-        final row = rows[i];
+        final row = rows[followTail ? rows.length - 1 - i : i];
         return row.kind == DiffLineKind.skip
             ? _skipRow(cs, textStyle)
             : _line(cs, green, red, gutterWidth, textStyle, row, clip: true);
