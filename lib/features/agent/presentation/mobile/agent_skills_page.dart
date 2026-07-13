@@ -14,8 +14,14 @@ import 'package:aetherlink_flutter/shared/domain/skill.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 Future<void> showAgentSkillsPage(BuildContext context) {
+  // 零时长路由：MaterialPageRoute 即使去掉视觉动画仍保留 300ms
+  // transitionDuration（见 app_router._instant 的说明），进入/返回都会卡一拍。
   return Navigator.of(context).push(
-    MaterialPageRoute<void>(builder: (_) => const AgentSkillsPage()),
+    PageRouteBuilder<void>(
+      pageBuilder: (_, _, _) => const AgentSkillsPage(),
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+    ),
   );
 }
 
