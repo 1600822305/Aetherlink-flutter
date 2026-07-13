@@ -34,8 +34,11 @@ SentinelMatch? matchSentinel(String output, String nonce, {String? command}) {
 }
 
 /// 提示符前缀：busybox 默认 `# ` / `$ `，或注入 PS1 后的
-/// `[名字]:路径 # `（可能带 ANSI 颜色序列）。
-final RegExp _promptPrefix = RegExp(r'^(\x1b\[[0-9;]*m|[^\n])*?[#$] ');
+/// `[名字]:路径 # `（可能带 ANSI 颜色序列）。ESC 只允许由颜色序列
+/// 分支消费（普通字符分支排除 `\x1b`）：两个分支无歧义，否则每个
+/// 颜色序列都有两种匹配方式，不命中的彩色长行（如 git log 输出）会
+/// 灾难性回溯，卡死主线程。
+final RegExp _promptPrefix = RegExp(r'^(\x1b\[[0-9;]*m|[^\n\x1b])*?[#$] ');
 
 /// 从 [head] 里剥掉 PTY 回显噪音：与输入行（命令各行 + 哨兵 printf 行）
 /// 相同的行（可带提示符前缀），以及只剩提示符的行。
