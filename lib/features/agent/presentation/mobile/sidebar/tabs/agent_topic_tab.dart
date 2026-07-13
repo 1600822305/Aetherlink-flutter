@@ -177,7 +177,7 @@ class _AgentTopicTabState extends ConsumerState<AgentTopicTab> {
 
 enum _TaskMenu { rename, togglePin, delete }
 
-/// 话题卡：状态色点 + 标题 + 最近事件摘要 + 工作区 chip + 活跃时间
+/// 话题卡：状态色点 + 标题 + 工作区 chip + 活跃时间
 /// （UI 稿 §三）+ 右侧「更多」菜单（重命名/固定/删除）
 /// + 两击确认快速删除（对齐聊天话题项）。
 class _TaskCard extends ConsumerWidget {
@@ -324,20 +324,6 @@ class _TaskCard extends ConsumerWidget {
                     ),
                   ],
                 ),
-                if (task.lastEventSummary.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 16),
-                    child: Text(
-                      task.lastEventSummary,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                ],
                 const SizedBox(height: 6),
                 Row(
                   children: [
