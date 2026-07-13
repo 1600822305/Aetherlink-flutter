@@ -23,6 +23,7 @@ class AgentProfileTab extends ConsumerWidget {
     final tasks = ref.watch(agentTasksProvider);
     final counts = <String, int>{};
     for (final t in tasks) {
+      if (t.isSubtask) continue;
       counts[t.profileId] = (counts[t.profileId] ?? 0) + 1;
     }
 

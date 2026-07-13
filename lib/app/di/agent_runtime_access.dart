@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_cance
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_control_tools.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_system_prompt.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/approval_gate.dart';
@@ -63,8 +64,13 @@ class AgentRuntime {
       forProfile(
     AgentProfile profile, {
     AgentSessionMode mode = AgentSessionMode.code,
+    bool enableSubagents = true,
   }) {
-    final catalog = _catalogFor(profile.tools, mode: mode);
+    final catalog = _catalogFor(
+      profile.tools,
+      mode: mode,
+      enableSubagents: enableSubagents,
+    );
     return (
       llm: _GatewayAgentLlmClient(_refOf, profile, catalog.definitions),
       tools: _McpAgentToolExecutor(_refOf, catalog.routes),
@@ -98,6 +104,7 @@ const Set<String> _kReadOnlyToolNames = {
     _catalogFor(
   Set<AgentToolGroup> groups, {
   AgentSessionMode mode = AgentSessionMode.code,
+  bool enableSubagents = true,
 }) {
   final readOnly =
       mode == AgentSessionMode.ask || mode == AgentSessionMode.plan;
@@ -128,6 +135,11 @@ const Set<String> _kReadOnlyToolNames = {
   if (groups.contains(AgentToolGroup.skills)) {
     definitions.add(kReadSkillToolDefinition);
     routes[kReadSkillToolName] = const SkillReadToolRoute();
+  }
+  // 子代理派生入口（引擎内部处理，不进 executor）；子代理自身
+  // 不再暴露，避免无限嵌套。
+  if (enableSubagents) {
+    definitions.add(kSpawnSubagentToolDefinition);
   }
   return (definitions: definitions, routes: routes);
 }

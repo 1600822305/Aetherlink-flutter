@@ -74,6 +74,7 @@ class AgentTaskConverter extends TypeConverter<AgentTask, String> {
       tokenCount: json['tokenCount'] as int? ?? 0,
       elapsed: Duration(milliseconds: json['elapsedMs'] as int? ?? 0),
       lastEventSummary: json['lastEventSummary'] as String? ?? '',
+      parentTaskId: json['parentTaskId'] as String? ?? '',
     );
   }
 
@@ -93,6 +94,7 @@ class AgentTaskConverter extends TypeConverter<AgentTask, String> {
         'tokenCount': value.tokenCount,
         'elapsedMs': value.elapsed.inMilliseconds,
         'lastEventSummary': value.lastEventSummary,
+        'parentTaskId': value.parentTaskId,
       });
 }
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -10,6 +11,9 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_budge
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
@@ -273,6 +277,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       store: _store(),
       gateway: _ProviderTaskGateway(this),
       budget: AgentBudget(),
+      subagents: _RunnerSubagentLauncher(this),
     );
     engine.run(task, token).whenComplete(() {
       _tokens.remove(task.id);
@@ -286,6 +291,153 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     });
   }
 
+  /// 子代理专属提示（系统提示第 3 层）：强调独立上下文 + 结论自包含。
+  static const String _kExploreSubagentPrompt =
+      '你是一个探索子代理：在独立上下文里完成父任务派发的只读调研/搜索子任务。'
+      '你看不到父任务的对话，指令里的信息就是全部上下文。完成后用 finish_task '
+      '返回结论：结论是父任务唯一能看到的内容，必须自包含（关键发现、文件路径、'
+      '结论依据），不要只说“已完成”。不要用 ask_user 提问。';
+
+  static const String _kBashSubagentPrompt =
+      '你是一个终端子代理：在独立上下文里执行父任务派发的命令型子任务。'
+      '你看不到父任务的对话，指令里的信息就是全部上下文。完成后用 finish_task '
+      '返回结论：提炼关键输出和结论，不要长篇粘贴原始输出。不要用 ask_user 提问。';
+
+  /// 派生并阻塞运行一个子代理（初稿 §5.5 P2，对标 Cursor）：独立
+  /// 事件流/预算，只把最终结论回填父任务；bash 型工具调用仍走现有
+  /// 审批链（auto 模式工作区内照常免审）。
+  Future<AgentToolResult> _launchSubagent({
+    required AgentTask parent,
+    required AgentToolCallRequest call,
+    required String toolEventId,
+    required AgentCancellationToken cancel,
+  }) async {
+    Map<String, dynamic> args;
+    try {
+      args = jsonDecode(call.argsJson) as Map<String, dynamic>;
+    } catch (_) {
+      return const AgentToolResult(ok: false, summary: '参数解析失败 ✗');
+    }
+    final typeName = args['type'] as String? ?? '';
+    final prompt = (args['prompt'] as String? ?? '').trim();
+    final description = (args['description'] as String? ?? '').trim();
+    final type = AgentSubagentType.values
+        .where((t) => t.name == typeName)
+        .firstOrNull;
+    if (type == null) {
+      return const AgentToolResult(
+          ok: false,
+          summary: '未知子代理类型 ✗',
+          detail: 'type 必须是 explore 或 bash');
+    }
+    if (prompt.isEmpty) {
+      return const AgentToolResult(ok: false, summary: '缺少 prompt ✗');
+    }
+    final parentReadOnly = parent.mode == AgentSessionMode.ask ||
+        parent.mode == AgentSessionMode.plan;
+    if (type == AgentSubagentType.bash && parentReadOnly) {
+      return const AgentToolResult(
+          ok: false,
+          summary: 'bash 子代理不可用 ✗',
+          detail: '当前为只读模式（Ask/Plan），只能派 explore 子代理');
+    }
+
+    final baseProfile = ref
+        .read(agentProfilesProvider)
+        .where((p) => p.id == parent.profileId)
+        .firstOrNull;
+    final childMode = type == AgentSubagentType.explore
+        ? AgentSessionMode.ask
+        : parent.mode;
+    final childProfile = AgentProfile(
+      id: parent.profileId,
+      name: type == AgentSubagentType.explore ? '探索子代理' : '终端子代理',
+      emoji: '🤖',
+      systemPrompt: type == AgentSubagentType.explore
+          ? _kExploreSubagentPrompt
+          : _kBashSubagentPrompt,
+      tools: type == AgentSubagentType.explore
+          ? (baseProfile?.tools ?? AgentToolGroup.values.toSet())
+          : {AgentToolGroup.terminal},
+      workspaceId: baseProfile?.workspaceId,
+      workspaceName: baseProfile?.workspaceName,
+    );
+
+    final now = DateTime.now();
+    final childId = subagentTaskIdFor(toolEventId);
+    final child = AgentTask(
+      id: childId,
+      profileId: parent.profileId,
+      title: description.isNotEmpty ? description : _titleFrom(prompt),
+      workspaceId: parent.workspaceId,
+      workspaceName: parent.workspaceName,
+      status: AgentTaskStatus.running,
+      mode: childMode,
+      createdAt: now,
+      updatedAt: now,
+      modelLabel: parent.modelLabel,
+      lastEventSummary: prompt,
+      parentTaskId: parent.id,
+    );
+    ref.read(agentTasksProvider.notifier).apply(child);
+    await _store().appendUserMessage(childId, prompt);
+
+    final runtime = ref.read(agentRuntimeProvider).forProfile(
+          childProfile,
+          mode: childMode,
+          enableSubagents: false,
+        );
+    final engine = AgentEngine(
+      llm: runtime.llm,
+      tools: runtime.tools,
+      approval: runtime.approval,
+      store: _store(),
+      gateway: _ProviderTaskGateway(this),
+      budget: AgentBudget(maxRounds: 15, maxTokens: 200000),
+    );
+    // 取消桥接：父任务暂停/终止 → 子代理在下个安全点终止。
+    final childToken = AgentCancellationToken();
+    final bridge = Timer.periodic(const Duration(milliseconds: 300), (_) {
+      if (cancel.stopRequested) childToken.requestCancel();
+    });
+    try {
+      await engine.run(child, childToken);
+    } finally {
+      bridge.cancel();
+    }
+
+    final finalChild = ref
+            .read(agentTasksProvider)
+            .where((t) => t.id == childId)
+            .firstOrNull ??
+        child;
+    final events = await _store().getEvents(childId);
+    final finalText =
+        events.whereType<AssistantTextEvent>().lastOrNull?.text.trim() ?? '';
+    final ok = finalChild.status == AgentTaskStatus.done;
+    final statusLabel = switch (finalChild.status) {
+      AgentTaskStatus.done => '完成',
+      AgentTaskStatus.cancelled => '已终止',
+      AgentTaskStatus.failed => '失败',
+      AgentTaskStatus.paused => '已暂停（预算耗尽或被暂停）',
+      _ => finalChild.status.name,
+    };
+    // finish_task 的总结落在 lastEventSummary；正文取最后一段助手文本。
+    final finishSummary = ok ? finalChild.lastEventSummary.trim() : '';
+    final detail = [
+      if (finalText.isNotEmpty) finalText,
+      if (finishSummary.isNotEmpty && finishSummary != finalText)
+        '结论：$finishSummary',
+    ].join('\n\n');
+    return AgentToolResult(
+      ok: ok,
+      summary: ok
+          ? '子代理完成 · ${finalChild.rounds} 轮'
+          : '子代理$statusLabel ✗',
+      detail: detail.isNotEmpty ? detail : '（子代理未返回结论，状态：$statusLabel）',
+    );
+  }
+
   static String _titleFrom(String text) =>
       text.length > 24 ? '${text.substring(0, 24)}…' : text;
 
@@ -294,6 +446,26 @@ class AgentTaskRunner extends _$AgentTaskRunner {
 
   void _applyTask(AgentTask task) =>
       ref.read(agentTasksProvider.notifier).apply(task);
+}
+
+class _RunnerSubagentLauncher implements AgentSubagentLauncher {
+  _RunnerSubagentLauncher(this._runner);
+
+  final AgentTaskRunner _runner;
+
+  @override
+  Future<AgentToolResult> launch({
+    required AgentTask parent,
+    required AgentToolCallRequest call,
+    required String toolEventId,
+    required AgentCancellationToken cancel,
+  }) =>
+      _runner._launchSubagent(
+        parent: parent,
+        call: call,
+        toolEventId: toolEventId,
+        cancel: cancel,
+      );
 }
 
 class _ProviderTaskGateway implements AgentTaskGateway {

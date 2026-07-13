@@ -70,7 +70,7 @@ class AgentTopicTab extends ConsumerWidget {
     // 新建/刚活跃的话题自然浮在顶部。
     final tasks = ref
         .watch(agentTasksProvider)
-        .where((t) => t.profileId == profile.id)
+        .where((t) => t.profileId == profile.id && !t.isSubtask)
         .toList()
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 

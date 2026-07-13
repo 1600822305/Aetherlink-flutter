@@ -50,6 +50,7 @@ class AgentTask {
     this.tokenCount = 0,
     this.elapsed = Duration.zero,
     this.lastEventSummary = '',
+    this.parentTaskId = '',
   });
 
   final String id;
@@ -74,6 +75,12 @@ class AgentTask {
 
   /// 侧栏话题卡上的最近事件摘要。
   final String lastEventSummary;
+
+  /// 非空 = 子任务（subagent 派生的隐藏话题），不进侧栏话题列表，
+  /// 只通过父时间线的子任务行展开查看。
+  final String parentTaskId;
+
+  bool get isSubtask => parentTaskId.isNotEmpty;
 
   bool get isActive =>
       status == AgentTaskStatus.running ||
@@ -107,6 +114,7 @@ class AgentTask {
       tokenCount: tokenCount ?? this.tokenCount,
       elapsed: elapsed ?? this.elapsed,
       lastEventSummary: lastEventSummary ?? this.lastEventSummary,
+      parentTaskId: parentTaskId,
     );
   }
 }

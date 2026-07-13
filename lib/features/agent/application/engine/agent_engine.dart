@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_cance
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/approval_gate.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
@@ -31,6 +32,7 @@ class AgentEngine {
     required this.store,
     required this.gateway,
     required this.budget,
+    this.subagents,
   });
 
   final AgentLlmClient llm;
@@ -39,6 +41,9 @@ class AgentEngine {
   final AgentEventStore store;
   final AgentTaskGateway gateway;
   final AgentBudget budget;
+
+  /// 子代理启动器；null = 本层不支持派生（子代理自身不可再嵌套）。
+  final AgentSubagentLauncher? subagents;
 
   Future<void> run(AgentTask task, AgentCancellationToken cancel) async {
     var current = task;
@@ -120,8 +125,19 @@ class AgentEngine {
           return;
         }
 
-        // ⑥ 逐个执行工具调用。
-        for (final call in turn.toolCalls) {
+        // ⑥ 逐个执行工具调用；同一轮连续的 spawn_subagent 成批并行。
+        for (var i = 0; i < turn.toolCalls.length; i++) {
+          final call = turn.toolCalls[i];
+          if (call.name == kToolSpawnSubagent) {
+            final batch = <AgentToolCallRequest>[call];
+            while (i + 1 < turn.toolCalls.length &&
+                turn.toolCalls[i + 1].name == kToolSpawnSubagent) {
+              batch.add(turn.toolCalls[++i]);
+            }
+            current = await _runSubagentBatch(current, batch, cancel);
+            if (cancel.stopRequested) break;
+            continue;
+          }
           // 控制工具在引擎内处理。
           if (call.name == kToolUpdatePlan) {
             await store.appendPlanUpdate(current.id, _parsePlan(call));
@@ -207,6 +223,59 @@ class AgentEngine {
         lastEventSummary: '执行出错：$e',
       ));
     }
+  }
+
+  /// 同批子代理并行跑（对标 Cursor：同轮多个 spawn 并行，父级阻塞等
+  /// 全部结果）。派生本身不过审批门：子代理内部的每个工具调用仍走
+  /// 自身的审批链。
+  Future<AgentTask> _runSubagentBatch(
+    AgentTask current,
+    List<AgentToolCallRequest> batch,
+    AgentCancellationToken cancel,
+  ) async {
+    final launcher = subagents;
+    final events = <ToolCallEvent>[];
+    for (final call in batch) {
+      events.add(await store.appendToolCall(
+          current.id, call, AgentToolCallState.running));
+    }
+    if (launcher == null) {
+      for (final event in events) {
+        await store.updateToolCall(current.id, event,
+            state: AgentToolCallState.failure,
+            resultSummary: '子代理不可用 ✗',
+            resultDetail: '当前上下文不支持派生子代理（子代理内不可再嵌套）');
+        budget.recordToolResult(ok: false);
+      }
+      return current;
+    }
+    await Future.wait([
+      for (var i = 0; i < batch.length; i++)
+        () async {
+          final stopwatch = Stopwatch()..start();
+          AgentToolResult result;
+          try {
+            result = await launcher.launch(
+              parent: current,
+              call: batch[i],
+              toolEventId: events[i].id,
+              cancel: cancel,
+            );
+          } catch (e) {
+            result = AgentToolResult(ok: false, summary: '子代理异常 ✗', detail: '$e');
+          }
+          stopwatch.stop();
+          await store.updateToolCall(current.id, events[i],
+              state: result.ok
+                  ? AgentToolCallState.success
+                  : AgentToolCallState.failure,
+              resultSummary: result.summary,
+              resultDetail: result.detail,
+              elapsed: stopwatch.elapsed);
+          budget.recordToolResult(ok: result.ok);
+        }(),
+    ]);
+    return current;
   }
 
   Future<void> _backfillInterruptedToolCalls(String taskId) async {

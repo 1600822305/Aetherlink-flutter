@@ -126,12 +126,20 @@ class AgentTasks extends _$AgentTasks {
     }
   }
 
+  /// 删话题级联删其派生的子任务（子代理隐藏话题）。
   void remove(String taskId) {
+    final childIds = [
+      for (final t in state)
+        if (t.parentTaskId == taskId) t.id,
+    ];
     state = [
       for (final t in state)
-        if (t.id != taskId) t,
+        if (t.id != taskId && t.parentTaskId != taskId) t,
     ];
     ref.read(agentDaoProvider).deleteTask(taskId);
+    for (final id in childIds) {
+      ref.read(agentDaoProvider).deleteTask(id);
+    }
   }
 
   /// 删除某智能体下的全部话题（删除智能体时联动）。
