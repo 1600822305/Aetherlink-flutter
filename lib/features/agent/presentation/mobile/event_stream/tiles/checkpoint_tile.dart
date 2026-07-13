@@ -27,8 +27,7 @@ class _CheckpointTileState extends ConsumerState<CheckpointTile> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurface.withValues(alpha: 0.5);
-    final running =
-        ref.watch(agentTaskRunnerProvider).contains(widget.taskId);
+    final running = ref.watch(agentTaskRunnerProvider).contains(widget.taskId);
     final label = widget.event.label.isEmpty ? '检查点' : widget.event.label;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -116,9 +115,9 @@ class _CheckpointTileState extends ConsumerState<CheckpointTile> {
       if (mounted) setState(() => _busy = false);
     }
     if (!mounted) return;
-    _snack(error == null
-        ? '已回滚到检查点，还原 ${result!.files.length} 个文件'
-        : '回滚失败：$error');
+    _snack(
+      error == null ? '已回滚到检查点，还原 ${result!.files.length} 个文件' : '回滚失败：$error',
+    );
   }
 
   void _snack(String text) {
@@ -143,74 +142,75 @@ class _RollbackPreviewSheet extends StatelessWidget {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurface.withValues(alpha: 0.6);
     final maxHeight = MediaQuery.of(context).size.height * 0.75;
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: maxHeight),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('回滚到此检查点', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 4),
-            Text(
-              label.isEmpty ? '工作区文件将还原到该消息之前的状态' : '还原到「$label」之前的状态',
-              style: theme.textTheme.bodySmall?.copyWith(color: muted),
-            ),
-            const SizedBox(height: 12),
-            if (files.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Center(
-                  child: Text(
-                    '工作区与该检查点一致，没有需要还原的文件',
-                    style: theme.textTheme.bodySmall?.copyWith(color: muted),
-                  ),
-                ),
-              )
-            else ...[
-              Text(
-                '将触达 ${files.length} 个文件（点文件可看改动内容）：',
-                style: theme.textTheme.labelSmall?.copyWith(color: muted),
-              ),
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('回滚到此检查点', style: theme.textTheme.titleMedium),
               const SizedBox(height: 4),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: files.length,
-                  itemBuilder: (context, i) =>
-                      _FileRow(file: files[i], loadDiff: loadDiff),
-                ),
+              Text(
+                label.isEmpty ? '工作区文件将还原到该消息之前的状态' : '还原到「$label」之前的状态',
+                style: theme.textTheme.bodySmall?.copyWith(color: muted),
               ),
-            ],
-            const SizedBox(height: 12),
-            Row(
-              children: [
+              const SizedBox(height: 12),
+              if (files.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Text(
+                      '未检测到文件差异，仍可执行回滚以确保工作区与检查点一致',
+                      style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                    ),
+                  ),
+                )
+              else ...[
                 Text(
-                  '对话记录不受影响；回滚前会自动保存当前状态',
+                  '将触达 ${files.length} 个文件（点文件可看改动内容）：',
                   style: theme.textTheme.labelSmall?.copyWith(color: muted),
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('取消'),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: files.isEmpty
-                      ? null
-                      : () => Navigator.of(context).pop(true),
-                  child: Text(
-                      files.isEmpty ? '无需回滚' : '回滚 ${files.length} 个文件'),
+                const SizedBox(height: 4),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: files.length,
+                    itemBuilder: (context, i) =>
+                        _FileRow(file: files[i], loadDiff: loadDiff),
+                  ),
                 ),
               ],
-            ),
-          ],
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Text(
+                    '对话记录不受影响；回滚前会自动保存当前状态',
+                    style: theme.textTheme.labelSmall?.copyWith(color: muted),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('取消'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: Text(
+                      files.isEmpty ? '回滚' : '回滚 ${files.length} 个文件',
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -301,9 +301,7 @@ class _FileRow extends StatelessWidget {
               }
               final diff = snapshot.data!.trim();
               if (diff.isEmpty) {
-                return const Text(
-                  '（检查点之后新增的未跟踪文件，回滚将直接删除，无逐行 diff）',
-                );
+                return const Text('（检查点之后新增的未跟踪文件，回滚将直接删除，无逐行 diff）');
               }
               return SingleChildScrollView(
                 child: SingleChildScrollView(
