@@ -51,10 +51,13 @@ class AgentLlmContext {
 /// LLM 调用抽象：骨架期用假实现跑通状态机，接真实现时经 app/di
 /// 复用 provider 层流式调用（初稿 §5.2 系统提示组装也在真实现里做）。
 abstract class AgentLlmClient {
+  /// [onToolCall]：每个工具调用的参数一流完就回调（不等整轮结束），
+  /// 供 UI 提前展示「执行中」块；实现必须 await 它再继续消费流。
   Future<AgentLlmTurn> completeTurn(
     AgentLlmContext context, {
     void Function(String textSoFar)? onTextDelta,
     void Function(String reasoningSoFar)? onReasoningDelta,
+    Future<void> Function(AgentToolCallRequest call)? onToolCall,
     AgentCancellationToken? cancel,
   });
 

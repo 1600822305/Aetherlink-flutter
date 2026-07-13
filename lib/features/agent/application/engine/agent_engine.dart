@@ -104,13 +104,36 @@ class AgentEngine {
         ));
         final events = await store.getEvents(current.id);
         final writer = _StreamingEventWriter(store, current.id);
+        // 工具调用参数一流完就先落「执行中」事件（不等整轮结束），
+        // UI 实时看到块；后续执行循环按 id 复用预建事件。
+        const engineTools = {kToolUpdatePlan, kToolAskUser, kToolFinishTask};
+        final preCreated = <String, List<ToolCallEvent>>{};
         final turn = await llm.completeTurn(
           AgentLlmContext(task: current, events: events),
           cancel: cancel,
           onReasoningDelta: writer.onReasoningDelta,
           onTextDelta: writer.onTextDelta,
+          onToolCall: (call) async {
+            if (engineTools.contains(call.name) ||
+                call.name == kToolSpawnSubagent) {
+              return;
+            }
+            final event = await store.appendToolCall(
+                current.id, call, AgentToolCallState.running);
+            preCreated.putIfAbsent(call.id, () => []).add(event);
+          },
         );
         await writer.finish(turn.text);
+        // 流中断时未回到 turn 的预建事件按失败回填，避免永久 running。
+        final returnedIds = {for (final c in turn.toolCalls) c.id};
+        for (final entry in preCreated.entries) {
+          if (returnedIds.contains(entry.key)) continue;
+          for (final event in entry.value) {
+            await store.updateToolCall(current.id, event,
+                state: AgentToolCallState.failure, resultSummary: '已中断 ✗');
+          }
+          entry.value.clear();
+        }
         budget.recordTokens(turn.tokensUsed);
         current = await save(current.copyWith(
           tokenCount: current.tokenCount + turn.tokensUsed,
@@ -160,8 +183,11 @@ class AgentEngine {
             return;
           }
 
-          var event = await store.appendToolCall(
-              current.id, call, AgentToolCallState.running);
+          final pre = preCreated[call.id];
+          var event = (pre != null && pre.isNotEmpty)
+              ? pre.removeAt(0)
+              : await store.appendToolCall(
+                  current.id, call, AgentToolCallState.running);
 
           // 审批（L2）：拒绝回填继续跑；挂起无超时。
           final requirement = await approval.evaluate(call, current);

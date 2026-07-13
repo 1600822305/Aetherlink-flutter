@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/agent/application/agent_providers.da
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tool_detail_sheet.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_diff_view.dart';
 
 /// 工作台「焦点」tab（UI 稿 §4.3）：只显示「当前最新活动」的单一视图，
 /// 活动切换时整块跟着变——终端工具→命令+实况输出、文件编辑→
@@ -294,16 +295,34 @@ class _ToolFocus extends StatelessWidget {
     } else {
       final pairs = _editPairsOf(event);
       if (pairs.isNotEmpty) {
+        // IDE 式行级红绿 diff（与 Git diff 面板同款行渲染）。
+        final numStyle = TextStyle(
+          fontFamily: 'monospace',
+          fontSize: 11,
+          color: cs.onSurfaceVariant,
+        );
         body = SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               for (final p in pairs) ...[
-                if (p.search != null)
-                  _MonoPane(text: p.search!, tint: cs.error, expand: false),
-                _MonoPane(text: p.replace, tint: Colors.green, expand: false),
-                const SizedBox(height: 8),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: theme.dividerColor),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final row
+                          in computeLineDiff(p.search ?? '', p.replace))
+                        buildDiffLineRow(theme, row, numStyle),
+                    ],
+                  ),
+                ),
               ],
             ],
           ),
@@ -376,33 +395,21 @@ class _TextFocus extends StatelessWidget {
   }
 }
 
-/// 等宽产物面板：[expand] 时占满高度内部滚动；[dark] 为终端风格深底，
-/// [tint] 为 diff 红/绿浅底。
+/// 等宽产物面板：占满高度内部滚动；[dark] 为终端风格深底。
 class _MonoPane extends StatelessWidget {
-  const _MonoPane({
-    required this.text,
-    this.dark = false,
-    this.tint,
-    this.expand = true,
-  });
+  const _MonoPane({required this.text, this.dark = false});
 
   final String text;
   final bool dark;
-  final Color? tint;
-  final bool expand;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final bg = dark
-        ? const Color(0xFF14161B)
-        : (tint?.withValues(alpha: 0.08) ??
-            cs.onSurface.withValues(alpha: 0.04));
-    final pane = Container(
-      margin: expand
-          ? const EdgeInsets.symmetric(horizontal: 12)
-          : const EdgeInsets.only(top: 2),
+    final bg =
+        dark ? const Color(0xFF14161B) : cs.onSurface.withValues(alpha: 0.04);
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(8),
@@ -414,15 +421,10 @@ class _MonoPane extends StatelessWidget {
           style: theme.textTheme.bodySmall?.copyWith(
             fontFamily: 'monospace',
             height: 1.4,
-            color: dark ? Colors.white.withValues(alpha: 0.9) : tint,
+            color: dark ? Colors.white.withValues(alpha: 0.9) : null,
           ),
         ),
       ),
-    );
-    if (expand) return pane;
-    return Container(
-      constraints: const BoxConstraints(maxHeight: 300),
-      child: pane,
     );
   }
 }

@@ -169,6 +169,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     AgentLlmContext context, {
     void Function(String textSoFar)? onTextDelta,
     void Function(String reasoningSoFar)? onReasoningDelta,
+    Future<void> Function(AgentToolCallRequest call)? onToolCall,
     AgentCancellationToken? cancel,
   }) async {
     final ref = _refOf();
@@ -216,6 +217,14 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
             onReasoningDelta?.call(reasoning.toString());
           case LlmToolCallChunk(:final call):
             calls.add(call);
+            if (onToolCall != null) {
+              await onToolCall(AgentToolCallRequest(
+                id: call.id.isEmpty ? call.name : call.id,
+                name: call.name,
+                argsJson: call.arguments,
+                argSummary: _summarizeArgs(call.name, call.arguments),
+              ));
+            }
           case LlmDone(usage: final usage):
             if (usage != null) totalTokens = usage.totalTokens;
         }
