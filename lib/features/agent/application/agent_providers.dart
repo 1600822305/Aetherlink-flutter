@@ -18,6 +18,9 @@ const String kLastActiveAgentTaskKey = 'agent_last_task';
 /// drift，之后一律以库为准（删光不会重新种入）。
 const String kAgentSeededKey = 'agent_seeded_v1';
 
+/// 会话上下文长度上限（token）的持久化键。
+const String kAgentContextLimitKey = 'agent_context_limit';
+
 /// 首次运行时的一次性种子写入（档案/话题/事件三表）。keepAlive 保证
 /// 多个 hydrate 入口共享同一次 Future，不会重复种入。
 @Riverpod(keepAlive: true)
@@ -179,6 +182,7 @@ class AgentUiSettings {
     this.defaultMode = AgentSessionMode.code,
     this.autoCollapseWorkSessions = true,
     this.followAiFile = true,
+    this.contextLimit = 128000,
   });
 
   /// 新话题的默认模式（Code/Ask/Plan）。
@@ -190,16 +194,22 @@ class AgentUiSettings {
   /// 右页工作台焦点 tab 跟随智能体当前活动。
   final bool followAiFile;
 
+  /// 会话上下文长度上限（token）：用于展示已用/剩余占比，按模型
+  /// 窗口自行设置（持久化）。
+  final int contextLimit;
+
   AgentUiSettings copyWith({
     AgentSessionMode? defaultMode,
     bool? autoCollapseWorkSessions,
     bool? followAiFile,
+    int? contextLimit,
   }) {
     return AgentUiSettings(
       defaultMode: defaultMode ?? this.defaultMode,
       autoCollapseWorkSessions:
           autoCollapseWorkSessions ?? this.autoCollapseWorkSessions,
       followAiFile: followAiFile ?? this.followAiFile,
+      contextLimit: contextLimit ?? this.contextLimit,
     );
   }
 }
@@ -207,7 +217,20 @@ class AgentUiSettings {
 @Riverpod(keepAlive: true)
 class AgentUiSettingsController extends _$AgentUiSettingsController {
   @override
-  AgentUiSettings build() => const AgentUiSettings();
+  AgentUiSettings build() {
+    _hydrate();
+    return const AgentUiSettings();
+  }
+
+  Future<void> _hydrate() async {
+    final stored = await ref
+        .read(appSettingsStoreProvider)
+        .getSetting(kAgentContextLimitKey);
+    final limit = int.tryParse(stored ?? '');
+    if (limit != null && limit > 0) {
+      state = state.copyWith(contextLimit: limit);
+    }
+  }
 
   void setDefaultMode(AgentSessionMode mode) =>
       state = state.copyWith(defaultMode: mode);
@@ -217,6 +240,14 @@ class AgentUiSettingsController extends _$AgentUiSettingsController {
 
   void setFollowAiFile(bool value) =>
       state = state.copyWith(followAiFile: value);
+
+  void setContextLimit(int value) {
+    if (value <= 0) return;
+    state = state.copyWith(contextLimit: value);
+    ref
+        .read(appSettingsStoreProvider)
+        .saveSetting(kAgentContextLimitKey, '$value');
+  }
 }
 
 /// 当前选中的智能体档案 id；冷启动从 KV 恢复，切换写穿。

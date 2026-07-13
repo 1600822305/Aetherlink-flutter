@@ -48,6 +48,7 @@ class AgentTask {
     this.modelLabel = '',
     this.rounds = 0,
     this.tokenCount = 0,
+    this.contextTokens = 0,
     this.elapsed = Duration.zero,
     this.lastEventSummary = '',
     this.parentTaskId = '',
@@ -70,7 +71,12 @@ class AgentTask {
   final String modelLabel;
 
   final int rounds;
+
+  /// 累计 token 用量（计费口径：每轮输入+输出累加）。
   final int tokenCount;
+
+  /// 当前上下文占用（最近一次 LLM 请求的总 token，对比窗口上限）。
+  final int contextTokens;
   final Duration elapsed;
 
   /// 侧栏话题卡上的最近事件摘要。
@@ -96,6 +102,7 @@ class AgentTask {
     String? modelLabel,
     int? rounds,
     int? tokenCount,
+    int? contextTokens,
     Duration? elapsed,
     String? lastEventSummary,
   }) {
@@ -112,6 +119,7 @@ class AgentTask {
       modelLabel: modelLabel ?? this.modelLabel,
       rounds: rounds ?? this.rounds,
       tokenCount: tokenCount ?? this.tokenCount,
+      contextTokens: contextTokens ?? this.contextTokens,
       elapsed: elapsed ?? this.elapsed,
       lastEventSummary: lastEventSummary ?? this.lastEventSummary,
       parentTaskId: parentTaskId,

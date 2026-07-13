@@ -233,6 +233,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     return AgentLlmTurn(
       text: buffer.toString(),
       tokensUsed: totalTokens,
+      contextTokens: totalTokens,
       toolCalls: [
         for (final call in calls)
           AgentToolCallRequest(

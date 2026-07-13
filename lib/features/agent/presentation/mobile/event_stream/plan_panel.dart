@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
@@ -130,13 +132,16 @@ class _PlanItemRow extends StatelessWidget {
 }
 
 /// 任务信息卡：工作区/模型/模式/token 轮数累计（UI 稿 §4.2）。
-class _TaskInfoCard extends StatelessWidget {
+class _TaskInfoCard extends ConsumerWidget {
   const _TaskInfoCard({required this.task});
 
   final AgentTask task;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final limit = ref.watch(
+      agentUiSettingsControllerProvider.select((s) => s.contextLimit),
+    );
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final muted = cs.onSurface.withValues(alpha: 0.6);
@@ -168,9 +173,16 @@ class _TaskInfoCard extends StatelessWidget {
           row(LucideIcons.keyboard, agentModeLabel(task.mode)),
           row(
             LucideIcons.activity,
-            '第${task.rounds}轮 · ${formatTokens(task.tokenCount)} tokens · '
+            '第${task.rounds}轮 · 累计 ${formatTokens(task.tokenCount)} tokens · '
             '${formatElapsed(task.elapsed)}',
           ),
+          if (task.contextTokens > 0)
+            row(
+              LucideIcons.gauge,
+              '上下文 ${formatTokens(task.contextTokens)} / '
+              '${formatTokens(limit)}（剩 '
+              '${formatTokens((limit - task.contextTokens).clamp(0, limit))}）',
+            ),
         ],
       ),
     );

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 
 /// 状态色板（全局统一，UI 稿 §三）。
@@ -72,16 +74,23 @@ String formatElapsed(Duration d) {
   return '${d.inSeconds}s';
 }
 
-/// 顶栏下的常驻状态条：`● 运行中 · 第12轮 · 8.4k · 6m`（UI 稿 §4.1）。
-class AgentStatusLine extends StatelessWidget {
+/// 顶栏下的常驻状态条：`● 运行中 · 第12轮 · 累计8.4k · 上下文12k/128k · 6m`
+/// （UI 稿 §4.1）。
+class AgentStatusLine extends ConsumerWidget {
   const AgentStatusLine({required this.task, super.key});
 
   final AgentTask task;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final color = agentStatusColor(context, task.status);
+    final limit = ref.watch(
+      agentUiSettingsControllerProvider.select((s) => s.contextLimit),
+    );
+    final contextInfo = task.contextTokens > 0
+        ? ' · 上下文${formatTokens(task.contextTokens)}/${formatTokens(limit)}'
+        : '';
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -93,7 +102,8 @@ class AgentStatusLine extends StatelessWidget {
         ],
         Text(
           '${agentStatusLabel(task.status)} · 第${task.rounds}轮 · '
-          '${formatTokens(task.tokenCount)} · ${formatElapsed(task.elapsed)}',
+          '累计${formatTokens(task.tokenCount)}$contextInfo · '
+          '${formatElapsed(task.elapsed)}',
           style: theme.textTheme.labelSmall?.copyWith(
             color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
           ),

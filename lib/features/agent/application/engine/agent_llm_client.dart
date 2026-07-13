@@ -27,11 +27,17 @@ class AgentLlmTurn {
     this.text = '',
     this.toolCalls = const [],
     this.tokensUsed = 0,
+    this.contextTokens = 0,
   });
 
   final String text;
   final List<AgentToolCallRequest> toolCalls;
+
+  /// 本次调用的 token 用量（计费口径，跨轮累加进 task.tokenCount）。
   final int tokensUsed;
+
+  /// 本次请求结束时的上下文占用（输入+输出，对比窗口上限）。0 = 未知。
+  final int contextTokens;
 }
 
 /// 一轮调用的上下文：任务 + 事件流（压缩视图后续在引擎内做）。

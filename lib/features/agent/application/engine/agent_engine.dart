@@ -114,6 +114,9 @@ class AgentEngine {
         budget.recordTokens(turn.tokensUsed);
         current = await save(current.copyWith(
           tokenCount: current.tokenCount + turn.tokensUsed,
+          contextTokens: turn.contextTokens > 0
+              ? turn.contextTokens
+              : current.contextTokens,
           updatedAt: DateTime.now(),
           lastEventSummary:
               turn.text.isNotEmpty ? turn.text : current.lastEventSummary,

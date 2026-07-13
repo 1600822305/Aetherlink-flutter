@@ -25,6 +25,11 @@ class AgentSettingsTab extends ConsumerWidget {
         profiles.firstOrNull;
     final s = ref.watch(agentUiSettingsControllerProvider);
     final c = ref.read(agentUiSettingsControllerProvider.notifier);
+    final taskId = ref.watch(selectedAgentTaskIdProvider);
+    final task = ref
+        .watch(agentTasksProvider)
+        .where((t) => t.id == taskId)
+        .firstOrNull;
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -63,6 +68,36 @@ class AgentSettingsTab extends ConsumerWidget {
               ],
               onChanged: c.setDefaultMode,
             ),
+          ],
+        ),
+        const _GroupDivider(),
+        _Group(
+          title: '上下文',
+          subtitle:
+              '上限 ${_formatK(s.contextLimit)}'
+              '${task != null && task.contextTokens > 0 ? ' · 当前已用 ${_formatK(task.contextTokens)}' : ''}',
+          children: [
+            _SelectRow<int>(
+              title: '会话上下文长度',
+              description: '按模型窗口设置；状态栏展示 已用/上限 与剩余量',
+              value: s.contextLimit,
+              options: const [
+                (32000, '32k'),
+                (64000, '64k'),
+                (128000, '128k'),
+                (200000, '200k'),
+                (256000, '256k'),
+                (1000000, '1M'),
+              ],
+              onChanged: c.setContextLimit,
+            ),
+            if (task != null)
+              _StaticRow(
+                title: '当前话题已用 / 剩余',
+                value: task.contextTokens > 0
+                    ? '${_formatK(task.contextTokens)} / 剩 ${_formatK((s.contextLimit - task.contextTokens).clamp(0, s.contextLimit))}'
+                    : '暂无数据（运行一轮后更新）',
+              ),
           ],
         ),
         const _GroupDivider(),
@@ -157,6 +192,12 @@ class _SettingsEntryRow extends StatelessWidget {
     );
   }
 }
+
+String _formatK(int tokens) => tokens >= 1000000
+    ? '${(tokens / 1000000).toStringAsFixed(tokens % 1000000 == 0 ? 0 : 1)}M'
+    : tokens >= 1000
+        ? '${(tokens / 1000).toStringAsFixed(tokens % 1000 == 0 ? 0 : 1)}k'
+        : '$tokens';
 
 String _modeLabel(AgentSessionMode mode) => switch (mode) {
   AgentSessionMode.code => 'Code',
