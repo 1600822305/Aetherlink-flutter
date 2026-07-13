@@ -70,6 +70,8 @@ Future<McpToolResult> readFile(Ref ref, Map<String, Object?> args) async {
   if (files is List && files.isNotEmpty) {
     final results = <Map<String, Object?>>[];
     var errors = 0;
+    var skipped = 0;
+    var totalChars = 0;
     for (final item in files) {
       if (item is! Map) continue;
       final m = item.map((k, v) => MapEntry(k.toString(), v as Object?));
@@ -79,11 +81,25 @@ Future<McpToolResult> readFile(Ref ref, Map<String, Object?> args) async {
         results.add({'status': 'error', 'error': '缺少必需参数: path'});
         continue;
       }
+      // 批量总量封顶：单文件上限之外再给整次调用一个总预算，
+      // 避免一次传十几个大文件把上下文撑爆；超出后剩余文件标记
+      // skipped，提示分批读。
+      if (totalChars >= kMaxBatchReadChars) {
+        skipped++;
+        results.add({
+          'path': path,
+          'status': 'skipped',
+          'error': '本次批量读取已达总量上限（$kMaxBatchReadChars 字符），'
+              '该文件未读取；请分批调用或指定行范围。',
+        });
+        continue;
+      }
       try {
         final one = await _readOne(
             ref, args, path,
             optionalInt(m, 'start_line'), optionalInt(m, 'end_line'),
             withLineNumbers: withLineNumbers);
+        totalChars += (one['content'] as String? ?? '').length;
         results.add({'status': 'success', ...one});
       } on FileEditorError catch (e) {
         errors++;
@@ -95,8 +111,9 @@ Future<McpToolResult> readFile(Ref ref, Map<String, Object?> args) async {
     }
     return fileEditorOk({
       'count': results.length,
-      'successCount': results.length - errors,
+      'successCount': results.length - errors - skipped,
       'errorCount': errors,
+      if (skipped > 0) 'skippedCount': skipped,
       'files': results,
     });
   }
@@ -275,6 +292,9 @@ const int _kMaxLineChars = 2000;
 
 /// 单次读取的内容字符上限；超出时截断并提示改用行范围分段读。
 const int _kMaxReadChars = 60000;
+
+/// 批量读取时整次调用的内容总量上限；达到后剩余文件被跳过。
+const int kMaxBatchReadChars = 120000;
 
 /// 对读到的内容做保护：超长行截断 + 总量封顶。返回处理后的文本与提示。
 ({String content, String? note}) _guardContent(String content) {
