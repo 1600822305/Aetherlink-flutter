@@ -225,6 +225,34 @@ Future<({String oldText, String newText})> loadAgentFileDiff(
   return (oldText: oldText, newText: newText);
 }
 
+/// 还原单个文件到 HEAD 版本（Diff tab 逐文件「还原此文件」）：
+/// HEAD 里存在的文件用 `git checkout HEAD --` 覆盖工作区与暂存区；
+/// HEAD 里不存在（新增/未跟踪）则从暂存区与工作区删除。
+/// 破坏性操作，工作区绑定解析失败直接抛错，不做回退。
+Future<void> revertAgentFileChange(
+  Ref ref,
+  String? workspaceId,
+  AgentChangesSnapshot snapshot,
+  AgentFileChange change,
+) async {
+  final resolved =
+      await resolveAgentWorkspace(ref, workspaceId, allowFallback: false);
+  if (resolved == null) throw StateError('工作区绑定不可用，无法还原');
+  final (_, backend) = resolved;
+  final quoted = shellQuoteArg(change.relPath);
+  final headRef = shellQuoteArg('HEAD:${change.relPath}');
+  final result = await backend.exec(
+    'if git cat-file -e $headRef 2>/dev/null; then '
+    'git checkout HEAD -- $quoted; '
+    'else git rm -f -q --ignore-unmatch -- $quoted; rm -f -- $quoted; fi',
+    workingDirectory: snapshot.repoRoot,
+    timeout: const Duration(seconds: 20),
+  );
+  if (result.exitCode != 0) {
+    throw StateError('还原失败：${result.stderr.trim()}');
+  }
+}
+
 /// 按任务/档案绑定解析工作区及其后端。
 ///
 /// [allowFallback] 为 true 时绑定未命中会回退到当前打开 → 最近

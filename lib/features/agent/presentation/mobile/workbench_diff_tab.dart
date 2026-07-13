@@ -157,6 +157,12 @@ class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
                                 AppToast.success(context, '已复制文件路径');
                               }
                             },
+                            onRevert: () => _revertFile(
+                              context,
+                              workspaceId,
+                              snapshot,
+                              change,
+                            ),
                           ),
                           if (expanded)
                             _InlineDiff(
@@ -178,6 +184,54 @@ class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
         ),
       ],
     );
+  }
+
+  /// 逐文件「还原此文件」：二次确认后把该文件恢复到 HEAD 版本
+  /// （新增/未跟踪文件则删除），成功后刷新改动清单。
+  Future<void> _revertFile(
+    BuildContext context,
+    String? workspaceId,
+    AgentChangesSnapshot snapshot,
+    AgentFileChange change,
+  ) async {
+    final isNew = change.status == GitFileStatus.untracked ||
+        change.status == GitFileStatus.added;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('还原此文件？'),
+        content: Text(
+          isNew
+              ? '${change.relPath}\n\n该文件在 HEAD 中不存在，还原将直接删除它，不可撤销。'
+              : '${change.relPath}\n\n将丢弃该文件的全部未提交改动，恢复为 HEAD 版本，不可撤销。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: Text(isNew ? '删除文件' : '还原'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ref
+          .read(_revertFileProvider((workspaceId, snapshot, change)).future);
+      if (context.mounted) {
+        AppToast.success(context, isNew ? '已删除 ${change.relPath}' : '已还原 ${change.relPath}');
+      }
+      setState(() => _expanded.remove(change.relPath));
+      ref.invalidate(agentWorkspaceChangesProvider(workspaceId));
+    } catch (e) {
+      if (context.mounted) AppToast.error(context, '还原失败 · $e');
+    }
   }
 
   Future<void> _openDiff(
@@ -204,6 +258,12 @@ class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
   }
 }
 
+final _revertFileProvider = FutureProvider.autoDispose.family<void,
+    (String?, AgentChangesSnapshot, AgentFileChange)>((ref, args) {
+  final (workspaceId, snapshot, change) = args;
+  return revertAgentFileChange(ref, workspaceId, snapshot, change);
+});
+
 final _fileDiffProvider = FutureProvider.autoDispose.family<
     ({String oldText, String newText}),
     (String?, AgentChangesSnapshot, AgentFileChange)>((ref, args) {
@@ -229,12 +289,14 @@ class _ChangeRow extends StatelessWidget {
     required this.expanded,
     required this.onTap,
     required this.onCopyPath,
+    required this.onRevert,
   });
 
   final AgentFileChange change;
   final bool expanded;
   final VoidCallback onTap;
   final VoidCallback onCopyPath;
+  final VoidCallback onRevert;
 
   @override
   Widget build(BuildContext context) {
@@ -288,6 +350,19 @@ class _ChangeRow extends StatelessWidget {
                 padding: const EdgeInsets.all(4),
                 child: Icon(
                   LucideIcons.copy,
+                  size: 13,
+                  color: cs.onSurface.withValues(alpha: 0.45),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            InkWell(
+              onTap: onRevert,
+              borderRadius: BorderRadius.circular(4),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  LucideIcons.undo2,
                   size: 13,
                   color: cs.onSurface.withValues(alpha: 0.45),
                 ),
