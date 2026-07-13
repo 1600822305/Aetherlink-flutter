@@ -8,6 +8,9 @@ sealed class Failure {
   const Failure(this.message);
 
   final String message;
+
+  @override
+  String toString() => message;
 }
 
 /// A failure while talking to a remote provider — transport error, timeout or
