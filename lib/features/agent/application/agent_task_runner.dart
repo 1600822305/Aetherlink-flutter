@@ -21,6 +21,9 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/domain/subagent_profile.dart';
 import 'package:aetherlink_flutter/shared/services/streaming_keepalive_service.dart';
 
+export 'package:aetherlink_flutter/app/di/agent_checkpoint_access.dart'
+    show AgentRollbackResult, RollbackFileChange, RollbackFileKind;
+
 part 'agent_task_runner.g.dart';
 
 /// 任务执行编排：组装引擎依赖、持有每任务的取消 token、
@@ -178,8 +181,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
 
   /// 回滚到检查点（初稿 §5.5 P2）：仅限非运行态；回滚前自动把当前
   /// 状态落为新检查点（可再回滚回来），只还原文件不动对话。
-  /// 失败抛带可读原因的 [StateError]。
-  Future<void> rollbackToCheckpoint(
+  /// 失败抛带可读原因的 [StateError]。返回结果含实际还原的文件清单。
+  Future<AgentRollbackResult> rollbackToCheckpoint(
     AgentTask task,
     CheckpointEvent checkpoint,
   ) async {
@@ -200,17 +203,47 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     await _store().appendStatusChange(
       task.id,
       '已回滚工作区到检查点 ${_shortCommit(checkpoint.commit)}'
+      '${_fileSummary(result.files)}'
       '（回滚前状态已保存为新检查点，可再回滚回来）',
     );
+    return result;
   }
 
-  /// 用户消息落地前落检查点（仅写入模式）；不可用/失败降级为
-  /// 一次性状态提示，不阻断任务启动。
+  /// 回滚预览：该检查点 vs 当前工作区会触达的文件清单（不改状态）。
+  Future<List<RollbackFileChange>> previewRollback(
+    AgentTask task,
+    CheckpointEvent checkpoint,
+  ) =>
+      previewAgentRollback(
+        ref,
+        task.workspaceId.isEmpty ? null : task.workspaceId,
+        checkpoint.commit,
+      );
+
+  /// 预览面板里单文件的文本 diff（检查点 vs 当前工作区）。
+  Future<String> rollbackFileDiff(
+    AgentTask task,
+    CheckpointEvent checkpoint,
+    String path,
+  ) =>
+      loadRollbackFileDiff(
+        ref,
+        task.workspaceId.isEmpty ? null : task.workspaceId,
+        checkpoint.commit,
+        path,
+      );
+
+  static String _fileSummary(List<RollbackFileChange> files) {
+    if (files.isEmpty) return '';
+    final names = files.take(5).map((f) => f.path.split('/').last).join('、');
+    final more = files.length > 5 ? ' 等' : '';
+    return '，还原 ${files.length} 个文件：$names$more';
+  }
+
+  /// 每条用户消息落地前都落检查点（含 plan/ask 模式，中途切模式后
+  /// 也能回滚到任意一条消息之前）；不可用/失败降级为一次性状态
+  /// 提示，不阻断任务启动。
   Future<void> _checkpoint(AgentTask task, String text) async {
-    if (task.mode != AgentSessionMode.code &&
-        task.mode != AgentSessionMode.auto) {
-      return;
-    }
     try {
       final result = await createAgentCheckpoint(
         ref,

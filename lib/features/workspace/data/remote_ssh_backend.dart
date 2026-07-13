@@ -846,8 +846,11 @@ class RemoteSshBackend extends WorkspaceBackend {
       onOutput?.call(utf8.decode(chunk, allowMalformed: true));
     }
 
-    final outSub = session.stdout.listen((c) => collect(out, c));
-    final errSub = session.stderr.listen((c) => collect(err, c));
+    // forEach（而非 listen+cancel）：session.done 在通道关闭时就完成，
+    // 此刻流里可能还有已缓冲未派发的最后一块输出（短命令的全部 stdout
+    // 就在这一块里）——cancel 会把它丢掉，必须等流自然结束再取字节。
+    final outDone = session.stdout.forEach((c) => collect(out, c));
+    final errDone = session.stderr.forEach((c) => collect(err, c));
 
     var timedOut = false;
     var canceled = false;
@@ -876,8 +879,9 @@ class RemoteSshBackend extends WorkspaceBackend {
       }
     } finally {
       finished = true;
-      await outSub.cancel();
-      await errSub.cancel();
+      // 被杀 / 异常关闭时流可能不结束，限时收尾避免永久挂起。
+      await Future.wait([outDone, errDone])
+          .timeout(const Duration(seconds: 2), onTimeout: () => const []);
     }
 
     return WorkspaceExecResult(

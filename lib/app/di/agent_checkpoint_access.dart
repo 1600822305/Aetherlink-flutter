@@ -24,11 +24,39 @@ class AgentCheckpointResult {
   final String? unavailableReason;
 }
 
-/// 回滚结果：[safetyCommit] 是回滚前自动落的安全快照（可再回滚回来）。
+/// 回滚结果：[safetyCommit] 是回滚前自动落的安全快照（可再回滚回来），
+/// [files] 是本次回滚实际触达的文件清单（检查点 vs 回滚前状态）。
 class AgentRollbackResult {
-  const AgentRollbackResult({required this.safetyCommit});
+  const AgentRollbackResult({
+    required this.safetyCommit,
+    required this.files,
+  });
 
   final String safetyCommit;
+  final List<RollbackFileChange> files;
+}
+
+/// 回滚会触达的一个文件（检查点与当前状态的差异条目）。
+class RollbackFileChange {
+  const RollbackFileChange({required this.path, required this.kind});
+
+  /// 仓库根相对路径。
+  final String path;
+
+  final RollbackFileKind kind;
+}
+
+/// 回滚对文件的动作：检查点之后新增的会被删除，被改的会还原，
+/// 被删的会恢复。
+enum RollbackFileKind {
+  /// 检查点之后新增 → 回滚将删除。
+  added,
+
+  /// 检查点之后被修改 → 回滚将还原。
+  modified,
+
+  /// 检查点之后被删除 → 回滚将恢复。
+  deleted,
 }
 
 /// 为任务当前工作区创建检查点。不可用（未绑定/SAF/非 git）不抛错，
@@ -81,9 +109,19 @@ Future<AgentRollbackResult> rollbackAgentCheckpoint(
     throw StateError('回滚前安全快照失败，已中止：${e.message}');
   }
 
+  // 两个快照都含未跟踪文件，这个 diff 就是本次回滚实际触达的文件清单。
+  final quotedCommit = shellQuoteArg(commit);
+  final diff = await backend.exec(
+    'git -c core.quotepath=off diff --name-status --no-renames -z '
+    '$quotedCommit ${shellQuoteArg(safetyCommit)}',
+    workingDirectory: repoRoot,
+    timeout: const Duration(minutes: 1),
+  );
+  final files =
+      diff.exitCode == 0 ? parseNameStatusZ(diff.stdout) : <RollbackFileChange>[];
+
   // 删掉检查点之后新增的文件（安全快照已保住它们），再整树还原。
   // --worktree 只动工作树，不碰用户的 index/暂存区。
-  final quotedCommit = shellQuoteArg(commit);
   final restore = await backend.exec(
     'git diff --name-only -z --diff-filter=A '
     '$quotedCommit ${shellQuoteArg(safetyCommit)} '
@@ -96,7 +134,109 @@ Future<AgentRollbackResult> rollbackAgentCheckpoint(
     throw StateError('还原失败：${restore.stderr.trim()}\n'
         '当前状态已保存为安全快照 ${_short(safetyCommit)}');
   }
-  return AgentRollbackResult(safetyCommit: safetyCommit);
+  return AgentRollbackResult(safetyCommit: safetyCommit, files: files);
+}
+
+/// 回滚预览：检查点 vs 当前工作区会触达的文件清单（不改任何状态）。
+/// `git diff <commit>` 看不到检查点之后新增的未跟踪文件，单独用
+/// ls-files/ls-tree 补齐。失败抛 [StateError]。
+Future<List<RollbackFileChange>> previewAgentRollback(
+  Ref ref,
+  String? workspaceId,
+  String commit,
+) async {
+  final context = await _repoContext(ref, workspaceId);
+  if (context.unavailableReason != null) {
+    throw StateError(context.unavailableReason!);
+  }
+  final (backend, repoRoot) = (context.backend!, context.repoRoot!);
+  final quotedCommit = shellQuoteArg(commit);
+
+  final diff = await backend.exec(
+    'git -c core.quotepath=off diff --name-status --no-renames -z '
+    '$quotedCommit',
+    workingDirectory: repoRoot,
+    timeout: const Duration(minutes: 1),
+  );
+  if (diff.exitCode != 0) {
+    throw StateError('对比检查点失败：${diff.stderr.trim()}');
+  }
+  final files = parseNameStatusZ(diff.stdout);
+
+  final untracked = await backend.exec(
+    'git -c core.quotepath=off ls-files --others --exclude-standard -z',
+    workingDirectory: repoRoot,
+    timeout: const Duration(seconds: 30),
+  );
+  final inCheckpoint = await backend.exec(
+    'git -c core.quotepath=off ls-tree -r --name-only -z $quotedCommit',
+    workingDirectory: repoRoot,
+    timeout: const Duration(seconds: 30),
+  );
+  if (untracked.exitCode == 0 && inCheckpoint.exitCode == 0) {
+    final checkpointPaths = inCheckpoint.stdout
+        .split('\x00')
+        .where((p) => p.isNotEmpty)
+        .toSet();
+    final known = files.map((f) => f.path).toSet();
+    for (final path in untracked.stdout.split('\x00')) {
+      if (path.isEmpty || known.contains(path)) continue;
+      files.add(RollbackFileChange(
+        path: path,
+        kind: checkpointPaths.contains(path)
+            ? RollbackFileKind.modified
+            : RollbackFileKind.added,
+      ));
+    }
+  }
+  files.sort((a, b) => a.path.compareTo(b.path));
+  return files;
+}
+
+/// 取单文件「检查点 vs 当前工作区」的文本 diff（预览面板看内容用）。
+/// 未跟踪新增文件 git diff 看不到，返回空串由 UI 降级提示。
+Future<String> loadRollbackFileDiff(
+  Ref ref,
+  String? workspaceId,
+  String commit,
+  String path,
+) async {
+  final context = await _repoContext(ref, workspaceId);
+  if (context.unavailableReason != null) {
+    throw StateError(context.unavailableReason!);
+  }
+  final (backend, repoRoot) = (context.backend!, context.repoRoot!);
+  final diff = await backend.exec(
+    'git -c core.quotepath=off diff --no-color --no-renames '
+    '${shellQuoteArg(commit)} -- ${shellQuoteArg(path)}',
+    workingDirectory: repoRoot,
+    timeout: const Duration(seconds: 30),
+  );
+  if (diff.exitCode != 0) {
+    throw StateError('取 diff 失败：${diff.stderr.trim()}');
+  }
+  return diff.stdout;
+}
+
+/// 解析 `git diff --name-status --no-renames -z` 输出（状态\0路径\0…）。
+/// 方向固定为「检查点 → 当前状态」：A=之后新增，D=之后被删。
+List<RollbackFileChange> parseNameStatusZ(String raw) {
+  final parts = raw.split('\x00');
+  final files = <RollbackFileChange>[];
+  for (var i = 0; i + 1 < parts.length; i += 2) {
+    final status = parts[i].trim();
+    final path = parts[i + 1];
+    if (status.isEmpty || path.isEmpty) continue;
+    files.add(RollbackFileChange(
+      path: path,
+      kind: switch (status[0]) {
+        'A' => RollbackFileKind.added,
+        'D' => RollbackFileKind.deleted,
+        _ => RollbackFileKind.modified,
+      },
+    ));
+  }
+  return files;
 }
 
 String _short(String commit) =>
@@ -172,15 +312,26 @@ Future<String> _snapshot(
     'commit=\$(git $author commit-tree \$tree -m aetherlink-checkpoint); '
     'fi && '
     'git update-ref ${shellQuoteArg(refName)} \$commit && '
-    'echo \$commit',
+    'echo "AETHER_CKPT_OK:\$commit"',
     workingDirectory: repoRoot,
     timeout: const Duration(minutes: 2),
   );
-  final commit = result.stdout.trim().split('\n').last.trim();
-  if (result.exitCode != 0 || commit.isEmpty) {
-    throw _GitFailure(result.stderr.trim().isEmpty
-        ? '未知错误（exit ${result.exitCode}）'
-        : result.stderr.trim());
+  // 用标记行定位 commit，不受 profile/警告等无关输出干扰。
+  final commit = RegExp(r'AETHER_CKPT_OK:([0-9a-f]{7,40})')
+      .firstMatch(result.stdout)
+      ?.group(1);
+  if (result.timedOut) {
+    throw const _GitFailure('git 快照超时（仓库过大或存储过慢）');
+  }
+  if (result.exitCode != 0 || commit == null) {
+    final stderr = result.stderr.trim();
+    final stdout = result.stdout.trim();
+    final detail = [
+      if (stderr.isNotEmpty) stderr,
+      if (stderr.isEmpty && stdout.isNotEmpty)
+        'stdout: ${stdout.length > 200 ? stdout.substring(stdout.length - 200) : stdout}',
+    ].join('\n');
+    throw _GitFailure(detail.isEmpty ? '未知错误（exit ${result.exitCode}）' : detail);
   }
   return commit;
 }
