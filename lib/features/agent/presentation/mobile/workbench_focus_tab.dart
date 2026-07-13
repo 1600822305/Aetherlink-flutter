@@ -38,15 +38,18 @@ class WorkbenchFocusTab extends ConsumerWidget {
         if (focus == null) {
           return _empty(context);
         }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(child: _FocusCard(event: focus)),
-            if (recentTools.isNotEmpty) ...[
-              const Divider(height: 1),
-              _RecentTools(tools: recentTools),
+        return SafeArea(
+          top: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: _FocusCard(event: focus)),
+              if (recentTools.isNotEmpty) ...[
+                const Divider(height: 1),
+                _RecentTools(tools: recentTools),
+              ],
             ],
-          ],
+          ),
         );
       },
     );
