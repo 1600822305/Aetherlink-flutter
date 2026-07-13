@@ -37,16 +37,20 @@ class DevinDiffLines extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         child: ConstrainedBox(
           constraints: BoxConstraints(minWidth: constraints.maxWidth),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final row in rows)
-                if (row.kind == DiffLineKind.skip)
-                  _skipRow(cs, textStyle)
-                else
-                  _line(cs, green, red, gutterWidth, textStyle, row),
-            ],
+          // 横向滚动里宽度无界，Column 的 stretch 会给子行传下无限宽度
+          // 触发布局异常；IntrinsicWidth 把列宽锁到最宽行后 stretch 才成立。
+          child: IntrinsicWidth(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final row in rows)
+                  if (row.kind == DiffLineKind.skip)
+                    _skipRow(cs, textStyle)
+                  else
+                    _line(cs, green, red, gutterWidth, textStyle, row),
+              ],
+            ),
           ),
         ),
       ),
@@ -97,47 +101,52 @@ class DevinDiffLinesLazy extends StatelessWidget {
 }
 
 Widget _skipRow(ColorScheme cs, TextStyle textStyle) => Container(
-      color: cs.onSurface.withValues(alpha: 0.04),
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Text(
-        '⋯',
-        style: textStyle.copyWith(color: cs.onSurfaceVariant),
-        textAlign: TextAlign.left,
-        softWrap: false,
-      ),
-    );
+  color: cs.onSurface.withValues(alpha: 0.04),
+  padding: const EdgeInsets.symmetric(vertical: 2),
+  child: Text(
+    '⋯',
+    style: textStyle.copyWith(color: cs.onSurfaceVariant),
+    textAlign: TextAlign.left,
+    softWrap: false,
+  ),
+);
 
 Widget _line(
-    ColorScheme cs,
-    Color green,
-    Color red,
-    double gutterWidth,
-    TextStyle textStyle,
-    DiffLine row, {
-    bool clip = false,
-  }) {
-    final (rowBg, gutterBg, numColor, lineNo) = switch (row.kind) {
-      DiffLineKind.added => (
-          green.withValues(alpha: 0.08),
-          green.withValues(alpha: 0.16),
-          green,
-          row.newLine,
-        ),
-      DiffLineKind.removed => (
-          red.withValues(alpha: 0.07),
-          red.withValues(alpha: 0.14),
-          red,
-          row.oldLine,
-        ),
-      _ => (
-          Colors.transparent,
-          cs.onSurface.withValues(alpha: 0.04),
-          cs.onSurfaceVariant,
-          row.newLine,
-        ),
-    };
-    return Container(
-      color: rowBg,
+  ColorScheme cs,
+  Color green,
+  Color red,
+  double gutterWidth,
+  TextStyle textStyle,
+  DiffLine row, {
+  bool clip = false,
+}) {
+  final (rowBg, gutterBg, numColor, lineNo) = switch (row.kind) {
+    DiffLineKind.added => (
+      green.withValues(alpha: 0.08),
+      green.withValues(alpha: 0.16),
+      green,
+      row.newLine,
+    ),
+    DiffLineKind.removed => (
+      red.withValues(alpha: 0.07),
+      red.withValues(alpha: 0.14),
+      red,
+      row.oldLine,
+    ),
+    _ => (
+      Colors.transparent,
+      cs.onSurface.withValues(alpha: 0.04),
+      cs.onSurfaceVariant,
+      row.newLine,
+    ),
+  };
+  // 行号 gutter 要撑满行高，但列表项的高度约束是无界的（ListView /
+  // 可滚动 Column），CrossAxisAlignment.stretch 会直接触发
+  // 「forces an infinite height」布局异常导致整行不渲染；
+  // 用 IntrinsicHeight 把行高锁定为文本行高后再 stretch。
+  return Container(
+    color: rowBg,
+    child: IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -179,5 +188,6 @@ Widget _line(
             ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
