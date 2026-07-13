@@ -214,10 +214,18 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     );
 
     // agent 侧协作取消 → 域层 LlmCancelToken（真正中断底层 HTTP 流）。
+    // 「立即打断并发送」在 LLM 流阶段也要生效：中断流后引擎在
+    // 安全点消费打断标记并注入排队消息。
     final llmCancel = LlmCancelToken();
-    final poller = Timer.periodic(const Duration(milliseconds: 100), (_) {
-      if (cancel?.stopRequested ?? false) llmCancel.cancel();
-    });
+    void onCancelSignal() {
+      if (cancel == null) return;
+      if (cancel.stopRequested || cancel.toolInterruptRequested) {
+        llmCancel.cancel();
+      }
+    }
+
+    cancel?.addListener(onCancelSignal);
+    onCancelSignal();
 
     final buffer = StringBuffer();
     final reasoning = StringBuffer();
@@ -226,6 +234,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     // LlmToolCallChunk 对回到同一个流 key（复用同一条事件）。
     final deltaKeys = <String, ({String? id, String? name})>{};
     var totalTokens = 0;
+    var promptTokens = 0;
     try {
       await for (final chunk
           in gateway.streamChat(request, cancelToken: llmCancel)) {
@@ -271,7 +280,10 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
               );
             }
           case LlmDone(usage: final usage):
-            if (usage != null) totalTokens = usage.totalTokens;
+            if (usage != null) {
+              totalTokens = usage.totalTokens;
+              promptTokens = usage.promptTokens;
+            }
         }
       }
     } on Object {
@@ -281,13 +293,15 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
       }
       rethrow;
     } finally {
-      poller.cancel();
+      cancel?.removeListener(onCancelSignal);
     }
 
     return AgentLlmTurn(
       text: buffer.toString(),
       tokensUsed: totalTokens,
-      contextTokens: totalTokens,
+      // 上下文占用取输入侧 promptTokens（totalTokens 含本轮输出，
+      // 作为占用展示会高估）；网关未回 usage 时退回 totalTokens。
+      contextTokens: promptTokens > 0 ? promptTokens : totalTokens,
       toolCalls: [
         for (final call in calls)
           AgentToolCallRequest(
@@ -306,12 +320,9 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     List<AgentEvent> events,
   ) async {
     final ref = _refOf();
-    final Model model;
-    try {
-      model = await _resolveModel(ref);
-    } on StateError {
-      return '';
-    }
+    // 模型未配置等失败向上抛：引擎会追加一次可见状态事件提示原因，
+    // 而不是每轮静默失败导致上下文持续膨胀。
+    final model = await _resolveModel(ref);
     final gateway = ref.read(appLlmGatewayFactoryProvider).forModel(model);
 
     final request = LlmChatRequest(
@@ -620,12 +631,15 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
 
     // 协作取消 → runTool 的 cancelSignal（terminal_execute 可被中途打断）。
     final interrupted = Completer<void>();
-    final poller = Timer.periodic(const Duration(milliseconds: 100), (_) {
+    void onCancelSignal() {
       if (interrupted.isCompleted) return;
       if (cancel.stopRequested || cancel.consumeToolInterrupt()) {
         interrupted.complete();
       }
-    });
+    }
+
+    cancel.addListener(onCancelSignal);
+    onCancelSignal();
     try {
       final result = await _executor.runTool(
         route,
@@ -643,7 +657,7 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
     } on Object catch (e) {
       return AgentToolResult(ok: false, summary: '执行异常 ✗', detail: '$e');
     } finally {
-      poller.cancel();
+      cancel.removeListener(onCancelSignal);
     }
   }
 
@@ -765,19 +779,22 @@ class _PolicyApprovalGate implements ApprovalGate {
     final registry = _refOf().read(agentApprovalRegistryProvider.notifier);
     final future = registry.request(task.id, call);
     // 挂起期间任务被暂停/终止 → 按拒绝回填，循环在安全点收敛。
-    final poller = Timer.periodic(const Duration(milliseconds: 200), (_) {
+    void onCancelSignal() {
       if (cancel.stopRequested) {
         registry.respond(
           task.id,
           const AgentApprovalDecision(approved: false, reason: '任务已暂停/终止'),
         );
       }
-    });
+    }
+
+    cancel.addListener(onCancelSignal);
+    onCancelSignal();
     final AgentApprovalDecision decision;
     try {
       decision = await future;
     } finally {
-      poller.cancel();
+      cancel.removeListener(onCancelSignal);
     }
     if (decision.approved &&
         decision.scope == AgentApprovalScope.whitelist) {

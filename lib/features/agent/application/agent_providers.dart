@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/agent_data_access.dart';
@@ -8,6 +10,15 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 
 part 'agent_providers.g.dart';
+
+/// 删除工具大输出的落盘文件（删任务/回滚截断时防孤儿文件堆积）。
+Future<void> deleteAgentOverflowFile(String? path) async {
+  if (path == null || path.isEmpty) return;
+  try {
+    final file = File(path);
+    if (await file.exists()) await file.delete();
+  } catch (_) {}
+}
 
 /// last-active 持久化键（架构稿 §三：agent 模式重启 → 恢复上次所在的
 /// 智能体与话题）。
@@ -54,7 +65,15 @@ class AgentProfiles extends _$AgentProfiles {
 
   Future<void> _hydrate() async {
     await ref.read(agentSeedProvider.future);
-    state = await ref.read(agentDaoProvider).getAllProfiles();
+    final fromDb = await ref.read(agentDaoProvider).getAllProfiles();
+    // hydrate 窗口内用户已增/改的档案优先，不被整表读回结果覆盖。
+    final existing = state;
+    state = [
+      for (final p in fromDb)
+        existing.where((e) => e.id == p.id).firstOrNull ?? p,
+      for (final e in existing)
+        if (!fromDb.any((p) => p.id == e.id)) e,
+    ];
   }
 
   /// 新增或按 id 覆盖一个档案（编辑页保存），等待落库完成。
@@ -109,7 +128,20 @@ class AgentTasks extends _$AgentTasks {
         await ref.read(agentDaoProvider).upsertTask(recovered[i]);
       }
     }
-    state = recovered;
+    // hydrate 窗口内用户已创建/更新的任务优先（按 updatedAt 新者胜），
+    // 不被整表读回结果覆盖。
+    final existing = state;
+    state = [
+      for (final t in recovered)
+        existing
+                .where(
+                  (e) => e.id == t.id && e.updatedAt.isAfter(t.updatedAt),
+                )
+                .firstOrNull ??
+            t,
+      for (final e in existing)
+        if (!recovered.any((t) => t.id == e.id)) e,
+    ];
   }
 
   /// 新增或按 id 覆盖一个话题（引擎写回/新建任务共用），写穿到库
@@ -147,7 +179,8 @@ class AgentTasks extends _$AgentTasks {
     }
   }
 
-  /// 删话题级联删其派生的子任务（子代理隐藏话题）。
+  /// 删话题级联删其派生的子任务（子代理隐藏话题），并清理
+  /// 各自事件引用的大输出落盘文件。
   Future<void> remove(String taskId) async {
     final childIds = [
       for (final t in state)
@@ -157,19 +190,35 @@ class AgentTasks extends _$AgentTasks {
       for (final t in state)
         if (t.id != taskId && t.parentTaskId != taskId) t,
     ];
-    await ref.read(agentDaoProvider).deleteTask(taskId);
-    for (final id in childIds) {
+    for (final id in [taskId, ...childIds]) {
+      await _deleteOverflowFilesOf(id);
       await ref.read(agentDaoProvider).deleteTask(id);
     }
   }
 
   /// 删除某智能体下的全部话题（删除智能体时联动）。
   Future<void> removeByProfile(String profileId) async {
+    final removedIds = [
+      for (final t in state)
+        if (t.profileId == profileId) t.id,
+    ];
     state = [
       for (final t in state)
         if (t.profileId != profileId) t,
     ];
+    for (final id in removedIds) {
+      await _deleteOverflowFilesOf(id);
+    }
     await ref.read(agentDaoProvider).deleteTasksByProfile(profileId);
+  }
+
+  Future<void> _deleteOverflowFilesOf(String taskId) async {
+    try {
+      final events = await ref.read(agentDaoProvider).getEvents(taskId);
+      for (final e in events.whereType<ToolCallEvent>()) {
+        await deleteAgentOverflowFile(e.resultOverflowPath);
+      }
+    } catch (_) {}
   }
 }
 
@@ -233,6 +282,9 @@ class AgentUiSettings {
 
 @Riverpod(keepAlive: true)
 class AgentUiSettingsController extends _$AgentUiSettingsController {
+  /// hydrate 窗口内用户已改过的设置键：hydrate 不再用存储旧值覆盖。
+  final Set<String> _touched = {};
+
   @override
   AgentUiSettings build() {
     _hydrate();
@@ -251,24 +303,33 @@ class AgentUiSettingsController extends _$AgentUiSettingsController {
         .where((m) => m.name == storedMode && m != AgentSessionMode.auto)
         .firstOrNull;
     state = state.copyWith(
-      contextLimit: (limit != null && limit > 0) ? limit : null,
-      defaultMode: mode,
-      autoCollapseWorkSessions: switch (storedCollapse) {
-        '1' => true,
-        '0' => false,
-        _ => null,
-      },
-      followAiFile: switch (storedFollow) {
-        '1' => true,
-        '0' => false,
-        _ => null,
-      },
+      contextLimit: _touched.contains(kAgentContextLimitKey)
+          ? null
+          : (limit != null && limit > 0)
+              ? limit
+              : null,
+      defaultMode: _touched.contains(kAgentDefaultModeKey) ? null : mode,
+      autoCollapseWorkSessions: _touched.contains(kAgentAutoCollapseKey)
+          ? null
+          : switch (storedCollapse) {
+              '1' => true,
+              '0' => false,
+              _ => null,
+            },
+      followAiFile: _touched.contains(kAgentFollowAiFileKey)
+          ? null
+          : switch (storedFollow) {
+              '1' => true,
+              '0' => false,
+              _ => null,
+            },
     );
   }
 
   void setDefaultMode(AgentSessionMode mode) {
     // 默认模式不提供 auto（决策 26：进 auto 必经话题内二次确认）。
     if (mode == AgentSessionMode.auto) return;
+    _touched.add(kAgentDefaultModeKey);
     state = state.copyWith(defaultMode: mode);
     ref
         .read(appSettingsStoreProvider)
@@ -276,6 +337,7 @@ class AgentUiSettingsController extends _$AgentUiSettingsController {
   }
 
   void setAutoCollapseWorkSessions(bool value) {
+    _touched.add(kAgentAutoCollapseKey);
     state = state.copyWith(autoCollapseWorkSessions: value);
     ref
         .read(appSettingsStoreProvider)
@@ -283,6 +345,7 @@ class AgentUiSettingsController extends _$AgentUiSettingsController {
   }
 
   void setFollowAiFile(bool value) {
+    _touched.add(kAgentFollowAiFileKey);
     state = state.copyWith(followAiFile: value);
     ref
         .read(appSettingsStoreProvider)
@@ -291,6 +354,7 @@ class AgentUiSettingsController extends _$AgentUiSettingsController {
 
   void setContextLimit(int value) {
     if (value <= 0) return;
+    _touched.add(kAgentContextLimitKey);
     state = state.copyWith(contextLimit: value);
     ref
         .read(appSettingsStoreProvider)
@@ -307,17 +371,20 @@ class SelectedAgentProfileId extends _$SelectedAgentProfileId {
     return kBuiltinAgentProfiles.first.id;
   }
 
+  bool _userSelected = false;
+
   Future<void> _hydrate() async {
     final stored = await ref
         .read(appSettingsStoreProvider)
         .getSetting(kLastActiveAgentProfileKey);
-    if (stored == null || stored.isEmpty) return;
+    if (_userSelected || stored == null || stored.isEmpty) return;
     // 不在这里验存在性（档案列表可能尚未 hydrate 完）；UI 侧用
     // firstOrNull 回退，档案已删时自动落到第一个/空态。
     state = stored;
   }
 
   void select(String id) {
+    _userSelected = true;
     state = id;
     ref
         .read(appSettingsStoreProvider)
@@ -335,6 +402,8 @@ class SelectedAgentTaskId extends _$SelectedAgentTaskId {
     return null;
   }
 
+  bool _userSelected = false;
+
   Future<void> _hydrate() async {
     final stored = await ref
         .read(appSettingsStoreProvider)
@@ -343,12 +412,13 @@ class SelectedAgentTaskId extends _$SelectedAgentTaskId {
     // 先等话题列表 hydrate 完再验存在性，避免和空列表竞态误判。
     await ref.read(agentSeedProvider.future);
     final tasks = await ref.read(agentDaoProvider).getAllTasks();
-    if (tasks.any((t) => t.id == stored)) {
+    if (!_userSelected && tasks.any((t) => t.id == stored)) {
       state = stored;
     }
   }
 
   void select(String? id) {
+    _userSelected = true;
     state = id;
     ref
         .read(appSettingsStoreProvider)

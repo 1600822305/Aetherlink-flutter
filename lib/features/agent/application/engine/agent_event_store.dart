@@ -103,15 +103,26 @@ class DriftAgentEventStore implements AgentEventStore {
 
   final AgentDao _dao;
   final Map<String, int> _seqCache = {};
+
+  /// 按 taskId 串行化 seq 分配：缓存未命中时 `maxSeq` 是异步查询，
+  /// 多入口（引擎/插队消息）并发进入会拿到相同 seq；用尾链把同任务的
+  /// 分配排队执行。
+  final Map<String, Future<void>> _seqLocks = {};
   int _idCounter = 0;
 
   String _newId(String prefix) =>
       '$prefix-${DateTime.now().microsecondsSinceEpoch}-${_idCounter++}';
 
-  Future<int> _nextSeq(String taskId) async {
-    final cached = _seqCache[taskId];
-    final next = cached != null ? cached + 1 : await _dao.maxSeq(taskId) + 1;
-    _seqCache[taskId] = next;
+  Future<int> _nextSeq(String taskId) {
+    final prev = _seqLocks[taskId] ?? Future<void>.value();
+    final next = prev.then((_) async {
+      final cached = _seqCache[taskId];
+      final value =
+          cached != null ? cached + 1 : await _dao.maxSeq(taskId) + 1;
+      _seqCache[taskId] = value;
+      return value;
+    });
+    _seqLocks[taskId] = next.then<void>((_) {}, onError: (_) {});
     return next;
   }
 

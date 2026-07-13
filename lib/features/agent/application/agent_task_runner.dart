@@ -149,10 +149,21 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     }
   }
 
-  /// 立即打断并发送：排队消息 + 打断当前工具（循环继续，下一轮先消费）。
+  /// 立即打断并发送：排队消息 + 打断当前执行（LLM 流/工具/审批挂起
+  /// 都生效），循环继续，下一个安全点先消费排队消息。
   Future<void> interruptAndSend(AgentTask task, String text) async {
     await _store().appendUserMessage(task.id, text, queued: true);
     _tokens[task.id]?.requestToolInterrupt();
+    // waitingApproval 时引擎阻塞在审批挂起，不消费打断标记：
+    // 把挂起审批按拒绝回填让循环继续，否则消息会一直排队
+    // 等审批卡被处理。
+    ref.read(agentApprovalRegistryProvider.notifier).respond(
+          task.id,
+          const AgentApprovalDecision(
+            approved: false,
+            reason: '用户打断并发送了新消息',
+          ),
+        );
   }
 
   /// 续跑 paused/waitingInput 的任务（恢复语义 L7：重放上下文接着跑）。
@@ -211,7 +222,13 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     // 文件回滚成功后再截断对话（失败时对话保持原样）；保留检查点
     // 事件本身作为锚点，之后追加的快照/状态事件从这里续增。
     if (mode != AgentRollbackMode.filesOnly) {
+      final events = await _store().getEvents(task.id);
+      final removed = [
+        for (final e in events)
+          if (e.seq > checkpoint.seq) e,
+      ];
       await _store().truncateEventsAfter(task.id, checkpoint.seq);
+      await _cleanupTruncatedEvents(removed);
     }
     if (result != null) {
       await _store().appendCheckpoint(
@@ -233,6 +250,20 @@ class AgentTaskRunner extends _$AgentTaskRunner {
             '（回滚前状态已保存为新检查点，可再回滚回来）',
     });
     return result;
+  }
+
+  /// 回滚截断后的级联清理：删除被截断工具事件的大输出落盘文件，
+  /// 以及由被截断 spawn_subagent 派生的隐藏子任务（含其事件流）。
+  Future<void> _cleanupTruncatedEvents(List<AgentEvent> removed) async {
+    final tasks = ref.read(agentTasksProvider);
+    for (final e in removed.whereType<ToolCallEvent>()) {
+      await deleteAgentOverflowFile(e.resultOverflowPath);
+      final childId = subagentTaskIdFor(e.id);
+      if (!tasks.any((t) => t.id == childId)) continue;
+      // 后台子代理仍在跑时不删（其回填会因源事件已删而跳过）。
+      if (state.contains(childId)) continue;
+      await ref.read(agentTasksProvider.notifier).remove(childId);
+    }
   }
 
   /// 回滚预览：该检查点 vs 当前工作区会触达的文件清单（不改状态）。
@@ -524,9 +555,12 @@ class AgentTaskRunner extends _$AgentTaskRunner {
 
     // 取消桥接：父任务暂停/终止 → 子代理在下个安全点终止。
     final childToken = AgentCancellationToken();
-    final bridge = Timer.periodic(const Duration(milliseconds: 300), (_) {
+    void bridge() {
       if (cancel.stopRequested) childToken.requestCancel();
-    });
+    }
+
+    cancel.addListener(bridge);
+    bridge();
     try {
       return await _runChildEngine(
         child: child,
@@ -535,7 +569,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         childToken: childToken,
       );
     } finally {
-      bridge.cancel();
+      cancel.removeListener(bridge);
     }
   }
 

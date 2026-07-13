@@ -50,6 +50,9 @@ class AgentEngine {
   /// 工具参数流式生成的实时通道（纯内存）；null = 不做实时预览。
   final AgentToolStreamSink? toolStream;
 
+  /// 压缩失败只提示一次（每次运行一个引擎实例）。
+  bool _compactionFailureNotified = false;
+
   Future<void> run(AgentTask task, AgentCancellationToken cancel) async {
     var current = task;
 
@@ -209,6 +212,11 @@ class AgentEngine {
         // 收尾；回到循环顶部走 paused/cancelled 分支。
         if (cancel.stopRequested) continue;
 
+        // 「立即打断并发送」在 LLM 流阶段命中：turn 已被截断，
+        // 消费打断标记回到循环顶部先注入排队消息，不按
+        // 「无工具调用」判收尾。
+        if (cancel.consumeToolInterrupt()) continue;
+
         // ⑤ 无工具调用 → 兜底判收尾（L1）。
         if (turn.toolCalls.isEmpty) {
           current = await transition(AgentTaskStatus.done, '任务完成');
@@ -311,7 +319,17 @@ class AgentEngine {
         // 不受影响），避免每轮额外一次全表读取+解码。
         try {
           await _maybeCompact(current, events);
-        } catch (_) {}
+        } catch (e) {
+          // 压缩失败不阻断任务（下轮再试），但给一次可见提示，
+          // 避免上下文持续膨胀到预算暂停时用户不知原因。
+          if (!_compactionFailureNotified) {
+            _compactionFailureNotified = true;
+            try {
+              await store.appendStatusChange(
+                  current.id, '上下文压缩失败（不影响任务，下轮重试）：$e');
+            } catch (_) {}
+          }
+        }
       }
     } catch (e) {
       await store.appendStatusChange(current.id, '执行出错：$e');
@@ -400,7 +418,9 @@ class AgentEngine {
     );
     if (covered.isEmpty) return;
     final summary = await llm.summarizeForCompaction(task, covered);
-    if (summary.trim().isEmpty) return;
+    if (summary.trim().isEmpty) {
+      throw StateError('压缩摘要为空（可能是模型未配置或模型返回空结果）');
+    }
     await store.appendCompaction(
       task.id,
       coveredCount: covered.length,

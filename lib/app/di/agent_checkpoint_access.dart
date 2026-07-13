@@ -357,20 +357,25 @@ Future<String> _snapshot(
   const author =
       '-c user.name=AetherLink '
       '-c user.email=checkpoint@aetherlink.local';
+  // 索引文件名带任务与时间戳：同一仓库并发任务（父任务/子代理）互不
+  // 踩索引；末尾无条件删除，失败路径不留残留。
+  final idxName =
+      '.git/aetherlink-ckpt-index-$safeTask-'
+      '${DateTime.now().millisecondsSinceEpoch}';
   final result = await backend.exec(
-    'idx=.git/aetherlink-ckpt-index && '
+    'idx=${shellQuoteArg(idxName)} && '
     '{ GIT_INDEX_FILE=\$idx git read-tree HEAD 2>/dev/null '
     '|| GIT_INDEX_FILE=\$idx git read-tree --empty; } && '
     'GIT_INDEX_FILE=\$idx git add -A . && '
     'tree=\$(GIT_INDEX_FILE=\$idx git write-tree) && '
-    'rm -f \$idx && '
     'if git rev-parse -q --verify HEAD >/dev/null 2>&1; then '
     'commit=\$(git $author commit-tree \$tree -p HEAD -m aetherlink-checkpoint); '
     'else '
     'commit=\$(git $author commit-tree \$tree -m aetherlink-checkpoint); '
     'fi && '
     'git update-ref ${shellQuoteArg(refName)} \$commit && '
-    'echo "AETHER_CKPT_OK:\$commit"',
+    'echo "AETHER_CKPT_OK:\$commit"; '
+    'rc=\$?; rm -f \$idx 2>/dev/null; exit \$rc',
     workingDirectory: repoRoot,
     timeout: const Duration(minutes: 2),
   );
