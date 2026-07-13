@@ -7,6 +7,7 @@ import 'package:aetherlink_flutter/app/di/agent_workspace_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/devin_diff_lines.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_diff_view.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
@@ -238,85 +239,97 @@ class _ChangeRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final (label, color) = _statusBadge(context, change.status);
     final dir = change.relPath.contains('/')
         ? change.relPath.substring(0, change.relPath.lastIndexOf('/'))
         : null;
-    return ListTile(
-      dense: true,
+    // 对齐 Devin Changes：文件名 + 灰色目录同行，右侧 复制 · +N -M · 徽标。
+    return InkWell(
       onTap: onTap,
-      leading: Icon(
-        expanded ? LucideIcons.chevronDown : LucideIcons.chevronRight,
-        size: 16,
-        color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
-      ),
-      title: Row(
-        children: [
-          Flexible(
-            child: Text(
-              change.relPath.split('/').last,
-              style: theme.textTheme.bodyMedium,
-              overflow: TextOverflow.ellipsis,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Icon(
+              expanded ? LucideIcons.chevronDown : LucideIcons.chevronRight,
+              size: 15,
+              color: cs.onSurface.withValues(alpha: 0.4),
             ),
-          ),
-          const SizedBox(width: 6),
-          if (change.additions != null) ...[
-            Text(
-              '+${change.additions}',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: Colors.green,
-                fontWeight: FontWeight.w600,
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: change.relPath.split('/').last,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (dir != null)
+                      TextSpan(
+                        text: '  $dir',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 6),
+            InkWell(
+              onTap: onCopyPath,
+              borderRadius: BorderRadius.circular(4),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  LucideIcons.copy,
+                  size: 13,
+                  color: cs.onSurface.withValues(alpha: 0.45),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            if ((change.additions ?? 0) > 0 || change.status != GitFileStatus.deleted) ...[
+              Text(
+                '+${change.additions ?? 0}',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: Colors.green.shade700,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 5),
+            ],
+            if ((change.deletions ?? 0) > 0) ...[
+              Text(
+                '-${change.deletions}',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: cs.error,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 5),
+            ],
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Text(
+                label,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                ),
+              ),
+            ),
           ],
-          if ((change.deletions ?? 0) > 0)
-            Text(
-              '-${change.deletions}',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.error,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-        ],
-      ),
-      subtitle: dir == null
-          ? null
-          : Text(
-              dir,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            tooltip: '复制文件路径',
-            visualDensity: VisualDensity.compact,
-            icon: Icon(
-              LucideIcons.copy,
-              size: 14,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
-            ),
-            onPressed: onCopyPath,
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(5),
-            ),
-            child: Text(
-              label,
-              style: theme.textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: color,
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -384,16 +397,11 @@ class _InlineDiff extends ConsumerWidget {
               ),
             );
           }
-          final numStyle = TextStyle(
-            fontFamily: 'monospace',
-            fontSize: 11,
-            color: theme.colorScheme.onSurfaceVariant,
-          );
           final visible = rows.take(_maxRows).toList();
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final row in visible) buildDiffLineRow(theme, row, numStyle),
+              DevinDiffLines(rows: visible),
               if (rows.length > _maxRows)
                 TextButton.icon(
                   onPressed: onOpenFull,
