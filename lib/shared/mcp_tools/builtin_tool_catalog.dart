@@ -645,7 +645,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           },
           'path': {
             'type': 'string',
-            'description': '目录的完整路径（不透明句柄，与 workspace 二选一）',
+            'description': '目录路径（与 workspace 二选一）：相对路径按工作区根目录解析，也可传绝对路径/不透明句柄',
           },
           'recursive': {
             'type': 'boolean',
@@ -668,13 +668,13 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'path': {'type': 'string', 'description': '单个文件的完整路径（与 files 二选一）'},
+          'path': {'type': 'string', 'description': '单个文件路径（与 files 二选一）；相对路径按工作区根目录解析'},
           'files': {
             'type': 'array',
             'items': {
               'type': 'object',
               'properties': {
-                'path': {'type': 'string', 'description': '文件路径'},
+                'path': {'type': 'string', 'description': '文件路径（相对路径按工作区根目录解析）'},
                 'start_line': {'type': 'number', 'description': '起始行号 (1-based)'},
                 'end_line': {'type': 'number', 'description': '结束行号 (1-based, 包含)'},
               },
@@ -702,7 +702,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'path': {'type': 'string', 'description': '文件的完整路径'},
+          'path': {'type': 'string', 'description': '文件路径（相对路径按工作区根目录解析）'},
         },
         'required': ['path'],
       },
@@ -716,7 +716,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'directory': {'type': 'string', 'description': '搜索的目录路径'},
+          'directory': {'type': 'string', 'description': '搜索的目录路径（相对路径按工作区根目录解析）'},
           'query': {'type': 'string', 'description': '搜索关键词，或正则表达式（当 use_regex=true）'},
           'search_type': {
             'type': 'string',
@@ -770,11 +770,11 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'properties': {
           'path': {
             'type': 'string',
-            'description': '覆盖写入：已有文件的完整路径（与 parent_path+name 二选一）',
+            'description': '覆盖写入：已有文件路径（与 parent_path+name 二选一；相对路径按工作区根目录解析）',
           },
           'parent_path': {
             'type': 'string',
-            'description': '新建文件：父目录的完整路径（不透明句柄，来自 list_files）',
+            'description': '新建文件：父目录路径（相对路径按工作区根目录解析，也可传 list_files 返回的句柄）',
           },
           'name': {'type': 'string', 'description': '新建文件：文件名（含扩展名）'},
           'content': {'type': 'string', 'description': '要写入的完整文件内容'},
@@ -798,7 +798,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
         'properties': {
           'parent_path': {
             'type': 'string',
-            'description': '父目录的完整路径（不透明句柄，来自 list_files）',
+            'description': '父目录路径（相对路径按工作区根目录解析，也可传 list_files 返回的句柄）',
           },
           'name': {'type': 'string', 'description': '新目录名'},
         },
@@ -812,10 +812,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'path': {'type': 'string', 'description': '要移动/重命名的文件或目录完整路径'},
+          'path': {'type': 'string', 'description': '要移动/重命名的文件或目录路径（相对路径按工作区根目录解析）'},
           'destination_path': {
             'type': 'string',
-            'description': '目标父目录的完整路径（不透明句柄）。省略则仅原地改名（需传 new_name）',
+            'description': '目标父目录路径（相对路径按工作区根目录解析）。省略则仅原地改名（需传 new_name）',
           },
           'new_name': {
             'type': 'string',
@@ -835,10 +835,10 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'source_path': {'type': 'string', 'description': '要复制的文件/目录完整路径'},
+          'source_path': {'type': 'string', 'description': '要复制的文件/目录路径（相对路径按工作区根目录解析）'},
           'destination_path': {
             'type': 'string',
-            'description': '目标父目录的完整路径（不透明句柄）',
+            'description': '目标父目录路径（相对路径按工作区根目录解析）',
           },
           'new_name': {'type': 'string', 'description': '复制后的新名称（可选，默认沿用原名）'},
           'overwrite': {
@@ -855,7 +855,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'path': {'type': 'string', 'description': '要删除的文件/目录完整路径'},
+          'path': {'type': 'string', 'description': '要删除的文件/目录路径（相对路径按工作区根目录解析）'},
           'recursive': {
             'type': 'boolean',
             'description': '删除目录时是否递归删除其内容，默认 false。删除非空目录必须为 true',
@@ -874,7 +874,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       inputSchema: {
         'type': 'object',
         'properties': {
-          'path': {'type': 'string', 'description': '目标文件的完整路径'},
+          'path': {'type': 'string', 'description': '目标文件路径（相对路径按工作区根目录解析）'},
           'search': {'type': 'string', 'description': '要查找的文本或正则表达式（与 edits 二选一）'},
           'replace': {'type': 'string', 'description': '替换后的文本（与 edits 二选一）'},
           'edits': {

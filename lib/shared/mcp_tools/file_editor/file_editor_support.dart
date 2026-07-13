@@ -139,6 +139,67 @@ Future<WorkspaceBackend> resolveWorkspaceById(Ref ref, String id) async {
   throw FileEditorError('找不到工作区: $id');
 }
 
+/// 路径是否已是“绝对”定位：POSIX 绝对路径，或带 scheme 的不透明 URI
+/// （如 SAF 的 `content://`）。相对路径（`README.md`、`lib/main.dart`）
+/// 需要经 [resolvePathArg] 锚定到工作区 root 再交给后端。
+bool isAbsoluteOrOpaque(String path) =>
+    path.startsWith('/') || path.contains('://');
+
+/// 把相对 [subPath] 逐段规整（去 `.`、消 `..`）后拼到 POSIX [root] 下。
+/// `..` 超出 root 时保留越界语义（返回 root 之外的祖先路径），
+/// 是否放行交给审批层决定，这里不做拒绝。
+String joinPosixPath(String root, String subPath) {
+  final base = root.endsWith('/') && root.length > 1
+      ? root.substring(0, root.length - 1)
+      : root;
+  final stack = base.split('/');
+  for (final seg in subPath.split('/')) {
+    final s = seg.trim();
+    if (s.isEmpty || s == '.') continue;
+    if (s == '..') {
+      if (stack.length > 1) stack.removeLast();
+      continue;
+    }
+    stack.add(s);
+  }
+  final joined = stack.join('/');
+  return joined.isEmpty ? '/' : joined;
+}
+
+/// 统一路径解析入口（所有 file-editor 工具共用）：
+/// - 绝对路径 / 不透明 URI：原样使用，按最长前缀匹配选后端；
+/// - 相对路径：锚定到 `workspace` 参数指定的工作区（智能体绑定任务会
+///   自动注入；缺省时取最近打开的工作区）的 root —— POSIX root 直接
+///   拼接，SAF 的 `content://` root 逐级列目录导航（目标必须已存在）。
+/// 越界路径不在这里拒绝，放行与否由审批层决定。
+Future<({WorkspaceBackend backend, String path})> resolvePathArg(
+  Ref ref,
+  Map<String, Object?> args,
+  String path,
+) async {
+  if (isAbsoluteOrOpaque(path)) {
+    return (backend: await backendForPath(ref, path), path: path);
+  }
+  final ResolvedWorkspace resolved;
+  if (optionalString(args, 'workspace') != null) {
+    resolved = await resolveWorkspace(ref, args);
+  } else {
+    final workspaces = await loadWorkspaces(ref);
+    if (workspaces.isEmpty) {
+      throw const FileEditorError(
+        '当前没有任何工作区，请先在工作区页面「打开文件夹」后再试。',
+      );
+    }
+    resolved = _resolve(ref, workspaces.first);
+  }
+  final root = resolved.workspace.root;
+  if (!root.contains('://')) {
+    return (backend: resolved.backend, path: joinPosixPath(root, path));
+  }
+  final target = await navigateSubPath(resolved.backend, root, path);
+  return (backend: resolved.backend, path: target);
+}
+
 /// Whether opaque [path] sits inside (or is) the workspace rooted at [root].
 ///
 /// Uses a boundary-aware prefix test (`root` itself, or `root/…`) so a sibling
@@ -159,6 +220,11 @@ bool fileEditorPathsWithinRoot(
     final value = args[key];
     if (value is! String || value.trim().isEmpty) continue;
     sawPath = true;
+    if (!isAbsoluteOrOpaque(value)) {
+      // 相对路径锚定工作区 root 解析；不含 `..` 时必然落在 root 内。
+      if (value.split('/').any((s) => s.trim() == '..')) return false;
+      continue;
+    }
     if (!pathUnderRoot(value, root)) return false;
   }
   return sawPath;

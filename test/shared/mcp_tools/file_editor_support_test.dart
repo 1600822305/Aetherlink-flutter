@@ -54,6 +54,30 @@ void main() {
       );
     });
 
+    test('相对路径锚定 root 解析 → 不含 .. 时视为 root 内', () {
+      expect(
+        fileEditorPathsWithinRoot(
+          const {'path': 'lib/a.dart'},
+          root: root,
+        ),
+        isTrue,
+      );
+      expect(
+        fileEditorPathsWithinRoot(
+          const {'path': 'README.md'},
+          root: root,
+        ),
+        isTrue,
+      );
+      expect(
+        fileEditorPathsWithinRoot(
+          const {'path': '../outside.txt'},
+          root: root,
+        ),
+        isFalse,
+      );
+    });
+
     test('未携带任何路径参数 → false（保守兜底）', () {
       expect(fileEditorPathsWithinRoot(const {}, root: root), isFalse);
       expect(
@@ -147,6 +171,40 @@ void main() {
       const code = 'final x = 1;\nprint(x);';
       expect(detectStrongCodeOmission(code), isFalse);
       expect(detectCodeOmission(code), isFalse);
+    });
+  });
+
+  group('isAbsoluteOrOpaque', () {
+    test('POSIX 绝对路径与 URI 视为绝对', () {
+      expect(isAbsoluteOrOpaque('/root/a.txt'), isTrue);
+      expect(isAbsoluteOrOpaque('content://docs/tree/x'), isTrue);
+    });
+
+    test('相对路径不是绝对', () {
+      expect(isAbsoluteOrOpaque('README.md'), isFalse);
+      expect(isAbsoluteOrOpaque('lib/main.dart'), isFalse);
+      expect(isAbsoluteOrOpaque('./a.txt'), isFalse);
+      expect(isAbsoluteOrOpaque('../a.txt'), isFalse);
+    });
+  });
+
+  group('joinPosixPath', () {
+    test('普通拼接', () {
+      expect(joinPosixPath('/root/demo', 'README.md'), '/root/demo/README.md');
+      expect(joinPosixPath('/root/demo', 'lib/main.dart'),
+          '/root/demo/lib/main.dart');
+    });
+
+    test('root 尾部斜杠与 ./ 段被规整', () {
+      expect(joinPosixPath('/root/demo/', 'a.txt'), '/root/demo/a.txt');
+      expect(joinPosixPath('/root/demo', './lib//a.dart'),
+          '/root/demo/lib/a.dart');
+    });
+
+    test('.. 逐级上跳，不做拒绝', () {
+      expect(joinPosixPath('/root/demo', '../other/a.txt'),
+          '/root/other/a.txt');
+      expect(joinPosixPath('/a', '../../..'), '/');
     });
   });
 

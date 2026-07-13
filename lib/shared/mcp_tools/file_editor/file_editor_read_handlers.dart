@@ -21,8 +21,9 @@ Future<McpToolResult> listFiles(Ref ref, Map<String, Object?> args) async {
   String? workspaceName;
   final rawPath = optionalString(args, 'path');
   if (rawPath != null) {
-    dir = rawPath;
-    backend = await backendForPath(ref, rawPath);
+    final resolved = await resolvePathArg(ref, args, rawPath);
+    dir = resolved.path;
+    backend = resolved.backend;
   } else if (args['workspace'] != null) {
     final resolved = await resolveWorkspace(ref, args);
     backend = resolved.backend;
@@ -80,7 +81,8 @@ Future<McpToolResult> readFile(Ref ref, Map<String, Object?> args) async {
       }
       try {
         final one = await _readOne(
-            ref, path, optionalInt(m, 'start_line'), optionalInt(m, 'end_line'),
+            ref, args, path,
+            optionalInt(m, 'start_line'), optionalInt(m, 'end_line'),
             withLineNumbers: withLineNumbers);
         results.add({'status': 'success', ...one});
       } on FileEditorError catch (e) {
@@ -100,15 +102,18 @@ Future<McpToolResult> readFile(Ref ref, Map<String, Object?> args) async {
   }
   final path = requireString(args, 'path');
   final one = await _readOne(
-      ref, path, optionalInt(args, 'start_line'), optionalInt(args, 'end_line'),
+      ref, args, path,
+      optionalInt(args, 'start_line'), optionalInt(args, 'end_line'),
       withLineNumbers: withLineNumbers);
   return fileEditorOk(one);
 }
 
 /// `get_file_info` — metadata (size / mtime / type) plus line count for files.
 Future<McpToolResult> getFileInfo(Ref ref, Map<String, Object?> args) async {
-  final path = requireString(args, 'path');
-  final backend = await backendForPath(ref, path);
+  final rawPath = requireString(args, 'path');
+  final resolved = await resolvePathArg(ref, args, rawPath);
+  final backend = resolved.backend;
+  final path = resolved.path;
   final info = await backend.getFileInfo(path);
   final json = entryJson(info);
   if (!info.isDirectory) {
@@ -125,9 +130,11 @@ Future<McpToolResult> getFileInfo(Ref ref, Map<String, Object?> args) async {
 /// ripgrep 级参数：`glob` 路径过滤、`case_sensitive`、`context_lines` 上下文、
 /// `output_mode`（content / files_with_matches / count）。
 Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
-  final directory = requireString(args, 'directory');
+  final rawDirectory = requireString(args, 'directory');
   final query = requireString(args, 'query');
-  final backend = await backendForPath(ref, directory);
+  final resolvedDir = await resolvePathArg(ref, args, rawDirectory);
+  final directory = resolvedDir.path;
+  final backend = resolvedDir.backend;
 
   final searchType = switch (optionalString(args, 'search_type')?.toLowerCase()) {
     'content' => WorkspaceSearchType.content,
@@ -302,12 +309,15 @@ const int _kMaxReadChars = 60000;
 
 Future<Map<String, Object?>> _readOne(
   Ref ref,
-  String path,
+  Map<String, Object?> args,
+  String rawPath,
   int? startLine,
   int? endLine, {
   bool withLineNumbers = true,
 }) async {
-  final backend = await backendForPath(ref, path);
+  final resolved = await resolvePathArg(ref, args, rawPath);
+  final backend = resolved.backend;
+  final path = resolved.path;
   // A range read kicks in when *either* bound is given: a missing start means
   // "from line 1", a missing end means "to the last line". (Previously both
   // had to be present or the whole file was returned silently.)

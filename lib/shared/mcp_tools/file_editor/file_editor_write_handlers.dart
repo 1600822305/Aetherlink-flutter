@@ -20,8 +20,8 @@ import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_supp
 /// (`parent_path` + `name`). On SAF a brand-new file can't be addressed by an
 /// arbitrary path, so creation always goes through an opaque parent dir.
 Future<McpToolResult> writeFile(Ref ref, Map<String, Object?> args) async {
-  final path = optionalString(args, 'path');
-  if (path == null) return _createFile(ref, args);
+  final rawPath = optionalString(args, 'path');
+  if (rawPath == null) return _createFile(ref, args);
   final raw = args['content'];
   if (raw == null) throw const FileEditorError('缺少必需参数: content');
   final processed = processIncomingContent(raw is String ? raw : raw.toString());
@@ -48,7 +48,9 @@ Future<McpToolResult> writeFile(Ref ref, Map<String, Object?> args) async {
     );
   }
 
-  final backend = await backendForPath(ref, path);
+  final resolved = await resolvePathArg(ref, args, rawPath);
+  final backend = resolved.backend;
+  final path = resolved.path;
 
   WorkspaceEntry info;
   try {
@@ -72,12 +74,14 @@ Future<McpToolResult> writeFile(Ref ref, Map<String, Object?> args) async {
 
 /// `write` (creation branch) — new file under an opaque [parent_path] dir.
 Future<McpToolResult> _createFile(Ref ref, Map<String, Object?> args) async {
-  final parentPath = requireString(args, 'parent_path');
+  final rawParent = requireString(args, 'parent_path');
   final name = requireString(args, 'name');
   final content = processIncomingContent(optionalString(args, 'content') ?? '');
   final overwrite = optionalBool(args, 'overwrite');
 
-  final backend = await backendForPath(ref, parentPath);
+  final resolved = await resolvePathArg(ref, args, rawParent);
+  final backend = resolved.backend;
+  final parentPath = resolved.path;
   final existing = await findChildByName(backend, parentPath, name);
   if (existing != null) {
     if (!overwrite) {
@@ -113,12 +117,17 @@ Future<McpToolResult> _createFile(Ref ref, Map<String, Object?> args) async {
 /// copy-as-new-name then delete-source (not atomic — a failed delete keeps the
 /// copy and reports both locations); a plain move uses the backend's move.
 Future<McpToolResult> moveEntry(Ref ref, Map<String, Object?> args) async {
-  final sourcePath = optionalString(args, 'path') ??
+  final rawSource = optionalString(args, 'path') ??
       requireString(args, 'source_path'); // 兼容旧参数名
-  final destParent = optionalString(args, 'destination_path');
+  final rawDestParent = optionalString(args, 'destination_path');
   final newName = optionalString(args, 'new_name');
   final overwrite = optionalBool(args, 'overwrite');
-  final backend = await backendForPath(ref, sourcePath);
+  final resolvedSource = await resolvePathArg(ref, args, rawSource);
+  final backend = resolvedSource.backend;
+  final sourcePath = resolvedSource.path;
+  final destParent = rawDestParent == null
+      ? null
+      : (await resolvePathArg(ref, args, rawDestParent)).path;
 
   if (destParent == null) {
     if (newName == null) {
@@ -181,11 +190,14 @@ Future<McpToolResult> moveEntry(Ref ref, Map<String, Object?> args) async {
 
 /// `copy_file` — copy a file/dir into the opaque [destination_path] directory.
 Future<McpToolResult> copyFile(Ref ref, Map<String, Object?> args) async {
-  final sourcePath = requireString(args, 'source_path');
-  final destParent = requireString(args, 'destination_path');
+  final rawSource = requireString(args, 'source_path');
+  final rawDestParent = requireString(args, 'destination_path');
   final newName = optionalString(args, 'new_name');
   final overwrite = optionalBool(args, 'overwrite');
-  final backend = await backendForPath(ref, sourcePath);
+  final resolvedSource = await resolvePathArg(ref, args, rawSource);
+  final backend = resolvedSource.backend;
+  final sourcePath = resolvedSource.path;
+  final destParent = (await resolvePathArg(ref, args, rawDestParent)).path;
   final newPath = await backend.copy(
     sourcePath,
     destParent,
@@ -201,9 +213,11 @@ Future<McpToolResult> copyFile(Ref ref, Map<String, Object?> args) async {
 /// explicit `recursive=true` so a single mistaken call can't wipe a whole tree.
 /// Files and already-empty directories delete without it.
 Future<McpToolResult> deleteFile(Ref ref, Map<String, Object?> args) async {
-  final path = requireString(args, 'path');
+  final rawPath = requireString(args, 'path');
   final recursive = optionalBool(args, 'recursive');
-  final backend = await backendForPath(ref, path);
+  final resolved = await resolvePathArg(ref, args, rawPath);
+  final backend = resolved.backend;
+  final path = resolved.path;
 
   bool isDirectory = false;
   try {
@@ -274,8 +288,10 @@ Future<McpToolResult> editFile(Ref ref, Map<String, Object?> args) async {
     edits.add((search: search, replace: raw is String ? raw : raw.toString()));
   }
 
-  final backend = await backendForPath(ref, path);
-  var content = await backend.readFile(path);
+  final resolved = await resolvePathArg(ref, args, path);
+  final backend = resolved.backend;
+  final resolvedPath = resolved.path;
+  var content = await backend.readFile(resolvedPath);
   final original = content;
   var total = 0;
 
@@ -316,10 +332,10 @@ Future<McpToolResult> editFile(Ref ref, Map<String, Object?> args) async {
     total += applied.replacements;
   }
 
-  if (content != original) await backend.writeFile(path, content);
+  if (content != original) await backend.writeFile(resolvedPath, content);
   return fileEditorOk({
     'message': '替换完成（$total 处${edits.length > 1 ? '，${edits.length} 个 edit' : ''}）',
-    'path': path,
+    'path': resolvedPath,
     'replacements': total,
     if (edits.length > 1) 'edits': edits.length,
   });
@@ -328,9 +344,11 @@ Future<McpToolResult> editFile(Ref ref, Map<String, Object?> args) async {
 /// `create_directory` — create a directory under an opaque [parent_path]
 /// (SAF paths are opaque URIs, so new entries are always parent + name).
 Future<McpToolResult> createDirectory(Ref ref, Map<String, Object?> args) async {
-  final parentPath = requireString(args, 'parent_path');
+  final rawParent = requireString(args, 'parent_path');
   final name = requireString(args, 'name');
-  final backend = await backendForPath(ref, parentPath);
+  final resolved = await resolvePathArg(ref, args, rawParent);
+  final backend = resolved.backend;
+  final parentPath = resolved.path;
   final existing = await findChildByName(backend, parentPath, name);
   if (existing != null) {
     if (existing.isDirectory) {
