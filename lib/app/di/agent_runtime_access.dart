@@ -134,7 +134,9 @@ const Set<String> _kReadOnlyToolNames = {
     definitions.add(kBuiltinWebSearchToolDefinition);
     routes[kBuiltinWebSearchToolName] = const WebSearchToolRoute();
   }
-  if (groups.contains(AgentToolGroup.skills)) {
+  // 子代理可用时 read_skill 必须同时可用（详细用法在内置技能
+  // 「子代理派发」里，系统提示只留一句能力声明，模型按需读取）。
+  if (groups.contains(AgentToolGroup.skills) || enableSubagents) {
     definitions.add(kReadSkillToolDefinition);
     routes[kReadSkillToolName] = const SkillReadToolRoute();
   }

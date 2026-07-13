@@ -24,12 +24,8 @@ enum AgentSubagentType {
 const kSpawnSubagentToolDefinition = McpToolDefinition(
   name: kToolSpawnSubagent,
   description: '派生一个子代理在独立上下文里完成专项子任务，只把最终结论带回。'
-      '适合会产生大量中间输出的活（大范围搜索/调研、跑一串命令看结果），'
-      '避免噪音挤爆主上下文。type=explore 为只读探索（搜索/读文件/调研），'
-      'type=bash 为终端执行（Ask/Plan 模式下不可用）；也可填系统提示里列出的'
-      '自定义子代理档案名。子代理没有本对话的记忆，prompt 必须自带全部必要'
-      '上下文。同一轮发多个调用即并行执行。background=true 时不阻塞当前循环：'
-      '立即返回「已启动」，子代理完成后结论回填本工具结果并以消息注入对话。',
+      '首次使用前先用 read_skill 读取「子代理派发」技能获取完整用法。'
+      '子代理没有本对话的记忆，prompt 必须自带全部必要上下文。',
   inputSchema: {
     'type': 'object',
     'properties': {
