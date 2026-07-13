@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_event
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/approval_gate.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
@@ -33,6 +34,7 @@ class AgentEngine {
     required this.gateway,
     required this.budget,
     this.subagents,
+    this.toolStream,
   });
 
   final AgentLlmClient llm;
@@ -44,6 +46,9 @@ class AgentEngine {
 
   /// 子代理启动器；null = 本层不支持派生（子代理自身不可再嵌套）。
   final AgentSubagentLauncher? subagents;
+
+  /// 工具参数流式生成的实时通道（纯内存）；null = 不做实时预览。
+  final AgentToolStreamSink? toolStream;
 
   Future<void> run(AgentTask task, AgentCancellationToken cancel) async {
     var current = task;
@@ -122,7 +127,7 @@ class AgentEngine {
             if (toolName == null || internalTool(toolName)) return;
             final existing = streamingEvents[streamKey];
             if (existing == null) {
-              streamingEvents[streamKey] = await store.appendToolCall(
+              final created = await store.appendToolCall(
                 current.id,
                 AgentToolCallRequest(
                   id: streamKey,
@@ -132,13 +137,18 @@ class AgentEngine {
                 ),
                 AgentToolCallState.running,
               );
+              streamingEvents[streamKey] = created;
               streamingWriteAt[streamKey] = DateTime.now();
+              toolStream?.update(created.id, toolName, argsTextSoFar);
               return;
             }
+            // 实时预览走内存通道，每个 delta 都推（UI 直接监听）；落库只按
+            // 节流做崩溃恢复持久化，不承担实时性。
+            toolStream?.update(existing.id, toolName, argsTextSoFar);
             final now = DateTime.now();
             final last = streamingWriteAt[streamKey];
             if (last != null &&
-                now.difference(last) < const Duration(milliseconds: 150)) {
+                now.difference(last) < const Duration(milliseconds: 500)) {
               return;
             }
             streamingWriteAt[streamKey] = now;
@@ -153,6 +163,7 @@ class AgentEngine {
             if (internalTool(call.name)) return;
             final streamed =
                 streamKey == null ? null : streamingEvents.remove(streamKey);
+            if (streamed != null) toolStream?.clear(streamed.id);
             final event = streamed != null
                 ? await store.updateToolCall(
                     current.id,
@@ -169,6 +180,7 @@ class AgentEngine {
         await writer.finish(turn.text);
         // 流中断时未闭合/未回到 turn 的预建事件按失败回填，避免永久 running。
         for (final event in streamingEvents.values) {
+          toolStream?.clear(event.id);
           await store.updateToolCall(current.id, event,
               state: AgentToolCallState.failure, resultSummary: '已中断 ✗');
         }

@@ -1,34 +1,59 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 
 /// 工具调用详情底部抽屉（UI 稿 §4.1）：完整参数 + 完整输出。
 /// 面板固定屏高 2/3；参数区限高、输出区占满余下高度，各自内部滑动。
 /// 大输出默认显截断内容，「查看全文」从落盘文件回读。
-Future<void> showToolDetailSheet(BuildContext context, ToolCallEvent event) {
+/// 传入 [taskId] 时抽屉订阅事件流，参数/状态/输出随执行实时更新。
+Future<void> showToolDetailSheet(
+  BuildContext context,
+  ToolCallEvent event, {
+  String? taskId,
+}) {
   // 先释放输入框焦点，避免面板关闭时焦点恢复自动顶起输入法。
   FocusManager.instance.primaryFocus?.unfocus();
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    builder: (sheetContext) => _ToolDetailSheet(event: event),
+    builder: (sheetContext) => _ToolDetailSheet(event: event, taskId: taskId),
   );
 }
 
-class _ToolDetailSheet extends StatefulWidget {
-  const _ToolDetailSheet({required this.event});
+class _ToolDetailSheet extends ConsumerStatefulWidget {
+  const _ToolDetailSheet({required this.event, this.taskId});
 
   final ToolCallEvent event;
+  final String? taskId;
 
   @override
-  State<_ToolDetailSheet> createState() => _ToolDetailSheetState();
+  ConsumerState<_ToolDetailSheet> createState() => _ToolDetailSheetState();
 }
 
-class _ToolDetailSheetState extends State<_ToolDetailSheet> {
-  ToolCallEvent get event => widget.event;
+class _ToolDetailSheetState extends ConsumerState<_ToolDetailSheet> {
+  /// 实时事件：有 taskId 时 build 里从事件流按 id 解析最新版本缓存于此，
+  /// 否则保持开启抽屉时的快照（回调里直接读，避免 build 外 watch）。
+  ToolCallEvent? _event;
+
+  ToolCallEvent get event => _event ?? widget.event;
+
+  ToolCallEvent _resolveEvent() {
+    final taskId = widget.taskId;
+    if (taskId == null) return widget.event;
+    final events = ref.watch(agentTaskEventsProvider(taskId)).value;
+    if (events == null) return widget.event;
+    for (var i = events.length - 1; i >= 0; i--) {
+      final e = events[i];
+      if (e is ToolCallEvent && e.id == widget.event.id) return e;
+    }
+    return widget.event;
+  }
 
   /// 落盘全文（点「查看全文」后加载，替换输出区内容）。
   String? _fullText;
@@ -53,6 +78,7 @@ class _ToolDetailSheetState extends State<_ToolDetailSheet> {
 
   @override
   Widget build(BuildContext context) {
+    _event = _resolveEvent();
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final muted = cs.onSurface.withValues(alpha: 0.55);
@@ -128,7 +154,12 @@ class _ToolDetailSheetState extends State<_ToolDetailSheet> {
                 children: [
                   _Section(
                     title: '参数',
-                    body: event.argsDetail ?? event.argSummary,
+                    body: ref.watch(
+                          agentToolStreamProvider
+                              .select((m) => m[event.id]?.argsText),
+                        ) ??
+                        event.argsDetail ??
+                        event.argSummary,
                     maxHeight: 140,
                   ),
                   const SizedBox(height: 14),

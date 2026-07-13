@@ -8,9 +8,10 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stre
 /// 工具行（collapsed 单行）：图标+名称+关键参数+结果摘要；
 /// 点击 → 底部抽屉看完整参数/输出。
 class ToolRow extends StatelessWidget {
-  const ToolRow({required this.event, super.key});
+  const ToolRow({required this.event, required this.taskId, super.key});
 
   final ToolCallEvent event;
+  final String taskId;
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +40,7 @@ class ToolRow extends StatelessWidget {
             )
           : Icon(icon, size: 14, color: iconColor),
       child: InkWell(
-        onTap: () => showToolDetailSheet(context, event),
+        onTap: () => showToolDetailSheet(context, event, taskId: taskId),
         borderRadius: BorderRadius.circular(6),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 2),

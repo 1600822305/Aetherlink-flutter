@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_event
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
@@ -343,6 +344,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       gateway: _ProviderTaskGateway(this),
       budget: AgentBudget(),
       subagents: _RunnerSubagentLauncher(this),
+      toolStream: ref.read(agentToolStreamProvider.notifier),
     );
     engine.run(task, token).whenComplete(() {
       _tokens.remove(task.id);
@@ -623,6 +625,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       store: _store(),
       gateway: _ProviderTaskGateway(this),
       budget: AgentBudget(maxRounds: 15, maxTokens: 200000),
+      toolStream: ref.read(agentToolStreamProvider.notifier),
     );
     await engine.run(child, childToken);
 

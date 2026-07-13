@@ -31,7 +31,7 @@ class AgentEventTile extends StatelessWidget {
         ApprovalCard(event: e, taskId: taskId),
       final ToolCallEvent e when e.toolName == kToolSpawnSubagent =>
         SubagentTile(event: e),
-      final ToolCallEvent e => ToolRow(event: e),
+      final ToolCallEvent e => ToolRow(event: e, taskId: taskId),
       final CompactionEvent e => CompactionDivider(event: e),
       final CheckpointEvent e => CheckpointTile(event: e, taskId: taskId),
       final StatusChangeEvent e => StatusChangeTile(event: e),
