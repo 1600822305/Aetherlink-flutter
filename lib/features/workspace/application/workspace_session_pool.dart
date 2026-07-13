@@ -255,6 +255,9 @@ class WorkspaceSessionPool {
   /// 池所属工作区的 ID（双作用域设计稿 §3.1）；裸后端默认池为 null。
   final String? workspaceId;
 
+  /// 池对应的后端（管理器按后端类型批量关会话用，如清理内置终端）。
+  WorkspaceBackend get backend => _backend;
+
   final Map<String, PooledWorkspaceSession> _sessions = {};
   Timer? _reaper;
 
@@ -410,6 +413,15 @@ class WorkspaceSessionPoolManager extends ChangeNotifier {
       if (session != null) return session;
     }
     return null;
+  }
+
+  /// 关掉 [test] 命中后端的所有池里的全部会话（如卸载内置终端环境前
+  /// 关掉所有 PRoot 会话）。
+  Future<void> closeBackends(bool Function(WorkspaceBackend) test) async {
+    for (final pool in _pools.values) {
+      if (test(pool.backend)) await pool.closeAll();
+    }
+    notifyListeners();
   }
 
   /// 跨池按 ID 关会话；找不到返回 false。

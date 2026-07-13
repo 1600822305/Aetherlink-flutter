@@ -8,6 +8,7 @@
 // Alpine/Ubuntu 双发行版与交互式终端回放模式。
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
@@ -16,6 +17,8 @@ import 'package:aetherlink_flutter/features/terminal/application/terminal_silent
 import 'package:aetherlink_flutter/features/terminal/domain/terminal_distro.dart';
 import 'package:aetherlink_flutter/features/terminal/domain/terminal_env_presets.dart';
 import 'package:aetherlink_flutter/features/terminal/domain/terminal_mirrors.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
+import 'package:aetherlink_flutter/features/workspace/data/proot_local_backend.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
@@ -33,16 +36,16 @@ Future<void> showTerminalEnvPage(
   );
 }
 
-class TerminalEnvPage extends StatefulWidget {
+class TerminalEnvPage extends ConsumerStatefulWidget {
   const TerminalEnvPage({super.key, required this.onRunCommand});
 
   final void Function(String command) onRunCommand;
 
   @override
-  State<TerminalEnvPage> createState() => _TerminalEnvPageState();
+  ConsumerState<TerminalEnvPage> createState() => _TerminalEnvPageState();
 }
 
-class _TerminalEnvPageState extends State<TerminalEnvPage>
+class _TerminalEnvPageState extends ConsumerState<TerminalEnvPage>
     with SingleTickerProviderStateMixin {
   TerminalDistro _distro = TerminalDistro.alpine;
 
@@ -69,6 +72,50 @@ class _TerminalEnvPageState extends State<TerminalEnvPage>
   void _runInTerminal(String command) {
     widget.onRunCommand(command);
     Navigator.of(context).pop();
+  }
+
+  /// 清理内置终端环境：二次确认后先关掉所有 PRoot 会话，再删除
+  /// rootfs 目录（只动应用私有目录，/sdcard 是绑定挂载的手机存储，
+  /// 不受影响）。清理后退回终端页，下次进入会重新引导安装。
+  Future<void> _cleanEngine() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('清理内置终端环境'),
+        content: const Text(
+          '将删除已安装的 Alpine/Ubuntu 环境（rootfs、已装的软件包、'
+          '/root 主目录里的文件）并关闭所有内置终端会话，释放存储空间。\n\n'
+          '/sdcard 是绑定挂载的手机存储，里面的文件不会被删除。\n'
+          '清理后可随时重新下载安装。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('清理'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ref
+          .read(workspaceSessionPoolManagerProvider)
+          .closeBackends((b) => b is ProotLocalBackend);
+      await TerminalEngineManager.instance.uninstall();
+      if (!mounted) return;
+      AppToast.success(context, '已清理内置终端环境');
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.error(context, '清理失败：$e');
+    }
   }
 
   @override
@@ -101,6 +148,15 @@ class _TerminalEnvPageState extends State<TerminalEnvPage>
           color: theme.colorScheme.onSurface,
         ),
         title: const Text('终端环境管理'),
+        actions: [
+          IconButton(
+            tooltip: '清理内置终端环境',
+            icon: const Icon(LucideIcons.trash2, size: 20),
+            color: theme.colorScheme.error,
+            onPressed: _cleanEngine,
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: Column(
         children: [
