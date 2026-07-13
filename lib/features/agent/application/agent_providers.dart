@@ -5,6 +5,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:aetherlink_flutter/app/di/agent_data_access.dart';
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_mock_data.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
@@ -100,6 +101,10 @@ class AgentProfiles extends _$AgentProfiles {
 /// 删话题联动删其事件流（DAO 事务内完成）。
 @Riverpod(keepAlive: true)
 class AgentTasks extends _$AgentTasks {
+  /// 已删除任务的 tombstone：引擎/后台子代理的晚到写回不能把
+  /// 删掉的任务行重新插回。
+  final Set<String> _removed = {};
+
   @override
   List<AgentTask> build() {
     _hydrate();
@@ -147,6 +152,7 @@ class AgentTasks extends _$AgentTasks {
   /// 新增或按 id 覆盖一个话题（引擎写回/新建任务共用），写穿到库
   /// 并等待落库完成（保证状态迁移的落库顺序，失败向上抛）。
   Future<void> apply(AgentTask task) async {
+    if (_removed.contains(task.id)) return;
     final index = state.indexWhere((t) => t.id == task.id);
     state = [
       for (var i = 0; i < state.length; i++)
@@ -186,6 +192,11 @@ class AgentTasks extends _$AgentTasks {
       for (final t in state)
         if (t.parentTaskId == taskId) t.id,
     ];
+    final runner = ref.read(agentTaskRunnerProvider.notifier);
+    for (final id in [taskId, ...childIds]) {
+      _removed.add(id);
+      runner.forceStop(id);
+    }
     state = [
       for (final t in state)
         if (t.id != taskId && t.parentTaskId != taskId) t,
@@ -202,6 +213,11 @@ class AgentTasks extends _$AgentTasks {
       for (final t in state)
         if (t.profileId == profileId) t.id,
     ];
+    final runner = ref.read(agentTaskRunnerProvider.notifier);
+    for (final id in removedIds) {
+      _removed.add(id);
+      runner.forceStop(id);
+    }
     state = [
       for (final t in state)
         if (t.profileId != profileId) t,

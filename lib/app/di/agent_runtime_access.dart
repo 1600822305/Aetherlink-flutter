@@ -630,10 +630,12 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
     }
 
     // 协作取消 → runTool 的 cancelSignal（terminal_execute 可被中途打断）。
+    // 打断标记不在这里消费——由引擎在安全点单点消费（P1：分散消费会
+    // 导致同轮后续工具误中断/事件卡 running）。
     final interrupted = Completer<void>();
     void onCancelSignal() {
       if (interrupted.isCompleted) return;
-      if (cancel.stopRequested || cancel.consumeToolInterrupt()) {
+      if (cancel.stopRequested || cancel.toolInterruptRequested) {
         interrupted.complete();
       }
     }

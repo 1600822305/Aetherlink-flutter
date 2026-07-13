@@ -320,9 +320,11 @@ class _RepoContext {
 }
 
 Future<_RepoContext> _repoContext(Ref ref, String? workspaceId) async {
-  final resolved = await resolveAgentWorkspace(ref, workspaceId);
+  // 检查点/回滚是破坏性操作，绑定解析失败不回退到其他工作区。
+  final resolved =
+      await resolveAgentWorkspace(ref, workspaceId, allowFallback: false);
   if (resolved == null) {
-    return const _RepoContext.unavailable('未绑定工作区');
+    return const _RepoContext.unavailable('绑定的工作区不可用（未绑定或已被移除）');
   }
   final (workspace, backend) = resolved;
   if (!backend.capabilities.canExec) {

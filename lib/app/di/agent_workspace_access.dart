@@ -225,12 +225,17 @@ Future<({String oldText, String newText})> loadAgentFileDiff(
   return (oldText: oldText, newText: newText);
 }
 
-/// 按任务/档案绑定解析工作区及其后端（绑定 → 当前打开 → 最近第一个），
-/// diff 面板与检查点回滚共用同一套规则。
+/// 按任务/档案绑定解析工作区及其后端。
+///
+/// [allowFallback] 为 true 时绑定未命中会回退到当前打开 → 最近
+/// 第一个，仅限纯展示型场景（diff 面板）；检查点/回滚等破坏性
+/// 操作必须传 false，绑定解析失败时直接返回 null，避免作用到
+/// 错误的工作区。
 Future<(Workspace, WorkspaceBackend)?> resolveAgentWorkspace(
   Ref ref,
-  String? workspaceId,
-) async {
+  String? workspaceId, {
+  bool allowFallback = true,
+}) async {
   List<Workspace> workspaces;
   try {
     workspaces = await loadWorkspaces(ref);
@@ -239,7 +244,11 @@ Future<(Workspace, WorkspaceBackend)?> resolveAgentWorkspace(
   }
   if (workspaces.isEmpty) return null;
   final bound = workspaces.where((w) => w.id == workspaceId).firstOrNull;
-  final workspace =
-      bound ?? ref.read(currentWorkspaceProvider) ?? workspaces.first;
+  if (bound == null && workspaceId != null && !allowFallback) return null;
+  final workspace = bound ??
+      (allowFallback
+          ? ref.read(currentWorkspaceProvider) ?? workspaces.first
+          : null);
+  if (workspace == null) return null;
   return (workspace, ref.read(workspaceBackendProvider(workspace)));
 }

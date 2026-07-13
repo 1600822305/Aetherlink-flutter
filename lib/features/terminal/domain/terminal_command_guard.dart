@@ -73,6 +73,16 @@ final RegExp _kScopeEscapePattern = RegExp(
   r'(^|[\s;&|])(su|sudo|chroot|proot)\b',
 );
 
+/// 命令替换 / 进程替换：`$(...)`、反引号、`<(...)`、`>(...)`、
+/// `${...}` 带命令的扩展。静态解析看不穿内层实际执行的命令，
+/// 首词白名单/路径启发式对它们失效，一律不当只读、不免审。
+final RegExp _kCommandSubstitutionPattern = RegExp(
+  r'\$\(|`|<\(|>\(',
+);
+
+bool _hasCommandSubstitution(String command) =>
+    _kCommandSubstitutionPattern.hasMatch(command);
+
 /// 评估项目模式（scope=project）下 [command] 相对工作区 [root] 的风险。
 ///
 /// 启发式（非强制隔离，见设计稿 §4）：解析命令里的绝对路径、`~`/`$HOME`
@@ -86,6 +96,10 @@ CommandRisk evaluateCommandRisk(String command, {required String root}) {
       : root;
 
   if (_kScopeEscapePattern.hasMatch(command)) return CommandRisk.escapesRoot;
+
+  // 命令替换内层可能执行任意命令/引用任意路径，静态评级看不穿，
+  // 一律按可能越界处理，强制 HITL（预授权不覆盖）。
+  if (_hasCommandSubstitution(command)) return CommandRisk.escapesRoot;
 
   // `~` / $HOME 引用：root 本身是（或在）家目录下才算界内。
   if (RegExp(r'(^|[\s=:"' r"'])(~($|[/\s])|\$HOME\b|\$\{HOME\})")
@@ -130,6 +144,8 @@ CommandRisk evaluateCommandRisk(String command, {required String root}) {
 /// 副作用，AI 通道可免 HITL 审批直接放行。
 bool isReadOnlyCommand(String command) {
   if (_kScopeEscapePattern.hasMatch(command)) return false;
+  // 命令替换内层可执行任意命令（如 `cat $(curl … | sh)`），不算只读。
+  if (_hasCommandSubstitution(command)) return false;
   final segments =
       _splitSegments(command).toList(growable: false);
   if (segments.isEmpty) return false;
@@ -142,7 +158,8 @@ bool isReadOnlyCommand(String command) {
   // 任意命令，同样不算只读。
   return allSafe &&
       !command.contains('>') &&
-      !RegExp(r'\s-(delete|exec|execdir|ok|okdir|o)\b').hasMatch(command);
+      !RegExp(r'\s-(delete|exec|execdir|ok|okdir|o|fprint|fprintf|fls|fprint0)\b')
+          .hasMatch(command);
 }
 
 bool _pathInsideRoot(String path, String root) {

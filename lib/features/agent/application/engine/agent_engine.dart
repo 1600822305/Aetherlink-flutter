@@ -197,6 +197,18 @@ class AgentEngine {
           }
           entry.value.clear();
         }
+        // 本轮中止时把尚未执行的预建工具事件按中断回填，避免永久
+        // 停在 running（包括 turn 已返回但未来得及执行的调用）。
+        Future<void> failPendingToolEvents() async {
+          for (final entry in preCreated.values) {
+            for (final event in entry) {
+              await store.updateToolCall(current.id, event,
+                  state: AgentToolCallState.failure, resultSummary: '已中断 ✗');
+            }
+            entry.clear();
+          }
+        }
+
         budget.recordTokens(turn.tokensUsed);
         current = await save(current.copyWith(
           tokenCount: current.tokenCount + turn.tokensUsed,
@@ -210,12 +222,18 @@ class AgentEngine {
 
         // 暂停/强停会中断 LLM 流并返回无工具调用的 turn，不能据此判
         // 收尾；回到循环顶部走 paused/cancelled 分支。
-        if (cancel.stopRequested) continue;
+        if (cancel.stopRequested) {
+          await failPendingToolEvents();
+          continue;
+        }
 
         // 「立即打断并发送」在 LLM 流阶段命中：turn 已被截断，
         // 消费打断标记回到循环顶部先注入排队消息，不按
         // 「无工具调用」判收尾。
-        if (cancel.consumeToolInterrupt()) continue;
+        if (cancel.consumeToolInterrupt()) {
+          await failPendingToolEvents();
+          continue;
+        }
 
         // ⑤ 无工具调用 → 兜底判收尾（L1）。
         if (turn.toolCalls.isEmpty) {
@@ -291,15 +309,19 @@ class AgentEngine {
           }
 
           final stopwatch = Stopwatch()..start();
+          var timedOut = false;
           final result = await tools
               .execute(call, cancel)
               .timeout(budget.toolTimeout, onTimeout: () {
             // 同时中止仍在运行的底层工具，避免模型重发同一命令时
             // 与旧命令并发（双重执行）。
+            timedOut = true;
             cancel.requestToolInterrupt();
             return const AgentToolResult(ok: false, summary: '超时 ✗');
           });
           stopwatch.stop();
+          // 超时自己发出的中断信号在此回收，不影响同轮后续工具。
+          if (timedOut) cancel.consumeToolInterrupt();
           await store.updateToolCall(current.id, event,
               state: result.ok
                   ? AgentToolCallState.success
@@ -311,6 +333,12 @@ class AgentEngine {
           budget.recordToolResult(ok: result.ok);
 
           if (cancel.stopRequested) break;
+          // 「立即打断并发送」在工具阶段命中：中止本轮剩余工具，
+          // 剩余预建事件按中断回填，回到循环顶部先注入排队消息。
+          if (cancel.consumeToolInterrupt()) {
+            await failPendingToolEvents();
+            break;
+          }
         }
 
         // ⑦ 自动 compaction（设计初稿 §5.3）：重放视图超阈值时把最早
