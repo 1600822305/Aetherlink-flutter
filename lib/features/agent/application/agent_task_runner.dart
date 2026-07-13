@@ -589,7 +589,34 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         '${result.summary}]（完整结论已回填到对应工具结果）',
         queued: true,
       );
-    } catch (_) {
+    } catch (e) {
+      // 异常也要回填父工具事件并通知，否则事件永久停在 running。
+      try {
+        ref.read(agentTasksProvider.notifier).apply(child.copyWith(
+              status: AgentTaskStatus.failed,
+              updatedAt: DateTime.now(),
+              lastEventSummary: '执行出错：$e',
+            ));
+        final events = await _store().getEvents(parent.id);
+        final event = events
+            .whereType<ToolCallEvent>()
+            .where((e) => e.id == toolEventId)
+            .firstOrNull;
+        if (event != null) {
+          await _store().updateToolCall(
+            parent.id,
+            event,
+            state: AgentToolCallState.failure,
+            resultSummary: '子代理执行出错 ✗',
+            resultDetail: '$e',
+          );
+        }
+        await _store().appendUserMessage(
+          parent.id,
+          '[后台子代理「${child.title}」执行出错：$e]',
+          queued: true,
+        );
+      } catch (_) {}
     } finally {
       _tokens.remove(child.id);
       state = {

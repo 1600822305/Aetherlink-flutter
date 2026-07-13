@@ -205,6 +205,10 @@ class AgentEngine {
               turn.text.isNotEmpty ? turn.text : current.lastEventSummary,
         ));
 
+        // 暂停/强停会中断 LLM 流并返回无工具调用的 turn，不能据此判
+        // 收尾；回到循环顶部走 paused/cancelled 分支。
+        if (cancel.stopRequested) continue;
+
         // ⑤ 无工具调用 → 兜底判收尾（L1）。
         if (turn.toolCalls.isEmpty) {
           current = await transition(AgentTaskStatus.done, '任务完成');
