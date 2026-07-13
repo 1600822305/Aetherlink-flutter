@@ -75,6 +75,23 @@ class InMemoryAgentEventStore implements AgentEventStore {
   }
 
   @override
+  Future<UserQuestionEvent> appendUserQuestion(
+    String taskId,
+    String question, {
+    List<String> options = const [],
+  }) async {
+    final event = UserQuestionEvent(
+      id: _newId(),
+      seq: _nextSeq(taskId),
+      at: DateTime.now(),
+      question: question,
+      options: options,
+    );
+    _upsert(taskId, event);
+    return event;
+  }
+
+  @override
   Future<AssistantTextEvent> appendAssistantText(
     String taskId,
     String text, {

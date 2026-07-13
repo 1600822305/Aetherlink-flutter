@@ -42,6 +42,23 @@ class UserMessageEvent extends AgentEvent {
   final bool queued;
 }
 
+/// ask_user 提问（引擎控制工具落地）：问题 + 可选的预设选项，
+/// 渲染为提问卡；选项被点选后以用户消息回填并续跑。
+class UserQuestionEvent extends AgentEvent {
+  const UserQuestionEvent({
+    required super.id,
+    required super.seq,
+    required super.at,
+    required this.question,
+    this.options = const [],
+  });
+
+  final String question;
+
+  /// 预设可点选的回复选项（空 = 纯开放式提问，只用输入框回答）。
+  final List<String> options;
+}
+
 /// 模型叙述文字（思考/汇报，流式渲染为贴左正文段落）。
 class AssistantTextEvent extends AgentEvent {
   const AssistantTextEvent({

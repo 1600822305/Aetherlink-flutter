@@ -17,6 +17,13 @@ abstract class AgentEventStore {
   /// 安全点消费排队消息：queued=true → false，正式进上下文（L3）。
   Future<void> consumeQueuedUserMessages(String taskId);
 
+  /// ask_user 提问：问题 + 可选预设选项，UI 渲染为提问卡。
+  Future<UserQuestionEvent> appendUserQuestion(
+    String taskId,
+    String question, {
+    List<String> options = const [],
+  });
+
   Future<AssistantTextEvent> appendAssistantText(
     String taskId,
     String text, {
@@ -139,6 +146,23 @@ class DriftAgentEventStore implements AgentEventStore {
     if (consumed.isNotEmpty) {
       await _dao.upsertEvents(taskId, consumed);
     }
+  }
+
+  @override
+  Future<UserQuestionEvent> appendUserQuestion(
+    String taskId,
+    String question, {
+    List<String> options = const [],
+  }) async {
+    final event = UserQuestionEvent(
+      id: _newId('uq'),
+      seq: await _nextSeq(taskId),
+      at: DateTime.now(),
+      question: question,
+      options: options,
+    );
+    await _dao.upsertEvents(taskId, [event]);
+    return event;
   }
 
   @override

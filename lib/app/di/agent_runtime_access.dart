@@ -427,6 +427,13 @@ List<LlmMessage> _replayMessages(List<AgentEvent> events) {
         messages.add(
           LlmMessage(role: MessageRole.user, content: event.text),
         );
+      case UserQuestionEvent():
+        messages.add(
+          LlmMessage(
+            role: MessageRole.assistant,
+            content: _questionText(event),
+          ),
+        );
       case AssistantTextEvent():
         if (event.text.isNotEmpty) {
           messages.add(
@@ -482,6 +489,8 @@ String _compactionTranscript(List<AgentEvent> events) {
     switch (event) {
       case UserMessageEvent():
         lines.add('[用户] ${clip(event.text)}');
+      case UserQuestionEvent():
+        lines.add('[助手提问] ${clip(_questionText(event))}');
       case AssistantTextEvent():
         if (event.text.isNotEmpty) lines.add('[助手] ${clip(event.text)}');
       case ToolCallEvent():
@@ -499,6 +508,11 @@ String _compactionTranscript(List<AgentEvent> events) {
   }
   return lines.join('\n\n');
 }
+
+/// ask_user 提问的文本形态（重放/压缩共用）：问题 + 选项清单。
+String _questionText(UserQuestionEvent event) => event.options.isEmpty
+    ? event.question
+    : '${event.question}\n可选：${event.options.join(' / ')}';
 
 String _toolResultText(ToolCallEvent event) => switch (event.state) {
       AgentToolCallState.success =>

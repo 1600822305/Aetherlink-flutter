@@ -231,10 +231,10 @@ class AgentEngine {
           }
           if (call.name == kToolAskUser) {
             final question = _stringArg(call, 'question') ?? '需要你的输入';
-            await store.appendAssistantText(current.id, question,
-                streaming: false);
+            await store.appendUserQuestion(current.id, question,
+                options: _stringListArg(call, 'options'));
             current = await transition(
-                AgentTaskStatus.waitingInput, '等待用户输入');
+                AgentTaskStatus.waitingInput, '等待回答：$question');
             return;
           }
           if (call.name == kToolFinishTask) {
@@ -426,6 +426,19 @@ class AgentEngine {
       return json[key] as String?;
     } catch (_) {
       return null;
+    }
+  }
+
+  List<String> _stringListArg(AgentToolCallRequest call, String key) {
+    try {
+      final json = jsonDecode(call.argsJson) as Map<String, dynamic>;
+      final list = json[key] as List<dynamic>? ?? const [];
+      return [
+        for (final item in list)
+          if (item is String && item.trim().isNotEmpty) item.trim(),
+      ];
+    } catch (_) {
+      return const [];
     }
   }
 }

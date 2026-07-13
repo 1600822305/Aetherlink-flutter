@@ -33,11 +33,18 @@ const List<McpToolDefinition> kAgentControlToolDefinitions = [
   McpToolDefinition(
     name: kToolAskUser,
     description: '向用户提问并暂停任务等待回复。仅在缺少关键信息、'
-        '或决策不可逆且无法自行判断时使用。',
+        '或决策不可逆且无法自行判断时使用。'
+        '若问题有少数几个明确的候选答案，请通过 options 提供可点选的选项。',
     inputSchema: {
       'type': 'object',
       'properties': {
         'question': {'type': 'string', 'description': '要问用户的问题'},
+        'options': {
+          'type': 'array',
+          'items': {'type': 'string'},
+          'description': '可选的预设回复选项（2-5 个，用户可直接点选；'
+              '开放式问题不要提供）',
+        },
       },
       'required': ['question'],
     },

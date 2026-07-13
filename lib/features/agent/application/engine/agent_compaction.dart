@@ -16,6 +16,8 @@ List<AgentEvent> foldCompactedEvents(List<AgentEvent> events) {
     switch (event) {
       case UserMessageEvent():
         entries.add(event);
+      case UserQuestionEvent():
+        entries.add(event);
       case AssistantTextEvent():
         if (event.text.isNotEmpty) entries.add(event);
       case ToolCallEvent():
@@ -38,6 +40,8 @@ List<AgentEvent> foldCompactedEvents(List<AgentEvent> events) {
 /// 英文 ≈4 字/token，取字符数做保守阈值即可，不追求精确）。
 int contextCharsOf(AgentEvent event) => switch (event) {
       UserMessageEvent(:final text) => text.length,
+      UserQuestionEvent(:final question, :final options) =>
+        question.length + options.fold(0, (sum, o) => sum + o.length),
       AssistantTextEvent(:final text) => text.length,
       ToolCallEvent() => (event.argsDetail?.length ?? 0) +
           (event.resultDetail ?? event.resultSummary).length,

@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stre
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/subagent_tile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/tool_row.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/user_message_tile.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/user_question_tile.dart';
 
 /// 时间线事件行分发器（UI 稿 §4.1）：按事件类型路由到对应小件
 /// （●助手文字 ○工具 ⚠审批 ✂压缩 ◆状态变化）。
@@ -24,6 +25,7 @@ class AgentEventTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return switch (event) {
       final UserMessageEvent e => UserMessageTile(event: e),
+      final UserQuestionEvent e => UserQuestionTile(event: e, taskId: taskId),
       final AssistantTextEvent e => AssistantTextTile(event: e),
       final ReasoningEvent e => ReasoningTile(event: e),
       final ToolCallEvent e
