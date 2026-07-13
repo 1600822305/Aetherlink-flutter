@@ -1,6 +1,8 @@
 // 智能体编辑页（UI 稿 §三）：名称/emoji + 专长提示词 + 工具集勾选 +
 // 绑定工作区（已拍板：一个工作区对应一个智能体，就在这里改，话题继承）。
-// UI 先行阶段保存写会话内 AgentProfiles provider；接真实现时改走 drift。
+// UI 风格对齐聊天的「编辑助手」dialog（edit_assistant_dialog.dart）：
+// 头像圈 + 名称行、onSurfaceVariant 小节标签、浅色圆角卡片分节、
+// 紧凑 chips、底部 取消/保存 操作条。
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -39,9 +41,7 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
   late final TextEditingController _name = TextEditingController(
     text: widget.profile?.name ?? '',
   );
-  late final TextEditingController _emoji = TextEditingController(
-    text: widget.profile?.emoji ?? '🤖',
-  );
+  late String _emoji = widget.profile?.emoji ?? '🤖';
   late final TextEditingController _prompt = TextEditingController(
     text: widget.profile?.systemPrompt ?? '',
   );
@@ -68,10 +68,44 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
     });
   }
 
+  Future<void> _editEmoji() async {
+    final controller = TextEditingController(text: _emoji);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('头像 emoji', style: TextStyle(fontSize: 16)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textAlign: TextAlign.center,
+          maxLength: 2,
+          style: const TextStyle(fontSize: 28),
+          decoration: InputDecoration(
+            counterText: '',
+            isDense: true,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null || !mounted) return;
+    setState(() => _emoji = result.isEmpty ? '🤖' : result);
+  }
+
   @override
   void dispose() {
     _name.dispose();
-    _emoji.dispose();
     _prompt.dispose();
     super.dispose();
   }
@@ -84,7 +118,7 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
         AgentProfile(
           id: 'agent-${DateTime.now().millisecondsSinceEpoch}',
           name: name,
-          emoji: _emoji.text.trim(),
+          emoji: _emoji,
           systemPrompt: _prompt.text.trim(),
           tools: _tools,
         );
@@ -93,7 +127,7 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
         .upsert(
           base.copyWith(
             name: name,
-            emoji: _emoji.text.trim().isEmpty ? '🤖' : _emoji.text.trim(),
+            emoji: _emoji,
             systemPrompt: _prompt.text.trim(),
             tools: _tools,
             workspaceId: _workspaceId,
@@ -110,135 +144,224 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final workspaces = ref.watch(recentWorkspacesViewProvider);
     final canSave = _name.text.trim().isNotEmpty;
 
-    // 顶栏 chrome 与主聊天同款：纸面 surface、无阴影、1px 底分隔线。
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: cs.surface,
-        foregroundColor: cs.onSurface,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        shape: Border(bottom: BorderSide(color: theme.dividerColor)),
-        titleSpacing: 0,
-        leading: IconButton(
-          tooltip: '返回',
-          icon: const Icon(LucideIcons.arrowLeft, size: 20),
-          onPressed: () => Navigator.of(context).pop(),
+      backgroundColor: cs.surface,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _header(theme),
+            Expanded(child: _body(theme, cs)),
+            _actions(theme, canSave),
+          ],
         ),
-        title: Text(
-          _isNew ? '新建智能体' : '编辑智能体',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w500,
-            color: cs.onSurface,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: canSave ? _save : null,
-            child: const Text('保存'),
-          ),
-        ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+    );
+  }
+
+  Widget _header(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: theme.dividerColor)),
+      ),
+      child: Row(
         children: [
-          Row(
-            children: [
-              SizedBox(
-                width: 64,
-                child: TextField(
-                  controller: _emoji,
-                  textAlign: TextAlign.center,
-                  maxLength: 2,
-                  style: const TextStyle(fontSize: 24),
-                  decoration: const InputDecoration(
-                    counterText: '',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextField(
-                  controller: _name,
-                  onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(
-                    labelText: '名称',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ),
-            ],
+          IconButton(
+            onPressed: () => Navigator.of(context).pop(),
+            iconSize: 26,
+            color: theme.colorScheme.onSurface,
+            icon: const Icon(LucideIcons.chevronLeft),
+            tooltip: '返回',
           ),
-          const SizedBox(height: 16),
-          const _SectionTitle(
-            title: '绑定工作区',
-            subtitle: '一个工作区对应一个智能体；话题创建时直接继承',
+          const SizedBox(width: 4),
+          Text(
+            _isNew ? '创建智能体' : '编辑智能体',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              ChoiceChip(
-                label: const Text('不绑定'),
-                selected: _workspaceId == null,
-                onSelected: (_) => setState(() {
-                  _workspaceId = null;
-                  _workspaceName = null;
-                }),
+          const Spacer(),
+          if (widget.profile?.builtin ?? false)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(999),
+                color: theme.colorScheme.primary.withValues(alpha: 0.1),
               ),
-              for (final ws in workspaces)
-                ChoiceChip(
-                  avatar: Icon(
-                    LucideIcons.folderTree,
-                    size: 14,
-                    color: cs.onSurface.withValues(alpha: 0.6),
-                  ),
-                  label: Text(ws.name),
-                  selected: _workspaceId == ws.id,
-                  onSelected: (_) => setState(() {
-                    _workspaceId = ws.id;
-                    _workspaceName = ws.name;
-                  }),
-                ),
-              ActionChip(
-                avatar: Icon(
-                  LucideIcons.folderPlus,
-                  size: 14,
-                  color: cs.primary,
-                ),
-                label: const Text('选目录新建绑定…'),
-                onPressed: _pickWorkspaceViaTerminal,
-              ),
-            ],
-          ),
-          if (workspaces.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
               child: Text(
-                '还没有最近打开的工作区，先去工作区页打开一个',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: cs.onSurface.withValues(alpha: 0.5),
+                '内置预设',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: theme.colorScheme.primary,
                 ),
               ),
             ),
-          const SizedBox(height: 16),
-          const _SectionTitle(title: '工具集', subtitle: '决定该智能体每轮可见的工具清单'),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
+        ],
+      ),
+    );
+  }
+
+  Widget _body(ThemeData theme, ColorScheme cs) {
+    final workspaces = ref.watch(recentWorkspacesViewProvider);
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // 头像 + 名称（编辑助手 dialog 基础 tab 同款布局）。
+        Row(
+          children: [
+            GestureDetector(
+              onTap: _editEmoji,
+              child: Stack(
+                children: [
+                  CircleAvatar(
+                    radius: 30,
+                    backgroundColor: cs.primary.withValues(alpha: 0.12),
+                    child: Text(_emoji, style: const TextStyle(fontSize: 26)),
+                  ),
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: cs.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: cs.surface, width: 2),
+                      ),
+                      child: const Icon(
+                        LucideIcons.pencil,
+                        size: 10,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _label(theme, '智能体名称'),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: _name,
+                    onChanged: (_) => setState(() {}),
+                    style: const TextStyle(fontSize: 16),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: '示例智能体',
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        _label(theme, '绑定工作区'),
+        const SizedBox(height: 4),
+        Text(
+          '一个工作区对应一个智能体；话题创建时直接继承',
+          style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+        ),
+        const SizedBox(height: 8),
+        _Card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 6,
+                runSpacing: 0,
+                children: [
+                  ChoiceChip(
+                    label: const Text('不绑定'),
+                    labelStyle: const TextStyle(fontSize: 12),
+                    visualDensity: VisualDensity.compact,
+                    selected: _workspaceId == null,
+                    selectedColor: cs.primary.withValues(alpha: 0.12),
+                    onSelected: (_) => setState(() {
+                      _workspaceId = null;
+                      _workspaceName = null;
+                    }),
+                  ),
+                  for (final ws in workspaces)
+                    ChoiceChip(
+                      avatar: Icon(
+                        LucideIcons.folderTree,
+                        size: 13,
+                        color: cs.onSurface.withValues(alpha: 0.6),
+                      ),
+                      label: Text(ws.name),
+                      labelStyle: const TextStyle(fontSize: 12),
+                      visualDensity: VisualDensity.compact,
+                      selected: _workspaceId == ws.id,
+                      selectedColor: cs.primary.withValues(alpha: 0.12),
+                      onSelected: (_) => setState(() {
+                        _workspaceId = ws.id;
+                        _workspaceName = ws.name;
+                      }),
+                    ),
+                  ActionChip(
+                    avatar: Icon(
+                      LucideIcons.folderPlus,
+                      size: 13,
+                      color: cs.primary,
+                    ),
+                    label: const Text('选目录新建绑定…'),
+                    labelStyle: TextStyle(fontSize: 12, color: cs.primary),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _pickWorkspaceViaTerminal,
+                  ),
+                ],
+              ),
+              if (workspaces.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '还没有最近打开的工作区，先去工作区页打开一个',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        _label(theme, '工具集'),
+        const SizedBox(height: 4),
+        Text(
+          '决定该智能体每轮可见的工具清单',
+          style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+        ),
+        const SizedBox(height: 8),
+        _Card(
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 0,
             children: [
               for (final g in AgentToolGroup.values)
                 FilterChip(
                   label: Text(_toolGroupLabel(g)),
+                  labelStyle: const TextStyle(fontSize: 12),
+                  visualDensity: VisualDensity.compact,
                   selected: _tools.contains(g),
+                  selectedColor: cs.primary.withValues(alpha: 0.12),
                   onSelected: (v) => setState(() {
                     v ? _tools.add(g) : _tools.remove(g);
                     _tools = {..._tools};
@@ -246,31 +369,52 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
                 ),
             ],
           ),
-          const SizedBox(height: 16),
-          const _SectionTitle(
-            title: '专长提示词',
-            subtitle: '系统提示第 3 层（档案专长段）；内置基础指南不可覆盖',
+        ),
+        const SizedBox(height: 20),
+        _label(theme, '专长提示词'),
+        const SizedBox(height: 4),
+        Text(
+          '系统提示第 3 层（档案专长段）；内置基础指南不可覆盖',
+          style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _prompt,
+          minLines: 5,
+          maxLines: 12,
+          style: const TextStyle(fontSize: 14, height: 1.5),
+          decoration: InputDecoration(
+            hintText: '例如：你是一名资深软件工程师……',
+            alignLabelWithHint: true,
+            contentPadding: const EdgeInsets.all(12),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _prompt,
-            minLines: 4,
-            maxLines: 10,
-            decoration: const InputDecoration(
-              hintText: '例如：你是一名资深软件工程师……',
-              border: OutlineInputBorder(),
+        ),
+      ],
+    );
+  }
+
+  Widget _actions(ThemeData theme, bool canSave) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: theme.dividerColor)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.onSurfaceVariant,
             ),
+            child: const Text('取消'),
           ),
-          if (widget.profile?.builtin ?? false)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(
-                '内置预设：可修改配置，不可删除',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: cs.onSurface.withValues(alpha: 0.5),
-                ),
-              ),
-            ),
+          const SizedBox(width: 8),
+          FilledButton(
+            onPressed: canSave ? _save : null,
+            child: Text(_isNew ? '创建' : '保存'),
+          ),
         ],
       ),
     );
@@ -285,32 +429,32 @@ String _toolGroupLabel(AgentToolGroup g) => switch (g) {
   AgentToolGroup.skills => '技能',
 };
 
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title, required this.subtitle});
+Widget _label(ThemeData theme, String text) => Text(
+  text,
+  style: TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w500,
+    color: theme.colorScheme.onSurfaceVariant,
+  ),
+);
 
-  final String title;
-  final String subtitle;
+/// 浅色圆角分节卡片（编辑助手 dialog `_Card` 同款）。
+class _Card extends StatelessWidget {
+  const _Card({required this.child});
+
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          subtitle,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-          ),
-        ),
-      ],
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+      ),
+      child: child,
     );
   }
 }
