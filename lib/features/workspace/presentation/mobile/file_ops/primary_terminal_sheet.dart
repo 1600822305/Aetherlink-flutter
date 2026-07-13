@@ -12,7 +12,9 @@ import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/workspace/application/primary_terminal_store.dart';
 import 'package:aetherlink_flutter/features/workspace/application/ssh_connection_pool.dart';
 import 'package:aetherlink_flutter/features/workspace/application/ssh_connection_store.dart';
+import 'package:aetherlink_flutter/features/workspace/application/ssh_credential_store.dart';
 import 'package:aetherlink_flutter/features/workspace/application/ssh_workspace_setup.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_store.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/primary_terminal.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/ssh_connection.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/termux_setup.dart';
@@ -81,6 +83,14 @@ Future<PrimaryTerminal?> showPrimaryTerminalPickerSheet(
   WidgetRef ref,
 ) async {
   await ref.read(sshConnectionStoreProvider.future);
+  await ref.read(workspaceStoreProvider.future);
+  // 先合并存量重复档案（历史上 Termux 一键接入每跑一次落一条），
+  // 选择器里才不会出现一排重复的 Termux。
+  await dedupeSshConnections(
+    connections: ref.read(sshConnectionStoreProvider.notifier),
+    credentials: ref.read(sshCredentialStoreProvider.notifier),
+    workspaces: ref.read(workspaceStoreProvider.notifier),
+  );
   final connections = ref.read(sshConnectionStoreProvider.notifier).all();
   if (!context.mounted) return null;
   return showModalBottomSheet<PrimaryTerminal>(

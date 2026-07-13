@@ -34,22 +34,23 @@ class TerminalEngineManager {
 
   /// 当前设备对应的 Alpine 架构名；不支持的平台返回 null。
   static String? get rootfsArch => switch (Abi.current()) {
-        Abi.androidArm64 => 'aarch64',
-        Abi.androidArm => 'armv7',
-        Abi.androidX64 => 'x86_64',
-        _ => null,
-      };
+    Abi.androidArm64 => 'aarch64',
+    Abi.androidArm => 'armv7',
+    Abi.androidX64 => 'x86_64',
+    _ => null,
+  };
 
   /// 当前设备对应的 Ubuntu 架构名；不支持的平台返回 null。
   static String? get ubuntuArch => switch (Abi.current()) {
-        Abi.androidArm64 => 'arm64',
-        Abi.androidArm => 'armhf',
-        Abi.androidX64 => 'amd64',
-        _ => null,
-      };
+    Abi.androidArm64 => 'arm64',
+    Abi.androidArm => 'armhf',
+    Abi.androidX64 => 'amd64',
+    _ => null,
+  };
 
   /// 官方 CDN 直链（安装面板里可替换为网盘等镜像）。
-  static Uri? get defaultRootfsUrl => rootfsUrlForMirror(kTerminalMirrors.first);
+  static Uri? get defaultRootfsUrl =>
+      rootfsUrlForMirror(kTerminalMirrors.first);
 
   /// [mirror] 下当前设备架构、[distro] 发行版的 rootfs 直链；不支持的架构
   /// 返回 null。
@@ -197,8 +198,7 @@ class TerminalEngineManager {
     final distro = await installedDistro() ?? TerminalDistro.alpine;
     switch (distro) {
       case TerminalDistro.alpine:
-        final repositories =
-            File(p.join(rootfs, 'etc', 'apk', 'repositories'));
+        final repositories = File(p.join(rootfs, 'etc', 'apk', 'repositories'));
         await repositories.parent.create(recursive: true);
         await repositories.writeAsString(
           apkRepositoriesFor(mirror, alpineVersion),
@@ -217,8 +217,14 @@ class TerminalEngineManager {
   }
 
   /// 卸载（清空 rootfs 与标记），设置页「释放空间」用。
+  ///
+  /// rootfs 里不少目录保留了 tar 里的只读权限（如 /var/empty、ssh 宿主
+  /// 密钥目录），父目录不可写时 delete 会抛 PathAccessException——先整树
+  /// 加回属主写权限再删。
   Future<void> uninstall() async {
     final base = Directory(await baseDirPath());
-    if (await base.exists()) await base.delete(recursive: true);
+    if (!await base.exists()) return;
+    await Process.run('chmod', ['-R', 'u+rwX', base.path]);
+    await base.delete(recursive: true);
   }
 }
