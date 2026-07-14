@@ -90,6 +90,101 @@ extension WorkspaceFileOpsTrash on WorkspaceFileOps {
     };
   }
 
+  /// 打开回收站面板（列出已删除条目，可恢复/彻底删除/清空）。
+  Future<void> openTrash() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => TrashSheet(
+        listTrash: listTrashEntries,
+        onRestore: restoreFromTrash,
+        onDeleteForever: _deleteTrashedWithConfirm,
+        onEmptyTrash: emptyTrash,
+      ),
+    );
+  }
+
+  /// The trash dir's current contents (empty when it doesn't exist yet).
+  Future<List<WorkspaceEntry>> listTrashEntries() async {
+    final trashPath = await _findTrashPath();
+    if (trashPath == null) return const [];
+    try {
+      return await backend.listDir(trashPath);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// 把回收站里的 [entry] 恢复到工作区根目录（原位置未记录），
+  /// 同名时自动改名保留两者。
+  Future<bool> restoreFromTrash(WorkspaceEntry entry) async {
+    try {
+      final trash = await _findTrashPath();
+      var srcPath = entry.path;
+      var name = entry.name;
+      final rootNames = await _siblingNames(rootPath);
+      if (rootNames.contains(name)) {
+        final taken = {
+          ...rootNames,
+          if (trash != null) ...await _siblingNames(trash),
+        }..remove(entry.name);
+        name = resolveDuplicateName(entry.name, taken);
+        srcPath = await backend.rename(entry.path, name);
+      }
+      await backend.move(srcPath, rootPath);
+      await reloadDir(rootPath);
+      _snack('已恢复 $name 到工作区根目录');
+      return true;
+    } catch (e) {
+      _snack('恢复失败 · $e');
+      return false;
+    }
+  }
+
+  Future<bool> _deleteTrashedWithConfirm(WorkspaceEntry entry) async {
+    final ok = await confirmDelete(
+      context,
+      name: entry.name,
+      isDirectory: entry.isDirectory,
+    );
+    if (!ok) return false;
+    try {
+      await backend.delete(
+        entry.path,
+        isDirectory: entry.isDirectory,
+        recursive: entry.isDirectory,
+      );
+      await reloadDir(_parentDirOf(entry));
+      return true;
+    } catch (e) {
+      _snack('删除失败 · $e');
+      return false;
+    }
+  }
+
+  /// 彻底删除回收站里的全部条目（删除回收站目录本身）。
+  Future<bool> emptyTrash() async {
+    final trashPath = await _findTrashPath();
+    if (trashPath == null) return true;
+    if (!context.mounted) return false;
+    final ok = await confirmDelete(
+      context,
+      name: '回收站全部内容',
+      isDirectory: true,
+    );
+    if (!ok) return false;
+    try {
+      await backend.delete(trashPath, isDirectory: true, recursive: true);
+      await reloadDir(rootPath);
+      _snack('已清空回收站');
+      return true;
+    } catch (e) {
+      _snack('清空失败 · $e');
+      return false;
+    }
+  }
+
   // Permanent deletion (used inside the trash dir), with the hard confirm.
   Future<void> _deleteForever(WorkspaceEntry entry) async {
     final ok = await confirmDelete(

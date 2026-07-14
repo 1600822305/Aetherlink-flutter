@@ -16,6 +16,7 @@ class FileTreeToolbar extends StatelessWidget {
     required this.onNewFile,
     required this.onNewFolder,
     required this.onEnterSelect,
+    required this.onOpenTrash,
     required this.onSortSelected,
     required this.onToggleHidden,
     required this.onRefresh,
@@ -32,6 +33,7 @@ class FileTreeToolbar extends StatelessWidget {
   final VoidCallback onNewFile;
   final VoidCallback onNewFolder;
   final VoidCallback onEnterSelect;
+  final VoidCallback onOpenTrash;
   final ValueChanged<TreeSortMode> onSortSelected;
   final VoidCallback onToggleHidden;
   final VoidCallback onRefresh;
@@ -58,6 +60,12 @@ class FileTreeToolbar extends StatelessWidget {
           tooltip: '多选',
           enabled: hasRoot && canWrite,
           onTap: onEnterSelect,
+        ),
+        FileTreeToolbarButton(
+          icon: LucideIcons.trash2,
+          tooltip: '回收站',
+          enabled: hasRoot && canWrite,
+          onTap: onOpenTrash,
         ),
         const Spacer(),
         FileTreeSortMenuButton(

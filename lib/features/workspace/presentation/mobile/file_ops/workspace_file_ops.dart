@@ -11,6 +11,7 @@ import 'directory_picker_sheet.dart';
 import 'entry_action_sheet.dart';
 import 'entry_details_dialog.dart';
 import 'file_op_dialogs.dart';
+import 'trash_sheet.dart';
 
 part 'workspace_file_ops_batch.dart';
 part 'workspace_file_ops_trash.dart';

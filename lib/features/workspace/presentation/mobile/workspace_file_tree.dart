@@ -682,6 +682,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                       onNewFolder: () => ops?.newFolder(ops.rootPath),
                       onEnterSelect: () =>
                           setState(() => _selecting = true),
+                      onOpenTrash: () => ops?.openTrash(),
                       onSortSelected: (m) =>
                           ref.read(treeSortModeProvider.notifier).set(m),
                       onToggleHidden: () => ref
