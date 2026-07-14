@@ -27,8 +27,8 @@ class AgentSidebar extends ConsumerStatefulWidget {
 
 class _AgentSidebarState extends ConsumerState<AgentSidebar>
     with SingleTickerProviderStateMixin {
-  // 与聊天侧边栏同款的 tab 记忆：会话内内存态（AgentSidebarTabIndex），
-  // 重开抽屉保持上次 tab，重启回默认智能体 tab。
+  // 与聊天侧边栏同款的 tab 记忆（AgentSidebarTabIndex，持久化）：
+  // 重开抽屉、重启 app 都保持上次 tab。
   late final TabController _tabController = TabController(
     length: 3,
     vsync: this,
@@ -53,6 +53,13 @@ class _AgentSidebarState extends ConsumerState<AgentSidebar>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // 持久化的 tab 索引是异步 hydrate 的：冷启动后第一次开抽屉时存储值可能
+    // 晚于控制器创建才到，监听到后补一次跳转。
+    ref.listen(agentSidebarTabIndexProvider, (_, next) {
+      if (next != _tabController.index && next < _tabController.length) {
+        _tabController.animateTo(next);
+      }
+    });
 
     return Drawer(
       backgroundColor: theme.colorScheme.surface,

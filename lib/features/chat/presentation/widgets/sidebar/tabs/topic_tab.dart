@@ -98,9 +98,10 @@ class _TopicTabState extends ConsumerState<TopicTab> {
                 icon: LucideIcons.search,
                 size: 18,
                 box: 28,
+                // 跟随主题取色（固定黑色在深色模式下看不清）。
                 color: _searchOpen
                     ? theme.colorScheme.primary
-                    : kSidebarMutedIcon,
+                    : theme.colorScheme.onSurface.withValues(alpha: 0.54),
                 onPressed: _toggleSearch,
               ),
               const SizedBox(width: 8),

@@ -38,6 +38,7 @@ const String kAgentContextLimitKey = 'agent_context_limit';
 const String kAgentDefaultModeKey = 'agent_default_mode';
 const String kAgentAutoCollapseKey = 'agent_auto_collapse_work_sessions';
 const String kAgentFollowAiFileKey = 'agent_follow_ai_file';
+const String kAgentSidebarTabIndexKey = 'agent_sidebar_tab_index';
 
 /// 首次运行时的一次性种子写入（档案/话题/事件三表）。keepAlive 保证
 /// 多个 hydrate 入口共享同一次 Future，不会重复种入。
@@ -265,16 +266,35 @@ Stream<List<AgentEvent>> agentTaskEvents(Ref ref, String taskId) async* {
   yield* ref.watch(agentDaoProvider).watchEvents(taskId);
 }
 
-/// 侧边栏当前 tab（0 智能体 / 1 话题 / 2 设置）。与聊天侧边栏同款策略：
-/// 仅会话内记忆（内存态）——重开抽屉保持在上次 tab，重启回默认智能体 tab。
+/// 侧边栏当前 tab（0 智能体 / 1 话题 / 2 设置）。持久化（appSettingsStore）：
+/// 重开抽屉、重启 app 都保持在上次 tab。
 @Riverpod(keepAlive: true)
 class AgentSidebarTabIndex extends _$AgentSidebarTabIndex {
+  bool _touched = false;
+
   @override
-  int build() => 0;
+  int build() {
+    _hydrate();
+    return 0;
+  }
+
+  Future<void> _hydrate() async {
+    final stored = await ref
+        .read(appSettingsStoreProvider)
+        .getSetting(kAgentSidebarTabIndexKey);
+    final index = int.tryParse(stored ?? '');
+    if (!_touched && index != null && index >= 0 && index <= 2) {
+      state = index;
+    }
+  }
 
   void set(int index) {
     if (index < 0 || index > 2) return;
+    _touched = true;
     state = index;
+    ref
+        .read(appSettingsStoreProvider)
+        .saveSetting(kAgentSidebarTabIndexKey, '$index');
   }
 }
 

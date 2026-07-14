@@ -39,8 +39,8 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
   void _syncController(int length) {
     final existing = _tabController;
     if (existing != null && existing.length == length) return;
-    // Open on the session's last tab (in-memory [SidebarTabIndex]); it is not
-    // persisted, so a fresh app launch starts on the default 助手 tab.
+    // Open on the last tab ([SidebarTabIndex], persisted — survives an app
+    // restart).
     final int prevIndex = existing?.index ?? ref.read(sidebarTabIndexProvider);
     existing?.removeListener(_onTabChanged);
     existing?.dispose();
@@ -52,8 +52,8 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
   }
 
   void _onTabChanged() {
-    // Remember the active tab for this session so reopening the drawer keeps it
-    // (in-memory only — a restart resets to the default tab).
+    // Remember the active tab (persisted) so reopening the drawer — and
+    // relaunching the app — keeps it.
     final index = _tabController!.index;
     if (ref.read(sidebarTabIndexProvider) != index) {
       ref.read(sidebarTabIndexProvider.notifier).set(index);
@@ -79,6 +79,13 @@ class _ChatSidebarState extends ConsumerState<ChatSidebar>
     final tabCount = showNotes ? 4 : 3;
     _syncController(tabCount);
     final tabController = _tabController!;
+    // 持久化的 tab 索引是异步 hydrate 的：冷启动后第一次开抽屉时存储值可能
+    // 晚于控制器创建才到，监听到后补一次跳转。
+    ref.listen(sidebarTabIndexProvider, (_, next) {
+      if (next != tabController.index && next < tabController.length) {
+        tabController.animateTo(next);
+      }
+    });
     final settingsIndex = tabCount - 1;
     final showTranslate = tabController.index != settingsIndex;
     // 设置 tab 的「侧边栏宽度」对话框驱动这里；按当前屏宽 clamp 到安全范围

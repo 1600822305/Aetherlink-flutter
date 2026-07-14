@@ -31,8 +31,7 @@ part 'sidebar_controllers.g.dart';
 /// [ChatRepository]'s key/value settings: each notifier hydrates from storage on
 /// first build and writes through on every change, so the selection survives both
 /// reopening the drawer and a full app restart. The sidebar tab index
-/// ([SidebarTabIndex]) is deliberately session-only (in-memory): it is remembered
-/// while the app runs but resets to the default 助手 tab on restart. The derived
+/// ([SidebarTabIndex]) is persisted the same way. The derived
 /// [currentAssistant]
 /// still falls back to the first assistant when nothing is selected — matching
 /// the web `setCurrentAssistant(defaultAssistants[0])`. Group membership maps
@@ -43,6 +42,7 @@ part 'sidebar_controllers.g.dart';
 const String kCurrentAssistantSettingKey = 'currentAssistant';
 const String kCurrentTopicSettingKey = 'currentTopic';
 const String kAssistantSortOrderSettingKey = 'assistantSortOrder';
+const String kSidebarTabIndexSettingKey = 'sidebarTabIndex';
 
 // ── Selection (keepAlive, persisted) ─────────────────────────────────────────
 
@@ -99,21 +99,39 @@ class CurrentTopicId extends _$CurrentTopicId {
   }
 }
 
-/// The active sidebar tab index (0 助手 / 1 话题 / 2 设置). Session-only and held
-/// purely in memory: it remembers the last tab while the app runs (so reopening
-/// the drawer keeps the same tab), but it is **not** persisted, so a full app
-/// restart resets to the default 助手 tab. We deliberately diverge from the web
-/// (`settings.sidebarTabIndex`), which persisted it across restarts.
+/// The active sidebar tab index (0 助手 / 1 话题 / 2 设置). Persisted like the web
+/// (`settings.sidebarTabIndex`): hydrated from the key/value store on build and
+/// written through on [set], so the tab survives both reopening the drawer and
+/// a full app restart.
 @Riverpod(keepAlive: true)
 class SidebarTabIndex extends _$SidebarTabIndex {
+  bool _touched = false;
+
   @override
-  int build() => 0;
+  int build() {
+    _hydrate();
+    return 0;
+  }
+
+  Future<void> _hydrate() async {
+    final stored = await ref
+        .read(chatRepositoryProvider)
+        .getSetting(kSidebarTabIndexSettingKey);
+    final index = int.tryParse(stored ?? '');
+    if (!_touched && index != null && index >= 0 && index <= 3) {
+      state = index;
+    }
+  }
 
   void set(int index) {
     // 0=助手 1=话题 [2=笔记] last=设置; the 笔记 Tab is optional so the max
     // valid index is 3 when it is enabled.
     if (index < 0 || index > 3) return;
+    _touched = true;
     state = index;
+    ref
+        .read(chatRepositoryProvider)
+        .saveSetting(kSidebarTabIndexSettingKey, '$index');
   }
 }
 
