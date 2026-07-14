@@ -508,7 +508,7 @@ class RemoteSshBackend extends WorkspaceBackend {
     _guardProtected(path);
     final sftp = await _sftpClient();
     final newPath = _join(_dirname(path), newName);
-    await sftp.rename(path, newPath);
+    await _renameOrCopyDelete(sftp, path, newPath);
     _emit(WorkspaceChangeKind.moved, newPath, fromPath: path);
     return newPath;
   }
@@ -518,7 +518,7 @@ class RemoteSshBackend extends WorkspaceBackend {
     _guardProtected(sourcePath);
     final sftp = await _sftpClient();
     final newPath = _join(destinationParent, _basename(sourcePath));
-    await sftp.rename(sourcePath, newPath);
+    await _renameOrCopyDelete(sftp, sourcePath, newPath);
     _emit(
       WorkspaceChangeKind.moved,
       newPath,
@@ -526,6 +526,30 @@ class RemoteSshBackend extends WorkspaceBackend {
       parentPath: destinationParent,
     );
     return newPath;
+  }
+
+  // SFTP rename 不能跨文件系统（如 Termux 下共享存储与应用私有目录之间，
+  // 服务端返回 Failure code 4），降级为复制+删除完成移动。符号链接不降级
+  // （复制会跟进目标，可能把真实手机存储整棵复制/删除），直接抛原错误。
+  Future<void> _renameOrCopyDelete(
+    SftpClient sftp,
+    String from,
+    String to,
+  ) async {
+    try {
+      await sftp.rename(from, to);
+      return;
+    } on SftpStatusError {
+      if (await _isSymlink(sftp, from)) rethrow;
+      final attrs = await sftp.stat(from);
+      if (attrs.isDirectory) {
+        await _copyTree(sftp, from, to, false);
+        await _deleteTree(sftp, from);
+      } else {
+        await _copyFile(sftp, from, to, false);
+        await sftp.remove(from);
+      }
+    }
   }
 
   @override
