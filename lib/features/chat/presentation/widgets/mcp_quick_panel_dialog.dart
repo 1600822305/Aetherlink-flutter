@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
+import 'package:aetherlink_flutter/app/di/remote_mcp_access.dart';
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
@@ -11,6 +12,7 @@ import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers
 import 'package:aetherlink_flutter/shared/config/builtin_mcp_servers.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/stdio/stdio_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
@@ -124,7 +126,7 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView>
   // 0 = 工具, 1 = 技能 (web `activeTab`). Backed by [_mainTabController] so the
   // top-level tab supports swipe-to-switch via [InstantSwitchTabView].
   int _mainTab = 0;
-  // 0 = 外部服务器, 1 = 内置工具, 2 = 智能助手 (web `subTab`).
+  // 0 = 外部服务器, 1 = 内置工具, 2 = 智能助手, 3 = stdio (web `subTab`).
   int _subTab = 0;
 
   late final TabController _mainTabController =
@@ -415,7 +417,14 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView>
     // exclusively done from the settings page's 「添加」 button — the quick
     // panel is a runtime switchboard, not a catalog.
     final external = servers
-        .where((s) => !isBuiltinMcpServerName(s.name))
+        .where(
+          (s) =>
+              !isBuiltinMcpServerName(s.name) &&
+              s.type != McpServerType.stdio,
+        )
+        .toList();
+    final stdio = servers
+        .where((s) => s.type == McpServerType.stdio)
         .toList();
     final builtinNames = kBuiltinMcpServers
         .where((s) => s.category != McpServerCategory.assistant)
@@ -440,7 +449,8 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView>
           child: switch (_subTab) {
             0 => _externalList(t, external),
             1 => _builtinList(t, builtinAdded),
-            _ => _assistantList(t, assistantAdded),
+            2 => _assistantList(t, assistantAdded),
+            _ => _stdioList(t, stdio),
           },
         ),
       ],
@@ -466,9 +476,10 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView>
       ),
       child: Row(
         children: [
-          tab(LucideIcons.server, '外部服务器', 0),
-          tab(LucideIcons.cpu, '内置工具', 1),
-          tab(LucideIcons.zap, '智能助手', 2),
+          tab(LucideIcons.server, '外部', 0),
+          tab(LucideIcons.cpu, '内置', 1),
+          tab(LucideIcons.zap, '助手', 2),
+          tab(LucideIcons.terminal, 'stdio', 3),
         ],
       ),
     );
@@ -577,6 +588,66 @@ class _McpQuickPanelViewState extends ConsumerState<_McpQuickPanelView>
                 color: t.textSecondary.withValues(alpha: 0.5),
               ),
             ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// stdio（移动端）子 tab：开关同样走 toggleActive（开 = 拉起子进程 /
+  /// 关 = 结束进程），行内订阅连接管理器实时显示运行状态。
+  Widget _stdioList(_Tokens t, List<McpServer> stdio) {
+    if (stdio.isEmpty) {
+      return _SubEmpty(
+        tokens: t,
+        icon: LucideIcons.terminal,
+        title: '还没有 stdio 服务器',
+        subtitle: '前往下方「管理 MCP 服务器」添加',
+      );
+    }
+    final manager = ref.read(stdioMcpConnectionManagerProvider);
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      itemCount: stdio.length,
+      separatorBuilder: (_, _) => _rowDivider(t),
+      itemBuilder: (context, i) {
+        final server = stdio[i];
+        final cfg = _typeConfig(server.type);
+        return _ServerRow(
+          tokens: t,
+          avatar: _TypeAvatar(icon: cfg.icon, color: cfg.color),
+          title: server.name,
+          subtitle: StreamBuilder<String>(
+            stream: manager.changes.where((id) => id == server.id),
+            builder: (context, _) {
+              final st = manager.stateOf(server.id);
+              final (label, color) = switch (st.status) {
+                StdioMcpStatus.running => ('运行中', _Tokens.success),
+                StdioMcpStatus.starting => ('启动中', cfg.color),
+                StdioMcpStatus.error => ('错误', const Color(0xFFEF4444)),
+                StdioMcpStatus.stopped => (
+                  server.isActive ? '未运行' : '已停用',
+                  t.textSecondary,
+                ),
+              };
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _TypeChip(label: cfg.label, color: cfg.color),
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: TextStyle(fontSize: 11, color: color),
+                  ),
+                ],
+              );
+            },
+          ),
+          trailing: _McpSwitch(
+            value: server.isActive,
+            onChanged: (v) => ref
+                .read(mcpServersProvider.notifier)
+                .toggleActive(server.id, isActive: v),
           ),
         );
       },
