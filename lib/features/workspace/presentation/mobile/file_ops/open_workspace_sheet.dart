@@ -199,79 +199,81 @@ class _AddWorkspaceSheet extends ConsumerWidget {
                 ),
               ),
             ),
-            Material(
-              color: theme.colorScheme.primary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-              child: ListTile(
-                leading: Icon(
-                  LucideIcons.folderOpen,
-                  color: theme.colorScheme.primary,
-                ),
-                title: const Text('打开本地文件夹'),
-                subtitle: const Text('授权手机上的一个目录 (SAF)'),
-                onTap: () async {
-                  Navigator.of(context).pop();
-                  await openLocalFolder(context, parentRef);
-                },
-              ),
+            _WorkspaceOptionTile(
+              icon: LucideIcons.folderOpen,
+              title: '打开本地文件夹',
+              subtitle: '授权手机上的一个目录 (SAF)',
+              onTap: () async {
+                Navigator.of(context).pop();
+                await openLocalFolder(context, parentRef);
+              },
             ),
             // SSH and Termux are both live now (设计文档 §10.5 / Termux-A).
             const SizedBox(height: 4),
-            Material(
-              color: theme.colorScheme.primary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-              child: ListTile(
-                leading: Icon(
-                  LucideIcons.server,
-                  color: theme.colorScheme.primary,
-                ),
-                title: const Text('SSH / 远程'),
-                subtitle: const Text('连接远程机器，浏览其文件 (Remote-SSH)'),
-                onTap: () {
-                  final router = GoRouter.of(context);
-                  Navigator.of(context).pop();
-                  router.push(AppRouter.sshConnectionPath);
-                },
-              ),
+            _WorkspaceOptionTile(
+              icon: LucideIcons.server,
+              title: 'SSH / 远程',
+              subtitle: '连接远程机器，浏览其文件 (Remote-SSH)',
+              onTap: () {
+                final router = GoRouter.of(context);
+                Navigator.of(context).pop();
+                router.push(AppRouter.sshConnectionPath);
+              },
             ),
             const SizedBox(height: 4),
-            Material(
-              color: theme.colorScheme.primary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-              child: ListTile(
-                leading: Icon(
-                  LucideIcons.terminal,
-                  color: theme.colorScheme.primary,
-                ),
-                title: const Text('Termux'),
-                subtitle: const Text('同机 Termux 一键接入，文件 + 终端'),
-                onTap: () {
-                  final router = GoRouter.of(context);
-                  Navigator.of(context).pop();
-                  router.push(AppRouter.termuxSetupPath);
-                },
-              ),
+            _WorkspaceOptionTile(
+              icon: LucideIcons.terminal,
+              title: 'Termux',
+              subtitle: '同机 Termux 一键接入，文件 + 终端',
+              onTap: () {
+                final router = GoRouter.of(context);
+                Navigator.of(context).pop();
+                router.push(AppRouter.termuxSetupPath);
+              },
             ),
             const SizedBox(height: 4),
-            Material(
-              color: theme.colorScheme.primary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-              child: ListTile(
-                leading: Icon(
-                  LucideIcons.squareTerminal,
-                  color: theme.colorScheme.primary,
-                ),
-                title: const Text('内置终端'),
-                subtitle: const Text('应用内置 Alpine Linux，免 Root 零依赖（PRoot）'),
-                onTap: () async {
-                  final navigator = Navigator.of(context);
-                  navigator.pop();
-                  await showProotScopeSheet(navigator.context, parentRef);
-                },
-              ),
+            _WorkspaceOptionTile(
+              icon: LucideIcons.squareTerminal,
+              title: '内置终端',
+              subtitle: '应用内置 Alpine Linux，免 Root 零依赖（PRoot）',
+              onTap: () async {
+                final navigator = Navigator.of(context);
+                navigator.pop();
+                await showProotScopeSheet(navigator.context, parentRef);
+              },
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 新建工作区面板里统一的「选项卡片」：淡色底 + 图标 + 标题/副标题。
+class _WorkspaceOptionTile extends StatelessWidget {
+  const _WorkspaceOptionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.primary.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(12),
+      child: ListTile(
+        leading: Icon(icon, color: theme.colorScheme.primary),
+        title: Text(title),
+        subtitle: Text(subtitle),
+        onTap: onTap,
       ),
     );
   }

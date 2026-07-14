@@ -54,6 +54,31 @@ extension WorkspaceFileOpsTrash on WorkspaceFileOps {
     }
   }
 
+  // Moves [entry] into [destDir], auto-renaming to keep both when a sibling of
+  // the same name already exists there. [avoidDir] adds another directory's
+  // names to steer clear of when generating the fresh name (so the pick is free
+  // in both the source and destination). Returns the moved path and the
+  // effective name (== entry.name when no rename was needed).
+  Future<({String path, String name})> _moveKeepingBoth(
+    WorkspaceEntry entry,
+    String destDir, {
+    String? avoidDir,
+  }) async {
+    var srcPath = entry.path;
+    var name = entry.name;
+    final destNames = await _siblingNames(destDir);
+    if (destNames.contains(name)) {
+      final taken = {
+        ...destNames,
+        if (avoidDir != null) ...await _siblingNames(avoidDir),
+      }..remove(entry.name);
+      name = resolveDuplicateName(entry.name, taken);
+      srcPath = await backend.rename(entry.path, name);
+    }
+    final moved = await backend.move(srcPath, destDir);
+    return (path: moved, name: name);
+  }
+
   // Moves [entry] into the trash dir (creating it if needed, keep-both on
   // name conflicts) and returns an undo closure, or null when it failed.
   Future<VoidCallback?> _moveToTrash(
@@ -63,23 +88,12 @@ extension WorkspaceFileOpsTrash on WorkspaceFileOps {
     final source = _parentDirOf(entry);
     final trash =
         trashPath ?? await backend.createDirectory(rootPath, kTrashDirName);
-    var srcPath = entry.path;
-    var name = entry.name;
-    final trashNames = await _siblingNames(trash);
-    if (trashNames.contains(name)) {
-      final taken = {
-        ...trashNames,
-        ...await _siblingNames(source),
-      }..remove(entry.name);
-      name = resolveDuplicateName(entry.name, taken);
-      srcPath = await backend.rename(entry.path, name);
-    }
-    final trashedPath = await backend.move(srcPath, trash);
+    final moved = await _moveKeepingBoth(entry, trash, avoidDir: source);
     await reloadDir(source);
     return () async {
       try {
-        var restored = await backend.move(trashedPath, source);
-        if (name != entry.name) {
+        var restored = await backend.move(moved.path, source);
+        if (moved.name != entry.name) {
           restored = await backend.rename(restored, entry.name);
         }
         await reloadDir(source);
@@ -121,20 +135,9 @@ extension WorkspaceFileOpsTrash on WorkspaceFileOps {
   Future<bool> restoreFromTrash(WorkspaceEntry entry) async {
     try {
       final trash = await _findTrashPath();
-      var srcPath = entry.path;
-      var name = entry.name;
-      final rootNames = await _siblingNames(rootPath);
-      if (rootNames.contains(name)) {
-        final taken = {
-          ...rootNames,
-          if (trash != null) ...await _siblingNames(trash),
-        }..remove(entry.name);
-        name = resolveDuplicateName(entry.name, taken);
-        srcPath = await backend.rename(entry.path, name);
-      }
-      await backend.move(srcPath, rootPath);
+      final moved = await _moveKeepingBoth(entry, rootPath, avoidDir: trash);
       await reloadDir(rootPath);
-      _snack('已恢复 $name 到工作区根目录');
+      _snack('已恢复 ${moved.name} 到工作区根目录');
       return true;
     } catch (e) {
       _snack('恢复失败 · $e');
