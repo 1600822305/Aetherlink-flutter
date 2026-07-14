@@ -216,16 +216,21 @@ Future<_ExecTarget> _resolveTarget(Ref ref, Map<String, Object?> args) async {
       greeting: workspace.backendType == WorkspaceBackendType.prootLocal
           ? buildProotGreeting(name: workspace.name, root: workspace.root)
           : null,
-      environment: workspace.scope == WorkspaceScope.project
-          ? {
-              'WORKSPACE_ROOT': workspace.root,
-              'WORKSPACE_NAME': workspace.name,
-              // L2 语言级隔离（设计稿 §4 P5）：独立 HOME 按工作区隔离
-              // rc 文件 / 全局配置 / 缓存。
-              if (workspace.isolatedHomePath != null)
-                'HOME': workspace.isolatedHomePath!,
-            }
-          : const {},
+      environment: {
+        if (workspace.scope == WorkspaceScope.project) ...{
+          'WORKSPACE_ROOT': workspace.root,
+          'WORKSPACE_NAME': workspace.name,
+          // L2 语言级隔离（设计稿 §4 P5）：独立 HOME 按工作区隔离
+          // rc 文件 / 全局配置 / 缓存。
+          if (workspace.isolatedHomePath != null)
+            'HOME': workspace.isolatedHomePath!,
+        },
+        // Android 共享存储（FUSE/sdcardfs）不支持符号链接，npm 装
+        // bin 链接必然 EACCES；注入等效于 --no-bin-links 的环境变量，
+        // npm/pnpm 都识别 npm_config_* 形式。
+        if (_isSharedStoragePath(workspace.root))
+          'npm_config_bin_links': 'false',
+      },
     );
   } else {
     target = _ExecTarget(
@@ -242,6 +247,11 @@ Future<_ExecTarget> _resolveTarget(Ref ref, Map<String, Object?> args) async {
   }
   return target;
 }
+
+/// Whether [path] lives on Android shared storage, where the underlying
+/// FUSE/sdcardfs filesystem rejects symlinks (breaks npm bin links etc.).
+bool _isSharedStoragePath(String path) =>
+    path.startsWith('/storage/emulated/') || path.startsWith('/sdcard');
 
 /// 命中黑名单的命令统一拦截（设计文档 §3）；只管 AI 通道，用户在交互式
 /// 终端里手动执行不受限。

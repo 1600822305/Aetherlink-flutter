@@ -442,10 +442,14 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   /// 隔离，双作用域设计稿 §3.1）；找不到绑定工作区时退回当前工作区。
   Future<String> _environmentContext(Ref ref, AgentTask task) async {
     String? workspace;
+    var onSharedStorage = false;
     try {
       final bound = (await loadWorkspaces(ref))
           .where((w) => w.id == task.workspaceId)
           .firstOrNull;
+      onSharedStorage = bound != null &&
+          (bound.root.startsWith('/storage/emulated/') ||
+              bound.root.startsWith('/sdcard'));
       workspace = await buildWorkspaceContextSection(
         ref,
         workspace: bound,
@@ -459,6 +463,10 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     return [
       '平台：${Platform.operatingSystem}',
       if (workspace != null) workspace,
+      if (onSharedStorage)
+        '注意：工作区位于 Android 共享存储，文件系统不支持符号链接——'
+            'npm/pnpm 已通过环境变量默认禁用 bin 链接，无需再传 --no-bin-links；'
+            '其它需要 symlink 的操作（如 ln -s）会失败，请改用复制等替代方案。',
       '可用工具：$toolNames',
       ...await _skillsSection(ref),
       ...await _customSubagentsSection(ref),
