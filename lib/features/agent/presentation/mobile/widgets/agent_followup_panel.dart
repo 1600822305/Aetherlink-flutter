@@ -88,7 +88,8 @@ class _AgentFollowupPanelState extends ConsumerState<AgentFollowupPanel> {
                   ),
               ],
             ),
-            for (final suggestion in question.suggestions)
+            for (final (index, suggestion)
+                in question.suggestions.indexed)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
                 child: OutlinedButton(
@@ -110,9 +111,41 @@ class _AgentFollowupPanelState extends ConsumerState<AgentFollowupPanel> {
                     ),
                     textStyle: theme.textTheme.bodySmall,
                   ),
-                  child: Text(suggestion, textAlign: TextAlign.left),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 18,
+                        height: 18,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: cs.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          String.fromCharCode(0x41 + index),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: cs.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(suggestion, textAlign: TextAlign.left),
+                      ),
+                    ],
+                  ),
                 ),
               ),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '或在下方输入框输入自定义回答',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+            ),
           ],
         ),
       ),
