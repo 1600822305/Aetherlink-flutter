@@ -485,22 +485,27 @@ class RemoteSshBackend extends WorkspaceBackend {
     } else if (!recursive) {
       await sftp.rmdir(path);
     } else {
-      await _deleteTree(sftp, path);
+      await _deleteTree(path);
     }
     _emit(WorkspaceChangeKind.deleted, path);
   }
 
-  Future<void> _deleteTree(SftpClient sftp, String dir) async {
-    for (final n in await sftp.listdir(dir)) {
-      if (n.filename == '.' || n.filename == '..') continue;
-      final child = _join(dir, n.filename);
-      if (n.attr.isDirectory) {
-        await _deleteTree(sftp, child);
-      } else {
-        await sftp.remove(child);
-      }
+  // Recursive dir deletion runs server-side as one `rm -rf` — one round trip
+  // instead of one SFTP remove per file.
+  Future<void> _deleteTree(String dir) async {
+    final r = await exec(
+      'rm -rf -- ${_shellQuote(dir)}',
+      timeout: const Duration(minutes: 5),
+    );
+    if (r.timedOut) {
+      throw const SshBackendException('删除超时（rm -rf 超过 5 分钟）');
     }
-    await sftp.rmdir(dir);
+    if (r.exitCode != 0) {
+      final err = r.stderr.trim();
+      throw SshBackendException(
+        '删除失败（rm -rf 退出码 ${r.exitCode}）${err.isEmpty ? '' : ' · $err'}',
+      );
+    }
   }
 
   @override

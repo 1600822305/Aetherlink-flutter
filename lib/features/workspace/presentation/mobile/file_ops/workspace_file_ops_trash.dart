@@ -150,6 +150,7 @@ extension WorkspaceFileOpsTrash on WorkspaceFileOps {
     );
     if (!ok) return false;
     try {
+      if (entry.isDirectory) _snack('正在删除 ${entry.name}…');
       await backend.delete(
         entry.path,
         isDirectory: entry.isDirectory,
@@ -175,6 +176,7 @@ extension WorkspaceFileOpsTrash on WorkspaceFileOps {
     );
     if (!ok) return false;
     try {
+      _snack('正在清空回收站…');
       await backend.delete(trashPath, isDirectory: true, recursive: true);
       await reloadDir(rootPath);
       _snack('已清空回收站');
@@ -194,6 +196,7 @@ extension WorkspaceFileOpsTrash on WorkspaceFileOps {
     );
     if (!ok) return;
     try {
+      if (entry.isDirectory) _snack('正在删除 ${entry.name}…');
       await backend.delete(
         entry.path,
         isDirectory: entry.isDirectory,
