@@ -35,11 +35,15 @@ class StdioMcpTransport implements McpTransport {
 
   @override
   Future<void> start() async {
+    // 后端实现给的实际是 Stream<Uint8List>，先 cast 回 List<int> 再解码，
+    // 否则 transform 在运行时报 Utf8Decoder 不是 StreamTransformer<Uint8List, String>。
     _outSub = _session.stdout
+        .cast<List<int>>()
         .transform(utf8.decoder)
         .transform(const LineSplitter())
         .listen(_onLine, onError: (_) {});
     _errSub = _session.stderr
+        .cast<List<int>>()
         .transform(utf8.decoder)
         .transform(const LineSplitter())
         .listen((line) => _onLog?.call(line), onError: (_) {});
