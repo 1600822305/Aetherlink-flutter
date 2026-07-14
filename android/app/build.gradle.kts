@@ -39,6 +39,12 @@ android {
         }
     }
 
+    lint {
+        // lintVital 每次 release 构建都全量重跑（printStackTrace 输入恒变、
+        // 缓存失效），白耗数十秒；发布前如需检查可手动跑 gradlew lint。
+        checkReleaseBuilds = false
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.
