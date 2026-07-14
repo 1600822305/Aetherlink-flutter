@@ -8,10 +8,12 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
 import 'package:aetherlink_flutter/app/di/remote_mcp_access.dart';
+import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/stdio/stdio_mcp_connection_manager.dart';
@@ -66,6 +68,13 @@ class AgentMcpPage extends ConsumerWidget {
           'MCP',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'MCP 服务器设置',
+            icon: const Icon(LucideIcons.settings, size: 20),
+            onPressed: () => context.push(AppRouter.mcpServerPath),
+          ),
+        ],
       ),
       body: profile == null
           ? Center(
@@ -109,7 +118,7 @@ class AgentMcpPage extends ConsumerWidget {
                           child: Padding(
                             padding: const EdgeInsets.all(24),
                             child: Text(
-                              '没有可接入的 MCP 服务器\n先在 设置 → MCP 服务器 里添加',
+                              '没有可接入的 MCP 服务器\n点右上角进入 MCP 服务器设置添加',
                               textAlign: TextAlign.center,
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: cs.onSurfaceVariant,
