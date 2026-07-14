@@ -16,6 +16,7 @@ class AgentProfile {
     required this.emoji,
     required this.systemPrompt,
     required this.tools,
+    this.mcpServerIds = const {},
     this.workspaceId,
     this.workspaceName,
     this.builtin = false,
@@ -29,6 +30,10 @@ class AgentProfile {
   final String systemPrompt;
 
   final Set<AgentToolGroup> tools;
+
+  /// 勾选接入的外部 MCP 服务器 id（远程 / stdio）；默认不接任何外部
+  /// server，避免工具清单膨胀污染上下文。
+  final Set<String> mcpServerIds;
 
   /// 该智能体绑定的工作区；null = 尚未绑定（在智能体设置里选）。
   final String? workspaceId;
@@ -45,6 +50,7 @@ class AgentProfile {
     String? emoji,
     String? systemPrompt,
     Set<AgentToolGroup>? tools,
+    Set<String>? mcpServerIds,
     Object? workspaceId = _unset,
     Object? workspaceName = _unset,
   }) {
@@ -54,6 +60,7 @@ class AgentProfile {
       emoji: emoji ?? this.emoji,
       systemPrompt: systemPrompt ?? this.systemPrompt,
       tools: tools ?? this.tools,
+      mcpServerIds: mcpServerIds ?? this.mcpServerIds,
       workspaceId: identical(workspaceId, _unset)
           ? this.workspaceId
           : workspaceId as String?,

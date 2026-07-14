@@ -7,7 +7,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/agent_subagent_access.dart';
+import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/app/di/remote_mcp_access.dart';
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
@@ -37,6 +39,7 @@ import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_backend_provider.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
+import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
@@ -45,8 +48,10 @@ import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_supp
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/workspace_context.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/tool_auth_policy.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/stdio/stdio_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart';
 
 part 'agent_runtime_access.g.dart';
@@ -68,18 +73,19 @@ class AgentRuntime {
 
   final Ref Function() _refOf;
 
-  ({AgentLlmClient llm, AgentToolExecutor tools, ApprovalGate approval})
+  Future<({AgentLlmClient llm, AgentToolExecutor tools, ApprovalGate approval})>
       forProfile(
     AgentProfile profile, {
     AgentSessionMode mode = AgentSessionMode.code,
     bool enableSubagents = true,
     String? boundWorkspaceId,
-  }) {
+  }) async {
     final catalog = _catalogFor(
       profile.tools,
       mode: mode,
       enableSubagents: enableSubagents,
     );
+    await _addMcpServerTools(_refOf(), profile, mode, catalog);
     return (
       llm: _GatewayAgentLlmClient(_refOf, profile, catalog.definitions),
       tools: _McpAgentToolExecutor(
@@ -158,6 +164,56 @@ const Set<String> _kReadOnlyToolNames = {
     definitions.add(kSpawnSubagentToolDefinition);
   }
   return (definitions: definitions, routes: routes);
+}
+
+/// 档案勾选的外部 MCP 服务器（远程 / stdio）：在线发现工具并并入目录。
+/// Ask/Plan 只读模式不注入（外部工具无法静态判定副作用，整组不暴露，
+/// 与终端组同策略）；server 连不上静默跳过不阻塞任务；工具名与
+/// 内置工具冲突时内置优先（first-wins）。
+Future<void> _addMcpServerTools(
+  Ref ref,
+  AgentProfile profile,
+  AgentSessionMode mode,
+  ({List<McpToolDefinition> definitions, Map<String, ToolRoute> routes})
+      catalog,
+) async {
+  if (profile.mcpServerIds.isEmpty) return;
+  if (mode == AgentSessionMode.ask || mode == AgentSessionMode.plan) return;
+  List<McpServer> servers;
+  try {
+    servers = await ref.read(mcpServersProvider.future);
+  } catch (_) {
+    return;
+  }
+  for (final server in servers) {
+    if (!server.isActive) continue;
+    if (!profile.mcpServerIds.contains(server.id)) continue;
+    try {
+      if (RemoteMcpConnectionManager.isRemote(server)) {
+        final discovered = await ref
+            .read(remoteMcpConnectionManagerProvider)
+            .listTools(server);
+        for (final tool in discovered) {
+          final exposed = tool.definition.name;
+          if (catalog.routes.containsKey(exposed)) continue;
+          catalog.definitions.add(tool.definition);
+          catalog.routes[exposed] = RemoteToolRoute(server, tool.toolName);
+        }
+      } else if (StdioMcpConnectionManager.isStdio(server)) {
+        final discovered = await ref
+            .read(stdioMcpConnectionManagerProvider)
+            .listTools(server);
+        for (final tool in discovered) {
+          final exposed = tool.definition.name;
+          if (catalog.routes.containsKey(exposed)) continue;
+          catalog.definitions.add(tool.definition);
+          catalog.routes[exposed] = StdioToolRoute(server, tool.toolName);
+        }
+      }
+    } on Object {
+      // 连不上 / 进程拉不起：本次运行跳过该 server。
+    }
+  }
 }
 
 /// 全局思考强度参数（与聊天共用 参数设置 里的档位）：仅取启用中的
@@ -819,6 +875,19 @@ class _PolicyApprovalGate implements ApprovalGate {
       workspaces: workspaces,
     )) {
       return ApprovalRequirement.allow;
+    }
+    // 外部 MCP 工具（远程 / stdio）：外部代码无法静态判定副作用，
+    // Code 模式逐次审批（可用运行级宽限）；auto 模式免审直通。
+    if (route is RemoteToolRoute || route is StdioToolRoute) {
+      if (task.mode == AgentSessionMode.auto) {
+        return ApprovalRequirement.allow;
+      }
+      if (ref
+          .read(agentApprovalRegistryProvider.notifier)
+          .hasTaskGrace(task.id, call.name)) {
+        return ApprovalRequirement.allow;
+      }
+      return ApprovalRequirement.needsUser;
     }
     // auto 模式：任务绑定工作区内的写/执行免审批直通；未绑定工作区
     // 或调用越出绑定 root 时不免审（硬约束，与白名单同级）。

@@ -358,7 +358,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
 
   void forceStop(String taskId) => _tokens[taskId]?.requestCancel();
 
-  void _run(AgentTask task) {
+  Future<void> _run(AgentTask task) async {
     if (state.contains(task.id)) return;
     final token = AgentCancellationToken();
     _tokens[task.id] = token;
@@ -388,7 +388,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           systemPrompt: '',
           tools: AgentToolGroup.values.toSet(),
         );
-    final runtime = ref
+    final runtime = await ref
         .read(agentRuntimeProvider)
         .forProfile(
           profile,
@@ -708,7 +708,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     required AgentSessionMode childMode,
     required AgentCancellationToken childToken,
   }) async {
-    final runtime = ref
+    final runtime = await ref
         .read(agentRuntimeProvider)
         .forProfile(
           childProfile,

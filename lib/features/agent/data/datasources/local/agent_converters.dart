@@ -30,6 +30,10 @@ class AgentProfileConverter extends TypeConverter<AgentProfile, String> {
         for (final name in (json['tools'] as List<dynamic>? ?? const []))
           AgentToolGroup.values.byName(name as String),
       },
+      mcpServerIds: {
+        for (final id in (json['mcpServerIds'] as List<dynamic>? ?? const []))
+          id as String,
+      },
       workspaceId: json['workspaceId'] as String?,
       workspaceName: json['workspaceName'] as String?,
       builtin: json['builtin'] as bool? ?? false,
@@ -43,6 +47,7 @@ class AgentProfileConverter extends TypeConverter<AgentProfile, String> {
         'emoji': value.emoji,
         'systemPrompt': value.systemPrompt,
         'tools': [for (final t in value.tools) t.name],
+        'mcpServerIds': [...value.mcpServerIds],
         'workspaceId': value.workspaceId,
         'workspaceName': value.workspaceName,
         'builtin': value.builtin,
