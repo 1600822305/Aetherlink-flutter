@@ -114,6 +114,8 @@ class _McpServerEditPageState extends ConsumerState<McpServerEditPage> {
 
   void _submit() {
     if (!_canSubmit) return;
+    // 先收键盘再 pop：带焦点返回时键盘收起动画会拖慢路由转场。
+    FocusManager.instance.primaryFocus?.unfocus();
     final argsText = _args.text.trim();
     final base =
         widget.initial ??
@@ -166,7 +168,10 @@ class _McpServerEditPageState extends ConsumerState<McpServerEditPage> {
             constraints: const BoxConstraints.tightFor(width: 40, height: 40),
             icon: const Icon(LucideIcons.arrowLeft, size: 24),
             color: cs.primary,
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              FocusManager.instance.primaryFocus?.unfocus();
+              Navigator.of(context).pop();
+            },
           ),
         ),
         titleTextStyle: theme.textTheme.titleLarge?.copyWith(
