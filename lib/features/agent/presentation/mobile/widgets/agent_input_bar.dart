@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/model_selector_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
@@ -13,7 +12,7 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/ag
 
 /// 底部输入区（UI 稿输入区，已拍板）：与普通聊天输入框同款视觉——
 /// 圆角纸面卡片，上层无边框文本区域，下层单独一行按钮工具条
-/// （左：＋附件、模式快切 Code/Ask/Plan、模型 chip；右：发送/中断变形按钮，
+/// （左：＋附件、模式快切 Code/Ask/Plan、思考档位；右：发送/中断变形按钮，
 /// §五打断交互）。
 class AgentInputBar extends ConsumerStatefulWidget {
   const AgentInputBar({this.task, super.key});
@@ -500,19 +499,6 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                         ),
                         const SizedBox(width: 6),
                         _Chip(
-                          icon: LucideIcons.brain,
-                          // 智能体跟随 App 级当前模型（引擎每轮现取），
-                          // chip 实时显示选中项而非任务创建时的快照。
-                          label:
-                              '${ref.watch(appCurrentModelProvider).value?.model.name ?? '选择模型'} ▾',
-                          maxWidth: 150,
-                          onTap: () {
-                            FocusManager.instance.primaryFocus?.unfocus();
-                            showAppModelSelectorDialog(context);
-                          },
-                        ),
-                        const SizedBox(width: 6),
-                        _Chip(
                           icon: LucideIcons.lightbulb,
                           // 与聊天共用全局思考档位（参数设置
                           // reasoningEffort），引擎每轮现取。单一图标，
@@ -641,7 +627,6 @@ class _Chip extends StatelessWidget {
     this.label,
     this.tooltip,
     this.color,
-    this.maxWidth,
   });
 
   final IconData icon;
@@ -655,9 +640,6 @@ class _Chip extends StatelessWidget {
 
   /// 非空时用作醒目强调色（如 auto 模式的琥珀色）。
   final Color? color;
-
-  /// 非空时限制 chip 总宽，超长标签省略号截断（如模型名）。
-  final double? maxWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -701,14 +683,7 @@ class _Chip extends StatelessWidget {
         ),
       ),
     );
-    final wrapped = tooltip == null
-        ? chip
-        : Tooltip(message: tooltip!, child: chip);
-    final limit = maxWidth;
-    if (limit == null) return wrapped;
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: limit),
-      child: wrapped,
-    );
+    if (tooltip == null) return chip;
+    return Tooltip(message: tooltip!, child: chip);
   }
 }

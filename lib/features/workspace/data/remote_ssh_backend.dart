@@ -549,7 +549,7 @@ class RemoteSshBackend extends WorkspaceBackend {
       final attrs = await sftp.stat(from);
       if (attrs.isDirectory) {
         await _copyTree(sftp, from, to, false);
-        await _deleteTree(sftp, from);
+        await _deleteTree(from);
       } else {
         await _copyFile(sftp, from, to, false);
         await sftp.remove(from);

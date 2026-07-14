@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/app/di/model_selector_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
@@ -84,6 +86,7 @@ class AgentHomePage extends ConsumerWidget {
         // 三点下拉菜单（决策 30）：智能体专属能力入口。当前有
         // 「技能」「MCP」，记忆/工作流/rules 后续逐项加入。
         actions: [
+          const _TopBarModelSelector(),
           Builder(
             builder: (context) => PopupMenuButton<String>(
               tooltip: '更多',
@@ -166,6 +169,58 @@ class AgentHomePage extends ConsumerWidget {
                 ),
               ),
             ),
+    );
+  }
+}
+
+/// 顶栏模型选择器（话题名右侧）：紧凑 chip，实时显示 App 级当前模型，
+/// 点击弹模型选择器（智能体引擎每轮现取当前模型）。
+class _TopBarModelSelector extends ConsumerWidget {
+  const _TopBarModelSelector();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final name =
+        ref.watch(appCurrentModelProvider).value?.model.name ?? '选择模型';
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 132),
+        child: Material(
+          color: cs.onSurface.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            onTap: () => showAppModelSelectorDialog(context),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    LucideIcons.brain,
+                    size: 13,
+                    color: cs.onSurface.withValues(alpha: 0.7),
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: cs.onSurface.withValues(alpha: 0.8),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
