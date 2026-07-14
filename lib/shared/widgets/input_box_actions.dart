@@ -37,6 +37,11 @@ abstract class InputBoxActions {
   /// Whether tapping [action] does anything yet. A `false` action renders at
   /// full fidelity but is non-interactive.
   bool isEnabled(InputBoxAction action);
+
+  /// Optional per-action glyph override for buttons whose icon reflects
+  /// run-time state (e.g. 思考程度 shows the current effort level's icon).
+  /// `null` keeps the static catalog glyph.
+  IconData? iconOverride(InputBoxAction action);
 }
 
 /// The inert port used by hosts with no wired behavior — the appearance
@@ -53,4 +58,7 @@ class NoInputBoxActions implements InputBoxActions {
 
   @override
   bool isEnabled(InputBoxAction action) => false;
+
+  @override
+  IconData? iconOverride(InputBoxAction action) => null;
 }

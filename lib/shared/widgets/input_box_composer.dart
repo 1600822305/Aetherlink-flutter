@@ -370,12 +370,14 @@ class _Toolbar extends StatelessWidget {
     final action = inputBoxButtonAction(id)!;
     final active = actions.isActive(action);
     final restColor = inputBoxToolbarRestColor(id, iconColor);
+    final color = active
+        ? inputBoxToolbarActiveColor(id, restColor)
+        : restColor;
+    final override = actions.iconOverride(action);
     return _ToolbarButton(
-      icon: inputBoxToolbarIcon(
-        id,
-        color: active ? inputBoxToolbarActiveColor(id, restColor) : restColor,
-        active: active,
-      ),
+      icon: override != null
+          ? Icon(override, size: 20, color: color)
+          : inputBoxToolbarIcon(id, color: color, active: active),
       tooltip: inputBoxToolbarTooltip(id, active: active),
       active: active,
       onPressed: _onPressed(id, context),

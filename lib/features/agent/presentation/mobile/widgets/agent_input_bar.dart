@@ -458,8 +458,8 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                             widget.task!.status == AgentTaskStatus.draft
                         ? '输入指令开始任务…'
                         : widget.task!.status == AgentTaskStatus.waitingInput
-                            ? '点选上方建议答案，或输入自定义回答…'
-                            : '追加指令…',
+                        ? '点选上方建议答案，或输入自定义回答…'
+                        : '追加指令…',
                     hintStyle: const TextStyle(fontSize: 16, height: 1.4),
                     border: InputBorder.none,
                     isDense: true,
@@ -499,10 +499,10 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                         ),
                         const SizedBox(width: 6),
                         _Chip(
-                          icon: LucideIcons.lightbulb,
+                          icon: appReasoningEffortIcon(ref),
                           // 与聊天共用全局思考档位（参数设置
-                          // reasoningEffort），引擎每轮现取。单一图标，
-                          // 档位靠 tooltip 展示，不占输入行宽度。
+                          // reasoningEffort），引擎每轮现取。图标随
+                          // 档位变化，档位靠 tooltip 展示，不占输入行宽度。
                           tooltip: '思考 ${appReasoningEffortLabel(ref)}',
                           onTap: () {
                             FocusManager.instance.primaryFocus?.unfocus();

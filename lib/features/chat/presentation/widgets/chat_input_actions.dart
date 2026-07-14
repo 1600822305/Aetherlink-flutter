@@ -9,6 +9,7 @@ import 'package:aetherlink_flutter/features/chat/application/composer_attachment
 import 'package:aetherlink_flutter/features/chat/application/composer_attachments_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/input_modes_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/mcp_tools_controller.dart';
+import 'package:aetherlink_flutter/features/chat/application/parameter_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/mounted_knowledge_bases_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/multi_model_mentions_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
@@ -21,6 +22,7 @@ import 'package:aetherlink_flutter/features/chat/presentation/widgets/reasoning_
 import 'package:aetherlink_flutter/shared/domain/input_box_settings.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_actions.dart';
+import 'package:aetherlink_flutter/shared/widgets/reasoning_effort_icons.dart';
 import 'package:aetherlink_flutter/shared/widgets/input_box_menu_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/search_settings_sheet.dart';
 import 'package:aetherlink_flutter/features/voice/presentation/widgets/voice_input_modal.dart';
@@ -64,6 +66,17 @@ class ChatInputActions implements InputBoxActions {
       _ref.read(mountedKnowledgeBasesProvider).isNotEmpty,
     _ => false,
   };
+
+  /// 思考程度按钮的图标跟随当前档位（关闭时用灭灯图标）。
+  @override
+  IconData? iconOverride(InputBoxAction action) {
+    if (action != InputBoxAction.reasoningEffort) return null;
+    final params = _ref.read(parameterSettingsControllerProvider);
+    final value =
+        (params.getParameterValue('reasoningEffort') as String?) ?? 'medium';
+    final enabled = params.isParameterEnabled('reasoningEffort');
+    return reasoningEffortIcon(enabled ? value : 'off');
+  }
 
   /// Every action the chat host knows about is interactive: it either runs (open
   /// a menu / toggle a mode / run a local action) or explains itself with 即将支持.
@@ -204,16 +217,12 @@ class ChatInputActions implements InputBoxActions {
     final picker = _ref.read(imagePickerApiProvider);
     try {
       final picked = fromCamera
-          ? [
-              if (await picker.pickFromCamera() case final image?) image,
-            ]
+          ? [if (await picker.pickFromCamera() case final image?) image]
           : await picker.pickMultipleFromGallery();
       if (picked.isEmpty) return;
       final attachments = _ref.read(composerAttachmentsProvider.notifier);
       for (final image in picked) {
-        attachments.add(
-          imageAttachment(name: image.name, bytes: image.bytes),
-        );
+        attachments.add(imageAttachment(name: image.name, bytes: image.bytes));
       }
     } catch (_) {
       if (context.mounted) _snack(context, '选择图片失败');

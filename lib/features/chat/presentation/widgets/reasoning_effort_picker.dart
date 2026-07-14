@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/chat/application/parameter_settings_controller.dart';
 import 'package:aetherlink_flutter/shared/domain/parameter_metadata.dart';
 import 'package:aetherlink_flutter/shared/domain/reasoning_model_detection.dart';
+import 'package:aetherlink_flutter/shared/widgets/reasoning_effort_icons.dart';
 
 /// Shows the reasoning-effort picker bottom sheet and writes the selected level
 /// back to [parameterSettingsControllerProvider].
@@ -26,8 +26,7 @@ void showReasoningEffortPicker(BuildContext context, WidgetRef ref) {
       currentValue: currentValue,
       options: options,
       onChanged: (value) {
-        final notifier =
-            ref.read(parameterSettingsControllerProvider.notifier);
+        final notifier = ref.read(parameterSettingsControllerProvider.notifier);
         notifier.setParameterValue('reasoningEffort', value);
         notifier.setParameterEnabled(
           'reasoningEffort',
@@ -126,13 +125,11 @@ class _ReasoningEffortPickerState extends State<_ReasoningEffortPicker> {
             ),
             const SizedBox(height: 20),
 
-            // Current level icon + label
-            _ReasoningIcon(
-              value: selected.value.toString(),
-              color: (selected.value == 'none' || selected.value == 'off')
-                  ? theme.colorScheme.onSurface
-                  : theme.colorScheme.primary,
+            // Current level icon + label（单色，跟随主题）
+            Icon(
+              reasoningEffortIcon(selected.value.toString()),
               size: 32,
+              color: theme.colorScheme.onSurface,
             ),
             const SizedBox(height: 8),
             Text(
@@ -149,16 +146,17 @@ class _ReasoningEffortPickerState extends State<_ReasoningEffortPicker> {
               SliderTheme(
                 data: SliderTheme.of(context).copyWith(
                   trackHeight: 4,
-                  thumbShape:
-                      const RoundSliderThumbShape(enabledThumbRadius: 10),
-                  overlayShape:
-                      const RoundSliderOverlayShape(overlayRadius: 18),
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 10,
+                  ),
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 18,
+                  ),
                   tickMarkShape: const RoundSliderTickMarkShape(
                     tickMarkRadius: 3,
                   ),
                   activeTickMarkColor: theme.colorScheme.primary,
-                  inactiveTickMarkColor:
-                      theme.colorScheme.outlineVariant,
+                  inactiveTickMarkColor: theme.colorScheme.outlineVariant,
                 ),
                 child: Slider(
                   value: _selectedIndex.toDouble(),
@@ -208,6 +206,7 @@ class _ReasoningScale extends StatelessWidget {
               onTap: () => onSelect(i),
               behavior: HitTestBehavior.opaque,
               child: _ScaleTick(
+                value: options[i].value.toString(),
                 label: options[i].label,
                 selected: i == selectedIndex,
                 theme: theme,
@@ -221,21 +220,25 @@ class _ReasoningScale extends StatelessWidget {
 
 class _ScaleTick extends StatelessWidget {
   const _ScaleTick({
+    required this.value,
     required this.label,
     required this.selected,
     required this.theme,
   });
 
+  final String value;
   final String label;
   final bool selected;
   final ThemeData theme;
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        selected ? theme.colorScheme.primary : theme.colorScheme.outlineVariant;
+    // 单色适配黑白主题：选中用 onSurface，未选中用次级灰。
+    final iconColor = selected
+        ? theme.colorScheme.onSurface
+        : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6);
     final textColor = selected
-        ? theme.colorScheme.primary
+        ? theme.colorScheme.onSurface
         : theme.colorScheme.onSurfaceVariant;
 
     return AnimatedContainer(
@@ -244,26 +247,18 @@ class _ScaleTick extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
       decoration: BoxDecoration(
         color: selected
-            ? theme.colorScheme.primary.withValues(alpha: 0.08)
+            ? theme.colorScheme.onSurface.withValues(alpha: 0.06)
             : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: selected ? color : Colors.transparent,
+          color: selected ? theme.colorScheme.outline : Colors.transparent,
           width: selected ? 1.5 : 1,
         ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: selected ? 20 : 16,
-            height: selected ? 6 : 4,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(999),
-            ),
-          ),
+          Icon(reasoningEffortIcon(value), size: 16, color: iconColor),
           const SizedBox(height: 6),
           Text(
             label,
@@ -279,45 +274,5 @@ class _ScaleTick extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-// ─── Icon helper ─────────────────────────────────────────────────────────────
-
-class _ReasoningIcon extends StatelessWidget {
-  const _ReasoningIcon({
-    required this.value,
-    required this.color,
-    this.size = 24,
-  });
-
-  final String value;
-  final Color color;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Icon(_iconFor(value), size: size, color: color);
-  }
-
-  static IconData _iconFor(String value) {
-    switch (value) {
-      case 'none':
-      case 'off':
-        return LucideIcons.lightbulbOff;
-      case 'auto':
-      case 'default':
-        return LucideIcons.lightbulb;
-      case 'minimal':
-      case 'low':
-        return LucideIcons.brain;
-      case 'medium':
-        return LucideIcons.brainCircuit;
-      case 'high':
-      case 'xhigh':
-        return LucideIcons.sparkles;
-      default:
-        return LucideIcons.lightbulb;
-    }
   }
 }
