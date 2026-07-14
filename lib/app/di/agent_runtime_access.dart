@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_appro
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_control_tools.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart' show kToolAskUser;
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_system_prompt.dart';
@@ -537,23 +538,64 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
 /// 用户消息。计划/状态事件不进消息（计划走系统提示置尾）。
 List<LlmMessage> _replayMessages(List<AgentEvent> events) {
   final messages = <LlmMessage>[];
-  for (final event in foldCompactedEvents(events)) {
+  final folded = foldCompactedEvents(events);
+  // 提问索引建在折叠后的事件上：提问若已被压缩折叠，其回答退化为
+  // 普通用户消息，避免回放出没有前置 tool_call 的 tool 结果。
+  final questionsById = {
+    for (final event in folded.whereType<UserQuestionEvent>())
+      event.id: event,
+  };
+  for (final event in folded) {
     switch (event) {
       case UserMessageEvent():
-        messages.add(
-          LlmMessage(
-            role: MessageRole.user,
-            content: _userMessageContent(event),
-            images: _userMessageImages(event),
-          ),
-        );
+        final question = questionsById[event.replyToQuestionId];
+        if (question?.toolCallId != null) {
+          messages.add(
+            LlmMessage(
+              role: MessageRole.user,
+              content: event.questionAnswers.isEmpty
+                  ? event.text
+                  : formatQuestionAnswers(
+                      question!,
+                      event.questionAnswers,
+                      fallback: event.text,
+                    ),
+              toolCallId: question!.toolCallId,
+              toolName: kToolAskUser,
+            ),
+          );
+        } else {
+          messages.add(
+            LlmMessage(
+              role: MessageRole.user,
+              content: _userMessageContent(event),
+              images: _userMessageImages(event),
+            ),
+          );
+        }
       case UserQuestionEvent():
-        messages.add(
-          LlmMessage(
-            role: MessageRole.assistant,
-            content: _questionText(event),
-          ),
-        );
+        if (event.toolCallId != null) {
+          messages.add(
+            LlmMessage(
+              role: MessageRole.assistant,
+              content: '',
+              toolCalls: [
+                LlmToolCall(
+                  id: event.toolCallId!,
+                  name: kToolAskUser,
+                  arguments: event.argsJson ?? _questionArgsJson(event),
+                ),
+              ],
+            ),
+          );
+        } else {
+          messages.add(
+            LlmMessage(
+              role: MessageRole.assistant,
+              content: _questionText(event),
+            ),
+          );
+        }
       case AssistantTextEvent():
         if (event.text.isNotEmpty) {
           messages.add(
@@ -632,7 +674,11 @@ String _compactionTranscript(List<AgentEvent> events) {
   for (final event in events) {
     switch (event) {
       case UserMessageEvent():
-        lines.add('[用户] ${clip(event.text)}');
+        lines.add(
+          event.replyToQuestionId == null
+              ? '[用户] ${clip(event.text)}'
+              : '[用户回答] ${clip(event.text)}',
+        );
       case UserQuestionEvent():
         lines.add('[助手提问] ${clip(_questionText(event))}');
       case AssistantTextEvent():
@@ -654,9 +700,28 @@ String _compactionTranscript(List<AgentEvent> events) {
 }
 
 /// ask_user 提问的文本形态（重放/压缩共用）：问题 + 选项清单。
-String _questionText(UserQuestionEvent event) => event.options.isEmpty
-    ? event.question
-    : '${event.question}\n可选：${event.options.join(' / ')}';
+String _questionText(UserQuestionEvent event) => [
+      for (var i = 0; i < event.questions.length; i++)
+        [
+          if (event.questions.length > 1) '${i + 1}. ',
+          event.questions[i].question,
+          if (event.questions[i].options.isNotEmpty)
+            '\n可选：${event.questions[i].options.join(' / ')}',
+          if (event.questions[i].allowMultiple) '\n（可多选）',
+        ].join(),
+    ].join('\n\n');
+
+/// 旧持久化提问缺原始参数时按当前协议重建 args JSON。
+String _questionArgsJson(UserQuestionEvent event) => jsonEncode({
+      'questions': [
+        for (final question in event.questions)
+          {
+            'question': question.question,
+            'options': question.options,
+            'allow_multiple': question.allowMultiple,
+          },
+      ],
+    });
 
 String _toolResultText(ToolCallEvent event) => switch (event.state) {
       AgentToolCallState.success =>

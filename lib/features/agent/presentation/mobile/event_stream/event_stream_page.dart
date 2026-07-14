@@ -72,11 +72,12 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 用户发送 → 显式回底（事件流里多出新的用户消息）。
+    // 用户发送或智能体提问 → 显式回底，确保交互卡立即进入视口。
     ref.listen(agentTaskEventsProvider(widget.task.id), (prev, next) {
-      final before =
-          prev?.value?.whereType<UserMessageEvent>().length ?? 0;
-      final after = next.value?.whereType<UserMessageEvent>().length ?? 0;
+      final before = (prev?.value?.whereType<UserMessageEvent>().length ?? 0) +
+          (prev?.value?.whereType<UserQuestionEvent>().length ?? 0);
+      final after = (next.value?.whereType<UserMessageEvent>().length ?? 0) +
+          (next.value?.whereType<UserQuestionEvent>().length ?? 0);
       if (after > before) _autoScroll.pinToBottom();
     });
 

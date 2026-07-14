@@ -171,11 +171,32 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       return;
     }
 
+    if (task.status == AgentTaskStatus.waitingInput) {
+      // 等待回答：输入框只承接单问题的快捷回答，多问题在提问卡里逐项答。
+      if (attachments.isNotEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('请先在提问卡中回答；回答暂不支持附件')));
+        return;
+      }
+      try {
+        await runner.answerLatestUserQuestion(task, text);
+        if (!mounted) return;
+        clearInput();
+      } on StateError catch (error) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message.toString())));
+      }
+      return;
+    }
+
     final executing =
         task.status == AgentTaskStatus.running ||
         task.status == AgentTaskStatus.waitingApproval;
     if (!executing) {
-      // paused/waitingInput/done/failed/cancelled：落消息并续跑（带上
+      // paused/done/failed/cancelled：落消息并续跑（带上
       // chips 当前模式，中途切模式在这里生效）。
       clearInput();
       await runner.sendMessage(
@@ -437,7 +458,9 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                         widget.task == null ||
                             widget.task!.status == AgentTaskStatus.draft
                         ? '输入指令开始任务…'
-                        : '追加指令…',
+                        : widget.task!.status == AgentTaskStatus.waitingInput
+                            ? '也可以在这里输入单个问题的回答…'
+                            : '追加指令…',
                     hintStyle: const TextStyle(fontSize: 16, height: 1.4),
                     border: InputBorder.none,
                     isDense: true,
@@ -536,8 +559,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                           ),
                         ),
                       )
-                    else if (widget.task?.status == AgentTaskStatus.paused ||
-                        widget.task?.status == AgentTaskStatus.waitingInput)
+                    else if (widget.task?.status == AgentTaskStatus.paused)
                       IconButton(
                         onPressed: () {
                           final task = widget.task;
@@ -549,6 +571,22 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                         },
                         icon: Icon(
                           LucideIcons.play,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        padding: const EdgeInsets.all(6),
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                      )
+                    else if (widget.task?.status ==
+                        AgentTaskStatus.waitingInput)
+                      IconButton(
+                        onPressed: null,
+                        icon: Icon(
+                          LucideIcons.circleHelp,
                           size: 18,
                           color: Theme.of(context).colorScheme.primary,
                         ),

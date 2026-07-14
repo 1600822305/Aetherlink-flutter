@@ -32,21 +32,36 @@ const List<McpToolDefinition> kAgentControlToolDefinitions = [
   ),
   McpToolDefinition(
     name: kToolAskUser,
-    description: '向用户提问并暂停任务等待回复。仅在缺少关键信息、'
-        '或决策不可逆且无法自行判断时使用。'
-        '若问题有少数几个明确的候选答案，请通过 options 提供可点选的选项。',
+    description: '向用户发起结构化提问并暂停任务等待回复。仅在缺少关键信息、'
+        '或决策不可逆且无法自行判断时使用。优先一次只问一个问题；'
+        '候选答案应提供为可点选选项，用户始终可以输入自定义回答。',
     inputSchema: {
       'type': 'object',
       'properties': {
-        'question': {'type': 'string', 'description': '要问用户的问题'},
-        'options': {
+        'questions': {
           'type': 'array',
-          'items': {'type': 'string'},
-          'description': '可选的预设回复选项（2-5 个，用户可直接点选；'
-              '开放式问题不要提供）',
+          'minItems': 1,
+          'maxItems': 4,
+          'description': '要用户回答的问题列表。问题不相关时不要批量提问。',
+          'items': {
+            'type': 'object',
+            'properties': {
+              'question': {'type': 'string', 'description': '简洁、可直接回答的问题'},
+              'options': {
+                'type': 'array',
+                'items': {'type': 'string'},
+                'description': '可点选的候选答案；开放式问题传空数组',
+              },
+              'allow_multiple': {
+                'type': 'boolean',
+                'description': '是否允许同时选择多个候选答案，默认 false',
+              },
+            },
+            'required': ['question', 'options'],
+          },
         },
       },
-      'required': ['question'],
+      'required': ['questions'],
     },
   ),
   McpToolDefinition(

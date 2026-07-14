@@ -13,16 +13,19 @@ abstract class AgentEventStore {
     String text, {
     bool queued = false,
     List<AgentUserAttachment> attachments = const [],
+    String? replyToQuestionId,
+    List<AgentUserQuestionAnswer> questionAnswers = const [],
   });
 
   /// 安全点消费排队消息：queued=true → false，正式进上下文（L3）。
   Future<void> consumeQueuedUserMessages(String taskId);
 
-  /// ask_user 提问：问题 + 可选预设选项，UI 渲染为提问卡。
+  /// ask_user 提问：结构化问题列表，UI 渲染为可交互提问卡。
   Future<UserQuestionEvent> appendUserQuestion(
     String taskId,
-    String question, {
-    List<String> options = const [],
+    List<AgentUserQuestion> questions, {
+    String? toolCallId,
+    String? argsJson,
   });
 
   Future<AssistantTextEvent> appendAssistantText(
@@ -136,6 +139,8 @@ class DriftAgentEventStore implements AgentEventStore {
     String text, {
     bool queued = false,
     List<AgentUserAttachment> attachments = const [],
+    String? replyToQuestionId,
+    List<AgentUserQuestionAnswer> questionAnswers = const [],
   }) async {
     final event = UserMessageEvent(
       id: _newId('um'),
@@ -144,6 +149,8 @@ class DriftAgentEventStore implements AgentEventStore {
       text: text,
       queued: queued,
       attachments: attachments,
+      replyToQuestionId: replyToQuestionId,
+      questionAnswers: questionAnswers,
     );
     await _dao.upsertEvents(taskId, [event]);
     return event;
@@ -155,7 +162,15 @@ class DriftAgentEventStore implements AgentEventStore {
     final consumed = [
       for (final e in events)
         if (e is UserMessageEvent && e.queued)
-          UserMessageEvent(id: e.id, seq: e.seq, at: e.at, text: e.text),
+          UserMessageEvent(
+            id: e.id,
+            seq: e.seq,
+            at: e.at,
+            text: e.text,
+            attachments: e.attachments,
+            replyToQuestionId: e.replyToQuestionId,
+            questionAnswers: e.questionAnswers,
+          ),
     ];
     if (consumed.isNotEmpty) {
       await _dao.upsertEvents(taskId, consumed);
@@ -165,15 +180,17 @@ class DriftAgentEventStore implements AgentEventStore {
   @override
   Future<UserQuestionEvent> appendUserQuestion(
     String taskId,
-    String question, {
-    List<String> options = const [],
+    List<AgentUserQuestion> questions, {
+    String? toolCallId,
+    String? argsJson,
   }) async {
     final event = UserQuestionEvent(
       id: _newId('uq'),
       seq: await _nextSeq(taskId),
       at: DateTime.now(),
-      question: question,
-      options: options,
+      questions: questions,
+      toolCallId: toolCallId,
+      argsJson: argsJson,
     );
     await _dao.upsertEvents(taskId, [event]);
     return event;

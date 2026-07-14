@@ -260,11 +260,14 @@ class AgentEngine {
             continue;
           }
           if (call.name == kToolAskUser) {
-            final question = _stringArg(call, 'question') ?? '需要你的输入';
-            await store.appendUserQuestion(current.id, question,
-                options: _stringListArg(call, 'options'));
+            final questions = _parseUserQuestions(call);
+            await store.appendUserQuestion(current.id, questions,
+                toolCallId: call.id, argsJson: call.argsJson);
+            final summary = questions.length == 1
+                ? questions.single.question
+                : '${questions.length} 个问题';
             current = await transition(
-                AgentTaskStatus.waitingInput, '等待回答：$question');
+                AgentTaskStatus.waitingInput, '等待回答：$summary');
             return;
           }
           if (call.name == kToolFinishTask) {
@@ -487,17 +490,54 @@ class AgentEngine {
     }
   }
 
-  List<String> _stringListArg(AgentToolCallRequest call, String key) {
+  List<AgentUserQuestion> _parseUserQuestions(AgentToolCallRequest call) {
     try {
       final json = jsonDecode(call.argsJson) as Map<String, dynamic>;
-      final list = json[key] as List<dynamic>? ?? const [];
-      return [
-        for (final item in list)
-          if (item is String && item.trim().isNotEmpty) item.trim(),
-      ];
+      final rawQuestions = json['questions'];
+      if (rawQuestions is List<dynamic>) {
+        final questions = <AgentUserQuestion>[];
+        for (final raw in rawQuestions.take(4)) {
+          if (raw is! Map<String, dynamic>) continue;
+          final text = (raw['question'] as String? ?? '').trim();
+          if (text.isEmpty) continue;
+          questions.add(
+            AgentUserQuestion(
+              question: text,
+              options: _trimmedStrings(raw['options']),
+              allowMultiple: raw['allow_multiple'] as bool? ?? false,
+            ),
+          );
+        }
+        if (questions.isNotEmpty) return questions;
+      }
+
+      // 兼容旧模型缓存或历史工具定义发出的单问题参数。
+      final legacyQuestion = (json['question'] as String? ?? '').trim();
+      if (legacyQuestion.isNotEmpty) {
+        return [
+          AgentUserQuestion(
+            question: legacyQuestion,
+            options: _trimmedStrings(json['options']),
+            allowMultiple: json['allow_multiple'] as bool? ?? false,
+          ),
+        ];
+      }
     } catch (_) {
-      return const [];
+      // 解析失败时仍落一个可回答的问题，避免任务挂起但 UI 无内容。
     }
+    return const [AgentUserQuestion(question: '需要你的输入')];
+  }
+
+  static List<String> _trimmedStrings(Object? raw) {
+    if (raw is! List<dynamic>) return const [];
+    final result = <String>[];
+    for (final item in raw) {
+      if (item is! String) continue;
+      final normalized = item.trim();
+      if (normalized.isEmpty || result.contains(normalized)) continue;
+      result.add(normalized);
+    }
+    return result;
   }
 }
 
