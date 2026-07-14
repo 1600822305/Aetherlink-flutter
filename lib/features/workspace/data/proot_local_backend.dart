@@ -336,10 +336,22 @@ class ProotLocalBackend extends WorkspaceBackend {
   Future<void> _rename(String fromGuest, String toGuest) async {
     final fromHost = await _hostPath(fromGuest);
     final toHost = await _hostPath(toGuest);
-    if (FileSystemEntity.isDirectorySync(fromHost)) {
-      await Directory(fromHost).rename(toHost);
-    } else {
-      await File(fromHost).rename(toHost);
+    final isDir = FileSystemEntity.isDirectorySync(fromHost);
+    try {
+      if (isDir) {
+        await Directory(fromHost).rename(toHost);
+      } else {
+        await File(fromHost).rename(toHost);
+      }
+    } on FileSystemException {
+      // rename 不能跨文件系统（如共享存储 <-> 应用私有目录），降级为复制+删除。
+      if (isDir) {
+        await _copyTree(fromHost, toHost);
+        await Directory(fromHost).delete(recursive: true);
+      } else {
+        await File(fromHost).copy(toHost);
+        await File(fromHost).delete();
+      }
     }
   }
 
