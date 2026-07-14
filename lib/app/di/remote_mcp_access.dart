@@ -13,4 +13,4 @@
 library;
 
 export 'package:aetherlink_flutter/features/chat/application/chat_providers.dart'
-    show remoteMcpConnectionManagerProvider;
+    show remoteMcpConnectionManagerProvider, stdioMcpConnectionManagerProvider;

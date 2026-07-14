@@ -112,6 +112,14 @@ class RemoteToolRoute extends ToolRoute {
   final McpServer server;
 }
 
+/// A tool executed over a live stdio connection to [server] (a
+/// workspace-spawned child process) via `StdioMcpConnectionManager`.
+class StdioToolRoute extends ToolRoute {
+  const StdioToolRoute(this.server, super.toolName);
+
+  final McpServer server;
+}
+
 // ── Web Search tool definition ──────────────────────────────────────────────
 
 const String kBuiltinWebSearchToolName = 'builtin_web_search';

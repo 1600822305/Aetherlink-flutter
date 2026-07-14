@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/settings/application/mcp_servers_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_server_detail_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_stdio_panel.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/config/builtin_mcp_servers.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
@@ -35,7 +36,7 @@ class _McpServerSettingsPageState extends ConsumerState<McpServerSettingsPage>
   static const String _title = 'MCP 服务器';
 
   late final TabController _tabController = TabController(
-    length: 3,
+    length: 4,
     vsync: this,
   )..addListener(_onTabChanged);
 
@@ -125,6 +126,14 @@ class _McpServerSettingsPageState extends ConsumerState<McpServerSettingsPage>
                 ),
               ),
             ),
+          if (_index == 3)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _AddFilledButton(
+                accent: kStdioAccent,
+                onPressed: () => openAddStdioServer(context, ref),
+              ),
+            ),
         ],
       ),
       body: Column(
@@ -133,7 +142,12 @@ class _McpServerSettingsPageState extends ConsumerState<McpServerSettingsPage>
           Expanded(
             child: InstantSwitchTabView(
               controller: _tabController,
-              children: const [_ExternalTab(), _BuiltinTab(), _AssistantTab()],
+              children: const [
+                _ExternalTab(),
+                _BuiltinTab(),
+                _AssistantTab(),
+                McpStdioTab(),
+              ],
             ),
           ),
         ],
@@ -300,10 +314,14 @@ class _TabBarHeader extends StatelessWidget {
           fontSize: 13,
           fontWeight: FontWeight.w500,
         ),
+        // 4 个带图标的 tab 寄宿在窄屏会挤，标签改短 + 可滚动兼顾完整性。
+        isScrollable: true,
+        tabAlignment: TabAlignment.fill,
         tabs: const [
-          _IconTab(icon: LucideIcons.server, label: '外部服务器'),
-          _IconTab(icon: LucideIcons.wrench, label: '内置工具'),
-          _IconTab(icon: LucideIcons.bot, label: '智能助手'),
+          _IconTab(icon: LucideIcons.server, label: '外部'),
+          _IconTab(icon: LucideIcons.wrench, label: '内置'),
+          _IconTab(icon: LucideIcons.bot, label: '助手'),
+          _IconTab(icon: LucideIcons.terminal, label: 'stdio'),
         ],
       ),
     );
@@ -347,9 +365,14 @@ class _ExternalTab extends ConsumerWidget {
         ref.watch(mcpServersProvider).asData?.value ?? const <McpServer>[];
     // The 外部服务器 tab is every configured server whose name is not in the
     // built-in catalog (port of `externalServers = servers.filter(s =>
-    // !isBuiltinServer(s.name))`); added built-ins live under their own tabs.
+    // !isBuiltinServer(s.name))`); added built-ins live under their own tabs,
+    // stdio servers under the stdio（移动端）tab.
     final external = servers
-        .where((s) => !isBuiltinMcpServerName(s.name))
+        .where(
+          (s) =>
+              !isBuiltinMcpServerName(s.name) &&
+              s.type != McpServerType.stdio,
+        )
         .toList();
 
     return ListView(

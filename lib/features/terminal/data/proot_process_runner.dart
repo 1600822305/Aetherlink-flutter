@@ -105,6 +105,18 @@ class ProotProcessRunner {
     );
   }
 
+  /// 启动 [command] 为长驻**无 PTY** 子进程（stdio MCP server 等协议子进程
+  /// 用）：stdin/stdout/stderr 三路分离、无回显无 CR/LF 翻译，调用方自管
+  /// 生命周期。
+  Future<ProotProcessSession> startProcess(ProotCommand command) async {
+    final process = await Process.start(
+      command.executable,
+      command.arguments,
+      environment: command.environment,
+    );
+    return ProotProcessSession._(process);
+  }
+
   /// 在真实 PTY 上启动 [command]（交互式 shell 用）。
   Future<ProotPtySession> startPty(
     ProotCommand command, {
@@ -118,6 +130,30 @@ class ProotProcessRunner {
         rows: rows,
         columns: columns,
       ));
+}
+
+/// 长驻无 PTY 子进程的中立包装（见 [ProotProcessRunner.startProcess]）。
+class ProotProcessSession {
+  ProotProcessSession._(this._process) {
+    unawaited(_process.exitCode.then((code) => _exitCode = code));
+  }
+
+  final Process _process;
+  int? _exitCode;
+
+  Stream<List<int>> get stdout => _process.stdout;
+
+  Stream<List<int>> get stderr => _process.stderr;
+
+  Future<int> get done => _process.exitCode;
+
+  int? get exitCode => _exitCode;
+
+  void write(List<int> data) => _process.stdin.add(data);
+
+  Future<void> kill() async {
+    _process.kill(ProcessSignal.sigkill);
+  }
 }
 
 /// 插件 PTY 会话的中立包装：上层（ProotLocalBackend）不直接 import 插件类型。

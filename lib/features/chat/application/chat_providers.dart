@@ -17,6 +17,7 @@ import 'package:aetherlink_flutter/features/chat/domain/repositories/chat_reposi
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/stdio/stdio_mcp_connection_manager.dart';
 
 part 'chat_providers.g.dart';
 
@@ -77,6 +78,17 @@ RemoteMcpConnectionManager remoteMcpConnectionManager(Ref ref) {
   final manager = RemoteMcpConnectionManager(
     proxy: ref.watch(appNetworkProxyConfigProvider),
   );
+  ref.onDispose(manager.dispose);
+  return manager;
+}
+
+/// The live MCP connection pool for **stdio** servers (workspace-spawned
+/// child processes, 移动端专用). Same shape as
+/// [remoteMcpConnectionManager]; the settings stdio 面板 also reads its
+/// status / logs via the `app/di` re-export.
+@Riverpod(keepAlive: true)
+StdioMcpConnectionManager stdioMcpConnectionManager(Ref ref) {
+  final manager = StdioMcpConnectionManager(ref);
   ref.onDispose(manager.dispose);
   return manager;
 }

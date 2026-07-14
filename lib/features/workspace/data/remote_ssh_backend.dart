@@ -894,6 +894,31 @@ class RemoteSshBackend extends WorkspaceBackend {
   }
 
   @override
+  Future<WorkspaceProcessSession> startProcess(
+    String command, {
+    String? workingDirectory,
+    Map<String, String>? environment,
+  }) async {
+    final client = await _sshClient();
+    final env = environment ?? const <String, String>{};
+    final envPrefix = env.isEmpty
+        ? ''
+        : 'env ${env.entries.map((e) => '${e.key}=${_shellQuote(e.value)}').join(' ')} ';
+    final full = (workingDirectory != null && workingDirectory.isNotEmpty)
+        ? 'cd ${_shellQuote(workingDirectory)} && $envPrefix$command'
+        : '$envPrefix$command';
+    final SSHSession session;
+    try {
+      // No PTY: stdin/stdout/stderr stay separate and unmangled (JSON-RPC
+      // framing over stdio needs raw byte streams).
+      session = await client.execute(full);
+    } catch (e) {
+      throw SshBackendException('启动进程失败 · $e');
+    }
+    return _SshProcessSession(session);
+  }
+
+  @override
   Future<WorkspaceShellSession> startShell({
     int columns = 80,
     int rows = 24,
@@ -1103,6 +1128,36 @@ class RemoteSshBackend extends WorkspaceBackend {
       sftp?.close();
       client?.close();
     }
+  }
+}
+
+/// [WorkspaceProcessSession] 适配：包一层无 PTY 的 SSH exec 通道。
+class _SshProcessSession implements WorkspaceProcessSession {
+  _SshProcessSession(this._session);
+
+  final SSHSession _session;
+
+  @override
+  Stream<List<int>> get stdout => _session.stdout;
+
+  @override
+  Stream<List<int>> get stderr => _session.stderr;
+
+  @override
+  void write(List<int> data) => _session.write(Uint8List.fromList(data));
+
+  @override
+  Future<void> get done => _session.done;
+
+  @override
+  int? get exitCode => _session.exitCode;
+
+  @override
+  Future<void> close() async {
+    try {
+      _session.kill(SSHSignal.KILL);
+    } catch (_) {}
+    _session.close();
   }
 }
 

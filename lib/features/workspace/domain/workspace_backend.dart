@@ -182,6 +182,29 @@ abstract class WorkspaceShellSession {
   Future<void> close();
 }
 
+/// A long-lived **non-PTY** child process (stdio MCP server 等)：stdin /
+/// stdout / stderr 三路分离、无回显无 CR/LF 翻译，适合走 JSON-RPC 这类
+/// 按行分帧的协议（PTY 的 [WorkspaceShellSession] 会破坏分帧）。
+abstract class WorkspaceProcessSession {
+  /// The process's raw stdout bytes.
+  Stream<List<int>> get stdout;
+
+  /// The process's raw stderr bytes (launch/runtime logs live here).
+  Stream<List<int>> get stderr;
+
+  /// Sends [data] to the process's stdin.
+  void write(List<int> data);
+
+  /// Completes when the process exits or the transport drops.
+  Future<void> get done;
+
+  /// The exit status once [done] completes, or null when unknown.
+  int? get exitCode;
+
+  /// Kills the process and releases the channel.
+  Future<void> close();
+}
+
 /// Diff payload format for [WorkspaceBackend.applyDiff].
 enum WorkspaceDiffFormat { searchReplace, unified }
 
@@ -409,6 +432,18 @@ abstract class WorkspaceBackend {
     String? workingDirectory,
   }) =>
       throw UnsupportedError('startShell is not supported by this backend');
+
+  /// Starts [command] as a long-lived **non-PTY** process and returns its
+  /// stdio channels (see [WorkspaceProcessSession]). Only valid when
+  /// [WorkspaceCapabilities.canExec] is true; backends that can't exec throw
+  /// [UnsupportedError]. Intended for protocol subprocesses（stdio MCP
+  /// server）——one-shot commands should keep using [exec].
+  Future<WorkspaceProcessSession> startProcess(
+    String command, {
+    String? workingDirectory,
+    Map<String, String>? environment,
+  }) =>
+      throw UnsupportedError('startProcess is not supported by this backend');
 
   /// Searches under [directory] for entries matching [query]. When [useRegex]
   /// is true, [query] is treated as a (case-insensitive) regular expression.

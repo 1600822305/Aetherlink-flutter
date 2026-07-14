@@ -77,6 +77,17 @@ class ChatToolExecutor {
             isError: true,
           );
         }
+      case StdioToolRoute(:final server):
+        try {
+          return await _ref
+              .read(stdioMcpConnectionManagerProvider)
+              .callTool(server, route.toolName, args);
+        } on Object catch (error) {
+          return McpToolResult(
+            '工具 $exposedName 调用失败: ${_errorMessage(error)}',
+            isError: true,
+          );
+        }
       case SkillReadToolRoute():
         final skills = await _ref.read(skillsProvider.future);
         return executeReadSkill(skills, args);

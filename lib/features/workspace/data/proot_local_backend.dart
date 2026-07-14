@@ -596,6 +596,37 @@ class ProotLocalBackend extends WorkspaceBackend {
   }
 
   @override
+  Future<WorkspaceProcessSession> startProcess(
+    String command, {
+    String? workingDirectory,
+    Map<String, String>? environment,
+  }) async {
+    final builder = await _commandBuilder();
+    final env = environment ?? const <String, String>{};
+    // 环境变量经 `env` 前缀注入 guest 侧（builder 的 environment 是 host
+    // 侧 proot 进程的），值单引号包裹防止注入。
+    final envPrefix = env.isEmpty
+        ? ''
+        : 'env ${env.entries.map((e) => '${e.key}=${_shellQuoteEnv(e.value)}').join(' ')} ';
+    try {
+      final session = await _runner.startProcess(
+        builder.build(
+          command: ['/bin/sh', '-lc', '$envPrefix$command'],
+          workingDirectory: workingDirectory,
+        ),
+      );
+      return _ProotProcessSession(session);
+    } on TerminalEngineMissingException {
+      rethrow;
+    } catch (e) {
+      throw ProotBackendException('启动进程失败 · $e');
+    }
+  }
+
+  static String _shellQuoteEnv(String value) =>
+      "'${value.replaceAll("'", "'\\''")}'";
+
+  @override
   Future<WorkspaceShellSession> startShell({
     int columns = 80,
     int rows = 24,
@@ -630,6 +661,31 @@ class ProotLocalBackend extends WorkspaceBackend {
       parentPath: parentPath,
     ));
   }
+}
+
+/// [WorkspaceProcessSession] 适配：包一层 PRoot 的无 PTY 子进程会话。
+class _ProotProcessSession implements WorkspaceProcessSession {
+  _ProotProcessSession(this._session);
+
+  final ProotProcessSession _session;
+
+  @override
+  Stream<List<int>> get stdout => _session.stdout;
+
+  @override
+  Stream<List<int>> get stderr => _session.stderr;
+
+  @override
+  void write(List<int> data) => _session.write(data);
+
+  @override
+  Future<void> get done => _session.done;
+
+  @override
+  int? get exitCode => _session.exitCode;
+
+  @override
+  Future<void> close() => _session.kill();
 }
 
 /// [WorkspaceShellSession] 适配：包一层 PRoot 的 PTY 会话。

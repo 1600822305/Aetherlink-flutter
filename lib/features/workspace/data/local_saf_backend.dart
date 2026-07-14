@@ -10,7 +10,7 @@ import 'package:aetherlink_saf/aetherlink_saf.dart' as saf;
 
 import '../domain/workspace_backend.dart';
 
-class LocalSafBackend implements WorkspaceBackend {
+class LocalSafBackend extends WorkspaceBackend {
   LocalSafBackend({saf.AetherlinkSaf? plugin})
       : _plugin = plugin ?? const saf.AetherlinkSaf();
 

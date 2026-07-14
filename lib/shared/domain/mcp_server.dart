@@ -57,6 +57,10 @@ abstract class McpServer with _$McpServer {
     String? command,
     String? cwd,
     int? timeout,
+
+    /// stdio 专用（移动端扩展字段，web 无对应项）：拉起 server 进程的
+    /// 运行环境（工作区 ID，proot 容器 / SSH）。
+    String? workspaceId,
   }) = _McpServer;
 
   factory McpServer.fromJson(Map<String, dynamic> json) =>

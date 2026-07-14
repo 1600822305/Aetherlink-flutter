@@ -14,6 +14,7 @@ import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/workspace_contex
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/mcp_bridge_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/stdio/stdio_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/skill_read_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart';
 
@@ -130,6 +131,25 @@ Future<McpSetup> buildMcpSetup(
         }
       } on Object {
         // Unreachable / failing server: skip it for this turn.
+      }
+      continue;
+    }
+
+    // stdio servers (workspace-spawned child processes): same live discovery
+    // shape as remote, dispatched through the stdio connection manager.
+    if (StdioMcpConnectionManager.isStdio(server)) {
+      try {
+        final discovered = await ref
+            .read(stdioMcpConnectionManagerProvider)
+            .listTools(server);
+        for (final tool in discovered) {
+          final exposed = tool.definition.name;
+          if (routes.containsKey(exposed)) continue;
+          tools.add(tool.definition);
+          routes[exposed] = StdioToolRoute(server, tool.toolName);
+        }
+      } on Object {
+        // Process failed to start / crashed: skip it for this turn.
       }
     }
   }
