@@ -72,4 +72,54 @@ void main() {
     expect(find.text('可多选'), findsOneWidget);
     expect(find.text('提交回答'), findsOneWidget);
   });
+
+  testWidgets('单问题时展示建议答案按钮和自定义输入框，无提交按钮', (tester) async {
+    final at = DateTime(2026, 7, 14);
+    final task = AgentTask(
+      id: 'task-1',
+      profileId: 'agent-1',
+      title: '测试任务',
+      workspaceId: 'workspace-1',
+      workspaceName: '测试工作区',
+      status: AgentTaskStatus.waitingInput,
+      mode: AgentSessionMode.code,
+      createdAt: at,
+      updatedAt: at,
+    );
+    final question = UserQuestionEvent(
+      id: 'question-1',
+      seq: 1,
+      at: at,
+      toolCallId: 'call-1',
+      questions: const [
+        AgentUserQuestion(
+          question: '配置文件路径是？',
+          options: ['./config.json', './src/config.json'],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          agentTasksProvider.overrideWith(() => _TestAgentTasks(task)),
+          agentTaskEventsProvider(
+            task.id,
+          ).overrideWith((ref) => Stream.value([question])),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: UserQuestionTile(event: question, taskId: task.id),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('配置文件路径是？'), findsOneWidget);
+    expect(find.text('./config.json'), findsOneWidget);
+    expect(find.text('./src/config.json'), findsOneWidget);
+    expect(find.text('自定义回答…'), findsOneWidget);
+    expect(find.text('提交回答'), findsNothing);
+  });
 }
