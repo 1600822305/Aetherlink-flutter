@@ -54,18 +54,26 @@ class McpServers extends _$McpServers {
   }
 
   /// Flips a server's `isActive` and persists (port of `MCPService.toggleServer`).
-  /// 停用时同步关掉活连接（stdio 子进程 / 远程连接），保证开关与
-  /// 真实运行状态一致；启用不预拉，消费方下次调用时按需连接。
+  /// 开关直接驱动真实运行状态：stdio 启用即拉起子进程、停用即结束进程；
+  /// 远程服务器停用时关掉活连接，启用后按需重连。
   Future<void> toggleActive(String id, {required bool isActive}) async {
     final server = _current.where((s) => s.id == id).firstOrNull;
     final next = _current
         .map((s) => s.id == id ? s.copyWith(isActive: isActive) : s)
         .toList();
     await _commit(next);
-    if (isActive || server == null) return;
+    if (server == null) return;
     if (server.type == McpServerType.stdio) {
-      await ref.read(stdioMcpConnectionManagerProvider).closeServer(server);
-    } else {
+      final manager = ref.read(stdioMcpConnectionManagerProvider);
+      if (isActive) {
+        // 启动失败不回滚开关：状态/日志面板会显示 error，便于排查。
+        try {
+          await manager.restartServer(server);
+        } catch (_) {}
+      } else {
+        await manager.closeServer(server);
+      }
+    } else if (!isActive) {
       await ref.read(remoteMcpConnectionManagerProvider).closeServer(server);
     }
   }

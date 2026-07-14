@@ -7,11 +7,10 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/app/di/remote_mcp_access.dart';
 import 'package:aetherlink_flutter/app/di/workspace_access.dart';
 import 'package:aetherlink_flutter/features/settings/application/mcp_servers_controller.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_server_edit_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
-import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/stdio/stdio_mcp_connection_manager.dart';
-import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// stdio（移动端）面板的强调色（终端橙）。
@@ -118,10 +117,7 @@ class McpStdioTab extends ConsumerWidget {
 
 /// Opens the 添加 stdio 服务器 form and persists the new server on confirm.
 Future<void> openAddStdioServer(BuildContext context, WidgetRef ref) async {
-  final draft = await showDialog<McpServer>(
-    context: context,
-    builder: (_) => const _StdioServerDialog(),
-  );
+  final draft = await showMcpServerEditPage(context, stdioOnly: true);
   if (draft == null) return;
   await ref.read(mcpServersProvider.notifier).add(draft);
   if (context.mounted) AppToast.info(context, '服务器添加成功');
@@ -287,12 +283,10 @@ class _StdioServerRowState extends ConsumerState<_StdioServerRow> {
           const SizedBox(width: 4),
           CustomSwitch(
             value: server.isActive,
-            onChanged: (v) async {
-              await ref
-                  .read(mcpServersProvider.notifier)
-                  .toggleActive(server.id, isActive: v);
-              if (!v) await manager.closeServer(server);
-            },
+            // toggleActive 内部启停真实进程（开 = 拉起 / 关 = 结束）。
+            onChanged: (v) => ref
+                .read(mcpServersProvider.notifier)
+                .toggleActive(server.id, isActive: v),
           ),
           _busy
               ? const Padding(
@@ -380,9 +374,10 @@ class _StdioServerRowState extends ConsumerState<_StdioServerRow> {
   }
 
   Future<void> _openEdit(BuildContext context) async {
-    final updated = await showDialog<McpServer>(
-      context: context,
-      builder: (_) => _StdioServerDialog(initial: widget.server),
+    final updated = await showMcpServerEditPage(
+      context,
+      initial: widget.server,
+      stdioOnly: true,
     );
     if (updated == null) return;
     await ref.read(mcpServersProvider.notifier).edit(updated);
@@ -522,7 +517,12 @@ class _StdioLogSheetState extends ConsumerState<_StdioLogSheet> {
           Flexible(
             child: state.logs.isEmpty && state.error == null
                 ? Padding(
-                    padding: const EdgeInsets.all(32),
+                    padding: EdgeInsets.fromLTRB(
+                      32,
+                      32,
+                      32,
+                      32 + MediaQuery.viewPaddingOf(context).bottom,
+                    ),
                     child: Text(
                       '暂无日志（进程尚未启动或没有输出）',
                       style: theme.textTheme.bodyMedium?.copyWith(
@@ -533,11 +533,13 @@ class _StdioLogSheetState extends ConsumerState<_StdioLogSheet> {
                 : ListView(
                     shrinkWrap: true,
                     reverse: true,
+                    // 弹层内 paddingOf 的 bottom 已被消耗为 0，用 viewPaddingOf
+                    // 才能避开底部手势条（安全区）。
                     padding: EdgeInsets.fromLTRB(
                       16,
                       12,
                       16,
-                      MediaQuery.paddingOf(context).bottom + 16,
+                      MediaQuery.viewPaddingOf(context).bottom + 16,
                     ),
                     children: [
                       if (state.error != null)
@@ -562,196 +564,6 @@ class _StdioLogSheetState extends ConsumerState<_StdioLogSheet> {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// 添加 / 编辑 stdio 服务器表单：名称、运行环境（工作区）、命令、参数、
-/// 环境变量（KEY=VALUE 每行一条）、工作目录、描述。
-class _StdioServerDialog extends ConsumerStatefulWidget {
-  const _StdioServerDialog({this.initial});
-
-  final McpServer? initial;
-
-  @override
-  ConsumerState<_StdioServerDialog> createState() => _StdioServerDialogState();
-}
-
-class _StdioServerDialogState extends ConsumerState<_StdioServerDialog> {
-  late final _name = TextEditingController(text: widget.initial?.name);
-  late final _command = TextEditingController(text: widget.initial?.command);
-  late final _args =
-      TextEditingController(text: widget.initial?.args?.join(' '));
-  late final _env = TextEditingController(
-    text: widget.initial?.env?.entries
-        .map((e) => '${e.key}=${e.value}')
-        .join('\n'),
-  );
-  late final _cwd = TextEditingController(text: widget.initial?.cwd);
-  late final _description =
-      TextEditingController(text: widget.initial?.description);
-  late String? _workspaceId = widget.initial?.workspaceId;
-
-  @override
-  void initState() {
-    super.initState();
-    for (final c in [_name, _command]) {
-      c.addListener(() => setState(() {}));
-    }
-  }
-
-  @override
-  void dispose() {
-    for (final c in [_name, _command, _args, _env, _cwd, _description]) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  bool get _canSubmit =>
-      _name.text.trim().isNotEmpty &&
-      _command.text.trim().isNotEmpty &&
-      _workspaceId != null;
-
-  Map<String, String>? _parseEnv() {
-    final lines = _env.text
-        .split('\n')
-        .map((l) => l.trim())
-        .where((l) => l.isNotEmpty);
-    final env = <String, String>{};
-    for (final line in lines) {
-      final idx = line.indexOf('=');
-      if (idx <= 0) continue;
-      env[line.substring(0, idx).trim()] = line.substring(idx + 1);
-    }
-    return env.isEmpty ? null : env;
-  }
-
-  void _submit() {
-    if (!_canSubmit) return;
-    final argsText = _args.text.trim();
-    final base = widget.initial ??
-        McpServer(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          name: '',
-          type: McpServerType.stdio,
-        );
-    Navigator.of(context).pop(
-      base.copyWith(
-        name: _name.text.trim(),
-        type: McpServerType.stdio,
-        command: _command.text.trim(),
-        args: argsText.isEmpty ? null : argsText.split(RegExp(r'\s+')),
-        env: _parseEnv(),
-        cwd: _cwd.text.trim().isEmpty ? null : _cwd.text.trim(),
-        workspaceId: _workspaceId,
-        description: _description.text.trim(),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final workspaces = ref.watch(recentWorkspacesViewProvider);
-    final isEdit = widget.initial != null;
-    // 只有可执行的后端（proot / SSH）能拉起进程；SAF 工作区不出现在列表。
-    final selectable = workspaces
-        .where((w) => w.backendType != WorkspaceBackendType.localSaf)
-        .toList();
-
-    return AlertDialog(
-      title: Text(isEdit ? '编辑 stdio 服务器' : '添加 stdio 服务器'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: _name,
-              autofocus: !isEdit,
-              decoration: const InputDecoration(
-                labelText: '服务器名称',
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 16),
-            AppSelectField<String?>(
-              label: '运行环境（工作区）',
-              value: _workspaceId,
-              options: [
-                if (selectable.isEmpty)
-                  const AppSelectOption<String?>(
-                    value: null,
-                    label: '无可用工作区（需 proot 容器 / SSH）',
-                  ),
-                for (final w in selectable)
-                  AppSelectOption<String?>(value: w.id, label: w.name),
-              ],
-              onChanged: (v) => setState(() => _workspaceId = v),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _command,
-              decoration: const InputDecoration(
-                labelText: '命令',
-                hintText: 'npx, node, python, uvx...',
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _args,
-              decoration: const InputDecoration(
-                labelText: '命令参数',
-                hintText: '-y @modelcontextprotocol/server-filesystem /tmp',
-                helperText: '用空格分隔',
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _env,
-              minLines: 2,
-              maxLines: 4,
-              decoration: const InputDecoration(
-                labelText: '环境变量（可选）',
-                hintText: 'API_KEY=xxx\n每行一条 KEY=VALUE',
-                alignLabelWithHint: true,
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _cwd,
-              decoration: const InputDecoration(
-                labelText: '工作目录（可选）',
-                hintText: '/root/project',
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _description,
-              minLines: 2,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: '描述（可选）',
-                alignLabelWithHint: true,
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: _canSubmit ? _submit : null,
-          child: Text(isEdit ? '保存' : '添加'),
-        ),
-      ],
     );
   }
 }

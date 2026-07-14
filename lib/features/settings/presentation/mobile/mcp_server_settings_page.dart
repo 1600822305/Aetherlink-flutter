@@ -6,11 +6,11 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/settings/application/mcp_servers_controller.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_server_detail_page.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_server_edit_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/mobile/mcp_stdio_panel.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/config/builtin_mcp_servers.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
-import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 import 'package:aetherlink_flutter/shared/widgets/instant_switch_tab_view.dart';
 
@@ -233,13 +233,10 @@ Future<void> _openAddBuiltinPicker(
   );
 }
 
-/// Opens the 添加 MCP 服务器 form and, on confirm, validates and persists the
+/// Opens the 添加 MCP 服务器 page and, on confirm, validates and persists the
 /// new external server (port of `handleAddServer`).
 Future<void> _openAddServer(BuildContext context, WidgetRef ref) async {
-  final draft = await showDialog<McpServer>(
-    context: context,
-    builder: (_) => const _AddServerDialog(),
-  );
+  final draft = await showMcpServerEditPage(context);
   if (draft == null) return;
   await ref.read(mcpServersProvider.notifier).add(draft);
   if (context.mounted) _toast(context, '服务器添加成功');
@@ -1138,171 +1135,6 @@ class _Card extends StatelessWidget {
         border: Border.all(color: theme.dividerColor),
       ),
       child: child,
-    );
-  }
-}
-
-/// The 添加 MCP 服务器 form (port of `AddServerDialog`): name + type with
-/// type-specific URL / 命令 / 参数 fields + description. 添加 stays disabled until
-/// the required fields for the chosen type are filled.
-class _AddServerDialog extends StatefulWidget {
-  const _AddServerDialog();
-
-  @override
-  State<_AddServerDialog> createState() => _AddServerDialogState();
-}
-
-class _AddServerDialogState extends State<_AddServerDialog> {
-  final _name = TextEditingController();
-  final _baseUrl = TextEditingController();
-  final _command = TextEditingController();
-  final _args = TextEditingController();
-  final _description = TextEditingController();
-  McpServerType _type = McpServerType.sse;
-
-  @override
-  void initState() {
-    super.initState();
-    for (final c in [_name, _baseUrl, _command]) {
-      c.addListener(_onChanged);
-    }
-  }
-
-  void _onChanged() => setState(() {});
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _baseUrl.dispose();
-    _command.dispose();
-    _args.dispose();
-    _description.dispose();
-    super.dispose();
-  }
-
-  bool get _isHttp =>
-      _type == McpServerType.sse ||
-      _type == McpServerType.streamableHttp ||
-      _type == McpServerType.httpStream;
-
-  bool get _canAdd {
-    if (_name.text.trim().isEmpty) return false;
-    if (_isHttp) return _baseUrl.text.trim().isNotEmpty;
-    if (_type == McpServerType.stdio) return _command.text.trim().isNotEmpty;
-    return true;
-  }
-
-  void _submit() {
-    if (!_canAdd) return;
-    final argsText = _args.text.trim();
-    Navigator.of(context).pop(
-      McpServer(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        name: _name.text.trim(),
-        type: _type,
-        description: _description.text.trim(),
-        baseUrl: _isHttp ? _baseUrl.text.trim() : null,
-        command: _type == McpServerType.stdio ? _command.text.trim() : null,
-        args: _type == McpServerType.stdio && argsText.isNotEmpty
-            ? argsText.split(RegExp(r'\s+'))
-            : null,
-        headers: const {},
-        env: const {},
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('添加 MCP 服务器'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: _name,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: '服务器名称',
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 16),
-            AppSelectField<McpServerType>(
-              label: '服务器类型',
-              value: _type,
-              options: [
-                for (final t in const [
-                  McpServerType.sse,
-                  McpServerType.streamableHttp,
-                  McpServerType.inMemory,
-                  McpServerType.stdio,
-                ])
-                  AppSelectOption<McpServerType>(
-                    value: t,
-                    label: mcpServerTypeLabel(t),
-                  ),
-              ],
-              onChanged: (v) => setState(() => _type = v),
-            ),
-            if (_isHttp) ...[
-              const SizedBox(height: 16),
-              TextField(
-                controller: _baseUrl,
-                decoration: const InputDecoration(
-                  labelText: '服务器 URL',
-                  hintText: 'https://example.com/mcp',
-                  isDense: true,
-                ),
-              ),
-            ],
-            if (_type == McpServerType.stdio) ...[
-              const SizedBox(height: 16),
-              TextField(
-                controller: _command,
-                decoration: const InputDecoration(
-                  labelText: '命令',
-                  hintText: 'npx, node, python, uvx...',
-                  helperText: '要执行的命令程序，如 npx、node、python 等',
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _args,
-                decoration: const InputDecoration(
-                  labelText: '命令参数',
-                  hintText: '-y @anthropic/mcp-server-fetch',
-                  helperText: '命令参数，用空格分隔',
-                  isDense: true,
-                ),
-              ),
-            ],
-            const SizedBox(height: 16),
-            TextField(
-              controller: _description,
-              minLines: 2,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: '描述（可选）',
-                alignLabelWithHint: true,
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: _canAdd ? _submit : null,
-          child: const Text('添加'),
-        ),
-      ],
     );
   }
 }
