@@ -509,11 +509,8 @@ void main() {
     await engine.run(task, AgentCancellationToken());
 
     expect(gateway.last.status, AgentTaskStatus.waitingInput);
-    final question = (await store.getEvents(
-      task.id,
-    ))
-        .whereType<UserQuestionEvent>()
-        .single;
+    final question =
+        (await store.getEvents(task.id)).whereType<UserQuestionEvent>().single;
     expect(question.toolCallId, 'ask-1');
     expect(question.questions, hasLength(2));
     expect(question.questions.first.options, ['测试', '生产']);
@@ -630,7 +627,8 @@ void main() {
     final gateway = RecordingTaskGateway();
     AgentEngine buildEngine() => AgentEngine(
           llm: const FakeAgentLlmClient(chunkDelay: Duration.zero),
-          tools: const FakeAgentToolExecutor(delay: Duration(milliseconds: 10)),
+          tools:
+              const FakeAgentToolExecutor(delay: Duration(milliseconds: 10)),
           approval: const AutoApprovalGate(),
           store: store,
           gateway: gateway,
@@ -690,7 +688,9 @@ void main() {
 
     final events = await store.getEvents(task.id);
     for (final id in [stale1.id, stale2.id]) {
-      final e = events.whereType<ToolCallEvent>().firstWhere((t) => t.id == id);
+      final e = events.whereType<ToolCallEvent>().firstWhere(
+            (t) => t.id == id,
+          );
       expect(e.state, AgentToolCallState.failure);
       expect(e.resultSummary, contains('进程中断'));
     }

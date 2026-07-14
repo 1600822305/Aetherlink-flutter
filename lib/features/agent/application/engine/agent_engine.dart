@@ -66,23 +66,19 @@ class AgentEngine {
       String description,
     ) async {
       await store.appendStatusChange(current.id, description);
-      return save(
-        current.copyWith(
-          status: status,
-          updatedAt: DateTime.now(),
-          lastEventSummary: description,
-        ),
-      );
+      return save(current.copyWith(
+        status: status,
+        updatedAt: DateTime.now(),
+        lastEventSummary: description,
+      ));
     }
 
     try {
       if (current.status != AgentTaskStatus.running) {
-        current = await save(
-          current.copyWith(
-            status: AgentTaskStatus.running,
-            updatedAt: DateTime.now(),
-          ),
-        );
+        current = await save(current.copyWith(
+          status: AgentTaskStatus.running,
+          updatedAt: DateTime.now(),
+        ));
       }
 
       // 恢复语义（L7）：上次进程死亡时半途的工具调用（仍 running /
@@ -110,12 +106,10 @@ class AgentEngine {
 
         // ③ 组上下文 + ④ LLM 流式调用（文本原位 upsert，L6）。
         budget.recordRound();
-        current = await save(
-          current.copyWith(
-            rounds: current.rounds + 1,
-            updatedAt: DateTime.now(),
-          ),
-        );
+        current = await save(current.copyWith(
+          rounds: current.rounds + 1,
+          updatedAt: DateTime.now(),
+        ));
         final events = await store.getEvents(current.id);
         final writer = _StreamingEventWriter(store, current.id);
         // 工具调用参数一流完就先落「执行中」事件（不等整轮结束），
@@ -182,10 +176,7 @@ class AgentEngine {
                     argsDetail: call.argsJson,
                   )
                 : await store.appendToolCall(
-                    current.id,
-                    call,
-                    AgentToolCallState.running,
-                  );
+                    current.id, call, AgentToolCallState.running);
             preCreated.putIfAbsent(call.id, () => []).add(event);
           },
         );
@@ -193,24 +184,16 @@ class AgentEngine {
         // 流中断时未闭合/未回到 turn 的预建事件按失败回填，避免永久 running。
         for (final event in streamingEvents.values) {
           toolStream?.clear(event.id);
-          await store.updateToolCall(
-            current.id,
-            event,
-            state: AgentToolCallState.failure,
-            resultSummary: '已中断 ✗',
-          );
+          await store.updateToolCall(current.id, event,
+              state: AgentToolCallState.failure, resultSummary: '已中断 ✗');
         }
         streamingEvents.clear();
         final returnedIds = {for (final c in turn.toolCalls) c.id};
         for (final entry in preCreated.entries) {
           if (returnedIds.contains(entry.key)) continue;
           for (final event in entry.value) {
-            await store.updateToolCall(
-              current.id,
-              event,
-              state: AgentToolCallState.failure,
-              resultSummary: '已中断 ✗',
-            );
+            await store.updateToolCall(current.id, event,
+                state: AgentToolCallState.failure, resultSummary: '已中断 ✗');
           }
           entry.value.clear();
         }
@@ -219,29 +202,23 @@ class AgentEngine {
         Future<void> failPendingToolEvents() async {
           for (final entry in preCreated.values) {
             for (final event in entry) {
-              await store.updateToolCall(
-                current.id,
-                event,
-                state: AgentToolCallState.failure,
-                resultSummary: '已中断 ✗',
-              );
+              await store.updateToolCall(current.id, event,
+                  state: AgentToolCallState.failure, resultSummary: '已中断 ✗');
             }
             entry.clear();
           }
         }
 
         budget.recordTokens(turn.tokensUsed);
-        current = await save(
-          current.copyWith(
-            tokenCount: current.tokenCount + turn.tokensUsed,
-            contextTokens: turn.contextTokens > 0
-                ? turn.contextTokens
-                : current.contextTokens,
-            updatedAt: DateTime.now(),
-            lastEventSummary:
-                turn.text.isNotEmpty ? turn.text : current.lastEventSummary,
-          ),
-        );
+        current = await save(current.copyWith(
+          tokenCount: current.tokenCount + turn.tokensUsed,
+          contextTokens: turn.contextTokens > 0
+              ? turn.contextTokens
+              : current.contextTokens,
+          updatedAt: DateTime.now(),
+          lastEventSummary:
+              turn.text.isNotEmpty ? turn.text : current.lastEventSummary,
+        ));
 
         // 暂停/强停会中断 LLM 流并返回无工具调用的 turn，不能据此判
         // 收尾；回到循环顶部走 paused/cancelled 分支。
@@ -284,19 +261,13 @@ class AgentEngine {
           }
           if (call.name == kToolAskUser) {
             final questions = _parseUserQuestions(call);
-            await store.appendUserQuestion(
-              current.id,
-              questions,
-              toolCallId: call.id,
-              argsJson: call.argsJson,
-            );
+            await store.appendUserQuestion(current.id, questions,
+                toolCallId: call.id, argsJson: call.argsJson);
             final summary = questions.length == 1
                 ? questions.single.question
                 : '${questions.length} 个问题';
             current = await transition(
-              AgentTaskStatus.waitingInput,
-              '等待回答：$summary',
-            );
+                AgentTaskStatus.waitingInput, '等待回答：$summary');
             return;
           }
           if (call.name == kToolFinishTask) {
@@ -309,85 +280,61 @@ class AgentEngine {
           var event = (pre != null && pre.isNotEmpty)
               ? pre.removeAt(0)
               : await store.appendToolCall(
-                  current.id,
-                  call,
-                  AgentToolCallState.running,
-                );
+                  current.id, call, AgentToolCallState.running);
 
           // 审批（L2）：拒绝回填继续跑；挂起无超时。
           final requirement = await approval.evaluate(call, current);
           if (requirement == ApprovalRequirement.forbid) {
-            event = await store.updateToolCall(
-              current.id,
-              event,
-              state: AgentToolCallState.denied,
-              resultSummary: '策略禁止',
-            );
+            event = await store.updateToolCall(current.id, event,
+                state: AgentToolCallState.denied,
+                resultSummary: '策略禁止');
             budget.recordToolResult(ok: false);
             continue;
           }
           if (requirement == ApprovalRequirement.needsUser) {
-            event = await store.updateToolCall(
-              current.id,
-              event,
-              state: AgentToolCallState.waitingApproval,
-            );
+            event = await store.updateToolCall(current.id, event,
+                state: AgentToolCallState.waitingApproval);
             current = await transition(
-              AgentTaskStatus.waitingApproval,
-              '等待审批：${call.name}',
-            );
-            final verdict = await approval.waitForVerdict(
-              call,
-              current,
-              cancel,
-            );
+                AgentTaskStatus.waitingApproval, '等待审批：${call.name}');
+            final verdict =
+                await approval.waitForVerdict(call, current, cancel);
             if (!verdict.approved) {
-              event = await store.updateToolCall(
-                current.id,
-                event,
-                state: AgentToolCallState.denied,
-                resultSummary: '用户拒绝：${verdict.reason}',
-              );
+              event = await store.updateToolCall(current.id, event,
+                  state: AgentToolCallState.denied,
+                  resultSummary: '用户拒绝：${verdict.reason}');
               current = await transition(AgentTaskStatus.running, '继续执行');
               budget.recordToolResult(ok: false);
               continue;
             }
-            event = await store.updateToolCall(
-              current.id,
-              event,
-              state: AgentToolCallState.running,
-            );
+            event = await store.updateToolCall(current.id, event,
+                state: AgentToolCallState.running);
             current = await transition(AgentTaskStatus.running, '审批通过，继续执行');
           }
 
           final stopwatch = Stopwatch()..start();
           var timeoutInterruptGen = 0;
-          final result = await tools.execute(call, cancel).timeout(
-            budget.toolTimeout,
-            onTimeout: () {
-              // 同时中止仍在运行的底层工具，避免模型重发同一命令时
-              // 与旧命令并发（双重执行）。
-              timeoutInterruptGen = cancel.requestToolInterrupt();
-              return const AgentToolResult(ok: false, summary: '超时 ✗');
-            },
-          );
+          final result = await tools
+              .execute(call, cancel)
+              .timeout(budget.toolTimeout, onTimeout: () {
+            // 同时中止仍在运行的底层工具，避免模型重发同一命令时
+            // 与旧命令并发（双重执行）。
+            timeoutInterruptGen = cancel.requestToolInterrupt();
+            return const AgentToolResult(ok: false, summary: '超时 ✗');
+          });
           stopwatch.stop();
           // 超时自己发出的中断信号按代号定向回收：不影响同轮后续工具，
           // 也不吞掉窗口内用户发起的新打断。
           if (timeoutInterruptGen > 0) {
             cancel.consumeToolInterruptOf(timeoutInterruptGen);
           }
-          await store.updateToolCall(
-            current.id,
-            event,
-            state: result.ok
-                ? AgentToolCallState.success
-                : AgentToolCallState.failure,
-            resultSummary: result.summary,
-            resultDetail: result.detail,
-            resultOverflowPath: result.overflowPath,
-            elapsed: stopwatch.elapsed,
-          );
+          await store.updateToolCall(current.id, event,
+              state: result.ok
+                  ? AgentToolCallState.success
+                  : AgentToolCallState.failure,
+              resultSummary: result.summary,
+              resultDetail: result.detail,
+              resultOverflowPath: result.overflowPath,
+              elapsed: stopwatch.elapsed);
           budget.recordToolResult(ok: result.ok);
 
           if (cancel.stopRequested) break;
@@ -412,22 +359,18 @@ class AgentEngine {
             _compactionFailureNotified = true;
             try {
               await store.appendStatusChange(
-                current.id,
-                '上下文压缩失败（不影响任务，下轮重试）：$e',
-              );
+                  current.id, '上下文压缩失败（不影响任务，下轮重试）：$e');
             } catch (_) {}
           }
         }
       }
     } catch (e) {
       await store.appendStatusChange(current.id, '执行出错：$e');
-      await gateway.save(
-        current.copyWith(
-          status: AgentTaskStatus.failed,
-          updatedAt: DateTime.now(),
-          lastEventSummary: '执行出错：$e',
-        ),
-      );
+      await gateway.save(current.copyWith(
+        status: AgentTaskStatus.failed,
+        updatedAt: DateTime.now(),
+        lastEventSummary: '执行出错：$e',
+      ));
     }
   }
 
@@ -442,23 +385,15 @@ class AgentEngine {
     final launcher = subagents;
     final events = <ToolCallEvent>[];
     for (final call in batch) {
-      events.add(
-        await store.appendToolCall(
-          current.id,
-          call,
-          AgentToolCallState.running,
-        ),
-      );
+      events.add(await store.appendToolCall(
+          current.id, call, AgentToolCallState.running));
     }
     if (launcher == null) {
       for (final event in events) {
-        await store.updateToolCall(
-          current.id,
-          event,
-          state: AgentToolCallState.failure,
-          resultSummary: '子代理不可用 ✗',
-          resultDetail: '当前上下文不支持派生子代理（子代理内不可再嵌套）',
-        );
+        await store.updateToolCall(current.id, event,
+            state: AgentToolCallState.failure,
+            resultSummary: '子代理不可用 ✗',
+            resultDetail: '当前上下文不支持派生子代理（子代理内不可再嵌套）');
         budget.recordToolResult(ok: false);
       }
       return current;
@@ -476,23 +411,16 @@ class AgentEngine {
               cancel: cancel,
             );
           } catch (e) {
-            result = AgentToolResult(
-              ok: false,
-              summary: '子代理异常 ✗',
-              detail: '$e',
-            );
+            result = AgentToolResult(ok: false, summary: '子代理异常 ✗', detail: '$e');
           }
           stopwatch.stop();
-          await store.updateToolCall(
-            current.id,
-            events[i],
-            state: result.ok
-                ? AgentToolCallState.success
-                : AgentToolCallState.failure,
-            resultSummary: result.summary,
-            resultDetail: result.detail,
-            elapsed: stopwatch.elapsed,
-          );
+          await store.updateToolCall(current.id, events[i],
+              state: result.ok
+                  ? AgentToolCallState.success
+                  : AgentToolCallState.failure,
+              resultSummary: result.summary,
+              resultDetail: result.detail,
+              elapsed: stopwatch.elapsed);
           budget.recordToolResult(ok: result.ok);
         }(),
     ]);
@@ -572,21 +500,10 @@ class AgentEngine {
           if (raw is! Map<String, dynamic>) continue;
           final text = (raw['question'] as String? ?? '').trim();
           if (text.isEmpty) continue;
-          final rawOptions = raw['options'];
-          final options = <String>[];
-          if (rawOptions is List<dynamic>) {
-            for (final option in rawOptions) {
-              if (option is! String) continue;
-              final normalized = option.trim();
-              if (normalized.isEmpty || options.contains(normalized)) continue;
-              options.add(normalized);
-              if (options.length == 6) break;
-            }
-          }
           questions.add(
             AgentUserQuestion(
               question: text,
-              options: options,
+              options: _trimmedStrings(raw['options']),
               allowMultiple: raw['allow_multiple'] as bool? ?? false,
             ),
           );
@@ -597,19 +514,10 @@ class AgentEngine {
       // 兼容旧模型缓存或历史工具定义发出的单问题参数。
       final legacyQuestion = (json['question'] as String? ?? '').trim();
       if (legacyQuestion.isNotEmpty) {
-        final options = <String>[];
-        final rawOptions = json['options'];
-        if (rawOptions is List<dynamic>) {
-          for (final option in rawOptions) {
-            if (option is String && option.trim().isNotEmpty) {
-              options.add(option.trim());
-            }
-          }
-        }
         return [
           AgentUserQuestion(
             question: legacyQuestion,
-            options: options,
+            options: _trimmedStrings(json['options']),
             allowMultiple: json['allow_multiple'] as bool? ?? false,
           ),
         ];
@@ -618,6 +526,18 @@ class AgentEngine {
       // 解析失败时仍落一个可回答的问题，避免任务挂起但 UI 无内容。
     }
     return const [AgentUserQuestion(question: '需要你的输入')];
+  }
+
+  static List<String> _trimmedStrings(Object? raw) {
+    if (raw is! List<dynamic>) return const [];
+    final result = <String>[];
+    for (final item in raw) {
+      if (item is! String) continue;
+      final normalized = item.trim();
+      if (normalized.isEmpty || result.contains(normalized)) continue;
+      result.add(normalized);
+    }
+    return result;
   }
 }
 
@@ -673,9 +593,7 @@ class _StreamingEventWriter {
     await _drainFuture;
     if (_reasoningEvent != null && _reasoningEvent!.streaming) {
       _reasoningEvent = await _store.updateReasoning(
-        _taskId,
-        _reasoningEvent!,
-        _reasoningEvent!.text,
+        _taskId, _reasoningEvent!, _reasoningEvent!.text,
         streaming: false,
         elapsed: _reasoningElapsed(),
       );
@@ -684,12 +602,8 @@ class _StreamingEventWriter {
     if (_textEvent != null || text.isNotEmpty) {
       _textEvent = _textEvent == null
           ? await _store.appendAssistantText(_taskId, text, streaming: false)
-          : await _store.updateAssistantText(
-              _taskId,
-              _textEvent!,
-              text,
-              streaming: false,
-            );
+          : await _store.updateAssistantText(_taskId, _textEvent!, text,
+              streaming: false);
     }
   }
 
@@ -717,22 +631,18 @@ class _StreamingEventWriter {
         _reasoningDirty = false;
         final reasoning = _reasoning;
         _reasoningEvent = _reasoningEvent == null
-            ? await _store.appendReasoning(_taskId, reasoning, streaming: true)
+            ? await _store.appendReasoning(_taskId, reasoning,
+                streaming: true)
             : await _store.updateReasoning(
-                _taskId,
-                _reasoningEvent!,
-                reasoning,
-                streaming: true,
-              );
+                _taskId, _reasoningEvent!, reasoning,
+                streaming: true);
       }
       if (_textDirty) {
         _textDirty = false;
         // 文本开始 → 思考定格（收起为"思考了 Xs"）。
         if (_reasoningEvent != null && _reasoningEvent!.streaming) {
           _reasoningEvent = await _store.updateReasoning(
-            _taskId,
-            _reasoningEvent!,
-            _reasoningEvent!.text,
+            _taskId, _reasoningEvent!, _reasoningEvent!.text,
             streaming: false,
             elapsed: _reasoningElapsed(),
           );
@@ -740,12 +650,8 @@ class _StreamingEventWriter {
         final text = _text;
         _textEvent = _textEvent == null
             ? await _store.appendAssistantText(_taskId, text, streaming: true)
-            : await _store.updateAssistantText(
-                _taskId,
-                _textEvent!,
-                text,
-                streaming: true,
-              );
+            : await _store.updateAssistantText(_taskId, _textEvent!, text,
+                streaming: true);
       }
     } finally {
       _lastWrite = DateTime.now();

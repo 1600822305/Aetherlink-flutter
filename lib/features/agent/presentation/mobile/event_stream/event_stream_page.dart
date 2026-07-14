@@ -94,11 +94,8 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
         ref.watch(agentTaskEventsProvider(widget.task.id)).value ?? const [];
     final plan = latestPlan(events);
     // 工作段折叠由侧边栏设置控制（默认折叠，用户点段头展开）。
-    final collapse = ref.watch(
-      agentUiSettingsControllerProvider.select(
-        (s) => s.autoCollapseWorkSessions,
-      ),
-    );
+    final collapse = ref.watch(agentUiSettingsControllerProvider
+        .select((s) => s.autoCollapseWorkSessions));
     final blocks = buildTimelineBlocks(events, collapse: collapse);
     final showWorking = widget.task.status == AgentTaskStatus.running &&
         needsWorkingIndicator(events);

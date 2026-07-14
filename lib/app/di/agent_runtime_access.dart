@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_appro
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_control_tools.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart' show kToolAskUser;
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_system_prompt.dart';
@@ -174,10 +175,8 @@ Future<void> _addMcpServerTools(
   Ref ref,
   AgentProfile profile,
   AgentSessionMode mode,
-  ({
-    List<McpToolDefinition> definitions,
-    Map<String, ToolRoute> routes
-  }) catalog,
+  ({List<McpToolDefinition> definitions, Map<String, ToolRoute> routes})
+      catalog,
 ) async {
   if (profile.mcpServerIds.isEmpty) return;
   if (mode == AgentSessionMode.ask || mode == AgentSessionMode.plan) return;
@@ -202,8 +201,9 @@ Future<void> _addMcpServerTools(
           catalog.routes[exposed] = RemoteToolRoute(server, tool.toolName);
         }
       } else if (StdioMcpConnectionManager.isStdio(server)) {
-        final discovered =
-            await ref.read(stdioMcpConnectionManagerProvider).listTools(server);
+        final discovered = await ref
+            .read(stdioMcpConnectionManagerProvider)
+            .listTools(server);
         for (final tool in discovered) {
           final exposed = tool.definition.name;
           if (catalog.routes.containsKey(exposed)) continue;
@@ -326,10 +326,8 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     var totalTokens = 0;
     var promptTokens = 0;
     try {
-      await for (final chunk in gateway.streamChat(
-        request,
-        cancelToken: llmCancel,
-      )) {
+      await for (final chunk
+          in gateway.streamChat(request, cancelToken: llmCancel)) {
         switch (chunk) {
           case LlmTextDelta(:final text):
             buffer.write(text);
@@ -337,12 +335,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
           case LlmReasoningDelta(:final text):
             reasoning.write(text);
             onReasoningDelta?.call(reasoning.toString());
-          case LlmToolCallDelta(
-              :final key,
-              :final id,
-              :final name,
-              :final argsTextSoFar,
-            ):
+          case LlmToolCallDelta(:final key, :final id, :final name, :final argsTextSoFar):
             deltaKeys[key] = (id: id, name: name);
             if (onToolCallDelta != null) {
               await onToolCallDelta(key, name, argsTextSoFar);
@@ -354,8 +347,8 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
               for (final entry in deltaKeys.entries) {
                 final matchesId =
                     call.id.isNotEmpty && entry.value.id == call.id;
-                final matchesName =
-                    entry.value.id == null && entry.value.name == call.name;
+                final matchesName = entry.value.id == null &&
+                    entry.value.name == call.name;
                 if (matchesId || matchesName) {
                   streamKey = entry.key;
                   break;
@@ -450,9 +443,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   Future<String> _environmentContext(Ref ref, AgentTask task) async {
     String? workspace;
     try {
-      final bound = (await loadWorkspaces(
-        ref,
-      ))
+      final bound = (await loadWorkspaces(ref))
           .where((w) => w.id == task.workspaceId)
           .firstOrNull;
       workspace = await buildWorkspaceContextSection(
@@ -522,9 +513,12 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     try {
       final workspaces = await loadWorkspaces(ref);
       if (workspaces.isEmpty) return null;
-      final bound =
-          workspaces.where((w) => w.id == task.workspaceId).firstOrNull ??
-              workspaces.where((w) => w.id == _profile.workspaceId).firstOrNull;
+      final bound = workspaces
+              .where((w) => w.id == task.workspaceId)
+              .firstOrNull ??
+          workspaces
+              .where((w) => w.id == _profile.workspaceId)
+              .firstOrNull;
       final workspace =
           bound ?? ref.read(currentWorkspaceProvider) ?? workspaces.first;
       final backend = ref.read(workspaceBackendProvider(workspace));
@@ -544,10 +538,14 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
 /// 用户消息。计划/状态事件不进消息（计划走系统提示置尾）。
 List<LlmMessage> _replayMessages(List<AgentEvent> events) {
   final messages = <LlmMessage>[];
+  final folded = foldCompactedEvents(events);
+  // 提问索引建在折叠后的事件上：提问若已被压缩折叠，其回答退化为
+  // 普通用户消息，避免回放出没有前置 tool_call 的 tool 结果。
   final questionsById = {
-    for (final event in events.whereType<UserQuestionEvent>()) event.id: event,
+    for (final event in folded.whereType<UserQuestionEvent>())
+      event.id: event,
   };
-  for (final event in foldCompactedEvents(events)) {
+  for (final event in folded) {
     switch (event) {
       case UserMessageEvent():
         final question = questionsById[event.replyToQuestionId];
@@ -555,9 +553,15 @@ List<LlmMessage> _replayMessages(List<AgentEvent> events) {
           messages.add(
             LlmMessage(
               role: MessageRole.user,
-              content: _questionAnswerText(question!, event),
-              toolCallId: question.toolCallId,
-              toolName: 'ask_user',
+              content: event.questionAnswers.isEmpty
+                  ? event.text
+                  : formatQuestionAnswers(
+                      question!,
+                      event.questionAnswers,
+                      fallback: event.text,
+                    ),
+              toolCallId: question!.toolCallId,
+              toolName: kToolAskUser,
             ),
           );
         } else {
@@ -578,7 +582,7 @@ List<LlmMessage> _replayMessages(List<AgentEvent> events) {
               toolCalls: [
                 LlmToolCall(
                   id: event.toolCallId!,
-                  name: 'ask_user',
+                  name: kToolAskUser,
                   arguments: event.argsJson ?? _questionArgsJson(event),
                 ),
               ],
@@ -680,11 +684,9 @@ String _compactionTranscript(List<AgentEvent> events) {
       case AssistantTextEvent():
         if (event.text.isNotEmpty) lines.add('[助手] ${clip(event.text)}');
       case ToolCallEvent():
-        lines.add(
-          '[工具 ${event.toolName}] 参数：'
-          '${clip(event.argsDetail ?? event.argSummary, 500)}\n'
-          '结果：${clip(event.resultDetail ?? event.resultSummary)}',
-        );
+        lines.add('[工具 ${event.toolName}] 参数：'
+            '${clip(event.argsDetail ?? event.argSummary, 500)}\n'
+            '结果：${clip(event.resultDetail ?? event.resultSummary)}');
       case CompactionEvent():
         lines.add('[早期摘要] ${clip(event.summary)}');
       case ReasoningEvent() ||
@@ -709,6 +711,7 @@ String _questionText(UserQuestionEvent event) => [
         ].join(),
     ].join('\n\n');
 
+/// 旧持久化提问缺原始参数时按当前协议重建 args JSON。
 String _questionArgsJson(UserQuestionEvent event) => jsonEncode({
       'questions': [
         for (final question in event.questions)
@@ -720,22 +723,9 @@ String _questionArgsJson(UserQuestionEvent event) => jsonEncode({
       ],
     });
 
-String _questionAnswerText(
-  UserQuestionEvent question,
-  UserMessageEvent answer,
-) {
-  if (answer.questionAnswers.isEmpty) return answer.text;
-  return [
-    for (final item in answer.questionAnswers)
-      if (item.questionIndex >= 0 &&
-          item.questionIndex < question.questions.length)
-        '${question.questions[item.questionIndex].question}\n'
-            '回答：${item.values.join('；')}',
-  ].join('\n\n');
-}
-
 String _toolResultText(ToolCallEvent event) => switch (event.state) {
-      AgentToolCallState.success => event.resultDetail ?? event.resultSummary,
+      AgentToolCallState.success =>
+        event.resultDetail ?? event.resultSummary,
       AgentToolCallState.failure =>
         '工具执行失败：${event.resultDetail ?? event.resultSummary}',
       AgentToolCallState.denied => '调用被拒绝：${event.resultSummary}',
@@ -805,8 +795,9 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
     Map<String, Object?> args;
     try {
       final decoded = jsonDecode(call.argsJson);
-      args =
-          decoded is Map<String, dynamic> ? decoded : const <String, Object?>{};
+      args = decoded is Map<String, dynamic>
+          ? decoded
+          : const <String, Object?>{};
     } catch (e) {
       return AgentToolResult(
         ok: false,
@@ -874,7 +865,8 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
       // 文件名附随机后缀：并行子代理/父任务同毫秒调同名工具时
       // 不互相覆盖，一方删任务清理也不会误删另一方仍引用的文件。
       final suffix = Random().nextInt(0xffffff).toRadixString(16);
-      path = '${dir.path}/${DateTime.now().microsecondsSinceEpoch}'
+      path =
+          '${dir.path}/${DateTime.now().microsecondsSinceEpoch}'
           '_${safeName}_$suffix.txt';
       await File(path).writeAsString(text);
     } catch (_) {
@@ -888,8 +880,7 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
             '需要时用 read_file 指定 start_line/end_line 分段回读]…\n\n'
         : '\n\n…[输出过长已截断：中间省略 $omitted 字符]…\n\n';
     return (
-      detail:
-          text.substring(0, head) + note + text.substring(text.length - tail),
+      detail: text.substring(0, head) + note + text.substring(text.length - tail),
       path: path,
     );
   }
@@ -937,12 +928,8 @@ class _PolicyApprovalGate implements ApprovalGate {
     } catch (_) {
       workspaces = const [];
     }
-    if (!toolNeedsConfirmation(
-      route,
-      call.name,
-      args,
-      workspaces: workspaces,
-    )) {
+    if (!toolNeedsConfirmation(route, call.name, args,
+        workspaces: workspaces)) {
       return ApprovalRequirement.allow;
     }
     if (toolAutoApprovedByPolicy(
@@ -1011,7 +998,8 @@ class _PolicyApprovalGate implements ApprovalGate {
     } finally {
       cancel.removeListener(onCancelSignal);
     }
-    if (decision.approved && decision.scope == AgentApprovalScope.whitelist) {
+    if (decision.approved &&
+        decision.scope == AgentApprovalScope.whitelist) {
       final route = _routes[call.name];
       final server = switch (route) {
         FileEditorToolRoute() => kFileEditorServerName,
@@ -1038,7 +1026,8 @@ class _PolicyApprovalGate implements ApprovalGate {
     Map<String, Object?> args,
     List<Workspace> workspaces,
   ) {
-    final bound = workspaces.where((w) => w.id == task.workspaceId).firstOrNull;
+    final bound =
+        workspaces.where((w) => w.id == task.workspaceId).firstOrNull;
     if (bound == null) return false;
     if (route is FileEditorToolRoute) {
       return fileEditorPathsWithinRoot(args, root: bound.root);

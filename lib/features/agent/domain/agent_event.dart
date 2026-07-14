@@ -145,6 +145,27 @@ UserMessageEvent? userQuestionAnswer(
   return null;
 }
 
+/// 结构化回答的统一文本形态（落库与恢复重放共用，保证两侧一致）：
+/// 单问题直接给答案值，多问题按「问题 + 回答」分段；索引越界的条目
+/// 跳过，全部无效时退回 [fallback]。
+String formatQuestionAnswers(
+  UserQuestionEvent question,
+  List<AgentUserQuestionAnswer> answers, {
+  String fallback = '',
+}) {
+  final lines = [
+    for (final item in answers)
+      if (item.questionIndex >= 0 &&
+          item.questionIndex < question.questions.length)
+        question.questions.length == 1
+            ? item.values.join('、')
+            : '${question.questions[item.questionIndex].question}\n'
+                '回答：${item.values.join('、')}',
+  ];
+  if (lines.isEmpty) return fallback;
+  return lines.join('\n\n');
+}
+
 UserQuestionEvent? latestPendingUserQuestion(Iterable<AgentEvent> events) {
   final list = events.toList();
   for (final question

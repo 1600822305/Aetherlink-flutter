@@ -31,7 +31,8 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
   bool _hasText = false;
   // 模式 chip 与侧边栏「执行设置」同源：无话题时取全局默认模式（持久化），
   // 有话题时跟话题自身模式走。
-  late AgentSessionMode _mode = widget.task?.mode ??
+  late AgentSessionMode _mode =
+      widget.task?.mode ??
       ref.read(agentUiSettingsControllerProvider).defaultMode;
   final List<AgentUserAttachment> _attachments = [];
   String _lastText = '';
@@ -171,6 +172,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
     }
 
     if (task.status == AgentTaskStatus.waitingInput) {
+      // 等待回答：输入框只承接单问题的快捷回答，多问题在提问卡里逐项答。
       if (attachments.isNotEmpty) {
         ScaffoldMessenger.of(
           context,
@@ -190,10 +192,11 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       return;
     }
 
-    final executing = task.status == AgentTaskStatus.running ||
+    final executing =
+        task.status == AgentTaskStatus.running ||
         task.status == AgentTaskStatus.waitingApproval;
     if (!executing) {
-      // paused/waitingInput/done/failed/cancelled：落消息并续跑（带上
+      // paused/done/failed/cancelled：落消息并续跑（带上
       // chips 当前模式，中途切模式在这里生效）。
       clearInput();
       await runner.sendMessage(
@@ -417,15 +420,11 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                     children: [
                       for (var i = 0; i < _attachments.length; i++)
                         InputChip(
-                          avatar: Icon(
-                              switch (_attachments[i].kind) {
-                                AgentAttachmentKind.image => LucideIcons.image,
-                                AgentAttachmentKind.file =>
-                                  LucideIcons.fileText,
-                                AgentAttachmentKind.snippet =>
-                                  LucideIcons.quote,
-                              },
-                              size: 14),
+                          avatar: Icon(switch (_attachments[i].kind) {
+                            AgentAttachmentKind.image => LucideIcons.image,
+                            AgentAttachmentKind.file => LucideIcons.fileText,
+                            AgentAttachmentKind.snippet => LucideIcons.quote,
+                          }, size: 14),
                           label: ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 160),
                             child: Text(
@@ -438,7 +437,8 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                           visualDensity: VisualDensity.compact,
                           onDeleted: () => setState(() {
                             _attachments.removeAt(i);
-                            _hasText = _controller.text.trim().isNotEmpty ||
+                            _hasText =
+                                _controller.text.trim().isNotEmpty ||
                                 _attachments.isNotEmpty;
                           }),
                         ),
@@ -454,7 +454,8 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                   maxLines: 5,
                   style: const TextStyle(fontSize: 16, height: 1.4),
                   decoration: InputDecoration(
-                    hintText: widget.task == null ||
+                    hintText:
+                        widget.task == null ||
                             widget.task!.status == AgentTaskStatus.draft
                         ? '输入指令开始任务…'
                         : widget.task!.status == AgentTaskStatus.waitingInput
@@ -656,7 +657,8 @@ class _Chip extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final chip = Material(
-      color: color?.withValues(alpha: 0.14) ??
+      color:
+          color?.withValues(alpha: 0.14) ??
           cs.onSurface.withValues(alpha: 0.05),
       borderRadius: BorderRadius.circular(8),
       child: InkWell(

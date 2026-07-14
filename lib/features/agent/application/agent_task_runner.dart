@@ -88,11 +88,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     );
     await ref.read(agentTasksProvider.notifier).apply(updated);
     await _checkpoint(updated, text);
-    await _store().appendUserMessage(
-      updated.id,
-      text,
-      attachments: attachments,
-    );
+    await _store()
+        .appendUserMessage(updated.id, text, attachments: attachments);
     _run(updated);
   }
 
@@ -161,6 +158,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     }
   }
 
+  /// 回答 ask_user 提问：校验提问仍是最新待答项，逐题归一化答案后
+  /// 以 replyToQuestionId + questionAnswers 落用户消息并续跑任务。
   Future<void> answerUserQuestion(
     AgentTask task,
     UserQuestionEvent question,
@@ -174,26 +173,29 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       throw StateError('该提问已失效或任务不再等待回答');
     }
 
+    final valuesByIndex = <int, List<String>>{};
+    for (final answer in answers) {
+      final values =
+          valuesByIndex.putIfAbsent(answer.questionIndex, () => []);
+      for (final value in answer.values) {
+        final text = value.trim();
+        if (text.isNotEmpty && !values.contains(text)) values.add(text);
+      }
+    }
     final normalized = <AgentUserQuestionAnswer>[];
     for (var i = 0; i < question.questions.length; i++) {
-      final source = answers.where((answer) => answer.questionIndex == i);
-      final values = <String>[];
-      for (final answer in source) {
-        for (final value in answer.values) {
-          final text = value.trim();
-          if (text.isNotEmpty && !values.contains(text)) values.add(text);
-        }
-      }
+      final values = valuesByIndex[i] ?? const [];
       if (values.isEmpty) throw StateError('请回答全部问题后再继续');
       normalized.add(
         AgentUserQuestionAnswer(
           questionIndex: i,
-          values: question.questions[i].allowMultiple ? values : [values.first],
+          values:
+              question.questions[i].allowMultiple ? values : [values.first],
         ),
       );
     }
 
-    final text = _formatQuestionAnswers(question, normalized);
+    final text = formatQuestionAnswers(question, normalized);
     await _checkpoint(task, text);
     await _store().appendUserMessage(
       task.id,
@@ -210,6 +212,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     _run(updated);
   }
 
+  /// 单问题快捷回答（底部输入框直接回复时走这里）。
   Future<void> answerLatestUserQuestion(AgentTask task, String text) async {
     final events = await _store().getEvents(task.id);
     final question = latestPendingUserQuestion(events);
@@ -241,7 +244,10 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     // 等审批卡被处理。
     ref.read(agentApprovalRegistryProvider.notifier).respond(
           task.id,
-          const AgentApprovalDecision(approved: false, reason: '用户打断并发送了新消息'),
+          const AgentApprovalDecision(
+            approved: false,
+            reason: '用户打断并发送了新消息',
+          ),
         );
   }
 
@@ -325,20 +331,18 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         label: '回滚前自动快照',
       );
     }
-    await _store().appendStatusChange(
-        task.id,
-        switch (mode) {
-          AgentRollbackMode.messagesOnly =>
-            '已回滚对话到检查点 ${_shortCommit(checkpoint.commit)}（工作区文件未变）',
-          AgentRollbackMode.filesOnly =>
-            '已回滚工作区到检查点 ${_shortCommit(checkpoint.commit)}'
-                '${_fileSummary(result!.files)}'
-                '（回滚前状态已保存为新检查点，可再回滚回来）',
-          AgentRollbackMode.filesAndMessages =>
-            '已回滚对话与工作区到检查点 ${_shortCommit(checkpoint.commit)}'
-                '${_fileSummary(result!.files)}'
-                '（回滚前状态已保存为新检查点，可再回滚回来）',
-        });
+    await _store().appendStatusChange(task.id, switch (mode) {
+      AgentRollbackMode.messagesOnly =>
+        '已回滚对话到检查点 ${_shortCommit(checkpoint.commit)}（工作区文件未变）',
+      AgentRollbackMode.filesOnly =>
+        '已回滚工作区到检查点 ${_shortCommit(checkpoint.commit)}'
+            '${_fileSummary(result!.files)}'
+            '（回滚前状态已保存为新检查点，可再回滚回来）',
+      AgentRollbackMode.filesAndMessages =>
+        '已回滚对话与工作区到检查点 ${_shortCommit(checkpoint.commit)}'
+            '${_fileSummary(result!.files)}'
+            '（回滚前状态已保存为新检查点，可再回滚回来）',
+    });
     return result;
   }
 
@@ -360,25 +364,23 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   Future<List<RollbackFileChange>> previewRollback(
     AgentTask task,
     CheckpointEvent checkpoint,
-  ) =>
-      previewAgentRollback(
-        ref,
-        task.workspaceId.isEmpty ? null : task.workspaceId,
-        checkpoint.commit,
-      );
+  ) => previewAgentRollback(
+    ref,
+    task.workspaceId.isEmpty ? null : task.workspaceId,
+    checkpoint.commit,
+  );
 
   /// 预览面板里单文件的文本 diff（检查点 vs 当前工作区）。
   Future<String> rollbackFileDiff(
     AgentTask task,
     CheckpointEvent checkpoint,
     String path,
-  ) =>
-      loadRollbackFileDiff(
-        ref,
-        task.workspaceId.isEmpty ? null : task.workspaceId,
-        checkpoint.commit,
-        path,
-      );
+  ) => loadRollbackFileDiff(
+    ref,
+    task.workspaceId.isEmpty ? null : task.workspaceId,
+    checkpoint.commit,
+    path,
+  );
 
   static String _fileSummary(List<RollbackFileChange> files) {
     if (files.isEmpty) return '';
@@ -441,7 +443,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     }
 
     // 档案已删的孤儿话题兜底：空专长 + 全工具组，任务仍可继续。
-    final profile = ref
+    final profile =
+        ref
             .read(agentProfilesProvider)
             .where((p) => p.id == task.profileId)
             .firstOrNull ??
@@ -452,7 +455,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           systemPrompt: '',
           tools: AgentToolGroup.values.toSet(),
         );
-    final runtime = await ref.read(agentRuntimeProvider).forProfile(
+    final runtime = await ref
+        .read(agentRuntimeProvider)
+        .forProfile(
           profile,
           mode: task.mode,
           boundWorkspaceId: task.workspaceId,
@@ -487,12 +492,14 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       '返回结论：结论是父任务唯一能看到的内容，必须自包含（关键发现、文件路径、'
       '结论依据），不要只说“已完成”。不要用 ask_user 提问。';
 
-  static const String _kBashSubagentPrompt = '你是一个终端子代理：在独立上下文里执行父任务派发的命令型子任务。'
+  static const String _kBashSubagentPrompt =
+      '你是一个终端子代理：在独立上下文里执行父任务派发的命令型子任务。'
       '你看不到父任务的对话，指令里的信息就是全部上下文。完成后用 finish_task '
       '返回结论：提炼关键输出和结论，不要长篇粘贴原始输出。不要用 ask_user 提问。';
 
   /// 自定义档案子代理的通用后缀（拼在档案正文之后）。
-  static const String _kCustomSubagentSuffix = '你是一个子代理，在独立上下文里完成父任务派发的子任务：'
+  static const String _kCustomSubagentSuffix =
+      '你是一个子代理，在独立上下文里完成父任务派发的子任务：'
       '你看不到父任务的对话，指令里的信息就是全部上下文。完成后用 finish_task '
       '返回自包含的结论（父任务只能看到结论）。不要用 ask_user 提问。';
 
@@ -521,15 +528,17 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     if (prompt.isEmpty) {
       return const AgentToolResult(ok: false, summary: '缺少 prompt ✗');
     }
-    final parentReadOnly = parent.mode == AgentSessionMode.ask ||
+    final parentReadOnly =
+        parent.mode == AgentSessionMode.ask ||
         parent.mode == AgentSessionMode.plan;
     final baseProfile = ref
         .read(agentProfilesProvider)
         .where((p) => p.id == parent.profileId)
         .firstOrNull;
 
-    final builtin =
-        AgentSubagentType.values.where((t) => t.name == typeName).firstOrNull;
+    final builtin = AgentSubagentType.values
+        .where((t) => t.name == typeName)
+        .firstOrNull;
     final AgentSessionMode childMode;
     final AgentProfile childProfile;
     if (builtin != null) {
@@ -638,7 +647,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       return AgentToolResult(
         ok: true,
         summary: '后台子代理已启动',
-        detail: '子代理「${child.title}」已在后台运行；完成后结论会更新到'
+        detail:
+            '子代理「${child.title}」已在后台运行；完成后结论会更新到'
             '本工具结果，并以消息注入对话。',
       );
     }
@@ -720,13 +730,11 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     } catch (e) {
       // 异常也要回填父工具事件并通知，否则事件永久停在 running。
       try {
-        await ref.read(agentTasksProvider.notifier).apply(
-              child.copyWith(
-                status: AgentTaskStatus.failed,
-                updatedAt: DateTime.now(),
-                lastEventSummary: '执行出错：$e',
-              ),
-            );
+        await ref.read(agentTasksProvider.notifier).apply(child.copyWith(
+              status: AgentTaskStatus.failed,
+              updatedAt: DateTime.now(),
+              lastEventSummary: '执行出错：$e',
+            ));
         final events = await _store().getEvents(parent.id);
         final event = events
             .whereType<ToolCallEvent>()
@@ -767,7 +775,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     required AgentSessionMode childMode,
     required AgentCancellationToken childToken,
   }) async {
-    final runtime = await ref.read(agentRuntimeProvider).forProfile(
+    final runtime = await ref
+        .read(agentRuntimeProvider)
+        .forProfile(
           childProfile,
           mode: childMode,
           enableSubagents: false,
@@ -784,7 +794,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     );
     await engine.run(child, childToken);
 
-    final finalChild = ref
+    final finalChild =
+        ref
             .read(agentTasksProvider)
             .where((t) => t.id == child.id)
             .firstOrNull ??
@@ -839,20 +850,6 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       ref.read(agentTasksProvider.notifier).apply(task);
 }
 
-String _formatQuestionAnswers(
-  UserQuestionEvent question,
-  List<AgentUserQuestionAnswer> answers,
-) {
-  if (question.questions.length == 1) {
-    return answers.single.values.join('、');
-  }
-  return [
-    for (final answer in answers)
-      '${question.questions[answer.questionIndex].question}\n'
-          '回答：${answer.values.join('、')}',
-  ].join('\n\n');
-}
-
 class _RunnerSubagentLauncher implements AgentSubagentLauncher {
   _RunnerSubagentLauncher(this._runner);
 
@@ -864,13 +861,12 @@ class _RunnerSubagentLauncher implements AgentSubagentLauncher {
     required AgentToolCallRequest call,
     required String toolEventId,
     required AgentCancellationToken cancel,
-  }) =>
-      _runner._launchSubagent(
-        parent: parent,
-        call: call,
-        toolEventId: toolEventId,
-        cancel: cancel,
-      );
+  }) => _runner._launchSubagent(
+    parent: parent,
+    call: call,
+    toolEventId: toolEventId,
+    cancel: cancel,
+  );
 }
 
 class _ProviderTaskGateway implements AgentTaskGateway {

@@ -338,9 +338,8 @@ AgentEvent decodeAgentEvent({
           for (final item in (p['items'] as List<dynamic>? ?? const []))
             AgentPlanItem(
               content: (item as Map<String, dynamic>)['content'] as String,
-              status: AgentPlanItemStatus.values.byName(
-                item['status'] as String,
-              ),
+              status:
+                  AgentPlanItemStatus.values.byName(item['status'] as String),
             ),
         ],
       );

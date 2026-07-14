@@ -121,7 +121,8 @@ class DriftAgentEventStore implements AgentEventStore {
     final prev = _seqLocks[taskId] ?? Future<void>.value();
     final next = prev.then((_) async {
       final cached = _seqCache[taskId];
-      final value = cached != null ? cached + 1 : await _dao.maxSeq(taskId) + 1;
+      final value =
+          cached != null ? cached + 1 : await _dao.maxSeq(taskId) + 1;
       _seqCache[taskId] = value;
       return value;
     });
