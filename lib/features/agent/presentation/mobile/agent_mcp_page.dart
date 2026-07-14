@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
+import 'package:aetherlink_flutter/app/di/remote_mcp_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 
@@ -149,6 +150,11 @@ class AgentMcpPage extends ConsumerWidget {
     ref
         .read(agentProfilesProvider.notifier)
         .upsert(profile.copyWith(mcpServerIds: ids));
+    if (!enabled && server.type == McpServerType.stdio) {
+      // 同步停掉 stdio 进程，MCP 设置页状态点一致；其他消费方
+      // （聊天/其他档案）下次调用时按需重新拉起。
+      ref.read(stdioMcpConnectionManagerProvider).closeServer(server);
+    }
   }
 
   Widget _row(

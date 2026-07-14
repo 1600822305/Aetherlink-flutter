@@ -87,6 +87,8 @@ class AgentHomePage extends ConsumerWidget {
               tooltip: '更多',
               icon: const Icon(LucideIcons.ellipsisVertical, size: 20),
               position: PopupMenuPosition.under,
+              // 秒开：去掉弹出/收起过渡动画。
+              popUpAnimationStyle: AnimationStyle.noAnimation,
               onSelected: (value) {
                 if (value == 'skills') showAgentSkillsPage(context);
                 if (value == 'mcp') showAgentMcpPage(context);
