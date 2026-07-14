@@ -130,7 +130,7 @@ class _WorkspaceManagementPageState
       navigated = true;
       context.push(AppRouter.workspacePath);
     });
-    await showOpenWorkspaceSheet(context, ref);
+    await showAddWorkspaceSheet(context, ref);
   }
 
   Future<void> _open(Workspace w) async {

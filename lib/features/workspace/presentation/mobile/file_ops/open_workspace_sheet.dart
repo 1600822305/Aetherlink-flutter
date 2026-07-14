@@ -47,6 +47,128 @@ class _OpenWorkspaceSheet extends ConsumerWidget {
     final recent = ref.watch(workspaceStoreProvider);
     final current = ref.watch(currentWorkspaceProvider);
 
+    final workspaces = recent.asData?.value ?? const <Workspace>[];
+
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+        ),
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12, left: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '切换工作区',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    icon: const Icon(LucideIcons.settings, size: 16),
+                    label: const Text('管理 / 新建'),
+                    onPressed: () {
+                      final router = GoRouter.of(context);
+                      Navigator.of(context).pop();
+                      router.push(AppRouter.workspaceManagementPath);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            if (workspaces.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Column(
+                  children: [
+                    Icon(
+                      LucideIcons.folderOpen,
+                      size: 32,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '还没有工作区',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      icon: const Icon(LucideIcons.folderPlus, size: 18),
+                      label: const Text('新建工作区'),
+                      onPressed: () {
+                        final router = GoRouter.of(context);
+                        Navigator.of(context).pop();
+                        router.push(AppRouter.workspaceManagementPath);
+                      },
+                    ),
+                  ],
+                ),
+              )
+            else
+              for (final w in workspaces)
+                ListTile(
+                  leading: Icon(
+                    LucideIcons.folder,
+                    color: w.id == current?.id
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  title: Text(
+                    w.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    w.displayPath ?? w.root,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: w.id == current?.id
+                      ? Icon(
+                          LucideIcons.check,
+                          color: theme.colorScheme.primary,
+                        )
+                      : null,
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    await openRecent(parentRef, w);
+                  },
+                ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Opens the “新建工作区” sheet: the ways to add a workspace (主终端 / 本地
+/// 文件夹 / SSH / Termux / 内置终端). Used by 工作区管理页; the file-tree header
+/// only quick-switches between already-added workspaces.
+Future<void> showAddWorkspaceSheet(BuildContext context, WidgetRef ref) {
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheetContext) => _AddWorkspaceSheet(parentRef: ref),
+  );
+}
+
+class _AddWorkspaceSheet extends ConsumerWidget {
+  const _AddWorkspaceSheet({required this.parentRef});
+
+  final WidgetRef parentRef;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     return SafeArea(
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -59,7 +181,7 @@ class _OpenWorkspaceSheet extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.only(bottom: 12, left: 4),
               child: Text(
-                '打开文件夹',
+                '新建工作区',
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
@@ -106,9 +228,6 @@ class _OpenWorkspaceSheet extends ConsumerWidget {
                 title: const Text('SSH / 远程'),
                 subtitle: const Text('连接远程机器，浏览其文件 (Remote-SSH)'),
                 onTap: () {
-                  // Pop this picker sheet, then push the full-screen form on the
-                  // router — its own ref outlives navigation, so no parent-ref
-                  // hand-off is needed.
                   final router = GoRouter.of(context);
                   Navigator.of(context).pop();
                   router.push(AppRouter.sshConnectionPath);
@@ -145,59 +264,12 @@ class _OpenWorkspaceSheet extends ConsumerWidget {
                 title: const Text('内置终端'),
                 subtitle: const Text('应用内置 Alpine Linux，免 Root 零依赖（PRoot）'),
                 onTap: () async {
-                  // Capture the navigator before popping — this sheet's context
-                  // is defunct afterwards but navigator.context stays valid.
                   final navigator = Navigator.of(context);
                   navigator.pop();
                   await showProotScopeSheet(navigator.context, parentRef);
                 },
               ),
             ),
-            if (recent.asData?.value.isNotEmpty ?? false) ...[
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 4),
-                child: Text(
-                  '工作区',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              for (final w in recent.asData!.value)
-                ListTile(
-                  leading: Icon(
-                    LucideIcons.folder,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  title: Text(
-                    w.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text(
-                    w.displayPath ?? w.root,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: w.id == current?.id
-                      ? Icon(
-                          LucideIcons.check,
-                          color: theme.colorScheme.primary,
-                        )
-                      : IconButton(
-                          icon: const Icon(LucideIcons.x, size: 18),
-                          onPressed: () => ref
-                              .read(workspaceStoreProvider.notifier)
-                              .remove(w.id),
-                        ),
-                  onTap: () async {
-                    Navigator.of(context).pop();
-                    await openRecent(parentRef, w);
-                  },
-                ),
-            ],
           ],
         ),
       ),
