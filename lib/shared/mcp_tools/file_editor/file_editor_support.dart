@@ -313,6 +313,32 @@ Map<String, Object?> entryJson(WorkspaceEntry e) => {
 /// the UI. When hit, the walk stops early and the caller reports it truncated.
 const int kMaxRecursiveEntries = 2000;
 
+/// Directories skipped during recursive listing: dependency/build/cache
+/// trees that are huge and almost never what the model wants. The entry
+/// itself is still listed (so the model knows it exists) but its contents
+/// are not walked; list it explicitly by path to inspect inside.
+const Set<String> kListIgnoredDirs = {
+  'node_modules',
+  '.git',
+  '.svn',
+  '.hg',
+  'dist',
+  'build',
+  'out',
+  'target',
+  '.dart_tool',
+  '.gradle',
+  '.idea',
+  '.vscode',
+  '__pycache__',
+  '.venv',
+  'venv',
+  '.next',
+  '.nuxt',
+  'coverage',
+  'Pods',
+};
+
 /// Result of [listRecursive]: the flattened entries plus whether the
 /// [kMaxRecursiveEntries] cap cut the walk short.
 class RecursiveListing {
@@ -345,7 +371,9 @@ Future<RecursiveListing> listRecursive(
         return;
       }
       out.add(entryJson(e));
-      if (e.isDirectory && depth < maxDepth) {
+      if (e.isDirectory &&
+          depth < maxDepth &&
+          !kListIgnoredDirs.contains(e.name)) {
         await walk(e.path, depth + 1);
       }
     }

@@ -53,11 +53,16 @@ Future<McpToolResult> listFiles(Ref ref, Map<String, Object?> args) async {
   }
   final entries = await backend.listDir(dir);
   entries.sort(_dirsFirst);
+  final truncated = entries.length > kMaxRecursiveEntries;
+  final shown =
+      truncated ? entries.sublist(0, kMaxRecursiveEntries) : entries;
   return fileEditorOk({
     if (workspaceName != null) 'workspace': workspaceName,
     'path': dir,
     'count': entries.length,
-    'files': [for (final e in entries) entryJson(e)],
+    if (truncated) 'truncated': true,
+    if (truncated) 'shown': shown.length,
+    'files': [for (final e in shown) entryJson(e)],
   });
 }
 
