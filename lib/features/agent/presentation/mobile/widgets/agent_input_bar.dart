@@ -31,8 +31,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
   bool _hasText = false;
   // 模式 chip 与侧边栏「执行设置」同源：无话题时取全局默认模式（持久化），
   // 有话题时跟话题自身模式走。
-  late AgentSessionMode _mode =
-      widget.task?.mode ??
+  late AgentSessionMode _mode = widget.task?.mode ??
       ref.read(agentUiSettingsControllerProvider).defaultMode;
   final List<AgentUserAttachment> _attachments = [];
   String _lastText = '';
@@ -171,8 +170,27 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       return;
     }
 
-    final executing =
-        task.status == AgentTaskStatus.running ||
+    if (task.status == AgentTaskStatus.waitingInput) {
+      if (attachments.isNotEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('请先在提问卡中回答；回答暂不支持附件')));
+        return;
+      }
+      try {
+        await runner.answerLatestUserQuestion(task, text);
+        if (!mounted) return;
+        clearInput();
+      } on StateError catch (error) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message.toString())));
+      }
+      return;
+    }
+
+    final executing = task.status == AgentTaskStatus.running ||
         task.status == AgentTaskStatus.waitingApproval;
     if (!executing) {
       // paused/waitingInput/done/failed/cancelled：落消息并续跑（带上
@@ -399,11 +417,15 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                     children: [
                       for (var i = 0; i < _attachments.length; i++)
                         InputChip(
-                          avatar: Icon(switch (_attachments[i].kind) {
-                            AgentAttachmentKind.image => LucideIcons.image,
-                            AgentAttachmentKind.file => LucideIcons.fileText,
-                            AgentAttachmentKind.snippet => LucideIcons.quote,
-                          }, size: 14),
+                          avatar: Icon(
+                              switch (_attachments[i].kind) {
+                                AgentAttachmentKind.image => LucideIcons.image,
+                                AgentAttachmentKind.file =>
+                                  LucideIcons.fileText,
+                                AgentAttachmentKind.snippet =>
+                                  LucideIcons.quote,
+                              },
+                              size: 14),
                           label: ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 160),
                             child: Text(
@@ -416,8 +438,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                           visualDensity: VisualDensity.compact,
                           onDeleted: () => setState(() {
                             _attachments.removeAt(i);
-                            _hasText =
-                                _controller.text.trim().isNotEmpty ||
+                            _hasText = _controller.text.trim().isNotEmpty ||
                                 _attachments.isNotEmpty;
                           }),
                         ),
@@ -433,11 +454,12 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                   maxLines: 5,
                   style: const TextStyle(fontSize: 16, height: 1.4),
                   decoration: InputDecoration(
-                    hintText:
-                        widget.task == null ||
+                    hintText: widget.task == null ||
                             widget.task!.status == AgentTaskStatus.draft
                         ? '输入指令开始任务…'
-                        : '追加指令…',
+                        : widget.task!.status == AgentTaskStatus.waitingInput
+                            ? '也可以在这里输入单个问题的回答…'
+                            : '追加指令…',
                     hintStyle: const TextStyle(fontSize: 16, height: 1.4),
                     border: InputBorder.none,
                     isDense: true,
@@ -536,8 +558,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                           ),
                         ),
                       )
-                    else if (widget.task?.status == AgentTaskStatus.paused ||
-                        widget.task?.status == AgentTaskStatus.waitingInput)
+                    else if (widget.task?.status == AgentTaskStatus.paused)
                       IconButton(
                         onPressed: () {
                           final task = widget.task;
@@ -549,6 +570,22 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                         },
                         icon: Icon(
                           LucideIcons.play,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        padding: const EdgeInsets.all(6),
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                      )
+                    else if (widget.task?.status ==
+                        AgentTaskStatus.waitingInput)
+                      IconButton(
+                        onPressed: null,
+                        icon: Icon(
+                          LucideIcons.circleHelp,
                           size: 18,
                           color: Theme.of(context).colorScheme.primary,
                         ),
@@ -619,8 +656,7 @@ class _Chip extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final chip = Material(
-      color:
-          color?.withValues(alpha: 0.14) ??
+      color: color?.withValues(alpha: 0.14) ??
           cs.onSurface.withValues(alpha: 0.05),
       borderRadius: BorderRadius.circular(8),
       child: InkWell(

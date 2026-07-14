@@ -40,8 +40,14 @@ List<AgentEvent> foldCompactedEvents(List<AgentEvent> events) {
 /// 英文 ≈4 字/token，取字符数做保守阈值即可，不追求精确）。
 int contextCharsOf(AgentEvent event) => switch (event) {
       UserMessageEvent(:final text) => text.length,
-      UserQuestionEvent(:final question, :final options) =>
-        question.length + options.fold(0, (sum, o) => sum + o.length),
+      UserQuestionEvent(:final questions) => questions.fold(
+          0,
+          (sum, question) =>
+              sum +
+              question.question.length +
+              question.options
+                  .fold(0, (total, option) => total + option.length),
+        ),
       AssistantTextEvent(:final text) => text.length,
       ToolCallEvent() => (event.argsDetail?.length ?? 0) +
           (event.resultDetail ?? event.resultSummary).length,

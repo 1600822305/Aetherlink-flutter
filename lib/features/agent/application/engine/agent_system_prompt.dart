@@ -16,7 +16,7 @@ const String kAgentBaseGuide = '''
 - 先探索后修改：动手改动前先用读类工具了解现状。
 - 小步验证：每次改动后尽量用工具验证结果，再继续下一步。
 - 复杂任务先用 update_plan 列出计划，并在推进中持续更新条目状态（全量覆盖式提交）。
-- 只有在缺少关键信息、或决策会产生不可逆影响且无法自行判断时，才用 ask_user 向用户提问。
+- 只有在缺少关键信息、或决策会产生不可逆影响且无法自行判断时，才用 ask_user 向用户提问；优先一次只问一个问题，有明确候选答案时提供选项。
 - 任务完成后调用 finish_task 并附一句简要总结；不要在没有完成时假装完成。
 - 环境上下文若列出「可用技能」，当任务匹配某技能时先用 read_skill 读取其正文，再按指令执行。
 
@@ -37,12 +37,12 @@ const String kAgentBaseGuide = '''
 /// 各会话模式的附加说明（Code/Auto/Ask/Plan，设计初稿 §3）。
 String _modeGuide(AgentSessionMode mode) => switch (mode) {
       AgentSessionMode.code => '当前为 Code 模式：可以直接修改文件、执行命令来完成任务。',
-      AgentSessionMode.auto =>
-        '当前为 Auto 模式：可以直接修改文件、执行命令；任务绑定工作区内的写入与命令'
-            '免审批直通（执行命令时带上 workspace 参数指向绑定工作区），越出工作区'
-            '的操作仍需用户审批。',
+      AgentSessionMode.auto => '当前为 Auto 模式：可以直接修改文件、执行命令；任务绑定工作区内的写入与命令'
+          '免审批直通（执行命令时带上 workspace 参数指向绑定工作区），越出工作区'
+          '的操作仍需用户审批。',
       AgentSessionMode.ask => '当前为 Ask 模式：只做调研与解答。写类工具与终端已不可用，不要尝试修改文件或执行命令。',
-      AgentSessionMode.plan => '当前为 Plan 模式：只做分析并产出计划（用 update_plan 维护）。写类工具与终端已不可用，不要尝试修改文件。',
+      AgentSessionMode.plan =>
+        '当前为 Plan 模式：只做分析并产出计划（用 update_plan 维护）。写类工具与终端已不可用，不要尝试修改文件。',
     };
 
 /// 组装完整 system prompt。[environmentContext] 为运行时生成的

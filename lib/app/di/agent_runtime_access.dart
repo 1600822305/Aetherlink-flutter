@@ -174,8 +174,10 @@ Future<void> _addMcpServerTools(
   Ref ref,
   AgentProfile profile,
   AgentSessionMode mode,
-  ({List<McpToolDefinition> definitions, Map<String, ToolRoute> routes})
-      catalog,
+  ({
+    List<McpToolDefinition> definitions,
+    Map<String, ToolRoute> routes
+  }) catalog,
 ) async {
   if (profile.mcpServerIds.isEmpty) return;
   if (mode == AgentSessionMode.ask || mode == AgentSessionMode.plan) return;
@@ -200,9 +202,8 @@ Future<void> _addMcpServerTools(
           catalog.routes[exposed] = RemoteToolRoute(server, tool.toolName);
         }
       } else if (StdioMcpConnectionManager.isStdio(server)) {
-        final discovered = await ref
-            .read(stdioMcpConnectionManagerProvider)
-            .listTools(server);
+        final discovered =
+            await ref.read(stdioMcpConnectionManagerProvider).listTools(server);
         for (final tool in discovered) {
           final exposed = tool.definition.name;
           if (catalog.routes.containsKey(exposed)) continue;
@@ -325,8 +326,10 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     var totalTokens = 0;
     var promptTokens = 0;
     try {
-      await for (final chunk
-          in gateway.streamChat(request, cancelToken: llmCancel)) {
+      await for (final chunk in gateway.streamChat(
+        request,
+        cancelToken: llmCancel,
+      )) {
         switch (chunk) {
           case LlmTextDelta(:final text):
             buffer.write(text);
@@ -334,7 +337,12 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
           case LlmReasoningDelta(:final text):
             reasoning.write(text);
             onReasoningDelta?.call(reasoning.toString());
-          case LlmToolCallDelta(:final key, :final id, :final name, :final argsTextSoFar):
+          case LlmToolCallDelta(
+              :final key,
+              :final id,
+              :final name,
+              :final argsTextSoFar,
+            ):
             deltaKeys[key] = (id: id, name: name);
             if (onToolCallDelta != null) {
               await onToolCallDelta(key, name, argsTextSoFar);
@@ -346,8 +354,8 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
               for (final entry in deltaKeys.entries) {
                 final matchesId =
                     call.id.isNotEmpty && entry.value.id == call.id;
-                final matchesName = entry.value.id == null &&
-                    entry.value.name == call.name;
+                final matchesName =
+                    entry.value.id == null && entry.value.name == call.name;
                 if (matchesId || matchesName) {
                   streamKey = entry.key;
                   break;
@@ -442,7 +450,9 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   Future<String> _environmentContext(Ref ref, AgentTask task) async {
     String? workspace;
     try {
-      final bound = (await loadWorkspaces(ref))
+      final bound = (await loadWorkspaces(
+        ref,
+      ))
           .where((w) => w.id == task.workspaceId)
           .firstOrNull;
       workspace = await buildWorkspaceContextSection(
@@ -512,12 +522,9 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     try {
       final workspaces = await loadWorkspaces(ref);
       if (workspaces.isEmpty) return null;
-      final bound = workspaces
-              .where((w) => w.id == task.workspaceId)
-              .firstOrNull ??
-          workspaces
-              .where((w) => w.id == _profile.workspaceId)
-              .firstOrNull;
+      final bound =
+          workspaces.where((w) => w.id == task.workspaceId).firstOrNull ??
+              workspaces.where((w) => w.id == _profile.workspaceId).firstOrNull;
       final workspace =
           bound ?? ref.read(currentWorkspaceProvider) ?? workspaces.first;
       final backend = ref.read(workspaceBackendProvider(workspace));
@@ -537,23 +544,54 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
 /// 用户消息。计划/状态事件不进消息（计划走系统提示置尾）。
 List<LlmMessage> _replayMessages(List<AgentEvent> events) {
   final messages = <LlmMessage>[];
+  final questionsById = {
+    for (final event in events.whereType<UserQuestionEvent>()) event.id: event,
+  };
   for (final event in foldCompactedEvents(events)) {
     switch (event) {
       case UserMessageEvent():
-        messages.add(
-          LlmMessage(
-            role: MessageRole.user,
-            content: _userMessageContent(event),
-            images: _userMessageImages(event),
-          ),
-        );
+        final question = questionsById[event.replyToQuestionId];
+        if (question?.toolCallId != null) {
+          messages.add(
+            LlmMessage(
+              role: MessageRole.user,
+              content: _questionAnswerText(question!, event),
+              toolCallId: question.toolCallId,
+              toolName: 'ask_user',
+            ),
+          );
+        } else {
+          messages.add(
+            LlmMessage(
+              role: MessageRole.user,
+              content: _userMessageContent(event),
+              images: _userMessageImages(event),
+            ),
+          );
+        }
       case UserQuestionEvent():
-        messages.add(
-          LlmMessage(
-            role: MessageRole.assistant,
-            content: _questionText(event),
-          ),
-        );
+        if (event.toolCallId != null) {
+          messages.add(
+            LlmMessage(
+              role: MessageRole.assistant,
+              content: '',
+              toolCalls: [
+                LlmToolCall(
+                  id: event.toolCallId!,
+                  name: 'ask_user',
+                  arguments: event.argsJson ?? _questionArgsJson(event),
+                ),
+              ],
+            ),
+          );
+        } else {
+          messages.add(
+            LlmMessage(
+              role: MessageRole.assistant,
+              content: _questionText(event),
+            ),
+          );
+        }
       case AssistantTextEvent():
         if (event.text.isNotEmpty) {
           messages.add(
@@ -632,15 +670,21 @@ String _compactionTranscript(List<AgentEvent> events) {
   for (final event in events) {
     switch (event) {
       case UserMessageEvent():
-        lines.add('[用户] ${clip(event.text)}');
+        lines.add(
+          event.replyToQuestionId == null
+              ? '[用户] ${clip(event.text)}'
+              : '[用户回答] ${clip(event.text)}',
+        );
       case UserQuestionEvent():
         lines.add('[助手提问] ${clip(_questionText(event))}');
       case AssistantTextEvent():
         if (event.text.isNotEmpty) lines.add('[助手] ${clip(event.text)}');
       case ToolCallEvent():
-        lines.add('[工具 ${event.toolName}] 参数：'
-            '${clip(event.argsDetail ?? event.argSummary, 500)}\n'
-            '结果：${clip(event.resultDetail ?? event.resultSummary)}');
+        lines.add(
+          '[工具 ${event.toolName}] 参数：'
+          '${clip(event.argsDetail ?? event.argSummary, 500)}\n'
+          '结果：${clip(event.resultDetail ?? event.resultSummary)}',
+        );
       case CompactionEvent():
         lines.add('[早期摘要] ${clip(event.summary)}');
       case ReasoningEvent() ||
@@ -654,13 +698,44 @@ String _compactionTranscript(List<AgentEvent> events) {
 }
 
 /// ask_user 提问的文本形态（重放/压缩共用）：问题 + 选项清单。
-String _questionText(UserQuestionEvent event) => event.options.isEmpty
-    ? event.question
-    : '${event.question}\n可选：${event.options.join(' / ')}';
+String _questionText(UserQuestionEvent event) => [
+      for (var i = 0; i < event.questions.length; i++)
+        [
+          if (event.questions.length > 1) '${i + 1}. ',
+          event.questions[i].question,
+          if (event.questions[i].options.isNotEmpty)
+            '\n可选：${event.questions[i].options.join(' / ')}',
+          if (event.questions[i].allowMultiple) '\n（可多选）',
+        ].join(),
+    ].join('\n\n');
+
+String _questionArgsJson(UserQuestionEvent event) => jsonEncode({
+      'questions': [
+        for (final question in event.questions)
+          {
+            'question': question.question,
+            'options': question.options,
+            'allow_multiple': question.allowMultiple,
+          },
+      ],
+    });
+
+String _questionAnswerText(
+  UserQuestionEvent question,
+  UserMessageEvent answer,
+) {
+  if (answer.questionAnswers.isEmpty) return answer.text;
+  return [
+    for (final item in answer.questionAnswers)
+      if (item.questionIndex >= 0 &&
+          item.questionIndex < question.questions.length)
+        '${question.questions[item.questionIndex].question}\n'
+            '回答：${item.values.join('；')}',
+  ].join('\n\n');
+}
 
 String _toolResultText(ToolCallEvent event) => switch (event.state) {
-      AgentToolCallState.success =>
-        event.resultDetail ?? event.resultSummary,
+      AgentToolCallState.success => event.resultDetail ?? event.resultSummary,
       AgentToolCallState.failure =>
         '工具执行失败：${event.resultDetail ?? event.resultSummary}',
       AgentToolCallState.denied => '调用被拒绝：${event.resultSummary}',
@@ -730,9 +805,8 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
     Map<String, Object?> args;
     try {
       final decoded = jsonDecode(call.argsJson);
-      args = decoded is Map<String, dynamic>
-          ? decoded
-          : const <String, Object?>{};
+      args =
+          decoded is Map<String, dynamic> ? decoded : const <String, Object?>{};
     } catch (e) {
       return AgentToolResult(
         ok: false,
@@ -800,8 +874,7 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
       // 文件名附随机后缀：并行子代理/父任务同毫秒调同名工具时
       // 不互相覆盖，一方删任务清理也不会误删另一方仍引用的文件。
       final suffix = Random().nextInt(0xffffff).toRadixString(16);
-      path =
-          '${dir.path}/${DateTime.now().microsecondsSinceEpoch}'
+      path = '${dir.path}/${DateTime.now().microsecondsSinceEpoch}'
           '_${safeName}_$suffix.txt';
       await File(path).writeAsString(text);
     } catch (_) {
@@ -815,7 +888,8 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
             '需要时用 read_file 指定 start_line/end_line 分段回读]…\n\n'
         : '\n\n…[输出过长已截断：中间省略 $omitted 字符]…\n\n';
     return (
-      detail: text.substring(0, head) + note + text.substring(text.length - tail),
+      detail:
+          text.substring(0, head) + note + text.substring(text.length - tail),
       path: path,
     );
   }
@@ -863,8 +937,12 @@ class _PolicyApprovalGate implements ApprovalGate {
     } catch (_) {
       workspaces = const [];
     }
-    if (!toolNeedsConfirmation(route, call.name, args,
-        workspaces: workspaces)) {
+    if (!toolNeedsConfirmation(
+      route,
+      call.name,
+      args,
+      workspaces: workspaces,
+    )) {
       return ApprovalRequirement.allow;
     }
     if (toolAutoApprovedByPolicy(
@@ -933,8 +1011,7 @@ class _PolicyApprovalGate implements ApprovalGate {
     } finally {
       cancel.removeListener(onCancelSignal);
     }
-    if (decision.approved &&
-        decision.scope == AgentApprovalScope.whitelist) {
+    if (decision.approved && decision.scope == AgentApprovalScope.whitelist) {
       final route = _routes[call.name];
       final server = switch (route) {
         FileEditorToolRoute() => kFileEditorServerName,
@@ -961,8 +1038,7 @@ class _PolicyApprovalGate implements ApprovalGate {
     Map<String, Object?> args,
     List<Workspace> workspaces,
   ) {
-    final bound =
-        workspaces.where((w) => w.id == task.workspaceId).firstOrNull;
+    final bound = workspaces.where((w) => w.id == task.workspaceId).firstOrNull;
     if (bound == null) return false;
     if (route is FileEditorToolRoute) {
       return fileEditorPathsWithinRoot(args, root: bound.root);

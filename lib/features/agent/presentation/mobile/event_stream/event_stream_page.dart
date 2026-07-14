@@ -72,11 +72,12 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 用户发送 → 显式回底（事件流里多出新的用户消息）。
+    // 用户发送或智能体提问 → 显式回底，确保交互卡立即进入视口。
     ref.listen(agentTaskEventsProvider(widget.task.id), (prev, next) {
-      final before =
-          prev?.value?.whereType<UserMessageEvent>().length ?? 0;
-      final after = next.value?.whereType<UserMessageEvent>().length ?? 0;
+      final before = (prev?.value?.whereType<UserMessageEvent>().length ?? 0) +
+          (prev?.value?.whereType<UserQuestionEvent>().length ?? 0);
+      final after = (next.value?.whereType<UserMessageEvent>().length ?? 0) +
+          (next.value?.whereType<UserQuestionEvent>().length ?? 0);
       if (after > before) _autoScroll.pinToBottom();
     });
 
@@ -93,8 +94,11 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
         ref.watch(agentTaskEventsProvider(widget.task.id)).value ?? const [];
     final plan = latestPlan(events);
     // 工作段折叠由侧边栏设置控制（默认折叠，用户点段头展开）。
-    final collapse = ref.watch(agentUiSettingsControllerProvider
-        .select((s) => s.autoCollapseWorkSessions));
+    final collapse = ref.watch(
+      agentUiSettingsControllerProvider.select(
+        (s) => s.autoCollapseWorkSessions,
+      ),
+    );
     final blocks = buildTimelineBlocks(events, collapse: collapse);
     final showWorking = widget.task.status == AgentTaskStatus.running &&
         needsWorkingIndicator(events);

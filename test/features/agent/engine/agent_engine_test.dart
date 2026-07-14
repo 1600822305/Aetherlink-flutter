@@ -50,6 +50,8 @@ class InMemoryAgentEventStore implements AgentEventStore {
     String text, {
     bool queued = false,
     List<AgentUserAttachment> attachments = const [],
+    String? replyToQuestionId,
+    List<AgentUserQuestionAnswer> questionAnswers = const [],
   }) async {
     final event = UserMessageEvent(
       id: _newId(),
@@ -58,6 +60,8 @@ class InMemoryAgentEventStore implements AgentEventStore {
       text: text,
       queued: queued,
       attachments: attachments,
+      replyToQuestionId: replyToQuestionId,
+      questionAnswers: questionAnswers,
     );
     _upsert(taskId, event);
     return event;
@@ -70,8 +74,15 @@ class InMemoryAgentEventStore implements AgentEventStore {
     for (var i = 0; i < list.length; i++) {
       final e = list[i];
       if (e is UserMessageEvent && e.queued) {
-        list[i] =
-            UserMessageEvent(id: e.id, seq: e.seq, at: e.at, text: e.text);
+        list[i] = UserMessageEvent(
+          id: e.id,
+          seq: e.seq,
+          at: e.at,
+          text: e.text,
+          attachments: e.attachments,
+          replyToQuestionId: e.replyToQuestionId,
+          questionAnswers: e.questionAnswers,
+        );
       }
     }
   }
@@ -79,15 +90,17 @@ class InMemoryAgentEventStore implements AgentEventStore {
   @override
   Future<UserQuestionEvent> appendUserQuestion(
     String taskId,
-    String question, {
-    List<String> options = const [],
+    List<AgentUserQuestion> questions, {
+    String? toolCallId,
+    String? argsJson,
   }) async {
     final event = UserQuestionEvent(
       id: _newId(),
       seq: _nextSeq(taskId),
       at: DateTime.now(),
-      question: question,
-      options: options,
+      questions: questions,
+      toolCallId: toolCallId,
+      argsJson: argsJson,
     );
     _upsert(taskId, event);
     return event;
@@ -400,6 +413,69 @@ class FailingToolExecutor implements AgentToolExecutor {
       const AgentToolResult(ok: false, summary: '失败 ✗');
 }
 
+class StructuredAskUserLlm implements AgentLlmClient {
+  @override
+  Future<AgentLlmTurn> completeTurn(
+    AgentLlmContext context, {
+    void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
+    Future<void> Function(
+      String streamKey,
+      String? toolName,
+      String argsTextSoFar,
+    )? onToolCallDelta,
+    Future<void> Function(AgentToolCallRequest call, String? streamKey)?
+        onToolCall,
+    AgentCancellationToken? cancel,
+  }) async {
+    final answered = context.events.whereType<UserMessageEvent>().any(
+          (event) => event.replyToQuestionId != null,
+        );
+    if (answered) {
+      return AgentLlmTurn(
+        toolCalls: [
+          AgentToolCallRequest(
+            id: 'finish-1',
+            name: kToolFinishTask,
+            argsJson: jsonEncode({'summary': '已收到回答'}),
+            argSummary: '完成',
+          ),
+        ],
+      );
+    }
+    return AgentLlmTurn(
+      toolCalls: [
+        AgentToolCallRequest(
+          id: 'ask-1',
+          name: kToolAskUser,
+          argsJson: jsonEncode({
+            'questions': [
+              {
+                'question': '选择发布环境',
+                'options': ['测试', '生产'],
+                'allow_multiple': false,
+              },
+              {
+                'question': '选择检查项',
+                'options': ['日志', '指标', '告警'],
+                'allow_multiple': true,
+              },
+            ],
+          }),
+          argSummary: '询问发布配置',
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events,
+  ) async =>
+      '摘要';
+}
+
 AgentTask newTask() {
   final now = DateTime.now();
   return AgentTask(
@@ -416,6 +492,48 @@ AgentTask newTask() {
 }
 
 void main() {
+  test('ask_user 结构化提问落库、等待回答并可恢复完成', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    final engine = AgentEngine(
+      llm: StructuredAskUserLlm(),
+      tools: const FakeAgentToolExecutor(delay: Duration.zero),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(),
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '部署应用');
+
+    await engine.run(task, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.waitingInput);
+    final question = (await store.getEvents(
+      task.id,
+    ))
+        .whereType<UserQuestionEvent>()
+        .single;
+    expect(question.toolCallId, 'ask-1');
+    expect(question.questions, hasLength(2));
+    expect(question.questions.first.options, ['测试', '生产']);
+    expect(question.questions.last.allowMultiple, isTrue);
+
+    await store.appendUserMessage(
+      task.id,
+      '选择发布环境\n回答：测试\n\n选择检查项\n回答：日志、告警',
+      replyToQuestionId: question.id,
+      questionAnswers: const [
+        AgentUserQuestionAnswer(questionIndex: 0, values: ['测试']),
+        AgentUserQuestionAnswer(questionIndex: 1, values: ['日志', '告警']),
+      ],
+    );
+    await engine.run(gateway.last, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.done);
+    expect(gateway.last.lastEventSummary, '已收到回答');
+  });
+
   test('假 LLM/假工具：完整状态机跑通并以 done 收尾', () async {
     final store = InMemoryAgentEventStore();
     final gateway = RecordingTaskGateway();
@@ -512,8 +630,7 @@ void main() {
     final gateway = RecordingTaskGateway();
     AgentEngine buildEngine() => AgentEngine(
           llm: const FakeAgentLlmClient(chunkDelay: Duration.zero),
-          tools:
-              const FakeAgentToolExecutor(delay: Duration(milliseconds: 10)),
+          tools: const FakeAgentToolExecutor(delay: Duration(milliseconds: 10)),
           approval: const AutoApprovalGate(),
           store: store,
           gateway: gateway,
@@ -573,9 +690,7 @@ void main() {
 
     final events = await store.getEvents(task.id);
     for (final id in [stale1.id, stale2.id]) {
-      final e = events.whereType<ToolCallEvent>().firstWhere(
-            (t) => t.id == id,
-          );
+      final e = events.whereType<ToolCallEvent>().firstWhere((t) => t.id == id);
       expect(e.state, AgentToolCallState.failure);
       expect(e.resultSummary, contains('进程中断'));
     }
@@ -597,13 +712,16 @@ void main() {
     await store.appendUserMessage(task.id, '帮我看看项目结构');
 
     // 第 1 轮用掉 120 tokens 即超预算 → 安全点 paused。
-    await buildEngine(AgentBudget(maxTokens: 100))
-        .run(task, AgentCancellationToken());
+    await buildEngine(
+      AgentBudget(maxTokens: 100),
+    ).run(task, AgentCancellationToken());
     expect(gateway.last.status, AgentTaskStatus.paused);
     expect(gateway.last.lastEventSummary, contains('token'));
 
     // 续跑发新预算，任务可完成。
-    await buildEngine(AgentBudget()).run(gateway.last, AgentCancellationToken());
+    await buildEngine(
+      AgentBudget(),
+    ).run(gateway.last, AgentCancellationToken());
     expect(gateway.last.status, AgentTaskStatus.done);
   });
 
@@ -634,8 +752,14 @@ void main() {
     expect(compactions.first.summary, isNotEmpty);
     // 原始事件不丢（审计），折叠视图被摘要替代且不超预算太多。
     final folded = foldCompactedEvents(events);
-    expect(folded.length, lessThan(events.whereType<ToolCallEvent>().length +
-        events.whereType<UserMessageEvent>().length + compactions.length));
+    expect(
+      folded.length,
+      lessThan(
+        events.whereType<ToolCallEvent>().length +
+            events.whereType<UserMessageEvent>().length +
+            compactions.length,
+      ),
+    );
     expect(events.whereType<ToolCallEvent>().length, greaterThanOrEqualTo(12));
   });
 

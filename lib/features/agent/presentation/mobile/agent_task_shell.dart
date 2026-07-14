@@ -20,6 +20,25 @@ class _AgentTaskShellState extends State<AgentTaskShell> {
   int _page = 0;
 
   @override
+  void didUpdateWidget(covariant AgentTaskShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final switchedTask = widget.task.id != oldWidget.task.id;
+    final startedWaiting = widget.task.status == AgentTaskStatus.waitingInput &&
+        oldWidget.task.status != AgentTaskStatus.waitingInput;
+    if (switchedTask || startedWaiting) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_controller.hasClients) return;
+        _controller.animateToPage(
+          0,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+        );
+        if (_page != 0) setState(() => _page = 0);
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();

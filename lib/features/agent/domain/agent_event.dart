@@ -68,6 +68,8 @@ class UserMessageEvent extends AgentEvent {
     required this.text,
     this.queued = false,
     this.attachments = const [],
+    this.replyToQuestionId,
+    this.questionAnswers = const [],
   });
 
   final String text;
@@ -76,23 +78,80 @@ class UserMessageEvent extends AgentEvent {
   final bool queued;
 
   final List<AgentUserAttachment> attachments;
+
+  /// 非空时表示这条消息是对某个 [UserQuestionEvent] 的结构化回答。
+  final String? replyToQuestionId;
+
+  final List<AgentUserQuestionAnswer> questionAnswers;
 }
 
-/// ask_user 提问（引擎控制工具落地）：问题 + 可选的预设选项，
-/// 渲染为提问卡；选项被点选后以用户消息回填并续跑。
+class AgentUserQuestion {
+  const AgentUserQuestion({
+    required this.question,
+    this.options = const [],
+    this.allowMultiple = false,
+  });
+
+  final String question;
+  final List<String> options;
+  final bool allowMultiple;
+}
+
+class AgentUserQuestionAnswer {
+  const AgentUserQuestionAnswer({
+    required this.questionIndex,
+    required this.values,
+  });
+
+  final int questionIndex;
+  final List<String> values;
+}
+
+/// ask_user 提问（引擎控制工具落地）：支持一次提交多个结构化问题，
+/// 每题可配置单选/多选，并始终允许用户输入自定义回答。
 class UserQuestionEvent extends AgentEvent {
   const UserQuestionEvent({
     required super.id,
     required super.seq,
     required super.at,
-    required this.question,
-    this.options = const [],
+    required this.questions,
+    this.toolCallId,
+    this.argsJson,
   });
 
-  final String question;
+  final List<AgentUserQuestion> questions;
 
-  /// 预设可点选的回复选项（空 = 纯开放式提问，只用输入框回答）。
-  final List<String> options;
+  /// 保留原始工具调用身份，恢复后可按 function-call 语义回放给模型。
+  final String? toolCallId;
+  final String? argsJson;
+
+  /// 兼容单问题调用方与历史展示逻辑。
+  String get question => questions.firstOrNull?.question ?? '需要你的输入';
+  List<String> get options => questions.firstOrNull?.options ?? const [];
+}
+
+UserMessageEvent? userQuestionAnswer(
+  UserQuestionEvent question,
+  Iterable<AgentEvent> events,
+) {
+  final messages = events.whereType<UserMessageEvent>();
+  final explicit = messages
+      .where((event) => event.replyToQuestionId == question.id)
+      .firstOrNull;
+  if (explicit != null) return explicit;
+  if (question.toolCallId == null) {
+    return messages.where((event) => event.seq > question.seq).firstOrNull;
+  }
+  return null;
+}
+
+UserQuestionEvent? latestPendingUserQuestion(Iterable<AgentEvent> events) {
+  final list = events.toList();
+  for (final question
+      in list.whereType<UserQuestionEvent>().toList().reversed) {
+    if (userQuestionAnswer(question, list) == null) return question;
+  }
+  return null;
 }
 
 /// 模型叙述文字（思考/汇报，流式渲染为贴左正文段落）。
