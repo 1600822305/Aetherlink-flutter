@@ -21,9 +21,14 @@ Future<McpServer?> showMcpServerEditPage(
   McpServer? initial,
   bool stdioOnly = false,
 }) {
+  // 零时长路由：与项目其它设置子页一致（MaterialPageRoute 自带 300ms
+  // transitionDuration，进入/返回都会卡一拍）。
   return Navigator.of(context).push<McpServer>(
-    MaterialPageRoute(
-      builder: (_) => McpServerEditPage(initial: initial, stdioOnly: stdioOnly),
+    PageRouteBuilder<McpServer>(
+      pageBuilder: (_, _, _) =>
+          McpServerEditPage(initial: initial, stdioOnly: stdioOnly),
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
     ),
   );
 }
