@@ -1,7 +1,9 @@
 // 智能体 MCP 页（设计初稿 §决策 30）：顶栏三点菜单 →「MCP」。
 // 管理当前智能体档案接入的外部 MCP 服务器（远程 SSE/HTTP + 移动端
 // stdio），底层复用 settings 的 MCP 服务器库（经 app/di/mcp_servers_access
-// seam）；勾选结果存进档案 mcpServerIds，任务运行时按档案注入工具。
+// seam）。开关与真实服务器状态联动：开 = 启用服务器（isActive）+ 接入
+// 档案 mcpServerIds；关 = 移出档案 + 停用服务器（同步关掉 stdio 进程 /
+// 远程连接，与设置 → MCP 服务器列表双向一致）。stdio 行实时显示运行状态。
 // UI 风格对齐技能页（agent_skills_page.dart）：列表行 + 开关 + 说明行。
 
 import 'package:flutter/material.dart';
@@ -12,6 +14,7 @@ import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
 import 'package:aetherlink_flutter/app/di/remote_mcp_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/stdio/stdio_mcp_connection_manager.dart';
 
 Future<void> showAgentMcpPage(BuildContext context) {
   return Navigator.of(context).push(
@@ -47,7 +50,7 @@ class AgentMcpPage extends ConsumerWidget {
         ref.watch(mcpServersProvider).asData?.value ?? const <McpServer>[];
     final external = [
       for (final s in servers)
-        if (s.isActive && _kExternalTypes.contains(s.type)) s,
+        if (_kExternalTypes.contains(s.type)) s,
     ];
     final selected = profile?.mcpServerIds ?? const <String>{};
     final bottomPad = MediaQuery.paddingOf(context).bottom;
@@ -106,7 +109,7 @@ class AgentMcpPage extends ConsumerWidget {
                           child: Padding(
                             padding: const EdgeInsets.all(24),
                             child: Text(
-                              '没有可接入的 MCP 服务器\n先在 设置 → MCP 服务器 里添加并启用',
+                              '没有可接入的 MCP 服务器\n先在 设置 → MCP 服务器 里添加',
                               textAlign: TextAlign.center,
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: cs.onSurfaceVariant,
@@ -128,7 +131,7 @@ class AgentMcpPage extends ConsumerWidget {
                                 ref,
                                 theme,
                                 server: s,
-                                enabled: selected.contains(s.id),
+                                enabled: s.isActive && selected.contains(s.id),
                               ),
                           ],
                         ),
@@ -138,7 +141,14 @@ class AgentMcpPage extends ConsumerWidget {
     );
   }
 
-  void _toggle(WidgetRef ref, McpServer server, {required bool enabled}) {
+  /// 开 = 启用服务器 + 接入当前档案；关 = 移出档案 + 停用服务器
+  /// （toggleActive 内部同步关掉 stdio 进程 / 远程连接），与设置 →
+  /// MCP 服务器列表双向联动。
+  Future<void> _toggle(
+    WidgetRef ref,
+    McpServer server, {
+    required bool enabled,
+  }) async {
     final profileId = ref.read(selectedAgentProfileIdProvider);
     final profile = ref
         .read(agentProfilesProvider)
@@ -147,13 +157,13 @@ class AgentMcpPage extends ConsumerWidget {
     if (profile == null) return;
     final ids = {...profile.mcpServerIds};
     enabled ? ids.add(server.id) : ids.remove(server.id);
-    ref
+    await ref
         .read(agentProfilesProvider.notifier)
         .upsert(profile.copyWith(mcpServerIds: ids));
-    if (!enabled && server.type == McpServerType.stdio) {
-      // 同步停掉 stdio 进程，MCP 设置页状态点一致；其他消费方
-      // （聊天/其他档案）下次调用时按需重新拉起。
-      ref.read(stdioMcpConnectionManagerProvider).closeServer(server);
+    if (server.isActive != enabled) {
+      await ref
+          .read(mcpServersProvider.notifier)
+          .toggleActive(server.id, isActive: enabled);
     }
   }
 
@@ -198,17 +208,50 @@ class AgentMcpPage extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      isStdio
-                          ? 'stdio · ${server.command ?? ''}'
-                          : '${server.type.name} · ${server.baseUrl ?? ''}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontSize: 12,
-                        color: cs.onSurfaceVariant,
+                    if (isStdio)
+                      // 实时运行状态（订阅连接管理器变更流）：开关关掉进程 /
+                      // 进程意外退出都即时反映，不再是静态 UI。
+                      StreamBuilder<String>(
+                        stream: ref
+                            .read(stdioMcpConnectionManagerProvider)
+                            .changes
+                            .where((id) => id == server.id),
+                        builder: (context, _) {
+                          final st = ref
+                              .read(stdioMcpConnectionManagerProvider)
+                              .stateOf(server.id);
+                          final (label, color) = switch (st.status) {
+                            StdioMcpStatus.running => ('运行中', Colors.green),
+                            StdioMcpStatus.starting => ('启动中', Colors.amber),
+                            StdioMcpStatus.error => ('错误', cs.error),
+                            StdioMcpStatus.stopped => (
+                                server.isActive ? '未运行' : '已停用',
+                                cs.onSurfaceVariant,
+                              ),
+                          };
+                          return Text(
+                            'stdio · $label · ${server.command ?? ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontSize: 12,
+                              color: color,
+                            ),
+                          );
+                        },
+                      )
+                    else
+                      Text(
+                        '${server.type.name}'
+                        '${server.isActive ? '' : ' · 已停用'}'
+                        ' · ${server.baseUrl ?? ''}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontSize: 12,
+                          color: cs.onSurfaceVariant,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),

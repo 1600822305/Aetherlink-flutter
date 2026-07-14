@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
+import 'package:aetherlink_flutter/app/di/remote_mcp_access.dart';
 import 'package:aetherlink_flutter/core/utils/id_generator.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 
@@ -53,11 +54,20 @@ class McpServers extends _$McpServers {
   }
 
   /// Flips a server's `isActive` and persists (port of `MCPService.toggleServer`).
+  /// 停用时同步关掉活连接（stdio 子进程 / 远程连接），保证开关与
+  /// 真实运行状态一致；启用不预拉，消费方下次调用时按需连接。
   Future<void> toggleActive(String id, {required bool isActive}) async {
+    final server = _current.where((s) => s.id == id).firstOrNull;
     final next = _current
         .map((s) => s.id == id ? s.copyWith(isActive: isActive) : s)
         .toList();
     await _commit(next);
+    if (isActive || server == null) return;
+    if (server.type == McpServerType.stdio) {
+      await ref.read(stdioMcpConnectionManagerProvider).closeServer(server);
+    } else {
+      await ref.read(remoteMcpConnectionManagerProvider).closeServer(server);
+    }
   }
 
   /// Adds a built-in server from the catalog, giving it a fresh id and turning
