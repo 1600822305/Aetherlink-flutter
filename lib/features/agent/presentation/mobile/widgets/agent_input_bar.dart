@@ -515,8 +515,9 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                         _Chip(
                           icon: LucideIcons.lightbulb,
                           // 与聊天共用全局思考档位（参数设置
-                          // reasoningEffort），引擎每轮现取。
-                          label: '思考 ${appReasoningEffortLabel(ref)} ▾',
+                          // reasoningEffort），引擎每轮现取。单一图标，
+                          // 档位靠 tooltip 展示，不占输入行宽度。
+                          tooltip: '思考 ${appReasoningEffortLabel(ref)}',
                           onTap: () {
                             FocusManager.instance.primaryFocus?.unfocus();
                             showAppReasoningEffortPicker(context, ref);
@@ -636,14 +637,20 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
 class _Chip extends StatelessWidget {
   const _Chip({
     required this.icon,
-    required this.label,
     required this.onTap,
+    this.label,
+    this.tooltip,
     this.color,
     this.maxWidth,
   });
 
   final IconData icon;
-  final String label;
+
+  /// 非空时在图标右侧显示文字；为空则只显示图标（如思考档位）。
+  final String? label;
+
+  /// 图标模式下的长按/悬浮提示。
+  final String? tooltip;
   final VoidCallback onTap;
 
   /// 非空时用作醒目强调色（如 auto 模式的琥珀色）。
@@ -656,6 +663,7 @@ class _Chip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final label = this.label;
     final chip = Material(
       color:
           color?.withValues(alpha: 0.14) ??
@@ -674,28 +682,33 @@ class _Chip extends StatelessWidget {
                 size: 13,
                 color: color ?? cs.onSurface.withValues(alpha: 0.7),
               ),
-              const SizedBox(width: 4),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: color ?? cs.onSurface.withValues(alpha: 0.8),
-                    fontWeight: FontWeight.w600,
+              if (label != null) ...[
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: color ?? cs.onSurface.withValues(alpha: 0.8),
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
       ),
     );
+    final wrapped = tooltip == null
+        ? chip
+        : Tooltip(message: tooltip!, child: chip);
     final limit = maxWidth;
-    if (limit == null) return chip;
+    if (limit == null) return wrapped;
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: limit),
-      child: chip,
+      child: wrapped,
     );
   }
 }
