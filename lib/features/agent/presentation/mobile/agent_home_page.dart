@@ -82,48 +82,71 @@ class AgentHomePage extends ConsumerWidget {
         // 三点下拉菜单（决策 30）：智能体专属能力入口。当前有
         // 「技能」「MCP」，记忆/工作流/rules 后续逐项加入。
         actions: [
-          PopupMenuButton<String>(
-            tooltip: '更多',
-            icon: const Icon(LucideIcons.ellipsisVertical, size: 20),
-            position: PopupMenuPosition.under,
-            onSelected: (value) {
-              if (value == 'skills') showAgentSkillsPage(context);
-              if (value == 'mcp') showAgentMcpPage(context);
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'skills',
-                child: Row(
-                  children: [
-                    Icon(
-                      LucideIcons.sparkles,
-                      size: 16,
-                      color: theme.colorScheme.onSurface.withValues(
-                        alpha: 0.7,
+          Builder(
+            builder: (context) => PopupMenuButton<String>(
+              tooltip: '更多',
+              icon: const Icon(LucideIcons.ellipsisVertical, size: 20),
+              position: PopupMenuPosition.under,
+              onSelected: (value) {
+                if (value == 'skills') showAgentSkillsPage(context);
+                if (value == 'mcp') showAgentMcpPage(context);
+                if (value == 'settings') {
+                  // 直达智能体设置：定位侧边栏设置 tab 再开抽屉。
+                  ref.read(agentSidebarTabIndexProvider.notifier).set(2);
+                  Scaffold.of(context).openDrawer();
+                }
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'skills',
+                  child: Row(
+                    children: [
+                      Icon(
+                        LucideIcons.sparkles,
+                        size: 16,
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.7,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    const Text('技能'),
-                  ],
+                      const SizedBox(width: 10),
+                      const Text('技能'),
+                    ],
+                  ),
                 ),
-              ),
-              PopupMenuItem(
-                value: 'mcp',
-                child: Row(
-                  children: [
-                    Icon(
-                      LucideIcons.plug,
-                      size: 16,
-                      color: theme.colorScheme.onSurface.withValues(
-                        alpha: 0.7,
+                PopupMenuItem(
+                  value: 'mcp',
+                  child: Row(
+                    children: [
+                      Icon(
+                        LucideIcons.plug,
+                        size: 16,
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.7,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    const Text('MCP'),
-                  ],
+                      const SizedBox(width: 10),
+                      const Text('MCP'),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+                PopupMenuItem(
+                  value: 'settings',
+                  child: Row(
+                    children: [
+                      Icon(
+                        LucideIcons.settings,
+                        size: 16,
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.7,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      const Text('设置'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

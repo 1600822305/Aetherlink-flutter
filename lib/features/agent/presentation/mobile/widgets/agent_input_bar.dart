@@ -29,7 +29,11 @@ class AgentInputBar extends ConsumerStatefulWidget {
 class _AgentInputBarState extends ConsumerState<AgentInputBar> {
   final TextEditingController _controller = TextEditingController();
   bool _hasText = false;
-  late AgentSessionMode _mode = widget.task?.mode ?? AgentSessionMode.code;
+  // 模式 chip 与侧边栏「执行设置」同源：无话题时取全局默认模式（持久化），
+  // 有话题时跟话题自身模式走。
+  late AgentSessionMode _mode =
+      widget.task?.mode ??
+      ref.read(agentUiSettingsControllerProvider).defaultMode;
   final List<AgentUserAttachment> _attachments = [];
   String _lastText = '';
 
@@ -112,8 +116,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       final inserted = '${attachment.name} ';
       _controller.value = TextEditingValue(
         text: text.replaceRange(atEnd, atEnd, inserted),
-        selection:
-            TextSelection.collapsed(offset: atEnd + inserted.length),
+        selection: TextSelection.collapsed(offset: atEnd + inserted.length),
       );
     }
     _addAttachment(attachment);
@@ -147,7 +150,11 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       if (profile == null) return;
       clearInput();
       final created = await runner.startNewTask(
-          profile: profile, text: text, mode: _mode, attachments: attachments);
+        profile: profile,
+        text: text,
+        mode: _mode,
+        attachments: attachments,
+      );
       ref.read(selectedAgentTaskIdProvider.notifier).select(created.id);
       return;
     }
@@ -155,17 +162,28 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
     if (task.status == AgentTaskStatus.draft) {
       // 空白草稿话题：发第一条消息 = 定标题 + 启动引擎。
       clearInput();
-      await runner.startDraft(task, text, mode: _mode, attachments: attachments);
+      await runner.startDraft(
+        task,
+        text,
+        mode: _mode,
+        attachments: attachments,
+      );
       return;
     }
 
-    final executing = task.status == AgentTaskStatus.running ||
+    final executing =
+        task.status == AgentTaskStatus.running ||
         task.status == AgentTaskStatus.waitingApproval;
     if (!executing) {
       // paused/waitingInput/done/failed/cancelled：落消息并续跑（带上
       // chips 当前模式，中途切模式在这里生效）。
       clearInput();
-      await runner.sendMessage(task, text, mode: _mode, attachments: attachments);
+      await runner.sendMessage(
+        task,
+        text,
+        mode: _mode,
+        attachments: attachments,
+      );
       return;
     }
     final action = await showModalBottomSheet<String>(
@@ -198,8 +216,12 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
     );
     if (action == 'queue') {
       clearInput();
-      await runner.sendMessage(task, text,
-          queued: true, attachments: attachments);
+      await runner.sendMessage(
+        task,
+        text,
+        queued: true,
+        attachments: attachments,
+      );
     } else if (action == 'interrupt') {
       clearInput();
       await runner.interruptAndSend(task, text, attachments: attachments);
@@ -277,6 +299,18 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       if (confirmed != true) return;
     }
     setState(() => _mode = mode);
+    final task = widget.task;
+    if (task == null || task.status == AgentTaskStatus.draft) {
+      // 新话题/草稿态：写回全局默认模式（持久化，与侧边栏执行设置同步）。
+      ref.read(agentUiSettingsControllerProvider.notifier).setDefaultMode(mode);
+    }
+    if (task != null && !ref.read(agentTaskRunnerProvider).contains(task.id)) {
+      // 非运行态话题立即持久化模式，切页/重启不丢；运行中保持
+      // 既有语义（下一条消息随 sendMessage 同步，避免与引擎写回竞态）。
+      await ref
+          .read(agentTasksProvider.notifier)
+          .apply(task.copyWith(mode: mode, updatedAt: DateTime.now()));
+    }
   }
 
   Future<bool?> _confirmAutoMode() {
@@ -313,6 +347,13 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
     final isDark = theme.brightness == Brightness.dark;
     final running = widget.task?.status == AgentTaskStatus.running;
 
+    // 侧边栏「执行设置」改默认模式时同步无话题态的 chip（同源双向）。
+    ref.listen(agentUiSettingsControllerProvider, (_, next) {
+      if (widget.task == null && next.defaultMode != _mode) {
+        setState(() => _mode = next.defaultMode);
+      }
+    });
+
     // 与普通聊天输入框同款卡片 chrome（InputBoxComposer defaultStyle：
     // 圆角 8、细边框、轻投影、纸面 surface），外围透明 + 8px gutter。
     final card = DecoratedBox(
@@ -348,20 +389,13 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                     children: [
                       for (var i = 0; i < _attachments.length; i++)
                         InputChip(
-                          avatar: Icon(
-                            switch (_attachments[i].kind) {
-                              AgentAttachmentKind.image =>
-                                LucideIcons.image,
-                              AgentAttachmentKind.file =>
-                                LucideIcons.fileText,
-                              AgentAttachmentKind.snippet =>
-                                LucideIcons.quote,
-                            },
-                            size: 14,
-                          ),
+                          avatar: Icon(switch (_attachments[i].kind) {
+                            AgentAttachmentKind.image => LucideIcons.image,
+                            AgentAttachmentKind.file => LucideIcons.fileText,
+                            AgentAttachmentKind.snippet => LucideIcons.quote,
+                          }, size: 14),
                           label: ConstrainedBox(
-                            constraints:
-                                const BoxConstraints(maxWidth: 160),
+                            constraints: const BoxConstraints(maxWidth: 160),
                             child: Text(
                               _attachments[i].name,
                               maxLines: 1,
@@ -372,7 +406,8 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                           visualDensity: VisualDensity.compact,
                           onDeleted: () => setState(() {
                             _attachments.removeAt(i);
-                            _hasText = _controller.text.trim().isNotEmpty ||
+                            _hasText =
+                                _controller.text.trim().isNotEmpty ||
                                 _attachments.isNotEmpty;
                           }),
                         ),
@@ -388,15 +423,15 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                   maxLines: 5,
                   style: const TextStyle(fontSize: 16, height: 1.4),
                   decoration: InputDecoration(
-                    hintText: widget.task == null ||
+                    hintText:
+                        widget.task == null ||
                             widget.task!.status == AgentTaskStatus.draft
                         ? '输入指令开始任务…'
                         : '追加指令…',
                     hintStyle: const TextStyle(fontSize: 16, height: 1.4),
                     border: InputBorder.none,
                     isDense: true,
-                    contentPadding:
-                        const EdgeInsets.symmetric(vertical: 10),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
                   ),
                 ),
               ),
@@ -415,7 +450,9 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                           padding: const EdgeInsets.all(6),
                           visualDensity: VisualDensity.compact,
                           constraints: const BoxConstraints(
-                              minWidth: 32, minHeight: 32),
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
                         ),
                         const SizedBox(width: 2),
                         _Chip(
@@ -467,7 +504,9 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                         padding: const EdgeInsets.all(6),
                         visualDensity: VisualDensity.compact,
                         constraints: const BoxConstraints(
-                            minWidth: 32, minHeight: 32),
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
                       )
                     else if (running)
                       GestureDetector(
@@ -482,7 +521,9 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                           padding: const EdgeInsets.all(6),
                           visualDensity: VisualDensity.compact,
                           constraints: const BoxConstraints(
-                              minWidth: 32, minHeight: 32),
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
                         ),
                       )
                     else if (widget.task?.status == AgentTaskStatus.paused ||
@@ -504,7 +545,9 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                         padding: const EdgeInsets.all(6),
                         visualDensity: VisualDensity.compact,
                         constraints: const BoxConstraints(
-                            minWidth: 32, minHeight: 32),
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
                       )
                     else
                       IconButton(
@@ -519,7 +562,9 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                         padding: const EdgeInsets.all(6),
                         visualDensity: VisualDensity.compact,
                         constraints: const BoxConstraints(
-                            minWidth: 32, minHeight: 32),
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
                       ),
                   ],
                 ),
@@ -534,10 +579,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       type: MaterialType.transparency,
       child: SafeArea(
         top: false,
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: card,
-        ),
+        child: Padding(padding: const EdgeInsets.all(8), child: card),
       ),
     );
   }
@@ -567,7 +609,8 @@ class _Chip extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final chip = Material(
-      color: color?.withValues(alpha: 0.14) ??
+      color:
+          color?.withValues(alpha: 0.14) ??
           cs.onSurface.withValues(alpha: 0.05),
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
@@ -578,8 +621,11 @@ class _Chip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 13,
-                  color: color ?? cs.onSurface.withValues(alpha: 0.7)),
+              Icon(
+                icon,
+                size: 13,
+                color: color ?? cs.onSurface.withValues(alpha: 0.7),
+              ),
               const SizedBox(width: 4),
               Flexible(
                 child: Text(

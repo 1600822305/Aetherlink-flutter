@@ -287,7 +287,8 @@ class AgentUiSettings {
     this.contextLimit = 128000,
   });
 
-  /// 新话题的默认模式（Code/Ask/Plan）。
+  /// 新话题的默认模式（Code/Auto/Ask/Plan）；与输入区模式 chip 同源，
+  /// 草稿态切模式也写回这里（持久化）。
   final AgentSessionMode defaultMode;
 
   /// 工作段完成后自动折叠为摘要块（UI 稿 §4.1）。
@@ -336,7 +337,7 @@ class AgentUiSettingsController extends _$AgentUiSettingsController {
 
     final limit = int.tryParse(storedLimit ?? '');
     final mode = AgentSessionMode.values
-        .where((m) => m.name == storedMode && m != AgentSessionMode.auto)
+        .where((m) => m.name == storedMode)
         .firstOrNull;
     state = state.copyWith(
       contextLimit: _touched.contains(kAgentContextLimitKey)
@@ -363,8 +364,6 @@ class AgentUiSettingsController extends _$AgentUiSettingsController {
   }
 
   void setDefaultMode(AgentSessionMode mode) {
-    // 默认模式不提供 auto（决策 26：进 auto 必经话题内二次确认）。
-    if (mode == AgentSessionMode.auto) return;
     _touched.add(kAgentDefaultModeKey);
     state = state.copyWith(defaultMode: mode);
     ref

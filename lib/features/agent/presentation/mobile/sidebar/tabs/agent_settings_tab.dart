@@ -60,11 +60,12 @@ class AgentSettingsTab extends ConsumerWidget {
           children: [
             _SelectRow<AgentSessionMode>(
               title: '新话题默认模式',
-              description: 'Code=执行 / Ask=只问答 / Plan=只读规划（Auto 需在话题内手动确认启用）',
+              description:
+                  'Code=执行 / Auto=工作区内免审 / Ask=只问答 / Plan=只读规划；'
+                  '与输入框模式 chip 同步',
               value: s.defaultMode,
               options: [
-                for (final m in AgentSessionMode.values)
-                  if (m != AgentSessionMode.auto) (m, _modeLabel(m)),
+                for (final m in AgentSessionMode.values) (m, _modeLabel(m)),
               ],
               onChanged: c.setDefaultMode,
             ),
