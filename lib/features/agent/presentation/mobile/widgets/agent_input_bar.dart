@@ -172,11 +172,11 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
     }
 
     if (task.status == AgentTaskStatus.waitingInput) {
-      // 等待回答：输入框只承接单问题的快捷回答，多问题在提问卡里逐项答。
+      // 等待回答：输入框承接自定义回答，建议答案在上方面板点选。
       if (attachments.isNotEmpty) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('请先在提问卡中回答；回答暂不支持附件')));
+        ).showSnackBar(const SnackBar(content: Text('回答暂不支持附件')));
         return;
       }
       try {
@@ -459,7 +459,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
                             widget.task!.status == AgentTaskStatus.draft
                         ? '输入指令开始任务…'
                         : widget.task!.status == AgentTaskStatus.waitingInput
-                            ? '也可以在这里输入单个问题的回答…'
+                            ? '点选上方建议答案，或输入自定义回答…'
                             : '追加指令…',
                     hintStyle: const TextStyle(fontSize: 16, height: 1.4),
                     border: InputBorder.none,

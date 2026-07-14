@@ -14,16 +14,16 @@ abstract class AgentEventStore {
     bool queued = false,
     List<AgentUserAttachment> attachments = const [],
     String? replyToQuestionId,
-    List<AgentUserQuestionAnswer> questionAnswers = const [],
   });
 
   /// 安全点消费排队消息：queued=true → false，正式进上下文（L3）。
   Future<void> consumeQueuedUserMessages(String taskId);
 
-  /// ask_user 提问：结构化问题列表，UI 渲染为可交互提问卡。
+  /// ask_user 提问：问题 + 建议答案，UI 渲染为可交互提问卡。
   Future<UserQuestionEvent> appendUserQuestion(
     String taskId,
-    List<AgentUserQuestion> questions, {
+    String question, {
+    List<String> suggestions = const [],
     String? toolCallId,
     String? argsJson,
   });
@@ -140,7 +140,6 @@ class DriftAgentEventStore implements AgentEventStore {
     bool queued = false,
     List<AgentUserAttachment> attachments = const [],
     String? replyToQuestionId,
-    List<AgentUserQuestionAnswer> questionAnswers = const [],
   }) async {
     final event = UserMessageEvent(
       id: _newId('um'),
@@ -150,7 +149,6 @@ class DriftAgentEventStore implements AgentEventStore {
       queued: queued,
       attachments: attachments,
       replyToQuestionId: replyToQuestionId,
-      questionAnswers: questionAnswers,
     );
     await _dao.upsertEvents(taskId, [event]);
     return event;
@@ -169,7 +167,6 @@ class DriftAgentEventStore implements AgentEventStore {
             text: e.text,
             attachments: e.attachments,
             replyToQuestionId: e.replyToQuestionId,
-            questionAnswers: e.questionAnswers,
           ),
     ];
     if (consumed.isNotEmpty) {
@@ -180,7 +177,8 @@ class DriftAgentEventStore implements AgentEventStore {
   @override
   Future<UserQuestionEvent> appendUserQuestion(
     String taskId,
-    List<AgentUserQuestion> questions, {
+    String question, {
+    List<String> suggestions = const [],
     String? toolCallId,
     String? argsJson,
   }) async {
@@ -188,7 +186,8 @@ class DriftAgentEventStore implements AgentEventStore {
       id: _newId('uq'),
       seq: await _nextSeq(taskId),
       at: DateTime.now(),
-      questions: questions,
+      question: question,
+      suggestions: suggestions,
       toolCallId: toolCallId,
       argsJson: argsJson,
     );

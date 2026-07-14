@@ -158,14 +158,16 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     }
   }
 
-  /// 回答 ask_user 提问：校验提问仍是最新待答项，逐题归一化答案后
-  /// 以 replyToQuestionId + questionAnswers 落用户消息并续跑任务。
+  /// 回答 ask_user 提问：校验提问仍是最新待答项，以 replyToQuestionId
+  /// 落用户消息并续跑任务。
   Future<void> answerUserQuestion(
     AgentTask task,
     UserQuestionEvent question,
-    List<AgentUserQuestionAnswer> answers,
+    String answer,
   ) async {
     if (state.contains(task.id)) return;
+    final text = answer.trim();
+    if (text.isEmpty) throw StateError('回答不能为空');
     final events = await _store().getEvents(task.id);
     final pending = latestPendingUserQuestion(events);
     if (task.status != AgentTaskStatus.waitingInput ||
@@ -173,35 +175,11 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       throw StateError('该提问已失效或任务不再等待回答');
     }
 
-    final valuesByIndex = <int, List<String>>{};
-    for (final answer in answers) {
-      final values =
-          valuesByIndex.putIfAbsent(answer.questionIndex, () => []);
-      for (final value in answer.values) {
-        final text = value.trim();
-        if (text.isNotEmpty && !values.contains(text)) values.add(text);
-      }
-    }
-    final normalized = <AgentUserQuestionAnswer>[];
-    for (var i = 0; i < question.questions.length; i++) {
-      final values = valuesByIndex[i] ?? const [];
-      if (values.isEmpty) throw StateError('请回答全部问题后再继续');
-      normalized.add(
-        AgentUserQuestionAnswer(
-          questionIndex: i,
-          values:
-              question.questions[i].allowMultiple ? values : [values.first],
-        ),
-      );
-    }
-
-    final text = formatQuestionAnswers(question, normalized);
     await _checkpoint(task, text);
     await _store().appendUserMessage(
       task.id,
       text,
       replyToQuestionId: question.id,
-      questionAnswers: normalized,
     );
     final updated = task.copyWith(
       status: AgentTaskStatus.running,
@@ -212,17 +190,12 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     _run(updated);
   }
 
-  /// 单问题快捷回答（底部输入框直接回复时走这里）。
+  /// 底部输入框直接回复最新提问时走这里。
   Future<void> answerLatestUserQuestion(AgentTask task, String text) async {
     final events = await _store().getEvents(task.id);
     final question = latestPendingUserQuestion(events);
     if (question == null) throw StateError('没有待回答的提问');
-    if (question.questions.length != 1) {
-      throw StateError('请在上方提问卡中逐项回答');
-    }
-    await answerUserQuestion(task, question, [
-      AgentUserQuestionAnswer(questionIndex: 0, values: [text]),
-    ]);
+    await answerUserQuestion(task, question, text);
   }
 
   /// 立即打断并发送：排队消息 + 打断当前执行（LLM 流/工具/审批挂起
