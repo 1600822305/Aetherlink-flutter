@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
@@ -10,7 +12,6 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_prof
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_skills_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_task_shell.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/agent_sidebar.dart';
-import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/tabs/agent_settings_tab.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_input_bar.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
 
@@ -93,7 +94,9 @@ class AgentHomePage extends ConsumerWidget {
               onSelected: (value) {
                 if (value == 'skills') showAgentSkillsPage(context);
                 if (value == 'mcp') showAgentMcpPage(context);
-                if (value == 'settings') showAgentSettingsPage(context);
+                if (value == 'settings') {
+                  context.push('${AppRouter.settingsPath}?mode=agent');
+                }
               },
               itemBuilder: (context) => [
                 PopupMenuItem(

@@ -280,12 +280,22 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
               (AgentSessionMode.plan, '只读规划：先出完整方案，确认后转 Code'),
             ])
               ListTile(
+                selected: m == _mode,
+                selectedTileColor: Theme.of(
+                  context,
+                ).colorScheme.primary.withValues(alpha: 0.08),
                 leading: Icon(
                   m == _mode ? LucideIcons.circleCheck : LucideIcons.circle,
                   size: 20,
                 ),
-                title: Text(agentModeLabel(m)),
+                title: Text(
+                  agentModeLabel(m),
+                  style: m == _mode
+                      ? const TextStyle(fontWeight: FontWeight.w600)
+                      : null,
+                ),
                 subtitle: Text(desc),
+                trailing: m == _mode ? const Text('当前') : null,
                 onTap: () => Navigator.pop(context, m),
               ),
           ],
@@ -304,9 +314,9 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       // 新话题/草稿态：写回全局默认模式（持久化，与侧边栏执行设置同步）。
       ref.read(agentUiSettingsControllerProvider.notifier).setDefaultMode(mode);
     }
-    if (task != null && !ref.read(agentTaskRunnerProvider).contains(task.id)) {
-      // 非运行态话题立即持久化模式，切页/重启不丢；运行中保持
-      // 既有语义（下一条消息随 sendMessage 同步，避免与引擎写回竞态）。
+    if (task != null) {
+      // 立即持久化到话题（切页/重启不丢，侧边栏「执行设置」同步显示）；
+      // 运行中话题下一轮引擎现取该模式。
       await ref
           .read(agentTasksProvider.notifier)
           .apply(task.copyWith(mode: mode, updatedAt: DateTime.now()));

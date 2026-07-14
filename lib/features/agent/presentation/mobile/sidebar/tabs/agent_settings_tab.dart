@@ -13,41 +13,6 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_profile_edit_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 
-/// 顶栏三点菜单 →「设置」：独立全屏设置页，正文复用 [AgentSettingsTab]。
-Future<void> showAgentSettingsPage(BuildContext context) {
-  return Navigator.of(context).push(
-    PageRouteBuilder<void>(
-      pageBuilder: (_, _, _) => const AgentSettingsPage(),
-      transitionDuration: Duration.zero,
-      reverseTransitionDuration: Duration.zero,
-    ),
-  );
-}
-
-class AgentSettingsPage extends StatelessWidget {
-  const AgentSettingsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: cs.surface,
-        foregroundColor: cs.onSurface,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        shape: Border(bottom: BorderSide(color: theme.dividerColor)),
-        title: const Text(
-          '设置',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
-        ),
-      ),
-      body: const SafeArea(child: AgentSettingsTab()),
-    );
-  }
-}
-
 class AgentSettingsTab extends ConsumerWidget {
   const AgentSettingsTab({super.key});
 
@@ -91,18 +56,31 @@ class AgentSettingsTab extends ConsumerWidget {
         ],
         _Group(
           title: '执行设置',
-          subtitle: '默认模式: ${_modeLabel(s.defaultMode)}',
+          subtitle: task != null
+              ? '当前话题模式: ${_modeLabel(task.mode)}'
+              : '新话题模式: ${_modeLabel(s.defaultMode)}',
           children: [
             _SelectRow<AgentSessionMode>(
-              title: '新话题默认模式',
+              title: task != null ? '当前话题模式' : '新话题模式',
               description:
                   'Code=执行 / Auto=工作区内免审 / Ask=只问答 / Plan=只读规划；'
                   '与输入框模式 chip 同步',
-              value: s.defaultMode,
+              value: task?.mode ?? s.defaultMode,
               options: [
                 for (final m in AgentSessionMode.values) (m, _modeLabel(m)),
               ],
-              onChanged: c.setDefaultMode,
+              onChanged: (mode) {
+                if (task == null || task.status == AgentTaskStatus.draft) {
+                  c.setDefaultMode(mode);
+                }
+                if (task != null) {
+                  ref
+                      .read(agentTasksProvider.notifier)
+                      .apply(
+                        task.copyWith(mode: mode, updatedAt: DateTime.now()),
+                      );
+                }
+              },
             ),
           ],
         ),
@@ -392,10 +370,23 @@ class _SelectRow<T> extends StatelessWidget {
             children: [
               for (final (v, label) in options)
                 ChoiceChip(
-                  label: Text(label, style: const TextStyle(fontSize: 12)),
+                  label: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: v == value ? FontWeight.w600 : null,
+                      color: v == value ? cs.primary : null,
+                    ),
+                  ),
                   visualDensity: VisualDensity.compact,
                   selected: v == value,
-                  selectedColor: cs.primary.withValues(alpha: 0.12),
+                  selectedColor: cs.primary.withValues(alpha: 0.15),
+                  checkmarkColor: cs.primary,
+                  side: v == value
+                      ? BorderSide(color: cs.primary)
+                      : BorderSide(
+                          color: cs.onSurface.withValues(alpha: 0.15),
+                        ),
                   onSelected: (_) => onChanged(v),
                 ),
             ],
