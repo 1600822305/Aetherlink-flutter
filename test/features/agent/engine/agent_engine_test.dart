@@ -51,7 +51,6 @@ class InMemoryAgentEventStore implements AgentEventStore {
     bool queued = false,
     List<AgentUserAttachment> attachments = const [],
     String? replyToQuestionId,
-    List<AgentUserQuestionAnswer> questionAnswers = const [],
   }) async {
     final event = UserMessageEvent(
       id: _newId(),
@@ -61,7 +60,6 @@ class InMemoryAgentEventStore implements AgentEventStore {
       queued: queued,
       attachments: attachments,
       replyToQuestionId: replyToQuestionId,
-      questionAnswers: questionAnswers,
     );
     _upsert(taskId, event);
     return event;
@@ -81,7 +79,6 @@ class InMemoryAgentEventStore implements AgentEventStore {
           text: e.text,
           attachments: e.attachments,
           replyToQuestionId: e.replyToQuestionId,
-          questionAnswers: e.questionAnswers,
         );
       }
     }
@@ -90,7 +87,8 @@ class InMemoryAgentEventStore implements AgentEventStore {
   @override
   Future<UserQuestionEvent> appendUserQuestion(
     String taskId,
-    List<AgentUserQuestion> questions, {
+    String question, {
+    List<String> suggestions = const [],
     String? toolCallId,
     String? argsJson,
   }) async {
@@ -98,7 +96,8 @@ class InMemoryAgentEventStore implements AgentEventStore {
       id: _newId(),
       seq: _nextSeq(taskId),
       at: DateTime.now(),
-      questions: questions,
+      question: question,
+      suggestions: suggestions,
       toolCallId: toolCallId,
       argsJson: argsJson,
     );
@@ -449,18 +448,8 @@ class StructuredAskUserLlm implements AgentLlmClient {
           id: 'ask-1',
           name: kToolAskUser,
           argsJson: jsonEncode({
-            'questions': [
-              {
-                'question': '选择发布环境',
-                'options': ['测试', '生产'],
-                'allow_multiple': false,
-              },
-              {
-                'question': '选择检查项',
-                'options': ['日志', '指标', '告警'],
-                'allow_multiple': true,
-              },
-            ],
+            'question': '选择发布环境',
+            'follow_up': ['测试', '生产'],
           }),
           argSummary: '询问发布配置',
         ),
@@ -492,7 +481,7 @@ AgentTask newTask() {
 }
 
 void main() {
-  test('ask_user 结构化提问落库、等待回答并可恢复完成', () async {
+  test('ask_user 提问落库、等待回答并可恢复完成', () async {
     final store = InMemoryAgentEventStore();
     final gateway = RecordingTaskGateway();
     final engine = AgentEngine(
@@ -512,18 +501,13 @@ void main() {
     final question =
         (await store.getEvents(task.id)).whereType<UserQuestionEvent>().single;
     expect(question.toolCallId, 'ask-1');
-    expect(question.questions, hasLength(2));
-    expect(question.questions.first.options, ['测试', '生产']);
-    expect(question.questions.last.allowMultiple, isTrue);
+    expect(question.question, '选择发布环境');
+    expect(question.suggestions, ['测试', '生产']);
 
     await store.appendUserMessage(
       task.id,
-      '选择发布环境\n回答：测试\n\n选择检查项\n回答：日志、告警',
+      '测试',
       replyToQuestionId: question.id,
-      questionAnswers: const [
-        AgentUserQuestionAnswer(questionIndex: 0, values: ['测试']),
-        AgentUserQuestionAnswer(questionIndex: 1, values: ['日志', '告警']),
-      ],
     );
     await engine.run(gateway.last, AgentCancellationToken());
 

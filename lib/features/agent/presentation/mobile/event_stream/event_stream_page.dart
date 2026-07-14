@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stre
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/plan_ready_card.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/work_segment_tile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/working_indicator_tile.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_followup_panel.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_input_bar.dart';
 import 'package:aetherlink_flutter/shared/widgets/auto_scroll_controller.dart';
 
@@ -150,6 +151,7 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
             ],
           ),
         ),
+        AgentFollowupPanel(task: widget.task),
         AgentInputBar(task: widget.task),
       ],
     );

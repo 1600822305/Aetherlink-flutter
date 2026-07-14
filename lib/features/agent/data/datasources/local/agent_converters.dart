@@ -130,7 +130,6 @@ String encodeAgentEventPayload(AgentEvent event) {
       :final queued,
       :final attachments,
       :final replyToQuestionId,
-      :final questionAnswers,
     ) =>
       {
         'text': text,
@@ -147,21 +146,16 @@ String encodeAgentEventPayload(AgentEvent event) {
               },
           ],
         if (replyToQuestionId != null) 'replyToQuestionId': replyToQuestionId,
-        if (questionAnswers.isNotEmpty)
-          'questionAnswers': [
-            for (final answer in questionAnswers)
-              {'questionIndex': answer.questionIndex, 'values': answer.values},
-          ],
       },
-    UserQuestionEvent(:final questions, :final toolCallId, :final argsJson) => {
-        'questions': [
-          for (final question in questions)
-            {
-              'question': question.question,
-              'options': question.options,
-              'allowMultiple': question.allowMultiple,
-            },
-        ],
+    UserQuestionEvent(
+      :final question,
+      :final suggestions,
+      :final toolCallId,
+      :final argsJson,
+    ) =>
+      {
+        'question': question,
+        if (suggestions.isNotEmpty) 'suggestions': suggestions,
         if (toolCallId != null) 'toolCallId': toolCallId,
         if (argsJson != null) 'argsJson': argsJson,
       },
@@ -245,54 +239,17 @@ AgentEvent decodeAgentEvent({
         queued: p['queued'] as bool? ?? false,
         attachments: attachments,
         replyToQuestionId: p['replyToQuestionId'] as String?,
-        questionAnswers: [
-          for (final raw
-              in (p['questionAnswers'] as List<dynamic>? ?? const []))
-            if (raw is Map<String, dynamic>)
-              AgentUserQuestionAnswer(
-                questionIndex: raw['questionIndex'] as int? ?? 0,
-                values: [
-                  for (final value
-                      in (raw['values'] as List<dynamic>? ?? const []))
-                    if (value is String) value,
-                ],
-              ),
-        ],
       );
     case 'user_question':
-      final rawQuestions = p['questions'];
-      final questions = rawQuestions is List<dynamic>
-          ? [
-              for (final raw in rawQuestions)
-                if (raw is Map<String, dynamic>)
-                  AgentUserQuestion(
-                    question: raw['question'] as String? ?? '需要你的输入',
-                    options: [
-                      for (final option
-                          in (raw['options'] as List<dynamic>? ?? const []))
-                        if (option is String) option,
-                    ],
-                    allowMultiple: raw['allowMultiple'] as bool? ?? false,
-                  ),
-            ]
-          : [
-              AgentUserQuestion(
-                question: p['question'] as String? ?? '需要你的输入',
-                options: [
-                  for (final option
-                      in (p['options'] as List<dynamic>? ?? const []))
-                    if (option is String) option,
-                ],
-                allowMultiple: p['allowMultiple'] as bool? ?? false,
-              ),
-            ];
       return UserQuestionEvent(
         id: id,
         seq: seq,
         at: at,
-        questions: questions.isEmpty
-            ? const [AgentUserQuestion(question: '需要你的输入')]
-            : questions,
+        question: p['question'] as String? ?? '需要你的输入',
+        suggestions: [
+          for (final item in (p['suggestions'] as List<dynamic>? ?? const []))
+            if (item is String) item,
+        ],
         toolCallId: p['toolCallId'] as String?,
         argsJson: p['argsJson'] as String?,
       );

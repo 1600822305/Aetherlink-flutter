@@ -553,13 +553,7 @@ List<LlmMessage> _replayMessages(List<AgentEvent> events) {
           messages.add(
             LlmMessage(
               role: MessageRole.user,
-              content: event.questionAnswers.isEmpty
-                  ? event.text
-                  : formatQuestionAnswers(
-                      question!,
-                      event.questionAnswers,
-                      fallback: event.text,
-                    ),
+              content: event.text,
               toolCallId: question!.toolCallId,
               toolName: kToolAskUser,
             ),
@@ -583,7 +577,11 @@ List<LlmMessage> _replayMessages(List<AgentEvent> events) {
                 LlmToolCall(
                   id: event.toolCallId!,
                   name: kToolAskUser,
-                  arguments: event.argsJson ?? _questionArgsJson(event),
+                  arguments: event.argsJson ??
+                      jsonEncode({
+                        'question': event.question,
+                        'follow_up': event.suggestions,
+                      }),
                 ),
               ],
             ),
@@ -699,29 +697,12 @@ String _compactionTranscript(List<AgentEvent> events) {
   return lines.join('\n\n');
 }
 
-/// ask_user 提问的文本形态（重放/压缩共用）：问题 + 选项清单。
+/// ask_user 提问的文本形态（重放/压缩共用）：问题 + 建议答案。
 String _questionText(UserQuestionEvent event) => [
-      for (var i = 0; i < event.questions.length; i++)
-        [
-          if (event.questions.length > 1) '${i + 1}. ',
-          event.questions[i].question,
-          if (event.questions[i].options.isNotEmpty)
-            '\n可选：${event.questions[i].options.join(' / ')}',
-          if (event.questions[i].allowMultiple) '\n（可多选）',
-        ].join(),
-    ].join('\n\n');
-
-/// 旧持久化提问缺原始参数时按当前协议重建 args JSON。
-String _questionArgsJson(UserQuestionEvent event) => jsonEncode({
-      'questions': [
-        for (final question in event.questions)
-          {
-            'question': question.question,
-            'options': question.options,
-            'allow_multiple': question.allowMultiple,
-          },
-      ],
-    });
+      event.question,
+      if (event.suggestions.isNotEmpty)
+        '建议：${event.suggestions.join(' / ')}',
+    ].join('\n');
 
 String _toolResultText(ToolCallEvent event) => switch (event.state) {
       AgentToolCallState.success =>

@@ -69,7 +69,6 @@ class UserMessageEvent extends AgentEvent {
     this.queued = false,
     this.attachments = const [],
     this.replyToQuestionId,
-    this.questionAnswers = const [],
   });
 
   final String text;
@@ -79,92 +78,41 @@ class UserMessageEvent extends AgentEvent {
 
   final List<AgentUserAttachment> attachments;
 
-  /// 非空时表示这条消息是对某个 [UserQuestionEvent] 的结构化回答。
+  /// 非空时表示这条消息是对某个 [UserQuestionEvent] 的回答。
   final String? replyToQuestionId;
-
-  final List<AgentUserQuestionAnswer> questionAnswers;
 }
 
-class AgentUserQuestion {
-  const AgentUserQuestion({
-    required this.question,
-    this.options = const [],
-    this.allowMultiple = false,
-  });
-
-  final String question;
-  final List<String> options;
-  final bool allowMultiple;
-}
-
-class AgentUserQuestionAnswer {
-  const AgentUserQuestionAnswer({
-    required this.questionIndex,
-    required this.values,
-  });
-
-  final int questionIndex;
-  final List<String> values;
-}
-
-/// ask_user 提问（引擎控制工具落地）：支持一次提交多个结构化问题，
-/// 每题可配置单选/多选，并始终允许用户输入自定义回答。
+/// ask_user 提问（引擎控制工具落地，RooCode ask_followup_question 风格）：
+/// 一个问题 + 2-4 个完整建议答案，用户点选即提交，也可输入自定义回答。
 class UserQuestionEvent extends AgentEvent {
   const UserQuestionEvent({
     required super.id,
     required super.seq,
     required super.at,
-    required this.questions,
+    required this.question,
+    this.suggestions = const [],
     this.toolCallId,
     this.argsJson,
   });
 
-  final List<AgentUserQuestion> questions;
+  final String question;
+
+  /// 建议答案（每个都是完整、可直接采用的回答）。
+  final List<String> suggestions;
 
   /// 保留原始工具调用身份，恢复后可按 function-call 语义回放给模型。
   final String? toolCallId;
   final String? argsJson;
-
-  /// 兼容单问题调用方与历史展示逻辑。
-  String get question => questions.firstOrNull?.question ?? '需要你的输入';
-  List<String> get options => questions.firstOrNull?.options ?? const [];
 }
 
 UserMessageEvent? userQuestionAnswer(
   UserQuestionEvent question,
   Iterable<AgentEvent> events,
-) {
-  final messages = events.whereType<UserMessageEvent>();
-  final explicit = messages
-      .where((event) => event.replyToQuestionId == question.id)
-      .firstOrNull;
-  if (explicit != null) return explicit;
-  if (question.toolCallId == null) {
-    return messages.where((event) => event.seq > question.seq).firstOrNull;
-  }
-  return null;
-}
-
-/// 结构化回答的统一文本形态（落库与恢复重放共用，保证两侧一致）：
-/// 单问题直接给答案值，多问题按「问题 + 回答」分段；索引越界的条目
-/// 跳过，全部无效时退回 [fallback]。
-String formatQuestionAnswers(
-  UserQuestionEvent question,
-  List<AgentUserQuestionAnswer> answers, {
-  String fallback = '',
-}) {
-  final lines = [
-    for (final item in answers)
-      if (item.questionIndex >= 0 &&
-          item.questionIndex < question.questions.length)
-        question.questions.length == 1
-            ? item.values.join('、')
-            : '${question.questions[item.questionIndex].question}\n'
-                '回答：${item.values.join('、')}',
-  ];
-  if (lines.isEmpty) return fallback;
-  return lines.join('\n\n');
-}
+) =>
+    events
+        .whereType<UserMessageEvent>()
+        .where((event) => event.replyToQuestionId == question.id)
+        .firstOrNull;
 
 UserQuestionEvent? latestPendingUserQuestion(Iterable<AgentEvent> events) {
   final list = events.toList();

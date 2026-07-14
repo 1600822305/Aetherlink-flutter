@@ -260,14 +260,13 @@ class AgentEngine {
             continue;
           }
           if (call.name == kToolAskUser) {
-            final questions = _parseUserQuestions(call);
-            await store.appendUserQuestion(current.id, questions,
-                toolCallId: call.id, argsJson: call.argsJson);
-            final summary = questions.length == 1
-                ? questions.single.question
-                : '${questions.length} 个问题';
+            final (question, suggestions) = _parseUserQuestion(call);
+            await store.appendUserQuestion(current.id, question,
+                suggestions: suggestions,
+                toolCallId: call.id,
+                argsJson: call.argsJson);
             current = await transition(
-                AgentTaskStatus.waitingInput, '等待回答：$summary');
+                AgentTaskStatus.waitingInput, '等待回答：$question');
             return;
           }
           if (call.name == kToolFinishTask) {
@@ -491,60 +490,26 @@ class AgentEngine {
   }
 
   /// 解析 ask_user 参数（RooCode ask_followup_question 风格）：
-  /// question + follow_up 建议答案列表；兼容旧的 questions[] 与
-  /// question/options 两种历史参数形态。
-  List<AgentUserQuestion> _parseUserQuestions(AgentToolCallRequest call) {
+  /// question + follow_up 建议答案列表。
+  (String, List<String>) _parseUserQuestion(AgentToolCallRequest call) {
     try {
       final json = jsonDecode(call.argsJson) as Map<String, dynamic>;
       final question = (json['question'] as String? ?? '').trim();
       if (question.isNotEmpty) {
-        final suggestions = _trimmedStrings(json['follow_up']);
-        return [
-          AgentUserQuestion(
-            question: question,
-            options: suggestions.isNotEmpty
-                ? suggestions
-                : _trimmedStrings(json['options']),
-            allowMultiple: json['allow_multiple'] as bool? ?? false,
-          ),
-        ];
-      }
-
-      // 兼容历史 questions[] 参数形态。
-      final rawQuestions = json['questions'];
-      if (rawQuestions is List<dynamic>) {
-        final questions = <AgentUserQuestion>[];
-        for (final raw in rawQuestions.take(4)) {
-          if (raw is! Map<String, dynamic>) continue;
-          final text = (raw['question'] as String? ?? '').trim();
-          if (text.isEmpty) continue;
-          questions.add(
-            AgentUserQuestion(
-              question: text,
-              options: _trimmedStrings(raw['options']),
-              allowMultiple: raw['allow_multiple'] as bool? ?? false,
-            ),
-          );
-        }
-        if (questions.isNotEmpty) return questions;
+        return (question, _trimmedStrings(json['follow_up']));
       }
     } catch (_) {
       // 解析失败时仍落一个可回答的问题，避免任务挂起但 UI 无内容。
     }
-    return const [AgentUserQuestion(question: '需要你的输入')];
+    return ('需要你的输入', const []);
   }
 
   static List<String> _trimmedStrings(Object? raw) {
     if (raw is! List<dynamic>) return const [];
     final result = <String>[];
-    for (final item in raw) {
-      // 容忍 {text: ...} 对象形态的建议答案。
-      final text = item is String
-          ? item
-          : item is Map<String, dynamic>
-              ? item['text'] as String? ?? ''
-              : '';
-      final normalized = text.trim();
+    for (final item in raw.take(4)) {
+      if (item is! String) continue;
+      final normalized = item.trim();
       if (normalized.isEmpty || result.contains(normalized)) continue;
       result.add(normalized);
     }
