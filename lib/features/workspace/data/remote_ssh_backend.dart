@@ -428,14 +428,59 @@ class RemoteSshBackend extends WorkspaceBackend {
     return path;
   }
 
+  /// 受保护路径：Android 共享存储挂载点与 Termux 的 ~/storage 目录
+  /// （termux-setup-storage 生成，内含指向真实手机存储的符号链接）。
+  /// 对它们做删除/重命名/移动会直接作用到手机真实文件；挂载点
+  /// 内部的文件不受限（与 proot 后端的 sdcard 保护同语义）。
+  static const Set<String> _protectedMounts = {
+    '/storage',
+    '/storage/emulated',
+    '/storage/emulated/0',
+    '/sdcard',
+    '/data/data/com.termux/files/home/storage',
+  };
+
+  static String _stripTrailingSlash(String path) =>
+      path.length > 1 && path.endsWith('/')
+          ? path.substring(0, path.length - 1)
+          : path;
+
+  @override
+  bool isProtectedPath(String path) =>
+      _protectedMounts.contains(_stripTrailingSlash(path));
+
+  void _guardProtected(String path) {
+    if (isProtectedPath(path)) {
+      throw SshBackendException(
+        '受保护路径：$path 是手机存储挂载点，不允许删除/重命名/移动',
+      );
+    }
+  }
+
+  // Whether [path] itself is a symlink (dartssh2 has no lstat; readlink
+  // succeeds only on links).
+  Future<bool> _isSymlink(SftpClient sftp, String path) async {
+    try {
+      await sftp.readlink(path);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   @override
   Future<void> delete(
     String path, {
     bool isDirectory = false,
     bool recursive = false,
   }) async {
+    _guardProtected(path);
     final sftp = await _sftpClient();
-    if (!isDirectory) {
+    // 符号链接只删链接本身，绝不跟进目标递归删除（Termux 的
+    // ~/storage/* 指向真实手机存储，跟进会摧毁用户文件）。
+    if (await _isSymlink(sftp, path)) {
+      await sftp.remove(path);
+    } else if (!isDirectory) {
       await sftp.remove(path);
     } else if (!recursive) {
       await sftp.rmdir(path);
@@ -460,6 +505,7 @@ class RemoteSshBackend extends WorkspaceBackend {
 
   @override
   Future<String> rename(String path, String newName) async {
+    _guardProtected(path);
     final sftp = await _sftpClient();
     final newPath = _join(_dirname(path), newName);
     await sftp.rename(path, newPath);
@@ -469,6 +515,7 @@ class RemoteSshBackend extends WorkspaceBackend {
 
   @override
   Future<String> move(String sourcePath, String destinationParent) async {
+    _guardProtected(sourcePath);
     final sftp = await _sftpClient();
     final newPath = _join(destinationParent, _basename(sourcePath));
     await sftp.rename(sourcePath, newPath);
