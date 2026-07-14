@@ -54,30 +54,49 @@ class AgentHomePage extends ConsumerWidget {
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
+        // 模型选择器放在标题行最右（与话题名持平），状态行单独在下。
         title: task == null
-            ? Text(
-                profile == null ? '智能体' : '${profile.emoji} ${profile.name}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w500,
-                  color: theme.colorScheme.onSurface,
-                ),
+            ? Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      profile == null
+                          ? '智能体'
+                          : '${profile.emoji} ${profile.name}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w500,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const _TopBarModelSelector(),
+                ],
               )
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    task.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: theme.colorScheme.onSurface,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          task.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const _TopBarModelSelector(),
+                    ],
                   ),
                   const SizedBox(height: 2),
                   AgentStatusLine(task: task),
@@ -86,7 +105,6 @@ class AgentHomePage extends ConsumerWidget {
         // 三点下拉菜单（决策 30）：智能体专属能力入口。当前有
         // 「技能」「MCP」，记忆/工作流/rules 后续逐项加入。
         actions: [
-          const _TopBarModelSelector(),
           Builder(
             builder: (context) => PopupMenuButton<String>(
               tooltip: '更多',
@@ -182,41 +200,38 @@ class _TopBarModelSelector extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final name =
-        ref.watch(appCurrentModelProvider).value?.model.name ?? '选择模型';
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 132),
-        child: Material(
-          color: cs.onSurface.withValues(alpha: 0.05),
+    final name = ref.watch(appCurrentModelProvider).value?.model.name ?? '选择模型';
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 132),
+      child: Material(
+        color: cs.onSurface.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: () => showAppModelSelectorDialog(context),
           borderRadius: BorderRadius.circular(8),
-          child: InkWell(
-            onTap: () => showAppModelSelectorDialog(context),
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    LucideIcons.brain,
-                    size: 13,
-                    color: cs.onSurface.withValues(alpha: 0.7),
-                  ),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: cs.onSurface.withValues(alpha: 0.8),
-                        fontWeight: FontWeight.w600,
-                      ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  LucideIcons.brain,
+                  size: 13,
+                  color: cs.onSurface.withValues(alpha: 0.7),
+                ),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cs.onSurface.withValues(alpha: 0.8),
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
