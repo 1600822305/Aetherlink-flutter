@@ -311,8 +311,9 @@ class _TabBarHeader extends StatelessWidget {
           fontSize: 13,
           fontWeight: FontWeight.w500,
         ),
-        // 4 个带图标的 tab 寄宿在窄屏会挤，标签改短 + 可滚动兼顾完整性。
-        isScrollable: true,
+        // 4 个 tab 均分宽度（标签已缩短）；TabAlignment.fill 只允许配合
+        // 非滚动 TabBar 使用。
+        isScrollable: false,
         tabAlignment: TabAlignment.fill,
         tabs: const [
           _IconTab(icon: LucideIcons.server, label: '外部'),
