@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_prof
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_skills_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_task_shell.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/agent_sidebar.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/sidebar/tabs/agent_settings_tab.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_input_bar.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
 
@@ -92,11 +93,7 @@ class AgentHomePage extends ConsumerWidget {
               onSelected: (value) {
                 if (value == 'skills') showAgentSkillsPage(context);
                 if (value == 'mcp') showAgentMcpPage(context);
-                if (value == 'settings') {
-                  // 直达智能体设置：定位侧边栏设置 tab 再开抽屉。
-                  ref.read(agentSidebarTabIndexProvider.notifier).set(2);
-                  Scaffold.of(context).openDrawer();
-                }
+                if (value == 'settings') showAgentSettingsPage(context);
               },
               itemBuilder: (context) => [
                 PopupMenuItem(
