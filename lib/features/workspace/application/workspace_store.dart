@@ -8,14 +8,11 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 
 part 'workspace_store.g.dart';
 
-/// Setting key for the persisted "最近打开" workspace list (a JSON array,
-/// newest first), stored in the same Drift-backed KV store as other prefs.
+/// Setting key for the persisted workspace list (a JSON array, newest
+/// first), stored in the same Drift-backed KV store as other prefs.
 const String kRecentWorkspacesKey = 'workspace_recent';
 
-/// Cap on the remembered workspace count — older entries drop off the tail.
-const int kMaxRecentWorkspaces = 20;
-
-/// The "最近打开" workspace list, newest first. Hydrated from the KV store on
+/// The workspace list, newest first. Hydrated from the KV store on
 /// first build and written through on every change so it survives a restart.
 @Riverpod(keepAlive: true)
 class WorkspaceStore extends _$WorkspaceStore {
@@ -91,9 +88,6 @@ class WorkspaceStore extends _$WorkspaceStore {
       for (final w in current)
         if (w.id != entry.id) w,
     ];
-    if (next.length > kMaxRecentWorkspaces) {
-      next.removeRange(kMaxRecentWorkspaces, next.length);
-    }
     await _persist(next);
     return entry;
   }
@@ -166,7 +160,7 @@ class WorkspaceStore extends _$WorkspaceStore {
     await _persist(next);
   }
 
-  /// Removes a workspace from the "最近打开" list.
+  /// Removes a workspace from the list.
   Future<void> remove(String id) async {
     final current = state.value ?? const [];
     await _persist([
@@ -175,6 +169,6 @@ class WorkspaceStore extends _$WorkspaceStore {
     ]);
   }
 
-  /// Clears the entire "最近打开" list.
+  /// Clears the entire workspace list.
   Future<void> clear() => _persist(const []);
 }

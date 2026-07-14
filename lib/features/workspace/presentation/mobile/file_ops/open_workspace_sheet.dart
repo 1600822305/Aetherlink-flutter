@@ -1,6 +1,6 @@
 // 「打开文件夹」 entry, moved off the old start screen onto the file-tree header.
 //
-// Shows a bottom sheet with "打开本地文件夹" (real SAF picker) plus the "最近打开"
+// Shows a bottom sheet with "打开本地文件夹" (real SAF picker) plus the workspace
 // list, and owns the open/switch logic: record the workspace in the recent
 // store, reset the open tabs (a different workspace starts a fresh session) and
 // set it as current. Only LocalSafBackend's neutral pickDirectory is touched —
@@ -158,7 +158,7 @@ class _OpenWorkspaceSheet extends ConsumerWidget {
               Padding(
                 padding: const EdgeInsets.only(left: 4, bottom: 4),
                 child: Text(
-                  '最近打开',
+                  '工作区',
                   style: theme.textTheme.titleSmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
@@ -414,7 +414,7 @@ Future<Workspace?> openProotProjectWorkspace(
   }
 }
 
-/// Re-opens a "最近打开" entry as the current workspace.
+/// Re-opens a stored workspace entry as the current workspace.
 Future<void> openRecent(WidgetRef ref, Workspace workspace) async {
   final stored = await ref
       .read(workspaceStoreProvider.notifier)

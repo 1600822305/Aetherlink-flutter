@@ -250,7 +250,7 @@ class _WorkspaceManagementPageState
   Future<void> _remove(Workspace w) async {
     final ok = await _confirm(
       title: '移除工作区',
-      message: '将从「最近打开」中移除「${w.name}」。不会删除磁盘上的任何文件。',
+      message: '将从工作区列表中移除「${w.name}」。不会删除磁盘上的任何文件。',
       confirmLabel: '移除',
     );
     if (ok) await ref.read(workspaceStoreProvider.notifier).remove(w.id);
@@ -259,7 +259,7 @@ class _WorkspaceManagementPageState
   Future<void> _clearAll() async {
     final ok = await _confirm(
       title: '清空所有工作区记录',
-      message: '将清空整个「最近打开」列表。不会删除磁盘上的任何文件。',
+      message: '将清空整个工作区列表。不会删除磁盘上的任何文件。',
       confirmLabel: '清空',
     );
     if (ok) await ref.read(workspaceStoreProvider.notifier).clear();
@@ -394,20 +394,6 @@ class _WorkspaceManagementPageState
                   subtitle: const Text('AI 调用文件/终端工具时哪些免确认（白名单）'),
                   trailing: const Icon(LucideIcons.chevronRight, size: 18),
                   onTap: () => showToolAuthSettingsPage(context),
-                ),
-                Divider(height: 1, color: theme.dividerColor),
-                ListTile(
-                  leading: Icon(
-                    LucideIcons.list,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  title: const Text('最多记住的工作区数量'),
-                  trailing: Text(
-                    '$kMaxRecentWorkspaces',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
                 ),
               ],
             ),
