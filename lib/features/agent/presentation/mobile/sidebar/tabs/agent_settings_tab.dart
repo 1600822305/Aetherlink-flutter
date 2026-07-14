@@ -146,63 +146,7 @@ class AgentSettingsTab extends ConsumerWidget {
             const _StaticRow(title: '越界命令', value: '永远强制审批（不可关闭）'),
           ],
         ),
-        const _GroupDivider(),
-        // App 级设置入口（对齐聊天设置 tab 底部的「设置」行）：
-        // 直达设置页的智能体视图。
-        _SettingsEntryRow(
-          onTap: () => context.push('${AppRouter.settingsPath}?mode=agent'),
-        ),
       ],
-    );
-  }
-}
-
-class _SettingsEntryRow extends StatelessWidget {
-  const _SettingsEntryRow({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(6, 10, 6, 10),
-        child: Row(
-          children: [
-            Icon(LucideIcons.cog, size: 20, color: cs.primary),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '设置',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '进入完整设置页面（智能体视图）',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: cs.onSurface.withValues(alpha: 0.5),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              LucideIcons.chevronRight,
-              size: 16,
-              color: cs.onSurface.withValues(alpha: 0.5),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
