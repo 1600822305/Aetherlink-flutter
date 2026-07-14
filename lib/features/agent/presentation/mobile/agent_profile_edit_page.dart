@@ -8,12 +8,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
 import 'package:aetherlink_flutter/app/di/workspace_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/primary_terminal_sheet.dart';
-import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 
 /// [profile] 为 null 时是新建智能体。
 Future<void> showAgentProfileEditPage(
@@ -50,7 +48,6 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
   late Set<AgentToolGroup> _tools = {
     ...widget.profile?.tools ?? {AgentToolGroup.fileEditor},
   };
-  late Set<String> _mcpServerIds = {...widget.profile?.mcpServerIds ?? {}};
   late String? _workspaceId = widget.profile?.workspaceId;
   late String? _workspaceName = widget.profile?.workspaceName;
 
@@ -133,7 +130,6 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
             emoji: _emoji,
             systemPrompt: _prompt.text.trim(),
             tools: _tools,
-            mcpServerIds: _mcpServerIds,
             workspaceId: _workspaceId,
             workspaceName: _workspaceName,
           ),
@@ -207,23 +203,6 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
         ],
       ),
     );
-  }
-
-  /// 可接入智能体的外部 MCP 服务器（远程 / stdio，已启用）；内置
-  /// server 由上方工具集分组覆盖，不在此列。
-  List<McpServer> get _mcpServers {
-    final servers =
-        ref.watch(mcpServersProvider).asData?.value ?? const <McpServer>[];
-    const externalTypes = {
-      McpServerType.sse,
-      McpServerType.streamableHttp,
-      McpServerType.httpStream,
-      McpServerType.stdio,
-    };
-    return [
-      for (final s in servers)
-        if (s.isActive && externalTypes.contains(s.type)) s,
-    ];
   }
 
   Widget _body(ThemeData theme, ColorScheme cs) {
@@ -380,42 +359,6 @@ class _AgentProfileEditPageState extends ConsumerState<AgentProfileEditPage> {
                 ),
             ],
           ),
-        ),
-        const SizedBox(height: 20),
-        _label(theme, 'MCP 服务器'),
-        const SizedBox(height: 4),
-        Text(
-          '勾选后该智能体可调用其工具（仅 Code/Auto 模式；Code 逐次审批）',
-          style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-        ),
-        const SizedBox(height: 8),
-        _Card(
-          child: _mcpServers.isEmpty
-              ? Text(
-                  '没有可接入的 MCP 服务器；先在 设置 → MCP 服务器 里添加并启用',
-                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-                )
-              : Wrap(
-                  spacing: 6,
-                  runSpacing: 0,
-                  children: [
-                    for (final s in _mcpServers)
-                      _selectChip(
-                        cs,
-                        label: s.name,
-                        icon: s.type == McpServerType.stdio
-                            ? LucideIcons.terminal
-                            : LucideIcons.server,
-                        selected: _mcpServerIds.contains(s.id),
-                        onSelected: () => setState(() {
-                          _mcpServerIds.contains(s.id)
-                              ? _mcpServerIds.remove(s.id)
-                              : _mcpServerIds.add(s.id);
-                          _mcpServerIds = {..._mcpServerIds};
-                        }),
-                      ),
-                  ],
-                ),
         ),
         const SizedBox(height: 20),
         _label(theme, '专长提示词'),
