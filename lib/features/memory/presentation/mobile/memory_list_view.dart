@@ -7,12 +7,13 @@ import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
 
 /// Creates a new memory from the editor sheet's fields (used by both the
 /// 全局记忆 and 助手私有记忆 list pages).
-typedef MemoryCreate = Future<void> Function({
-  required String content,
-  required MemoryType type,
-  String? category,
-  double importance,
-});
+typedef MemoryCreate =
+    Future<void> Function({
+      required String content,
+      required MemoryType type,
+      String? category,
+      double importance,
+    });
 
 /// A scope-agnostic memory management screen: search field + list of cards with
 /// manual add / edit / delete and an empty state. Both the 全局记忆 page and the
@@ -327,6 +328,7 @@ class MemoryCard extends StatelessWidget {
                 ),
               ),
               PopupMenuButton<String>(
+                popUpAnimationStyle: AnimationStyle.noAnimation,
                 icon: Icon(
                   LucideIcons.ellipsisVertical,
                   size: 18,
@@ -370,7 +372,9 @@ class _TypeChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isSemantic = type == MemoryType.semantic;
-    final color = isSemantic ? const Color(0xFF6366F1) : const Color(0xFF0EA5E9);
+    final color = isSemantic
+        ? const Color(0xFF6366F1)
+        : const Color(0xFF0EA5E9);
     final label = isSemantic ? '语义' : '情景';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),

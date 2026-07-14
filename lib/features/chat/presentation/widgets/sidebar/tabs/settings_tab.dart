@@ -1205,9 +1205,9 @@ class _SelectSettingRow<T> extends StatelessWidget {
       description: description,
       comingSoon: comingSoon,
       trailing: PopupMenuButton<T>(
+        popUpAnimationStyle: AnimationStyle.noAnimation,
         initialValue: value,
         onSelected: onChanged,
-        popUpAnimationStyle: AnimationStyle.noAnimation,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         position: PopupMenuPosition.under,
         itemBuilder: (_) => [

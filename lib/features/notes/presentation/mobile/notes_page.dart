@@ -431,11 +431,7 @@ class NotesPage extends ConsumerWidget {
     WidgetRef ref,
     NoteNode node,
   ) async {
-    AppToast.info(
-      context,
-      '正在生成标题…',
-      duration: const Duration(seconds: 30),
-    );
+    AppToast.info(context, '正在生成标题…', duration: const Duration(seconds: 30));
     try {
       final content = await ref
           .read(notesFileStoreProvider)
@@ -1237,6 +1233,7 @@ class _SortMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return PopupMenuButton<NotesSortType>(
+      popUpAnimationStyle: AnimationStyle.noAnimation,
       icon: Icon(
         LucideIcons.arrowDownUp,
         size: 20,

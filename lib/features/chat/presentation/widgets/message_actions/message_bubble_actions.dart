@@ -209,14 +209,19 @@ class _MessageActionMenuState extends ConsumerState<MessageActionMenu> {
         Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
     final position = RelativeRect.fromRect(
       Rect.fromPoints(
-        button.localToGlobal(button.size.bottomLeft(Offset.zero),
-            ancestor: overlay),
-        button.localToGlobal(button.size.bottomRight(Offset.zero),
-            ancestor: overlay),
+        button.localToGlobal(
+          button.size.bottomLeft(Offset.zero),
+          ancestor: overlay,
+        ),
+        button.localToGlobal(
+          button.size.bottomRight(Offset.zero),
+          ancestor: overlay,
+        ),
       ),
       Offset.zero & overlay.size,
     );
     final selected = await showMenu<MessageAction>(
+      popUpAnimationStyle: AnimationStyle.noAnimation,
       context: context,
       position: position,
       items: [
@@ -293,9 +298,7 @@ class _MicroBubble extends StatelessWidget {
     return Tooltip(
       message: tooltip,
       child: Material(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(
-          alpha: 0.6,
-        ),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
         shape: const StadiumBorder(),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -332,7 +335,8 @@ class _TtsMicroBubble extends ConsumerWidget {
     } catch (_) {
       // Provider not ready — show default icon.
     }
-    final isPlayingThis = ttsState != null &&
+    final isPlayingThis =
+        ttsState != null &&
         ttsState.messageId == messageId &&
         (ttsState.status == TtsStatus.playing ||
             ttsState.status == TtsStatus.loading);
@@ -345,7 +349,9 @@ class _TtsMicroBubble extends ConsumerWidget {
       label: isPlayingThis ? '播放中' : '播放',
       tooltip: isPlayingThis ? '停止播放' : '语音播放',
       color: baseColor,
-      backgroundColor: isPlayingThis ? _activeColor(pillColor, baseColor) : pillColor,
+      backgroundColor: isPlayingThis
+          ? _activeColor(pillColor, baseColor)
+          : pillColor,
       onTap: onTap,
     );
   }
@@ -437,10 +443,9 @@ class _VersionSwitcher extends ConsumerWidget {
     final total = versions.length + 1;
     final currentIndex = view.currentVersionId == null
         ? total - 1
-        : versions.indexWhere((v) => v.id == view.currentVersionId).clamp(
-            0,
-            total - 1,
-          );
+        : versions
+              .indexWhere((v) => v.id == view.currentVersionId)
+              .clamp(0, total - 1);
 
     final label = '${currentIndex + 1}/$total';
     final popupLabel = '版本 $label';

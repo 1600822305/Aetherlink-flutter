@@ -552,8 +552,8 @@ class _KnowledgeBaseDetailPageState
                 child: Text(
                   '最近打开的工作区',
                   style: Theme.of(ctx).textTheme.labelMedium?.copyWith(
-                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                      ),
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
               for (final w in workspaces)
@@ -585,12 +585,8 @@ class _KnowledgeBaseDetailPageState
           .read(knowledgeItemsControllerProvider(widget.baseId).notifier)
           .addWorkspace(
             workspaceId: picked.id,
-            onProgress: (done, total, fileName) => _setProgress(
-              '正在摄取「$fileName」',
-              done,
-              total,
-              cancellable: true,
-            ),
+            onProgress: (done, total, fileName) =>
+                _setProgress('正在摄取「$fileName」', done, total, cancellable: true),
             shouldCancel: () => _cancelRequested,
           );
       final cancelled = _cancelRequested;
@@ -761,8 +757,7 @@ class _KnowledgeBaseDetailPageState
           .changeEmbeddingModel(
             modelKey,
             searchMode: searchMode,
-            onProgress: (done, total) =>
-                _setProgress('正在重建向量索引', done, total),
+            onProgress: (done, total) => _setProgress('正在重建向量索引', done, total),
           );
       _clearProgress();
       if (mounted) AppToast.success(context, '已更换嵌入模型并重建索引（$count 个条目）');

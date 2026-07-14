@@ -180,10 +180,7 @@ class _StdioServerRowState extends ConsumerState<_StdioServerRow> {
   @override
   void initState() {
     super.initState();
-    _sub = ref
-        .read(stdioMcpConnectionManagerProvider)
-        .changes
-        .listen((id) {
+    _sub = ref.read(stdioMcpConnectionManagerProvider).changes.listen((id) {
       if (id == widget.server.id && mounted) setState(() {});
     });
   }
@@ -206,8 +203,10 @@ class _StdioServerRowState extends ConsumerState<_StdioServerRow> {
         .map((w) => w.name)
         .firstOrNull;
 
-    final commandLine =
-        [server.command ?? '', ...?server.args].join(' ').trim();
+    final commandLine = [
+      server.command ?? '',
+      ...?server.args,
+    ].join(' ').trim();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
@@ -298,6 +297,7 @@ class _StdioServerRowState extends ConsumerState<_StdioServerRow> {
                   ),
                 )
               : PopupMenuButton<String>(
+                  popUpAnimationStyle: AnimationStyle.noAnimation,
                   icon: Icon(
                     LucideIcons.ellipsisVertical,
                     size: 18,
@@ -447,10 +447,7 @@ class _StdioLogSheetState extends ConsumerState<_StdioLogSheet> {
   @override
   void initState() {
     super.initState();
-    _sub = ref
-        .read(stdioMcpConnectionManagerProvider)
-        .changes
-        .listen((id) {
+    _sub = ref.read(stdioMcpConnectionManagerProvider).changes.listen((id) {
       if (id == widget.server.id && mounted) setState(() {});
     });
   }
@@ -485,8 +482,9 @@ class _StdioLogSheetState extends ConsumerState<_StdioLogSheet> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color:
-                    theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                color: theme.colorScheme.onSurfaceVariant.withValues(
+                  alpha: 0.3,
+                ),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),

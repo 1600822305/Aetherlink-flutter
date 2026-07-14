@@ -217,6 +217,7 @@ class FileTreeSortMenuButton extends StatelessWidget {
         ? theme.colorScheme.onSurfaceVariant
         : theme.colorScheme.onSurface.withValues(alpha: 0.30);
     return PopupMenuButton<TreeSortMode>(
+      popUpAnimationStyle: AnimationStyle.noAnimation,
       tooltip: '排序：${_labels[mode]}',
       enabled: enabled,
       initialValue: mode,

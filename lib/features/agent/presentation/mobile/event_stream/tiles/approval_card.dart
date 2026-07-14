@@ -60,9 +60,8 @@ class ApprovalCard extends ConsumerWidget {
               children: [
                 FilledButton(
                   onPressed: active
-                      ? () => respond(
-                            const AgentApprovalDecision(approved: true),
-                          )
+                      ? () =>
+                            respond(const AgentApprovalDecision(approved: true))
                       : null,
                   style: FilledButton.styleFrom(
                     visualDensity: VisualDensity.compact,
@@ -73,11 +72,11 @@ class ApprovalCard extends ConsumerWidget {
                 OutlinedButton(
                   onPressed: active
                       ? () => respond(
-                            const AgentApprovalDecision(
-                              approved: false,
-                              reason: '用户拒绝',
-                            ),
-                          )
+                          const AgentApprovalDecision(
+                            approved: false,
+                            reason: '用户拒绝',
+                          ),
+                        )
                       : null,
                   style: OutlinedButton.styleFrom(
                     visualDensity: VisualDensity.compact,
@@ -110,6 +109,7 @@ class _WhitelistMenuButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<AgentApprovalScope>(
+      popUpAnimationStyle: AnimationStyle.noAnimation,
       enabled: enabled,
       onSelected: onSelected,
       itemBuilder: (context) => const [
@@ -127,10 +127,10 @@ class _WhitelistMenuButton extends StatelessWidget {
         child: Text(
           '白名单 ▾',
           style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: enabled
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).disabledColor,
-              ),
+            color: enabled
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).disabledColor,
+          ),
         ),
       ),
     );

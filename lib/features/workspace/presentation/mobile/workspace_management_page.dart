@@ -403,7 +403,10 @@ class _WorkspaceManagementPageState
             const _SectionHeader(title: '危险区'),
             _OutlinedCard(
               child: ListTile(
-                leading: Icon(LucideIcons.trash2, color: theme.colorScheme.error),
+                leading: Icon(
+                  LucideIcons.trash2,
+                  color: theme.colorScheme.error,
+                ),
                 title: Text(
                   '清空所有工作区记录',
                   style: TextStyle(color: theme.colorScheme.error),
@@ -449,8 +452,8 @@ class _WorkspaceRow extends StatelessWidget {
         color: isInvalid
             ? theme.colorScheme.error
             : isCurrent
-                ? theme.colorScheme.primary
-                : theme.colorScheme.onSurfaceVariant,
+            ? theme.colorScheme.primary
+            : theme.colorScheme.onSurfaceVariant,
       ),
       title: Row(
         children: [
@@ -470,11 +473,7 @@ class _WorkspaceRow extends StatelessWidget {
             ),
           ] else if (isCurrent) ...[
             const SizedBox(width: 8),
-            _Badge(
-              theme: theme,
-              label: '当前',
-              color: theme.colorScheme.primary,
-            ),
+            _Badge(theme: theme, label: '当前', color: theme.colorScheme.primary),
           ],
         ],
       ),
@@ -497,6 +496,7 @@ class _WorkspaceRow extends StatelessWidget {
         ],
       ),
       trailing: PopupMenuButton<String>(
+        popUpAnimationStyle: AnimationStyle.noAnimation,
         icon: const Icon(LucideIcons.ellipsisVertical, size: 18),
         onSelected: (value) {
           switch (value) {
@@ -521,11 +521,11 @@ class _WorkspaceRow extends StatelessWidget {
   }
 
   static String _backendLabel(WorkspaceBackendType type) => switch (type) {
-        WorkspaceBackendType.localSaf => '本地',
-        WorkspaceBackendType.termux => 'Termux',
-        WorkspaceBackendType.ssh => 'SSH',
-        WorkspaceBackendType.prootLocal => '内置终端',
-      };
+    WorkspaceBackendType.localSaf => '本地',
+    WorkspaceBackendType.termux => 'Termux',
+    WorkspaceBackendType.ssh => 'SSH',
+    WorkspaceBackendType.prootLocal => '内置终端',
+  };
 
   static String _relativeTime(DateTime t) {
     final diff = DateTime.now().difference(t);
@@ -539,11 +539,7 @@ class _WorkspaceRow extends StatelessWidget {
 }
 
 class _Badge extends StatelessWidget {
-  const _Badge({
-    required this.theme,
-    required this.label,
-    required this.color,
-  });
+  const _Badge({required this.theme, required this.label, required this.color});
 
   final ThemeData theme;
   final String label;
@@ -608,10 +604,7 @@ class _EmptyHint extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
             const SizedBox(height: 12),
-            Text(
-              '还没有任何工作区',
-              style: theme.textTheme.bodyMedium,
-            ),
+            Text('还没有任何工作区', style: theme.textTheme.bodyMedium),
             const SizedBox(height: 4),
             Text(
               '打开本地目录,或连接 SSH / Termux 开始使用',

@@ -77,9 +77,9 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
   }
 
   void _emit() => widget.onQueryChanged(
-        _query.text,
-        FindOptions(caseSensitive: _caseSensitive, regex: _regex),
-      );
+    _query.text,
+    FindOptions(caseSensitive: _caseSensitive, regex: _regex),
+  );
 
   void _commit() {
     if (_query.text.trim().isEmpty) return;
@@ -93,6 +93,7 @@ class _FindReplaceBarState extends State<FindReplaceBar> {
     if (box == null || overlay == null) return;
     final origin = box.localToGlobal(Offset.zero, ancestor: overlay);
     final picked = await showMenu<String>(
+      popUpAnimationStyle: AnimationStyle.noAnimation,
       context: context,
       position: RelativeRect.fromLTRB(
         origin.dx + 8,

@@ -146,7 +146,8 @@ class _FileEditorState extends ConsumerState<FileEditor>
   // so the editor's own save never trips the conflict banner.
   void _onWatchEvent(WorkspaceChangeEvent e) {
     if (!mounted) return;
-    final isOurs = e.path == _path ||
+    final isOurs =
+        e.path == _path ||
         (e.kind == WorkspaceChangeKind.moved && e.fromPath == _path);
     if (!isOurs) return;
     switch (e.kind) {
@@ -302,8 +303,7 @@ class _FileEditorState extends ConsumerState<FileEditor>
     }
 
     _openKind = classifyOpen(size: size, head: head);
-    if (_openKind == FileOpenKind.binary ||
-        _openKind == FileOpenKind.image) {
+    if (_openKind == FileOpenKind.binary || _openKind == FileOpenKind.image) {
       _readOnlyReason = null;
       return;
     }
@@ -340,23 +340,22 @@ class _FileEditorState extends ConsumerState<FileEditor>
   // The placeholder body for non-text files, or null when the editor's text
   // area should be shown.
   Widget? _placeholder() => switch (_openKind) {
-        FileOpenKind.binary => EditorPlaceholders.binary(
-            widget.entry,
-            onOpenExternally: _shareEntry,
-          ),
-        FileOpenKind.tooLarge => EditorPlaceholders.tooLarge(
-            widget.entry,
-            onOpenExternally: _shareEntry,
-          ),
-        FileOpenKind.image => ImagePreview(
-            entry: widget.entry,
-            backend: ref.read(workspacePreviewBackendProvider)!,
-          ),
-        _ => null,
-      };
+    FileOpenKind.binary => EditorPlaceholders.binary(
+      widget.entry,
+      onOpenExternally: _shareEntry,
+    ),
+    FileOpenKind.tooLarge => EditorPlaceholders.tooLarge(
+      widget.entry,
+      onOpenExternally: _shareEntry,
+    ),
+    FileOpenKind.image => ImagePreview(
+      entry: widget.entry,
+      backend: ref.read(workspacePreviewBackendProvider)!,
+    ),
+    _ => null,
+  };
 
-  void _shareEntry() =>
-      shareWorkspaceFile(context, ref, entry: widget.entry);
+  void _shareEntry() => shareWorkspaceFile(context, ref, entry: widget.entry);
 
   // Drops unsaved edits (used when closing a dirty tab via "放弃").
   void _discard() {
@@ -586,10 +585,10 @@ class _FileEditorState extends ConsumerState<FileEditor>
         tooltip: locked ? '解锁页面(可横向翻页)' : '锁定页面(防止缩放误触翻页)',
         icon: Icon(locked ? LucideIcons.lock : LucideIcons.lockOpen, size: 18),
         color: locked ? primary : null,
-        onPressed: () =>
-            ref.read(workspacePageLockProvider.notifier).toggle(),
+        onPressed: () => ref.read(workspacePageLockProvider.notifier).toggle(),
       ),
       PopupMenuButton<String>(
+        popUpAnimationStyle: AnimationStyle.noAnimation,
         tooltip: '更多',
         icon: const Icon(LucideIcons.ellipsisVertical, size: 18),
         onSelected: (value) {
