@@ -201,7 +201,7 @@ class _SidebarTab extends StatelessWidget {
   }
 }
 
-/// 底部入口行：回聊天（与聊天侧边栏底部行同款按钮样式）。
+/// 底部入口行：工作区 + 回聊天（与聊天侧边栏底部行同款按钮样式）。
 class _BottomActionRow extends ConsumerWidget {
   const _BottomActionRow();
 
@@ -213,6 +213,24 @@ class _BottomActionRow extends ConsumerWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: () => context.push(AppRouter.workspacePath),
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: Icon(
+                  LucideIcons.folderTree,
+                  size: 22,
+                  color: textPrimary,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
           Material(
             color: Colors.transparent,
             borderRadius: BorderRadius.circular(12),
