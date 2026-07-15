@@ -38,7 +38,7 @@ class AgentProfile {
   /// 该智能体绑定的工作区；null = 尚未绑定（在智能体设置里选）。
   final String? workspaceId;
 
-  /// 展示用工作区名（UI mock 阶段直存；接真实数据后由 id 派生）。
+  /// 展示用工作区名（绑定时随 id 一并存下，避免每次展示都解析工作区列表）。
   final String? workspaceName;
 
   final bool builtin;
