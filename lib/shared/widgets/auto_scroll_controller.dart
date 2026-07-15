@@ -200,7 +200,15 @@ class AutoScrollController {
     final position = _scrollController.position;
     final atBottom = position.maxScrollExtent - position.pixels <= threshold;
     if (atBottom) {
-      if (position.userScrollDirection != ScrollDirection.idle) _stick = true;
+      // Re-stick only on a user scroll *toward* the bottom (reverse =
+      // pixels increasing). A scroll-offset correction during an upward
+      // fling (history rows inserted above) can momentarily place pixels
+      // near maxScrollExtent while the direction is still forward —
+      // re-sticking then would pin the list to the bottom against the
+      // user's scroll.
+      if (position.userScrollDirection == ScrollDirection.reverse) {
+        _stick = true;
+      }
     } else if (position.userScrollDirection != ScrollDirection.idle) {
       _stick = false;
       _pinnedUntil = DateTime.fromMillisecondsSinceEpoch(0);

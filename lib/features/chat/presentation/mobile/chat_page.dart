@@ -959,18 +959,16 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     }
   }
 
-  /// One ramp increment per frame, compensating the scroll offset by the
-  /// added extent during the relayout itself (see
-  /// [AutoFollowScrollController.extentAnchor]) — a no-op while the
-  /// entry pin is sticking to the bottom, and keeps the viewport still when
-  /// the user has already scrolled away.
+  /// One ramp increment per frame. Rows are prepended with stable keys
+  /// (`findChildIndexCallback`), so the sliver keeps the existing elements and
+  /// issues its own scroll-offset correction for the extent inserted above —
+  /// the viewport stays still without any manual compensation.
   void _rampStep(Duration _) {
     if (!mounted || !_ramping) return;
     if (_hiddenRowCount <= _rampTargetHidden) {
       _ramping = false;
       return;
     }
-    _anchorExtentForReveal();
     setState(() {
       _hiddenRowCount = (_hiddenRowCount - _kRampRowsPerFrame).clamp(
         _rampTargetHidden,
@@ -986,26 +984,12 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     });
   }
 
-  /// Arms the layout-time scroll compensation for a history reveal: rows are
-  /// inserted above the viewport, so the offset must shift by the extent
-  /// delta *in the same layout pass* — a post-frame `jumpTo` shows one frame
-  /// of shifted content snapping back (a visible "bounce") and kills any
-  /// in-flight fling.
-  void _anchorExtentForReveal() {
-    if (!_scrollController.hasClients) return;
-    final position = _scrollController.position;
-    // While pinned to the bottom the auto-follow already keeps the viewport
-    // anchored; compensating too would fight it.
-    if (position.pixels >= position.maxScrollExtent &&
-        _autoScroll.isSticking) {
-      return;
-    }
-    _scrollController.extentAnchor = position.maxScrollExtent;
-  }
-
   /// Reveals another page of hidden history when the user scrolls near the
-  /// top, keeping the viewport anchored on the same content by shifting the
-  /// offset during the relayout (kelivo's history-load pattern).
+  /// top. The per-row keys + `findChildIndexCallback` let the sliver keep the
+  /// existing elements and self-correct the scroll offset by the *actual*
+  /// extent laid out above, so no manual estimate-based compensation is
+  /// needed (an extra `extentAnchor` shift here would double-correct and
+  /// throw the viewport toward the bottom on fast flings).
   void _maybeRevealMore(ScrollMetrics metrics) {
     if (_revealScheduled || _ramping || _effectiveHiddenRows == 0) return;
     if (metrics.pixels > _kRevealThreshold) return;
@@ -1021,7 +1005,6 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         _revealScheduled = false;
         return;
       }
-      _anchorExtentForReveal();
       setState(() {
         _hiddenRowCount = (_hiddenRowCount - _kRevealPageRows).clamp(
           0,
@@ -1034,12 +1017,11 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     });
   }
 
-  /// Reveals hidden history down to (at most) [targetRow], compensating the
-  /// scroll offset so the viewport stays on the same content.
+  /// Reveals hidden history down to (at most) [targetRow]; the sliver's own
+  /// offset correction keeps the viewport on the same content.
   Future<void> _revealDownTo(int targetRow) async {
     if (targetRow >= _effectiveHiddenRows) return;
     _ramping = false;
-    _anchorExtentForReveal();
     setState(() {
       _hiddenRowCount = targetRow.clamp(0, widget.rows.length);
     });
