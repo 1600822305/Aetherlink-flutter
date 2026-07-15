@@ -1,6 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import 'package:aetherlink_flutter/core/database/app_database.dart';
+import 'package:aetherlink_flutter/core/database/database_provider.dart';
 import 'package:aetherlink_flutter/features/models/application/default_model_providers.dart';
 import 'package:aetherlink_flutter/features/models/data/repositories/model_repository_impl.dart';
 import 'package:aetherlink_flutter/features/models/domain/repositories/model_repository.dart';
@@ -16,22 +16,11 @@ part 'model_providers.g.dart';
 /// yields an empty list — a fresh install ships no providers, which the model
 /// UI renders as its empty state.
 ///
-/// NOTE (single-DB seam): this opens its own [AppDatabase] handle, mirroring
-/// how `chat_providers.dart` opens the app-wide DB. The DB provider is not yet
-/// hoisted into `core/database`, so each feature opens its own handle; sharing
-/// a single instance across features is a small follow-up (point both at one
-/// `core/database` provider) deliberately left out of this data-layer slice to
-/// avoid touching the in-flight chat / settings tracks.
-
-/// The model-provider persistence port, backed by Drift. The repository owns
-/// the [AppDatabase], which is kept alive for the app's lifetime and closed
-/// when the container disposes.
+/// The model-provider persistence port, backed by Drift, sharing the single
+/// app-wide database handle from `core/database`.
 @Riverpod(keepAlive: true)
-ModelRepository modelRepository(Ref ref) {
-  final db = AppDatabase.open();
-  ref.onDispose(db.close);
-  return ModelRepositoryImpl(db);
-}
+ModelRepository modelRepository(Ref ref) =>
+    ModelRepositoryImpl(ref.watch(appDatabaseProvider));
 
 /// All persisted providers in their user-defined order. Empty on a fresh
 /// install (the seed is never written automatically).

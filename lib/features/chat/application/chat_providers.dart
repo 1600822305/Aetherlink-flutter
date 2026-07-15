@@ -3,6 +3,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:aetherlink_flutter/app/di/network_proxy_access.dart';
 import 'package:aetherlink_flutter/core/database/app_database.dart';
+import 'package:aetherlink_flutter/core/database/database_provider.dart';
 import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/llm/provider_factory.dart';
 import 'package:aetherlink_flutter/features/chat/data/datasources/remote/media/media_generation_api.dart';
@@ -18,6 +19,9 @@ import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers
 import 'package:aetherlink_flutter/shared/domain/topic.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/remote/remote_mcp_connection_manager.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/stdio/stdio_mcp_connection_manager.dart';
+
+export 'package:aetherlink_flutter/core/database/database_provider.dart'
+    show appDatabaseProvider;
 
 part 'chat_providers.g.dart';
 
@@ -35,15 +39,6 @@ part 'chat_providers.g.dart';
 /// ([debugChatSeed]) so the bubbles are visible before sending/streaming land.
 /// Sending, streaming, the other 14 block variants and markdown are later
 /// slices; this file intentionally exposes only `Future` reads.
-
-/// The single app-wide Drift database (composition root in `core/database`).
-/// Kept alive for the app's lifetime and closed when the container disposes.
-@Riverpod(keepAlive: true)
-AppDatabase appDatabase(Ref ref) {
-  final db = AppDatabase.open();
-  ref.onDispose(db.close);
-  return db;
-}
 
 /// The chat persistence port, backed by Drift. Upper layers depend on the
 /// [ChatRepository] interface; this provider is the one place the `data`
