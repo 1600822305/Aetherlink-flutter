@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+
+import 'package:aetherlink_flutter/shared/widgets/auto_scroll_controller.dart';
 
 /// Spreads the build cost of heavy message content across frames.
 ///
@@ -64,6 +67,7 @@ class _DeferredContentState extends State<DeferredContent> {
   void _materialize() {
     _entry = null;
     if (!mounted) return;
+    compensateDeferredMaterialization(context);
     setState(() => _materialized = true);
   }
 
@@ -86,6 +90,29 @@ class _DeferredContentState extends State<DeferredContent> {
         borderRadius: BorderRadius.circular(8),
       ),
     );
+  }
+}
+
+/// Placeholder→content swaps change an item's height. When the item lies
+/// entirely *above* the viewport's leading edge, that delta would shift every
+/// visible row while `pixels` stays put — a visible jump mid-scroll (worst on
+/// long user bubbles, whose estimated skeleton height is far off). Arm the
+/// [AutoFollowScrollController]'s layout-time extent compensation so the next
+/// layout pass shifts the offset by the same delta and the viewport stays
+/// anchored. Items visible or below the viewport need no correction: their
+/// growth happens at/below the anchor and never moves the content above it.
+void compensateDeferredMaterialization(BuildContext context) {
+  final box = context.findRenderObject();
+  if (box is! RenderBox || !box.attached || !box.hasSize) return;
+  final viewport = RenderAbstractViewport.maybeOf(box);
+  final position = Scrollable.maybeOf(context)?.position;
+  if (viewport == null || position == null || !position.hasPixels) return;
+  final revealTop = viewport.getOffsetToReveal(box, 0).offset;
+  if (revealTop + box.size.height <= position.pixels &&
+      AutoFollowScrollController.anchorExtentFor(position)) {
+    // Isolate this item's extent delta: other materializations in the same
+    // frame (possibly below the viewport) would corrupt the compensation.
+    DeferredContentScheduler.instance.requestPumpBreak();
   }
 }
 
@@ -117,6 +144,12 @@ class DeferredContentScheduler {
 
   final List<DeferredContentEntry> _stack = [];
   bool _pumpScheduled = false;
+  bool _breakRequested = false;
+
+  /// Ends the current pump after the running entry — called when an entry
+  /// armed scroll compensation whose extent delta must stay isolated to this
+  /// frame's layout pass.
+  void requestPumpBreak() => _breakRequested = true;
 
   DeferredContentEntry enqueue(int cost, VoidCallback run) {
     final entry = DeferredContentEntry(cost, run);
@@ -139,7 +172,8 @@ class DeferredContentScheduler {
 
   void _pump() {
     var used = 0;
-    while (_stack.isNotEmpty && used < _frameBudget) {
+    _breakRequested = false;
+    while (_stack.isNotEmpty && used < _frameBudget && !_breakRequested) {
       final entry = _stack.removeLast();
       if (entry._canceled) continue;
       used += entry.cost < 1 ? 1 : entry.cost;
