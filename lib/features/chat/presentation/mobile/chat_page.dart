@@ -1435,6 +1435,7 @@ class _DeferredBubbleState extends ConsumerState<_DeferredBubble> {
   void _materialize() {
     _entry = null;
     if (!mounted) return;
+    compensateDeferredMaterialization(context);
     setState(() => _materialized = true);
   }
 

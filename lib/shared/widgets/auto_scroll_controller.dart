@@ -28,6 +28,17 @@ class AutoFollowScrollController extends ScrollController {
   /// `jumpTo` (which also killed any in-flight fling).
   double? extentAnchor;
 
+  /// Arms above-viewport extent compensation on the controller owning
+  /// [position] (no-op for other position types). Used when content above the
+  /// viewport changes height (e.g. a deferred bubble materializing) so the
+  /// next layout pass shifts the offset by the same delta and the visible
+  /// rows stay anchored.
+  static bool anchorExtentFor(ScrollPosition position) {
+    if (position is! _AutoFollowScrollPosition) return false;
+    position.controller.extentAnchor = position.maxScrollExtent;
+    return true;
+  }
+
   @override
   ScrollPosition createScrollPosition(
     ScrollPhysics physics,
