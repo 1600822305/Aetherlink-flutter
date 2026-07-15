@@ -50,6 +50,7 @@ class DeferredContent extends StatefulWidget {
 class _DeferredContentState extends State<DeferredContent> {
   bool _materialized = false;
   DeferredContentEntry? _entry;
+  double? _compensateFrom;
 
   @override
   void initState() {
@@ -67,7 +68,7 @@ class _DeferredContentState extends State<DeferredContent> {
   void _materialize() {
     _entry = null;
     if (!mounted) return;
-    compensateDeferredMaterialization(context);
+    _compensateFrom = materializationBaseline(context);
     setState(() => _materialized = true);
   }
 
@@ -80,7 +81,14 @@ class _DeferredContentState extends State<DeferredContent> {
 
   @override
   Widget build(BuildContext context) {
-    if (_materialized) return widget.builder(context);
+    if (_materialized) {
+      final baseline = _compensateFrom;
+      if (baseline == null) return widget.builder(context);
+      return MaterializationShift(
+        previousExtent: baseline,
+        child: Builder(builder: widget.builder),
+      );
+    }
     final theme = Theme.of(context);
     return Container(
       width: double.infinity,
@@ -96,23 +104,74 @@ class _DeferredContentState extends State<DeferredContent> {
 /// Placeholder→content swaps change an item's height. When the item lies
 /// entirely *above* the viewport's leading edge, that delta would shift every
 /// visible row while `pixels` stays put — a visible jump mid-scroll (worst on
-/// long user bubbles, whose estimated skeleton height is far off). Arm the
-/// [AutoFollowScrollController]'s layout-time extent compensation so the next
-/// layout pass shifts the offset by the same delta and the viewport stays
-/// anchored. Items visible or below the viewport need no correction: their
-/// growth happens at/below the anchor and never moves the content above it.
-void compensateDeferredMaterialization(BuildContext context) {
+/// long user bubbles, whose estimated skeleton height is far off).
+///
+/// Returns the item's current (placeholder) extent when it lies fully above
+/// the leading edge — the baseline for a [MaterializationShift] wrapper that
+/// measures the real content on its first layout and compensates the scroll
+/// offset by the *exact* per-item delta within the same layout pass. Items
+/// visible or below the viewport need no correction (null): their growth
+/// happens at/below the anchor and never moves the content above it.
+double? materializationBaseline(BuildContext context) {
   final box = context.findRenderObject();
-  if (box is! RenderBox || !box.attached || !box.hasSize) return;
+  if (box is! RenderBox || !box.attached || !box.hasSize) return null;
   final viewport = RenderAbstractViewport.maybeOf(box);
   final position = Scrollable.maybeOf(context)?.position;
-  if (viewport == null || position == null || !position.hasPixels) return;
+  if (viewport == null || position == null || !position.hasPixels) return null;
   final revealTop = viewport.getOffsetToReveal(box, 0).offset;
-  if (revealTop + box.size.height <= position.pixels &&
-      AutoFollowScrollController.anchorExtentFor(position)) {
-    // Isolate this item's extent delta: other materializations in the same
-    // frame (possibly below the viewport) would corrupt the compensation.
-    DeferredContentScheduler.instance.requestPumpBreak();
+  if (revealTop + box.size.height <= position.pixels) return box.size.height;
+  return null;
+}
+
+/// Wraps freshly materialized content whose placeholder sat fully above the
+/// viewport: on the first layout after the swap it feeds the measured extent
+/// delta into the scroll position's layout-time compensation
+/// ([AutoFollowScrollController.addPendingAdjustFor]), applied in the same
+/// layout pass — the viewport stays anchored with no estimate-based drift
+/// (a `maxScrollExtent`-delta proxy is wildly wrong mid-scroll, when the
+/// list's estimated extent swings with every newly built child).
+class MaterializationShift extends SingleChildRenderObjectWidget {
+  const MaterializationShift({
+    required this.previousExtent,
+    super.child,
+    super.key,
+  });
+
+  final double previousExtent;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return _RenderMaterializationShift(
+      previousExtent,
+      Scrollable.maybeOf(context)?.position,
+    );
+  }
+
+  @override
+  void updateRenderObject(BuildContext context, RenderObject renderObject) {
+    // One-shot: the baseline is only meaningful for the first layout after
+    // the swap — never re-arm on rebuilds.
+  }
+}
+
+class _RenderMaterializationShift extends RenderProxyBox {
+  _RenderMaterializationShift(this._previousExtent, this._position);
+
+  double? _previousExtent;
+  final ScrollPosition? _position;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final baseline = _previousExtent;
+    if (baseline == null) return;
+    _previousExtent = null;
+    final position = _position;
+    if (position == null) return;
+    final delta = size.height - baseline;
+    if (delta.abs() > 0.5) {
+      AutoFollowScrollController.addPendingAdjustFor(position, delta);
+    }
   }
 }
 
@@ -144,12 +203,6 @@ class DeferredContentScheduler {
 
   final List<DeferredContentEntry> _stack = [];
   bool _pumpScheduled = false;
-  bool _breakRequested = false;
-
-  /// Ends the current pump after the running entry — called when an entry
-  /// armed scroll compensation whose extent delta must stay isolated to this
-  /// frame's layout pass.
-  void requestPumpBreak() => _breakRequested = true;
 
   DeferredContentEntry enqueue(int cost, VoidCallback run) {
     final entry = DeferredContentEntry(cost, run);
@@ -172,8 +225,7 @@ class DeferredContentScheduler {
 
   void _pump() {
     var used = 0;
-    _breakRequested = false;
-    while (_stack.isNotEmpty && used < _frameBudget && !_breakRequested) {
+    while (_stack.isNotEmpty && used < _frameBudget) {
       final entry = _stack.removeLast();
       if (entry._canceled) continue;
       used += entry.cost < 1 ? 1 : entry.cost;

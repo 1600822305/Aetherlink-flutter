@@ -1013,6 +1013,15 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _revealScheduled = false;
+        // At the very top no further scroll notifications arrive (pixels
+        // can't go below zero), so continue revealing from here until the
+        // viewport is off the threshold or history is exhausted. Delayed past
+        // the throttle window so each page still lands on its own frame.
+        Future<void>.delayed(const Duration(milliseconds: 120), () {
+          if (!mounted || !_scrollController.hasClients) return;
+          if (_scrollController.positions.length != 1) return;
+          _maybeRevealMore(_scrollController.position);
+        });
       });
     });
   }
@@ -1400,6 +1409,7 @@ class _DeferredBubble extends ConsumerStatefulWidget {
 class _DeferredBubbleState extends ConsumerState<_DeferredBubble> {
   bool _materialized = false;
   DeferredContentEntry? _entry;
+  double? _compensateFrom;
   double _estimatedHeight = 120;
 
   @override
@@ -1435,7 +1445,7 @@ class _DeferredBubbleState extends ConsumerState<_DeferredBubble> {
   void _materialize() {
     _entry = null;
     if (!mounted) return;
-    compensateDeferredMaterialization(context);
+    _compensateFrom = materializationBaseline(context);
     setState(() => _materialized = true);
   }
 
@@ -1448,7 +1458,11 @@ class _DeferredBubbleState extends ConsumerState<_DeferredBubble> {
 
   @override
   Widget build(BuildContext context) {
-    if (_materialized) return widget.child;
+    if (_materialized) {
+      final baseline = _compensateFrom;
+      if (baseline == null) return widget.child;
+      return MaterializationShift(previousExtent: baseline, child: widget.child);
+    }
     final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

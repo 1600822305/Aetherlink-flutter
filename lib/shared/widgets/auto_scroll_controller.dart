@@ -20,22 +20,14 @@ class AutoFollowScrollController extends ScrollController {
   /// exactly the keyboard height). Positive pans the content up.
   double pendingAdjust = 0;
 
-  /// When set, the next layout pass compensates the scroll offset by however
-  /// much [ScrollPosition.maxScrollExtent] changed relative to this baseline —
-  /// used when rows are inserted above the viewport (history reveal / entry
-  /// ramp) so the visible content stays anchored within the same frame,
-  /// instead of shifting for one frame and snapping back via a post-frame
-  /// `jumpTo` (which also killed any in-flight fling).
-  double? extentAnchor;
-
-  /// Arms above-viewport extent compensation on the controller owning
+  /// Adds a measured extent delta to [pendingAdjust] on the controller owning
   /// [position] (no-op for other position types). Used when content above the
   /// viewport changes height (e.g. a deferred bubble materializing) so the
-  /// next layout pass shifts the offset by the same delta and the visible
+  /// same layout pass shifts the offset by exactly that delta and the visible
   /// rows stay anchored.
-  static bool anchorExtentFor(ScrollPosition position) {
+  static bool addPendingAdjustFor(ScrollPosition position, double delta) {
     if (position is! _AutoFollowScrollPosition) return false;
-    position.controller.extentAnchor = position.maxScrollExtent;
+    position.controller.pendingAdjust += delta;
     return true;
   }
 
@@ -70,28 +62,11 @@ class _AutoFollowScrollPosition extends ScrollPositionWithSingleContext {
       minScrollExtent,
       maxScrollExtent,
     );
-    // Above-viewport insertion compensation: rows revealed above the viewport
-    // grow maxScrollExtent; shift pixels by the same delta in this layout pass
-    // so the visible content never moves. Returning false re-runs layout and
-    // re-seeds any in-flight ballistic simulation from the corrected offset.
-    final anchor = controller.extentAnchor;
-    if (anchor != null) {
-      controller.extentAnchor = null;
-      final delta = maxScrollExtent - anchor;
-      if (delta.abs() > 0.5) {
-        final target = (pixels + delta).clamp(
-          this.minScrollExtent,
-          this.maxScrollExtent,
-        );
-        if ((target - pixels).abs() > 0.5) {
-          correctPixels(target);
-          return false; // Re-run layout with the corrected position.
-        }
-      }
-    }
-    // Keyboard-reserve compensation: shift the content by the reserve delta in
-    // the same layout pass, so the messages visible above the composer stay
-    // anchored to it while the keyboard shows/hides.
+    // Layout-time compensation (keyboard reserve delta / above-viewport
+    // materialization deltas): shift the content by the pending delta in the
+    // same layout pass, so the visible content stays anchored. Returning
+    // false re-runs layout and re-seeds any in-flight ballistic simulation
+    // from the corrected offset.
     if (controller.pendingAdjust != 0) {
       final target = (pixels + controller.pendingAdjust).clamp(
         this.minScrollExtent,
@@ -199,19 +174,20 @@ class AutoScrollController {
     if (_disposed || !_scrollController.hasClients) return;
     final position = _scrollController.position;
     final atBottom = position.maxScrollExtent - position.pixels <= threshold;
-    if (atBottom) {
-      // Re-stick only on a user scroll *toward* the bottom (reverse =
-      // pixels increasing). A scroll-offset correction during an upward
-      // fling (history rows inserted above) can momentarily place pixels
-      // near maxScrollExtent while the direction is still forward —
-      // re-sticking then would pin the list to the bottom against the
-      // user's scroll.
-      if (position.userScrollDirection == ScrollDirection.reverse) {
-        _stick = true;
-      }
-    } else if (position.userScrollDirection != ScrollDirection.idle) {
+    final direction = position.userScrollDirection;
+    // Any user scroll away from the bottom detaches, even inside the bottom
+    // threshold — otherwise a wheel tick smaller than the threshold is undone
+    // by the layout pin before the next tick and the list is locked to the
+    // bottom. Re-stick only on a user scroll *toward* the bottom that lands
+    // within the threshold: a scroll-offset correction during an upward
+    // fling (history rows inserted above) can momentarily place pixels near
+    // maxScrollExtent while the direction is still forward — re-sticking
+    // then would pin the list against the user's scroll.
+    if (direction == ScrollDirection.forward) {
       _stick = false;
       _pinnedUntil = DateTime.fromMillisecondsSinceEpoch(0);
+    } else if (direction == ScrollDirection.reverse && atBottom) {
+      _stick = true;
     }
   }
 
