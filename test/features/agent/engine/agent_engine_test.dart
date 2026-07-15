@@ -10,10 +10,11 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_event
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/approval_gate.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/fakes/fake_agent_llm_client.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/fakes/fake_agent_tool_executor.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+
+import 'fakes/fake_agent_llm_client.dart';
+import 'fakes/fake_agent_tool_executor.dart';
 
 /// 内存事件仓：不依赖 drift，验证引擎「每步落库」的调用序列。
 class InMemoryAgentEventStore implements AgentEventStore {

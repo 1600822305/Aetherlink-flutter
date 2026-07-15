@@ -5,7 +5,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:aetherlink_flutter/app/di/agent_checkpoint_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_data_access.dart';
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
-import 'package:aetherlink_flutter/features/agent/application/agent_mock_data.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_builtin_profiles.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
@@ -27,9 +27,13 @@ Future<void> deleteAgentOverflowFile(String? path) async {
 const String kLastActiveAgentProfileKey = 'agent_last_profile';
 const String kLastActiveAgentTaskKey = 'agent_last_task';
 
-/// 一次性种子数据标记：首次启动把内置预设档案 + 演示话题/事件流写入
-/// drift，之后一律以库为准（删光不会重新种入）。
+/// 一次性种子数据标记：首次启动把内置预设档案写入 drift，
+/// 之后一律以库为准（删光不会重新种入）。
 const String kAgentSeededKey = 'agent_seeded_v1';
+
+/// 一次性清理标记：移除 UI 先行阶段种入的演示话题，并清掉内置
+/// 档案上的假工作区绑定（ws-1/ws-2 不对应任何真实工作区）。
+const String kAgentMockPurgedKey = 'agent_mock_purged_v1';
 
 /// 会话上下文长度上限（token）的持久化键。
 const String kAgentContextLimitKey = 'agent_context_limit';
@@ -40,21 +44,39 @@ const String kAgentAutoCollapseKey = 'agent_auto_collapse_work_sessions';
 const String kAgentFollowAiFileKey = 'agent_follow_ai_file';
 const String kAgentSidebarTabIndexKey = 'agent_sidebar_tab_index';
 
-/// 首次运行时的一次性种子写入（档案/话题/事件三表）。keepAlive 保证
+/// 首次运行时的一次性种子写入（内置预设档案）。keepAlive 保证
 /// 多个 hydrate 入口共享同一次 Future，不会重复种入。
 @Riverpod(keepAlive: true)
 Future<void> agentSeed(Ref ref) async {
   final store = ref.read(appSettingsStoreProvider);
-  if (await store.getSetting(kAgentSeededKey) == '1') return;
   final dao = ref.read(agentDaoProvider);
-  for (final profile in kBuiltinAgentProfiles) {
-    await dao.upsertProfile(profile);
+  if (await store.getSetting(kAgentSeededKey) != '1') {
+    for (final profile in kBuiltinAgentProfiles) {
+      await dao.upsertProfile(profile);
+    }
+    await store.saveSetting(kAgentSeededKey, '1');
   }
-  for (final task in kMockAgentTasks) {
-    await dao.upsertTask(task);
-    await dao.upsertEvents(task.id, mockEventsForTask(task.id));
+  await _purgeMockData(ref);
+}
+
+/// 旧版首次启动曾种入 3 条演示话题（task-1/2/3）和带假工作区
+/// 绑定（ws-1/ws-2）的内置档案；这里对已种入的安装做一次性清理。
+Future<void> _purgeMockData(Ref ref) async {
+  final store = ref.read(appSettingsStoreProvider);
+  final dao = ref.read(agentDaoProvider);
+  if (await store.getSetting(kAgentMockPurgedKey) == '1') return;
+  for (final id in const ['task-1', 'task-2', 'task-3']) {
+    await dao.deleteTask(id);
   }
-  await store.saveSetting(kAgentSeededKey, '1');
+  for (final profile in await dao.getAllProfiles()) {
+    if (profile.builtin &&
+        (profile.workspaceId == 'ws-1' || profile.workspaceId == 'ws-2')) {
+      await dao.upsertProfile(
+        profile.copyWith(workspaceId: null, workspaceName: null),
+      );
+    }
+  }
+  await store.saveSetting(kAgentMockPurgedKey, '1');
 }
 
 /// 智能体档案列表（drift 持久化）：冷启动从库 hydrate，增删改写穿。
