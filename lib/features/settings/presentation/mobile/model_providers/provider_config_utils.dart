@@ -4,6 +4,8 @@
 /// URL-preview / grouping behaviour matches the web app exactly.
 library;
 
+import 'package:aetherlink_flutter/shared/utils/api_host.dart';
+
 /// The original `providerTypeOptions` (value, label), verbatim and in order.
 /// Used by the 编辑供应商 dialog's type dropdown.
 const List<(String, String)> providerTypeOptions = [
@@ -65,9 +67,10 @@ String defaultBaseUrlForType(String? providerType) {
 bool isOpenAIProvider(String? providerType) =>
     !['anthropic', 'gemini'].contains(providerType ?? '');
 
-/// Normalizes a base URL host the way `formatApiHost` does: trims a trailing
-/// `/`, keeps VolcEngine / `openai-response` hosts as-is, otherwise appends
-/// `/v1`.
+/// Normalizes a base URL host via the shared [formatApiHost]: trims a trailing
+/// `/`, keeps VolcEngine / `openai-response` hosts and hosts that already carry
+/// a version segment (`/v1`, `/v2beta`, …) as-is, honours a trailing `#`, and
+/// otherwise appends `/v1`.
 String _formatApiHost(String host, String? providerType) {
   final trimmed = host.trim();
   if (trimmed.isEmpty) return '';
@@ -75,8 +78,10 @@ String _formatApiHost(String host, String? providerType) {
       ? trimmed.substring(0, trimmed.length - 1)
       : trimmed;
   if (normalized.endsWith(_volcesEndpoint)) return normalized;
-  if (providerType == _openaiResponseType) return normalized;
-  return '$normalized/v1';
+  if (providerType == _openaiResponseType) {
+    return normalized.replaceFirst(RegExp(r'#$'), '');
+  }
+  return formatApiHost(normalized);
 }
 
 /// The full endpoint preview shown under the base-URL field — `getCompleteApiUrl`
