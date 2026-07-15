@@ -81,6 +81,16 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   final Set<String> _loading = {};
   final Map<String, List<WorkspaceEntry>> _children = {};
 
+  // Per-directory listDir generation: bumped when a (re)load starts so a
+  // slower, older in-flight response can't overwrite a newer listing.
+  final Map<String, int> _listGen = {};
+
+  // Sorted view of [_children] per directory, memoised so rebuilding the
+  // flattened rows doesn't re-sort every expanded directory on every build.
+  // Invalidated per-dir on relist and wholesale when the sort mode changes.
+  final Map<String, List<WorkspaceEntry>> _sortedCache = {};
+  TreeSortMode? _sortedCacheMode;
+
   // child path → parent directory path, kept in sync with [_children] so
   // [_parentOf] is O(1) instead of scanning every cached listing per call
   // (which the ancestor-chain walk did once per level).
@@ -98,7 +108,13 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   // doesn't race the synchronous reload file-ops already does.
   StreamSubscription<WorkspaceChangeEvent>? _watchSub;
   Timer? _watchDebounce;
+  Timer? _watchRetry;
   final Set<String> _pendingReload = {};
+
+  // Git refresh is throttled separately from directory reloads: a burst of
+  // agent writes re-lists dirs every debounce tick, but the two git execs
+  // only run once per second.
+  Timer? _gitDebounce;
 
   // 多选模式：选中集合按路径索引，退出时清空。选择中点击行只切换勾选，
   // 不展开目录/不打开文件；长按菜单也禁用。
@@ -120,6 +136,8 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   @override
   void dispose() {
     _watchDebounce?.cancel();
+    _watchRetry?.cancel();
+    _gitDebounce?.cancel();
     _watchSub?.cancel();
     _scroll.dispose();
     super.dispose();
@@ -134,6 +152,8 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     _children.clear();
     _parentIndex.clear();
     _loading.clear();
+    _listGen.clear();
+    _sortedCache.clear();
     _revealedPath = null;
     _initialRevealDone = false;
     _rebindWatch();
@@ -149,8 +169,11 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   }
 
   // (Re)subscribes to the backend's change stream for the current workspace.
+  // On stream error/close the subscription is rebuilt after a short delay so
+  // the tree keeps following file changes instead of silently going stale.
   void _rebindWatch() {
     _watchDebounce?.cancel();
+    _watchRetry?.cancel();
     _watchSub?.cancel();
     _watchSub = null;
     _pendingReload.clear();
@@ -158,7 +181,19 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     if (_root == null || backend == null || !backend.capabilities.canWatch) {
       return;
     }
-    _watchSub = backend.watch().listen(_onWatchEvent);
+    final boundRoot = _root;
+    void retry() {
+      _watchRetry?.cancel();
+      _watchRetry = Timer(const Duration(seconds: 2), () {
+        if (mounted && _root == boundRoot) _rebindWatch();
+      });
+    }
+
+    _watchSub = backend.watch().listen(
+          _onWatchEvent,
+          onError: (Object _) => retry(),
+          onDone: retry,
+        );
   }
 
   // Queues the directories an event touched and schedules a debounced reload.
@@ -184,7 +219,10 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     for (final dir in dirs) {
       if (_children.containsKey(dir)) _reload(dir);
     }
-    ref.read(gitStatusProvider.notifier).refresh();
+    _gitDebounce ??= Timer(const Duration(seconds: 1), () {
+      _gitDebounce = null;
+      if (mounted) ref.read(gitStatusProvider.notifier).refresh();
+    });
   }
 
   // ===== reveal active file (IDE follow mode) =====
@@ -196,9 +234,11 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     if (cached != null) return cached;
     final backend = _backend;
     if (backend == null) return null;
+    final gen = _bumpGen(path);
     try {
       final entries = await backend.listDir(path);
       if (!mounted) return null;
+      if (_listGen[path] != gen) return _children[path];
       setState(() => _cacheChildren(path, entries));
       return entries;
     } catch (_) {
@@ -206,11 +246,38 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     }
   }
 
+  int _bumpGen(String path) => _listGen[path] = (_listGen[path] ?? 0) + 1;
+
   // Caches [path]'s listing and indexes each child's parent for [_parentOf].
+  // Children that disappeared since the last listing get their stale parent
+  // mapping and cached subtree evicted so [_parentOf] / reveal never resolve
+  // through deleted paths.
   void _cacheChildren(String path, List<WorkspaceEntry> entries) {
+    final old = _children[path];
+    if (old != null) {
+      final alive = {for (final e in entries) e.path};
+      for (final e in old) {
+        if (!alive.contains(e.path)) _evictSubtree(e.path);
+      }
+    }
     _children[path] = entries;
+    _sortedCache.remove(path);
     for (final e in entries) {
       _parentIndex[e.path] = path;
+    }
+  }
+
+  // Drops every cached trace of [path] and its cached descendants.
+  void _evictSubtree(String path) {
+    _parentIndex.remove(path);
+    _expanded.remove(path);
+    _loading.remove(path);
+    _listGen.remove(path);
+    _sortedCache.remove(path);
+    final children = _children.remove(path);
+    if (children == null) return;
+    for (final e in children) {
+      _evictSubtree(e.path);
     }
   }
 
@@ -289,30 +356,34 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   }
 
   // Expands [target]'s ancestors and scrolls its row to the middle, then marks
-  // it revealed so repeat builds don't re-run the search.
+  // it revealed so repeat builds don't re-run the search. A failed reveal
+  // (e.g. a listDir error) leaves the path unmarked so a later trigger can
+  // retry it.
   Future<void> _revealActive(String target) async {
     if (_revealedPath == target) return;
     _revealedPath = target;
-    await _revealPath(target);
+    final ok = await _revealPath(target);
+    if (!ok && _revealedPath == target) _revealedPath = null;
   }
 
   // Expands [target]'s ancestors and scrolls its row to the middle. Also used
   // to locate a directory picked from the search sheet, so it carries no
-  // active-file dedup guard.
-  Future<void> _revealPath(String target) async {
+  // active-file dedup guard. Returns whether the target was located.
+  Future<bool> _revealPath(String target) async {
     final root = _root;
-    if (root == null) return;
+    if (root == null) return false;
 
     var chain = _knownChain(target);
     chain ??= await _deriveChain(root, target);
     chain ??= await _searchChain(root, target, [root], _SearchBudget());
-    if (chain == null || !mounted) return;
+    if (chain == null || !mounted) return false;
 
     final toExpand = chain.where((d) => !_expanded.contains(d)).toList();
     if (toExpand.isNotEmpty) {
       setState(() => _expanded.addAll(toExpand));
     }
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToPath(target));
+    return true;
   }
 
   // Animates the active row to the vertical centre of the viewport.
@@ -336,16 +407,22 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     if (backend == null) return;
     if (_children.containsKey(path) || _loading.contains(path)) return;
     setState(() => _loading.add(path));
+    final gen = _bumpGen(path);
     try {
       final entries = await backend.listDir(path);
-      if (!mounted) return;
+      if (!mounted || _listGen[path] != gen) return;
       setState(() {
         _loading.remove(path);
         _cacheChildren(path, entries);
       });
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _loading.remove(path));
+      if (!mounted || _listGen[path] != gen) return;
+      // Collapse on failure so the lazy-load-from-build path doesn't retry
+      // (and toast) in a loop for a directory that keeps failing to list.
+      setState(() {
+        _loading.remove(path);
+        _expanded.remove(path);
+      });
       AppToast.error(context, '列目录失败 · $e');
     }
   }
@@ -366,15 +443,16 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     final backend = _backend;
     if (backend == null) return;
     setState(() => _loading.add(path));
+    final gen = _bumpGen(path);
     try {
       final entries = await backend.listDir(path);
-      if (!mounted) return;
+      if (!mounted || _listGen[path] != gen) return;
       setState(() {
         _loading.remove(path);
         _cacheChildren(path, entries);
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || _listGen[path] != gen) return;
       setState(() => _loading.remove(path));
       AppToast.error(context, '列目录失败 · $e');
     }
@@ -442,7 +520,8 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   }
 
   // Drops every cached listing and reloads the root, so the tree reflects any
-  // out-of-band changes. Expand state for still-present directories is kept.
+  // out-of-band changes. Expand state for still-present directories is kept;
+  // their listings reload lazily from [_appendRows] as they become visible.
   void _refresh() {
     final root = _root;
     if (root == null) return;
@@ -450,6 +529,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
       _children.clear();
       _parentIndex.clear();
       _loading.clear();
+      _sortedCache.clear();
     });
     _load(root);
     ref.read(gitStatusProvider.notifier).refresh();
@@ -517,6 +597,20 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   // Hidden entries are skipped unless the 「显示隐藏文件」 toggle is on; each
   // directory's entries are ordered by the picked sort mode (directories
   // first) at render time, so switching modes never needs a reload.
+  // Memoised per-directory sorted listing; the whole cache resets when the
+  // sort mode changes, individual dirs are invalidated by [_cacheChildren].
+  List<WorkspaceEntry> _sortedChildren(
+    String path,
+    List<WorkspaceEntry> entries,
+    TreeSortMode sortMode,
+  ) {
+    if (_sortedCacheMode != sortMode) {
+      _sortedCache.clear();
+      _sortedCacheMode = sortMode;
+    }
+    return _sortedCache[path] ??= sortTreeEntries(entries, sortMode);
+  }
+
   void _appendRows(
     String path,
     int depth,
@@ -526,13 +620,20 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   ) {
     final entries = _children[path];
     if (entries == null) return;
-    for (final entry in sortTreeEntries(entries, sortMode)) {
+    for (final entry in _sortedChildren(path, entries, sortMode)) {
       if (!showHidden && entry.isHidden) continue;
       final expanded = _expanded.contains(entry.path);
       out.add(_TreeRow(entry: entry, depth: depth, expanded: expanded));
       if (entry.isDirectory && expanded) {
         if (_loading.contains(entry.path)) {
           out.add(_TreeRow.loading(depth + 1));
+        } else if (!_children.containsKey(entry.path)) {
+          // Expanded but not cached (e.g. right after 刷新 cleared the
+          // caches): show the spinner and reload lazily.
+          out.add(_TreeRow.loading(depth + 1));
+          scheduleMicrotask(() {
+            if (mounted) _load(entry.path);
+          });
         } else {
           _appendRows(entry.path, depth + 1, out, showHidden, sortMode);
         }
