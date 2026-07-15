@@ -111,7 +111,7 @@ class MainTextBlockView extends ConsumerWidget {
         body = DeferredContent(
           cost: content.length,
           estimatedHeight: content.length / 22 * lineHeight,
-          builder: (_) => AppMarkdown(content: content, style: textStyle),
+          builder: (_) => finishedMarkdown(content, textStyle),
         );
       } else {
         body = Column(
@@ -122,7 +122,7 @@ class MainTextBlockView extends ConsumerWidget {
               DeferredContent(
                 cost: chunk.length,
                 estimatedHeight: chunk.length / 22 * lineHeight,
-                builder: (_) => AppMarkdown(content: chunk, style: textStyle),
+                builder: (_) => finishedMarkdown(chunk, textStyle),
               ),
           ],
         );
@@ -137,6 +137,31 @@ class MainTextBlockView extends ConsumerWidget {
     return selectable ? MessageSelectionArea(child: body) : body;
   }
 }
+
+/// Returns the markdown body widget for a *finished* block, memoized by
+/// (content, style) in an LRU cache. Finished bodies are pure functions of
+/// their input, but list-window changes (history reveal, entry ramp) rebuild
+/// every visible row wholesale — and GptMarkdown re-parses its content on
+/// every build. Handing `Element.updateChild` the *identical* widget instance
+/// makes it skip the whole subtree, so the visible bodies are parsed and laid
+/// out once per (content, style) instead of once per list rebuild.
+Widget finishedMarkdown(String content, TextStyle? style) {
+  final key = (content, style);
+  final cached = _finishedMarkdownCache.remove(key);
+  if (cached != null) {
+    _finishedMarkdownCache[key] = cached; // re-insert as most recently used
+    return cached;
+  }
+  final built = AppMarkdown(content: content, style: style);
+  _finishedMarkdownCache[key] = built;
+  if (_finishedMarkdownCache.length > _kFinishedMarkdownCacheLimit) {
+    _finishedMarkdownCache.remove(_finishedMarkdownCache.keys.first);
+  }
+  return built;
+}
+
+const int _kFinishedMarkdownCacheLimit = 512;
+final Map<(String, TextStyle?), Widget> _finishedMarkdownCache = {};
 
 /// Target size (chars) of one markdown chunk — small enough that a single
 /// chunk's parse + text layout fits a 120Hz frame's budget.
