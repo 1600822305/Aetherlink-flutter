@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme.dart';
@@ -123,6 +124,14 @@ void main() {
   testWidgets('tapping 关于我们 navigates to the existing About page', (
     tester,
   ) async {
+    // The About page reads its version from package_info_plus at runtime.
+    PackageInfo.setMockInitialValues(
+      appName: 'AetherLink',
+      packageName: 'com.example.aetherlink_flutter',
+      version: '0.7.0',
+      buildNumber: '70',
+      buildSignature: '',
+    );
     final container = ProviderContainer(
       overrides: [
         currentTopicProvider.overrideWith((ref) => null),

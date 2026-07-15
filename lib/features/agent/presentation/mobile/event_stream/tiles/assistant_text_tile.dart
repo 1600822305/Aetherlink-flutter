@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'package:aetherlink_flutter/app/di/markdown_access.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/app_markdown.dart';
-import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/text_blocks.dart';
 
 /// 助手叙述行：无气泡、贴左正文段落，Markdown 渲染（与聊天页同一套）；
 /// 流式中走 [StreamingMarkdownBody]（块级记忆化，每个增量只重解析尾块）
