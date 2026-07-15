@@ -1244,6 +1244,13 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     final rows = hiddenRows > 0 ? allRows.sublist(hiddenRows) : allRows;
     final headerCount = _headerCount;
     final loaderCount = _loaderCount;
+    // Stable row-key → index map for `findChildIndexCallback`: when a history
+    // reveal prepends rows, the sliver re-maps the existing elements to their
+    // shifted indices instead of rebuilding every visible row as a different
+    // message (which flashed skeletons and lost the scroll anchor).
+    final rowIndexByKey = <String, int>{
+      for (var i = 0; i < rows.length; i++) rows[i].first: i,
+    };
     final selectedIds = isSelecting
         ? ref.watch(messageSelectionProvider.select((s) => s.selectedIds))
         : const <String>{};
@@ -1299,6 +1306,12 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
             : null,
         padding: EdgeInsets.fromLTRB(0, 8, 0, 8 + widget.bottomReserve),
         itemCount: rows.length + headerCount + loaderCount,
+        findChildIndexCallback: (key) {
+          if (key is! ValueKey<String>) return null;
+          final rowIndex = rowIndexByKey[key.value];
+          if (rowIndex == null) return null;
+          return rowIndex + headerCount + loaderCount;
+        },
         itemBuilder: (context, index) {
           // A slim spinner tops the list while older history is hidden — it
           // loads in as the user scrolls up (WeChat-style), never eagerly.
@@ -1351,11 +1364,16 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           // when the setting is on.
           final needsDivider =
               isPlain || (showDivider && rowIndex < rows.length - 1);
-          if (!needsDivider) return _KeepAliveItem(child: item);
+          // The stable per-row key on the sliver's direct child is what
+          // `findChildIndexCallback` resolves, keeping elements (and their
+          // keep-alive / deferred state) across history reveals.
+          final rowKey = ValueKey<String>(row.first);
+          if (!needsDivider) return _KeepAliveItem(key: rowKey, child: item);
           final dividerColor = Theme.of(context).brightness == Brightness.dark
               ? const Color(0x1AFFFFFF)
               : const Color(0x14000000);
           return _KeepAliveItem(
+            key: rowKey,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1520,7 +1538,7 @@ class _NavFlashHighlight extends ConsumerWidget {
 /// markdown bubble from scratch takes 100ms+ on a single frame (the dominant
 /// jank source measured on-device); keeping it alive makes re-entry free.
 class _KeepAliveItem extends StatefulWidget {
-  const _KeepAliveItem({required this.child});
+  const _KeepAliveItem({super.key, required this.child});
 
   final Widget child;
 
