@@ -18,18 +18,34 @@ enum GitFileStatus { modified, added, deleted, renamed, untracked, conflicted }
 /// [files] keys are absolute POSIX paths (`repoRoot` + `/` + porcelain path),
 /// matching [WorkspaceEntry.path] on exec-capable backends.
 class GitStatusSnapshot {
-  const GitStatusSnapshot({required this.repoRoot, required this.files});
+  GitStatusSnapshot({required this.repoRoot, required this.files})
+      : _changedDirs = _ancestorDirsOf(files.keys);
 
   final String repoRoot;
   final Map<String, GitFileStatus> files;
+
+  /// Every ancestor directory of a changed file, precomputed so directory
+  /// roll-up colouring is an O(1) lookup per row instead of a prefix scan
+  /// over all changed files.
+  final Set<String> _changedDirs;
 
   GitFileStatus? statusOf(String path) => files[path];
 
   /// Whether any changed file lives under [dirPath] (for directory roll-up
   /// colouring).
-  bool dirHasChanges(String dirPath) {
-    final prefix = '$dirPath/';
-    return files.keys.any((k) => k.startsWith(prefix));
+  bool dirHasChanges(String dirPath) => _changedDirs.contains(dirPath);
+
+  static Set<String> _ancestorDirsOf(Iterable<String> paths) {
+    final dirs = <String>{};
+    for (final path in paths) {
+      var slash = path.lastIndexOf('/');
+      while (slash > 0) {
+        final dir = path.substring(0, slash);
+        if (!dirs.add(dir)) break; // ancestors already added
+        slash = dir.lastIndexOf('/');
+      }
+    }
+    return dirs;
   }
 }
 
@@ -82,6 +98,7 @@ final gitStatusProvider = NotifierProvider<GitStatusNotifier, GitStatusSnapshot?
 
 class GitStatusNotifier extends Notifier<GitStatusSnapshot?> {
   bool _refreshing = false;
+  bool _pending = false;
 
   @override
   GitStatusSnapshot? build() {
@@ -90,8 +107,13 @@ class GitStatusNotifier extends Notifier<GitStatusSnapshot?> {
     return null;
   }
 
+  /// Runs one `git status` pass. A call arriving mid-run is coalesced into a
+  /// single trailing rerun so the last change is never missed.
   Future<void> refresh() async {
-    if (_refreshing) return;
+    if (_refreshing) {
+      _pending = true;
+      return;
+    }
     final backend = ref.read(workspacePreviewBackendProvider);
     final workspace = ref.read(currentWorkspaceProvider);
     if (backend == null ||
@@ -129,6 +151,10 @@ class GitStatusNotifier extends Notifier<GitStatusSnapshot?> {
       state = null;
     } finally {
       _refreshing = false;
+      if (_pending) {
+        _pending = false;
+        Future.microtask(refresh);
+      }
     }
   }
 }
