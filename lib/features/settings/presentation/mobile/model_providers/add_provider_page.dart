@@ -240,8 +240,8 @@ class _ProviderTypeField extends StatelessWidget {
   }
 }
 
-/// A selectable provider type, lifted verbatim from the original
-/// `providerTypeOptions` (custom / google filtered out) and the inline
+/// A selectable provider type, lifted from the original `providerTypeOptions`
+/// (custom and the redundant web-era types filtered out) and the inline
 /// description map in `AddProvider.tsx`.
 class _ProviderType {
   const _ProviderType(this.value, this.label, this.description);
@@ -253,16 +253,6 @@ class _ProviderType {
 
 const List<_ProviderType> _providerTypes = [
   _ProviderType('openai', 'OpenAI', '添加OpenAI兼容的API服务'),
-  _ProviderType(
-    'openai-aisdk',
-    'OpenAI (AI SDK) - 流式优化',
-    '添加OpenAI API服务（使用AI SDK，专为浏览器优化，解决流式响应延迟问题）',
-  ),
-  _ProviderType(
-    'azure-openai',
-    'Azure OpenAI',
-    '添加Azure OpenAI API服务（需要配置endpoint和apiVersion）',
-  ),
   _ProviderType('gemini', 'Gemini', '添加Google Gemini API服务'),
   _ProviderType('anthropic', 'Anthropic', '添加Anthropic Claude API服务'),
   _ProviderType('grok', 'xAI (Grok)', '添加xAI (Grok) API服务'),

@@ -38,16 +38,6 @@ List<ModelProvider> defaultModelProviders() => const [
     providerType: 'openai',
   ),
   ModelProvider(
-    id: 'openai-aisdk',
-    name: 'OpenAI (AI SDK)',
-    avatar: '🚀',
-    color: '#10a37f',
-    isEnabled: false,
-    apiKey: '',
-    baseUrl: 'https://api.openai.com/v1',
-    providerType: 'openai-aisdk',
-  ),
-  ModelProvider(
     id: 'gemini',
     name: 'Gemini',
     avatar: 'G',

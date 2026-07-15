@@ -6,12 +6,12 @@ library;
 
 import 'package:aetherlink_flutter/shared/utils/api_host.dart';
 
-/// The original `providerTypeOptions` (value, label), verbatim and in order.
-/// Used by the 编辑供应商 dialog's type dropdown.
+/// The provider-type options offered by the 编辑供应商 dialog's type dropdown.
+/// Redundant web-era types (`openai-aisdk`, `azure-openai`, `google`,
+/// `openai-response`) are not offered; legacy stored values are folded onto
+/// their equivalents by [normalizeProviderType].
 const List<(String, String)> providerTypeOptions = [
   ('openai', 'OpenAI'),
-  ('openai-aisdk', 'OpenAI (AI SDK) - 流式优化'),
-  ('azure-openai', 'Azure OpenAI'),
   ('gemini', 'Gemini'),
   ('anthropic', 'Anthropic'),
   ('grok', 'xAI (Grok)'),
@@ -21,22 +21,29 @@ const List<(String, String)> providerTypeOptions = [
   ('volcengine', '火山引擎'),
   ('minimax', 'MiniMax'),
   ('dashscope', '阿里云百炼 (DashScope)'),
-  ('google', 'Google (通用)'),
   ('custom', '自定义'),
 ];
 
+/// Folds legacy provider types from the web app onto their runtime
+/// equivalents: `openai-aisdk` / `azure-openai` / `openai-response` behave as
+/// plain `openai`, and `google` is the Gemini protocol. Everything else passes
+/// through unchanged.
+String? normalizeProviderType(String? providerType) => switch (providerType) {
+  'openai-aisdk' || 'azure-openai' || 'openai-response' => 'openai',
+  'google' => 'gemini',
+  _ => providerType,
+};
+
 const String _volcesEndpoint = 'volces.com/api/v3';
-const String _openaiResponseType = 'openai-response';
 
 /// The default API base URL for a freshly-added provider of [providerType], so
 /// 添加提供商 can pre-fill the detail page's URL field instead of leaving it
 /// blank. Hosts mirror the seed providers in `defaultModelProviders()` and
 /// Cherry Studio's `SYSTEM_PROVIDERS_CONFIG`. Types without a fixed public host
-/// (`azure-openai`, `google`, `custom`, …) return `''` so the field stays empty.
+/// (`custom`, …) return `''` so the field stays empty.
 String defaultBaseUrlForType(String? providerType) {
-  switch (providerType) {
+  switch (normalizeProviderType(providerType)) {
     case 'openai':
-    case 'openai-aisdk':
       return 'https://api.openai.com/v1';
     case 'gemini':
       return 'https://generativelanguage.googleapis.com/v1beta';
@@ -64,37 +71,36 @@ String defaultBaseUrlForType(String? providerType) {
 /// Whether [providerType] is treated as an OpenAI-compatible provider for the
 /// URL preview (everything except `anthropic` / `gemini`). Mirrors
 /// `isOpenAIProvider`.
-bool isOpenAIProvider(String? providerType) =>
-    !['anthropic', 'gemini'].contains(providerType ?? '');
+bool isOpenAIProvider(String? providerType) => ![
+  'anthropic',
+  'gemini',
+].contains(normalizeProviderType(providerType) ?? '');
 
 /// Normalizes a base URL host via the shared [formatApiHost]: trims a trailing
-/// `/`, keeps VolcEngine / `openai-response` hosts and hosts that already carry
-/// a version segment (`/v1`, `/v2beta`, …) as-is, honours a trailing `#`, and
-/// otherwise appends `/v1`.
-String _formatApiHost(String host, String? providerType) {
+/// `/`, keeps VolcEngine hosts and hosts that already carry a version segment
+/// (`/v1`, `/v2beta`, …) as-is, honours a trailing `#`, and otherwise appends
+/// `/v1`.
+String _formatApiHost(String host) {
   final trimmed = host.trim();
   if (trimmed.isEmpty) return '';
   final normalized = trimmed.endsWith('/')
       ? trimmed.substring(0, trimmed.length - 1)
       : trimmed;
   if (normalized.endsWith(_volcesEndpoint)) return normalized;
-  if (providerType == _openaiResponseType) {
-    return normalized.replaceFirst(RegExp(r'#$'), '');
-  }
   return formatApiHost(normalized);
 }
 
 /// The full endpoint preview shown under the base-URL field — `getCompleteApiUrl`
-/// / `getPreviewUrl`. Appends `/responses` when [useResponsesAPI] is on (or the
-/// type is `openai-response`), else `/chat/completions`.
+/// / `getPreviewUrl`. Appends `/responses` when [useResponsesAPI] is on, else
+/// `/chat/completions`.
 String getCompleteApiUrl(
   String baseUrl,
   String? providerType, {
   bool useResponsesAPI = false,
 }) {
   if (baseUrl.trim().isEmpty) return '';
-  final host = _formatApiHost(baseUrl, providerType);
-  if (useResponsesAPI || providerType == _openaiResponseType) {
+  final host = _formatApiHost(baseUrl);
+  if (useResponsesAPI) {
     return '$host/responses';
   }
   return '$host/chat/completions';

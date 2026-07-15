@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/mobile/model_providers/provider_config_utils.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/utils/provider_icons.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_select_field.dart';
@@ -911,15 +912,14 @@ class _EditProviderDialog extends StatefulWidget {
 
   final ModelProvider provider;
 
-  // The original `providerTypeOptions` (value, label), verbatim.
+  // The provider-type options (value, label); redundant web-era types are
+  // folded onto their equivalents by [normalizeProviderType].
   static const List<(String, String)> typeOptions = [
     ('openai', 'OpenAI'),
-    ('openai-response', 'OpenAI (Responses API)'),
+    ('gemini', 'Gemini'),
     ('anthropic', 'Anthropic'),
     ('deepseek', 'DeepSeek'),
     ('zhipu', '智谱AI'),
-    ('google', 'Google'),
-    ('azure-openai', 'Azure OpenAI'),
     ('siliconflow', 'SiliconFlow'),
     ('volcengine', '火山引擎'),
     ('grok', 'Grok'),
@@ -941,7 +941,7 @@ class _EditProviderDialogState extends State<_EditProviderDialog> {
     // Seed the dropdown only when the stored type is one of the options;
     // otherwise leave it unselected (the original `provider.providerType || ''`
     // would simply show no matching MenuItem).
-    final stored = widget.provider.providerType;
+    final stored = normalizeProviderType(widget.provider.providerType);
     _type = _EditProviderDialog.typeOptions.any((o) => o.$1 == stored)
         ? stored
         : null;

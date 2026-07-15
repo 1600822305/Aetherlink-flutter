@@ -23,7 +23,7 @@ class _EditProviderDialogState extends State<EditProviderDialog> {
   void initState() {
     super.initState();
     _name = TextEditingController(text: widget.provider.name);
-    final stored = widget.provider.providerType;
+    final stored = normalizeProviderType(widget.provider.providerType);
     _type = providerTypeOptions.any((o) => o.$1 == stored) ? stored : null;
   }
 

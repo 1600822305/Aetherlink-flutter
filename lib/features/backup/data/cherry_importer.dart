@@ -484,8 +484,6 @@ class CherryImporter {
         return 'anthropic';
       case 'gemini':
         return 'gemini';
-      case 'azure-openai':
-        return 'azure-openai';
       case 'ollama':
         return 'ollama';
       case 'openai-response':
