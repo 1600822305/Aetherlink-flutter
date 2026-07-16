@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -666,6 +669,8 @@ class _TtsProviderDetailPageState
   late double _fishRepetitionPenalty;
   late bool _fishConditionOnPreviousChunks;
   late double _fishEarlyStopThreshold;
+  late String _fishReferenceAudio;
+  late TextEditingController _fishReferenceTextCtrl;
 
   bool get _isSystem => widget.kind == TtsProviderKind.system;
   bool get _isVolcano => widget.kind == TtsProviderKind.volcano;
@@ -763,6 +768,8 @@ class _TtsProviderDetailPageState
     _fishRepetitionPenalty = p.fishRepetitionPenalty;
     _fishConditionOnPreviousChunks = p.fishConditionOnPreviousChunks;
     _fishEarlyStopThreshold = p.fishEarlyStopThreshold;
+    _fishReferenceAudio = p.fishReferenceAudio;
+    _fishReferenceTextCtrl = TextEditingController(text: p.fishReferenceText);
   }
 
   @override
@@ -783,6 +790,7 @@ class _TtsProviderDetailPageState
     _mimoCloneAudioCtrl.dispose();
     _qwenInstructionsCtrl.dispose();
     _fishReferenceIdCtrl.dispose();
+    _fishReferenceTextCtrl.dispose();
     _systemTts?.dispose();
     super.dispose();
   }
@@ -865,6 +873,8 @@ class _TtsProviderDetailPageState
     fishRepetitionPenalty: _fishRepetitionPenalty,
     fishConditionOnPreviousChunks: _fishConditionOnPreviousChunks,
     fishEarlyStopThreshold: _fishEarlyStopThreshold,
+    fishReferenceAudio: _fishReferenceAudio,
+    fishReferenceText: _fishReferenceTextCtrl.text,
   );
 
   /// Persists the current form values. Called automatically when leaving the

@@ -26,6 +26,10 @@ extension _FishAudioSettings on _TtsProviderDetailPageState {
         controller: _fishReferenceIdCtrl,
       ),
       const SizedBox(height: 12),
+      // -- Zero-shot cloning: inline reference audio + transcript.
+      //    When set, it takes precedence over reference_id and the request is
+      //    sent as MessagePack.
+      ..._buildFishReferenceAudio(),
       // -- Sampling --
       _SliderRow(
         label: '温度',
@@ -184,5 +188,77 @@ extension _FishAudioSettings on _TtsProviderDetailPageState {
         onChanged: (v) => setState(() => _fishEarlyStopThreshold = v),
       ),
     ];
+  }
+
+  /// Zero-shot voice cloning: pick a local reference audio (WAV/MP3/FLAC,
+  /// ideally 10-30s of clear speech) plus its exact transcript.
+  List<Widget> _buildFishReferenceAudio() {
+    final hasAudio = _fishReferenceAudio.isNotEmpty;
+    return [
+      Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 6),
+        child: Text(
+          '零样本克隆参考音频',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+      Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _pickFishReferenceAudio,
+              icon: const Icon(LucideIcons.fileAudio, size: 15),
+              label: Text(
+                hasAudio
+                    ? '已选择（${(_fishReferenceAudio.length * 3 ~/ 4 / 1024).round()} KB）'
+                    : '选择参考音频（10-30 秒清晰人声）',
+                style: const TextStyle(fontSize: 12.5),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          if (hasAudio) ...[
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: '清除',
+              icon: const Icon(LucideIcons.x, size: 16),
+              onPressed: () => setState(() => _fishReferenceAudio = ''),
+            ),
+          ],
+        ],
+      ),
+      if (hasAudio) ...[
+        const SizedBox(height: 8),
+        ModelFormField(
+          label: '参考音频转写文本',
+          hint: '输入参考音频中说的原文（转写越准克隆效果越好）',
+          controller: _fishReferenceTextCtrl,
+          maxLines: 2,
+        ),
+      ],
+      const SizedBox(height: 12),
+    ];
+  }
+
+  Future<void> _pickFishReferenceAudio() async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['wav', 'mp3', 'flac'],
+    );
+    final file = result?.files.firstOrNull;
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    if (bytes.length > 20 * 1024 * 1024) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('音频超过 20 MB，请换更短的样本')));
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _fishReferenceAudio = base64Encode(bytes));
   }
 }

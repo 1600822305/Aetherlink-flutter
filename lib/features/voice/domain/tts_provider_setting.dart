@@ -141,6 +141,10 @@ abstract class TtsProviderSetting with _$TtsProviderSetting {
     @Default(1.2) double fishRepetitionPenalty,
     @Default(true) bool fishConditionOnPreviousChunks,
     @Default(1.0) double fishEarlyStopThreshold, // [0,1]
+    // Zero-shot voice cloning: inline reference audio (base64, WAV/MP3/FLAC)
+    // plus its exact transcript; sent via MessagePack `references`.
+    @Default('') String fishReferenceAudio,
+    @Default('') String fishReferenceText,
   }) = _TtsProviderSetting;
 
   factory TtsProviderSetting.fromJson(Map<String, dynamic> json) =>

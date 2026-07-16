@@ -1,15 +1,22 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 
+import 'package:aetherlink_flutter/features/voice/data/tts/engines/msgpack_encoder.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/engines/tts_audio_utils.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/engines/tts_engine.dart';
 import 'package:aetherlink_flutter/features/voice/domain/tts_provider_setting.dart';
 
 /// Fish Audio TTS — `POST /v1/tts` with a `model` **header** selecting the TTS
-/// model (s1 / s2-pro / s2.1-pro / s2.1-pro-free) and a JSON body carrying the
+/// model (s1 / s2-pro / s2.1-pro / s2.1-pro-free) and a body carrying the
 /// voice `reference_id`, sampling (temperature / top_p), prosody
 /// (speed / volume / normalize_loudness) and output format options.
+///
+/// With an inline reference audio configured (zero-shot cloning), the body is
+/// serialized as MessagePack and carries `references` (raw audio bytes +
+/// transcript) instead of `reference_id` — the API only accepts inline audio
+/// via `application/msgpack`. Otherwise plain JSON is used.
 class FishAudioTtsEngine extends TtsEngine {
   const FishAudioTtsEngine();
 
@@ -47,20 +54,32 @@ class FishAudioTtsEngine extends TtsEngine {
       'condition_on_previous_chunks': provider.fishConditionOnPreviousChunks,
       'early_stop_threshold': provider.fishEarlyStopThreshold,
     };
-    if (provider.voice.trim().isNotEmpty) {
-      body['reference_id'] = provider.voice.trim();
-    }
     if (provider.fishSampleRate > 0) {
       body['sample_rate'] = provider.fishSampleRate;
     }
 
+    final referenceAudio = provider.fishReferenceAudio.trim();
+    final useMsgpack = referenceAudio.isNotEmpty;
+    if (useMsgpack) {
+      body['references'] = [
+        {
+          'audio': base64Decode(referenceAudio),
+          'text': provider.fishReferenceText,
+        },
+      ];
+    } else if (provider.voice.trim().isNotEmpty) {
+      body['reference_id'] = provider.voice.trim();
+    }
+
     final response = await dio.post<List<int>>(
       joinUrl(baseUrl, '/v1/tts'),
-      data: body,
+      data: useMsgpack ? msgpackEncode(body) : body,
       options: Options(
         headers: {
           'Authorization': 'Bearer ${provider.apiKey}',
-          'Content-Type': 'application/json',
+          'Content-Type': useMsgpack
+              ? 'application/msgpack'
+              : 'application/json',
           'model': model,
         },
         responseType: ResponseType.bytes,
