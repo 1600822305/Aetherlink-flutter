@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/workspace/application/editor_auto_save.dart';
+import 'package:aetherlink_flutter/features/workspace/application/workspace_file_history.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_body.dart';
@@ -369,6 +370,15 @@ class _FileEditorState extends ConsumerState<FileEditor>
     _autoSave?.cancel();
     setState(() => _saving = true);
     try {
+      // 应用级文件历史：覆盖前存一份旧内容，不依赖 git，任何后端可回滚。
+      if (_controller.text != _original) {
+        await recordFileHistory(
+          ref.read(workspaceFileHistoryProvider.future),
+          widget.entry.path,
+          _original,
+          source: '编辑器保存',
+        );
+      }
       await backend.writeFile(widget.entry.path, _controller.text);
       _original = _controller.text;
       ref.read(dirtyFilesProvider.notifier).clear(_path);

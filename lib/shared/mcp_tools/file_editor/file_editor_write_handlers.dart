@@ -10,6 +10,7 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aetherlink_flutter/features/workspace/application/workspace_file_history.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_text_ops.dart'
     as text_ops;
@@ -65,6 +66,7 @@ Future<McpToolResult> writeFile(Ref ref, Map<String, Object?> args) async {
     throw const FileEditorError('目标是目录，无法作为文件写入。');
   }
 
+  await _snapshotBeforeOverwrite(ref, backend, path);
   await backend.writeFile(path, processed);
   return fileEditorOk({
     'message': '文件更新成功',
@@ -91,6 +93,7 @@ Future<McpToolResult> _createFile(Ref ref, Map<String, Object?> args) async {
     if (existing.isDirectory) {
       throw FileEditorError('「$name」是一个目录，无法以文件覆盖。');
     }
+    await _snapshotBeforeOverwrite(ref, backend, existing.path);
     await backend.writeFile(existing.path, content);
     return fileEditorOk({
       'message': '文件已覆盖',
@@ -345,13 +348,42 @@ Future<McpToolResult> editFile(Ref ref, Map<String, Object?> args) async {
     total += counted.replacements;
   }
 
-  if (content != original) await backend.writeFile(resolvedPath, content);
+  if (content != original) {
+    await recordFileHistory(
+      ref.read(workspaceFileHistoryProvider.future),
+      resolvedPath,
+      original,
+      source: '智能体编辑',
+    );
+    await backend.writeFile(resolvedPath, content);
+  }
   return fileEditorOk({
     'message': '替换完成（$total 处${edits.length > 1 ? '，${edits.length} 个 edit' : ''}）',
     'path': resolvedPath,
     'replacements': total,
     if (edits.length > 1) 'edits': edits.length,
   });
+}
+
+/// Saves [path]'s current content to the workspace file history before an
+/// overwrite. Best-effort: unreadable (binary/oversized) files are skipped.
+Future<void> _snapshotBeforeOverwrite(
+  Ref ref,
+  WorkspaceBackend backend,
+  String path,
+) async {
+  String old;
+  try {
+    old = await backend.readFile(path);
+  } catch (_) {
+    return;
+  }
+  await recordFileHistory(
+    ref.read(workspaceFileHistoryProvider.future),
+    path,
+    old,
+    source: '智能体写入',
+  );
 }
 
 /// `create_directory` — create a directory under an opaque [parent_path]

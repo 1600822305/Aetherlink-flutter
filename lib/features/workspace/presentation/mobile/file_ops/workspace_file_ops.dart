@@ -39,6 +39,7 @@ class WorkspaceFileOps {
     this.onFileCreated,
     this.canGitDiff,
     this.onGitDiff,
+    this.onFileHistory,
     this.onShare,
   });
 
@@ -68,6 +69,10 @@ class WorkspaceFileOps {
   /// Shows the git working-tree diff for [entry]。
   final Future<void> Function(WorkspaceEntry entry)? onGitDiff;
 
+  /// Opens the app-level file-history sheet for [entry]（checkpoint 快照，
+  /// 与 Git 无关）。Null ⇒ the action is hidden.
+  final Future<void> Function(WorkspaceEntry entry)? onFileHistory;
+
   /// Exports [entry]'s bytes to the OS share sheet (用其他应用打开/分享).
   /// Null ⇒ the action is hidden.
   final Future<void> Function(WorkspaceEntry entry)? onShare;
@@ -94,6 +99,7 @@ class WorkspaceFileOps {
         protected: protected,
         writable: _writable,
         showGitDiff: canGitDiff?.call(entry) ?? false,
+        showFileHistory: onFileHistory != null && !entry.isDirectory,
         showShare: onShare != null && !entry.isDirectory,
       ),
     );
@@ -115,6 +121,8 @@ class WorkspaceFileOps {
         await showDetails(entry);
       case FileEntryAction.gitDiff:
         await onGitDiff?.call(entry);
+      case FileEntryAction.fileHistory:
+        await onFileHistory?.call(entry);
       case FileEntryAction.share:
         await onShare?.call(entry);
       case FileEntryAction.delete:

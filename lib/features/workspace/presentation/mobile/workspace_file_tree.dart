@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.d
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_diff_view.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_registry.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/workspace_file_share.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/file_history_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/open_workspace_sheet.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/workspace_file_ops.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/workspace_search_sheet.dart';
@@ -703,6 +704,12 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                 backend.capabilities.canExec &&
                 ref.read(gitStatusProvider)?.statusOf(entry.path) != null,
             onGitDiff: _showGitDiff,
+            onFileHistory: (entry) => showFileHistorySheet(
+              context,
+              ref,
+              backend: backend,
+              entry: entry,
+            ),
             onFileCreated: (entry) =>
                 ref.read(openWorkspaceFilesProvider.notifier).open(
                       entry,

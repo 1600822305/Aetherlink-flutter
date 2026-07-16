@@ -15,6 +15,7 @@ enum FileEntryAction {
   copyPath,
   details,
   gitDiff,
+  fileHistory,
   share,
   delete,
 }
@@ -28,6 +29,7 @@ class EntryActionSheet extends StatelessWidget {
     this.protected = false,
     this.writable = true,
     this.showGitDiff = false,
+    this.showFileHistory = false,
     this.showShare = false,
   });
 
@@ -41,6 +43,9 @@ class EntryActionSheet extends StatelessWidget {
 
   /// Whether to offer 「Git 对比」 (the entry has a git working-tree status).
   final bool showGitDiff;
+
+  /// Whether to offer 「文件历史」（应用级 checkpoint 快照，files only）。
+  final bool showFileHistory;
 
   /// Whether to offer 「用其他应用打开/分享」 (files only).
   final bool showShare;
@@ -115,6 +120,12 @@ class EntryActionSheet extends StatelessWidget {
               icon: LucideIcons.fileDiff,
               label: 'Git 对比',
               action: FileEntryAction.gitDiff,
+            ),
+          if (showFileHistory)
+            const _ActionTile(
+              icon: LucideIcons.history,
+              label: '文件历史',
+              action: FileEntryAction.fileHistory,
             ),
           if (showShare)
             const _ActionTile(
