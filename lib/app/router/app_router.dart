@@ -59,6 +59,7 @@ import 'package:aetherlink_flutter/features/welcome/presentation/mobile/welcome_
 import 'package:aetherlink_flutter/features/workspace/domain/ssh_connection.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/ssh_connection_form_page.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/file_ops/termux_setup_page.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/git/git_review_page.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_management_page.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_page.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/workspace_terminal_page.dart';
@@ -146,6 +147,9 @@ abstract final class AppRouter {
 
   /// Termux 一键接入页（原上拉面板，多步引导故独立成页）。
   static const String termuxSetupPath = '/workspace/termux';
+
+  /// 「Git 变更」页：文件树工具栏的 git 按钮进入，变更暂存/提交 + 历史。
+  static const String gitReviewPath = '/workspace/git';
   static const String devToolsPath = '/devtools';
 
   /// The model-provider third-level pages (M4.3.1). The detail / edit / advanced
@@ -240,6 +244,12 @@ abstract final class AppRouter {
         name: 'termux-setup',
         pageBuilder: (context, state) =>
             _instant(state, const TermuxSetupPage()),
+      ),
+      GoRoute(
+        path: gitReviewPath,
+        name: 'git-review',
+        pageBuilder: (context, state) =>
+            _instant(state, const GitReviewPage()),
       ),
       GoRoute(
         path: settingsPath,

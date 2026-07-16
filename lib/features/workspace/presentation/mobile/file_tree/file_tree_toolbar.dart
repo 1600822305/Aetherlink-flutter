@@ -4,7 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_tree_sort.dart';
 
 /// The tree toolbar in normal mode: new file/folder, enter multi-select,
-/// sort menu, hidden-files toggle, refresh and collapse-all.
+/// git review, sort menu, hidden-files toggle, refresh and collapse-all.
 class FileTreeToolbar extends StatelessWidget {
   const FileTreeToolbar({
     super.key,
@@ -13,6 +13,9 @@ class FileTreeToolbar extends StatelessWidget {
     required this.canCreate,
     required this.showHidden,
     required this.sortMode,
+    required this.gitEnabled,
+    required this.gitChangeCount,
+    required this.onOpenGit,
     required this.onNewFile,
     required this.onNewFolder,
     required this.onEnterSelect,
@@ -30,6 +33,14 @@ class FileTreeToolbar extends StatelessWidget {
   final bool canCreate;
   final bool showHidden;
   final TreeSortMode sortMode;
+
+  /// Whether the workspace root sits inside a git repo (exec backend +
+  /// resolved status snapshot) — gates the git button.
+  final bool gitEnabled;
+
+  /// Number of changed files shown as the git button's badge (0 hides it).
+  final int gitChangeCount;
+  final VoidCallback onOpenGit;
   final VoidCallback onNewFile;
   final VoidCallback onNewFolder;
   final VoidCallback onEnterSelect;
@@ -66,6 +77,11 @@ class FileTreeToolbar extends StatelessWidget {
           tooltip: '回收站',
           enabled: hasRoot && canWrite,
           onTap: onOpenTrash,
+        ),
+        FileTreeGitButton(
+          enabled: gitEnabled,
+          changeCount: gitChangeCount,
+          onTap: onOpenGit,
         ),
         const Spacer(),
         FileTreeSortMenuButton(
@@ -187,6 +203,62 @@ class FileTreeToolbarButton extends StatelessWidget {
       visualDensity: VisualDensity.compact,
       iconSize: 18,
       icon: Icon(icon, color: color),
+    );
+  }
+}
+
+/// Git 变更入口按钮：带改动数角标，仅在工作区位于 git 仓库内时可点。
+class FileTreeGitButton extends StatelessWidget {
+  const FileTreeGitButton({
+    super.key,
+    required this.enabled,
+    required this.changeCount,
+    required this.onTap,
+  });
+
+  final bool enabled;
+  final int changeCount;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final button = FileTreeToolbarButton(
+      icon: LucideIcons.gitBranch,
+      tooltip: 'Git 变更',
+      enabled: enabled,
+      onTap: onTap,
+    );
+    if (!enabled || changeCount <= 0) return button;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        button,
+        Positioned(
+          right: 4,
+          top: 4,
+          child: IgnorePointer(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              constraints: const BoxConstraints(minWidth: 14),
+              child: Text(
+                changeCount > 99 ? '99+' : '$changeCount',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 9,
+                  height: 1.2,
+                  fontWeight: FontWeight.w700,
+                  color: theme.colorScheme.onPrimary,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

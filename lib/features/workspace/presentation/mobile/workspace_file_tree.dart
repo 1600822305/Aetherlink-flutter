@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+
+import 'package:aetherlink_flutter/app/router/app_router.dart';
 
 import 'package:aetherlink_flutter/features/workspace/application/workspace_git_status.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_tree_sort.dart';
@@ -777,6 +780,10 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                       hasRoot: root != null,
                       canWrite: canWrite,
                       canCreate: ops != null && canWrite,
+                      gitEnabled: gitSnap != null,
+                      gitChangeCount: gitSnap?.files.length ?? 0,
+                      onOpenGit: () =>
+                          context.push(AppRouter.gitReviewPath),
                       showHidden: showHidden,
                       sortMode: sortMode,
                       onNewFile: () => ops?.newFile(ops.rootPath),
