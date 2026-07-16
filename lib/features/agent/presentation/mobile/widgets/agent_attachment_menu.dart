@@ -13,8 +13,9 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 输入栏「＋」附件菜单：工作区 @ 引用 / 设备文件 / 图片 /
-/// 当前改动 Diff / 终端输出。返回选中的附件（取消返回 null）。
-Future<AgentUserAttachment?> showAgentAttachmentMenu(
+/// 当前改动 Diff / 终端输出。返回选中的附件列表（图片可多选；
+/// 取消返回空列表）。
+Future<List<AgentUserAttachment>> showAgentAttachmentMenu(
   BuildContext context,
   WidgetRef ref, {
   required String? workspaceId,
@@ -41,7 +42,7 @@ Future<AgentUserAttachment?> showAgentAttachmentMenu(
           ListTile(
             leading: const Icon(LucideIcons.image, size: 20),
             title: const Text('图片'),
-            subtitle: const Text('相册选图，发给多模态模型'),
+            subtitle: const Text('相册选图（可多选），发给多模态模型'),
             onTap: () => Navigator.pop(context, 'image'),
           ),
           ListTile(
@@ -60,21 +61,25 @@ Future<AgentUserAttachment?> showAgentAttachmentMenu(
       ),
     ),
   );
-  if (action == null || !context.mounted) return null;
+  if (action == null || !context.mounted) return const [];
   switch (action) {
     case 'workspace':
-      return showAgentWorkspaceFilePicker(context, ref,
+      final attachment = await showAgentWorkspaceFilePicker(context, ref,
           workspaceId: workspaceId);
+      return [if (attachment != null) attachment];
     case 'device':
-      return _pickDeviceFile(context);
+      final attachment = await _pickDeviceFile(context);
+      return [if (attachment != null) attachment];
     case 'image':
-      return _pickImage(context);
+      return _pickImages(context);
     case 'diff':
-      return _diffAttachment(context, ref, workspaceId);
+      final attachment = await _diffAttachment(context, ref, workspaceId);
+      return [if (attachment != null) attachment];
     case 'terminal':
-      return _terminalAttachment(context, ref, workspaceId);
+      final attachment = await _terminalAttachment(context, ref, workspaceId);
+      return [if (attachment != null) attachment];
   }
-  return null;
+  return const [];
 }
 
 /// 工作区文件模糊搜索浮层（＋菜单与输入框 @ 触发共用）。
@@ -147,22 +152,21 @@ Future<AgentUserAttachment?> _pickDeviceFile(BuildContext context) async {
   );
 }
 
-Future<AgentUserAttachment?> _pickImage(BuildContext context) async {
-  final picked = await ImagePicker().pickImage(
-    source: ImageSource.gallery,
+Future<List<AgentUserAttachment>> _pickImages(BuildContext context) async {
+  final picked = await ImagePicker().pickMultiImage(
     maxWidth: 1600,
     maxHeight: 1600,
     imageQuality: 85,
   );
-  if (picked == null) return null;
-  final bytes = await picked.readAsBytes();
-  final ext = picked.name.split('.').last.toLowerCase();
-  return AgentUserAttachment(
-    kind: AgentAttachmentKind.image,
-    name: picked.name,
-    mimeType: picked.mimeType ?? _mimeOf(ext),
-    base64Data: base64Encode(bytes),
-  );
+  return [
+    for (final file in picked)
+      AgentUserAttachment(
+        kind: AgentAttachmentKind.image,
+        name: file.name,
+        mimeType: file.mimeType ?? _mimeOf(file.name.split('.').last.toLowerCase()),
+        base64Data: base64Encode(await file.readAsBytes()),
+      ),
+  ];
 }
 
 Future<AgentUserAttachment?> _diffAttachment(

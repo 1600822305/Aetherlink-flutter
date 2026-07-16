@@ -83,22 +83,22 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
         ?.workspaceId;
   }
 
-  void _addAttachment(AgentUserAttachment? attachment) {
-    if (attachment == null) return;
+  void _addAttachments(List<AgentUserAttachment> attachments) {
+    if (attachments.isEmpty) return;
     setState(() {
-      _attachments.add(attachment);
+      _attachments.addAll(attachments);
       _hasText = true;
     });
   }
 
   Future<void> _onAttachmentPressed() async {
     FocusManager.instance.primaryFocus?.unfocus();
-    final attachment = await showAgentAttachmentMenu(
+    final attachments = await showAgentAttachmentMenu(
       context,
       ref,
       workspaceId: _workspaceId,
     );
-    _addAttachment(attachment);
+    _addAttachments(attachments);
   }
 
   /// 输入框内敲 @：弹工作区文件搜索，选中后把相对路径接在 @ 后，
@@ -118,7 +118,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
         selection: TextSelection.collapsed(offset: atEnd + inserted.length),
       );
     }
-    _addAttachment(attachment);
+    _addAttachments([attachment]);
   }
 
   /// 有文字：任务执行中发送不直接发——弹三选面板（排队/立即打断并
