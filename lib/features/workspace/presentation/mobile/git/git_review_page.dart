@@ -272,6 +272,177 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
     }
   }
 
+  // ===== v2：同步 / 分支 / 回滚 =====
+
+  Future<void> _sync(String action) async {
+    switch (action) {
+      case 'pull':
+        final ok = await _mutate((s) => s.pull());
+        if (ok && mounted) AppToast.success(context, '已拉取');
+      case 'push':
+        final branch = _snapshot?.branch.branch ?? '';
+        final ok = await _mutate((s) => s.push(branch));
+        if (ok && mounted) AppToast.success(context, '已推送');
+      case 'fetch':
+        final ok = await _mutate((s) => s.fetch());
+        if (ok && mounted) AppToast.success(context, '已获取远端更新');
+      case 'branches':
+        await _showBranchSheet();
+      case 'new-branch':
+        await _createBranch();
+    }
+  }
+
+  Future<void> _showBranchSheet() async {
+    final service = _service;
+    if (service == null) return;
+    List<GitBranchItem> branches;
+    try {
+      branches = await service.branches();
+    } catch (e) {
+      if (mounted) AppToast.error(context, '读取分支失败 · $e');
+      return;
+    }
+    if (!mounted) return;
+    final theme = Theme.of(context);
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+              child: Text(
+                '切换分支',
+                style: theme.textTheme.titleSmall,
+              ),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final b in branches)
+                    ListTile(
+                      dense: true,
+                      leading: Icon(
+                        LucideIcons.gitBranch,
+                        size: 18,
+                        color: b.isCurrent
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
+                      title: Text(
+                        b.name,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight:
+                              b.isCurrent ? FontWeight.w600 : null,
+                          color: b.isCurrent
+                              ? theme.colorScheme.primary
+                              : null,
+                        ),
+                      ),
+                      trailing: b.isCurrent
+                          ? Icon(LucideIcons.check,
+                              size: 16,
+                              color: theme.colorScheme.primary)
+                          : null,
+                      onTap: () => Navigator.of(context).pop(b.name),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null ||
+        !mounted ||
+        branches.any((b) => b.isCurrent && b.name == picked)) {
+      return;
+    }
+    final ok = await _mutate((s) => s.checkout(picked));
+    if (ok && mounted) AppToast.success(context, '已切换到 $picked');
+  }
+
+  Future<void> _createBranch() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('新建分支'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '分支名称'),
+          onSubmitted: (v) => Navigator.of(context).pop(v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('创建并切换'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.isEmpty || !mounted) return;
+    final ok = await _mutate((s) => s.createBranch(name));
+    if (ok && mounted) AppToast.success(context, '已创建并切换到 $name');
+  }
+
+  Future<void> _confirmRevert(GitCommitInfo commit) async {
+    final ok = await _confirmDanger(
+      title: '撤销此提交？',
+      body: '将创建一个新提交撤销「${commit.shortSha} ${commit.subject}」的改动，'
+          '历史记录不会丢失。',
+      action: '撤销',
+    );
+    if (ok) {
+      final done = await _mutate((s) => s.revertCommit(commit.sha));
+      if (done && mounted) AppToast.success(context, '已撤销 ${commit.shortSha}');
+    }
+  }
+
+  Future<void> _confirmResetHard(GitCommitInfo commit) async {
+    final ok = await _confirmDanger(
+      title: '回退到此提交？',
+      body: '当前分支将硬回退到「${commit.shortSha} ${commit.subject}」，'
+          '之后的提交和所有未提交改动都会丢失，此操作不可撤销。',
+      action: '硬回退',
+    );
+    if (ok) {
+      final done = await _mutate((s) => s.resetHard(commit.sha));
+      if (done && mounted) {
+        AppToast.success(context, '已回退到 ${commit.shortSha}');
+      }
+    }
+  }
+
+  Future<void> _confirmRestoreFile(
+    GitCommitInfo commit,
+    GitCommitFile file,
+  ) async {
+    final ok = await _confirmDanger(
+      title: '恢复文件到此版本？',
+      body: '「${file.path}」将恢复为 ${commit.shortSha} 时的内容'
+          '（写入工作区并暂存），当前未提交的改动会被覆盖。',
+      action: '恢复',
+    );
+    if (ok) {
+      final done =
+          await _mutate((s) => s.restoreFileAt(commit.sha, file.path));
+      if (done && mounted) AppToast.success(context, '已恢复 ${file.path}');
+    }
+  }
+
   Future<void> _showCommitDetail(GitCommitInfo commit) async {
     final service = _service;
     if (service == null) return;
@@ -290,6 +461,18 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
       builder: (context) => _CommitDetailSheet(
         commit: commit,
         files: files,
+        onRevert: () {
+          Navigator.of(context).pop();
+          _confirmRevert(commit);
+        },
+        onResetHard: () {
+          Navigator.of(context).pop();
+          _confirmResetHard(commit);
+        },
+        onRestoreFile: (file) {
+          Navigator.of(context).pop();
+          _confirmRestoreFile(commit, file);
+        },
         onOpenFile: (file) async {
           try {
             final (oldText, newText) =
@@ -388,6 +571,21 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
                     _refreshStatus();
                     if (_tabs.index == 1) _loadLog();
                   },
+          ),
+          PopupMenuButton<String>(
+            tooltip: '更多',
+            icon: const Icon(LucideIcons.ellipsisVertical, size: 20),
+            iconColor: theme.colorScheme.onSurfaceVariant,
+            enabled: !_busy && _service != null,
+            onSelected: _sync,
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'pull', child: Text('拉取 (pull)')),
+              PopupMenuItem(value: 'push', child: Text('推送 (push)')),
+              PopupMenuItem(value: 'fetch', child: Text('获取远端 (fetch)')),
+              PopupMenuDivider(),
+              PopupMenuItem(value: 'branches', child: Text('切换分支…')),
+              PopupMenuItem(value: 'new-branch', child: Text('新建分支…')),
+            ],
           ),
           const SizedBox(width: 4),
         ],
@@ -881,11 +1079,17 @@ class _CommitDetailSheet extends StatelessWidget {
     required this.commit,
     required this.files,
     required this.onOpenFile,
+    required this.onRevert,
+    required this.onResetHard,
+    required this.onRestoreFile,
   });
 
   final GitCommitInfo commit;
   final List<GitCommitFile> files;
   final ValueChanged<GitCommitFile> onOpenFile;
+  final VoidCallback onRevert;
+  final VoidCallback onResetHard;
+  final ValueChanged<GitCommitFile> onRestoreFile;
 
   @override
   Widget build(BuildContext context) {
@@ -927,7 +1131,32 @@ class _CommitDetailSheet extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                TextButton.icon(
+                  onPressed: onRevert,
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  icon: const Icon(LucideIcons.undo2, size: 15),
+                  label: const Text('撤销此提交'),
+                ),
+                TextButton.icon(
+                  onPressed: onResetHard,
+                  style: TextButton.styleFrom(
+                    foregroundColor: theme.colorScheme.error,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  icon: const Icon(LucideIcons.history, size: 15),
+                  label: const Text('回退到此提交'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
           Divider(height: 1, color: theme.dividerColor),
           Expanded(
             child: files.isEmpty
@@ -962,6 +1191,7 @@ class _CommitDetailSheet extends StatelessWidget {
                           ),
                         ),
                         onTap: () => onOpenFile(file),
+                        onLongPress: () => onRestoreFile(file),
                       );
                     },
                   ),

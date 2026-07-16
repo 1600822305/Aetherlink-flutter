@@ -214,6 +214,28 @@ GitBranchInfo parseGitBranchHeader(String header) {
   return GitBranchInfo(branch: s, ahead: ahead, behind: behind);
 }
 
+/// One local branch in the 切换分支 sheet.
+class GitBranchItem {
+  const GitBranchItem({required this.name, required this.isCurrent});
+
+  final String name;
+  final bool isCurrent;
+}
+
+/// Parses `git branch --list --format='%(HEAD)%(refname:short)'` output:
+/// one branch per line, `*` prefix marks the checked-out one.
+List<GitBranchItem> parseGitBranches(String out) {
+  final branches = <GitBranchItem>[];
+  for (final line in out.split('\n')) {
+    if (line.isEmpty) continue;
+    final isCurrent = line[0] == '*';
+    final name = line.substring(1).trim();
+    if (name.isEmpty || name.startsWith('(')) continue; // detached HEAD row
+    branches.add(GitBranchItem(name: name, isCurrent: isCurrent));
+  }
+  return branches;
+}
+
 /// The full 「变更」 tab state loaded in one pass.
 class GitReviewSnapshot {
   const GitReviewSnapshot({
@@ -371,6 +393,58 @@ class GitReviewService {
     }
     return (oldText, newText);
   }
+
+  // ===== v2：同步 / 分支 / 回滚 =====
+
+  static const _syncTimeout = Duration(seconds: 120);
+
+  Future<void> fetch() =>
+      _run('$_git fetch --all --prune', timeout: _syncTimeout);
+
+  /// `git pull --ff-only`：只快进，分叉时报错提示用户处理而不是默默
+  /// 产生 merge commit。
+  Future<void> pull() =>
+      _run('$_git pull --ff-only', timeout: _syncTimeout);
+
+  /// `git push`；新分支没有 upstream 时自动补 `-u origin <branch>`。
+  Future<void> push(String branch) async {
+    try {
+      await _run('$_git push', timeout: _syncTimeout);
+    } on GitCommandException catch (e) {
+      if (!e.message.contains('no upstream')) rethrow;
+      await _run(
+        '$_git push -u origin ${shellQuoteArg(branch)}',
+        timeout: _syncTimeout,
+      );
+    }
+  }
+
+  Future<List<GitBranchItem>> branches() async {
+    final result = await _run(
+      "$_git branch --list --format='%(HEAD)%(refname:short)'",
+      timeout: const Duration(seconds: 20),
+    );
+    return parseGitBranches(result.stdout);
+  }
+
+  Future<void> checkout(String branch) =>
+      _run('$_git checkout ${shellQuoteArg(branch)}');
+
+  Future<void> createBranch(String name) =>
+      _run('$_git checkout -b ${shellQuoteArg(name)}');
+
+  /// `git revert --no-edit <sha>`：用一个新提交撤销 [sha] 的改动，历史不丢。
+  Future<void> revertCommit(String sha) =>
+      _run('$_git revert --no-edit ${shellQuoteArg(sha)}');
+
+  /// `git reset --hard <sha>`：把当前分支回退到 [sha]，丢弃之后的提交与
+  /// 未提交改动（UI 层红色二次确认）。
+  Future<void> resetHard(String sha) =>
+      _run('$_git reset --hard ${shellQuoteArg(sha)}');
+
+  /// 把单个文件恢复到 [sha] 时的内容（写入工作区与暂存区）。
+  Future<void> restoreFileAt(String sha, String path) =>
+      _run('$_git checkout ${shellQuoteArg(sha)} -- ${shellQuoteArg(path)}');
 
   /// Old/new contents of [file] in commit [sha] (parent → commit).
   Future<(String, String)> commitDiffTexts(String sha, GitCommitFile file) async {

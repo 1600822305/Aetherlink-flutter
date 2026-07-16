@@ -169,6 +169,17 @@ void main() {
     });
   });
 
+  group('parseGitBranches', () {
+    test('marks the current branch and skips detached HEAD rows', () {
+      final out = '*main\n dev\n feature/x\n*(HEAD detached at 1a2b3c)\n';
+      final branches = parseGitBranches(out);
+
+      expect(branches.map((b) => b.name), ['main', 'dev', 'feature/x']);
+      expect(branches[0].isCurrent, isTrue);
+      expect(branches[1].isCurrent, isFalse);
+    });
+  });
+
   group('parseGitBranchHeader', () {
     test('parses branch with upstream and ahead/behind', () {
       final info =
