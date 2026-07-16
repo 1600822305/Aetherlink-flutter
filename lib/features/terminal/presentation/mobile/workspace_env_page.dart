@@ -93,6 +93,12 @@ class _WorkspaceEnvPageState extends State<WorkspaceEnvPage>
     try {
       final result = await widget.silentExec(kRemoteEnvProbeCommand);
       if (!mounted) return;
+      // 探测命令以 `true` 结尾，正常必然 exit 0；非 0 且无输出说明
+      // 通道/远端 shell 出了问题，按失败展示而不是误报「未识别」。
+      if (result.exitCode != 0 && result.stdout.trim().isEmpty) {
+        setState(() => _probeError = '探测命令退出码 ${result.exitCode}');
+        return;
+      }
       setState(() => _env = parseRemoteEnvProbe(result.stdout));
     } catch (e) {
       if (!mounted) return;

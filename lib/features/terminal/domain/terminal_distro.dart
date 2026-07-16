@@ -64,6 +64,26 @@ Uri ubuntuRootfsUrlFor(TerminalMirror mirror, String version, String arch) {
 String aptSourcesFor(TerminalMirror mirror, String arch) =>
     aptSourcesForSeries(mirror, kUbuntuSeries, arch);
 
+/// 某架构下的 Ubuntu apt 镜像列表（baseUrl 是真实生效的 apt 源根，
+/// 供远程环境页展示；内置终端复用 [kTerminalMirrors] 另行映射）。
+List<TerminalMirror> ubuntuAptMirrorsFor(String arch) {
+  final bases = arch == 'amd64' ? _kUbuntuArchiveBases : _kUbuntuPortsBases;
+  const names = {
+    'official': '官方',
+    'tuna': '清华 TUNA',
+    'aliyun': '阿里云',
+    'ustc': '中科大',
+  };
+  return [
+    for (final entry in bases.entries)
+      TerminalMirror(
+        id: entry.key,
+        name: names[entry.key] ?? entry.key,
+        baseUrl: entry.value,
+      ),
+  ];
+}
+
 /// 任意系列代号（noble / jammy …）的 sources.list 内容——远程 Ubuntu
 /// 环境的系列来自探测结果，不一定等于内置终端的 [kUbuntuSeries]。
 String aptSourcesForSeries(TerminalMirror mirror, String series, String arch) {

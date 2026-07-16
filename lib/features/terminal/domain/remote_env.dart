@@ -304,7 +304,10 @@ List<TerminalMirror> remoteSystemMirrorsFor(RemoteEnvInfo env) {
   if (env.isTermux) return kTermuxMirrors;
   return switch (env.packageManager) {
     RemotePackageManager.apk => kTerminalMirrors,
-    RemotePackageManager.apt when env.osId == 'ubuntu' => kTerminalMirrors,
+    // 列表 baseUrl 即真实生效的 apt 源根（区分 archive / ports）。
+    RemotePackageManager.apt
+        when env.osId == 'ubuntu' && env.osCodename.isNotEmpty =>
+      ubuntuAptMirrorsFor(env.arch.isEmpty ? 'amd64' : env.arch),
     _ => const [],
   };
 }
