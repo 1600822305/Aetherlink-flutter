@@ -31,6 +31,7 @@ import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_header.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/file_open_policy.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/image_preview.dart';
+import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/markdown_preview.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_replace_bar.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/find_session.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/readable_path.dart';
@@ -56,6 +57,8 @@ class _FileEditorState extends ConsumerState<FileEditor>
 
   String _original = '';
   bool _editing = false;
+  // Markdown 预览态：渲染当前缓冲区（未保存的编辑也实时可见）。
+  bool _previewMd = false;
   bool _saving = false;
   String? _readOnlyReason;
   FileOpenKind _openKind = FileOpenKind.editable;
@@ -106,6 +109,11 @@ class _FileEditorState extends ConsumerState<FileEditor>
   // 覆盖磁盘版本，必须等用户在 banner 里做决定）。
   bool get _canAutoSave =>
       _writable && _externalNotice == null && _conflictDisk == null;
+  bool get _inMdPreview => _previewMd && _isMarkdown && _hasTextBody;
+  bool get _isMarkdown {
+    final n = widget.entry.name.toLowerCase();
+    return n.endsWith('.md') || n.endsWith('.markdown') || n.endsWith('.mdx');
+  }
 
   @override
   void initState() {
@@ -504,9 +512,10 @@ class _FileEditorState extends ConsumerState<FileEditor>
             actions: _headerActions(),
             onTapTitle: _showPathPanel,
           ),
-          if (_hasTextBody) EditorToolbar(children: _toolbarButtons(dirty)),
+          if (_hasTextBody && !_inMdPreview)
+            EditorToolbar(children: _toolbarButtons(dirty)),
           Divider(height: 1, color: theme.dividerColor),
-          if (_hasTextBody && _showFind)
+          if (_hasTextBody && !_inMdPreview && _showFind)
             FindReplaceBar(
               matchCount: _find.matches.length,
               currentIndex: _find.index,
@@ -538,7 +547,15 @@ class _FileEditorState extends ConsumerState<FileEditor>
               }),
             ),
           Expanded(
-            child: EditorContent(
+            child: _inMdPreview &&
+                    ref.watch(workspacePreviewBackendProvider) != null
+                ? MarkdownPreview(
+                    entry: widget.entry,
+                    backend: ref.watch(workspacePreviewBackendProvider)!,
+                    content: _controller.text,
+                    fontSize: _fontSize,
+                  )
+                : EditorContent(
               ready: _ready,
               controller: _controller,
               focusNode: _focus,
@@ -565,7 +582,7 @@ class _FileEditorState extends ConsumerState<FileEditor>
               currentLineHighlight: editorSettings.currentLineHighlight,
             ),
           ),
-          if (_hasTextBody)
+          if (_hasTextBody && !_inMdPreview)
             EditorStatusBar(
               controller: _controller,
               onTapCaret: _promptJumpToLine,
@@ -581,6 +598,19 @@ class _FileEditorState extends ConsumerState<FileEditor>
     final locked = ref.watch(workspacePageLockProvider);
     final primary = Theme.of(context).colorScheme.primary;
     return [
+      if (_isMarkdown && _hasTextBody)
+        IconButton(
+          tooltip: _previewMd ? '退出预览' : 'Markdown 预览',
+          icon: Icon(
+            _previewMd ? LucideIcons.eyeOff : LucideIcons.eye,
+            size: 18,
+          ),
+          color: _previewMd ? primary : null,
+          onPressed: () {
+            setState(() => _previewMd = !_previewMd);
+            if (_previewMd) _focus.unfocus();
+          },
+        ),
       if (_writable)
         IconButton(
           tooltip: _editing ? '退出编辑' : '编辑',
