@@ -10,6 +10,8 @@
 // 危险操作（丢弃）一律红色 + 确认弹窗；每次变更后同步刷新
 // gitStatusProvider，让文件树染色跟上。
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -17,6 +19,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_git_review.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_git_status.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/editor_diff_view.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
@@ -43,6 +46,12 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
   bool _busy = false;
   String? _error;
 
+  // 失效推送：订阅后端的文件变更流，当前仓库内的变更去抖后自动刷新
+  // 状态，不用手动点刷新；页面自己的 git 操作在 [_mutate] 里已同步
+  // 刷新，busy 期间的事件直接忽略。
+  StreamSubscription<WorkspaceChangeEvent>? _watchSub;
+  Timer? _watchDebounce;
+
   @override
   void initState() {
     super.initState();
@@ -56,6 +65,8 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
 
   @override
   void dispose() {
+    _watchDebounce?.cancel();
+    _watchSub?.cancel();
     _tabs.dispose();
     _message.dispose();
     super.dispose();
@@ -82,6 +93,18 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
     }
     _repos = repos;
     _selectRepo(repos.first);
+    if (backend.capabilities.canWatch) {
+      _watchSub = backend.watch().listen((event) {
+        final root = _repoRoot;
+        if (root == null || _busy) return;
+        if (event.path != root && !event.path.startsWith('$root/')) return;
+        _watchDebounce?.cancel();
+        _watchDebounce = Timer(const Duration(milliseconds: 500), () {
+          if (!mounted || _busy) return;
+          _refreshStatus();
+        });
+      });
+    }
   }
 
   /// Switches the page onto [repoRoot]: rebuilds the service and drops the
@@ -291,22 +314,38 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final snapshot = _snapshot;
+    // 顶栏沿用设置页的扁平 HeaderBar 风格（surface 底 + 1px 底边框 +
+    // primary 色返回箭头 + 18/600 左对齐标题，settings_page.dart 同款）。
+    final title = _repos.length > 1 && _repoName.isNotEmpty
+        ? '$_repoName · ${snapshot?.branch.branch ?? '…'}'
+        : (snapshot?.branch.branch.isNotEmpty == true
+            ? 'Git · ${snapshot!.branch.branch}'
+            : 'Git');
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.onSurface,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        toolbarHeight: 56,
+        centerTitle: false,
+        titleSpacing: 0,
+        shape: Border(bottom: BorderSide(color: theme.dividerColor)),
+        leading: IconButton(
+          icon: const Icon(LucideIcons.arrowLeft, size: 20),
+          color: theme.colorScheme.primary,
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        titleTextStyle: theme.textTheme.titleLarge?.copyWith(
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onSurface,
+        ),
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(LucideIcons.gitBranch, size: 18),
-            const SizedBox(width: 8),
             Flexible(
-              child: Text(
-                _repos.length > 1 && _repoName.isNotEmpty
-                    ? '$_repoName · ${snapshot?.branch.branch ?? '…'}'
-                    : (snapshot?.branch.branch.isNotEmpty == true
-                        ? snapshot!.branch.branch
-                        : 'Git'),
-                overflow: TextOverflow.ellipsis,
-              ),
+              child: Text(title, overflow: TextOverflow.ellipsis),
             ),
             if (snapshot != null &&
                 (snapshot.branch.ahead > 0 || snapshot.branch.behind > 0)) ...[
@@ -322,7 +361,8 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
           if (_repos.length > 1)
             PopupMenuButton<String>(
               tooltip: '切换仓库',
-              icon: const Icon(LucideIcons.folderGit2, size: 18),
+              icon: const Icon(LucideIcons.folderGit2, size: 20),
+              iconColor: theme.colorScheme.onSurfaceVariant,
               onSelected: _busy ? null : _selectRepo,
               itemBuilder: (context) => [
                 for (final root in _repos)
@@ -339,7 +379,8 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
             ),
           IconButton(
             tooltip: '刷新',
-            icon: const Icon(LucideIcons.refreshCw, size: 18),
+            icon: const Icon(LucideIcons.refreshCw, size: 20),
+            color: theme.colorScheme.onSurfaceVariant,
             onPressed: _busy
                 ? null
                 : () {
@@ -347,9 +388,14 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
                     if (_tabs.index == 1) _loadLog();
                   },
           ),
+          const SizedBox(width: 4),
         ],
         bottom: TabBar(
           controller: _tabs,
+          labelColor: theme.colorScheme.primary,
+          unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+          indicatorColor: theme.colorScheme.primary,
+          dividerColor: Colors.transparent,
           tabs: const [Tab(text: '变更'), Tab(text: '历史')],
         ),
       ),
@@ -400,79 +446,91 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
       children: [
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(16),
             children: [
               if (snapshot.staged.isNotEmpty) ...[
-                _SectionHeader(
-                  title: '已暂存',
-                  count: snapshot.staged.length,
+                _ChangeGroupCard(
+                  title: '已暂存 · ${snapshot.staged.length}',
                   actionLabel: '全部取消',
                   actionEnabled: !_busy,
                   onAction: () => _mutate((s) => s.unstageAll()),
+                  children: [
+                    for (final entry in snapshot.staged)
+                      _ChangeRow(
+                        entry: entry,
+                        busy: _busy,
+                        onTap: () => _showEntryDiff(entry),
+                        onToggle: () => _mutate((s) => s.unstage(entry.path)),
+                      ),
+                  ],
                 ),
-                for (final entry in snapshot.staged)
-                  _ChangeRow(
-                    entry: entry,
-                    busy: _busy,
-                    onTap: () => _showEntryDiff(entry),
-                    onToggle: () => _mutate((s) => s.unstage(entry.path)),
-                  ),
+                const SizedBox(height: 24),
               ],
-              if (snapshot.unstaged.isNotEmpty) ...[
-                _SectionHeader(
-                  title: '未暂存',
-                  count: snapshot.unstaged.length,
+              if (snapshot.unstaged.isNotEmpty)
+                _ChangeGroupCard(
+                  title: '未暂存 · ${snapshot.unstaged.length}',
                   actionLabel: '全部暂存',
                   actionEnabled: !_busy,
                   onAction: () => _mutate((s) => s.stageAll()),
                   dangerLabel: '全部丢弃',
                   onDanger: _busy ? null : _confirmDiscardAll,
+                  children: [
+                    for (final entry in snapshot.unstaged)
+                      _ChangeRow(
+                        entry: entry,
+                        busy: _busy,
+                        onTap: () => _showEntryDiff(entry),
+                        onToggle: () => _mutate((s) => s.stage(entry.path)),
+                        onDiscard: () => _confirmDiscard(entry),
+                      ),
+                  ],
                 ),
-                for (final entry in snapshot.unstaged)
-                  _ChangeRow(
-                    entry: entry,
-                    busy: _busy,
-                    onTap: () => _showEntryDiff(entry),
-                    onToggle: () => _mutate((s) => s.stage(entry.path)),
-                    onDiscard: () => _confirmDiscard(entry),
-                  ),
-              ],
             ],
           ),
         ),
         Divider(height: 1, color: theme.dividerColor),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _message,
-                    minLines: 1,
-                    maxLines: 3,
-                    textInputAction: TextInputAction.newline,
-                    decoration: InputDecoration(
-                      hintText: snapshot.staged.isEmpty
-                          ? '先暂存要提交的改动'
-                          : '提交信息…',
-                      isDense: true,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
+        Container(
+          color: theme.colorScheme.surface,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _message,
+                      minLines: 1,
+                      maxLines: 3,
+                      textInputAction: TextInputAction.newline,
+                      decoration: InputDecoration(
+                        hintText: snapshot.staged.isEmpty
+                            ? '先暂存要提交的改动'
+                            : '提交信息…',
+                        isDense: true,
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: theme.dividerColor),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              BorderSide(color: theme.colorScheme.primary),
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  onPressed:
-                      snapshot.staged.isEmpty || _busy ? null : _commit,
-                  icon: const Icon(LucideIcons.gitCommitHorizontal, size: 16),
-                  label: Text('提交 (${snapshot.staged.length})'),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed:
+                        snapshot.staged.isEmpty || _busy ? null : _commit,
+                    icon:
+                        const Icon(LucideIcons.gitCommitHorizontal, size: 16),
+                    label: Text('提交 (${snapshot.staged.length})'),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -501,42 +559,44 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
         ),
       );
     }
-    return ListView.separated(
-      itemCount: commits.length,
-      separatorBuilder: (_, _) =>
-          Divider(height: 1, indent: 56, color: theme.dividerColor),
-      itemBuilder: (context, i) {
-        final commit = commits[i];
-        return ListTile(
-          dense: true,
-          leading: CircleAvatar(
-            radius: 15,
-            backgroundColor:
-                theme.colorScheme.primaryContainer.withValues(alpha: 0.7),
-            child: Text(
-              commit.author.isEmpty
-                  ? '?'
-                  : commit.author.characters.first.toUpperCase(),
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onPrimaryContainer,
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _GroupCard(
+          children: [
+            for (final commit in commits)
+              ListTile(
+                dense: true,
+                leading: CircleAvatar(
+                  radius: 15,
+                  backgroundColor: theme.colorScheme.primaryContainer
+                      .withValues(alpha: 0.7),
+                  child: Text(
+                    commit.author.isEmpty
+                        ? '?'
+                        : commit.author.characters.first.toUpperCase(),
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                ),
+                title: Text(
+                  commit.subject,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium,
+                ),
+                subtitle: Text(
+                  '${commit.author} · ${_relativeTime(commit.time)} · ${commit.shortSha}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                onTap: () => _showCommitDetail(commit),
               ),
-            ),
-          ),
-          title: Text(
-            commit.subject,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodyMedium,
-          ),
-          subtitle: Text(
-            '${commit.author} · ${_relativeTime(commit.time)} · ${commit.shortSha}',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          onTap: () => _showCommitDetail(commit),
-        );
-      },
+          ],
+        ),
+      ],
     );
   }
 }
@@ -603,55 +663,102 @@ class _AheadBehindChip extends StatelessWidget {
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({
+/// A titled bordered group card, matching the settings hub's `SettingGroup`
+/// (muted letter-spaced title above a 12-radius bordered surface card), with
+/// the group actions on the title row's right side.
+class _ChangeGroupCard extends StatelessWidget {
+  const _ChangeGroupCard({
     required this.title,
-    required this.count,
     required this.actionLabel,
     required this.actionEnabled,
     required this.onAction,
+    required this.children,
     this.dangerLabel,
     this.onDanger,
   });
 
   final String title;
-  final int count;
   final String actionLabel;
   final bool actionEnabled;
   final VoidCallback onAction;
+  final List<Widget> children;
   final String? dangerLabel;
   final VoidCallback? onDanger;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
-      child: Row(
-        children: [
-          Text(
-            '$title · $count',
-            style: theme.textTheme.labelLarge?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const Spacer(),
-          if (dangerLabel != null)
-            TextButton(
-              onPressed: onDanger,
-              style: TextButton.styleFrom(
-                foregroundColor: theme.colorScheme.error,
-                visualDensity: VisualDensity.compact,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 12, bottom: 4),
+          child: Row(
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.6,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
-              child: Text(dangerLabel!),
-            ),
-          TextButton(
-            onPressed: actionEnabled ? onAction : null,
-            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-            child: Text(actionLabel),
+              const Spacer(),
+              if (dangerLabel != null)
+                TextButton(
+                  onPressed: onDanger,
+                  style: TextButton.styleFrom(
+                    foregroundColor: theme.colorScheme.error,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: Text(dangerLabel!),
+                ),
+              TextButton(
+                onPressed: actionEnabled ? onAction : null,
+                style:
+                    TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                child: Text(actionLabel),
+              ),
+            ],
           ),
-        ],
+        ),
+        _GroupCard(children: children),
+      ],
+    );
+  }
+}
+
+/// The bordered card body shared by the change groups and the history list
+/// (settings `SettingGroup` card: surface fill, 12 radius, divider border,
+/// clipped ink, 1px separators between rows).
+class _GroupCard extends StatelessWidget {
+  const _GroupCard({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Material(
+          type: MaterialType.transparency,
+          child: Column(
+            children: [
+              for (var i = 0; i < children.length; i++) ...[
+                if (i > 0)
+                  Divider(height: 1, indent: 52, color: theme.dividerColor),
+                children[i],
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

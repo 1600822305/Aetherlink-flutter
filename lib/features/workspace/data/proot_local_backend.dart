@@ -104,10 +104,73 @@ class ProotLocalBackend extends WorkspaceBackend {
   @override
   Stream<WorkspaceChangeEvent> watch() => _changes.stream;
 
+  // ===== 外部变更监听（inotify） =====
+  //
+  // 在容器终端/智能体命令里改文件不经过本后端的写接口，[_emit] 不会
+  // 触发。Linux 的 dart:io 不支持递归 watch，所以对「UI 列过的目录」逐个
+  // 非递归 inotify（LRU 上限 [_kMaxWatchedDirs]，与 SSH 轮询集同口径），
+  // 事件映射回 guest 路径后广播到 [watch]；`.git` 内部噪声不监听。
+  static const int _kMaxWatchedDirs = 64;
+
+  final Map<String, StreamSubscription<FileSystemEvent>> _dirWatchers = {};
+
+  void _watchHostDir(String guestDir, String hostDir) {
+    if (_basename(guestDir) == '.git' || guestDir.contains('/.git/')) return;
+    final existing = _dirWatchers.remove(guestDir);
+    if (existing != null) {
+      _dirWatchers[guestDir] = existing; // refresh LRU position
+      return;
+    }
+    late final StreamSubscription<FileSystemEvent> sub;
+    try {
+      sub = Directory(hostDir).watch().listen(
+        (event) => _onHostEvent(guestDir, hostDir, event),
+        onError: (Object _) {
+          _dirWatchers.remove(guestDir)?.cancel();
+        },
+        onDone: () => _dirWatchers.remove(guestDir),
+        cancelOnError: true,
+      );
+    } catch (_) {
+      return; // 平台不支持 watch 时退化为无外部监听
+    }
+    _dirWatchers[guestDir] = sub;
+    while (_dirWatchers.length > _kMaxWatchedDirs) {
+      final oldest = _dirWatchers.keys.first;
+      _dirWatchers.remove(oldest)?.cancel();
+    }
+  }
+
+  void _onHostEvent(String guestDir, String hostDir, FileSystemEvent event) {
+    final name = _basename(event.path);
+    if (name == '.git') return; // git 内部操作频繁 touch .git，不向上吹
+    final guest = _joinGuest(guestDir, name);
+    switch (event) {
+      case FileSystemCreateEvent():
+        _emit(WorkspaceChangeKind.created, guest, parentPath: guestDir);
+      case FileSystemModifyEvent(contentChanged: final changed):
+        if (changed) _emit(WorkspaceChangeKind.modified, guest);
+      case FileSystemDeleteEvent():
+        _emit(WorkspaceChangeKind.deleted, guest);
+      case FileSystemMoveEvent(destination: final dest):
+        if (dest != null && dest.startsWith('$hostDir/')) {
+          _emit(
+            WorkspaceChangeKind.moved,
+            _joinGuest(guestDir, _basename(dest)),
+            fromPath: guest,
+            parentPath: guestDir,
+          );
+        } else {
+          _emit(WorkspaceChangeKind.deleted, guest);
+        }
+    }
+  }
+
   @override
   Future<List<WorkspaceEntry>> listDir(String path) async {
     final host = Directory(await _hostPath(path));
     final guestDir = _normalizeGuest(path);
+    _watchHostDir(guestDir, host.path);
     final out = <WorkspaceEntry>[];
     await for (final entity in host.list(followLinks: false)) {
       final name = _basename(entity.path);
