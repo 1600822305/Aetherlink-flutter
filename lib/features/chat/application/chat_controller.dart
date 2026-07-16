@@ -569,15 +569,15 @@ class ChatController extends _$ChatController
     final target = await _repo.getMessage(messageId);
     if (target == null || target.role != MessageRole.assistant) return;
 
-    // Plain regenerate keeps the reply on its OWN model (port of Cherry's
-    // regenerateWithCapabilities — "a plain retry on an assistant uses the
-    // target's own model, otherwise retrying kimi would produce a gemini reply
-    // when the assistant default is gemini"). Falls back to the current model
-    // when the reply has no stored model or its provider is gone. This is what
-    // makes 多模型对比 的「重试失败」re-run each sibling on its own model.
-    final current =
-        await _currentModelForOwnModel(target.model) ??
-        await ref.read(appCurrentModelProvider.future);
+    // A multi-model 对比 sibling regenerates on its OWN model — that is what
+    // makes 「重试失败」 re-run each sibling on the model it belongs to, instead
+    // of turning every column into the current model. A plain (single-reply)
+    // regenerate follows the app-level current model, so switching the model
+    // then tapping 重新生成 re-runs on the newly selected one.
+    final current = target.siblingsGroupId != 0
+        ? (await _currentModelForOwnModel(target.model) ??
+              await ref.read(appCurrentModelProvider.future))
+        : await ref.read(appCurrentModelProvider.future);
     if (current == null) return;
 
     final now = DateTime.now();
