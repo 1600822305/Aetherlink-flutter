@@ -61,14 +61,19 @@ Uri ubuntuRootfsUrlFor(TerminalMirror mirror, String version, String arch) {
 }
 
 /// [mirror] 对应的 /etc/apt/sources.list 内容（noble + updates + security）。
-String aptSourcesFor(TerminalMirror mirror, String arch) {
+String aptSourcesFor(TerminalMirror mirror, String arch) =>
+    aptSourcesForSeries(mirror, kUbuntuSeries, arch);
+
+/// 任意系列代号（noble / jammy …）的 sources.list 内容——远程 Ubuntu
+/// 环境的系列来自探测结果，不一定等于内置终端的 [kUbuntuSeries]。
+String aptSourcesForSeries(TerminalMirror mirror, String series, String arch) {
   final bases = arch == 'amd64' ? _kUbuntuArchiveBases : _kUbuntuPortsBases;
   // 自定义源（id 不在内置表里）直接用其 baseUrl 作为 apt 仓库根。
   final base = bases[mirror.id] ?? mirror.baseUrl;
   const components = 'main restricted universe multiverse';
-  return 'deb $base $kUbuntuSeries $components\n'
-      'deb $base $kUbuntuSeries-updates $components\n'
-      'deb $base $kUbuntuSeries-security $components\n';
+  return 'deb $base $series $components\n'
+      'deb $base $series-updates $components\n'
+      'deb $base $series-security $components\n';
 }
 
 /// 各发行版的常用环境一键装命令。
