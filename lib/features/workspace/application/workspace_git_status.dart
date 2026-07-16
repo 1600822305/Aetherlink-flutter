@@ -228,13 +228,17 @@ class GitStatusNotifier extends Notifier<GitStatusOverview?> {
   }
 
   /// The workspace's repo roots, discovering (and caching) on first call.
+  /// Empty results are NOT cached — a transient exec failure (连接抖动/超时)
+  /// 或进页时仓库还没建好不应该把「无仓库」钉死到工作区切换为止。
   Future<List<String>> repoRoots() async {
     final cached = _roots;
     if (cached != null) return cached;
     final backend = ref.read(workspacePreviewBackendProvider);
     final workspace = ref.read(currentWorkspaceProvider);
     if (backend == null || workspace == null) return const [];
-    return _roots = await discoverGitRepos(backend, workspace.root);
+    final roots = await discoverGitRepos(backend, workspace.root);
+    if (roots.isNotEmpty) _roots = roots;
+    return roots;
   }
 
   /// Runs one batched `git status` pass over the cached repo roots. A call

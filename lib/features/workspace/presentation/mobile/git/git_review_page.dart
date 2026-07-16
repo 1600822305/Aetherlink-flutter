@@ -137,14 +137,15 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
     setState(() => _loading = _snapshot == null);
     try {
       final snapshot = await service.loadStatus();
-      if (!mounted) return;
+      // 快速切仓时旧仓的在飞请求可能后到，不能覆盖新仓状态。
+      if (!mounted || _service != service) return;
       setState(() {
         _snapshot = snapshot;
         _loading = false;
         _error = null;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || _service != service) return;
       setState(() {
         _loading = false;
         _error = '读取 Git 状态失败 · $e';
@@ -157,7 +158,9 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
     if (service == null) return;
     try {
       final commits = await service.log();
-      if (mounted) setState(() => _commits = commits);
+      if (mounted && _service == service) {
+        setState(() => _commits = commits);
+      }
     } catch (e) {
       if (mounted) AppToast.error(context, '读取提交历史失败 · $e');
     }
@@ -281,6 +284,10 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
         if (ok && mounted) AppToast.success(context, '已拉取');
       case 'push':
         final branch = _snapshot?.branch.branch ?? '';
+        if (branch.isEmpty) {
+          AppToast.info(context, '还没读到当前分支，先刷新再推送');
+          return;
+        }
         final ok = await _mutate((s) => s.push(branch));
         if (ok && mounted) AppToast.success(context, '已推送');
       case 'fetch':
