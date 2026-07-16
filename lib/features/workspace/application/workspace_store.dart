@@ -71,7 +71,9 @@ class WorkspaceStore extends _$WorkspaceStore {
         break;
       }
     }
-    final entry = existing?.copyWith(lastOpenedAt: DateTime.now()) ??
+    // 打开即取消隐藏：当前工作区必须出现在快速切换列表里。
+    final entry =
+        existing?.copyWith(lastOpenedAt: DateTime.now(), hidden: false) ??
         Workspace(
           id: generateId('ws'),
           name: name,
@@ -130,6 +132,8 @@ class WorkspaceStore extends _$WorkspaceStore {
             // Keep the SshConnection reference across a rebind (设计文档 §5.1).
             connectionId: w.connectionId,
             lastOpenedAt: DateTime.now(),
+            pinned: w.pinned,
+            hidden: w.hidden,
           )
         else
           w,
@@ -158,6 +162,26 @@ class WorkspaceStore extends _$WorkspaceStore {
       next.add(entry);
     }
     await _persist(next);
+  }
+
+  /// Toggles the pinned flag of workspace [id]（置顶条目在列表排序时
+  /// 永远靠前，见 [sortWorkspacesForDisplay]）。
+  Future<void> togglePin(String id) async {
+    final current = state.value ?? const [];
+    await _persist([
+      for (final w in current)
+        if (w.id == id) w.copyWith(pinned: !w.pinned) else w,
+    ]);
+  }
+
+  /// Sets the hidden flag of workspace [id]（隐藏条目不出现在快速切换
+  /// 面板，仅在工作区管理页可见/可恢复）。
+  Future<void> setHidden(String id, bool hidden) async {
+    final current = state.value ?? const [];
+    await _persist([
+      for (final w in current)
+        if (w.id == id) w.copyWith(hidden: hidden) else w,
+    ]);
   }
 
   /// Removes a workspace from the list.

@@ -47,7 +47,11 @@ class _OpenWorkspaceSheet extends ConsumerWidget {
     final recent = ref.watch(workspaceStoreProvider);
     final current = ref.watch(currentWorkspaceProvider);
 
-    final workspaces = recent.asData?.value ?? const <Workspace>[];
+    // 隐藏条目不进快速切换；置顶靠前，组内按活跃时间。
+    final workspaces = sortWorkspacesForDisplay([
+      for (final w in recent.asData?.value ?? const <Workspace>[])
+        if (!w.hidden) w,
+    ]);
 
     return SafeArea(
       child: ConstrainedBox(
@@ -121,10 +125,24 @@ class _OpenWorkspaceSheet extends ConsumerWidget {
                         ? theme.colorScheme.primary
                         : theme.colorScheme.onSurfaceVariant,
                   ),
-                  title: Text(
-                    w.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  title: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          w.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (w.pinned) ...[
+                        const SizedBox(width: 6),
+                        Icon(
+                          LucideIcons.pin,
+                          size: 13,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ],
                   ),
                   subtitle: Text(
                     w.displayPath ?? w.root,

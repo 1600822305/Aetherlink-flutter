@@ -62,6 +62,8 @@ class Workspace {
     this.isolatedHome = false,
     this.displayPath,
     this.connectionId,
+    this.pinned = false,
+    this.hidden = false,
   });
 
   factory Workspace.fromJson(Map<String, dynamic> json) {
@@ -90,6 +92,9 @@ class Workspace {
       lastOpenedAt:
           DateTime.tryParse((json['lastOpenedAt'] ?? '').toString()) ??
           DateTime.now(),
+      // Absent in older records → false (back-compat).
+      pinned: json['pinned'] == true,
+      hidden: json['hidden'] == true,
     );
   }
 
@@ -107,6 +112,12 @@ class Workspace {
   final String? connectionId;
   final DateTime lastOpenedAt;
 
+  /// 置顶：排序时永远排在未置顶条目前面（同组内仍按活跃时间）。
+  final bool pinned;
+
+  /// 隐藏：不出现在快速切换面板，仅在工作区管理页可见/可恢复。
+  final bool hidden;
+
   /// 独立 HOME 目录：`<root>/.home`；未开启时为 null。
   String? get isolatedHomePath => isolatedHome
       ? '${root.endsWith('/') ? root.substring(0, root.length - 1) : root}/.home'
@@ -116,6 +127,8 @@ class Workspace {
     String? name,
     String? connectionId,
     DateTime? lastOpenedAt,
+    bool? pinned,
+    bool? hidden,
   }) {
     return Workspace(
       id: id,
@@ -127,6 +140,8 @@ class Workspace {
       displayPath: displayPath,
       connectionId: connectionId ?? this.connectionId,
       lastOpenedAt: lastOpenedAt ?? this.lastOpenedAt,
+      pinned: pinned ?? this.pinned,
+      hidden: hidden ?? this.hidden,
     );
   }
 
@@ -140,5 +155,21 @@ class Workspace {
     if (displayPath != null) 'displayPath': displayPath,
     if (connectionId != null) 'connectionId': connectionId,
     'lastOpenedAt': lastOpenedAt.toIso8601String(),
+    if (pinned) 'pinned': true,
+    if (hidden) 'hidden': true,
   };
+}
+
+/// Display ordering for workspace lists: pinned entries first, then by
+/// [Workspace.lastOpenedAt] (newest first) within each group. Stable for
+/// equal timestamps.
+List<Workspace> sortWorkspacesForDisplay(List<Workspace> workspaces) {
+  final indexed = workspaces.asMap().entries.toList();
+  indexed.sort((a, b) {
+    if (a.value.pinned != b.value.pinned) return a.value.pinned ? -1 : 1;
+    final byTime = b.value.lastOpenedAt.compareTo(a.value.lastOpenedAt);
+    if (byTime != 0) return byTime;
+    return a.key.compareTo(b.key); // 稳定：时间相同保持原顺序
+  });
+  return [for (final e in indexed) e.value];
 }

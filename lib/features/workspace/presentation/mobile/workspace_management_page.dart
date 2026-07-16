@@ -247,6 +247,12 @@ class _WorkspaceManagementPageState
     AppToast.info(context, message);
   }
 
+  Future<void> _togglePin(Workspace w) =>
+      ref.read(workspaceStoreProvider.notifier).togglePin(w.id);
+
+  Future<void> _setHidden(Workspace w, bool hidden) =>
+      ref.read(workspaceStoreProvider.notifier).setHidden(w.id, hidden);
+
   Future<void> _remove(Workspace w) async {
     final ok = await _confirm(
       title: '移除工作区',
@@ -298,7 +304,16 @@ class _WorkspaceManagementPageState
     final theme = Theme.of(context);
     final recent = ref.watch(workspaceStoreProvider);
     final current = ref.watch(currentWorkspaceProvider);
-    final workspaces = recent.asData?.value ?? const <Workspace>[];
+    // 置顶靠前、组内按活跃时间；隐藏条目沉底到独立分组可恢复。
+    final all = recent.asData?.value ?? const <Workspace>[];
+    final workspaces = sortWorkspacesForDisplay([
+      for (final w in all)
+        if (!w.hidden) w,
+    ]);
+    final hiddenWorkspaces = sortWorkspacesForDisplay([
+      for (final w in all)
+        if (w.hidden) w,
+    ]);
 
     return Scaffold(
       appBar: AppBar(
@@ -358,12 +373,39 @@ class _WorkspaceManagementPageState
                       onOpen: () => _open(workspaces[i]),
                       onRename: () => _rename(workspaces[i]),
                       onReauthorize: () => _reauthorize(workspaces[i]),
+                      onTogglePin: () => _togglePin(workspaces[i]),
+                      onToggleHidden: () => _setHidden(workspaces[i], true),
                       onRemove: () => _remove(workspaces[i]),
                     ),
                   ],
                 ],
               ),
             ),
+          if (hiddenWorkspaces.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _SectionHeader(title: '已隐藏 (${hiddenWorkspaces.length})'),
+            _OutlinedCard(
+              child: Column(
+                children: [
+                  for (var i = 0; i < hiddenWorkspaces.length; i++) ...[
+                    if (i > 0) Divider(height: 1, color: theme.dividerColor),
+                    _WorkspaceRow(
+                      workspace: hiddenWorkspaces[i],
+                      isCurrent: hiddenWorkspaces[i].id == current?.id,
+                      isInvalid: _invalidIds.contains(hiddenWorkspaces[i].id),
+                      onOpen: () => _open(hiddenWorkspaces[i]),
+                      onRename: () => _rename(hiddenWorkspaces[i]),
+                      onReauthorize: () => _reauthorize(hiddenWorkspaces[i]),
+                      onTogglePin: () => _togglePin(hiddenWorkspaces[i]),
+                      onToggleHidden: () =>
+                          _setHidden(hiddenWorkspaces[i], false),
+                      onRemove: () => _remove(hiddenWorkspaces[i]),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           const _SectionHeader(title: '偏好'),
           _OutlinedCard(
@@ -430,6 +472,8 @@ class _WorkspaceRow extends StatelessWidget {
     required this.onOpen,
     required this.onRename,
     required this.onReauthorize,
+    required this.onTogglePin,
+    required this.onToggleHidden,
     required this.onRemove,
   });
 
@@ -439,6 +483,12 @@ class _WorkspaceRow extends StatelessWidget {
   final VoidCallback onOpen;
   final VoidCallback onRename;
   final VoidCallback onReauthorize;
+
+  /// 置顶/取消置顶（按当前 [Workspace.pinned] 取反）。
+  final VoidCallback onTogglePin;
+
+  /// 隐藏或取消隐藏（行在哪个分组决定方向）。
+  final VoidCallback onToggleHidden;
   final VoidCallback onRemove;
 
   @override
@@ -464,6 +514,14 @@ class _WorkspaceRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          if (workspace.pinned) ...[
+            const SizedBox(width: 6),
+            Icon(
+              LucideIcons.pin,
+              size: 13,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ],
           if (isInvalid) ...[
             const SizedBox(width: 8),
             _Badge(
@@ -506,15 +564,27 @@ class _WorkspaceRow extends StatelessWidget {
               onRename();
             case 'reauthorize':
               onReauthorize();
+            case 'pin':
+              onTogglePin();
+            case 'hide':
+              onToggleHidden();
             case 'remove':
               onRemove();
           }
         },
-        itemBuilder: (context) => const [
-          PopupMenuItem(value: 'open', child: Text('打开')),
-          PopupMenuItem(value: 'rename', child: Text('重命名')),
-          PopupMenuItem(value: 'reauthorize', child: Text('重新授权')),
-          PopupMenuItem(value: 'remove', child: Text('移除')),
+        itemBuilder: (context) => [
+          const PopupMenuItem(value: 'open', child: Text('打开')),
+          PopupMenuItem(
+            value: 'pin',
+            child: Text(workspace.pinned ? '取消置顶' : '置顶'),
+          ),
+          PopupMenuItem(
+            value: 'hide',
+            child: Text(workspace.hidden ? '取消隐藏' : '隐藏'),
+          ),
+          const PopupMenuItem(value: 'rename', child: Text('重命名')),
+          const PopupMenuItem(value: 'reauthorize', child: Text('重新授权')),
+          const PopupMenuItem(value: 'remove', child: Text('移除')),
         ],
       ),
     );
