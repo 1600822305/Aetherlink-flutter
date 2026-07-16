@@ -31,6 +31,8 @@ enum TtsProviderKind {
   groq,
   @JsonValue('xai')
   xai,
+  @JsonValue('fishaudio')
+  fishaudio,
 }
 
 /// A single TTS provider's configuration — API key, base URL, model, voice,
@@ -121,6 +123,24 @@ abstract class TtsProviderSetting with _$TtsProviderSetting {
     bool xaiTextNormalization, // normalize numbers/symbols to spoken form
     @Default(0)
     int xaiOptimizeStreamingLatency, // 0=best quality, 1/2=lower latency
+    // Fish Audio-specific — `model` holds the model header (s1/s2-pro/...),
+    // `voice` holds the reference_id, `speed` holds prosody speed.
+    @Default(0.7) double fishTemperature, // expressiveness [0,1]
+    @Default(0.7) double fishTopP, // nucleus sampling [0,1]
+    @Default(0.0) double fishVolume, // prosody volume in dB
+    @Default(true) bool fishNormalizeLoudness, // prosody loudness normalize
+    @Default('mp3') String fishFormat, // wav/pcm/mp3/opus
+    @Default(0) int fishSampleRate, // 0 = format default
+    @Default(128) int fishMp3Bitrate, // 64/128/192 kbps
+    @Default(-1000) int fishOpusBitrate, // -1000 auto, else bps
+    @Default('normal') String fishLatency, // low/normal/balanced
+    @Default(true) bool fishNormalize, // text normalization
+    @Default(300) int fishChunkLength, // [100,300]
+    @Default(50) int fishMinChunkLength, // [0,100]
+    @Default(1024) int fishMaxNewTokens, // max audio tokens per chunk
+    @Default(1.2) double fishRepetitionPenalty,
+    @Default(true) bool fishConditionOnPreviousChunks,
+    @Default(1.0) double fishEarlyStopThreshold, // [0,1]
   }) = _TtsProviderSetting;
 
   factory TtsProviderSetting.fromJson(Map<String, dynamic> json) =>
@@ -229,6 +249,15 @@ TtsProviderSetting defaultTtsProvider(TtsProviderKind kind) => switch (kind) {
     voice: 'Fritz-PlayAI',
     audioFormat: 'wav',
     groqSampleRate: 24000,
+  ),
+  TtsProviderKind.fishaudio => const TtsProviderSetting(
+    id: 'fishaudio',
+    kind: TtsProviderKind.fishaudio,
+    name: 'Fish Audio TTS',
+    baseUrl: 'https://api.fish.audio',
+    model: 's2.1-pro-free',
+    fishFormat: 'mp3',
+    fishLatency: 'normal',
   ),
   TtsProviderKind.xai => const TtsProviderSetting(
     id: 'xai',

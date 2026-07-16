@@ -31,6 +31,7 @@ part 'voice_settings/engines/mimo_settings.dart';
 part 'voice_settings/engines/qwen_settings.dart';
 part 'voice_settings/engines/groq_settings.dart';
 part 'voice_settings/engines/xai_settings.dart';
+part 'voice_settings/engines/fishaudio_settings.dart';
 
 // ASR (speech-to-text) settings: tab + per-provider detail page.
 part 'voice_settings/asr_settings.dart';
@@ -152,6 +153,14 @@ Map<TtsProviderKind, _ServiceMeta> _ttsServiceMeta() => {
     name: 'xAI TTS',
     description: 'xAI Grok 多语言语音合成',
     features: ['5音色', '20+语言', '自动检测', '延迟优化'],
+    status: '高级',
+  ),
+  TtsProviderKind.fishaudio: const _ServiceMeta(
+    providerId: 'custom',
+    color: Color(0xFF0EA5E9),
+    name: 'Fish Audio',
+    description: 'Fish Audio 语音合成与语音克隆平台',
+    features: ['语音克隆', '多模型', '免费档', '多格式'],
     status: '高级',
   ),
 };
@@ -639,6 +648,25 @@ class _TtsProviderDetailPageState
   late bool _xaiTextNormalization;
   late int _xaiOptimizeStreamingLatency;
 
+  // Fish Audio-specific
+  late TextEditingController _fishReferenceIdCtrl;
+  late double _fishTemperature;
+  late double _fishTopP;
+  late double _fishVolume;
+  late bool _fishNormalizeLoudness;
+  late String _fishFormat;
+  late int _fishSampleRate;
+  late int _fishMp3Bitrate;
+  late int _fishOpusBitrate;
+  late String _fishLatency;
+  late bool _fishNormalize;
+  late int _fishChunkLength;
+  late int _fishMinChunkLength;
+  late int _fishMaxNewTokens;
+  late double _fishRepetitionPenalty;
+  late bool _fishConditionOnPreviousChunks;
+  late double _fishEarlyStopThreshold;
+
   bool get _isSystem => widget.kind == TtsProviderKind.system;
   bool get _isVolcano => widget.kind == TtsProviderKind.volcano;
   bool get _isElevenLabs => widget.kind == TtsProviderKind.elevenlabs;
@@ -717,6 +745,24 @@ class _TtsProviderDetailPageState
     _xaiBitRate = p.xaiBitRate;
     _xaiTextNormalization = p.xaiTextNormalization;
     _xaiOptimizeStreamingLatency = p.xaiOptimizeStreamingLatency;
+    // Fish Audio
+    _fishReferenceIdCtrl = TextEditingController(text: p.voice);
+    _fishTemperature = p.fishTemperature;
+    _fishTopP = p.fishTopP;
+    _fishVolume = p.fishVolume;
+    _fishNormalizeLoudness = p.fishNormalizeLoudness;
+    _fishFormat = p.fishFormat;
+    _fishSampleRate = p.fishSampleRate;
+    _fishMp3Bitrate = p.fishMp3Bitrate;
+    _fishOpusBitrate = p.fishOpusBitrate;
+    _fishLatency = p.fishLatency;
+    _fishNormalize = p.fishNormalize;
+    _fishChunkLength = p.fishChunkLength;
+    _fishMinChunkLength = p.fishMinChunkLength;
+    _fishMaxNewTokens = p.fishMaxNewTokens;
+    _fishRepetitionPenalty = p.fishRepetitionPenalty;
+    _fishConditionOnPreviousChunks = p.fishConditionOnPreviousChunks;
+    _fishEarlyStopThreshold = p.fishEarlyStopThreshold;
   }
 
   @override
@@ -736,6 +782,7 @@ class _TtsProviderDetailPageState
     _mimoVoiceDescCtrl.dispose();
     _mimoCloneAudioCtrl.dispose();
     _qwenInstructionsCtrl.dispose();
+    _fishReferenceIdCtrl.dispose();
     _systemTts?.dispose();
     super.dispose();
   }
@@ -747,7 +794,11 @@ class _TtsProviderDetailPageState
     apiKey: _apiKeyCtrl.text.trim(),
     baseUrl: _baseUrlCtrl.text.trim(),
     model: _usesModelSelector ? _model : _modelCtrl.text.trim(),
-    voice: widget.kind == TtsProviderKind.gemini ? '' : _voice,
+    voice: switch (widget.kind) {
+      TtsProviderKind.gemini => '',
+      TtsProviderKind.fishaudio => _fishReferenceIdCtrl.text.trim(),
+      _ => _voice,
+    },
     voiceName: widget.kind == TtsProviderKind.gemini ? _voiceName : '',
     region: _regionCtrl.text.trim(),
     groupId: _groupIdCtrl.text.trim(),
@@ -798,6 +849,22 @@ class _TtsProviderDetailPageState
     xaiBitRate: _xaiBitRate,
     xaiTextNormalization: _xaiTextNormalization,
     xaiOptimizeStreamingLatency: _xaiOptimizeStreamingLatency,
+    fishTemperature: _fishTemperature,
+    fishTopP: _fishTopP,
+    fishVolume: _fishVolume,
+    fishNormalizeLoudness: _fishNormalizeLoudness,
+    fishFormat: _fishFormat,
+    fishSampleRate: _fishSampleRate,
+    fishMp3Bitrate: _fishMp3Bitrate,
+    fishOpusBitrate: _fishOpusBitrate,
+    fishLatency: _fishLatency,
+    fishNormalize: _fishNormalize,
+    fishChunkLength: _fishChunkLength,
+    fishMinChunkLength: _fishMinChunkLength,
+    fishMaxNewTokens: _fishMaxNewTokens,
+    fishRepetitionPenalty: _fishRepetitionPenalty,
+    fishConditionOnPreviousChunks: _fishConditionOnPreviousChunks,
+    fishEarlyStopThreshold: _fishEarlyStopThreshold,
   );
 
   /// Persists the current form values. Called automatically when leaving the
@@ -826,6 +893,7 @@ class _TtsProviderDetailPageState
     TtsProviderKind.mimo,
     TtsProviderKind.qwen,
     TtsProviderKind.groq,
+    TtsProviderKind.fishaudio,
   }.contains(widget.kind);
 
   @override
@@ -1069,6 +1137,8 @@ class _TtsProviderDetailPageState
         return _buildGroqVoice();
       case TtsProviderKind.xai:
         return _buildXaiVoice();
+      case TtsProviderKind.fishaudio:
+        return _buildFishAudioVoice();
     }
   }
 }

@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/engines/azure_tts_engine.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/engines/elevenlabs_tts_engine.dart';
+import 'package:aetherlink_flutter/features/voice/data/tts/engines/fishaudio_tts_engine.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/engines/gemini_tts_engine.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/engines/groq_tts_engine.dart';
 import 'package:aetherlink_flutter/features/voice/data/tts/engines/mimo_tts_engine.dart';
@@ -47,6 +48,7 @@ class NetworkTtsService {
     TtsProviderKind.qwen: QwenTtsEngine(),
     TtsProviderKind.groq: GroqTtsEngine(),
     TtsProviderKind.xai: XaiTtsEngine(),
+    TtsProviderKind.fishaudio: FishAudioTtsEngine(),
   };
 
   /// Synthesizes [text] using the given [provider] configuration. Returns raw
