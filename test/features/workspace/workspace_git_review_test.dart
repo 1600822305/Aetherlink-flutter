@@ -146,6 +146,29 @@ void main() {
     });
   });
 
+  group('batch status', () {
+    test('command quotes roots and delimits records', () {
+      final cmd = buildBatchStatusCommand(['/ws/a', "/ws/it's"]);
+      expect(cmd, contains("printf '\\001%s\\002' '/ws/a';"));
+      expect(cmd, contains("git -C '/ws/a'"));
+      expect(cmd, contains("'/ws/it'\\''s'"));
+    });
+
+    test('parses multi-repo delimited output', () {
+      final out = '\x01/ws/a\x02 M x.txt\x00'
+          '\x01/ws/b\x02?? y.txt\x00 M z.txt\x00'
+          '\x01/ws/clean\x02';
+      final snaps = parseBatchStatusOutput(out);
+
+      expect(snaps, hasLength(3));
+      expect(snaps[0].repoRoot, '/ws/a');
+      expect(snaps[0].files['/ws/a/x.txt'], GitFileStatus.modified);
+      expect(snaps[1].files['/ws/b/y.txt'], GitFileStatus.untracked);
+      expect(snaps[1].files['/ws/b/z.txt'], GitFileStatus.modified);
+      expect(snaps[2].files, isEmpty);
+    });
+  });
+
   group('parseGitBranchHeader', () {
     test('parses branch with upstream and ahead/behind', () {
       final info =

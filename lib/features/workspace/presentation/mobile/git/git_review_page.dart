@@ -82,7 +82,8 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
       });
       return;
     }
-    final repos = await discoverGitRepos(backend, workspace.root);
+    // 复用 gitStatusProvider 的发现缓存，进页不再重复扫描。
+    final repos = await ref.read(gitStatusProvider.notifier).repoRoots();
     if (!mounted) return;
     if (repos.isEmpty) {
       setState(() {

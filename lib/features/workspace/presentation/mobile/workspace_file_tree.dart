@@ -535,7 +535,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
       _sortedCache.clear();
     });
     _load(root);
-    ref.read(gitStatusProvider.notifier).refresh();
+    ref.read(gitStatusProvider.notifier).refresh(rediscover: true);
   }
 
   // Opens the search sheet; a picked file opens in an editor tab (the shell

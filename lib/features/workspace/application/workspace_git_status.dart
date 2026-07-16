@@ -102,20 +102,12 @@ Future<List<String>> discoverGitRepos(
 ) async {
   if (!backend.capabilities.canExec) return const [];
   try {
-    final top = await backend.exec(
-      'git rev-parse --show-toplevel',
-      workingDirectory: root,
-      timeout: const Duration(seconds: 10),
-    );
-    final repoRoot = top.stdout.trim();
-    if (top.exitCode == 0 && repoRoot.isNotEmpty) return [repoRoot];
-  } catch (_) {
-    return const [];
-  }
-  try {
-    // `.git` may be a dir (normal repo) or a file (worktree/submodule), so
-    // no -type filter; node_modules 与回收站目录直接剪枝。
-    final found = await backend.exec(
+    // 向上 rev-parse 与向下扫描合成一次 exec：每次 exec 在 SSH 是一次
+    // 往返、在 PRoot 是一次进程启动，合并后发现成本减半。`.git` 可能
+    // 是目录（普通仓）或文件（worktree/submodule），所以不加 -type；
+    // node_modules 与回收站目录直接剪枝。
+    final result = await backend.exec(
+      'git rev-parse --show-toplevel 2>/dev/null || '
       'find ${shellQuoteArg(root)} -maxdepth $kGitDiscoverMaxDepth '
       "! -path '*/node_modules/*' ! -path '*/.Trash*' -name .git "
       '2>/dev/null | head -n $kGitDiscoverMaxRepos',
@@ -123,16 +115,51 @@ Future<List<String>> discoverGitRepos(
       timeout: const Duration(seconds: 20),
     );
     final roots = <String>[];
-    for (final line in found.stdout.split('\n')) {
+    for (final line in result.stdout.split('\n')) {
       final path = line.trim();
-      if (!path.endsWith('/.git')) continue;
-      roots.add(path.substring(0, path.length - '/.git'.length));
+      if (path.isEmpty) continue;
+      if (path.endsWith('/.git')) {
+        roots.add(path.substring(0, path.length - '/.git'.length));
+      } else if (path.startsWith('/')) {
+        return [path]; // rev-parse 命中：工作区在某个仓库内
+      }
     }
     roots.sort();
     return roots;
   } catch (_) {
     return const [];
   }
+}
+
+/// One `printf`-delimited `git status` pass over every repo in [roots] in a
+/// single exec (\x01 starts a repo record, \x02 separates root from its
+/// porcelain output). Repos whose status fails contribute empty output and
+/// are skipped.
+String buildBatchStatusCommand(List<String> roots) {
+  final buf = StringBuffer();
+  for (final r in roots) {
+    buf
+      ..write("printf '\\001%s\\002' ${shellQuoteArg(r)}; ")
+      ..write('git -C ${shellQuoteArg(r)} -c core.quotepath=off '
+          'status --porcelain=v1 -z 2>/dev/null; ');
+  }
+  return buf.toString();
+}
+
+/// Parses [buildBatchStatusCommand] output into per-repo snapshots.
+List<GitStatusSnapshot> parseBatchStatusOutput(String out) {
+  final snapshots = <GitStatusSnapshot>[];
+  for (final chunk in out.split('\x01')) {
+    final sep = chunk.indexOf('\x02');
+    if (sep <= 0) continue;
+    final repoRoot = chunk.substring(0, sep);
+    final porcelain = chunk.substring(sep + 1);
+    snapshots.add(GitStatusSnapshot(
+      repoRoot: repoRoot,
+      files: parseGitPorcelainZ(repoRoot, porcelain),
+    ));
+  }
+  return snapshots;
 }
 
 /// Parses `git status --porcelain=v1 -z` output into absolute-path statuses.
@@ -188,16 +215,34 @@ class GitStatusNotifier extends Notifier<GitStatusOverview?> {
   bool _refreshing = false;
   bool _pending = false;
 
+  /// Discovered repo roots, cached per workspace — discovery (rev-parse +
+  /// find) 只在首次/手动重扫时跑，watch 事件触发的刷新只跑一次批量 status。
+  List<String>? _roots;
+
   @override
   GitStatusOverview? build() {
     // Reset the snapshot whenever the opened workspace changes.
     ref.watch(currentWorkspaceProvider);
+    _roots = null;
     return null;
   }
 
-  /// Runs one `git status` pass. A call arriving mid-run is coalesced into a
-  /// single trailing rerun so the last change is never missed.
-  Future<void> refresh() async {
+  /// The workspace's repo roots, discovering (and caching) on first call.
+  Future<List<String>> repoRoots() async {
+    final cached = _roots;
+    if (cached != null) return cached;
+    final backend = ref.read(workspacePreviewBackendProvider);
+    final workspace = ref.read(currentWorkspaceProvider);
+    if (backend == null || workspace == null) return const [];
+    return _roots = await discoverGitRepos(backend, workspace.root);
+  }
+
+  /// Runs one batched `git status` pass over the cached repo roots. A call
+  /// arriving mid-run is coalesced into a single trailing rerun so the last
+  /// change is never missed. [rediscover] re-scans the workspace for repos
+  /// first (手动刷新/新建仓库后用).
+  Future<void> refresh({bool rediscover = false}) async {
+    if (rediscover) _roots = null;
     if (_refreshing) {
       _pending = true;
       return;
@@ -212,24 +257,17 @@ class GitStatusNotifier extends Notifier<GitStatusOverview?> {
     }
     _refreshing = true;
     try {
-      final roots = await discoverGitRepos(backend, workspace.root);
+      final roots = await repoRoots();
       if (roots.isEmpty) {
         state = null;
         return;
       }
-      final snapshots = <GitStatusSnapshot>[];
-      for (final repoRoot in roots) {
-        final status = await backend.exec(
-          'git -c core.quotepath=off status --porcelain=v1 -z',
-          workingDirectory: repoRoot,
-          timeout: const Duration(seconds: 20),
-        );
-        if (status.exitCode != 0) continue;
-        snapshots.add(GitStatusSnapshot(
-          repoRoot: repoRoot,
-          files: parseGitPorcelainZ(repoRoot, status.stdout),
-        ));
-      }
+      final result = await backend.exec(
+        buildBatchStatusCommand(roots),
+        workingDirectory: workspace.root,
+        timeout: const Duration(seconds: 20),
+      );
+      final snapshots = parseBatchStatusOutput(result.stdout);
       state = snapshots.isEmpty
           ? null
           : GitStatusOverview(repos: snapshots);
