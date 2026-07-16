@@ -24,6 +24,7 @@ import 'package:aetherlink_flutter/core/platform/platform_providers.dart';
 import 'package:aetherlink_flutter/features/terminal/application/terminal_engine_manager.dart';
 import 'package:aetherlink_flutter/features/terminal/presentation/mobile/terminal_env_page.dart';
 import 'package:aetherlink_flutter/features/terminal/presentation/mobile/terminal_setup_sheet.dart';
+import 'package:aetherlink_flutter/features/terminal/presentation/mobile/workspace_env_page.dart';
 import 'package:aetherlink_flutter/features/workspace/application/terminal_output_links.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_pool.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_session_restore.dart';
@@ -558,6 +559,42 @@ class _WorkspaceTerminalPageState
                         session.write(utf8.encode('$command\n'));
                       },
                     ),
+                  )
+                // 远程后端（SSH / Termux）：环境探测走 backend.exec 静默
+                // 通道，写操作只生成命令回放进终端（不静默改用户环境）。
+                else if (canExec && workspace != null)
+                  IconButton(
+                    tooltip: '环境管理（镜像源 / 预设包检测）',
+                    icon: const Icon(LucideIcons.package,
+                        size: 18, color: Colors.white70),
+                    onPressed: () {
+                      final envBackend = backend;
+                      if (envBackend == null) return;
+                      showWorkspaceEnvPage(
+                        context,
+                        workspaceName: workspace.name,
+                        mirrorScope: 'ws_${workspace.id}',
+                        silentExec: (command) async {
+                          final result = await envBackend.exec(
+                            command,
+                            workingDirectory: workspace.root,
+                            timeout: const Duration(seconds: 20),
+                          );
+                          return (
+                            stdout: result.stdout,
+                            exitCode: result.exitCode,
+                          );
+                        },
+                        onRunCommand: (command) {
+                          final session = tab.session;
+                          if (session == null) {
+                            AppToast.info(context, '终端未连接，无法执行命令');
+                            return;
+                          }
+                          session.write(utf8.encode('$command\n'));
+                        },
+                      );
+                    },
                   ),
                 if (tab.connected)
                   IconButton(
