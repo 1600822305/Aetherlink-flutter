@@ -108,23 +108,13 @@ class ModelStore extends _$ModelStore {
   }
 
   /// Sets the app-level current chat model, clearing `isDefault` on every other
-  /// model and setting it on ([providerId], [modelId]). Persists only the
-  /// providers whose models actually changed.
+  /// model and setting it on ([providerId], [modelId]). The write is a single
+  /// repository transaction so the store never holds a half-applied switch.
   Future<void> selectCurrentModel({
     required String providerId,
     required String modelId,
   }) async {
-    final providers = await _repo.getProviders();
-    final updated = providersWithCurrentModel(
-      providers,
-      providerId: providerId,
-      modelId: modelId,
-    );
-    for (var i = 0; i < providers.length; i++) {
-      if (updated[i] != providers[i]) {
-        await _repo.saveProvider(updated[i]);
-      }
-    }
+    await _repo.setCurrentModel(providerId: providerId, modelId: modelId);
     ref.invalidate(appModelProvidersProvider);
   }
 

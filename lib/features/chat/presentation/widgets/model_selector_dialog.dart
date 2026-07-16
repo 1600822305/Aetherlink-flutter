@@ -210,7 +210,7 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
           : null;
     } else if (activeComboId != null) {
       currentProviderId = kModelComboProviderId;
-      selectedKey = _identity(activeComboId, kModelComboProviderId);
+      selectedKey = _identity(kModelComboProviderId, activeComboId);
     } else if (current != null) {
       currentProviderId = current.provider.id;
       selectedKey = _identity(current.provider.id, current.model.id);

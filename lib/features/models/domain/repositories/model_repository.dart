@@ -27,4 +27,12 @@ abstract interface class ModelRepository {
     required String providerId,
     required String modelId,
   });
+
+  /// Sets the app-level current model: clears `isDefault` on every model of
+  /// every provider and sets it on ([providerId], [modelId]), atomically — the
+  /// store never observes a half-applied switch (two defaults, or none).
+  Future<void> setCurrentModel({
+    required String providerId,
+    required String modelId,
+  });
 }

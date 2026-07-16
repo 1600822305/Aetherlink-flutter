@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 
 import 'package:aetherlink_flutter/core/database/app_database.dart';
 import 'package:aetherlink_flutter/features/models/data/datasources/local/providers_table.dart';
+import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 
 part 'provider_dao.g.dart';
@@ -16,9 +17,12 @@ class ProviderDao extends DatabaseAccessor<AppDatabase>
 
   /// All providers in ascending `sortOrder` (the user-defined order).
   Future<List<ModelProvider>> getAll() async {
-    final rows = await (select(
-      providerRows,
-    )..orderBy([(t) => OrderingTerm(expression: t.sortOrder)])).get();
+    final rows =
+        await (select(providerRows)..orderBy([
+              (t) => OrderingTerm(expression: t.sortOrder),
+              (t) => OrderingTerm(expression: t.id),
+            ]))
+            .get();
     return rows.map((row) => row.data).toList();
   }
 
@@ -74,6 +78,30 @@ class ProviderDao extends DatabaseAccessor<AppDatabase>
         model.copyWith(isDefault: model.id == modelId),
     ];
     await upsert(provider.copyWith(models: updatedModels));
+  }
+
+  /// Sets the app-level current model in a single transaction: clears
+  /// `isDefault` on every model of every provider and sets it on
+  /// ([providerId], [modelId]). Only rows whose models actually changed are
+  /// rewritten; the transaction guarantees a reader never observes a
+  /// half-applied switch (two defaults, or none).
+  Future<void> setCurrentModel({
+    required String providerId,
+    required String modelId,
+  }) async {
+    await transaction(() async {
+      final providers = await getAll();
+      final updated = providersWithCurrentModel(
+        providers,
+        providerId: providerId,
+        modelId: modelId,
+      );
+      for (var i = 0; i < providers.length; i++) {
+        if (updated[i] != providers[i]) {
+          await upsert(updated[i]);
+        }
+      }
+    });
   }
 
   /// Existing provider's `sortOrder`, or the next append position for a new id.

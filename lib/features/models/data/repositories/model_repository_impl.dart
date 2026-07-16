@@ -33,4 +33,11 @@ class ModelRepositoryImpl implements ModelRepository {
     required String modelId,
   }) =>
       _db.providerDao.setDefaultModel(providerId: providerId, modelId: modelId);
+
+  @override
+  Future<void> setCurrentModel({
+    required String providerId,
+    required String modelId,
+  }) =>
+      _db.providerDao.setCurrentModel(providerId: providerId, modelId: modelId);
 }
