@@ -140,6 +140,28 @@ void main() {
       expect(cmd, isNot(contains('sudo')));
     });
 
+    test('Ubuntu 镜像列表 baseUrl 是真实 apt 源根（区分 archive/ports）', () {
+      final arm = parseRemoteEnvProbe(
+        'PM apt-get\nOS_ID ubuntu\nOS_CODENAME noble\nARCH arm64\n',
+      );
+      expect(
+        remoteSystemMirrorsFor(arm).map((m) => m.baseUrl),
+        everyElement(contains('ubuntu-ports')),
+      );
+      final amd = parseRemoteEnvProbe(
+        'PM apt-get\nOS_ID ubuntu\nOS_CODENAME noble\nARCH amd64\n',
+      );
+      expect(
+        remoteSystemMirrorsFor(amd).map((m) => m.baseUrl),
+        everyElement(isNot(contains('ports'))),
+      );
+    });
+
+    test('Ubuntu 探测不到 codename 时不提供系统源', () {
+      final env = parseRemoteEnvProbe('PM apt-get\nOS_ID ubuntu\n');
+      expect(remoteSystemMirrorsFor(env), isEmpty);
+    });
+
     test('Debian（非 ubuntu 的 apt 系）不生成系统源命令', () {
       final env = parseRemoteEnvProbe(
         'PM apt-get\nOS_ID debian\nOS_CODENAME bookworm\n',

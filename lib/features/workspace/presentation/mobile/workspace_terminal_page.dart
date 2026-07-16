@@ -574,10 +574,11 @@ class _WorkspaceTerminalPageState
                         context,
                         workspaceName: workspace.name,
                         mirrorScope: 'ws_${workspace.id}',
+                        // 不传 workingDirectory：探测/检测与目录无关，
+                        // 避免远端 cd 失败连累整条探测（误报「未识别」）。
                         silentExec: (command) async {
                           final result = await envBackend.exec(
                             command,
-                            workingDirectory: workspace.root,
                             timeout: const Duration(seconds: 20),
                           );
                           return (
