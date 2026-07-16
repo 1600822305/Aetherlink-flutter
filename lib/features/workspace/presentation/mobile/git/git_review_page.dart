@@ -32,6 +32,10 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
   late final TabController _tabs;
   final TextEditingController _message = TextEditingController();
 
+  /// Every repo discovered under the workspace (多仓库容器式工作区可能不止
+  /// 一个)；[_repoRoot] is the currently selected one.
+  List<String> _repos = const [];
+  String? _repoRoot;
   GitReviewService? _service;
   GitReviewSnapshot? _snapshot;
   List<GitCommitInfo>? _commits;
@@ -67,18 +71,40 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
       });
       return;
     }
-    final repoRoot =
-        await GitReviewService.resolveRepoRoot(backend, workspace.root);
+    final repos = await discoverGitRepos(backend, workspace.root);
     if (!mounted) return;
-    if (repoRoot == null) {
+    if (repos.isEmpty) {
       setState(() {
         _loading = false;
-        _error = '当前工作区不在 Git 仓库内';
+        _error = '工作区内没有找到 Git 仓库';
       });
       return;
     }
-    _service = GitReviewService(backend: backend, repoRoot: repoRoot);
-    await _refreshStatus();
+    _repos = repos;
+    _selectRepo(repos.first);
+  }
+
+  /// Switches the page onto [repoRoot]: rebuilds the service and drops the
+  /// per-repo state before reloading.
+  void _selectRepo(String repoRoot) {
+    final backend = ref.read(workspacePreviewBackendProvider);
+    if (backend == null) return;
+    setState(() {
+      _repoRoot = repoRoot;
+      _service = GitReviewService(backend: backend, repoRoot: repoRoot);
+      _snapshot = null;
+      _commits = null;
+      _loading = true;
+      _error = null;
+    });
+    _refreshStatus();
+    if (_tabs.index == 1) _loadLog();
+  }
+
+  String get _repoName {
+    final root = _repoRoot ?? '';
+    final slash = root.lastIndexOf('/');
+    return slash < 0 ? root : root.substring(slash + 1);
   }
 
   Future<void> _refreshStatus() async {
@@ -274,9 +300,11 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
             const SizedBox(width: 8),
             Flexible(
               child: Text(
-                snapshot?.branch.branch.isNotEmpty == true
-                    ? snapshot!.branch.branch
-                    : 'Git',
+                _repos.length > 1 && _repoName.isNotEmpty
+                    ? '$_repoName · ${snapshot?.branch.branch ?? '…'}'
+                    : (snapshot?.branch.branch.isNotEmpty == true
+                        ? snapshot!.branch.branch
+                        : 'Git'),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -291,6 +319,24 @@ class _GitReviewPageState extends ConsumerState<GitReviewPage>
           ],
         ),
         actions: [
+          if (_repos.length > 1)
+            PopupMenuButton<String>(
+              tooltip: '切换仓库',
+              icon: const Icon(LucideIcons.folderGit2, size: 18),
+              onSelected: _busy ? null : _selectRepo,
+              itemBuilder: (context) => [
+                for (final root in _repos)
+                  CheckedPopupMenuItem<String>(
+                    value: root,
+                    checked: root == _repoRoot,
+                    child: Text(
+                      root.substring(root.lastIndexOf('/') + 1),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+            ),
           IconButton(
             tooltip: '刷新',
             icon: const Icon(LucideIcons.refreshCw, size: 18),

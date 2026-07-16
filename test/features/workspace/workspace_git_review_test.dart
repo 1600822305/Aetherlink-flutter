@@ -113,6 +113,39 @@ void main() {
     });
   });
 
+  group('GitStatusOverview', () {
+    test('resolves ownership by longest repo-root prefix', () {
+      final outer = GitStatusSnapshot(
+        repoRoot: '/ws/app',
+        files: {'/ws/app/a.txt': GitFileStatus.modified},
+      );
+      final nested = GitStatusSnapshot(
+        repoRoot: '/ws/app/vendor/lib',
+        files: {'/ws/app/vendor/lib/b.txt': GitFileStatus.added},
+      );
+      final overview = GitStatusOverview(repos: [outer, nested]);
+
+      expect(overview.repoOf('/ws/app/a.txt')?.repoRoot, '/ws/app');
+      expect(
+        overview.repoOf('/ws/app/vendor/lib/b.txt')?.repoRoot,
+        '/ws/app/vendor/lib',
+      );
+      expect(overview.repoOf('/ws/other/c.txt'), isNull);
+      expect(overview.statusOf('/ws/app/vendor/lib/b.txt'),
+          GitFileStatus.added);
+      expect(overview.totalChanges, 2);
+    });
+
+    test('sibling repo roots do not swallow each other', () {
+      final a = GitStatusSnapshot(repoRoot: '/ws/app', files: const {});
+      final b = GitStatusSnapshot(repoRoot: '/ws/app2', files: const {});
+      final overview = GitStatusOverview(repos: [a, b]);
+
+      expect(overview.repoOf('/ws/app2/x.txt')?.repoRoot, '/ws/app2');
+      expect(overview.repoOf('/ws/app/x.txt')?.repoRoot, '/ws/app');
+    });
+  });
+
   group('parseGitBranchHeader', () {
     test('parses branch with upstream and ahead/behind', () {
       final info =

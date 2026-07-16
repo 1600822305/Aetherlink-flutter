@@ -474,7 +474,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
 
   // A row's git badge: the file's own status, or a roll-up marker when a
   // directory contains changed descendants.
-  GitFileStatus? _gitStatusOf(GitStatusSnapshot? snap, WorkspaceEntry entry) {
+  GitFileStatus? _gitStatusOf(GitStatusOverview? snap, WorkspaceEntry entry) {
     if (snap == null) return null;
     final direct = snap.statusOf(entry.path);
     if (direct != null) return direct;
@@ -488,10 +488,10 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   // 可用，此时路径是真实 POSIX 路径，可以安全地剪出仓内相对路径。
   Future<void> _showGitDiff(WorkspaceEntry entry) async {
     final backend = _backend;
-    final snap = ref.read(gitStatusProvider);
-    final status = snap?.statusOf(entry.path);
-    if (backend == null || snap == null || status == null) return;
-    final prefix = '${snap.repoRoot}/';
+    final repo = ref.read(gitStatusProvider)?.repoOf(entry.path);
+    final status = repo?.statusOf(entry.path);
+    if (backend == null || repo == null || status == null) return;
+    final prefix = '${repo.repoRoot}/';
     if (!entry.path.startsWith(prefix)) return;
     final rel = entry.path.substring(prefix.length);
     try {
@@ -500,7 +500,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
           status != GitFileStatus.added) {
         final show = await backend.exec(
           'git -c core.quotepath=off show ${shellQuoteArg('HEAD:$rel')}',
-          workingDirectory: snap.repoRoot,
+          workingDirectory: repo.repoRoot,
           timeout: const Duration(seconds: 20),
         );
         if (show.exitCode == 0) oldText = show.stdout;
@@ -781,7 +781,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                       canWrite: canWrite,
                       canCreate: ops != null && canWrite,
                       gitEnabled: gitSnap != null,
-                      gitChangeCount: gitSnap?.files.length ?? 0,
+                      gitChangeCount: gitSnap?.totalChanges ?? 0,
                       onOpenGit: () =>
                           context.push(AppRouter.gitReviewPath),
                       showHidden: showHidden,

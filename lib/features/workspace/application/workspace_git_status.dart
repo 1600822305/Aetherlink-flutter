@@ -10,6 +10,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 
 /// A file's git working-tree state, reduced to what the tree colours on.
 enum GitFileStatus { modified, added, deleted, renamed, untracked, conflicted }
@@ -46,6 +47,91 @@ class GitStatusSnapshot {
       }
     }
     return dirs;
+  }
+}
+
+/// All discovered repos of one workspace, sorted by root-path length
+/// descending so [repoOf] resolves nested repos by longest-prefix match.
+/// The workspace root itself need not be a repo — a 「多仓库容器」式工作区
+/// 下每个子仓库各自一份 [GitStatusSnapshot]。
+class GitStatusOverview {
+  GitStatusOverview({required List<GitStatusSnapshot> repos})
+      : repos = _sortedByRootLength(repos);
+
+  static List<GitStatusSnapshot> _sortedByRootLength(
+    List<GitStatusSnapshot> repos,
+  ) {
+    final sorted = [...repos]
+      ..sort((a, b) => b.repoRoot.length.compareTo(a.repoRoot.length));
+    return List.unmodifiable(sorted);
+  }
+
+  final List<GitStatusSnapshot> repos;
+
+  /// The repo owning [path] (longest root prefix), or null.
+  GitStatusSnapshot? repoOf(String path) {
+    for (final repo in repos) {
+      if (path == repo.repoRoot || path.startsWith('${repo.repoRoot}/')) {
+        return repo;
+      }
+    }
+    return null;
+  }
+
+  GitFileStatus? statusOf(String path) => repoOf(path)?.statusOf(path);
+
+  bool dirHasChanges(String dirPath) =>
+      repos.any((repo) => repo.dirHasChanges(dirPath));
+
+  int get totalChanges =>
+      repos.fold(0, (sum, repo) => sum + repo.files.length);
+}
+
+/// Caps for the downward `.git` scan: don't crawl huge trees, don't run
+/// `git status` over an unbounded repo list.
+const int kGitDiscoverMaxDepth = 4;
+const int kGitDiscoverMaxRepos = 12;
+
+/// Finds the git repos a workspace [root] relates to, on an exec backend:
+/// upward `rev-parse` first (root inside a repo → single repo); otherwise a
+/// bounded downward scan for `.git` entries (multi-repo container 工作区).
+/// Returns absolute repo roots, or an empty list when none are found.
+Future<List<String>> discoverGitRepos(
+  WorkspaceBackend backend,
+  String root,
+) async {
+  if (!backend.capabilities.canExec) return const [];
+  try {
+    final top = await backend.exec(
+      'git rev-parse --show-toplevel',
+      workingDirectory: root,
+      timeout: const Duration(seconds: 10),
+    );
+    final repoRoot = top.stdout.trim();
+    if (top.exitCode == 0 && repoRoot.isNotEmpty) return [repoRoot];
+  } catch (_) {
+    return const [];
+  }
+  try {
+    // `.git` may be a dir (normal repo) or a file (worktree/submodule), so
+    // no -type filter; node_modules 与回收站目录直接剪枝。
+    final found = await backend.exec(
+      'find ${shellQuoteArg(root)} -maxdepth $kGitDiscoverMaxDepth '
+      "! -path '*/node_modules/*' ! -path '*/.Trash*' -name .git "
+      '2>/dev/null | head -n $kGitDiscoverMaxRepos',
+      workingDirectory: root,
+      timeout: const Duration(seconds: 20),
+    );
+    final roots = <String>[];
+    for (final line in found.stdout.split('\n')) {
+      final path = line.trim();
+      if (!path.endsWith('/.git')) continue;
+      roots.add(path.substring(0, path.length - '/.git'.length));
+    }
+    roots.sort();
+    return roots;
+  } catch (_) {
+    return const [];
   }
 }
 
@@ -89,19 +175,21 @@ GitFileStatus? _statusFromXY(String x, String y) {
   return null;
 }
 
-/// Latest git status of the current workspace's repo, or `null` when the
-/// backend can't exec / the root isn't inside a git repo. Refreshed by the
-/// file tree (initial load / manual refresh / debounced change events).
-final gitStatusProvider = NotifierProvider<GitStatusNotifier, GitStatusSnapshot?>(
+/// Latest git status over every repo the current workspace relates to
+/// (工作区在仓库内 / 工作区是多仓库容器都支持), or `null` when the backend
+/// can't exec / no repo was found. Refreshed by the file tree (initial load /
+/// manual refresh / debounced change events).
+final gitStatusProvider =
+    NotifierProvider<GitStatusNotifier, GitStatusOverview?>(
   GitStatusNotifier.new,
 );
 
-class GitStatusNotifier extends Notifier<GitStatusSnapshot?> {
+class GitStatusNotifier extends Notifier<GitStatusOverview?> {
   bool _refreshing = false;
   bool _pending = false;
 
   @override
-  GitStatusSnapshot? build() {
+  GitStatusOverview? build() {
     // Reset the snapshot whenever the opened workspace changes.
     ref.watch(currentWorkspaceProvider);
     return null;
@@ -124,29 +212,27 @@ class GitStatusNotifier extends Notifier<GitStatusSnapshot?> {
     }
     _refreshing = true;
     try {
-      final top = await backend.exec(
-        'git rev-parse --show-toplevel',
-        workingDirectory: workspace.root,
-        timeout: const Duration(seconds: 10),
-      );
-      final repoRoot = top.stdout.trim();
-      if (top.exitCode != 0 || repoRoot.isEmpty) {
+      final roots = await discoverGitRepos(backend, workspace.root);
+      if (roots.isEmpty) {
         state = null;
         return;
       }
-      final status = await backend.exec(
-        'git -c core.quotepath=off status --porcelain=v1 -z',
-        workingDirectory: workspace.root,
-        timeout: const Duration(seconds: 20),
-      );
-      if (status.exitCode != 0) {
-        state = null;
-        return;
+      final snapshots = <GitStatusSnapshot>[];
+      for (final repoRoot in roots) {
+        final status = await backend.exec(
+          'git -c core.quotepath=off status --porcelain=v1 -z',
+          workingDirectory: repoRoot,
+          timeout: const Duration(seconds: 20),
+        );
+        if (status.exitCode != 0) continue;
+        snapshots.add(GitStatusSnapshot(
+          repoRoot: repoRoot,
+          files: parseGitPorcelainZ(repoRoot, status.stdout),
+        ));
       }
-      state = GitStatusSnapshot(
-        repoRoot: repoRoot,
-        files: parseGitPorcelainZ(repoRoot, status.stdout),
-      );
+      state = snapshots.isEmpty
+          ? null
+          : GitStatusOverview(repos: snapshots);
     } catch (_) {
       state = null;
     } finally {

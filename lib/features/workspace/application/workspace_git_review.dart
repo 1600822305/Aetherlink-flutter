@@ -267,26 +267,6 @@ class GitReviewService {
     return result;
   }
 
-  /// Resolves the repo root containing [workingDirectory], or null when it
-  /// isn't inside a git repo / the backend can't exec.
-  static Future<String?> resolveRepoRoot(
-    WorkspaceBackend backend,
-    String workingDirectory,
-  ) async {
-    if (!backend.capabilities.canExec) return null;
-    try {
-      final top = await backend.exec(
-        'git rev-parse --show-toplevel',
-        workingDirectory: workingDirectory,
-        timeout: const Duration(seconds: 10),
-      );
-      final root = top.stdout.trim();
-      return top.exitCode == 0 && root.isNotEmpty ? root : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
   Future<GitReviewSnapshot> loadStatus() async {
     final result = await _run('$_git status --porcelain=v1 -z -b');
     final tokens = result.stdout.split('\x00');
