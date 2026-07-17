@@ -280,7 +280,10 @@ mixin _ChatMultiModel on _$ChatController {
     final params = _parameterFields();
     final regexRules = await _sendingRegexRules();
     final baseViews = <ChatMessageView>[...snapshot.messages, userView];
-    final contextViews = ChatController._trimViews(baseViews, ctx.contextCount);
+    final contextViews = ChatController._trimViews(
+      ChatController._filterSiblingsForContext(baseViews),
+      ctx.contextCount,
+    );
     final memInjection = await collectChatMemoryInjection(
       ref,
       assistantId: _assistantId,
@@ -589,7 +592,10 @@ mixin _ChatMultiModel on _$ChatController {
 
     // 3. Build messages for the thinking model request.
     final ctx = _contextSettings();
-    final contextViews = ChatController._trimViews(views, ctx.contextCount);
+    final contextViews = ChatController._trimViews(
+      ChatController._filterSiblingsForContext(views),
+      ctx.contextCount,
+    );
     final regexRules = await _sendingRegexRules();
     final llmMessages = [
       for (final view in contextViews)

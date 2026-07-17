@@ -716,6 +716,71 @@ void main() {
     },
   );
 
+  test(
+    'regenerating a sibling excludes the group answers from its context',
+    () async {
+      final gateway = _FakeGateway(const [
+        LlmStreamChunk.textDelta('Hello world'),
+        LlmStreamChunk.done(),
+      ]);
+      final container = _container(
+        gateway: gateway,
+        repo: repo,
+        current: _currentModel(),
+      );
+
+      await container.read(chatControllerProvider.future);
+      await container
+          .read(chatControllerProvider.notifier)
+          .sendMultiModel('hi', [_currentModel(), modelB()]);
+
+      final topic = (await repo.getRecentTopics()).single;
+      final messages = await repo.getMessagesByTopicId(topic.id);
+      final second = messages.firstWhere((m) => m.model?.id == 'gpt-test-2');
+
+      await container
+          .read(chatControllerProvider.notifier)
+          .regenerate(second.id);
+
+      // The sibling answers the shared conversation independently: only the
+      // user turn is in its history — never its siblings' answers.
+      final history = gateway.lastRequest!.messages;
+      expect(history, hasLength(1));
+      expect(history.single.role, MessageRole.user);
+      expect(history.single.content, 'hi');
+    },
+  );
+
+  test(
+    'a follow-up send keeps only the foldSelected sibling in the context',
+    () async {
+      final gateway = _FakeGateway(const [
+        LlmStreamChunk.textDelta('Hello world'),
+        LlmStreamChunk.done(),
+      ]);
+      final container = _container(
+        gateway: gateway,
+        repo: repo,
+        current: _currentModel(),
+      );
+
+      await container.read(chatControllerProvider.future);
+      await container
+          .read(chatControllerProvider.notifier)
+          .sendMultiModel('hi', [_currentModel(), modelB()]);
+      await container.read(chatControllerProvider.notifier).send('next');
+
+      // History: user turn + the selected sibling's answer + the new user
+      // turn — the unselected sibling never reaches the model.
+      final history = gateway.lastRequest!.messages;
+      expect(history.map((m) => m.role), [
+        MessageRole.user,
+        MessageRole.assistant,
+        MessageRole.user,
+      ]);
+    },
+  );
+
   test('send routes to multi-model when mentions are staged', () async {
     final gateway = _FakeGateway(const [
       LlmStreamChunk.textDelta('Hi'),

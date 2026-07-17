@@ -415,7 +415,10 @@ class ChatController extends _$ChatController
     final mcp = await _mcpSetup();
     final ctx = _contextSettings();
     final params = _parameterFields();
-    final contextViews = _trimViews(views, ctx.contextCount);
+    final contextViews = _trimViews(
+      _filterSiblingsForContext(views),
+      ctx.contextCount,
+    );
     final regexRules = await _sendingRegexRules();
     final messages = await _buildLlmMessages(
       contextViews,
@@ -618,6 +621,8 @@ class ChatController extends _$ChatController
     // Reset the view to a streaming placeholder; the request history is the
     // conversation up to (excluding) this assistant message.
     final views = List<ChatMessageView>.of(snapshot.messages);
+    // Carry the tree/group fields over so a multi-model sibling stays inside
+    // its 对比 group (and keeps its selection) while it re-streams.
     final assistantView = ChatMessageView(
       id: messageId,
       role: MessageRole.assistant,
@@ -625,6 +630,12 @@ class ChatController extends _$ChatController
       createdAt: target.createdAt,
       modelName: effective.name,
       providerName: current.provider.name,
+      modelId: effective.id,
+      providerId: current.provider.id,
+      askId: target.askId,
+      siblingsGroupId: target.siblingsGroupId,
+      multiModelMessageStyle: target.multiModelMessageStyle,
+      foldSelected: target.foldSelected ?? false,
     );
     views[index] = assistantView;
     _emitTurn(target.topicId, views, streaming: true);
@@ -632,7 +643,15 @@ class ChatController extends _$ChatController
     final mcp = await _mcpSetup();
     final ctx = _contextSettings();
     final params = _parameterFields();
-    final contextViews = _trimViews(views.sublist(0, index), ctx.contextCount);
+    final contextViews = _trimViews(
+      _filterSiblingsForContext(
+        views.sublist(0, index),
+        excludeGroupId: target.siblingsGroupId != 0
+            ? target.siblingsGroupId
+            : null,
+      ),
+      ctx.contextCount,
+    );
     final regexRules = await _sendingRegexRules();
     final messages = await _buildLlmMessages(
       contextViews,
@@ -763,7 +782,10 @@ class ChatController extends _$ChatController
     final mcp = await _mcpSetup();
     final ctx = _contextSettings();
     final params = _parameterFields();
-    final contextViews = _trimViews(snapshot.messages, ctx.contextCount);
+    final contextViews = _trimViews(
+      _filterSiblingsForContext(snapshot.messages),
+      ctx.contextCount,
+    );
     final regexRules = await _sendingRegexRules();
     final messages = await _buildLlmMessages(
       contextViews,
@@ -838,14 +860,20 @@ class ChatController extends _$ChatController
     final snapshot = state.value;
     if (snapshot == null || snapshot.isStreaming) return;
 
-    final current = await ref.read(appCurrentModelProvider.future);
-    if (current == null) return;
-
     _truncatedMessageId = null;
 
     // Load the existing assistant message.
     final message = await _repo.getMessage(messageId);
     if (message == null || message.role != MessageRole.assistant) return;
+
+    // Continue on the model that produced the truncated reply — splicing a
+    // different model's continuation into the same message would silently mix
+    // outputs (and mismatch the stored `message.model`). Fall back to the
+    // app-level current model only when the own model is gone.
+    final current =
+        await _currentModelForOwnModel(message.model) ??
+        await ref.read(appCurrentModelProvider.future);
+    if (current == null) return;
 
     final effective = effectiveModelFor(current);
     final now = DateTime.now();
@@ -859,7 +887,15 @@ class ChatController extends _$ChatController
     final mcp = await _mcpSetup();
     final ctx = _contextSettings();
     final params = _parameterFields();
-    final history = _trimViews(views.sublist(0, msgIndex), ctx.contextCount);
+    final history = _trimViews(
+      _filterSiblingsForContext(
+        views.sublist(0, msgIndex),
+        excludeGroupId: message.siblingsGroupId != 0
+            ? message.siblingsGroupId
+            : null,
+      ),
+      ctx.contextCount,
+    );
     final regexRules = await _sendingRegexRules();
     final messages = await _buildLlmMessages(
       [...history, views[msgIndex]],
@@ -1092,6 +1128,33 @@ class ChatController extends _$ChatController
   ) {
     if (views.length <= count) return views;
     return views.sublist(views.length - count);
+  }
+
+  /// Multi-model 对比 context hygiene: the displayed list inlines every
+  /// sibling of a group, but the conversation continues from the `foldSelected`
+  /// one — so LLM history keeps only that sibling per group. Siblings of
+  /// [excludeGroupId] (the group being regenerated) are dropped entirely, so
+  /// each model answers the shared conversation independently instead of
+  /// seeing its siblings' answers to the same question.
+  /// Groups without a `foldSelected` member (pre-flag data) keep their last
+  /// sibling instead, so the turn never silently vanishes from the context.
+  static List<ChatMessageView> _filterSiblingsForContext(
+    List<ChatMessageView> views, {
+    int? excludeGroupId,
+  }) {
+    final keptOfGroup = <int, ChatMessageView>{};
+    for (final view in views) {
+      final group = view.siblingsGroupId;
+      if (group == 0 || group == excludeGroupId) continue;
+      final kept = keptOfGroup[group];
+      if (kept == null || !kept.foldSelected) keptOfGroup[group] = view;
+    }
+    return [
+      for (final view in views)
+        if (view.siblingsGroupId == 0 ||
+            identical(keptOfGroup[view.siblingsGroupId], view))
+          view,
+    ];
   }
 
   /// Replaces every block of [messageId] with [blocks] (in order) and stamps the
