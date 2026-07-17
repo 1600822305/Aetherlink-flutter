@@ -100,6 +100,7 @@ void main() {
         MessageActionId.edit,
         MessageActionId.export,
         MessageActionId.regenerate,
+        MessageActionId.regenerateWithModel,
         MessageActionId.tts,
         MessageActionId.translate,
         MessageActionId.fork,

@@ -14,6 +14,7 @@ enum MessageActionId {
   export,
   resend,
   regenerate,
+  regenerateWithModel,
   tts,
   translate,
   versionHistory,
@@ -34,6 +35,10 @@ kMessageActionCatalog = {
   MessageActionId.export: (icon: LucideIcons.fileText, label: '导出/分享'),
   MessageActionId.resend: (icon: LucideIcons.refreshCw, label: '重新发送'),
   MessageActionId.regenerate: (icon: LucideIcons.refreshCw, label: '重新生成'),
+  MessageActionId.regenerateWithModel: (
+    icon: LucideIcons.refreshCcwDot,
+    label: '换模型重新生成',
+  ),
   MessageActionId.tts: (icon: LucideIcons.volume2, label: '语音播放'),
   MessageActionId.translate: (icon: LucideIcons.languages, label: '翻译'),
   MessageActionId.versionHistory: (icon: LucideIcons.history, label: '版本历史'),

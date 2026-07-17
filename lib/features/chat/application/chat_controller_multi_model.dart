@@ -126,7 +126,7 @@ mixin _ChatMultiModel on _$ChatController {
   Future<void> _maybeExtractMemory(String turnTopicId);
 
   Future<void> deleteMessage(String messageId, {bool cascade = false});
-  Future<void> regenerate(String messageId);
+  Future<void> regenerate(String messageId, {CurrentModel? withModel});
 
   // --- 搬出的方法 ---
 

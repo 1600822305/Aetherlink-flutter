@@ -48,6 +48,7 @@ enum VersionSwitchStyle {
 /// 页自定义；[MessageBubbleSettings.collapsedActionIds] 为 null 时用此预设。
 const List<String> kDefaultCollapsedActionIds = [
   'export',
+  'regenerateWithModel',
   'versionHistory',
   'fork',
   'branch',

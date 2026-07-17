@@ -558,7 +558,7 @@ class ChatController extends _$ChatController
   }
 
   @override
-  Future<void> regenerate(String messageId) async {
+  Future<void> regenerate(String messageId, {CurrentModel? withModel}) async {
     _truncatedMessageId = null;
     final snapshot = state.value;
     if (snapshot == null || snapshot.isStreaming) return;
@@ -573,11 +573,14 @@ class ChatController extends _$ChatController
     // makes 「重试失败」 re-run each sibling on the model it belongs to, instead
     // of turning every column into the current model. A plain (single-reply)
     // regenerate follows the app-level current model, so switching the model
-    // then tapping 重新生成 re-runs on the newly selected one.
-    final current = target.siblingsGroupId != 0
-        ? (await _currentModelForOwnModel(target.model) ??
-              await ref.read(appCurrentModelProvider.future))
-        : await ref.read(appCurrentModelProvider.future);
+    // then tapping 重新生成 re-runs on the newly selected one. [withModel]
+    // (换模型重新生成) overrides both.
+    final current =
+        withModel ??
+        (target.siblingsGroupId != 0
+            ? (await _currentModelForOwnModel(target.model) ??
+                  await ref.read(appCurrentModelProvider.future))
+            : await ref.read(appCurrentModelProvider.future));
     if (current == null) return;
 
     final now = DateTime.now();

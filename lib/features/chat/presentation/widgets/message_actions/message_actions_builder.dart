@@ -16,6 +16,9 @@ import 'package:aetherlink_flutter/features/chat/domain/translate/translate_lang
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/knowledge_mount_sheet.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_action.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/message_actions/message_action_sheets.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/model_selector_dialog.dart';
+import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
+import 'package:aetherlink_flutter/shared/domain/model_detection/model_checks.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// The **headless behaviour layer** for message actions: the single source of
@@ -98,6 +101,13 @@ class MessageActionsBuilder {
           icon: LucideIcons.refreshCw,
           tooltip: '重新生成',
           onInvoke: regenerate,
+        ),
+      if (!_isUser)
+        MessageAction(
+          id: MessageActionId.regenerateWithModel,
+          icon: LucideIcons.refreshCcwDot,
+          tooltip: '换模型重新生成',
+          onInvoke: regenerateWithModel,
         ),
       if (!_isUser && showTtsButton)
         MessageAction(
@@ -197,6 +207,24 @@ class MessageActionsBuilder {
 
   void regenerate() =>
       ref.read(chatControllerProvider.notifier).regenerate(view.id);
+
+  /// Opens the model selector and regenerates this reply on the chosen model.
+  /// Unlike plain 重新生成, the pick applies even to multi-model 对比 siblings
+  /// (which otherwise always re-run on their own model).
+  Future<void> regenerateWithModel() async {
+    await showModelSelectorDialog(
+      context,
+      selectedProviderId: view.providerId,
+      selectedModelId: view.modelId,
+      filter: (m) => !isNonChatModel(m),
+      onSelect: (provider, model) => ref
+          .read(chatControllerProvider.notifier)
+          .regenerate(
+            view.id,
+            withModel: CurrentModel(provider: provider, model: model),
+          ),
+    );
+  }
 
   void toggleTts() {
     final text = _mainText.trim();

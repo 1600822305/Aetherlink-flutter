@@ -134,6 +134,7 @@ class _MessageActionMenuState extends ConsumerState<MessageActionMenu> {
     MessageActionId.edit,
     MessageActionId.resend,
     MessageActionId.regenerate,
+    MessageActionId.regenerateWithModel,
     MessageActionId.translate,
     MessageActionId.versionHistory,
     MessageActionId.fork,
