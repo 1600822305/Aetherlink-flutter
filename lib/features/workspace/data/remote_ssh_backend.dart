@@ -907,10 +907,19 @@ class RemoteSshBackend extends WorkspaceBackend {
     final full = (workingDirectory != null && workingDirectory.isNotEmpty)
         ? 'cd ${_shellQuote(workingDirectory)} && $command'
         : command;
+    // Some SSH servers never send the exit-status channel request, leaving
+    // dartssh2's `session.exitCode` null and every command looking like it
+    // failed with -1. For non-streaming calls, append a sentinel that carries
+    // the real `$?` on stdout; it is stripped below before returning. Streamed
+    // ([onOutput]) calls keep the raw command so live output stays clean.
+    final useSentinel = onOutput == null;
+    final toRun = useSentinel
+        ? '$full\nprintf "\\n$_exitMarker%d" "\$?"'
+        : full;
 
     final SSHSession session;
     try {
-      session = await client.execute(full);
+      session = await client.execute(toRun);
     } catch (e) {
       throw SshBackendException('命令执行失败 · $e');
     }
@@ -960,14 +969,28 @@ class RemoteSshBackend extends WorkspaceBackend {
           .timeout(const Duration(seconds: 2), onTimeout: () => const []);
     }
 
+    var stdout = utf8.decode(out.takeBytes(), allowMalformed: true);
+    var exitCode = session.exitCode ?? -1;
+    if (useSentinel) {
+      final match =
+          RegExp('(?:^|\n)$_exitMarker(\\d+)\$').firstMatch(stdout);
+      if (match != null) {
+        exitCode = int.parse(match.group(1)!);
+        stdout = stdout.substring(0, match.start);
+      }
+    }
+
     return WorkspaceExecResult(
-      stdout: utf8.decode(out.takeBytes(), allowMalformed: true),
+      stdout: stdout,
       stderr: utf8.decode(err.takeBytes(), allowMalformed: true),
-      exitCode: session.exitCode ?? -1,
+      exitCode: exitCode,
       timedOut: timedOut,
       canceled: canceled,
     );
   }
+
+  /// Marker line carrying the remote command's `$?` — see [exec].
+  static const _exitMarker = '__AETHERLINK_EXIT__';
 
   @override
   Future<WorkspaceProcessSession> startProcess(
