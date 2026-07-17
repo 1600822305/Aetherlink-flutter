@@ -36,6 +36,8 @@ enum ThinkingModelType {
   zhipu,
   perplexity,
   deepseekHybrid,
+  deepseekV4,
+  deepseekReasoner,
 }
 
 // ─── MODEL_SUPPORTED_OPTIONS ─────────────────────────────────────────────────
@@ -99,7 +101,9 @@ const Map<ThinkingModelType, List<String>> _modelSupportedOptions = {
   ThinkingModelType.hunyuan: ['default', 'none', 'auto'],
   ThinkingModelType.zhipu: ['default', 'none', 'auto'],
   ThinkingModelType.perplexity: ['default', 'low', 'medium', 'high'],
-  ThinkingModelType.deepseekHybrid: ['none', 'high', 'xhigh'],
+  ThinkingModelType.deepseekHybrid: ['default', 'none', 'auto'],
+  ThinkingModelType.deepseekV4: ['default', 'none', 'high', 'xhigh'],
+  ThinkingModelType.deepseekReasoner: ['default'],
 };
 
 // ─── Label map ───────────────────────────────────────────────────────────────
@@ -225,14 +229,28 @@ bool _isQwenAlwaysThink(String id) =>
     id.contains('qwen3-thinking') ||
     id.contains('qwen-omni-thinking');
 
-bool _isDeepSeekHybrid(String id) => id.contains('deepseek-v4');
-bool _isDeepSeekReasoning(String id) {
-  if (_isDeepSeekHybrid(id)) return true;
-  if (id.contains('deepseek-reasoner') || id.contains('deepseek-coder')) {
-    return true;
-  }
-  return false;
-}
+final _deepSeekV4PlusRegex = RegExp(
+  r'deepseek-v(?:[4-9]\d*|[1-9]\d{1,})(?:\.\d+)?(?:-[\w]+)*(?=$|[:/])',
+  caseSensitive: false,
+);
+final _deepSeekV3HybridRegex = RegExp(
+  r'(\w+-)?deepseek-v3(?:\.\d|-\d)(?:(\.|-)(?!speciale$)\w+)?$',
+  caseSensitive: false,
+);
+
+bool _isDeepSeekV4Plus(String id) => _deepSeekV4PlusRegex.hasMatch(id);
+
+/// DeepSeek runtime hybrid-inference model (thinking / non-thinking served at
+/// the same endpoint): V3.1+ / `deepseek-chat` / V4+.
+bool _isDeepSeekHybrid(String id) =>
+    _deepSeekV3HybridRegex.hasMatch(id) ||
+    id.contains('deepseek-chat-v3.1') ||
+    id.contains('deepseek-chat') ||
+    _isDeepSeekV4Plus(id);
+
+/// Always-thinking DeepSeek models with no reasoning control (reasoner / R1).
+bool _isDeepSeekReasoner(String id) =>
+    id.contains('deepseek-reasoner') || id.contains('deepseek-r1');
 
 bool _isZhipuReasoning(String id) =>
     id.contains('glm-z1') || id.contains('glm-4');
@@ -302,7 +320,9 @@ ThinkingModelType getThinkModelType(String? modelId) {
         : ThinkingModelType.qwen;
   }
 
-  if (_isDeepSeekReasoning(id)) return ThinkingModelType.deepseekHybrid;
+  if (_isDeepSeekV4Plus(id)) return ThinkingModelType.deepseekV4;
+  if (_isDeepSeekHybrid(id)) return ThinkingModelType.deepseekHybrid;
+  if (_isDeepSeekReasoner(id)) return ThinkingModelType.deepseekReasoner;
   if (_isZhipuReasoning(id)) return ThinkingModelType.zhipu;
 
   if (_isDoubaoReasoning(id)) {
@@ -338,6 +358,20 @@ const List<SelectOption> _defaultReasoningEffortOptions = [
 /// When [modelId] is null/empty, returns the static defaults (off/low/medium/high).
 /// Otherwise, detects the model type and returns the model-specific options with
 /// Chinese labels (same as web's `getReasoningEffortOptions`).
+/// DeepSeek V4+ model (id-based; input may carry a provider prefix).
+bool isDeepSeekV4PlusModelId(String modelId) =>
+    _isDeepSeekV4Plus(_lowerBase(modelId));
+
+/// DeepSeek hybrid-inference model (V3.1+ / `deepseek-chat` / V4+).
+bool isDeepSeekHybridModelId(String modelId) =>
+    _isDeepSeekHybrid(_lowerBase(modelId));
+
+/// Always-thinking DeepSeek model without reasoning control (reasoner / R1).
+bool isDeepSeekReasonerModelId(String modelId) {
+  final id = _lowerBase(modelId);
+  return !_isDeepSeekHybrid(id) && _isDeepSeekReasoner(id);
+}
+
 List<SelectOption> getReasoningEffortOptions(String? modelId) {
   if (modelId == null || modelId.isEmpty) {
     return _defaultReasoningEffortOptions;

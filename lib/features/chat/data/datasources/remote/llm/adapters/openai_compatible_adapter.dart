@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_gateway.dar
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
+import 'package:aetherlink_flutter/shared/domain/reasoning_model_detection.dart';
 import 'package:aetherlink_flutter/shared/utils/api_host.dart';
 import 'package:dio/dio.dart';
 
@@ -74,8 +75,7 @@ class OpenAiCompatibleAdapter implements LlmGateway {
       if (request.logprobs != null) 'logprobs': request.logprobs,
       if (request.user != null && request.user!.isNotEmpty)
         'user': request.user,
-      if (request.reasoningEffort != null && request.reasoningEffort != 'off')
-        'reasoning_effort': request.reasoningEffort,
+      ..._reasoningBodyParams(request),
       if (request.parallelToolCalls != null)
         'parallel_tool_calls': request.parallelToolCalls,
       if (tools != null && tools.isNotEmpty)
@@ -235,7 +235,9 @@ class OpenAiCompatibleAdapter implements LlmGateway {
         'frequency_penalty': request.frequencyPenalty,
       if (request.presencePenalty != null)
         'presence_penalty': request.presencePenalty,
-      if (request.reasoningEffort != null && request.reasoningEffort != 'off')
+      if (request.reasoningEffort != null &&
+          request.reasoningEffort != 'off' &&
+          request.reasoningEffort != 'default')
         'reasoning_effort': request.reasoningEffort,
       if (hasTools) ...{
         'tools': [
@@ -358,6 +360,43 @@ class OpenAiCompatibleAdapter implements LlmGateway {
     }
 
     yield LlmStreamChunk.done(usage: usage, finishReason: finishReason);
+  }
+
+  /// Maps [LlmChatRequest.reasoningEffort] to wire params for Chat
+  /// Completions. Most vendors take `reasoning_effort` verbatim, but DeepSeek
+  /// models control thinking via `thinking: {type: enabled|disabled}`
+  /// (https://api-docs.deepseek.com/guides/thinking_mode) and reject unknown
+  /// `reasoning_effort` values with HTTP 400:
+  ///  - hybrid V3.x (`deepseek-chat` / `deepseek-v3.x`): any effort →
+  ///    `thinking.enabled`; `none` → nothing (non-thinking is the default);
+  ///  - V4+: `thinking.enabled` + `reasoning_effort: high|max`
+  ///    (`xhigh` → `max`); `none` → `thinking.disabled`;
+  ///  - `deepseek-reasoner` / R1: always thinking, no control → nothing.
+  static Map<String, dynamic> _reasoningBodyParams(LlmChatRequest request) {
+    final effort = request.reasoningEffort;
+    if (effort == null || effort == 'off' || effort == 'default') {
+      return const {};
+    }
+    final modelId = request.model.id;
+    if (isDeepSeekV4PlusModelId(modelId)) {
+      if (effort == 'none') {
+        return const {
+          'thinking': {'type': 'disabled'},
+        };
+      }
+      return {
+        'thinking': const {'type': 'enabled'},
+        'reasoning_effort': effort == 'xhigh' ? 'max' : 'high',
+      };
+    }
+    if (isDeepSeekHybridModelId(modelId)) {
+      if (effort == 'none') return const {};
+      return const {
+        'thinking': {'type': 'enabled'},
+      };
+    }
+    if (isDeepSeekReasonerModelId(modelId)) return const {};
+    return {'reasoning_effort': effort};
   }
 
   Future<Stream<List<int>>> _openStream(
