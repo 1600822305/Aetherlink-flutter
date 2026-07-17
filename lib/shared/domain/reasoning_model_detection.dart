@@ -353,11 +353,71 @@ const List<SelectOption> _defaultReasoningEffortOptions = [
   SelectOption(value: 'high', label: '高'),
 ];
 
-/// Returns the reasoning-effort options available for [modelId].
-///
-/// When [modelId] is null/empty, returns the static defaults (off/low/medium/high).
-/// Otherwise, detects the model type and returns the model-specific options with
-/// Chinese labels (same as web's `getReasoningEffortOptions`).
+// ─── Id-based family checks (for wire-param adaptation) ─────────────────────
+// Public wrappers over the private matchers; input may carry a provider
+// prefix (`vendor/model`) which is stripped before matching.
+
+bool isQwenReasoningModelId(String modelId) =>
+    _isQwenReasoning(_lowerBase(modelId));
+
+bool isQwenAlwaysThinkModelId(String modelId) =>
+    _isQwenAlwaysThink(_lowerBase(modelId));
+
+bool isZhipuThinkingModelId(String modelId) =>
+    _isZhipuReasoning(_lowerBase(modelId));
+
+bool isDoubaoThinkingModelId(String modelId) =>
+    _isDoubaoReasoning(_lowerBase(modelId));
+
+/// Doubao seed-1.6-thinking / seed-1.8+: controlled via `reasoning_effort`.
+bool isDoubaoAfter251015ModelId(String modelId) =>
+    _isDoubao16Thinking(_lowerBase(modelId));
+
+/// Doubao thinking model that accepts `thinking: {type: auto}`.
+bool isDoubaoAutoThinkingModelId(String modelId) {
+  final id = _lowerBase(modelId);
+  return _isDoubaoReasoning(id) && !_isDoubaoNoAuto(id);
+}
+
+bool isHunyuanThinkingModelId(String modelId) =>
+    _isHunyuanReasoning(_lowerBase(modelId));
+
+bool isMimoThinkingModelId(String modelId) =>
+    _isMimoReasoning(_lowerBase(modelId));
+
+/// Kimi model with thinking-token control (currently kimi-k2.5 only).
+bool isKimiThinkingModelId(String modelId) {
+  final id = _lowerBase(modelId);
+  return id.contains('kimi-k2.5') || id.contains('kimi-k2-5');
+}
+
+/// Gemini model with thinking-token control (2.0/2.5/3.x, OpenAI-compat).
+bool isGeminiThinkingModelId(String modelId) =>
+    _isSupportedThinkingTokenGemini(_lowerBase(modelId));
+
+/// Gemini 3.x thinking model — takes `reasoning_effort` on the compat API.
+bool isGemini3ThinkingModelId(String modelId) {
+  final id = _lowerBase(modelId);
+  return _isGemini3Flash(id) || _isGemini3Pro(id);
+}
+
+/// Gemini flash-family id (thinking can be disabled via budget 0).
+bool isGeminiFlashModelId(String modelId) =>
+    _geminiFlashRegex.hasMatch(_lowerBase(modelId));
+
+/// Claude model with extended-thinking support (3.7+ / 4.x families).
+bool isClaudeThinkingModelId(String modelId) {
+  final id = _lowerBase(modelId);
+  return id.contains('claude') &&
+      RegExp(r'claude-(?:3[.-]7|(?:sonnet|opus|haiku)-4)').hasMatch(id);
+}
+
+bool isGrok4FastModelId(String modelId) => _isGrok4Fast(_lowerBase(modelId));
+
+/// OpenAI reasoning-effort model (o-series / gpt-5 family).
+bool isOpenAiReasoningModelId(String modelId) =>
+    _isSupportedReasoningEffortOpenAI(_lowerBase(modelId));
+
 /// DeepSeek V4+ model (id-based; input may carry a provider prefix).
 bool isDeepSeekV4PlusModelId(String modelId) =>
     _isDeepSeekV4Plus(_lowerBase(modelId));
@@ -372,6 +432,11 @@ bool isDeepSeekReasonerModelId(String modelId) {
   return !_isDeepSeekHybrid(id) && _isDeepSeekReasoner(id);
 }
 
+/// Returns the reasoning-effort options available for [modelId].
+///
+/// When [modelId] is null/empty, returns the static defaults (off/low/medium/high).
+/// Otherwise, detects the model type and returns the model-specific options with
+/// Chinese labels (same as web's `getReasoningEffortOptions`).
 List<SelectOption> getReasoningEffortOptions(String? modelId) {
   if (modelId == null || modelId.isEmpty) {
     return _defaultReasoningEffortOptions;

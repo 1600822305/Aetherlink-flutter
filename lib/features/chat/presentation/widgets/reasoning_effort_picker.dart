@@ -28,10 +28,9 @@ void showReasoningEffortPicker(BuildContext context, WidgetRef ref) {
       onChanged: (value) {
         final notifier = ref.read(parameterSettingsControllerProvider.notifier);
         notifier.setParameterValue('reasoningEffort', value);
-        notifier.setParameterEnabled(
-          'reasoningEffort',
-          value != 'none' && value != 'off',
-        );
+        // 'none' stays enabled: the adapter translates it into each vendor's
+        // explicit disable params (enable_thinking:false / thinking.disabled).
+        notifier.setParameterEnabled('reasoningEffort', value != 'off');
       },
     ),
   );
