@@ -37,6 +37,7 @@ class AnthropicAdapter implements LlmGateway {
       for (final m in request.messages)
         if (m.role != MessageRole.system) _toWireMessage(m),
     ];
+    if (request.cacheControl == true) _markCacheBreakpoints(messages);
 
     final tools = request.tools;
     // Anthropic extended thinking: when thinkingBudget is set and reasoning is
@@ -87,11 +88,14 @@ class AnthropicAdapter implements LlmGateway {
           if (request.codeExecutionEnabled == true)
             {'type': 'code_execution_20250825'},
           if (tools != null)
-            for (final t in tools)
+            for (final (i, t) in tools.indexed)
               {
                 'name': t.name,
                 'description': t.description,
                 'input_schema': t.inputSchema,
+                // Cache the tool-definition prefix at the last tool.
+                if (request.cacheControl == true && i == tools.length - 1)
+                  'cache_control': const {'type': 'ephemeral'},
               },
         ],
       ...?request.customParameters,
@@ -195,6 +199,37 @@ class AnthropicAdapter implements LlmGateway {
           )
         : null;
     yield LlmStreamChunk.done(usage: usage, finishReason: finishReason);
+  }
+
+  /// Prompt caching only reuses prefixes that end at an explicit
+  /// `cache_control` breakpoint
+  /// (https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching), so
+  /// marking the system prompt alone leaves the conversation history uncached.
+  /// Mark the last two user turns — each round then reads the previous turn's
+  /// cache and extends it (the incremental scheme Claude Code uses).
+  static void _markCacheBreakpoints(List<Map<String, dynamic>> messages) {
+    var marked = 0;
+    for (var i = messages.length - 1; i >= 0 && marked < 2; i--) {
+      final m = messages[i];
+      if (m['role'] != 'user') continue;
+      final content = m['content'];
+      if (content is String && content.isNotEmpty) {
+        m['content'] = [
+          {
+            'type': 'text',
+            'text': content,
+            'cache_control': const {'type': 'ephemeral'},
+          },
+        ];
+      } else if (content is List && content.isNotEmpty) {
+        final last = content.last;
+        if (last is! Map<String, dynamic>) continue;
+        last['cache_control'] = const {'type': 'ephemeral'};
+      } else {
+        continue;
+      }
+      marked++;
+    }
   }
 
   Future<Stream<List<int>>> _openStream(

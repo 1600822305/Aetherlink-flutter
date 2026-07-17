@@ -12,6 +12,7 @@ import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_reques
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_content_image.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
+import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -285,6 +286,48 @@ data: {"type":"message_stop"}
       expect(adapter.request!.headers['anthropic-version'], '2023-06-01');
       // System prompt is a top-level field, not a message.
       expect(adapter.requestBody, contains('"system":"You are concise."'));
+    });
+
+    test('cacheControl marks system, last tool and user turns', () async {
+      final adapter = _ReplayAdapter(sse);
+      final gateway = AnthropicAdapter(_dioWith(adapter));
+
+      final request = LlmChatRequest(
+        model: _model(
+          provider: 'anthropic',
+          baseUrl: 'https://api.anthropic.test',
+        ),
+        system: 'You are concise.',
+        cacheControl: true,
+        messages: const [
+          LlmMessage(role: MessageRole.user, content: 'First'),
+          LlmMessage(role: MessageRole.assistant, content: 'Ok'),
+          LlmMessage(role: MessageRole.user, content: 'Second'),
+        ],
+        tools: const [
+          McpToolDefinition(name: 'a', description: 'a', inputSchema: {}),
+          McpToolDefinition(name: 'b', description: 'b', inputSchema: {}),
+        ],
+      );
+      await gateway.streamChat(request).toList();
+
+      final body = jsonDecode(adapter.requestBody) as Map<String, dynamic>;
+      const ephemeral = {'type': 'ephemeral'};
+
+      final system = body['system'] as List;
+      expect((system.single as Map)['cache_control'], ephemeral);
+
+      final tools = body['tools'] as List;
+      expect((tools[0] as Map).containsKey('cache_control'), isFalse);
+      expect((tools[1] as Map)['cache_control'], ephemeral);
+
+      // Both user turns get a breakpoint; the assistant turn stays a string.
+      final messages = body['messages'] as List;
+      final first = (messages[0] as Map)['content'] as List;
+      expect((first.single as Map)['cache_control'], ephemeral);
+      expect((messages[1] as Map)['content'], 'Ok');
+      final second = (messages[2] as Map)['content'] as List;
+      expect((second.single as Map)['cache_control'], ephemeral);
     });
   });
 
