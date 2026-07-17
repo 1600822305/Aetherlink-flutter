@@ -118,6 +118,8 @@ class AnthropicAdapter implements LlmGateway {
 
     int? inputTokens;
     int? outputTokens;
+    int? cachedTokens;
+    int? cacheCreationTokens;
     String? finishReason;
     // `tool_use` blocks stream as content_block_start (id + name) then a run of
     // `input_json_delta` fragments (partial JSON), keyed by the block `index`.
@@ -132,6 +134,9 @@ class AnthropicAdapter implements LlmGateway {
           final message = json['message'] as Map<String, dynamic>?;
           final u = message?['usage'] as Map<String, dynamic>?;
           inputTokens = (u?['input_tokens'] as num?)?.toInt();
+          cachedTokens = (u?['cache_read_input_tokens'] as num?)?.toInt();
+          cacheCreationTokens = (u?['cache_creation_input_tokens'] as num?)
+              ?.toInt();
         case 'content_block_start':
           final block = json['content_block'] as Map<String, dynamic>?;
           if (block?['type'] == 'tool_use') {
@@ -196,6 +201,8 @@ class AnthropicAdapter implements LlmGateway {
             promptTokens: inputTokens ?? 0,
             completionTokens: outputTokens ?? 0,
             totalTokens: (inputTokens ?? 0) + (outputTokens ?? 0),
+            cachedTokens: cachedTokens,
+            cacheCreationTokens: cacheCreationTokens,
           )
         : null;
     yield LlmStreamChunk.done(usage: usage, finishReason: finishReason);

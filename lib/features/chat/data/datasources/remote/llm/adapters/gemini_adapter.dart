@@ -165,6 +165,7 @@ class GeminiAdapter implements LlmGateway {
           promptTokens: (u['promptTokenCount'] as num?)?.toInt() ?? 0,
           completionTokens: (u['candidatesTokenCount'] as num?)?.toInt() ?? 0,
           totalTokens: (u['totalTokenCount'] as num?)?.toInt() ?? 0,
+          cachedTokens: (u['cachedContentTokenCount'] as num?)?.toInt(),
         );
       }
     }

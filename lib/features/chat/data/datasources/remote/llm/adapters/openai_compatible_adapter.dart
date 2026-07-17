@@ -181,6 +181,7 @@ class OpenAiCompatibleAdapter implements LlmGateway {
           promptTokens: (u['prompt_tokens'] as num?)?.toInt() ?? 0,
           completionTokens: (u['completion_tokens'] as num?)?.toInt() ?? 0,
           totalTokens: (u['total_tokens'] as num?)?.toInt() ?? 0,
+          cachedTokens: _cachedPromptTokens(u),
         );
       }
     }
@@ -547,11 +548,27 @@ class OpenAiCompatibleAdapter implements LlmGateway {
   /// `total_tokens`) into [Usage], or null if absent.
   static Usage? _responsesUsage(Object? raw) {
     if (raw is! Map<String, dynamic>) return null;
+    final details = raw['input_tokens_details'];
     return Usage(
       promptTokens: (raw['input_tokens'] as num?)?.toInt() ?? 0,
       completionTokens: (raw['output_tokens'] as num?)?.toInt() ?? 0,
       totalTokens: (raw['total_tokens'] as num?)?.toInt() ?? 0,
+      cachedTokens: details is Map<String, dynamic>
+          ? (details['cached_tokens'] as num?)?.toInt()
+          : null,
     );
+  }
+
+  /// Prompt tokens served from the provider's cache: OpenAI-style
+  /// `prompt_tokens_details.cached_tokens`, with DeepSeek's flat
+  /// `prompt_cache_hit_tokens` as fallback.
+  static int? _cachedPromptTokens(Map<String, dynamic> usage) {
+    final details = usage['prompt_tokens_details'];
+    if (details is Map<String, dynamic>) {
+      final cached = (details['cached_tokens'] as num?)?.toInt();
+      if (cached != null) return cached;
+    }
+    return (usage['prompt_cache_hit_tokens'] as num?)?.toInt();
   }
 
   /// Extracts assistant text from the shapes returned by OpenAI-compatible

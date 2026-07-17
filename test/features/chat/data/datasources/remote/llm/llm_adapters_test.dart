@@ -230,7 +230,7 @@ data: [DONE]
   group('AnthropicAdapter', () {
     const sse = '''
 event: message_start
-data: {"type":"message_start","message":{"usage":{"input_tokens":15,"output_tokens":0}}}
+data: {"type":"message_start","message":{"usage":{"input_tokens":15,"output_tokens":0,"cache_read_input_tokens":7,"cache_creation_input_tokens":3}}}
 
 event: content_block_delta
 data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"I should greet. "}}
@@ -277,6 +277,8 @@ data: {"type":"message_stop"}
       expect(done.usage?.promptTokens, 15);
       expect(done.usage?.completionTokens, 5);
       expect(done.usage?.totalTokens, 20);
+      expect(done.usage?.cachedTokens, 7);
+      expect(done.usage?.cacheCreationTokens, 3);
 
       expect(
         adapter.request!.uri.toString(),

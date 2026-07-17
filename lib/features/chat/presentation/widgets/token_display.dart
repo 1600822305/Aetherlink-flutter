@@ -232,6 +232,18 @@ class _TokenDisplayState extends ConsumerState<TokenDisplay> {
           label: '输出',
           value: '${_grouped(usage.completionTokens)} tokens',
         ),
+        if ((usage.cachedTokens ?? 0) > 0)
+          _StatRow(
+            icon: LucideIcons.databaseZap,
+            label: '缓存命中',
+            value: '${_grouped(usage.cachedTokens!)} tokens',
+          ),
+        if ((usage.cacheCreationTokens ?? 0) > 0)
+          _StatRow(
+            icon: LucideIcons.database,
+            label: '缓存写入',
+            value: '${_grouped(usage.cacheCreationTokens!)} tokens',
+          ),
         if (latencySeconds > 0) ...[
           if (tokensPerSecond > 0)
             _StatRow(
