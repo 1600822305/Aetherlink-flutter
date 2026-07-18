@@ -122,6 +122,11 @@ class WorkspaceFileOps {
     final action = await showModalBottomSheet<FileEntryAction>(
       context: context,
       showDragHandle: true,
+      // 高度随内容伸展，最高占屏幕 90%（超出部分面板内可滚动）。
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+      ),
       builder: (context) => EntryActionSheet(
         entry: entry,
         protected: protected,
