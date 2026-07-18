@@ -153,6 +153,45 @@ Future<ConflictAction?> promptNameConflict(
   );
 }
 
+/// 删除方式：移入回收站（可恢复）或直接删除（不可撤销）。
+enum DeleteChoice { trash, forever }
+
+/// 删除 [name] 时让用户选择删除方式；取消返回 null。
+Future<DeleteChoice?> promptDelete(
+  BuildContext context, {
+  required String name,
+  required bool isDirectory,
+}) {
+  return showDialog<DeleteChoice>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('删除'),
+      content: Text(
+        isDirectory
+            ? '删除文件夹「$name」及其全部内容?\n移入回收站可恢复；直接删除无法撤销。'
+            : '删除文件「$name」?\n移入回收站可恢复；直接删除无法撤销。',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          style: TextButton.styleFrom(
+            foregroundColor: Theme.of(context).colorScheme.error,
+          ),
+          onPressed: () => Navigator.of(context).pop(DeleteChoice.forever),
+          child: const Text('直接删除'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(DeleteChoice.trash),
+          child: const Text('移入回收站'),
+        ),
+      ],
+    ),
+  );
+}
+
 /// Confirms deletion of [name]. Directories warn that contents go too.
 Future<bool> confirmDelete(
   BuildContext context, {

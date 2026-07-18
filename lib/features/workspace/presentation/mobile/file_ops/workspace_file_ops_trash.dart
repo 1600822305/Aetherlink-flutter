@@ -1,8 +1,8 @@
 part of 'workspace_file_ops.dart';
 
-/// 删除 = 回收站语义：默认把条目移入工作区根下的隐藏回收站目录（可撤销），
-/// 回收站内的条目（或回收站本身）才真正删除。移动/命名规则在
-/// [WorkspaceFileOpService]，这里只负责确认对话框、撤销 toast 与树刷新。
+/// 删除 = 先选方式：移入工作区根下的隐藏回收站目录（可撤销）或直接删除
+/// （不可撤销）；回收站内的条目（或回收站本身）只能真正删除。移动/命名
+/// 规则在 [WorkspaceFileOpService]，这里只负责对话框、撤销 toast 与树刷新。
 extension WorkspaceFileOpsTrash on WorkspaceFileOps {
   Future<void> delete(WorkspaceEntry entry) async {
     if (!_guardWritable() || !_guardNotProtected(entry)) return;
@@ -10,6 +10,16 @@ extension WorkspaceFileOpsTrash on WorkspaceFileOps {
     if (!context.mounted) return;
     if (service.isInTrash(entry, trashPath)) {
       await _deleteForever(entry);
+      return;
+    }
+    final choice = await promptDelete(
+      context,
+      name: entry.name,
+      isDirectory: entry.isDirectory,
+    );
+    if (choice == null || !context.mounted) return;
+    if (choice == DeleteChoice.forever) {
+      await _deleteEntryNow(entry);
       return;
     }
     try {
@@ -118,6 +128,11 @@ extension WorkspaceFileOpsTrash on WorkspaceFileOps {
       isDirectory: entry.isDirectory,
     );
     if (!ok) return;
+    await _deleteEntryNow(entry);
+  }
+
+  // 真正删除（确认已在调用方完成）。
+  Future<void> _deleteEntryNow(WorkspaceEntry entry) async {
     try {
       if (entry.isDirectory) _snack('正在删除 ${entry.name}…');
       await service.deleteEntry(entry);
