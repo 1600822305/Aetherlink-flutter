@@ -21,6 +21,8 @@ enum FileEntryAction {
   copy,
   copyPath,
   details,
+  permissions,
+  openTerminal,
   gitDiff,
   fileHistory,
   share,
@@ -39,6 +41,8 @@ class EntryActionSheet extends StatelessWidget {
     this.showGitDiff = false,
     this.showFileHistory = false,
     this.showShare = false,
+    this.showPermissions = false,
+    this.showOpenTerminal = false,
   });
 
   final WorkspaceEntry entry;
@@ -63,6 +67,12 @@ class EntryActionSheet extends StatelessWidget {
   /// Whether to offer 「用其他应用打开/分享」 (files only).
   final bool showShare;
 
+  /// Whether to offer 「权限」（exec 后端专属，真实 POSIX 路径）。
+  final bool showPermissions;
+
+  /// Whether to offer 「在终端打开」（exec 后端的目录）。
+  final bool showOpenTerminal;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -70,9 +80,11 @@ class EntryActionSheet extends StatelessWidget {
     // 写操作组（新建/重命名/移动/复制到…）与「复制路径/详情」信息组之间加
     // 分隔线；有写操作时才需要分隔。
     final hasWriteGroup = writable && (isDir || !protected);
-    return SafeArea(
-      top: false,
-      minimum: const EdgeInsets.only(bottom: 8),
+    // 模态底部面板的 MediaQuery.padding.bottom 会被 sheet 吃掉，SafeArea 拿到
+    // 的是 0；改用 viewPadding 直接读手势条高度。
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset > 8 ? bottomInset : 8),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -169,6 +181,18 @@ class EntryActionSheet extends StatelessWidget {
             label: '详情',
             action: FileEntryAction.details,
           ),
+          if (showPermissions)
+            const _ActionTile(
+              icon: LucideIcons.shieldCheck,
+              label: '权限',
+              action: FileEntryAction.permissions,
+            ),
+          if (showOpenTerminal)
+            const _ActionTile(
+              icon: LucideIcons.terminal,
+              label: '在终端打开',
+              action: FileEntryAction.openTerminal,
+            ),
           if (showGitDiff)
             const _ActionTile(
               icon: LucideIcons.fileDiff,

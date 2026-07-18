@@ -8,6 +8,32 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.d
 
 import 'in_memory_workspace_backend.dart';
 
+/// In-memory backend with a scripted [exec] for permission tests.
+class _ExecBackend extends InMemoryWorkspaceBackend {
+  WorkspaceExecResult execResult =
+      const WorkspaceExecResult(stdout: '', stderr: '', exitCode: 0);
+  final List<String> commands = [];
+
+  @override
+  WorkspaceCapabilities get capabilities => const WorkspaceCapabilities(
+        canExec: true,
+        canWatch: true,
+        isRemote: false,
+      );
+
+  @override
+  Future<WorkspaceExecResult> exec(
+    String command, {
+    String? workingDirectory,
+    Duration? timeout,
+    Future<void>? cancelSignal,
+    void Function(String chunk)? onOutput,
+  }) async {
+    commands.add(command);
+    return execResult;
+  }
+}
+
 void main() {
   const root = '/ws';
 
@@ -130,6 +156,45 @@ void main() {
       expect(backend.exists('$root/a.txt'), isTrue);
       expect(backend.exists('$root/b.txt'), isTrue);
       expect(backend.exists('$root/dst/a.txt'), isFalse);
+    });
+  });
+
+  group('permissions', () {
+    test('isValidChmodMode accepts octal and symbolic modes', () {
+      for (final ok in ['644', '0755', 'u+x', 'go-w', 'a=r', 'u+rw,go-w']) {
+        expect(WorkspaceFileOpService.isValidChmodMode(ok), isTrue, reason: ok);
+      }
+      for (final bad in ['', '99', '77777', 'rm -rf /', 'u+q', '755; ls']) {
+        expect(
+          WorkspaceFileOpService.isValidChmodMode(bad),
+          isFalse,
+          reason: bad,
+        );
+      }
+    });
+
+    test('statPermissions parses stat output; chmod validates mode', () async {
+      final execBackend = _ExecBackend();
+      execBackend.seedDir(root);
+      execBackend.seedFile('$root/a.txt');
+      final svc = WorkspaceFileOpService(
+        backend: execBackend,
+        rootPath: root,
+        parentOf: (path) => parentIndex[path],
+      );
+      execBackend.execResult =
+          const WorkspaceExecResult(stdout: '755 -rwxr-xr-x u:g\n', stderr: '', exitCode: 0);
+      final entry = await execBackend.getFileInfo('$root/a.txt');
+      final perms = await svc.statPermissions(entry);
+      expect(perms.octal, '755');
+      expect(perms.symbolic, '-rwxr-xr-x');
+      expect(perms.owner, 'u:g');
+      expect(execBackend.commands.single, contains("stat -c '%a %A %U:%G'"));
+
+      await svc.chmod(entry, '644', recursive: true);
+      expect(execBackend.commands.last, "chmod -R 644 '$root/a.txt'");
+
+      await expectLater(svc.chmod(entry, 'bad; rm'), throwsArgumentError);
     });
   });
 
