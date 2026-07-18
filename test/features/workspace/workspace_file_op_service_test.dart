@@ -1,3 +1,6 @@
+import 'dart:typed_data';
+
+import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherlink_flutter/features/workspace/application/workspace_file_op_service.dart';
@@ -127,6 +130,63 @@ void main() {
       expect(backend.exists('$root/a.txt'), isTrue);
       expect(backend.exists('$root/b.txt'), isTrue);
       expect(backend.exists('$root/dst/a.txt'), isFalse);
+    });
+  });
+
+  group('import / zip', () {
+    test('importFiles writes bytes with keep-both naming', () async {
+      backend.seedFile('$root/a.txt', 'old');
+      await index(root);
+      final result = await service.importFiles(root, [
+        ImportFileData(name: 'a.txt', bytes: Uint8List.fromList('new'.codeUnits)),
+        ImportFileData(name: 'b.txt', bytes: Uint8List.fromList('bb'.codeUnits)),
+      ]);
+      expect(result.imported, 2);
+      expect(result.skipped, 0);
+      expect(await backend.readFile('$root/a.txt'), 'old');
+      expect(await backend.readFile('$root/a (2).txt'), 'new');
+      expect(await backend.readFile('$root/b.txt'), 'bb');
+    });
+
+    test('zipEntry then extractZip round-trips a directory tree', () async {
+      backend
+        ..seedFile('$root/proj/main.dart', 'void main() {}')
+        ..seedFile('$root/proj/lib/util.dart', 'x')
+        ..seedDir('$root/proj/empty');
+      await index(root);
+      await index('$root/proj');
+      final zipName =
+          await service.zipEntry(await entryOf('$root/proj'));
+      expect(zipName, 'proj.zip');
+      expect(backend.exists('$root/proj.zip'), isTrue);
+
+      await index(root);
+      final dirName =
+          await service.extractZip(await entryOf('$root/proj.zip'));
+      expect(dirName, 'proj (2)'); // 'proj' is taken by the source dir
+      expect(
+        await backend.readFile('$root/proj (2)/proj/main.dart'),
+        'void main() {}',
+      );
+      expect(
+        await backend.readFile('$root/proj (2)/proj/lib/util.dart'),
+        'x',
+      );
+      expect(backend.exists('$root/proj (2)/proj/empty'), isTrue);
+    });
+
+    test('extractZip skips zip-slip entries', () async {
+      final archive = Archive()
+        ..add(ArchiveFile.bytes('../evil.txt', Uint8List.fromList('x'.codeUnits)))
+        ..add(ArchiveFile.bytes('ok.txt', Uint8List.fromList('ok'.codeUnits)));
+      final bytes = ZipEncoder().encodeBytes(archive);
+      backend.seedFile('$root/p.zip', String.fromCharCodes(bytes));
+      await index(root);
+      final dirName = await service.extractZip(await entryOf('$root/p.zip'));
+      expect(dirName, 'p');
+      expect(await backend.readFile('$root/p/ok.txt'), 'ok');
+      expect(backend.exists('$root/evil.txt'), isFalse);
+      expect(backend.exists('$root/p/evil.txt'), isFalse);
     });
   });
 

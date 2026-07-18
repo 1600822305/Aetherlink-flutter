@@ -429,6 +429,9 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                           ? null
                           : () => _pasteClipboard(ops, ops.rootPath),
                       onToggleFilter: root == null ? null : _toggleFilterBar,
+                      onImportToRoot: ops == null
+                          ? null
+                          : () => ops.importInto(ops.rootPath),
                     ),
             ),
             if (_filterBarVisible && !_tree.selecting)

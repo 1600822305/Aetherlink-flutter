@@ -117,6 +117,20 @@ class InMemoryWorkspaceBackend extends WorkspaceBackend {
   }
 
   @override
+  Future<List<int>> readFileBytes(
+    String path, {
+    int offset = 0,
+    int? length,
+  }) async {
+    final node = _lookup(path).node;
+    if (node.isDir) throw StateError('is a directory: $path');
+    final bytes = (node.content ?? '').codeUnits;
+    final end =
+        length == null ? bytes.length : (offset + length).clamp(0, bytes.length);
+    return bytes.sublist(offset, end);
+  }
+
+  @override
   Future<WorkspaceEntry> getFileInfo(String path) async {
     final found = _lookup(path);
     final segs = _segments(path);
@@ -139,6 +153,14 @@ class InMemoryWorkspaceBackend extends WorkspaceBackend {
     dir.children[name] = _Node.file(name, content ?? '');
     return _join(parentPath, name);
   }
+
+  @override
+  Future<String> createFileBytes(
+    String parentPath,
+    String name,
+    List<int> bytes,
+  ) =>
+      createFile(parentPath, name, content: String.fromCharCodes(bytes));
 
   @override
   Future<String> createDirectory(

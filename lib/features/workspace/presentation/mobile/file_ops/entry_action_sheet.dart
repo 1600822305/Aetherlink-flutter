@@ -14,6 +14,9 @@ enum FileEntryAction {
   copyToClipboard,
   paste,
   duplicate,
+  importHere,
+  compress,
+  extract,
   move,
   copy,
   copyPath,
@@ -125,6 +128,23 @@ class EntryActionSheet extends StatelessWidget {
               label: '创建副本',
               action: FileEntryAction.duplicate,
             ),
+            if (isDir)
+              const _ActionTile(
+                icon: LucideIcons.import,
+                label: '导入文件到此',
+                action: FileEntryAction.importHere,
+              ),
+            const _ActionTile(
+              icon: LucideIcons.folderArchive,
+              label: '压缩为 zip',
+              action: FileEntryAction.compress,
+            ),
+            if (!isDir && entry.name.toLowerCase().endsWith('.zip'))
+              const _ActionTile(
+                icon: LucideIcons.packageOpen,
+                label: '解压到此处',
+                action: FileEntryAction.extract,
+              ),
           ],
           if (writable && !protected)
             const _ActionTile(
