@@ -104,6 +104,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   void dispose() {
     _tree.removeListener(_onTreeChanged);
     _tree.dispose();
+    _filterInput.dispose();
     _scroll.dispose();
     super.dispose();
   }
@@ -206,6 +207,21 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   // The ops instance from the last build, so the paste callback (captured by
   // the entry menu) always uses the current tree wiring.
   WorkspaceFileOps? _ops;
+
+  // 树内快速过滤条：由 ⋯ 菜单的「过滤」开关，关闭时清空 controller 的
+  // 过滤词。
+  bool _filterBarVisible = false;
+  final TextEditingController _filterInput = TextEditingController();
+
+  void _toggleFilterBar() {
+    setState(() {
+      _filterBarVisible = !_filterBarVisible;
+      if (!_filterBarVisible) {
+        _filterInput.clear();
+        _tree.setFilter('');
+      }
+    });
+  }
 
   // Pastes the file-tree clipboard into [dest]; a successful cut-paste
   // consumes the clipboard (copy-paste stays for repeated pastes).
@@ -412,8 +428,48 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                       onPasteToRoot: ops == null
                           ? null
                           : () => _pasteClipboard(ops, ops.rootPath),
+                      onToggleFilter: root == null ? null : _toggleFilterBar,
                     ),
             ),
+            if (_filterBarVisible && !_tree.selecting)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 8, 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _filterInput,
+                        autofocus: true,
+                        style: theme.textTheme.bodySmall,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          hintText: '按名称过滤已加载的文件…',
+                          prefixIcon: const Icon(
+                            LucideIcons.listFilter,
+                            size: 16,
+                          ),
+                          prefixIconConstraints: const BoxConstraints(
+                            minWidth: 32,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 8,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onChanged: _tree.setFilter,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '关闭过滤',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(LucideIcons.x, size: 18),
+                      onPressed: _toggleFilterBar,
+                    ),
+                  ],
+                ),
+              ),
             Divider(height: 1, color: theme.dividerColor),
             Expanded(
               child: root == null

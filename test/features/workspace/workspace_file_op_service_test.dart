@@ -62,15 +62,71 @@ void main() {
         ..seedDir('$root/dst')
         ..seedFile('$root/dst/a.txt')
         ..seedFile('$root/a.txt');
-      final name = await service.moveKeepBoth(
+      final moved = await service.moveKeepBoth(
         await entryOf('$root/a.txt'),
         root,
         '$root/dst',
       );
-      expect(name, isNot('a.txt'));
+      expect(moved.movedName, isNot('a.txt'));
+      expect(moved.originalName, 'a.txt');
       expect(backend.exists('$root/a.txt'), isFalse);
-      expect(backend.exists('$root/dst/$name'), isTrue);
+      expect(backend.exists('$root/dst/${moved.movedName}'), isTrue);
       expect(backend.exists('$root/dst/a.txt'), isTrue);
+    });
+  });
+
+  group('undo move', () {
+    test('undoMove moves back and restores the original name', () async {
+      backend
+        ..seedDir('$root/dst')
+        ..seedFile('$root/dst/a.txt')
+        ..seedFile('$root/a.txt', 'src');
+      await index(root);
+      final moved = await service.moveKeepBoth(
+        await entryOf('$root/a.txt'),
+        root,
+        '$root/dst',
+      );
+      await service.undoMove(moved);
+      expect(backend.exists('$root/a.txt'), isTrue);
+      expect(await backend.readFile('$root/a.txt'), 'src');
+      expect(backend.exists('$root/dst/${moved.movedName}'), isFalse);
+    });
+
+    test('plain move records an undoable entry', () async {
+      backend
+        ..seedDir('$root/dst')
+        ..seedFile('$root/a.txt');
+      await index(root);
+      final moved = await service.move(
+        await entryOf('$root/a.txt'),
+        root,
+        '$root/dst',
+      );
+      expect(moved.movedName, 'a.txt');
+      expect(moved.sourceDir, root);
+      await service.undoMove(moved);
+      expect(backend.exists('$root/a.txt'), isTrue);
+      expect(backend.exists('$root/dst/a.txt'), isFalse);
+    });
+
+    test('moveMany returns undoable move records', () async {
+      backend
+        ..seedDir('$root/dst')
+        ..seedFile('$root/a.txt')
+        ..seedFile('$root/b.txt');
+      await index(root);
+      final result = await service.moveMany([
+        await entryOf('$root/a.txt'),
+        await entryOf('$root/b.txt'),
+      ], '$root/dst');
+      expect(result.moves, hasLength(2));
+      for (final moved in result.moves.reversed) {
+        await service.undoMove(moved);
+      }
+      expect(backend.exists('$root/a.txt'), isTrue);
+      expect(backend.exists('$root/b.txt'), isTrue);
+      expect(backend.exists('$root/dst/a.txt'), isFalse);
     });
   });
 

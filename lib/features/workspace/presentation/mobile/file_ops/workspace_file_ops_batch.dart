@@ -50,10 +50,7 @@ extension WorkspaceFileOpsBatch on WorkspaceFileOps {
     for (final dir in result.touchedDirs) {
       await reloadDir(dir);
     }
-    _snack(
-      '已移动 ${result.moved} 项'
-      '${result.skipped > 0 ? '，跳过 ${result.skipped} 项' : ''}',
-    );
+    _moveResultToast(result, dest);
   }
 
   /// Batch copy to a picked destination; keep-both on name conflicts.
