@@ -738,33 +738,44 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                     icon: const Icon(LucideIcons.arrowLeft, size: 20),
                     onPressed: widget.onBack,
                   ),
-                  Icon(
-                    LucideIcons.folderTree,
-                    size: 18,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 8),
+                  // 标题即工作区切换入口：点名称弹出打开/切换工作区面板。
                   Expanded(
-                    child: Text(
-                      workspace?.name ?? '工作区',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => showOpenWorkspaceSheet(context, ref),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 6,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              LucideIcons.folderTree,
+                              size: 18,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                workspace?.name ?? '工作区',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              LucideIcons.chevronDown,
+                              size: 14,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  IconButton(
-                    tooltip: '搜索文件',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(LucideIcons.search, size: 18),
-                    onPressed: root == null ? null : _openSearch,
-                  ),
-                  IconButton(
-                    tooltip: '打开文件夹',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(LucideIcons.folderOpen, size: 18),
-                    onPressed: () => showOpenWorkspaceSheet(context, ref),
                   ),
                 ],
               ),
@@ -795,6 +806,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                       sortMode: sortMode,
                       onNewFile: () => ops?.newFile(ops.rootPath),
                       onNewFolder: () => ops?.newFolder(ops.rootPath),
+                      onOpenSearch: _openSearch,
                       onEnterSelect: () =>
                           setState(() => _selecting = true),
                       onOpenTrash: () => ops?.openTrash(),
