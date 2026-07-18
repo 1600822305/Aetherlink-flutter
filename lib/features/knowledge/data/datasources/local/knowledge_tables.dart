@@ -15,6 +15,13 @@ class KnowledgeBaseRows extends Table {
   IntColumn get dimensions => integer().nullable()();
   IntColumn get chunkSize => integer().withDefault(const Constant(1000))();
   IntColumn get chunkOverlap => integer().withDefault(const Constant(200))();
+
+  /// 切块策略（structured / delimiter）与转义形式的自定义分隔符（如 `\n\n`），
+  /// 对齐 CS 的 chunkStrategy / chunkSeparator。
+  TextColumn get chunkStrategy =>
+      text().withDefault(const Constant('structured'))();
+  TextColumn get chunkSeparator =>
+      text().withDefault(const Constant(r'\n\n'))();
   TextColumn get searchMode => text().withDefault(const Constant('keyword'))();
   RealColumn get threshold => real().nullable()();
   IntColumn get topK => integer().withDefault(const Constant(5))();

@@ -711,7 +711,10 @@ class _KnowledgeBaseDetailPageState
     if (result == null) return;
     final chunkingChanged =
         result.chunkSize != base.chunkSize ||
-        result.chunkOverlap != base.chunkOverlap;
+        result.chunkOverlap != base.chunkOverlap ||
+        result.chunkStrategy != base.chunkStrategy ||
+        (result.chunkStrategy == KnowledgeChunkStrategy.delimiter &&
+            result.chunkSeparator != base.chunkSeparator);
     final newModelKey = result.embeddingModelKey;
     final modelChanged =
         newModelKey != null && newModelKey != base.embeddingModelKey;
@@ -722,6 +725,8 @@ class _KnowledgeBaseDetailPageState
             name: result.name,
             chunkSize: result.chunkSize,
             chunkOverlap: result.chunkOverlap,
+            chunkStrategy: result.chunkStrategy,
+            chunkSeparator: result.chunkSeparator,
             topK: result.topK,
             threshold: result.threshold,
             // 换模型时检索模式交给 changeEmbeddingModel 一并落库（新模型

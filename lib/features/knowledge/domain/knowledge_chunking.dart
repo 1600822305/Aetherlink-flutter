@@ -1,3 +1,5 @@
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
+
 /// 一段切块的位置与内容。保持设计文档 §4.3 的不变式
 /// `content.text.substring(charStart, charEnd) == text`——chunk 是正文的切片
 /// 派生，不重复存整篇正文。
@@ -23,10 +25,15 @@ class TextChunk {
 ///   连续，不变式仍然成立），单块长度上界为 [size]。
 /// - 纯空白的块会被丢弃；[overlap] 被夹在 `[0, size)` 内以保证步进为正。
 /// - 切点与回扩点都不会落在 UTF-16 代理对中间。
+///
+/// [strategy] 为 [KnowledgeChunkStrategy.delimiter] 时，把 [separator]（转义
+/// 形式，如 `\n\n`）作为最高优先级切分符，单元仍超长时回退结构感知级别。
 List<TextChunk> chunkText(
   String text, {
   required int size,
   required int overlap,
+  KnowledgeChunkStrategy strategy = KnowledgeChunkStrategy.structured,
+  String separator = '',
 }) {
   if (text.isEmpty) return const [];
   final safeSize = size < 1 ? 1 : size;
@@ -37,8 +44,9 @@ List<TextChunk> chunkText(
   // 「窗口 size、步进 size-overlap」的语义对齐）。
   final target = safeSize - safeOverlap;
 
+  final levels = _separatorLevels(strategy, separator);
   final cuts = <int>[];
-  _cutRecursive(text, 0, text.length, target, 0, cuts);
+  _cutRecursive(text, 0, text.length, target, 0, levels, cuts);
 
   final chunks = <TextChunk>[];
   var prev = 0;
@@ -67,13 +75,37 @@ List<TextChunk> chunkText(
 /// 递归回退的分隔级别：段落边界 → 行边界 → 句子边界。
 /// 每个正则匹配「结构单元的结尾（含分隔符本身）」，切点取匹配结束位置，
 /// 保证切片拼接可还原原文。
-final List<RegExp> _kSeparatorLevels = [
+final List<RegExp> _kStructuredLevels = [
   RegExp(r'\n{2,}'), // 段落：连续空行
   RegExp(r'\n'), // 行
   // 句子：CJK 句末标点直接断；ASCII 句末标点要求后跟空白或文末，
   // 避免把 "3.14"、"v1.2" 这类小数/版本号误当句界。
   RegExp(r'[。！？；][」』”’\)）\]】]*\s*|[.!?;]["' "'" r'\)\]]*(?:\s+|$)'),
 ];
+
+const Map<String, String> _kSeparatorEscapes = {
+  'n': '\n',
+  't': '\t',
+  'r': '\r',
+  r'\': r'\',
+};
+
+/// 把用户输入的转义形式分隔符（如 `\n\n`、`\t`）解成字面字符。
+String unescapeChunkSeparator(String raw) {
+  return raw.replaceAllMapped(
+    RegExp(r'\\([ntr\\])'),
+    (m) => _kSeparatorEscapes[m.group(1)]!,
+  );
+}
+
+/// 本次切块的分隔级别链：delimiter 策略把用户分隔符插到最高优先级，
+/// 切不动时仍能逐级回退；structured / 空分隔符保持原链。
+List<RegExp> _separatorLevels(KnowledgeChunkStrategy strategy, String raw) {
+  if (strategy != KnowledgeChunkStrategy.delimiter) return _kStructuredLevels;
+  final literal = unescapeChunkSeparator(raw);
+  if (literal.isEmpty) return _kStructuredLevels;
+  return [RegExp(RegExp.escape(literal)), ..._kStructuredLevels];
+}
 
 /// 把 `[start, end)` 切成若干净长度 ≤ [target] 的片段，切点依次追加进
 /// [cuts]（每个切点是片段的结束偏移，彼此连续覆盖整个区间）。
@@ -86,13 +118,14 @@ void _cutRecursive(
   int end,
   int target,
   int level,
+  List<RegExp> levels,
   List<int> cuts,
 ) {
   if (end - start <= target) {
     cuts.add(end);
     return;
   }
-  if (level >= _kSeparatorLevels.length) {
+  if (level >= levels.length) {
     // 定长硬切兜底。
     var pos = start;
     while (pos < end) {
@@ -106,7 +139,7 @@ void _cutRecursive(
 
   // 本级把区间切成结构单元（单元末尾含分隔符），再贪心合并到 ≤ target。
   final unitEnds = <int>[];
-  for (final m in _kSeparatorLevels[level].allMatches(
+  for (final m in levels[level].allMatches(
     text.substring(start, end),
   )) {
     final unitEnd = start + m.end;
@@ -116,7 +149,7 @@ void _cutRecursive(
 
   if (unitEnds.length == 1) {
     // 本级切不动，整段下沉到下一级。
-    _cutRecursive(text, start, end, target, level + 1, cuts);
+    _cutRecursive(text, start, end, target, level + 1, levels, cuts);
     return;
   }
 
@@ -134,7 +167,7 @@ void _cutRecursive(
     }
     if (unitEnd - groupStart > target) {
       // 单个单元本身超长 → 递归下一级。
-      _cutRecursive(text, groupStart, unitEnd, target, level + 1, cuts);
+      _cutRecursive(text, groupStart, unitEnd, target, level + 1, levels, cuts);
       groupStart = unitEnd;
     }
     unitStart = unitEnd;

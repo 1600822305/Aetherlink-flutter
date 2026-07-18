@@ -278,6 +278,8 @@ class KnowledgeBaseController extends _$KnowledgeBaseController {
     required int topK,
     required double? threshold,
     KnowledgeSearchMode? searchMode,
+    KnowledgeChunkStrategy? chunkStrategy,
+    String? chunkSeparator,
   }) async {
     await ref
         .read(knowledgeServiceProvider)
@@ -289,6 +291,8 @@ class KnowledgeBaseController extends _$KnowledgeBaseController {
           topK: topK,
           threshold: threshold,
           searchMode: searchMode,
+          chunkStrategy: chunkStrategy,
+          chunkSeparator: chunkSeparator,
         );
     ref.invalidateSelf();
     await future;

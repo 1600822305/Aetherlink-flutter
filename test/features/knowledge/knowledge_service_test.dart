@@ -186,6 +186,89 @@ void main() {
       }
     });
 
+    test('unescapeChunkSeparator resolves escaped forms', () {
+      expect(unescapeChunkSeparator(r'\n\n'), '\n\n');
+      expect(unescapeChunkSeparator(r'\t'), '\t');
+      expect(unescapeChunkSeparator(r'\r\n'), '\r\n');
+      expect(unescapeChunkSeparator(r'\\n'), r'\n');
+      expect(unescapeChunkSeparator('。'), '。');
+    });
+
+    test('delimiter strategy cuts at the custom separator first', () {
+      const text = '第一节的内容。---第二节的内容。---第三节的内容。';
+      final chunks = chunkText(
+        text,
+        size: 16,
+        overlap: 0,
+        strategy: KnowledgeChunkStrategy.delimiter,
+        separator: '---',
+      );
+      expect(chunks, hasLength(3));
+      expect(chunks[0].text, '第一节的内容。---');
+      expect(chunks[1].text, '第二节的内容。---');
+      expect(chunks[2].text, '第三节的内容。');
+      for (final c in chunks) {
+        expect(text.substring(c.charStart, c.charEnd), c.text);
+      }
+    });
+
+    test('delimiter strategy honors escaped separators like \\t', () {
+      const text = 'aaa\tbbb\tccc';
+      final chunks = chunkText(
+        text,
+        size: 5,
+        overlap: 0,
+        strategy: KnowledgeChunkStrategy.delimiter,
+        separator: r'\t',
+      );
+      expect(chunks.map((c) => c.text), ['aaa\t', 'bbb\t', 'ccc']);
+    });
+
+    test('delimiter strategy falls back when a segment is oversized', () {
+      const text = '短段落###这一个分段实在太长了必须回退到句子级别。它有第二句。###尾段';
+      final chunks = chunkText(
+        text,
+        size: 12,
+        overlap: 0,
+        strategy: KnowledgeChunkStrategy.delimiter,
+        separator: '###',
+      );
+      expect(chunks.map((c) => c.text).join(), text);
+      for (final c in chunks) {
+        expect(c.text.length, lessThanOrEqualTo(12));
+      }
+    });
+
+    test('delimiter strategy with empty separator behaves as structured', () {
+      const text = '第一段。\n\n第二段。';
+      final a = chunkText(
+        text,
+        size: 10,
+        overlap: 0,
+        strategy: KnowledgeChunkStrategy.delimiter,
+        separator: '',
+      );
+      final b = chunkText(text, size: 10, overlap: 0);
+      expect(a.map((c) => c.text), b.map((c) => c.text));
+    });
+
+    test('delimiter strategy keeps overlap and substring invariant', () {
+      const text = '一二三四五。|六七八九十。|十一十二十三。';
+      final chunks = chunkText(
+        text,
+        size: 10,
+        overlap: 3,
+        strategy: KnowledgeChunkStrategy.delimiter,
+        separator: '|',
+      );
+      expect(chunks, isNotEmpty);
+      for (final c in chunks) {
+        expect(text.substring(c.charStart, c.charEnd), c.text);
+        expect(c.text.length, lessThanOrEqualTo(10));
+      }
+      expect(chunks.last.charEnd, text.length);
+    });
+
     test('keeps substring invariant with overlap on structured text', () {
       const text = '第一句话在这里。第二句话也在这里。\n\n新的段落开始了。它还有第二句。';
       final chunks = chunkText(text, size: 16, overlap: 4);
@@ -349,6 +432,118 @@ void main() {
       // The chunk covering both tokens (similarity 1.0) ranks first.
       expect(hits.first.content, contains('beta'));
       expect(hits.first.similarity, 1.0);
+    });
+
+    test('updateBaseConfig persists chunk strategy and separator', () async {
+      final base = await service.createBase(name: 'KB');
+      expect(base.chunkStrategy, KnowledgeChunkStrategy.structured);
+      expect(base.chunkSeparator, KnowledgeBase.kDefaultChunkSeparator);
+
+      await service.updateBaseConfig(
+        base.id,
+        name: 'KB',
+        chunkSize: 500,
+        chunkOverlap: 50,
+        topK: 5,
+        threshold: null,
+        chunkStrategy: KnowledgeChunkStrategy.delimiter,
+        chunkSeparator: '---',
+      );
+      final reloaded = (await service.getBase(base.id))!;
+      expect(reloaded.chunkStrategy, KnowledgeChunkStrategy.delimiter);
+      expect(reloaded.chunkSeparator, '---');
+
+      // delimiter 策略拒绝空分隔符。
+      await expectLater(
+        service.updateBaseConfig(
+          base.id,
+          name: 'KB',
+          chunkSize: 500,
+          chunkOverlap: 50,
+          topK: 5,
+          threshold: null,
+          chunkSeparator: '   ',
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('delimiter base chunks new items by the custom separator', () async {
+      final base = await service.createBase(name: 'KB');
+      await service.updateBaseConfig(
+        base.id,
+        name: 'KB',
+        chunkSize: 100,
+        chunkOverlap: 0,
+        topK: 5,
+        threshold: null,
+        chunkStrategy: KnowledgeChunkStrategy.delimiter,
+        chunkSeparator: '===',
+      );
+      // 每节约 60 字，超过 100 的块目标时按 === 切开（不足时贪心合并）。
+      final section = '第一节的正文内容' * 8;
+      final item = await service.addNote(
+        baseId: base.id,
+        title: 'n',
+        text: '$section===$section===$section',
+      );
+      final chunks = await service.itemChunks(item.id);
+      expect(chunks, hasLength(3));
+      expect(chunks[0].content, '$section===');
+      expect(chunks[2].content, section);
+
+      // 改大 chunkSize 后 reindex 重新贪心合并为单块。
+      await service.updateBaseConfig(
+        base.id,
+        name: 'KB',
+        chunkSize: 500,
+        chunkOverlap: 0,
+        topK: 5,
+        threshold: null,
+      );
+      await service.reindexBase(base.id);
+      final rechunked = await service.itemChunks(item.id);
+      expect(rechunked, hasLength(1));
+    });
+
+    test('BM25 ranks higher term frequency first for long-token queries',
+        () async {
+      final base = await service.createBase(name: 'KB');
+      await service.addNote(
+        baseId: base.id,
+        title: 'dense',
+        text: 'flutter flutter flutter is everywhere in this note.',
+      );
+      await service.addNote(
+        baseId: base.id,
+        title: 'sparse',
+        text: 'flutter appears once amid many other unrelated words here '
+            'to dilute term frequency for ranking purposes.',
+      );
+
+      final hits = await service.search(baseId: base.id, query: 'flutter');
+      expect(hits, hasLength(2));
+      expect(hits.first.content, contains('flutter flutter'));
+      expect(hits.first.similarity, 1.0);
+      expect(hits[1].similarity, lessThan(1.0));
+    });
+
+    test('BM25 zero-hit and short-token queries fall back to substring scan',
+        () async {
+      final base = await service.createBase(name: 'KB');
+      await service.addNote(
+        baseId: base.id,
+        title: '中文',
+        text: '知识库支持自定义分隔符切块和全文检索。',
+      );
+
+      // 1–2 字查询（trigram 不可靠）走 bigram 子串路径。
+      final short = await service.search(baseId: base.id, query: '切块');
+      expect(short, isNotEmpty);
+
+      // 长 CJK 查询整串不连续出现时，BM25 零命中回退子串扫描仍有召回。
+      final long = await service.search(baseId: base.id, query: '切块的分隔符');
+      expect(long, isNotEmpty);
     });
 
     test('Chinese sentence query matches via bigram tokens', () async {

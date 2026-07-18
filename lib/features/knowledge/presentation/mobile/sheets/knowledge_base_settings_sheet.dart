@@ -19,6 +19,8 @@ class KnowledgeBaseSettingsResult {
     required this.name,
     required this.chunkSize,
     required this.chunkOverlap,
+    required this.chunkStrategy,
+    required this.chunkSeparator,
     required this.topK,
     required this.threshold,
     required this.searchMode,
@@ -29,6 +31,8 @@ class KnowledgeBaseSettingsResult {
   final String name;
   final int chunkSize;
   final int chunkOverlap;
+  final KnowledgeChunkStrategy chunkStrategy;
+  final String chunkSeparator;
   final int topK;
   final double? threshold;
   final KnowledgeSearchMode searchMode;
@@ -58,6 +62,10 @@ class _KnowledgeBaseSettingsSheetState
   late final _chunkOverlapController = TextEditingController(
     text: '${widget.base.chunkOverlap}',
   );
+  late final _separatorController = TextEditingController(
+    text: widget.base.chunkSeparator,
+  );
+  late KnowledgeChunkStrategy _chunkStrategy = widget.base.chunkStrategy;
   late int _topK = widget.base.topK.clamp(1, 50);
   late double? _threshold = widget.base.threshold;
   late KnowledgeSearchMode _searchMode = widget.base.searchMode;
@@ -69,6 +77,7 @@ class _KnowledgeBaseSettingsSheetState
     _nameController.dispose();
     _chunkSizeController.dispose();
     _chunkOverlapController.dispose();
+    _separatorController.dispose();
     super.dispose();
   }
 
@@ -84,11 +93,21 @@ class _KnowledgeBaseSettingsSheetState
       AppToast.error(context, '切块大小 / 重叠需为整数');
       return;
     }
+    final separator = _separatorController.text.trim();
+    if (_chunkStrategy == KnowledgeChunkStrategy.delimiter &&
+        separator.isEmpty) {
+      AppToast.error(context, '自定义分隔符不能为空');
+      return;
+    }
     Navigator.of(context).pop(
       KnowledgeBaseSettingsResult(
         name: name,
         chunkSize: chunkSize,
         chunkOverlap: chunkOverlap,
+        chunkStrategy: _chunkStrategy,
+        chunkSeparator: separator.isEmpty
+            ? KnowledgeBase.kDefaultChunkSeparator
+            : separator,
         topK: _topK,
         threshold: _threshold,
         searchMode: _searchMode,
@@ -185,9 +204,41 @@ class _KnowledgeBaseSettingsSheetState
             ),
           ],
         ),
+        const SizedBox(height: 12),
+        Text(
+          '切块策略',
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        SegmentedButton<KnowledgeChunkStrategy>(
+          segments: const [
+            ButtonSegment(
+              value: KnowledgeChunkStrategy.structured,
+              label: Text('结构感知'),
+            ),
+            ButtonSegment(
+              value: KnowledgeChunkStrategy.delimiter,
+              label: Text('自定义分隔符'),
+            ),
+          ],
+          selected: {_chunkStrategy},
+          onSelectionChanged: (s) => setState(() => _chunkStrategy = s.first),
+        ),
+        if (_chunkStrategy == KnowledgeChunkStrategy.delimiter) ...[
+          const SizedBox(height: 8),
+          TextField(
+            controller: _separatorController,
+            decoration: const InputDecoration(
+              labelText: '分隔符',
+              helperText: r'支持转义：\n 换行、\t 制表符，如 \n\n 表示空行；也可用 。 等字面符',
+            ),
+          ),
+        ],
         const SizedBox(height: 8),
         Text(
-          '修改切块大小 / 重叠后会自动重建整库索引（向量库会按需补嵌，'
+          '修改切块大小 / 重叠 / 策略 / 分隔符后会自动重建整库索引（向量库会按需补嵌，'
           '未变的内容不重复调用嵌入 API）。',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,

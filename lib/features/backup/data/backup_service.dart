@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/features/backup/domain/backup_manifest.dart';
 import 'package:aetherlink_flutter/features/backup/domain/restore_plan.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_base.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_chunking.dart';
 import 'package:aetherlink_flutter/features/knowledge/domain/knowledge_scope.dart';
 import 'package:aetherlink_flutter/features/memory/domain/memory_item.dart';
@@ -1335,6 +1336,8 @@ class BackupService {
             'dimensions': base.dimensions,
             'chunkSize': base.chunkSize,
             'chunkOverlap': base.chunkOverlap,
+            'chunkStrategy': base.chunkStrategy,
+            'chunkSeparator': base.chunkSeparator,
             'searchMode': base.searchMode,
             'threshold': base.threshold,
             'topK': base.topK,
@@ -1855,6 +1858,12 @@ class BackupService {
       if (id.isEmpty || name.isEmpty) return false;
       final chunkSize = (json['chunkSize'] as num?)?.toInt() ?? 1000;
       final chunkOverlap = (json['chunkOverlap'] as num?)?.toInt() ?? 200;
+      final chunkStrategy = KnowledgeChunkStrategy.fromName(
+        json['chunkStrategy'] as String?,
+      );
+      final chunkSeparator =
+          (json['chunkSeparator'] as String?) ??
+          KnowledgeBase.kDefaultChunkSeparator;
       final scopeJson = json['scope'];
       final scope = scopeJson is Map<String, dynamic>
           ? KnowledgeScope.fromJson(scopeJson)
@@ -1868,6 +1877,8 @@ class BackupService {
           dimensions: Value((json['dimensions'] as num?)?.toInt()),
           chunkSize: Value(chunkSize),
           chunkOverlap: Value(chunkOverlap),
+          chunkStrategy: Value(chunkStrategy.name),
+          chunkSeparator: Value(chunkSeparator),
           searchMode: Value((json['searchMode'] ?? 'keyword').toString()),
           threshold: Value((json['threshold'] as num?)?.toDouble()),
           topK: Value((json['topK'] as num?)?.toInt() ?? 5),
@@ -1915,6 +1926,8 @@ class BackupService {
           content,
           size: chunkSize,
           overlap: chunkOverlap,
+          strategy: chunkStrategy,
+          separator: chunkSeparator,
         )) {
           await db.into(db.kbChunkRows).insert(
             KbChunkRowsCompanion.insert(

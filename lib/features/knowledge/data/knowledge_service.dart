@@ -268,6 +268,8 @@ class KnowledgeService {
     required int topK,
     required double? threshold,
     KnowledgeSearchMode? searchMode,
+    KnowledgeChunkStrategy? chunkStrategy,
+    String? chunkSeparator,
   }) async {
     final base = await _requireBase(baseId);
     final trimmed = name.trim();
@@ -279,6 +281,11 @@ class KnowledgeService {
       throw StateError('切块重叠需 ≥ 0 且小于切块大小');
     }
     if (topK < 1 || topK > 50) throw StateError('topK 需在 1–50 之间');
+    final strategy = chunkStrategy ?? base.chunkStrategy;
+    final separator = (chunkSeparator ?? base.chunkSeparator).trim();
+    if (strategy == KnowledgeChunkStrategy.delimiter && separator.isEmpty) {
+      throw StateError('delimiter 策略需要非空分隔符');
+    }
     if (threshold != null && (threshold < 0 || threshold > 1)) {
       throw StateError('相似度阈值需在 0–1 之间');
     }
@@ -292,6 +299,10 @@ class KnowledgeService {
       name: trimmed,
       chunkSize: chunkSize,
       chunkOverlap: chunkOverlap,
+      chunkStrategy: strategy,
+      chunkSeparator: separator.isEmpty
+          ? KnowledgeBase.kDefaultChunkSeparator
+          : separator,
       topK: topK,
       threshold: threshold,
       searchMode: searchMode,
@@ -447,6 +458,8 @@ class KnowledgeService {
       text,
       size: base.chunkSize,
       overlap: base.chunkOverlap,
+      strategy: base.chunkStrategy,
+      separator: base.chunkSeparator,
     );
     final item = KnowledgeItem(
       id: generateId('kbitem'),
@@ -539,6 +552,8 @@ class KnowledgeService {
         entry.content,
         size: base.chunkSize,
         overlap: base.chunkOverlap,
+        strategy: base.chunkStrategy,
+        separator: base.chunkSeparator,
       );
       final embedded = await _embedChunks(base, chunks);
       if (embedded != null) embeddings.addAll(embedded.vectors);
@@ -575,6 +590,8 @@ class KnowledgeService {
       entry.content,
       size: base.chunkSize,
       overlap: base.chunkOverlap,
+      strategy: base.chunkStrategy,
+      separator: base.chunkSeparator,
     );
     final embedded = await _embedChunks(base, chunks);
     await _dao.reindexItem(
@@ -894,11 +911,15 @@ class KnowledgeService {
     return _toReferences(base, scored, limit);
   }
 
-  /// 关键词打分：命中查询词的比例作相似度，命中次数作次序 tiebreaker。
+  /// 关键词打分：优先走 FTS5 BM25 全文索引（对齐 CS）；BM25 不可用（短查询词 /
+  /// 旧 SQLite 无 trigram）时回退子串扫描——命中查询词的比例作相似度，命中
+  /// 次数作次序 tiebreaker。
   Future<List<_ScoredChunk>> _keywordScored(
     KnowledgeBase base,
     String query,
   ) async {
+    final bm25 = await _bm25Scored(base, query);
+    if (bm25 != null) return bm25;
     final tokens = _tokenize(query);
     if (tokens.isEmpty) return const [];
     final rows = await _dao.searchChunks(base.id, tokens);
@@ -927,6 +948,55 @@ class KnowledgeService {
     }
     scored.sort(_ScoredChunk.compare);
     return scored;
+  }
+
+  /// BM25 候选上限：远大于 topK 上限（50），足够 hybrid RRF 融合使用。
+  static const int _kBm25CandidateLimit = 200;
+
+  /// FTS5 BM25 打分（对齐 CS 的 ftsQuery）：查询按「字母/数字/下划线连续段」
+  /// 提取词元，全部长度 ≥ 3（trigram 可靠索引下限）时才走 MATCH——含 1–2 字
+  /// 词元（常见于短中文查询）或 FTS 表不可用（旧 SQLite 无 trigram）时返回
+  /// null，回退 bigram 子串扫描保证召回。bm25 分数（越小越相关）按最优命中
+  /// 归一化成 (0,1] 作相似度。
+  Future<List<_ScoredChunk>?> _bm25Scored(
+    KnowledgeBase base,
+    String query,
+  ) async {
+    final tokens =
+        RegExp(
+          r'[\p{L}\p{N}_]+',
+          unicode: true,
+        ).allMatches(query).map((m) => m.group(0)!).toList();
+    if (tokens.isEmpty) return null;
+    if (tokens.any((t) => t.runes.length < 3)) return null;
+    final match = tokens
+        .map((t) => '"${t.replaceAll('"', '""')}"')
+        .join(' AND ');
+    try {
+      final rows = await _dao.searchChunksBm25(
+        base.id,
+        match,
+        limit: _kBm25CandidateLimit,
+      );
+      // 零命中回退子串扫描：CJK 长查询作为单个 MATCH 词元要求整串连续出现，
+      // bigram 路径的召回更宽。
+      if (rows.isEmpty) return null;
+      // bm25 越小越相关（通常为负）；取反后按最优值归一化。
+      final best = -rows.first.bm25;
+      final scale = best > 0 ? best : 1.0;
+      return [
+        for (final row in rows)
+          _ScoredChunk(
+            chunkId: row.chunk.chunkId,
+            text: row.chunk.content,
+            itemId: row.chunk.itemId,
+            similarity: ((-row.bm25) / scale).clamp(0.0, 1.0),
+            tieBreaker: -row.bm25,
+          ),
+      ];
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 向量打分：嵌入查询，对本库已嵌入切块算 cosine 排序。拿不到嵌入器 / 查询向量 /

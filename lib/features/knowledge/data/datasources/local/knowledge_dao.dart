@@ -91,6 +91,8 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
         dimensions: Value(base.dimensions),
         chunkSize: Value(base.chunkSize),
         chunkOverlap: Value(base.chunkOverlap),
+        chunkStrategy: Value(base.chunkStrategy.name),
+        chunkSeparator: Value(base.chunkSeparator),
         searchMode: Value(base.searchMode.name),
         threshold: Value(base.threshold),
         topK: Value(base.topK),
@@ -186,6 +188,8 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
     required String name,
     required int chunkSize,
     required int chunkOverlap,
+    required KnowledgeChunkStrategy chunkStrategy,
+    required String chunkSeparator,
     required int topK,
     required double? threshold,
     KnowledgeSearchMode? searchMode,
@@ -195,6 +199,8 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
         name: Value(name),
         chunkSize: Value(chunkSize),
         chunkOverlap: Value(chunkOverlap),
+        chunkStrategy: Value(chunkStrategy.name),
+        chunkSeparator: Value(chunkSeparator),
         topK: Value(topK),
         threshold: Value(threshold),
         searchMode: searchMode == null
@@ -652,6 +658,38 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
     return query.get();
   }
 
+  /// FTS5 BM25 全文检索（对齐 CS 的 BM25 路径）：用 [matchQuery]（FTS5 MATCH
+  /// 语法）在 `kb_chunk_fts` 上查，按 bm25 升序（越小越相关）返回切块及其分数，
+  /// 限已完成条目。FTS 表不可用（旧 SQLite 无 trigram）时由调用方捕错回退。
+  Future<List<({KbChunkRow chunk, double bm25})>> searchChunksBm25(
+    String baseId,
+    String matchQuery, {
+    required int limit,
+  }) async {
+    final rows = await customSelect(
+      'SELECT c.*, bm25(kb_chunk_fts) AS bm25_score '
+      'FROM kb_chunk_fts f '
+      'JOIN kb_chunk_rows c ON c.chunk_id = f.chunk_id '
+      'JOIN knowledge_item_rows i ON i.id = c.item_id '
+      "WHERE kb_chunk_fts MATCH ? AND c.base_id = ? AND i.status = 'completed' "
+      'ORDER BY bm25_score ASC LIMIT ?',
+      variables: [
+        Variable<String>(matchQuery),
+        Variable<String>(baseId),
+        Variable<int>(limit),
+      ],
+      readsFrom: {kbChunkRows, knowledgeItemRows},
+    ).get();
+    final result = <({KbChunkRow chunk, double bm25})>[];
+    for (final row in rows) {
+      result.add((
+        chunk: kbChunkRows.map(row.data),
+        bm25: row.read<double>('bm25_score'),
+      ));
+    }
+    return result;
+  }
+
   // ── vector search (设计文档 §6 vector / hybrid) ──
 
   /// 某库所有「已完成条目 + 已嵌入（`embeddingKey` 非空）」的切块，供向量检索取回
@@ -704,6 +742,8 @@ class KnowledgeDao extends DatabaseAccessor<AppDatabase>
     dimensions: row.dimensions,
     chunkSize: row.chunkSize,
     chunkOverlap: row.chunkOverlap,
+    chunkStrategy: KnowledgeChunkStrategy.fromName(row.chunkStrategy),
+    chunkSeparator: row.chunkSeparator,
     searchMode: KnowledgeSearchMode.fromName(row.searchMode),
     threshold: row.threshold,
     topK: row.topK,

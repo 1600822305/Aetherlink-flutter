@@ -15,6 +15,20 @@ enum KnowledgeSearchMode {
   }
 }
 
+/// 切块策略：[structured] 结构感知（段落 → 行 → 句子逐级回退）；[delimiter]
+/// 按用户自定义分隔符优先切分，切不动时回退结构感知级别。
+enum KnowledgeChunkStrategy {
+  structured,
+  delimiter;
+
+  static KnowledgeChunkStrategy fromName(String? name) {
+    for (final strategy in KnowledgeChunkStrategy.values) {
+      if (strategy.name == name) return strategy;
+    }
+    return KnowledgeChunkStrategy.structured;
+  }
+}
+
 /// 知识库整体索引状态（设计文档 §4.1）。
 enum KnowledgeBaseStatus {
   idle,
@@ -46,6 +60,8 @@ class KnowledgeBase {
     this.dimensions,
     this.chunkSize = kDefaultChunkSize,
     this.chunkOverlap = kDefaultChunkOverlap,
+    this.chunkStrategy = KnowledgeChunkStrategy.structured,
+    this.chunkSeparator = kDefaultChunkSeparator,
     this.threshold,
     this.topK = kDefaultTopK,
     this.fileProcessorId,
@@ -58,12 +74,20 @@ class KnowledgeBase {
   static const int kDefaultChunkOverlap = 200;
   static const int kDefaultTopK = 5;
 
+  /// 默认分隔符（转义形式，同 CS：`\n\n` 表示空行）。仅 delimiter 策略使用。
+  static const String kDefaultChunkSeparator = r'\n\n';
+
   final String id;
   final String name;
   final String? embeddingModelKey;
   final int? dimensions;
   final int chunkSize;
   final int chunkOverlap;
+
+  /// 切块策略；[chunkSeparator] 是用户输入的转义形式分隔符（如 `\n\n`），
+  /// 由切块器解转义后使用，仅 delimiter 策略生效。
+  final KnowledgeChunkStrategy chunkStrategy;
+  final String chunkSeparator;
   final KnowledgeSearchMode searchMode;
   final double? threshold;
   final int topK;
@@ -99,6 +123,8 @@ class KnowledgeBase {
       dimensions: dimensions ?? this.dimensions,
       chunkSize: chunkSize,
       chunkOverlap: chunkOverlap,
+      chunkStrategy: chunkStrategy,
+      chunkSeparator: chunkSeparator,
       searchMode: searchMode ?? this.searchMode,
       threshold: threshold ?? this.threshold,
       topK: topK ?? this.topK,

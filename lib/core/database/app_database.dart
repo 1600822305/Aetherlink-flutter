@@ -105,7 +105,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.open() : super(_openConnection());
 
   @override
-  int get schemaVersion => 17;
+  int get schemaVersion => 18;
 
   // SQLite can't ALTER a table-level CHECK/FK onto an existing table, but a
   // partial UNIQUE index CAN be created on one. This enforces the single-root
@@ -149,6 +149,7 @@ class AppDatabase extends _$AppDatabase {
       await m.createAll();
       // @TableIndex can't express a partial (WHERE) unique index, so add it here.
       await customStatement(_rootUniqueIndexSql);
+      await _createKbChunkFts();
     },
     onUpgrade: (m, from, to) async {
       if (from < 2) {
@@ -259,8 +260,62 @@ class AppDatabase extends _$AppDatabase {
           'ON agent_event_rows (task_id, seq)',
         );
       }
+      if (from < 18) {
+        // 知识库对齐 CS：① 自定义分隔符切块（knowledge_base 补 chunkStrategy /
+        // chunkSeparator 列）；② FTS5 BM25 全文索引（trigram 分词，触发器随
+        // kb_chunk 增删改同步，并回填存量切块）。
+        await _addColumnIfAbsent(
+          m,
+          knowledgeBaseRows,
+          knowledgeBaseRows.chunkStrategy,
+        );
+        await _addColumnIfAbsent(
+          m,
+          knowledgeBaseRows,
+          knowledgeBaseRows.chunkSeparator,
+        );
+        await _createKbChunkFts();
+      }
     },
   );
+
+  /// 建 kb_chunk 的 FTS5 BM25 全文索引（trigram 分词，支持 CJK 子串匹配），
+  /// 用触发器跟随 `kb_chunk_rows` 增删改同步，并回填存量切块。幂等可重跑。
+  /// trigram 需 SQLite ≥ 3.34；不支持时静默降级（检索层会回退到子串扫描）。
+  Future<void> _createKbChunkFts() async {
+    try {
+      await customStatement(
+        'CREATE VIRTUAL TABLE IF NOT EXISTS kb_chunk_fts USING fts5('
+        "content, chunk_id UNINDEXED, base_id UNINDEXED, tokenize='trigram')",
+      );
+      await customStatement(
+        'CREATE TRIGGER IF NOT EXISTS kb_chunk_fts_ai '
+        'AFTER INSERT ON kb_chunk_rows BEGIN '
+        'INSERT INTO kb_chunk_fts(content, chunk_id, base_id) '
+        'VALUES (new.content, new.chunk_id, new.base_id); END',
+      );
+      await customStatement(
+        'CREATE TRIGGER IF NOT EXISTS kb_chunk_fts_ad '
+        'AFTER DELETE ON kb_chunk_rows BEGIN '
+        'DELETE FROM kb_chunk_fts WHERE chunk_id = old.chunk_id; END',
+      );
+      await customStatement(
+        'CREATE TRIGGER IF NOT EXISTS kb_chunk_fts_au '
+        'AFTER UPDATE OF content ON kb_chunk_rows BEGIN '
+        'DELETE FROM kb_chunk_fts WHERE chunk_id = old.chunk_id; '
+        'INSERT INTO kb_chunk_fts(content, chunk_id, base_id) '
+        'VALUES (new.content, new.chunk_id, new.base_id); END',
+      );
+      await customStatement(
+        'INSERT INTO kb_chunk_fts(content, chunk_id, base_id) '
+        'SELECT c.content, c.chunk_id, c.base_id FROM kb_chunk_rows c '
+        'WHERE NOT EXISTS '
+        '(SELECT 1 FROM kb_chunk_fts f WHERE f.chunk_id = c.chunk_id)',
+      );
+    } catch (_) {
+      // 旧 SQLite 无 trigram 分词器时跳过；关键词检索保持 instr 子串路径。
+    }
+  }
 
   /// 加列前先查 pragma_table_info，列已存在则跳过。迁移不在单个事务里执行，
   /// 若某次启动在迁移中途被打断，user_version 仍是旧值但部分列已加上，
