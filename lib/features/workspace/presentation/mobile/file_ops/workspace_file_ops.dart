@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:aetherlink_flutter/features/workspace/application/workspace_file_op_service.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_file_templates.dart';
-import 'package:aetherlink_flutter/features/workspace/application/workspace_name_conflicts.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/features/workspace/presentation/mobile/editor/readable_path.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
@@ -16,36 +16,40 @@ import 'trash_sheet.dart';
 part 'workspace_file_ops_batch.dart';
 part 'workspace_file_ops_trash.dart';
 
-/// Drives the file-tree write operations (create/rename/delete/move/copy).
-///
-/// It owns no state: the tree passes in its [backend], the workspace [rootPath]/
-/// [rootName] (for the move/copy destination picker) and a small set of
-/// callbacks so the tree can refresh the affected directories after an op
-/// succeeds. Each method shows its own dialog(s), calls the backend and reports
-/// success/failure through a snackbar.
+/// The interaction half of the file-tree operations: dialogs, pickers and
+/// toasts. Every backend mutation and its conflict-resolution rules live in
+/// the UI-free [WorkspaceFileOpService]; this class prompts the user, calls
+/// the service and refreshes the affected directories through the callbacks
+/// the tree passes in.
 ///
 /// 拆分：回收站/可撤销删除在 `workspace_file_ops_trash.dart`，多选批量操作在
 /// `workspace_file_ops_batch.dart`（同库 part，扩展方法）；长按菜单 sheet 与
 /// 详情对话框是独立组件（`entry_action_sheet.dart` / `entry_details_dialog.dart`）。
 class WorkspaceFileOps {
-  const WorkspaceFileOps({
+  WorkspaceFileOps({
     required this.context,
-    required this.backend,
-    required this.rootPath,
+    required WorkspaceBackend backend,
+    required String rootPath,
     required this.rootName,
     required this.reloadDir,
     required this.ensureExpanded,
-    required this.parentOf,
+    required String? Function(String childPath) parentOf,
     this.onFileCreated,
     this.canGitDiff,
     this.onGitDiff,
     this.onFileHistory,
     this.onShare,
-  });
+  }) : service = WorkspaceFileOpService(
+          backend: backend,
+          rootPath: rootPath,
+          parentOf: parentOf,
+        );
 
   final BuildContext context;
-  final WorkspaceBackend backend;
-  final String rootPath;
+
+  /// The UI-free operation service (backend calls + conflict rules).
+  final WorkspaceFileOpService service;
+
   final String rootName;
 
   /// Re-list a directory and refresh its rows in the tree.
@@ -53,10 +57,6 @@ class WorkspaceFileOps {
 
   /// Make sure a directory is expanded (so freshly-created children show).
   final void Function(String dirPath) ensureExpanded;
-
-  /// The cached parent directory of an entry, or `null` when unknown (e.g. a
-  /// top-level entry whose parent is the root).
-  final String? Function(String childPath) parentOf;
 
   /// Called with the freshly-created file so the tree can open it in an
   /// editor tab right away (新建后自动打开).
@@ -77,27 +77,26 @@ class WorkspaceFileOps {
   /// Null ⇒ the action is hidden.
   final Future<void> Function(WorkspaceEntry entry)? onShare;
 
-  bool get _writable => backend.capabilities.canWrite;
+  WorkspaceBackend get backend => service.backend;
+
+  String get rootPath => service.rootPath;
 
   void _snack(String message) {
     if (!context.mounted) return;
     AppToast.info(context, message);
   }
 
-  // Resolves the parent of [entry] for refresh; falls back to the root.
-  String _parentDirOf(WorkspaceEntry entry) => parentOf(entry.path) ?? rootPath;
-
   /// Opens the per-entry action sheet (long-press menu). [entry] is the
   /// long-pressed row.
   Future<void> showEntryMenu(WorkspaceEntry entry) async {
-    final protected = backend.isProtectedPath(entry.path);
+    final protected = service.isProtected(entry.path);
     final action = await showModalBottomSheet<FileEntryAction>(
       context: context,
       showDragHandle: true,
       builder: (context) => EntryActionSheet(
         entry: entry,
         protected: protected,
-        writable: _writable,
+        writable: service.canWrite,
         showGitDiff: canGitDiff?.call(entry) ?? false,
         showFileHistory: onFileHistory != null && !entry.isDirectory,
         showShare: onShare != null && !entry.isDirectory,
@@ -167,7 +166,7 @@ class WorkspaceFileOps {
     if (req == null) return;
     final name = req.name;
     try {
-      final newPath = await backend.createFile(
+      final entry = await service.createFile(
         parentPath,
         name,
         content: req.useTemplate ? fileTemplateFor(name) : null,
@@ -175,7 +174,7 @@ class WorkspaceFileOps {
       ensureExpanded(parentPath);
       await reloadDir(parentPath);
       _snack('已创建 $name');
-      onFileCreated?.call(await _entryForCreated(newPath, name));
+      onFileCreated?.call(entry);
     } catch (e) {
       _snack('新建文件失败 · $e');
     }
@@ -191,7 +190,7 @@ class WorkspaceFileOps {
     );
     if (name == null) return;
     try {
-      await backend.createDirectory(parentPath, name);
+      await service.createDirectory(parentPath, name);
       ensureExpanded(parentPath);
       await reloadDir(parentPath);
       _snack('已创建 $name');
@@ -210,8 +209,8 @@ class WorkspaceFileOps {
     );
     if (name == null || name == entry.name) return;
     try {
-      await backend.rename(entry.path, name);
-      await reloadDir(_parentDirOf(entry));
+      await service.rename(entry, name);
+      await reloadDir(service.parentDirOf(entry));
       _snack('已重命名为 $name');
     } catch (e) {
       _snack('重命名失败 · $e');
@@ -228,37 +227,28 @@ class WorkspaceFileOps {
       disabledPath: entry.isDirectory ? entry.path : null,
     );
     if (dest == null) return;
-    final source = _parentDirOf(entry);
+    final source = service.parentDirOf(entry);
     if (dest == source) {
       _snack('目标与当前目录相同');
       return;
     }
     try {
-      var srcPath = entry.path;
       var name = entry.name;
-      final existing = await _findConflict(dest, entry.name);
+      final existing = await service.findConflict(dest, entry.name);
       if (existing != null) {
         final action = await _promptConflict(existing);
         if (action == null) return;
         if (action == ConflictAction.overwrite) {
-          await backend.delete(
-            existing.path,
-            isDirectory: existing.isDirectory,
-            recursive: existing.isDirectory,
-          );
+          await service.deleteEntry(existing);
+          if (!context.mounted) return;
+          await service.move(entry.path, dest);
         } else {
-          // 保留两者：先在源目录里改成一个两边都不冲突的名字再移动
-          // （move 不支持改名，改名发生在源目录，所以两边都要查）。
-          final taken = <String>{
-            ...await _siblingNames(dest),
-            ...await _siblingNames(source),
-          };
-          name = resolveDuplicateName(entry.name, taken);
-          srcPath = await backend.rename(entry.path, name);
+          if (!context.mounted) return;
+          name = await service.moveKeepBoth(entry, source, dest);
         }
-        if (!context.mounted) return;
+      } else {
+        await service.move(entry.path, dest);
       }
-      await backend.move(srcPath, dest);
       ensureExpanded(dest);
       await reloadDir(source);
       await reloadDir(dest);
@@ -279,49 +269,23 @@ class WorkspaceFileOps {
     if (dest == null) return;
     try {
       String? newName;
-      final existing = await _findConflict(dest, entry.name);
+      final existing = await service.findConflict(dest, entry.name);
       if (existing != null) {
         final action = await _promptConflict(existing);
         if (action == null) return;
         if (action == ConflictAction.overwrite) {
-          await backend.delete(
-            existing.path,
-            isDirectory: existing.isDirectory,
-            recursive: existing.isDirectory,
-          );
+          await service.deleteEntry(existing);
         } else {
-          newName = resolveDuplicateName(
-            entry.name,
-            await _siblingNames(dest),
-          );
+          newName = await service.copyKeepBothName(entry, dest);
         }
         if (!context.mounted) return;
       }
-      await backend.copy(entry.path, dest, newName: newName);
+      await service.copy(entry, dest, newName: newName);
       ensureExpanded(dest);
       await reloadDir(dest);
       _snack('已复制 ${newName ?? entry.name}');
     } catch (e) {
       _snack('复制失败 · $e');
-    }
-  }
-
-  // The destination's same-name entry, or null when the name is free (or the
-  // destination can't be listed — the op then proceeds and may still throw).
-  Future<WorkspaceEntry?> _findConflict(String dest, String name) async {
-    try {
-      for (final e in await backend.listDir(dest)) {
-        if (e.name == name) return e;
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  Future<Set<String>> _siblingNames(String dir) async {
-    try {
-      return (await backend.listDir(dir)).map((e) => e.name).toSet();
-    } catch (_) {
-      return const {};
     }
   }
 
@@ -334,23 +298,8 @@ class WorkspaceFileOps {
     );
   }
 
-  // Resolves the created file's entry for the auto-open callback; falls back
-  // to a minimal stub when the backend can't stat.
-  Future<WorkspaceEntry> _entryForCreated(String path, String name) async {
-    try {
-      return await backend.getFileInfo(path);
-    } catch (_) {}
-    return WorkspaceEntry(
-      name: name,
-      path: path,
-      isDirectory: false,
-      size: 0,
-      mtime: 0,
-    );
-  }
-
   bool _guardWritable() {
-    if (_writable) return true;
+    if (service.canWrite) return true;
     _snack('当前后端不支持写操作');
     return false;
   }
@@ -358,7 +307,7 @@ class WorkspaceFileOps {
   // Mount points mapping to real phone storage (e.g. /sdcard in the PRoot
   // backend) must not be deleted / renamed / moved.
   bool _guardNotProtected(WorkspaceEntry entry) {
-    if (!backend.isProtectedPath(entry.path)) return true;
+    if (!service.isProtected(entry.path)) return true;
     _snack('${entry.name} 是受保护的挂载点，不能删除/重命名/移动');
     return false;
   }
