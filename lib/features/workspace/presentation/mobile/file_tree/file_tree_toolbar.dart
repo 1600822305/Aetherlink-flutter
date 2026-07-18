@@ -27,10 +27,17 @@ class FileTreeToolbar extends StatelessWidget {
     required this.onToggleHidden,
     required this.onRefresh,
     required this.onCollapseAll,
+    this.canPaste = false,
+    this.onPasteToRoot,
   });
 
   final bool hasRoot;
   final bool canWrite;
+
+  /// Whether the file-tree clipboard holds something pasteable — shows the
+  /// 「粘贴到根目录」 overflow item.
+  final bool canPaste;
+  final VoidCallback? onPasteToRoot;
 
   /// Whether the new-file/new-folder buttons are enabled (ops built + writable).
   final bool canCreate;
@@ -85,6 +92,8 @@ class FileTreeToolbar extends StatelessWidget {
         FileTreeOverflowMenuButton(
           hasRoot: hasRoot,
           canWrite: canWrite,
+          canPaste: canPaste,
+          onPasteToRoot: onPasteToRoot,
           showHidden: showHidden,
           sortMode: sortMode,
           onEnterSelect: onEnterSelect,
@@ -108,6 +117,8 @@ class FileTreeOverflowMenuButton extends StatelessWidget {
     required this.canWrite,
     required this.showHidden,
     required this.sortMode,
+    this.canPaste = false,
+    this.onPasteToRoot,
     required this.onEnterSelect,
     required this.onOpenTrash,
     required this.onSortSelected,
@@ -120,6 +131,10 @@ class FileTreeOverflowMenuButton extends StatelessWidget {
   final bool canWrite;
   final bool showHidden;
   final TreeSortMode sortMode;
+
+  /// Shows the 「粘贴到根目录」 item when the clipboard holds something.
+  final bool canPaste;
+  final VoidCallback? onPasteToRoot;
   final VoidCallback onEnterSelect;
   final VoidCallback onOpenTrash;
   final ValueChanged<TreeSortMode> onSortSelected;
@@ -168,6 +183,13 @@ class FileTreeOverflowMenuButton extends StatelessWidget {
       iconSize: 18,
       style: const ButtonStyle(visualDensity: VisualDensity.compact),
       itemBuilder: (context) => [
+        if (canPaste && onPasteToRoot != null)
+          _action(
+            LucideIcons.clipboardPaste,
+            '粘贴到根目录',
+            onPasteToRoot!,
+            enabled: canWrite,
+          ),
         _action(
           LucideIcons.squareCheck,
           '多选',

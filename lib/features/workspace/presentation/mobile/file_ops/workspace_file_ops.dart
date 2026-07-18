@@ -35,6 +35,9 @@ class WorkspaceFileOps {
     required this.ensureExpanded,
     required String? Function(String childPath) parentOf,
     this.onFileCreated,
+    this.canPaste = false,
+    this.onClipboardSet,
+    this.onPaste,
     this.canGitDiff,
     this.onGitDiff,
     this.onFileHistory,
@@ -61,6 +64,18 @@ class WorkspaceFileOps {
   /// Called with the freshly-created file so the tree can open it in an
   /// editor tab right away (新建后自动打开).
   final void Function(WorkspaceEntry entry)? onFileCreated;
+
+  /// Whether the file-tree clipboard holds something pasteable in this
+  /// workspace — gates the 「粘贴」 menu item.
+  final bool canPaste;
+
+  /// Puts [entries] on the file-tree clipboard（cut = 粘贴后移动，否则复制）.
+  final void Function(List<WorkspaceEntry> entries, {required bool cut})?
+      onClipboardSet;
+
+  /// Pastes the current clipboard into [destDir]（由树侧读取剪贴板并回调
+  /// [pasteEntries]，剪切粘贴后清空剪贴板）.
+  final Future<void> Function(String destDir)? onPaste;
 
   /// Whether the 「Git 对比」 action applies to [entry]（exec-capable backend
   /// and the file has a git status）. Both null ⇒ the action is hidden.
@@ -97,6 +112,7 @@ class WorkspaceFileOps {
         entry: entry,
         protected: protected,
         writable: service.canWrite,
+        canPaste: canPaste && onPaste != null,
         showGitDiff: canGitDiff?.call(entry) ?? false,
         showFileHistory: onFileHistory != null && !entry.isDirectory,
         showShare: onShare != null && !entry.isDirectory,
@@ -110,6 +126,18 @@ class WorkspaceFileOps {
         await newFolder(entry.path);
       case FileEntryAction.rename:
         await rename(entry);
+      case FileEntryAction.cut:
+        onClipboardSet?.call([entry], cut: true);
+        _snack('已剪切 ${entry.name}，长按目标目录粘贴');
+      case FileEntryAction.copyToClipboard:
+        onClipboardSet?.call([entry], cut: false);
+        _snack('已复制 ${entry.name}，长按目标目录粘贴');
+      case FileEntryAction.paste:
+        await onPaste?.call(
+          entry.isDirectory ? entry.path : service.parentDirOf(entry),
+        );
+      case FileEntryAction.duplicate:
+        await duplicate(entry);
       case FileEntryAction.move:
         await move(entry);
       case FileEntryAction.copy:
@@ -286,6 +314,55 @@ class WorkspaceFileOps {
       _snack('已复制 ${newName ?? entry.name}');
     } catch (e) {
       _snack('复制失败 · $e');
+    }
+  }
+
+  /// 原地副本：复制到同目录，自动取「name (2).ext」式空闲名。
+  Future<void> duplicate(WorkspaceEntry entry) async {
+    if (!_guardWritable()) return;
+    try {
+      final parent = service.parentDirOf(entry);
+      final name = await service.duplicate(entry);
+      await reloadDir(parent);
+      _snack('已创建副本 $name');
+    } catch (e) {
+      _snack('创建副本失败 · $e');
+    }
+  }
+
+  /// 粘贴剪贴板内容到 [dest]：剪切 = 批量移动，复制 = 批量复制；重名自动
+  /// 「保留两者」，受保护/移入自身等自动跳过并汇总提示。返回是否有条目
+  /// 真正落地（调用方据此决定是否清空剪切剪贴板）。
+  Future<bool> pasteEntries(
+    List<WorkspaceEntry> entries, {
+    required bool cut,
+    required String dest,
+  }) async {
+    if (!_guardWritable()) return false;
+    try {
+      if (cut) {
+        final result = await service.moveMany(entries, dest);
+        ensureExpanded(dest);
+        for (final dir in result.touchedDirs) {
+          await reloadDir(dir);
+        }
+        _snack(
+          '已移动 ${result.moved} 项'
+          '${result.skipped > 0 ? '，跳过 ${result.skipped} 项' : ''}',
+        );
+        return result.moved > 0;
+      }
+      final result = await service.copyMany(entries, dest);
+      ensureExpanded(dest);
+      await reloadDir(dest);
+      _snack(
+        '已复制 ${result.copied} 项'
+        '${result.skipped > 0 ? '，跳过 ${result.skipped} 项' : ''}',
+      );
+      return result.copied > 0;
+    } catch (e) {
+      _snack('粘贴失败 · $e');
+      return false;
     }
   }
 
