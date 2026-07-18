@@ -6,9 +6,10 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_appro
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
 
-/// 审批卡（内嵌事件流）：摘要 + 批准/拒绝/白名单▾（UI 稿 §五）。
-/// 按钮接 [agentApprovalRegistryProvider]：引擎挂起在登记处等裁决，
-/// 白名单▾ 提供「本任务内不再询问」与「永久加入白名单」两档（初稿 §6.3）。
+/// 审批卡（内嵌事件流）：摘要 + 批准/拒绝/更多▾（UI 稿 §五）。
+/// 按钮接 [agentApprovalRegistryProvider]：引擎挂起在登记处等裁决；
+/// 更多▾ 按本次命中的 pattern 动态生成授权选项（如「总是允许
+/// npm run *」），另含整工具宽限/白名单与永久禁止。
 /// 无挂起（如重启后的历史卡）时按钮禁用，续跑任务会重新发起审批。
 class ApprovalCard extends ConsumerWidget {
   const ApprovalCard({required this.event, required this.taskId, super.key});
@@ -84,11 +85,10 @@ class ApprovalCard extends ConsumerWidget {
                   child: const Text('拒绝'),
                 ),
                 const SizedBox(width: 8),
-                _WhitelistMenuButton(
+                _GrantMenuButton(
                   enabled: active,
-                  onSelected: (scope) => respond(
-                    AgentApprovalDecision(approved: true, scope: scope),
-                  ),
+                  patterns: active ? pending.alwaysPatterns : const [],
+                  onSelected: respond,
                 ),
               ],
             ),
@@ -99,33 +99,72 @@ class ApprovalCard extends ConsumerWidget {
   }
 }
 
-/// 「白名单 ▾」两档快捷入口：批准并附带授权范围。
-class _WhitelistMenuButton extends StatelessWidget {
-  const _WhitelistMenuButton({required this.enabled, required this.onSelected});
+/// 「更多 ▾」授权菜单：按本次命中的 pattern 动态生成选项。
+class _GrantMenuButton extends StatelessWidget {
+  const _GrantMenuButton({
+    required this.enabled,
+    required this.patterns,
+    required this.onSelected,
+  });
 
   final bool enabled;
-  final void Function(AgentApprovalScope scope) onSelected;
+  final List<String> patterns;
+  final void Function(AgentApprovalDecision decision) onSelected;
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<AgentApprovalScope>(
+    final label = patterns.join('、');
+    return PopupMenuButton<AgentApprovalDecision>(
       popUpAnimationStyle: AnimationStyle.noAnimation,
       enabled: enabled,
       onSelected: onSelected,
-      itemBuilder: (context) => const [
-        PopupMenuItem(
-          value: AgentApprovalScope.taskTool,
+      itemBuilder: (context) => [
+        if (patterns.isNotEmpty) ...[
+          PopupMenuItem(
+            value: const AgentApprovalDecision(
+              approved: true,
+              scope: AgentApprovalScope.taskPatterns,
+            ),
+            child: Text('批准，本任务允许 $label'),
+          ),
+          PopupMenuItem(
+            value: const AgentApprovalDecision(
+              approved: true,
+              scope: AgentApprovalScope.alwaysPatterns,
+            ),
+            child: Text('批准，总是允许 $label'),
+          ),
+        ],
+        const PopupMenuItem(
+          value: AgentApprovalDecision(
+            approved: true,
+            scope: AgentApprovalScope.taskTool,
+          ),
           child: Text('批准，本任务内此工具不再询问'),
         ),
-        PopupMenuItem(
-          value: AgentApprovalScope.whitelist,
+        const PopupMenuItem(
+          value: AgentApprovalDecision(
+            approved: true,
+            scope: AgentApprovalScope.whitelist,
+          ),
           child: Text('批准，永久加入白名单'),
+        ),
+        PopupMenuItem(
+          value: const AgentApprovalDecision(
+            approved: false,
+            reason: '用户拒绝并永久禁止',
+            scope: AgentApprovalScope.denyPatterns,
+          ),
+          child: Text(
+            patterns.isEmpty ? '拒绝，总是禁止此工具' : '拒绝，总是禁止 $label',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
         ),
       ],
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: Text(
-          '白名单 ▾',
+          '更多 ▾',
           style: Theme.of(context).textTheme.labelLarge?.copyWith(
             color: enabled
                 ? Theme.of(context).colorScheme.primary

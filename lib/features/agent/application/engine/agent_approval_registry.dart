@@ -7,6 +7,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aetherlink_flutter/features/agent/application/agent_permission_rules.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/data/agent_notification_service.dart';
@@ -17,11 +18,20 @@ enum AgentApprovalScope {
   /// 只放行本次调用。
   once,
 
-  /// 本任务内此工具不再询问（运行级宽限，随任务结束失效）。
+  /// 本任务内此工具不再询问（会话临时规则，随任务结束失效）。
   taskTool,
 
   /// 永久加入工具授权白名单（持久化，越界命令仍强制审批）。
   whitelist,
+
+  /// 本任务内允许本次命中的 pattern（如 `npm run *`，随任务结束失效）。
+  taskPatterns,
+
+  /// 永久允许本次命中的 pattern（写入用户全局规则）。
+  alwaysPatterns,
+
+  /// 永久禁止本次命中的 pattern（配合拒绝，写入用户全局 deny 规则）。
+  denyPatterns,
 }
 
 /// 审批卡上的用户裁决。
@@ -35,6 +45,64 @@ class AgentApprovalDecision {
   final bool approved;
   final String reason;
   final AgentApprovalScope scope;
+}
+
+/// 审批裁决 → 要落的授权规则（纯函数）：patterns 为空时按整工具（`*`）。
+/// session 层规则进会话临时层，userGlobal 层规则持久化。
+List<PermissionRule> approvalGrantRules({
+  required AgentApprovalScope scope,
+  required bool approved,
+  required String permission,
+  required List<String> patterns,
+}) {
+  final effective = patterns.isEmpty ? const ['*'] : patterns;
+  switch (scope) {
+    case AgentApprovalScope.once:
+    case AgentApprovalScope.whitelist:
+      return const [];
+    case AgentApprovalScope.taskTool:
+      if (!approved) return const [];
+      return [
+        PermissionRule(
+          permission: permission,
+          action: PermissionAction.allow,
+          layer: PermissionRuleLayer.session,
+        ),
+      ];
+    case AgentApprovalScope.taskPatterns:
+      if (!approved) return const [];
+      return [
+        for (final pattern in effective)
+          PermissionRule(
+            permission: permission,
+            pattern: pattern,
+            action: PermissionAction.allow,
+            layer: PermissionRuleLayer.session,
+          ),
+      ];
+    case AgentApprovalScope.alwaysPatterns:
+      if (!approved) return const [];
+      return [
+        for (final pattern in effective)
+          PermissionRule(
+            permission: permission,
+            pattern: pattern,
+            action: PermissionAction.allow,
+            layer: PermissionRuleLayer.userGlobal,
+          ),
+      ];
+    case AgentApprovalScope.denyPatterns:
+      if (approved) return const [];
+      return [
+        for (final pattern in effective)
+          PermissionRule(
+            permission: permission,
+            pattern: pattern,
+            action: PermissionAction.deny,
+            layer: PermissionRuleLayer.userGlobal,
+          ),
+      ];
+  }
 }
 
 /// 一条挂起中的审批请求（UI 据此渲染可交互的审批卡）。
@@ -106,15 +174,20 @@ class AgentApprovalRegistryNotifier
     if (pending == null) return;
     state = Map.of(state)..remove(taskId);
     unawaited(AgentNotificationService().cancelApprovalRequest(taskId));
-    if (decision.approved && decision.scope == AgentApprovalScope.taskTool) {
-      final permission = pending.permission.isEmpty
+    final grants = approvalGrantRules(
+      scope: decision.scope,
+      approved: decision.approved,
+      permission: pending.permission.isEmpty
           ? pending.call.name
-          : pending.permission;
-      (_sessionRules[taskId] ??= <PermissionRule>[]).add(PermissionRule(
-        permission: permission,
-        action: PermissionAction.allow,
-        layer: PermissionRuleLayer.session,
-      ));
+          : pending.permission,
+      patterns: pending.alwaysPatterns,
+    );
+    for (final rule in grants) {
+      if (rule.layer == PermissionRuleLayer.session) {
+        (_sessionRules[taskId] ??= <PermissionRule>[]).add(rule);
+      } else {
+        ref.read(agentPermissionRulesProvider.notifier).add(rule);
+      }
     }
     if (!pending.completer.isCompleted) pending.completer.complete(decision);
   }
