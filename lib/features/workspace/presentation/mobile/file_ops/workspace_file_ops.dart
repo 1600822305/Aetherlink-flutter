@@ -109,8 +109,13 @@ class WorkspaceFileOps {
   final void Function(WorkspaceEntry entry)? onTogglePin;
 
   /// 条目重命名/移动后的路径变更通知（收藏等持有旧路径的状态据此同步）。
-  final void Function(String oldPath, String newPath, String newName)?
-      onEntryMoved;
+  /// [newParent] 是变更后的父目录，重命名时为 null（父目录不变）。
+  final void Function(
+    String oldPath,
+    String newPath,
+    String newName,
+    String? newParent,
+  )? onEntryMoved;
 
   /// 条目被删除/移入回收站后的通知。
   final void Function(String path)? onEntryRemoved;
@@ -309,7 +314,7 @@ class WorkspaceFileOps {
     if (name == null || name == entry.name) return;
     try {
       final newPath = await service.rename(entry, name);
-      onEntryMoved?.call(entry.path, newPath, name);
+      onEntryMoved?.call(entry.path, newPath, name, null);
       final parent = service.parentDirOf(entry);
       await reloadDir(parent);
       if (!context.mounted) return;
@@ -334,7 +339,7 @@ class WorkspaceFileOps {
   ) async {
     try {
       final restored = await backend.rename(newPath, originalName);
-      onEntryMoved?.call(newPath, restored, originalName);
+      onEntryMoved?.call(newPath, restored, originalName, null);
       await reloadDir(parent);
       _snack('已恢复为 $originalName');
     } catch (e) {
@@ -378,7 +383,12 @@ class WorkspaceFileOps {
       } else {
         moved = await service.move(entry, source, dest);
       }
-      onEntryMoved?.call(moved.sourcePath, moved.movedPath, moved.movedName);
+      onEntryMoved?.call(
+        moved.sourcePath,
+        moved.movedPath,
+        moved.movedName,
+        dest,
+      );
       ensureExpanded(dest);
       await reloadDir(source);
       await reloadDir(dest);
@@ -408,7 +418,12 @@ class WorkspaceFileOps {
     for (final moved in moves.reversed) {
       try {
         final restoredPath = await service.undoMove(moved);
-        onEntryMoved?.call(moved.movedPath, restoredPath, moved.originalName);
+        onEntryMoved?.call(
+          moved.movedPath,
+          restoredPath,
+          moved.originalName,
+          moved.sourceDir,
+        );
         touched.add(moved.sourceDir);
         restored++;
       } catch (_) {}
@@ -544,7 +559,7 @@ class WorkspaceFileOps {
       if (cut) {
         final result = await service.moveMany(entries, dest);
         for (final m in result.moves) {
-          onEntryMoved?.call(m.sourcePath, m.movedPath, m.movedName);
+          onEntryMoved?.call(m.sourcePath, m.movedPath, m.movedName, dest);
         }
         ensureExpanded(dest);
         for (final dir in result.touchedDirs) {

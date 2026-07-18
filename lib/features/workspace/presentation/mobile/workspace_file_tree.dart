@@ -211,7 +211,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   void _togglePin(WorkspaceEntry entry) {
     final notifier = ref.read(pinnedFilesProvider.notifier);
     final wasPinned = notifier.isPinned(entry.path);
-    if (!notifier.toggle(entry)) {
+    if (!notifier.toggle(entry, parentPath: _tree.parentOf(entry.path))) {
       AppToast.info(context, '收藏已达上限（$kMaxPinnedFiles 个）');
       return;
     }
@@ -320,7 +320,9 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
             rootName: workspace?.name ?? '工作区',
             reloadDir: _tree.reload,
             ensureExpanded: _tree.ensureExpanded,
-            parentOf: _tree.parentOf,
+            parentOf: (path) =>
+                _tree.parentOf(path) ??
+                ref.read(pinnedFilesProvider.notifier).parentPathOf(path),
             canGitDiff: (entry) =>
                 !entry.isDirectory &&
                 backend.capabilities.canExec &&
@@ -355,9 +357,10 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
             isPinned: (entry) =>
                 ref.read(pinnedFilesProvider.notifier).isPinned(entry.path),
             onTogglePin: _togglePin,
-            onEntryMoved: (oldPath, newPath, newName) => ref
+            onEntryMoved: (oldPath, newPath, newName, newParent) => ref
                 .read(pinnedFilesProvider.notifier)
-                .updatePath(oldPath, newPath, newName),
+                .updatePath(oldPath, newPath, newName,
+                    newParentPath: newParent),
             onEntryRemoved: (path) =>
                 ref.read(pinnedFilesProvider.notifier).remove(path),
           )

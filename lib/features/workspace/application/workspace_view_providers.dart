@@ -439,16 +439,31 @@ final pinnedFilesProvider =
 );
 
 class PinnedFilesNotifier extends Notifier<List<WorkspaceEntry>> {
+  /// 收藏条目的已知父目录（path → parent opaque path）。随收藏一起持久化，
+  /// 应用重启后树的 parent 缓存尚未建立时作为兜底（副本/压缩等操作需要
+  /// 父目录才能把产物放对位置）。
+  final Map<String, String> _parents = {};
+
   @override
   List<WorkspaceEntry> build() {
     final workspace = ref.watch(currentWorkspaceProvider);
+    _parents.clear();
     if (workspace != null) {
       ref
           .read(appSettingsStoreProvider)
           .getSetting(kWorkspacePinnedFilesKey)
           .then((raw) {
-        final entries = _decodeMap(raw)[workspace.id];
-        if (entries != null && entries.isNotEmpty) state = entries;
+        final items = _decodeRaw(raw)[workspace.id];
+        if (items == null || items.isEmpty) return;
+        final entries = <WorkspaceEntry>[];
+        for (final item in items) {
+          entries.add(WorkspaceEntry.fromJson(item));
+          final parent = item['parentPath'];
+          if (parent is String) {
+            _parents[item['path'] as String] = parent;
+          }
+        }
+        state = entries;
       });
     }
     return const [];
@@ -456,16 +471,22 @@ class PinnedFilesNotifier extends Notifier<List<WorkspaceEntry>> {
 
   bool isPinned(String path) => state.any((e) => e.path == path);
 
+  /// 收藏条目的已持久化父目录（树缓存缺失时的兜底），未知返回 null。
+  String? parentPathOf(String path) => _parents[path];
+
   /// 收藏/取消收藏切换；新收藏追加到末尾，超上限时拒绝并返回 `false`。
-  bool toggle(WorkspaceEntry entry) {
+  /// [parentPath] 是条目当前的父目录（用于重启后的父目录兜底）。
+  bool toggle(WorkspaceEntry entry, {String? parentPath}) {
     final workspace = ref.read(currentWorkspaceProvider);
     if (workspace == null) return false;
     List<WorkspaceEntry> next;
     if (isPinned(entry.path)) {
       next = [...state.where((e) => e.path != entry.path)];
+      _parents.remove(entry.path);
     } else {
       if (state.length >= kMaxPinnedFiles) return false;
       next = [...state, entry];
+      if (parentPath != null) _parents[entry.path] = parentPath;
     }
     state = next;
     _persist(workspace.id, next);
@@ -473,7 +494,13 @@ class PinnedFilesNotifier extends Notifier<List<WorkspaceEntry>> {
   }
 
   /// 收藏条目被重命名/移动后同步（旧路径 → 新路径/新名，其余字段保留）。
-  void updatePath(String oldPath, String newPath, String newName) {
+  /// [newParentPath] 在移动时传入新的父目录；重命名不传（父目录不变）。
+  void updatePath(
+    String oldPath,
+    String newPath,
+    String newName, {
+    String? newParentPath,
+  }) {
     final workspace = ref.read(currentWorkspaceProvider);
     if (workspace == null || !isPinned(oldPath)) return;
     final next = [
@@ -489,6 +516,9 @@ class PinnedFilesNotifier extends Notifier<List<WorkspaceEntry>> {
               )
             : e,
     ];
+    final parent = newParentPath ?? _parents[oldPath];
+    _parents.remove(oldPath);
+    if (parent != null) _parents[newPath] = parent;
     state = next;
     _persist(workspace.id, next);
   }
@@ -498,25 +528,42 @@ class PinnedFilesNotifier extends Notifier<List<WorkspaceEntry>> {
     final workspace = ref.read(currentWorkspaceProvider);
     if (workspace == null || !isPinned(path)) return;
     final next = [...state.where((e) => e.path != path)];
+    _parents.remove(path);
     state = next;
     _persist(workspace.id, next);
   }
 
   Future<void> _persist(String workspaceId, List<WorkspaceEntry> entries) async {
     final store = ref.read(appSettingsStoreProvider);
-    final map = _decodeMap(await store.getSetting(kWorkspacePinnedFilesKey));
-    map[workspaceId] = entries;
-    await store.saveSetting(
-      kWorkspacePinnedFilesKey,
-      jsonEncode({
-        for (final e in map.entries)
-          e.key: [for (final t in e.value) t.toJson()],
-      }),
-    );
+    final map = _decodeRaw(await store.getSetting(kWorkspacePinnedFilesKey));
+    map[workspaceId] = [
+      for (final e in entries)
+        {
+          ...e.toJson(),
+          if (_parents[e.path] != null) 'parentPath': _parents[e.path],
+        },
+    ];
+    await store.saveSetting(kWorkspacePinnedFilesKey, jsonEncode(map));
   }
 
-  static Map<String, List<WorkspaceEntry>> _decodeMap(String? raw) =>
-      RecentFilesNotifier._decodeMap(raw);
+  /// 原始 JSON（保留 parentPath 等附加字段，其他工作区的数据原样透传）。
+  static Map<String, List<Map<String, dynamic>>> _decodeRaw(String? raw) {
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return {};
+      return {
+        for (final e in decoded.entries)
+          if (e.key is String && e.value is List)
+            e.key as String: [
+              for (final item in e.value as List)
+                if (item is Map) Map<String, dynamic>.from(item),
+            ],
+      };
+    } catch (_) {
+      return {};
+    }
+  }
 }
 
 /// Whether the three-page horizontal pager is locked. When `true` the shell
