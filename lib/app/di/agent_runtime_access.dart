@@ -930,7 +930,7 @@ class _PolicyApprovalGate implements ApprovalGate {
     final decision = evaluatePermissionRequest(
       _permissionOf(route, call.name),
       _patternsOf(route, call.name, args),
-      _ruleLayers(ref, task),
+      await _ruleLayers(ref, task, workspaces),
     );
     if (decision.action == PermissionAction.deny) {
       return ApprovalRequirement.forbid;
@@ -985,8 +985,13 @@ class _PolicyApprovalGate implements ApprovalGate {
   }
 
   /// 规则层低→高：旧工具授权白名单（换算为整工具 allow，保留存量
-  /// 授权）→ 用户全局规则 → 会话临时规则（审批卡「本任务允许」）。
-  List<List<PermissionRule>> _ruleLayers(Ref ref, AgentTask task) {
+  /// 授权）→ 用户全局规则 → 工作区规则文件 → 会话临时规则
+  /// （审批卡「本任务允许」）。
+  Future<List<List<PermissionRule>>> _ruleLayers(
+    Ref ref,
+    AgentTask task,
+    List<Workspace> workspaces,
+  ) async {
     final whitelist = ref.read(toolAuthPolicyProvider).autoApproved;
     return [
       [
@@ -998,9 +1003,45 @@ class _PolicyApprovalGate implements ApprovalGate {
           ),
       ],
       ref.read(agentPermissionRulesProvider),
+      await _workspaceRules(ref, task, workspaces),
       ref.read(agentApprovalRegistryProvider.notifier).sessionRules(task.id),
     ];
   }
+
+  /// 任务绑定工作区根目录下 `.aetherlink/permissions.json` 里的项目级
+  /// 规则（与用户全局规则同格式，可随仓库提交共享）。每个工作区
+  /// 每次任务运行只读一次（门实例级缓存）；文件不存在或解析失败
+  /// 视为无规则。
+  Future<List<PermissionRule>> _workspaceRules(
+    Ref ref,
+    AgentTask task,
+    List<Workspace> workspaces,
+  ) async {
+    final bound =
+        workspaces.where((w) => w.id == task.workspaceId).firstOrNull;
+    if (bound == null) return const [];
+    final cached = _workspaceRulesCache[bound.id];
+    if (cached != null) return cached;
+    List<PermissionRule> rules = const [];
+    try {
+      final root = bound.root.endsWith('/')
+          ? bound.root.substring(0, bound.root.length - 1)
+          : bound.root;
+      final path = '$root/.aetherlink/permissions.json';
+      final backend = await backendForPath(ref, path);
+      rules = decodeAgentPermissionRules(
+            await backend.readFile(path),
+            layer: PermissionRuleLayer.workspace,
+          ) ??
+          const [];
+    } catch (_) {
+      rules = const [];
+    }
+    _workspaceRulesCache[bound.id] = rules;
+    return rules;
+  }
+
+  final Map<String, List<PermissionRule>> _workspaceRulesCache = {};
 
   @override
   Future<ApprovalVerdict> waitForVerdict(

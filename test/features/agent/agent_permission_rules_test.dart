@@ -40,4 +40,12 @@ void main() {
     expect(decoded.length, 1);
     expect(decoded.single.action, PermissionAction.allow);
   });
+
+  test('decode 可指定规则层（工作区规则文件同格式）', () {
+    final decoded = decodeAgentPermissionRules(
+      '[{"permission":"terminal_execute","pattern":"npm run *","action":"allow"}]',
+      layer: PermissionRuleLayer.workspace,
+    )!;
+    expect(decoded.single.layer, PermissionRuleLayer.workspace);
+  });
 }

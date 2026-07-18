@@ -25,8 +25,13 @@ String encodeAgentPermissionRules(List<PermissionRule> rules) => jsonEncode([
         },
     ]);
 
-/// 解码持久化规则；坏数据返回 null，未知 action 的条目丢弃。
-List<PermissionRule>? decodeAgentPermissionRules(String? raw) {
+/// 解码规则 JSON（用户全局存储与工作区 `.aetherlink/permissions.json`
+/// 共用同一格式，[layer] 区分规则层）；坏数据返回 null，未知 action
+/// 的条目丢弃。
+List<PermissionRule>? decodeAgentPermissionRules(
+  String? raw, {
+  PermissionRuleLayer layer = PermissionRuleLayer.userGlobal,
+}) {
   if (raw == null || raw.isEmpty) return null;
   try {
     final list = jsonDecode(raw);
@@ -46,7 +51,7 @@ List<PermissionRule>? decodeAgentPermissionRules(String? raw) {
         permission: permission,
         pattern: pattern,
         action: action,
-        layer: PermissionRuleLayer.userGlobal,
+        layer: layer,
       ));
     }
     return rules;
