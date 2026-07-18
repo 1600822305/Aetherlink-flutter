@@ -3,8 +3,10 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/workspace/application/workspace_tree_sort.dart';
 
-/// The tree toolbar in normal mode: new file/folder, enter multi-select,
-/// git review, sort menu, hidden-files toggle, refresh and collapse-all.
+/// The tree toolbar in normal mode: the high-frequency actions (new
+/// file/folder, search, git review) stay pinned; everything low-frequency
+/// (multi-select, trash, sort, hidden-files toggle, refresh, collapse-all)
+/// lives in the trailing overflow menu.
 class FileTreeToolbar extends StatelessWidget {
   const FileTreeToolbar({
     super.key,
@@ -18,6 +20,7 @@ class FileTreeToolbar extends StatelessWidget {
     required this.onOpenGit,
     required this.onNewFile,
     required this.onNewFolder,
+    required this.onOpenSearch,
     required this.onEnterSelect,
     required this.onOpenTrash,
     required this.onSortSelected,
@@ -43,6 +46,7 @@ class FileTreeToolbar extends StatelessWidget {
   final VoidCallback onOpenGit;
   final VoidCallback onNewFile;
   final VoidCallback onNewFolder;
+  final VoidCallback onOpenSearch;
   final VoidCallback onEnterSelect;
   final VoidCallback onOpenTrash;
   final ValueChanged<TreeSortMode> onSortSelected;
@@ -67,16 +71,10 @@ class FileTreeToolbar extends StatelessWidget {
           onTap: onNewFolder,
         ),
         FileTreeToolbarButton(
-          icon: LucideIcons.squareCheck,
-          tooltip: '多选',
-          enabled: hasRoot && canWrite,
-          onTap: onEnterSelect,
-        ),
-        FileTreeToolbarButton(
-          icon: LucideIcons.trash2,
-          tooltip: '回收站',
-          enabled: hasRoot && canWrite,
-          onTap: onOpenTrash,
+          icon: LucideIcons.search,
+          tooltip: '搜索文件',
+          enabled: hasRoot,
+          onTap: onOpenSearch,
         ),
         FileTreeGitButton(
           enabled: gitEnabled,
@@ -84,29 +82,130 @@ class FileTreeToolbar extends StatelessWidget {
           onTap: onOpenGit,
         ),
         const Spacer(),
-        FileTreeSortMenuButton(
-          mode: sortMode,
-          enabled: hasRoot,
-          onSelected: onSortSelected,
+        FileTreeOverflowMenuButton(
+          hasRoot: hasRoot,
+          canWrite: canWrite,
+          showHidden: showHidden,
+          sortMode: sortMode,
+          onEnterSelect: onEnterSelect,
+          onOpenTrash: onOpenTrash,
+          onSortSelected: onSortSelected,
+          onToggleHidden: onToggleHidden,
+          onRefresh: onRefresh,
+          onCollapseAll: onCollapseAll,
         ),
-        FileTreeToolbarButton(
-          icon: showHidden ? LucideIcons.eye : LucideIcons.eyeOff,
-          tooltip: showHidden ? '隐藏隐藏文件' : '显示隐藏文件',
-          enabled: hasRoot,
-          onTap: onToggleHidden,
+      ],
+    );
+  }
+}
+
+/// The trailing `⋯` menu holding the low-frequency tree actions: multi-select,
+/// trash, refresh, collapse-all, the hidden-files toggle and the sort modes.
+class FileTreeOverflowMenuButton extends StatelessWidget {
+  const FileTreeOverflowMenuButton({
+    super.key,
+    required this.hasRoot,
+    required this.canWrite,
+    required this.showHidden,
+    required this.sortMode,
+    required this.onEnterSelect,
+    required this.onOpenTrash,
+    required this.onSortSelected,
+    required this.onToggleHidden,
+    required this.onRefresh,
+    required this.onCollapseAll,
+  });
+
+  final bool hasRoot;
+  final bool canWrite;
+  final bool showHidden;
+  final TreeSortMode sortMode;
+  final VoidCallback onEnterSelect;
+  final VoidCallback onOpenTrash;
+  final ValueChanged<TreeSortMode> onSortSelected;
+  final VoidCallback onToggleHidden;
+  final VoidCallback onRefresh;
+  final VoidCallback onCollapseAll;
+
+  static const _sortLabels = {
+    TreeSortMode.nameAsc: '名称',
+    TreeSortMode.mtimeDesc: '修改时间',
+    TreeSortMode.sizeDesc: '大小',
+  };
+
+  PopupMenuItem<VoidCallback> _action(
+    IconData icon,
+    String label,
+    VoidCallback onTap, {
+    bool enabled = true,
+  }) {
+    return PopupMenuItem(
+      value: onTap,
+      enabled: enabled,
+      height: 40,
+      child: Row(
+        children: [
+          Icon(icon, size: 16),
+          const SizedBox(width: 10),
+          Text(label),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = hasRoot
+        ? theme.colorScheme.onSurfaceVariant
+        : theme.colorScheme.onSurface.withValues(alpha: 0.30);
+    return PopupMenuButton<VoidCallback>(
+      popUpAnimationStyle: AnimationStyle.noAnimation,
+      tooltip: '更多',
+      enabled: hasRoot,
+      onSelected: (action) => action(),
+      icon: Icon(LucideIcons.ellipsis, size: 18, color: color),
+      iconSize: 18,
+      style: const ButtonStyle(visualDensity: VisualDensity.compact),
+      itemBuilder: (context) => [
+        _action(
+          LucideIcons.squareCheck,
+          '多选',
+          onEnterSelect,
+          enabled: canWrite,
         ),
-        FileTreeToolbarButton(
-          icon: LucideIcons.refreshCw,
-          tooltip: '刷新',
-          enabled: hasRoot,
-          onTap: onRefresh,
+        _action(
+          LucideIcons.trash2,
+          '回收站',
+          onOpenTrash,
+          enabled: canWrite,
         ),
-        FileTreeToolbarButton(
-          icon: LucideIcons.chevronsDownUp,
-          tooltip: '全部折叠',
-          enabled: hasRoot,
-          onTap: onCollapseAll,
+        _action(LucideIcons.refreshCw, '刷新', onRefresh),
+        _action(LucideIcons.chevronsDownUp, '全部折叠', onCollapseAll),
+        _action(
+          showHidden ? LucideIcons.eyeOff : LucideIcons.eye,
+          showHidden ? '隐藏隐藏文件' : '显示隐藏文件',
+          onToggleHidden,
         ),
+        const PopupMenuDivider(),
+        for (final m in TreeSortMode.values)
+          PopupMenuItem(
+            value: () => onSortSelected(m),
+            height: 40,
+            child: Row(
+              children: [
+                Icon(
+                  LucideIcons.check,
+                  size: 16,
+                  color: m == sortMode
+                      ? theme.colorScheme.primary
+                      : Colors.transparent,
+                ),
+                const SizedBox(width: 10),
+                Text('排序：${_sortLabels[m]}'),
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -263,60 +362,3 @@ class FileTreeGitButton extends StatelessWidget {
   }
 }
 
-/// 排序方式下拉菜单（名称/修改时间/大小，目录始终优先）。
-class FileTreeSortMenuButton extends StatelessWidget {
-  const FileTreeSortMenuButton({
-    super.key,
-    required this.mode,
-    required this.enabled,
-    required this.onSelected,
-  });
-
-  final TreeSortMode mode;
-  final bool enabled;
-  final ValueChanged<TreeSortMode> onSelected;
-
-  static const _labels = {
-    TreeSortMode.nameAsc: '名称',
-    TreeSortMode.mtimeDesc: '修改时间',
-    TreeSortMode.sizeDesc: '大小',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = enabled
-        ? theme.colorScheme.onSurfaceVariant
-        : theme.colorScheme.onSurface.withValues(alpha: 0.30);
-    return PopupMenuButton<TreeSortMode>(
-      popUpAnimationStyle: AnimationStyle.noAnimation,
-      tooltip: '排序：${_labels[mode]}',
-      enabled: enabled,
-      initialValue: mode,
-      onSelected: onSelected,
-      icon: Icon(LucideIcons.arrowDownUp, size: 18, color: color),
-      iconSize: 18,
-      style: const ButtonStyle(visualDensity: VisualDensity.compact),
-      itemBuilder: (context) => [
-        for (final m in TreeSortMode.values)
-          PopupMenuItem(
-            value: m,
-            height: 40,
-            child: Row(
-              children: [
-                Icon(
-                  LucideIcons.check,
-                  size: 16,
-                  color: m == mode
-                      ? theme.colorScheme.primary
-                      : Colors.transparent,
-                ),
-                const SizedBox(width: 8),
-                Text(_labels[m]!),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-}
