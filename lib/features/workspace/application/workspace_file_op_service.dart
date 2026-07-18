@@ -1,7 +1,26 @@
+import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:aetherlink_flutter/features/workspace/application/workspace_name_conflicts.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+
+/// A file picked outside the workspace, waiting to be imported into it.
+@immutable
+class ImportFileData {
+  const ImportFileData({required this.name, required this.bytes});
+
+  final String name;
+  final Uint8List bytes;
+}
+
+/// Outcome of a batch import.
+@immutable
+class ImportResult {
+  const ImportResult({required this.imported, required this.skipped});
+
+  final int imported;
+  final int skipped;
+}
 
 /// A file moved into the trash, with enough context to undo the move.
 @immutable
@@ -240,6 +259,115 @@ class WorkspaceFileOpService {
     final name = resolveDuplicateName(entry.name, await siblingNames(parent));
     await backend.copy(entry.path, parent, newName: name);
     return name;
+  }
+
+  // ===== import / zip =====
+
+  /// 单个文件的导入/压缩/解压上限（字节数）——整个内容会拉进内存。
+  static const int kMaxArchiveBytes = 64 << 20;
+
+  /// 把外部选择的文件写入 [dest]；重名自动「保留两者」，写入失败的计入
+  /// skipped。
+  Future<ImportResult> importFiles(
+    String dest,
+    List<ImportFileData> files,
+  ) async {
+    var imported = 0;
+    var skipped = 0;
+    for (final f in files) {
+      try {
+        final name = resolveDuplicateName(f.name, await siblingNames(dest));
+        await backend.createFileBytes(dest, name, f.bytes);
+        imported++;
+      } catch (_) {
+        skipped++;
+      }
+    }
+    return ImportResult(imported: imported, skipped: skipped);
+  }
+
+  /// 把目录（或单个文件）压缩成 zip，写到它旁边（同目录，重名自动取
+  /// 空闲名）。返回 zip 的名字。
+  Future<String> zipEntry(WorkspaceEntry entry) async {
+    final archive = Archive();
+    await _addToArchive(archive, entry, '');
+    final bytes = ZipEncoder().encodeBytes(archive);
+    final parent = parentDirOf(entry);
+    final zipName = resolveDuplicateName(
+      '${entry.name}.zip',
+      await siblingNames(parent),
+    );
+    await backend.createFileBytes(parent, zipName, bytes);
+    return zipName;
+  }
+
+  Future<void> _addToArchive(
+    Archive archive,
+    WorkspaceEntry entry,
+    String prefix,
+  ) async {
+    if (entry.isDirectory) {
+      final children = await backend.listDir(entry.path);
+      for (final child in children) {
+        await _addToArchive(archive, child, '$prefix${entry.name}/');
+      }
+      if (children.isEmpty) {
+        archive.add(
+          ArchiveFile.bytes('$prefix${entry.name}/', Uint8List(0))
+            ..isFile = false,
+        );
+      }
+      return;
+    }
+    if (entry.size > kMaxArchiveBytes) {
+      throw StateError('文件过大（超过 64MB）：${entry.name}');
+    }
+    final bytes = await backend.readFileBytes(entry.path);
+    archive.add(
+      ArchiveFile.bytes('$prefix${entry.name}', Uint8List.fromList(bytes)),
+    );
+  }
+
+  /// 把 zip 解压到它旁边的新目录（以 zip 基名命名，重名自动取空闲名）。
+  /// 跳过含 `..` 的条目（zip-slip 防护）。返回新目录的名字。
+  Future<String> extractZip(WorkspaceEntry zipFile) async {
+    if (zipFile.size > kMaxArchiveBytes) {
+      throw StateError('zip 过大（超过 64MB）');
+    }
+    final bytes = await backend.readFileBytes(zipFile.path);
+    final archive = ZipDecoder().decodeBytes(Uint8List.fromList(bytes));
+    final parent = parentDirOf(zipFile);
+    final lower = zipFile.name.toLowerCase();
+    final base = lower.endsWith('.zip')
+        ? zipFile.name.substring(0, zipFile.name.length - 4)
+        : zipFile.name;
+    final destName = resolveDuplicateName(base, await siblingNames(parent));
+    final destPath = await backend.createDirectory(parent, destName);
+    // 相对目录路径 → opaque path（逐级 createDirectory，路径不可拼接）。
+    final dirs = <String, String>{'': destPath};
+    Future<String> ensureDir(List<String> parts) async {
+      var rel = '';
+      var path = destPath;
+      for (final part in parts) {
+        rel = rel.isEmpty ? part : '$rel/$part';
+        path = dirs[rel] ??= await backend.createDirectory(path, part);
+      }
+      return path;
+    }
+
+    for (final f in archive) {
+      final parts =
+          f.name.split('/').where((p) => p.isNotEmpty).toList();
+      if (parts.isEmpty || parts.contains('..')) continue;
+      if (f.isFile) {
+        final dirPath = await ensureDir(parts.sublist(0, parts.length - 1));
+        final content = f.content as List<int>;
+        await backend.createFileBytes(dirPath, parts.last, content);
+      } else {
+        await ensureDir(parts);
+      }
+    }
+    return destName;
   }
 
   // ===== trash =====

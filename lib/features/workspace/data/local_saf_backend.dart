@@ -5,6 +5,7 @@
 // plugin-side `FileInfo` into the backend-neutral `WorkspaceEntry`.
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:aetherlink_saf/aetherlink_saf.dart' as saf;
 
@@ -154,6 +155,23 @@ class LocalSafBackend extends WorkspaceBackend {
       parentPath: parentPath,
       name: name,
       content: content,
+    );
+    _emit(WorkspaceChangeKind.created, r.path, parentPath: parentPath);
+    return r.path;
+  }
+
+  @override
+  Future<String> createFileBytes(
+    String parentPath,
+    String name,
+    List<int> bytes,
+  ) async {
+    // SAF 通道走 base64 传二进制（插件侧 decode 后原样写入）。
+    final r = await _plugin.createFile(
+      parentPath: parentPath,
+      name: name,
+      content: base64Encode(bytes),
+      encoding: 'base64',
     );
     _emit(WorkspaceChangeKind.created, r.path, parentPath: parentPath);
     return r.path;

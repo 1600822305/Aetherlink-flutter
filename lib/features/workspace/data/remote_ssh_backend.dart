@@ -401,6 +401,29 @@ class RemoteSshBackend extends WorkspaceBackend {
   }
 
   @override
+  Future<String> createFileBytes(
+    String parentPath,
+    String name,
+    List<int> bytes,
+  ) async {
+    final sftp = await _sftpClient();
+    final path = _join(parentPath, name);
+    final file = await sftp.open(
+      path,
+      mode: SftpFileOpenMode.write |
+          SftpFileOpenMode.create |
+          SftpFileOpenMode.exclusive,
+    );
+    try {
+      await file.writeBytes(Uint8List.fromList(bytes));
+    } finally {
+      await file.close();
+    }
+    _emit(WorkspaceChangeKind.created, path, parentPath: parentPath);
+    return path;
+  }
+
+  @override
   Future<String> createDirectory(
     String parentPath,
     String name, {

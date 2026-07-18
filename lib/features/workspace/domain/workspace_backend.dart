@@ -329,6 +329,18 @@ abstract class WorkspaceBackend {
   Future<String> createFile(String parentPath, String name, {String? content}) =>
       throw UnsupportedError('createFile is not supported by this backend');
 
+  /// Creates a file named [name] under [parentPath] with raw [bytes] (no text
+  /// encoding — safe for binary content like imports and zip archives),
+  /// returning its opaque path.
+  Future<String> createFileBytes(
+    String parentPath,
+    String name,
+    List<int> bytes,
+  ) =>
+      throw UnsupportedError(
+        'createFileBytes is not supported by this backend',
+      );
+
   /// Creates a directory named [name] under [parentPath], returning its
   /// opaque path.
   Future<String> createDirectory(

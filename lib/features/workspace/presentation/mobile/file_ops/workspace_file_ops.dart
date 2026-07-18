@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -138,6 +139,12 @@ class WorkspaceFileOps {
         );
       case FileEntryAction.duplicate:
         await duplicate(entry);
+      case FileEntryAction.importHere:
+        await importInto(entry.path);
+      case FileEntryAction.compress:
+        await compress(entry);
+      case FileEntryAction.extract:
+        await extract(entry);
       case FileEntryAction.move:
         await move(entry);
       case FileEntryAction.copy:
@@ -388,6 +395,69 @@ class WorkspaceFileOps {
       _snack('已创建副本 $name');
     } catch (e) {
       _snack('创建副本失败 · $e');
+    }
+  }
+
+  /// 从系统文件选择器挑文件写入 [dirPath]；重名自动「保留两者」。
+  Future<void> importInto(String dirPath) async {
+    if (!_guardWritable()) return;
+    final picked = await FilePicker.pickFiles();
+    if (picked == null || picked.files.isEmpty) return;
+    final files = <ImportFileData>[];
+    var tooLarge = 0;
+    for (final f in picked.files) {
+      if (f.size > WorkspaceFileOpService.kMaxArchiveBytes) {
+        tooLarge++;
+        continue;
+      }
+      try {
+        files.add(ImportFileData(name: f.name, bytes: await f.readAsBytes()));
+      } catch (_) {
+        tooLarge++;
+      }
+    }
+    if (files.isEmpty) {
+      _snack(tooLarge > 0 ? '已跳过 $tooLarge 项（过大或读取失败）' : '没有可导入的文件');
+      return;
+    }
+    try {
+      final result = await service.importFiles(dirPath, files);
+      ensureExpanded(dirPath);
+      await reloadDir(dirPath);
+      final skipped = result.skipped + tooLarge;
+      _snack(
+        '已导入 ${result.imported} 项'
+        '${skipped > 0 ? '，跳过 $skipped 项' : ''}',
+      );
+    } catch (e) {
+      _snack('导入失败 · $e');
+    }
+  }
+
+  /// 把目录/文件压缩成 zip，放在它旁边（重名自动取空闲名）。
+  Future<void> compress(WorkspaceEntry entry) async {
+    if (!_guardWritable()) return;
+    try {
+      final parent = service.parentDirOf(entry);
+      final zipName = await service.zipEntry(entry);
+      await reloadDir(parent);
+      _snack('已压缩为 $zipName');
+    } catch (e) {
+      _snack('压缩失败 · $e');
+    }
+  }
+
+  /// 把 zip 解压到它旁边的新目录（以 zip 基名命名）。
+  Future<void> extract(WorkspaceEntry entry) async {
+    if (!_guardWritable()) return;
+    try {
+      final parent = service.parentDirOf(entry);
+      final dirName = await service.extractZip(entry);
+      ensureExpanded(parent);
+      await reloadDir(parent);
+      _snack('已解压到 $dirName');
+    } catch (e) {
+      _snack('解压失败 · $e');
     }
   }
 

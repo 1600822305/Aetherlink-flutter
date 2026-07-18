@@ -335,6 +335,26 @@ class ProotLocalBackend extends WorkspaceBackend {
   }
 
   @override
+  Future<String> createFileBytes(
+    String parentPath,
+    String name,
+    List<int> bytes,
+  ) async {
+    final guest = _joinGuest(_normalizeGuest(parentPath), name);
+    final file = File(await _hostPath(guest));
+    if (await file.exists()) {
+      throw ProotBackendException('文件已存在：$guest');
+    }
+    await file.writeAsBytes(bytes, flush: true);
+    _emit(
+      WorkspaceChangeKind.created,
+      guest,
+      parentPath: _normalizeGuest(parentPath),
+    );
+    return guest;
+  }
+
+  @override
   Future<String> createDirectory(
     String parentPath,
     String name, {
