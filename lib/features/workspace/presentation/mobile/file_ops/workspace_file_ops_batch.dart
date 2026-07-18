@@ -50,7 +50,7 @@ extension WorkspaceFileOpsBatch on WorkspaceFileOps {
     if (dest == null) return;
     final result = await service.moveMany(entries, dest);
     for (final m in result.moves) {
-      onEntryMoved?.call(m.sourcePath, m.movedPath, m.movedName);
+      onEntryMoved?.call(m.sourcePath, m.movedPath, m.movedName, dest);
     }
     ensureExpanded(dest);
     for (final dir in result.touchedDirs) {
