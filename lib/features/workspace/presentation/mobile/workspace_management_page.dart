@@ -21,6 +21,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_permission_rules_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/features/workspace/application/ssh_connection_pool.dart';
 import 'package:aetherlink_flutter/features/workspace/application/ssh_connection_store.dart';
@@ -436,6 +437,17 @@ class _WorkspaceManagementPageState
                   subtitle: const Text('AI 调用文件/终端工具时哪些免确认（白名单）'),
                   trailing: const Icon(LucideIcons.chevronRight, size: 18),
                   onTap: () => showToolAuthSettingsPage(context),
+                ),
+                Divider(height: 1, color: theme.dividerColor),
+                ListTile(
+                  leading: Icon(
+                    LucideIcons.listChecks,
+                    color: theme.colorScheme.primary,
+                  ),
+                  title: const Text('权限规则'),
+                  subtitle: const Text('智能体审批的「总是允许 / 总是禁止」持久规则'),
+                  trailing: const Icon(LucideIcons.chevronRight, size: 18),
+                  onTap: () => showAgentPermissionRulesPage(context),
                 ),
               ],
             ),
