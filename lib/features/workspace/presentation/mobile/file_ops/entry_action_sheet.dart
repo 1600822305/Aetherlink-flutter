@@ -104,137 +104,149 @@ class EntryActionSheet extends StatelessWidget {
               entry.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w700),
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
-          if (writable && isDir) ...[
-            const _ActionTile(
-              icon: LucideIcons.filePlus,
-              label: '在此新建文件',
-              action: FileEntryAction.newFile,
-            ),
-            const _ActionTile(
-              icon: LucideIcons.folderPlus,
-              label: '在此新建文件夹',
-              action: FileEntryAction.newFolder,
-            ),
-          ],
-          if (writable && !protected) ...[
-            const _ActionTile(
-              icon: LucideIcons.pencil,
-              label: '重命名',
-              action: FileEntryAction.rename,
-            ),
-            const _ActionTile(
-              icon: LucideIcons.scissors,
-              label: '剪切',
-              action: FileEntryAction.cut,
-            ),
-          ],
-          if (writable) ...[
-            const _ActionTile(
-              icon: LucideIcons.files,
-              label: '复制',
-              action: FileEntryAction.copyToClipboard,
-            ),
-            if (canPaste)
-              _ActionTile(
-                icon: LucideIcons.clipboardPaste,
-                label: isDir ? '粘贴到此' : '粘贴到所在目录',
-                action: FileEntryAction.paste,
+          // 菜单项可能超出 sheet 高度上限（小屏/项多时），放进可滚动区。
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (writable && isDir) ...[
+                    const _ActionTile(
+                      icon: LucideIcons.filePlus,
+                      label: '在此新建文件',
+                      action: FileEntryAction.newFile,
+                    ),
+                    const _ActionTile(
+                      icon: LucideIcons.folderPlus,
+                      label: '在此新建文件夹',
+                      action: FileEntryAction.newFolder,
+                    ),
+                  ],
+                  if (writable && !protected) ...[
+                    const _ActionTile(
+                      icon: LucideIcons.pencil,
+                      label: '重命名',
+                      action: FileEntryAction.rename,
+                    ),
+                    const _ActionTile(
+                      icon: LucideIcons.scissors,
+                      label: '剪切',
+                      action: FileEntryAction.cut,
+                    ),
+                  ],
+                  if (writable) ...[
+                    const _ActionTile(
+                      icon: LucideIcons.files,
+                      label: '复制',
+                      action: FileEntryAction.copyToClipboard,
+                    ),
+                    if (canPaste)
+                      _ActionTile(
+                        icon: LucideIcons.clipboardPaste,
+                        label: isDir ? '粘贴到此' : '粘贴到所在目录',
+                        action: FileEntryAction.paste,
+                      ),
+                    const _ActionTile(
+                      icon: LucideIcons.copyPlus,
+                      label: '创建副本',
+                      action: FileEntryAction.duplicate,
+                    ),
+                    if (isDir)
+                      const _ActionTile(
+                        icon: LucideIcons.import,
+                        label: '导入文件到此',
+                        action: FileEntryAction.importHere,
+                      ),
+                    const _ActionTile(
+                      icon: LucideIcons.folderArchive,
+                      label: '压缩为 zip',
+                      action: FileEntryAction.compress,
+                    ),
+                    if (!isDir && entry.name.toLowerCase().endsWith('.zip'))
+                      const _ActionTile(
+                        icon: LucideIcons.packageOpen,
+                        label: '解压到此处',
+                        action: FileEntryAction.extract,
+                      ),
+                  ],
+                  if (writable && !protected)
+                    const _ActionTile(
+                      icon: LucideIcons.cornerUpRight,
+                      label: '移动到…',
+                      action: FileEntryAction.move,
+                    ),
+                  if (writable)
+                    const _ActionTile(
+                      icon: LucideIcons.copy,
+                      label: '复制到…',
+                      action: FileEntryAction.copy,
+                    ),
+                  if (hasWriteGroup) const _MenuDivider(),
+                  const _ActionTile(
+                    icon: LucideIcons.clipboardCopy,
+                    label: '复制路径',
+                    action: FileEntryAction.copyPath,
+                  ),
+                  const _ActionTile(
+                    icon: LucideIcons.info,
+                    label: '详情',
+                    action: FileEntryAction.details,
+                  ),
+                  if (showPin)
+                    _ActionTile(
+                      icon: pinned ? LucideIcons.starOff : LucideIcons.star,
+                      label: pinned ? '取消收藏' : '收藏',
+                      action: FileEntryAction.togglePin,
+                    ),
+                  if (showPermissions)
+                    const _ActionTile(
+                      icon: LucideIcons.shieldCheck,
+                      label: '权限',
+                      action: FileEntryAction.permissions,
+                    ),
+                  if (showOpenTerminal)
+                    const _ActionTile(
+                      icon: LucideIcons.terminal,
+                      label: '在终端打开',
+                      action: FileEntryAction.openTerminal,
+                    ),
+                  if (showGitDiff)
+                    const _ActionTile(
+                      icon: LucideIcons.fileDiff,
+                      label: 'Git 对比',
+                      action: FileEntryAction.gitDiff,
+                    ),
+                  if (showFileHistory)
+                    const _ActionTile(
+                      icon: LucideIcons.history,
+                      label: '文件历史',
+                      action: FileEntryAction.fileHistory,
+                    ),
+                  if (showShare)
+                    const _ActionTile(
+                      icon: LucideIcons.share2,
+                      label: '用其他应用打开/分享',
+                      action: FileEntryAction.share,
+                    ),
+                  if (writable && !protected) ...[
+                    const _MenuDivider(),
+                    const _ActionTile(
+                      icon: LucideIcons.trash2,
+                      label: '删除',
+                      action: FileEntryAction.delete,
+                      destructive: true,
+                    ),
+                  ],
+                ],
               ),
-            const _ActionTile(
-              icon: LucideIcons.copyPlus,
-              label: '创建副本',
-              action: FileEntryAction.duplicate,
             ),
-            if (isDir)
-              const _ActionTile(
-                icon: LucideIcons.import,
-                label: '导入文件到此',
-                action: FileEntryAction.importHere,
-              ),
-            const _ActionTile(
-              icon: LucideIcons.folderArchive,
-              label: '压缩为 zip',
-              action: FileEntryAction.compress,
-            ),
-            if (!isDir && entry.name.toLowerCase().endsWith('.zip'))
-              const _ActionTile(
-                icon: LucideIcons.packageOpen,
-                label: '解压到此处',
-                action: FileEntryAction.extract,
-              ),
-          ],
-          if (writable && !protected)
-            const _ActionTile(
-              icon: LucideIcons.cornerUpRight,
-              label: '移动到…',
-              action: FileEntryAction.move,
-            ),
-          if (writable)
-            const _ActionTile(
-              icon: LucideIcons.copy,
-              label: '复制到…',
-              action: FileEntryAction.copy,
-            ),
-          if (hasWriteGroup) const _MenuDivider(),
-          const _ActionTile(
-            icon: LucideIcons.clipboardCopy,
-            label: '复制路径',
-            action: FileEntryAction.copyPath,
           ),
-          const _ActionTile(
-            icon: LucideIcons.info,
-            label: '详情',
-            action: FileEntryAction.details,
-          ),
-          if (showPin)
-            _ActionTile(
-              icon: pinned ? LucideIcons.starOff : LucideIcons.star,
-              label: pinned ? '取消收藏' : '收藏',
-              action: FileEntryAction.togglePin,
-            ),
-          if (showPermissions)
-            const _ActionTile(
-              icon: LucideIcons.shieldCheck,
-              label: '权限',
-              action: FileEntryAction.permissions,
-            ),
-          if (showOpenTerminal)
-            const _ActionTile(
-              icon: LucideIcons.terminal,
-              label: '在终端打开',
-              action: FileEntryAction.openTerminal,
-            ),
-          if (showGitDiff)
-            const _ActionTile(
-              icon: LucideIcons.fileDiff,
-              label: 'Git 对比',
-              action: FileEntryAction.gitDiff,
-            ),
-          if (showFileHistory)
-            const _ActionTile(
-              icon: LucideIcons.history,
-              label: '文件历史',
-              action: FileEntryAction.fileHistory,
-            ),
-          if (showShare)
-            const _ActionTile(
-              icon: LucideIcons.share2,
-              label: '用其他应用打开/分享',
-              action: FileEntryAction.share,
-            ),
-          if (writable && !protected) ...[
-            const _MenuDivider(),
-            const _ActionTile(
-              icon: LucideIcons.trash2,
-              label: '删除',
-              action: FileEntryAction.delete,
-              destructive: true,
-            ),
-          ],
         ],
       ),
     );
