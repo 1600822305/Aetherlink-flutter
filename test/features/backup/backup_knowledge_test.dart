@@ -165,6 +165,62 @@ void main() {
       expect(hits, isNotEmpty);
     });
 
+    test('restore keeps trashed items in the trash without derived chunks',
+        () async {
+      final record = sampleKnowledgeRecord();
+      (record['items'] as List).add({
+        'id': 'item-trashed',
+        'type': 'note',
+        'source': 'note',
+        'conceptId': 'item-trashed',
+        'title': '回收站笔记',
+        'status': 'completed',
+        'error': null,
+        'sourceFingerprint': null,
+        'createdAt': 1700000000000,
+        'deletedAt': 1700000001000,
+        'content': 'trashed note content',
+        'contentHash': 'hash-2',
+      });
+      final file = await _writeZipBackup(tempDir, knowledge: [record]);
+
+      final result = await service.restoreFromFile(file);
+      expect(result.failed, 0);
+
+      final live = await knowledge.listItems('kb-1');
+      expect(live.map((i) => i.id), ['item-1']);
+      final trash = await knowledge.listTrash('kb-1');
+      expect(trash.map((i) => i.id), ['item-trashed']);
+
+      final trashedChunks = await (db.select(db.kbChunkRows)
+            ..where((t) => t.itemId.equals('item-trashed')))
+          .get();
+      expect(trashedChunks, isEmpty);
+
+      // 恢复后仍可从回收站还原（正文保留，切块重建）。
+      await knowledge.restoreItem('item-trashed');
+      final restoredChunks = await (db.select(db.kbChunkRows)
+            ..where((t) => t.itemId.equals('item-trashed')))
+          .get();
+      expect(restoredChunks, isNotEmpty);
+    });
+
+    test('restore round-trips base-level group / rerank / file-processor '
+        'config', () async {
+      final record = sampleKnowledgeRecord()
+        ..['groupName'] = '工作'
+        ..['rerankModelKey'] = 'provider|rerank-model'
+        ..['fileProcessorId'] = 'mineru';
+      final file = await _writeZipBackup(tempDir, knowledge: [record]);
+
+      await service.restoreFromFile(file);
+
+      final base = (await knowledge.listBases()).single;
+      expect(base.groupName, '工作');
+      expect(base.rerankModelKey, 'provider|rerank-model');
+      expect(base.fileProcessorId, 'mineru');
+    });
+
     test('overwrite restore of an old backup without knowledge.json keeps '
         'existing knowledge bases', () async {
       final base = await knowledge.createBase(name: '现存库');

@@ -1344,6 +1344,9 @@ class BackupService {
             'scope': base.scope.toJson(),
             'status': base.status,
             'createdAt': base.createdAt,
+            'fileProcessorId': base.fileProcessorId,
+            'groupName': base.groupName,
+            'rerankModelKey': base.rerankModelKey,
             'items': [
               for (final item in itemRows)
                 if (item.baseId == base.id)
@@ -1357,6 +1360,7 @@ class BackupService {
                     'error': item.error,
                     'sourceFingerprint': item.sourceFingerprint,
                     'createdAt': item.createdAt,
+                    'deletedAt': item.deletedAt,
                     'content': contentByItem[item.id]?.content,
                     'contentHash': contentByItem[item.id]?.contentHash,
                   },
@@ -1885,6 +1889,9 @@ class BackupService {
           scope: scope,
           status: Value((json['status'] ?? 'idle').toString()),
           createdAt: (json['createdAt'] as num?)?.toInt() ?? 0,
+          fileProcessorId: Value(json['fileProcessorId'] as String?),
+          groupName: Value(json['groupName'] as String?),
+          rerankModelKey: Value(json['rerankModelKey'] as String?),
         ),
       );
 
@@ -1894,6 +1901,7 @@ class BackupService {
         if (raw is! Map<String, dynamic>) continue;
         final itemId = (raw['id'] ?? '').toString();
         final content = raw['content'] as String?;
+        final deletedAt = (raw['deletedAt'] as num?)?.toInt();
         if (itemId.isEmpty) continue;
         await db.into(db.knowledgeItemRows).insertOnConflictUpdate(
           KnowledgeItemRowsCompanion.insert(
@@ -1907,6 +1915,7 @@ class BackupService {
             error: Value(raw['error'] as String?),
             sourceFingerprint: Value(raw['sourceFingerprint'] as String?),
             createdAt: (raw['createdAt'] as num?)?.toInt() ?? 0,
+            deletedAt: Value(deletedAt),
           ),
         );
         if (content == null) continue;
@@ -1918,10 +1927,12 @@ class BackupService {
             contentHash: contentHash,
           ),
         );
-        // 派生切块：先清后建，保证 merge 模式下重复恢复也幂等。
+        // 派生切块：先清后建，保证 merge 模式下重复恢复也幂等；回收站条目
+        // 不建切块（与软删除语义一致，恢复时再重建）。
         await (db.delete(db.kbChunkRows)
               ..where((t) => t.itemId.equals(itemId)))
             .go();
+        if (deletedAt != null) continue;
         for (final chunk in chunkText(
           content,
           size: chunkSize,
