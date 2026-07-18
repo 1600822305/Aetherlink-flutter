@@ -44,6 +44,8 @@ class WorkspaceFileOps {
     this.onFileHistory,
     this.onShare,
     this.onOpenTerminal,
+    this.isPinned,
+    this.onTogglePin,
   }) : service = WorkspaceFileOpService(
           backend: backend,
           rootPath: rootPath,
@@ -98,6 +100,12 @@ class WorkspaceFileOps {
   /// hidden.
   final void Function(WorkspaceEntry entry)? onOpenTerminal;
 
+  /// [entry] 是否已收藏（决定菜单项文案）。
+  final bool Function(WorkspaceEntry entry)? isPinned;
+
+  /// 收藏/取消收藏 [entry]。Null ⇒ the action is hidden.
+  final void Function(WorkspaceEntry entry)? onTogglePin;
+
   WorkspaceBackend get backend => service.backend;
 
   String get rootPath => service.rootPath;
@@ -122,6 +130,8 @@ class WorkspaceFileOps {
         showGitDiff: canGitDiff?.call(entry) ?? false,
         showFileHistory: onFileHistory != null && !entry.isDirectory,
         showShare: onShare != null && !entry.isDirectory,
+        showPin: onTogglePin != null,
+        pinned: isPinned?.call(entry) ?? false,
         showPermissions: service.canExec,
         showOpenTerminal:
             onOpenTerminal != null && service.canExec && entry.isDirectory,
@@ -165,6 +175,8 @@ class WorkspaceFileOps {
         await showPermissions(entry);
       case FileEntryAction.openTerminal:
         onOpenTerminal?.call(entry);
+      case FileEntryAction.togglePin:
+        onTogglePin?.call(entry);
       case FileEntryAction.gitDiff:
         await onGitDiff?.call(entry);
       case FileEntryAction.fileHistory:

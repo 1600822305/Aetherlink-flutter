@@ -23,6 +23,7 @@ enum FileEntryAction {
   details,
   permissions,
   openTerminal,
+  togglePin,
   gitDiff,
   fileHistory,
   share,
@@ -43,6 +44,8 @@ class EntryActionSheet extends StatelessWidget {
     this.showShare = false,
     this.showPermissions = false,
     this.showOpenTerminal = false,
+    this.showPin = false,
+    this.pinned = false,
   });
 
   final WorkspaceEntry entry;
@@ -72,6 +75,12 @@ class EntryActionSheet extends StatelessWidget {
 
   /// Whether to offer 「在终端打开」（exec 后端的目录）。
   final bool showOpenTerminal;
+
+  /// Whether to offer 「收藏/取消收藏」。
+  final bool showPin;
+
+  /// 当前条目是否已收藏（决定菜单项文案）。
+  final bool pinned;
 
   @override
   Widget build(BuildContext context) {
@@ -181,6 +190,12 @@ class EntryActionSheet extends StatelessWidget {
             label: '详情',
             action: FileEntryAction.details,
           ),
+          if (showPin)
+            _ActionTile(
+              icon: pinned ? LucideIcons.starOff : LucideIcons.star,
+              label: pinned ? '取消收藏' : '收藏',
+              action: FileEntryAction.togglePin,
+            ),
           if (showPermissions)
             const _ActionTile(
               icon: LucideIcons.shieldCheck,
