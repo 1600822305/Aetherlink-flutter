@@ -80,8 +80,13 @@ class AgentRuntime {
 
   final Ref Function() _refOf;
 
-  Future<({AgentLlmClient llm, AgentToolExecutor tools, ApprovalGate approval})>
-      forProfile(
+  Future<
+      ({
+        AgentLlmClient llm,
+        AgentToolExecutor tools,
+        ApprovalGate approval,
+        Future<String?> Function() stopGuard,
+      })> forProfile(
     AgentProfile profile, {
     AgentSessionMode mode = AgentSessionMode.code,
     bool enableSubagents = true,
@@ -93,19 +98,21 @@ class AgentRuntime {
       enableSubagents: enableSubagents,
     );
     await _addMcpServerTools(_refOf(), profile, mode, catalog);
-    return (
-      llm: _GatewayAgentLlmClient(_refOf, profile, catalog.definitions),
-      tools: _HookedAgentToolExecutor(
+    final hooked = _HookedAgentToolExecutor(
+      _refOf,
+      _McpAgentToolExecutor(
         _refOf,
-        _McpAgentToolExecutor(
-          _refOf,
-          catalog.routes,
-          boundWorkspaceId: boundWorkspaceId,
-        ),
         catalog.routes,
         boundWorkspaceId: boundWorkspaceId,
       ),
+      catalog.routes,
+      boundWorkspaceId: boundWorkspaceId,
+    );
+    return (
+      llm: _GatewayAgentLlmClient(_refOf, profile, catalog.definitions),
+      tools: hooked,
       approval: _PolicyApprovalGate(_refOf, catalog.routes),
+      stopGuard: hooked.runStopHooks,
     );
   }
 
@@ -114,6 +121,21 @@ class AgentRuntime {
     final current = await _refOf().read(appCurrentModelProvider.future);
     return current?.model.name;
   }
+}
+
+/// 某工作区 hooks.json 原文（Hooks 设置页审阅/信任用）；工作区不存在
+/// 或无文件返回 null。
+@riverpod
+Future<String?> workspaceHooksFile(Ref ref, String workspaceId) async {
+  List<Workspace> workspaces;
+  try {
+    workspaces = await loadWorkspaces(ref);
+  } catch (_) {
+    return null;
+  }
+  final bound = workspaces.where((w) => w.id == workspaceId).firstOrNull;
+  if (bound == null) return null;
+  return _readWorkspaceFile(ref, bound, '.aetherlink/hooks.json');
 }
 
 /// 只读硬约束（Ask/Plan 模式，参考 Roo Code 模式×工具组 /
@@ -1224,9 +1246,12 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
     final patterns =
         route == null ? const <String>['*'] : _patternsOfCall(route, call.name, args);
 
+    final path = args['path'];
+    final filePath = path is String && path.isNotEmpty ? path : null;
     for (final hook in hooksForToolCall(
         config, AgentHookEvent.preToolUse, permission, patterns)) {
-      final result = await _runHook(hook, call, args);
+      final result = await _runHook(hook,
+          toolName: call.name, argsJson: call.argsJson, filePath: filePath);
       if (result.outcome == AgentHookOutcome.block) {
         return AgentToolResult(
           ok: false,
@@ -1244,7 +1269,8 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
     final feedback = <String>[];
     for (final hook in hooksForToolCall(
         config, AgentHookEvent.postToolUse, permission, patterns)) {
-      final result = await _runHook(hook, call, args);
+      final result = await _runHook(hook,
+          toolName: call.name, argsJson: call.argsJson, filePath: filePath);
       if (result.outcome == AgentHookOutcome.block) {
         feedback.add(result.message.isEmpty
             ? 'hook（${hook.command}）报告了问题（无输出）。'
@@ -1261,24 +1287,41 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
     );
   }
 
+  /// 任务收尾前跑 stop hooks（引擎 [AgentEngine.stopGuard]）：任一
+  /// hook 阻断则返回阻断原因（收尾被阻止，原因回填继续跑），
+  /// 全部放行/失败返回 null。stop hook 不按工具匹配，matcher/pattern
+  /// 忽略。
+  Future<String?> runStopHooks() async {
+    final config = await _hooks();
+    if (config == null) return null;
+    for (final hook in config.ofEvent(AgentHookEvent.stop)) {
+      final result = await _runHook(hook, toolName: 'stop', argsJson: '{}');
+      if (result.outcome == AgentHookOutcome.block) {
+        return result.message.isEmpty
+            ? 'hook（${hook.command}）阻止了收尾。'
+            : result.message;
+      }
+    }
+    return null;
+  }
+
   /// 在绑定工作区里跑一条 hook 命令：现场上下文经环境变量传入
   /// （AETHER_TOOL / AETHER_ARGS_JSON / AETHER_FILE_PATH），超时/异常
   /// 按 hook 自身失败处理（不阻断）。
   Future<AgentHookResult> _runHook(
-    AgentHook hook,
-    AgentToolCallRequest call,
-    Map<String, Object?> args,
-  ) async {
+    AgentHook hook, {
+    required String toolName,
+    required String argsJson,
+    String? filePath,
+  }) async {
     try {
-      final argsJson = call.argsJson.length > 4000
-          ? call.argsJson.substring(0, 4000)
-          : call.argsJson;
-      final path = args['path'];
+      final cappedArgs =
+          argsJson.length > 4000 ? argsJson.substring(0, 4000) : argsJson;
       final exports = [
-        'export AETHER_TOOL=${_shellQuote(call.name)}',
-        'export AETHER_ARGS_JSON=${_shellQuote(argsJson)}',
-        if (path is String && path.isNotEmpty)
-          'export AETHER_FILE_PATH=${_shellQuote(path)}',
+        'export AETHER_TOOL=${_shellQuote(toolName)}',
+        'export AETHER_ARGS_JSON=${_shellQuote(cappedArgs)}',
+        if (filePath != null && filePath.isNotEmpty)
+          'export AETHER_FILE_PATH=${_shellQuote(filePath)}',
       ].join('; ');
       final result = await runTerminalTool(_refOf(), 'terminal_execute', {
         'command': '$exports; ${hook.command}',

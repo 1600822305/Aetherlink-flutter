@@ -21,6 +21,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_hooks_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_permission_rules_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/features/workspace/application/ssh_connection_pool.dart';
@@ -448,6 +449,17 @@ class _WorkspaceManagementPageState
                   subtitle: const Text('智能体审批的「总是允许 / 总是禁止」持久规则'),
                   trailing: const Icon(LucideIcons.chevronRight, size: 18),
                   onTap: () => showAgentPermissionRulesPage(context),
+                ),
+                Divider(height: 1, color: theme.dividerColor),
+                ListTile(
+                  leading: Icon(
+                    LucideIcons.webhook,
+                    color: theme.colorScheme.primary,
+                  ),
+                  title: const Text('Hooks'),
+                  subtitle: const Text('工作区 hooks.json 的审阅与信任'),
+                  trailing: const Icon(LucideIcons.chevronRight, size: 18),
+                  onTap: () => showAgentHooksPage(context),
                 ),
               ],
             ),
