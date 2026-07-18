@@ -83,6 +83,29 @@ void main() {
     });
   });
 
+  group('duplicate', () {
+    test('copies next to the source with a fresh keep-both name', () async {
+      backend
+        ..seedDir('$root/lib')
+        ..seedFile('$root/lib/a.txt', 'hi');
+      await index(root);
+      await index('$root/lib');
+      final name = await service.duplicate(await entryOf('$root/lib/a.txt'));
+      expect(name, isNot('a.txt'));
+      expect(await backend.readFile('$root/lib/$name'), 'hi');
+      expect(backend.exists('$root/lib/a.txt'), isTrue);
+    });
+
+    test('skips names already taken by earlier duplicates', () async {
+      backend
+        ..seedFile('$root/a.txt')
+        ..seedFile('$root/a (2).txt');
+      await index(root);
+      final name = await service.duplicate(await entryOf('$root/a.txt'));
+      expect(name, 'a (3).txt');
+    });
+  });
+
   group('trash', () {
     test('moveToTrash creates the trash dir and preserves the name', () async {
       backend.seedFile('$root/a.txt');

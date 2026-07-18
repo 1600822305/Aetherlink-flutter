@@ -571,3 +571,47 @@ class OpenWorkspaceFiles extends Notifier<WorkspaceTabsState> {
         .saveSetting(kWorkspaceSessionKey, session.encode());
   }
 }
+
+/// 文件树剪贴板的语义：剪切（粘贴后移动并清空剪贴板）或复制（可多次粘贴）。
+enum FileClipboardMode { cut, copy }
+
+/// 文件树剪贴板内容：一组条目 + 剪切/复制语义 + 所属工作区根。
+///
+/// 记录 [workspaceRoot] 是因为路径是各 backend 的 opaque 标识，跨工作区/
+/// 跨 backend 粘贴不可行 — 切换工作区后剪贴板即失效。
+class FileClipboardState {
+  const FileClipboardState({
+    required this.entries,
+    required this.mode,
+    required this.workspaceRoot,
+  });
+
+  final List<WorkspaceEntry> entries;
+  final FileClipboardMode mode;
+  final String workspaceRoot;
+}
+
+class FileTreeClipboard extends Notifier<FileClipboardState?> {
+  @override
+  FileClipboardState? build() => null;
+
+  void set(
+    List<WorkspaceEntry> entries,
+    FileClipboardMode mode,
+    String workspaceRoot,
+  ) {
+    state = FileClipboardState(
+      entries: entries,
+      mode: mode,
+      workspaceRoot: workspaceRoot,
+    );
+  }
+
+  void clear() => state = null;
+}
+
+/// 文件树的剪切/复制剪贴板（长按菜单「剪切/复制」→「粘贴到此」）。
+final fileTreeClipboardProvider =
+    NotifierProvider<FileTreeClipboard, FileClipboardState?>(
+  FileTreeClipboard.new,
+);

@@ -203,6 +203,20 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     }
   }
 
+  // The ops instance from the last build, so the paste callback (captured by
+  // the entry menu) always uses the current tree wiring.
+  WorkspaceFileOps? _ops;
+
+  // Pastes the file-tree clipboard into [dest]; a successful cut-paste
+  // consumes the clipboard (copy-paste stays for repeated pastes).
+  Future<void> _pasteClipboard(WorkspaceFileOps ops, String dest) async {
+    final clip = ref.read(fileTreeClipboardProvider);
+    if (clip == null || clip.workspaceRoot != _tree.root) return;
+    final cut = clip.mode == FileClipboardMode.cut;
+    final done = await ops.pasteEntries(clip.entries, cut: cut, dest: dest);
+    if (cut && done) ref.read(fileTreeClipboardProvider.notifier).clear();
+  }
+
   // Runs a batch op over the current selection, then exits select mode.
   Future<void> _batch(
     Future<void> Function(List<WorkspaceEntry> sel) op,
@@ -255,6 +269,10 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     // Ops are built even for read-only backends: the long-press menu still
     // offers the non-mutating actions (复制路径/详情); write actions are gated
     // inside by capabilities.canWrite.
+    final clipboard = ref.watch(fileTreeClipboardProvider);
+    final canPaste = clipboard != null &&
+        clipboard.workspaceRoot == root &&
+        (backend?.capabilities.canWrite ?? false);
     final ops = (root != null && backend != null)
         ? WorkspaceFileOps(
             context: context,
@@ -280,10 +298,22 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                       entry,
                       dirtyPaths: ref.read(dirtyFilesProvider),
                     ),
+            canPaste: canPaste,
+            onClipboardSet: (entries, {required cut}) =>
+                ref.read(fileTreeClipboardProvider.notifier).set(
+                      entries,
+                      cut ? FileClipboardMode.cut : FileClipboardMode.copy,
+                      root,
+                    ),
+            onPaste: (dest) async {
+              final ops = _ops;
+              if (ops != null) await _pasteClipboard(ops, dest);
+            },
             onShare: (entry) =>
                 shareWorkspaceFile(context, ref, entry: entry),
           )
         : null;
+    _ops = ops;
     final canWrite = backend?.capabilities.canWrite ?? false;
 
     return ColoredBox(
@@ -378,6 +408,10 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                           .toggle(),
                       onRefresh: _refresh,
                       onCollapseAll: _tree.collapseAll,
+                      canPaste: canPaste,
+                      onPasteToRoot: ops == null
+                          ? null
+                          : () => _pasteClipboard(ops, ops.rootPath),
                     ),
             ),
             Divider(height: 1, color: theme.dividerColor),

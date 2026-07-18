@@ -10,6 +10,10 @@ enum FileEntryAction {
   newFile,
   newFolder,
   rename,
+  cut,
+  copyToClipboard,
+  paste,
+  duplicate,
   move,
   copy,
   copyPath,
@@ -28,6 +32,7 @@ class EntryActionSheet extends StatelessWidget {
     required this.entry,
     this.protected = false,
     this.writable = true,
+    this.canPaste = false,
     this.showGitDiff = false,
     this.showFileHistory = false,
     this.showShare = false,
@@ -40,6 +45,11 @@ class EntryActionSheet extends StatelessWidget {
 
   /// Read-only backends only get the non-mutating actions (复制路径/详情).
   final bool writable;
+
+  /// Whether the file-tree clipboard holds something pasteable here (writable
+  /// backend + clipboard from the same workspace). 目录粘贴到其内部，文件
+  /// 粘贴到其所在目录。
+  final bool canPaste;
 
   /// Whether to offer 「Git 对比」 (the entry has a git working-tree status).
   final bool showGitDiff;
@@ -93,11 +103,35 @@ class EntryActionSheet extends StatelessWidget {
               action: FileEntryAction.rename,
             ),
             const _ActionTile(
+              icon: LucideIcons.scissors,
+              label: '剪切',
+              action: FileEntryAction.cut,
+            ),
+          ],
+          if (writable) ...[
+            const _ActionTile(
+              icon: LucideIcons.files,
+              label: '复制',
+              action: FileEntryAction.copyToClipboard,
+            ),
+            if (canPaste)
+              _ActionTile(
+                icon: LucideIcons.clipboardPaste,
+                label: isDir ? '粘贴到此' : '粘贴到所在目录',
+                action: FileEntryAction.paste,
+              ),
+            const _ActionTile(
+              icon: LucideIcons.copyPlus,
+              label: '创建副本',
+              action: FileEntryAction.duplicate,
+            ),
+          ],
+          if (writable && !protected)
+            const _ActionTile(
               icon: LucideIcons.cornerUpRight,
               label: '移动到…',
               action: FileEntryAction.move,
             ),
-          ],
           if (writable)
             const _ActionTile(
               icon: LucideIcons.copy,

@@ -182,6 +182,15 @@ class WorkspaceFileOpService {
   Future<String> copyKeepBothName(WorkspaceEntry entry, String dest) async =>
       resolveDuplicateName(entry.name, await siblingNames(dest));
 
+  /// 原地副本：把 [entry] 复制到它所在的目录，自动取「name (2).ext」式
+  /// 空闲名（源条目本身占着原名，所以副本必然改名）。返回副本的名字。
+  Future<String> duplicate(WorkspaceEntry entry) async {
+    final parent = parentDirOf(entry);
+    final name = resolveDuplicateName(entry.name, await siblingNames(parent));
+    await backend.copy(entry.path, parent, newName: name);
+    return name;
+  }
+
   // ===== trash =====
 
   /// The trash directory's opaque path when it already exists under the root.
