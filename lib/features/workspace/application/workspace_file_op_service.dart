@@ -36,17 +36,40 @@ class BatchTrashResult {
   final int skipped;
 }
 
-/// Outcome of a batch move: how many moved / were skipped, and every directory
-/// whose listing the operation touched (sources + destination).
+/// A completed move, with enough context to undo it (move back to the source
+/// directory and restore the original name after a keep-both rename).
+@immutable
+class MovedEntry {
+  const MovedEntry({
+    required this.movedPath,
+    required this.movedName,
+    required this.sourceDir,
+    required this.originalName,
+  });
+
+  /// The entry's opaque path in the destination directory.
+  final String movedPath;
+
+  /// The name it carries there (differs from [originalName] after keep-both).
+  final String movedName;
+
+  final String sourceDir;
+  final String originalName;
+}
+
+/// Outcome of a batch move: what moved (undoable), how many were skipped, and
+/// every directory whose listing the operation touched (sources +
+/// destination).
 @immutable
 class BatchMoveResult {
   const BatchMoveResult({
-    required this.moved,
+    required this.moves,
     required this.skipped,
     required this.touchedDirs,
   });
 
-  final int moved;
+  final List<MovedEntry> moves;
+  int get moved => moves.length;
   final int skipped;
   final Set<String> touchedDirs;
 }
@@ -153,8 +176,8 @@ class WorkspaceFileOpService {
 
   /// Moves [entry] (from [source]) into [dest], renaming it first to a name
   /// free in both directories when the caller resolved a conflict as
-  /// keep-both. Returns the effective name.
-  Future<String> moveKeepBoth(
+  /// keep-both. Returns the undoable move record.
+  Future<MovedEntry> moveKeepBoth(
     WorkspaceEntry entry,
     String source,
     String dest,
@@ -167,11 +190,39 @@ class WorkspaceFileOpService {
     };
     final name = resolveDuplicateName(entry.name, taken);
     final srcPath = await backend.rename(entry.path, name);
-    await backend.move(srcPath, dest);
-    return name;
+    final movedPath = await backend.move(srcPath, dest);
+    return MovedEntry(
+      movedPath: movedPath,
+      movedName: name,
+      sourceDir: source,
+      originalName: entry.name,
+    );
   }
 
-  Future<void> move(String path, String dest) => backend.move(path, dest);
+  /// Moves [entry] (from [source]) into [dest] without renaming. Returns the
+  /// undoable move record.
+  Future<MovedEntry> move(
+    WorkspaceEntry entry,
+    String source,
+    String dest,
+  ) async {
+    final movedPath = await backend.move(entry.path, dest);
+    return MovedEntry(
+      movedPath: movedPath,
+      movedName: entry.name,
+      sourceDir: source,
+      originalName: entry.name,
+    );
+  }
+
+  /// Undoes [moved]: moves it back to its source directory and restores the
+  /// original name when a keep-both rename happened on the way.
+  Future<void> undoMove(MovedEntry moved) async {
+    final restored = await backend.move(moved.movedPath, moved.sourceDir);
+    if (moved.movedName != moved.originalName) {
+      await backend.rename(restored, moved.originalName);
+    }
+  }
 
   /// Copies [entry] into [dest]; [newName] carries the keep-both name when the
   /// caller resolved a conflict that way.
@@ -330,7 +381,7 @@ class WorkspaceFileOpService {
     List<WorkspaceEntry> entries,
     String dest,
   ) async {
-    var moved = 0;
+    final moves = <MovedEntry>[];
     var skipped = 0;
     final touched = <String>{dest};
     for (final entry in entries) {
@@ -344,22 +395,30 @@ class WorkspaceFileOpService {
       }
       try {
         var srcPath = entry.path;
+        var name = entry.name;
         if ((await siblingNames(dest)).contains(entry.name)) {
           final taken = {
             ...await siblingNames(dest),
             ...await siblingNames(source),
           };
-          final name = resolveDuplicateName(entry.name, taken);
+          name = resolveDuplicateName(entry.name, taken);
           srcPath = await backend.rename(entry.path, name);
         }
-        await backend.move(srcPath, dest);
+        final movedPath = await backend.move(srcPath, dest);
+        moves.add(
+          MovedEntry(
+            movedPath: movedPath,
+            movedName: name,
+            sourceDir: source,
+            originalName: entry.name,
+          ),
+        );
         touched.add(source);
-        moved++;
       } catch (_) {
         skipped++;
       }
     }
-    return BatchMoveResult(moved: moved, skipped: skipped, touchedDirs: touched);
+    return BatchMoveResult(moves: moves, skipped: skipped, touchedDirs: touched);
   }
 
   /// Batch copy into [dest]; keep-both on name conflicts. Copies into

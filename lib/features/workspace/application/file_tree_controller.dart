@@ -101,6 +101,12 @@ class FileTreeController extends ChangeNotifier {
   final Map<String, WorkspaceEntry> _selected = {};
   Map<String, WorkspaceEntry> get selected => _selected;
 
+  // 树内快速过滤：非空时 [buildRows] 只保留名字包含它的条目（及其祖先
+  // 目录），并忽略展开状态遍历所有已缓存的目录。
+  String _filter = '';
+  String get filter => _filter;
+  bool get filtering => _filter.isNotEmpty;
+
   // Guards against re-revealing the same active file repeatedly.
   String? _revealedPath;
 
@@ -118,6 +124,15 @@ class FileTreeController extends ChangeNotifier {
 
   void _notify() {
     if (!_disposed) notifyListeners();
+  }
+
+  /// Sets (or clears) the quick-filter query; matching is case-insensitive
+  /// substring on entry names.
+  void setFilter(String query) {
+    final q = query.trim();
+    if (q == _filter) return;
+    _filter = q;
+    _notify();
   }
 
   bool isLoading(String path) => _loading.contains(path);
@@ -143,6 +158,7 @@ class FileTreeController extends ChangeNotifier {
     _loading.clear();
     _listGen.clear();
     _sortedCache.clear();
+    _filter = '';
     _revealedPath = null;
     _rebindWatch();
     if (root != null) {
@@ -527,9 +543,63 @@ class FileTreeController extends ChangeNotifier {
     final root = _root;
     final rows = <FileTreeRowData>[];
     if (root != null) {
-      _appendRows(root, 0, rows, showHidden, sortMode);
+      if (filtering) {
+        _appendRowsFiltered(
+          root,
+          0,
+          rows,
+          showHidden,
+          sortMode,
+          _filter.toLowerCase(),
+        );
+      } else {
+        _appendRows(root, 0, rows, showHidden, sortMode);
+      }
     }
     return rows;
+  }
+
+  // Filtered flattening: walks every *cached* directory regardless of its
+  // expansion state (no lazy loads are triggered — only what's already listed
+  // is searched) and keeps entries whose name matches plus the ancestor
+  // directories leading to them. Returns whether anything under [path]
+  // matched.
+  bool _appendRowsFiltered(
+    String path,
+    int depth,
+    List<FileTreeRowData> out,
+    bool showHidden,
+    TreeSortMode sortMode,
+    String query,
+  ) {
+    final entries = _children[path];
+    if (entries == null) return false;
+    var any = false;
+    for (final entry in _sortedChildren(path, entries, sortMode)) {
+      if (!showHidden && entry.isHidden) continue;
+      final selfMatch = entry.name.toLowerCase().contains(query);
+      if (entry.isDirectory) {
+        final mark = out.length;
+        out.add(FileTreeRowData(entry: entry, depth: depth, expanded: true));
+        final childMatch = _appendRowsFiltered(
+          entry.path,
+          depth + 1,
+          out,
+          showHidden,
+          sortMode,
+          query,
+        );
+        if (selfMatch || childMatch) {
+          any = true;
+        } else {
+          out.removeRange(mark, out.length);
+        }
+      } else if (selfMatch) {
+        out.add(FileTreeRowData(entry: entry, depth: depth, expanded: false));
+        any = true;
+      }
+    }
+    return any;
   }
 
   void _appendRows(

@@ -29,6 +29,7 @@ class FileTreeToolbar extends StatelessWidget {
     required this.onCollapseAll,
     this.canPaste = false,
     this.onPasteToRoot,
+    this.onToggleFilter,
   });
 
   final bool hasRoot;
@@ -38,6 +39,9 @@ class FileTreeToolbar extends StatelessWidget {
   /// 「粘贴到根目录」 overflow item.
   final bool canPaste;
   final VoidCallback? onPasteToRoot;
+
+  /// Toggles the quick-filter bar under the toolbar (树内按名过滤).
+  final VoidCallback? onToggleFilter;
 
   /// Whether the new-file/new-folder buttons are enabled (ops built + writable).
   final bool canCreate;
@@ -94,6 +98,7 @@ class FileTreeToolbar extends StatelessWidget {
           canWrite: canWrite,
           canPaste: canPaste,
           onPasteToRoot: onPasteToRoot,
+          onToggleFilter: onToggleFilter,
           showHidden: showHidden,
           sortMode: sortMode,
           onEnterSelect: onEnterSelect,
@@ -119,6 +124,7 @@ class FileTreeOverflowMenuButton extends StatelessWidget {
     required this.sortMode,
     this.canPaste = false,
     this.onPasteToRoot,
+    this.onToggleFilter,
     required this.onEnterSelect,
     required this.onOpenTrash,
     required this.onSortSelected,
@@ -135,6 +141,9 @@ class FileTreeOverflowMenuButton extends StatelessWidget {
   /// Shows the 「粘贴到根目录」 item when the clipboard holds something.
   final bool canPaste;
   final VoidCallback? onPasteToRoot;
+
+  /// Toggles the quick-filter bar (树内按名过滤).
+  final VoidCallback? onToggleFilter;
   final VoidCallback onEnterSelect;
   final VoidCallback onOpenTrash;
   final ValueChanged<TreeSortMode> onSortSelected;
@@ -190,6 +199,8 @@ class FileTreeOverflowMenuButton extends StatelessWidget {
             onPasteToRoot!,
             enabled: canWrite,
           ),
+        if (onToggleFilter != null)
+          _action(LucideIcons.listFilter, '过滤', onToggleFilter!),
         _action(
           LucideIcons.squareCheck,
           '多选',

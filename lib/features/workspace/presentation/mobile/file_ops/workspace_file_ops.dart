@@ -237,11 +237,35 @@ class WorkspaceFileOps {
     );
     if (name == null || name == entry.name) return;
     try {
-      await service.rename(entry, name);
-      await reloadDir(service.parentDirOf(entry));
-      _snack('已重命名为 $name');
+      final newPath = await service.rename(entry, name);
+      final parent = service.parentDirOf(entry);
+      await reloadDir(parent);
+      if (!context.mounted) return;
+      AppToast.success(
+        context,
+        '已重命名为 $name',
+        duration: const Duration(seconds: 6),
+        action: AppToastAction(
+          label: '撤销',
+          onPressed: () => _undoRename(newPath, entry.name, parent),
+        ),
+      );
     } catch (e) {
       _snack('重命名失败 · $e');
+    }
+  }
+
+  Future<void> _undoRename(
+    String newPath,
+    String originalName,
+    String parent,
+  ) async {
+    try {
+      await backend.rename(newPath, originalName);
+      await reloadDir(parent);
+      _snack('已恢复为 $originalName');
+    } catch (e) {
+      _snack('撤销失败 · $e');
     }
   }
 
@@ -261,7 +285,9 @@ class WorkspaceFileOps {
       return;
     }
     try {
-      var name = entry.name;
+      MovedEntry moved;
+      // 覆盖后无法撤销（被覆盖的条目已删除），只给普通提示。
+      var undoable = true;
       final existing = await service.findConflict(dest, entry.name);
       if (existing != null) {
         final action = await _promptConflict(existing);
@@ -269,21 +295,56 @@ class WorkspaceFileOps {
         if (action == ConflictAction.overwrite) {
           await service.deleteEntry(existing);
           if (!context.mounted) return;
-          await service.move(entry.path, dest);
+          moved = await service.move(entry, source, dest);
+          undoable = false;
         } else {
           if (!context.mounted) return;
-          name = await service.moveKeepBoth(entry, source, dest);
+          moved = await service.moveKeepBoth(entry, source, dest);
         }
       } else {
-        await service.move(entry.path, dest);
+        moved = await service.move(entry, source, dest);
       }
       ensureExpanded(dest);
       await reloadDir(source);
       await reloadDir(dest);
-      _snack('已移动 $name');
+      if (!context.mounted) return;
+      if (!undoable) {
+        _snack('已移动 ${moved.movedName}');
+        return;
+      }
+      AppToast.success(
+        context,
+        '已移动 ${moved.movedName}',
+        duration: const Duration(seconds: 6),
+        action: AppToastAction(
+          label: '撤销',
+          onPressed: () => _undoMoves([moved], dest),
+        ),
+      );
     } catch (e) {
       _snack('移动失败 · $e');
     }
+  }
+
+  /// Undoes [moves]（单个或批量）：逆序移回各自源目录并恢复原名。
+  Future<void> _undoMoves(List<MovedEntry> moves, String dest) async {
+    var restored = 0;
+    final touched = <String>{dest};
+    for (final moved in moves.reversed) {
+      try {
+        await service.undoMove(moved);
+        touched.add(moved.sourceDir);
+        restored++;
+      } catch (_) {}
+    }
+    for (final dir in touched) {
+      await reloadDir(dir);
+    }
+    _snack(
+      restored == moves.length
+          ? '已撤销移动 $restored 项'
+          : '撤销了 $restored/${moves.length} 项，其余失败',
+    );
   }
 
   Future<void> copy(WorkspaceEntry entry) async {
@@ -346,10 +407,7 @@ class WorkspaceFileOps {
         for (final dir in result.touchedDirs) {
           await reloadDir(dir);
         }
-        _snack(
-          '已移动 ${result.moved} 项'
-          '${result.skipped > 0 ? '，跳过 ${result.skipped} 项' : ''}',
-        );
+        _moveResultToast(result, dest);
         return result.moved > 0;
       }
       final result = await service.copyMany(entries, dest);
@@ -364,6 +422,26 @@ class WorkspaceFileOps {
       _snack('粘贴失败 · $e');
       return false;
     }
+  }
+
+  /// The batch-move summary toast, with an 撤销 action when anything moved.
+  void _moveResultToast(BatchMoveResult result, String dest) {
+    if (!context.mounted) return;
+    final message = '已移动 ${result.moved} 项'
+        '${result.skipped > 0 ? '，跳过 ${result.skipped} 项' : ''}';
+    if (result.moves.isEmpty) {
+      _snack(message);
+      return;
+    }
+    AppToast.success(
+      context,
+      message,
+      duration: const Duration(seconds: 6),
+      action: AppToastAction(
+        label: '撤销',
+        onPressed: () => _undoMoves(result.moves, dest),
+      ),
+    );
   }
 
   Future<ConflictAction?> _promptConflict(WorkspaceEntry existing) {

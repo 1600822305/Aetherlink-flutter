@@ -37,6 +37,62 @@ void main() {
 
   Future<void> settle() => Future<void>.delayed(Duration.zero);
 
+  group('filter', () {
+    test('keeps matching entries and their ancestor dirs', () async {
+      backend
+        ..seedFile('$root/lib/src/main.dart')
+        ..seedFile('$root/lib/other.txt')
+        ..seedFile('$root/readme.md');
+      tree.bind(root, backend);
+      await settle();
+      tree.toggleDir(await backend.getFileInfo('$root/lib'));
+      await settle();
+      tree.toggleDir(await backend.getFileInfo('$root/lib/src'));
+      await settle();
+      tree.setFilter('main');
+      expect(rowPaths(), ['$root/lib', '$root/lib/src', '$root/lib/src/main.dart']);
+    });
+
+    test('matching is case-insensitive and searches collapsed cached dirs',
+        () async {
+      backend.seedFile('$root/lib/Main.dart');
+      tree.bind(root, backend);
+      await settle();
+      tree.toggleDir(await backend.getFileInfo('$root/lib'));
+      await settle();
+      // Collapse again: the filter still finds cached children.
+      tree.toggleDir(await backend.getFileInfo('$root/lib'));
+      tree.setFilter('main');
+      expect(rowPaths(), ['$root/lib', '$root/lib/Main.dart']);
+    });
+
+    test('a matching dir keeps its row; clearing restores normal rows',
+        () async {
+      backend
+        ..seedDir('$root/libx')
+        ..seedFile('$root/a.txt');
+      tree.bind(root, backend);
+      await settle();
+      tree.setFilter('libx');
+      expect(rowPaths(), ['$root/libx']);
+      tree.setFilter('');
+      expect(tree.filtering, isFalse);
+      expect(rowPaths(), ['$root/libx', '$root/a.txt']);
+    });
+
+    test('bind clears the filter', () async {
+      backend.seedFile('$root/a.txt');
+      tree.bind(root, backend);
+      await settle();
+      tree.setFilter('zzz');
+      expect(rowPaths(), isEmpty);
+      tree.bind(root, backend);
+      await settle();
+      expect(tree.filtering, isFalse);
+      expect(rowPaths(), ['$root/a.txt']);
+    });
+  });
+
   group('binding / loading', () {
     test('bind loads and expands the root', () async {
       backend
