@@ -46,6 +46,8 @@ class WorkspaceFileOps {
     this.onOpenTerminal,
     this.isPinned,
     this.onTogglePin,
+    this.onEntryMoved,
+    this.onEntryRemoved,
   }) : service = WorkspaceFileOpService(
           backend: backend,
           rootPath: rootPath,
@@ -105,6 +107,13 @@ class WorkspaceFileOps {
 
   /// 收藏/取消收藏 [entry]。Null ⇒ the action is hidden.
   final void Function(WorkspaceEntry entry)? onTogglePin;
+
+  /// 条目重命名/移动后的路径变更通知（收藏等持有旧路径的状态据此同步）。
+  final void Function(String oldPath, String newPath, String newName)?
+      onEntryMoved;
+
+  /// 条目被删除/移入回收站后的通知。
+  final void Function(String path)? onEntryRemoved;
 
   WorkspaceBackend get backend => service.backend;
 
@@ -300,6 +309,7 @@ class WorkspaceFileOps {
     if (name == null || name == entry.name) return;
     try {
       final newPath = await service.rename(entry, name);
+      onEntryMoved?.call(entry.path, newPath, name);
       final parent = service.parentDirOf(entry);
       await reloadDir(parent);
       if (!context.mounted) return;
@@ -323,7 +333,8 @@ class WorkspaceFileOps {
     String parent,
   ) async {
     try {
-      await backend.rename(newPath, originalName);
+      final restored = await backend.rename(newPath, originalName);
+      onEntryMoved?.call(newPath, restored, originalName);
       await reloadDir(parent);
       _snack('已恢复为 $originalName');
     } catch (e) {
@@ -356,6 +367,7 @@ class WorkspaceFileOps {
         if (action == null) return;
         if (action == ConflictAction.overwrite) {
           await service.deleteEntry(existing);
+          onEntryRemoved?.call(existing.path);
           if (!context.mounted) return;
           moved = await service.move(entry, source, dest);
           undoable = false;
@@ -366,6 +378,7 @@ class WorkspaceFileOps {
       } else {
         moved = await service.move(entry, source, dest);
       }
+      onEntryMoved?.call(moved.sourcePath, moved.movedPath, moved.movedName);
       ensureExpanded(dest);
       await reloadDir(source);
       await reloadDir(dest);
@@ -394,7 +407,8 @@ class WorkspaceFileOps {
     final touched = <String>{dest};
     for (final moved in moves.reversed) {
       try {
-        await service.undoMove(moved);
+        final restoredPath = await service.undoMove(moved);
+        onEntryMoved?.call(moved.movedPath, restoredPath, moved.originalName);
         touched.add(moved.sourceDir);
         restored++;
       } catch (_) {}
@@ -426,6 +440,7 @@ class WorkspaceFileOps {
         if (action == null) return;
         if (action == ConflictAction.overwrite) {
           await service.deleteEntry(existing);
+          onEntryRemoved?.call(existing.path);
         } else {
           newName = await service.copyKeepBothName(entry, dest);
         }
@@ -528,6 +543,9 @@ class WorkspaceFileOps {
     try {
       if (cut) {
         final result = await service.moveMany(entries, dest);
+        for (final m in result.moves) {
+          onEntryMoved?.call(m.sourcePath, m.movedPath, m.movedName);
+        }
         ensureExpanded(dest);
         for (final dir in result.touchedDirs) {
           await reloadDir(dir);

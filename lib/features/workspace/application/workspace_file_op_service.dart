@@ -50,11 +50,15 @@ class TrashedEntry {
     required this.movedPath,
     required this.movedName,
     required this.sourceDir,
+    required this.sourcePath,
     required this.originalName,
   });
 
   /// The entry's opaque path inside the trash directory.
   final String movedPath;
+
+  /// The entry's opaque path before it was trashed.
+  final String sourcePath;
 
   /// The name it carries in the trash (may differ from [originalName] when a
   /// keep-both rename was needed).
@@ -84,11 +88,15 @@ class MovedEntry {
     required this.movedPath,
     required this.movedName,
     required this.sourceDir,
+    required this.sourcePath,
     required this.originalName,
   });
 
   /// The entry's opaque path in the destination directory.
   final String movedPath;
+
+  /// The entry's opaque path before the move.
+  final String sourcePath;
 
   /// The name it carries there (differs from [originalName] after keep-both).
   final String movedName;
@@ -237,6 +245,7 @@ class WorkspaceFileOpService {
       movedPath: movedPath,
       movedName: name,
       sourceDir: source,
+      sourcePath: entry.path,
       originalName: entry.name,
     );
   }
@@ -253,17 +262,20 @@ class WorkspaceFileOpService {
       movedPath: movedPath,
       movedName: entry.name,
       sourceDir: source,
+      sourcePath: entry.path,
       originalName: entry.name,
     );
   }
 
   /// Undoes [moved]: moves it back to its source directory and restores the
-  /// original name when a keep-both rename happened on the way.
-  Future<void> undoMove(MovedEntry moved) async {
-    final restored = await backend.move(moved.movedPath, moved.sourceDir);
+  /// original name when a keep-both rename happened on the way. Returns the
+  /// entry's restored opaque path.
+  Future<String> undoMove(MovedEntry moved) async {
+    var restored = await backend.move(moved.movedPath, moved.sourceDir);
     if (moved.movedName != moved.originalName) {
-      await backend.rename(restored, moved.originalName);
+      restored = await backend.rename(restored, moved.originalName);
     }
+    return restored;
   }
 
   /// Copies [entry] into [dest]; [newName] carries the keep-both name when the
@@ -509,17 +521,20 @@ class WorkspaceFileOpService {
       movedPath: moved.path,
       movedName: moved.name,
       sourceDir: source,
+      sourcePath: entry.path,
       originalName: entry.name,
     );
   }
 
   /// Undoes [trashed]: moves it back to its source directory and restores the
-  /// original name when a keep-both rename happened on the way in.
-  Future<void> undoTrash(TrashedEntry trashed) async {
+  /// original name when a keep-both rename happened on the way in. Returns
+  /// the entry's restored opaque path.
+  Future<String> undoTrash(TrashedEntry trashed) async {
     var restored = await backend.move(trashed.movedPath, trashed.sourceDir);
     if (trashed.movedName != trashed.originalName) {
-      await backend.rename(restored, trashed.originalName);
+      restored = await backend.rename(restored, trashed.originalName);
     }
+    return restored;
   }
 
   /// The trash dir's current contents (empty when it doesn't exist yet).
@@ -609,6 +624,7 @@ class WorkspaceFileOpService {
             movedPath: movedPath,
             movedName: name,
             sourceDir: source,
+            sourcePath: entry.path,
             originalName: entry.name,
           ),
         );

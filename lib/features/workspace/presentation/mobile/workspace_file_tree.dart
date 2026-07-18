@@ -355,6 +355,11 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
             isPinned: (entry) =>
                 ref.read(pinnedFilesProvider.notifier).isPinned(entry.path),
             onTogglePin: _togglePin,
+            onEntryMoved: (oldPath, newPath, newName) => ref
+                .read(pinnedFilesProvider.notifier)
+                .updatePath(oldPath, newPath, newName),
+            onEntryRemoved: (path) =>
+                ref.read(pinnedFilesProvider.notifier).remove(path),
           )
         : null;
     _ops = ops;
