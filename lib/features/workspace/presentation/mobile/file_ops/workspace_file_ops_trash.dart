@@ -24,6 +24,7 @@ extension WorkspaceFileOpsTrash on WorkspaceFileOps {
     }
     try {
       final trashed = await service.moveToTrash(entry, trashPath: trashPath);
+      onEntryRemoved?.call(entry.path);
       await reloadDir(trashed.sourceDir);
       if (!context.mounted) return;
       AppToast.success(
@@ -89,6 +90,7 @@ extension WorkspaceFileOpsTrash on WorkspaceFileOps {
     try {
       if (entry.isDirectory) _snack('正在删除 ${entry.name}…');
       await service.deleteEntry(entry);
+      onEntryRemoved?.call(entry.path);
       await reloadDir(service.parentDirOf(entry));
       return true;
     } catch (e) {
@@ -136,6 +138,7 @@ extension WorkspaceFileOpsTrash on WorkspaceFileOps {
     try {
       if (entry.isDirectory) _snack('正在删除 ${entry.name}…');
       await service.deleteEntry(entry);
+      onEntryRemoved?.call(entry.path);
       await reloadDir(service.parentDirOf(entry));
       _snack('已删除 ${entry.name}');
     } catch (e) {

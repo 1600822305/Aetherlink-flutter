@@ -10,6 +10,9 @@ extension WorkspaceFileOpsBatch on WorkspaceFileOps {
   Future<void> deleteMany(List<WorkspaceEntry> entries) async {
     if (!_guardWritable()) return;
     final result = await service.deleteManyToTrash(entries);
+    for (final t in result.trashed) {
+      onEntryRemoved?.call(t.sourcePath);
+    }
     for (final dir in {for (final t in result.trashed) t.sourceDir}) {
       await reloadDir(dir);
     }
@@ -46,6 +49,9 @@ extension WorkspaceFileOpsBatch on WorkspaceFileOps {
     );
     if (dest == null) return;
     final result = await service.moveMany(entries, dest);
+    for (final m in result.moves) {
+      onEntryMoved?.call(m.sourcePath, m.movedPath, m.movedName);
+    }
     ensureExpanded(dest);
     for (final dir in result.touchedDirs) {
       await reloadDir(dir);

@@ -116,7 +116,9 @@ void main() {
         root,
         '$root/dst',
       );
-      await service.undoMove(moved);
+      expect(moved.sourcePath, '$root/a.txt');
+      final restored = await service.undoMove(moved);
+      expect(restored, '$root/a.txt');
       expect(backend.exists('$root/a.txt'), isTrue);
       expect(await backend.readFile('$root/a.txt'), 'src');
       expect(backend.exists('$root/dst/${moved.movedName}'), isFalse);
@@ -324,7 +326,9 @@ void main() {
         );
       await index(root);
       final trashed = await service.moveToTrash(await entryOf('$root/a.txt'));
-      await service.undoTrash(trashed);
+      expect(trashed.sourcePath, '$root/a.txt');
+      final restored = await service.undoTrash(trashed);
+      expect(restored, '$root/a.txt');
       expect(backend.exists('$root/a.txt'), isTrue);
     });
 

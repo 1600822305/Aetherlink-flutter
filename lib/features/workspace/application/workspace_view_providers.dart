@@ -472,12 +472,22 @@ class PinnedFilesNotifier extends Notifier<List<WorkspaceEntry>> {
     return true;
   }
 
-  /// 收藏条目被重命名/移动后同步（旧路径 → 新条目）。
-  void replace(String oldPath, WorkspaceEntry entry) {
+  /// 收藏条目被重命名/移动后同步（旧路径 → 新路径/新名，其余字段保留）。
+  void updatePath(String oldPath, String newPath, String newName) {
     final workspace = ref.read(currentWorkspaceProvider);
     if (workspace == null || !isPinned(oldPath)) return;
     final next = [
-      for (final e in state) e.path == oldPath ? entry : e,
+      for (final e in state)
+        e.path == oldPath
+            ? WorkspaceEntry(
+                name: newName,
+                path: newPath,
+                isDirectory: e.isDirectory,
+                size: e.size,
+                mtime: e.mtime,
+                isHidden: e.isHidden,
+              )
+            : e,
     ];
     state = next;
     _persist(workspace.id, next);
