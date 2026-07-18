@@ -208,6 +208,11 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   // the entry menu) always uses the current tree wiring.
   WorkspaceFileOps? _ops;
 
+  // 树缓存 + 收藏持久化的父目录解析（opaque 路径的祖先判断兼用）。
+  String? _pinnedParentResolver(String path) =>
+      _tree.parentOf(path) ??
+      ref.read(pinnedFilesProvider.notifier).parentPathOf(path);
+
   void _togglePin(WorkspaceEntry entry) {
     final notifier = ref.read(pinnedFilesProvider.notifier);
     final wasPinned = notifier.isPinned(entry.path);
@@ -320,9 +325,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
             rootName: workspace?.name ?? '工作区',
             reloadDir: _tree.reload,
             ensureExpanded: _tree.ensureExpanded,
-            parentOf: (path) =>
-                _tree.parentOf(path) ??
-                ref.read(pinnedFilesProvider.notifier).parentPathOf(path),
+            parentOf: _pinnedParentResolver,
             canGitDiff: (entry) =>
                 !entry.isDirectory &&
                 backend.capabilities.canExec &&
@@ -357,12 +360,23 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
             isPinned: (entry) =>
                 ref.read(pinnedFilesProvider.notifier).isPinned(entry.path),
             onTogglePin: _togglePin,
-            onEntryMoved: (oldPath, newPath, newName, newParent) => ref
+            onEntryMoved: (oldPath, newPath, newName, newParent) {
+              final notifier = ref.read(pinnedFilesProvider.notifier);
+              notifier.updatePath(
+                oldPath,
+                newPath,
+                newName,
+                newParentPath: newParent,
+              );
+              notifier.moveDescendants(
+                oldPath,
+                newPath,
+                parentOf: _pinnedParentResolver,
+              );
+            },
+            onEntryRemoved: (path) => ref
                 .read(pinnedFilesProvider.notifier)
-                .updatePath(oldPath, newPath, newName,
-                    newParentPath: newParent),
-            onEntryRemoved: (path) =>
-                ref.read(pinnedFilesProvider.notifier).remove(path),
+                .remove(path, parentOf: _pinnedParentResolver),
           )
         : null;
     _ops = ops;

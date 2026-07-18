@@ -523,14 +523,89 @@ class PinnedFilesNotifier extends Notifier<List<WorkspaceEntry>> {
     _persist(workspace.id, next);
   }
 
-  /// 收藏条目被删除后移除。
-  void remove(String path) {
+  /// 收藏条目被删除后移除（含被删目录内部的收藏子条目）。
+  /// [parentOf] 用于 opaque 路径的祖先判断（树缓存 + 收藏持久化兜底）。
+  void remove(String path, {String? Function(String)? parentOf}) {
     final workspace = ref.read(currentWorkspaceProvider);
-    if (workspace == null || !isPinned(path)) return;
-    final next = [...state.where((e) => e.path != path)];
-    _parents.remove(path);
+    if (workspace == null) return;
+    final next = [
+      for (final e in state)
+        if (e.path != path && !_isUnder(e.path, path, parentOf)) e,
+    ];
+    if (next.length == state.length) return;
+    for (final e in state) {
+      if (e.path == path || _isUnder(e.path, path, parentOf)) {
+        _parents.remove(e.path);
+      }
+    }
     state = next;
     _persist(workspace.id, next);
+  }
+
+  /// 目录被移动/重命名后同步其内部的收藏子条目：POSIX 路径按前缀重写；
+  /// opaque 路径无法推导新子路径，移除避免留下失效收藏。
+  void moveDescendants(
+    String oldDirPath,
+    String newDirPath, {
+    String? Function(String)? parentOf,
+  }) {
+    final workspace = ref.read(currentWorkspaceProvider);
+    if (workspace == null) return;
+    final posix = !oldDirPath.contains('://');
+    final prefix = oldDirPath.endsWith('/') ? oldDirPath : '$oldDirPath/';
+    final newBase = newDirPath.endsWith('/')
+        ? newDirPath.substring(0, newDirPath.length - 1)
+        : newDirPath;
+    var changed = false;
+    final next = <WorkspaceEntry>[];
+    for (final e in state) {
+      if (e.path == oldDirPath || !_isUnder(e.path, oldDirPath, parentOf)) {
+        next.add(e);
+        continue;
+      }
+      changed = true;
+      if (posix && e.path.startsWith(prefix)) {
+        final newPath = '$newBase/${e.path.substring(prefix.length)}';
+        final oldParent = _parents.remove(e.path);
+        _parents[newPath] = oldParent != null && oldParent.startsWith(prefix)
+            ? '$newBase/${oldParent.substring(prefix.length)}'
+            : (oldParent == oldDirPath || oldParent == null
+                ? newDirPath
+                : oldParent);
+        next.add(
+          WorkspaceEntry(
+            name: e.name,
+            path: newPath,
+            isDirectory: e.isDirectory,
+            size: e.size,
+            mtime: e.mtime,
+            isHidden: e.isHidden,
+          ),
+        );
+      } else {
+        _parents.remove(e.path);
+      }
+    }
+    if (!changed) return;
+    state = next;
+    _persist(workspace.id, next);
+  }
+
+  // [path] 是否在目录 [dir] 内部：POSIX 路径按前缀判断；opaque 路径沿
+  // [parentOf]（树缓存/收藏持久化）向上查找。
+  bool _isUnder(String path, String dir, String? Function(String)? parentOf) {
+    if (!dir.contains('://')) {
+      final prefix = dir.endsWith('/') ? dir : '$dir/';
+      if (path.startsWith(prefix)) return true;
+    }
+    var cursor = parentOf?.call(path) ?? _parents[path];
+    var hops = 0;
+    while (cursor != null && hops < 64) {
+      if (cursor == dir) return true;
+      cursor = parentOf?.call(cursor) ?? _parents[cursor];
+      hops++;
+    }
+    return false;
   }
 
   Future<void> _persist(String workspaceId, List<WorkspaceEntry> entries) async {
