@@ -208,6 +208,28 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
   // the entry menu) always uses the current tree wiring.
   WorkspaceFileOps? _ops;
 
+  void _togglePin(WorkspaceEntry entry) {
+    final notifier = ref.read(pinnedFilesProvider.notifier);
+    final wasPinned = notifier.isPinned(entry.path);
+    if (!notifier.toggle(entry)) {
+      AppToast.info(context, '收藏已达上限（$kMaxPinnedFiles 个）');
+      return;
+    }
+    AppToast.info(context, wasPinned ? '已取消收藏 ${entry.name}' : '已收藏 ${entry.name}');
+  }
+
+  /// 点收藏条：文件直接打开，目录在树中展开定位。
+  Future<void> _openPinned(WorkspaceEntry entry) async {
+    if (entry.isDirectory) {
+      await _tree.revealPath(entry.path);
+    } else {
+      ref.read(openWorkspaceFilesProvider.notifier).open(
+            entry,
+            dirtyPaths: ref.read(dirtyFilesProvider),
+          );
+    }
+  }
+
   // 树内快速过滤条：由 ⋯ 菜单的「过滤」开关，关闭时清空 controller 的
   // 过滤词。
   bool _filterBarVisible = false;
@@ -286,6 +308,7 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
     // offers the non-mutating actions (复制路径/详情); write actions are gated
     // inside by capabilities.canWrite.
     final clipboard = ref.watch(fileTreeClipboardProvider);
+    final pinned = ref.watch(pinnedFilesProvider);
     final canPaste = clipboard != null &&
         clipboard.workspaceRoot == root &&
         (backend?.capabilities.canWrite ?? false);
@@ -329,6 +352,9 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                 shareWorkspaceFile(context, ref, entry: entry),
             onOpenTerminal: (entry) =>
                 context.push(AppRouter.terminalPath, extra: entry.path),
+            isPinned: (entry) =>
+                ref.read(pinnedFilesProvider.notifier).isPinned(entry.path),
+            onTogglePin: _togglePin,
           )
         : null;
     _ops = ops;
@@ -475,6 +501,21 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                   ],
                 ),
               ),
+            if (root != null && pinned.isNotEmpty && !_tree.selecting)
+              SizedBox(
+                height: 36,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+                  itemCount: pinned.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 6),
+                  itemBuilder: (context, i) => _PinnedChip(
+                    entry: pinned[i],
+                    onTap: () => _openPinned(pinned[i]),
+                    onLongPress: () => _ops?.showEntryMenu(pinned[i]),
+                  ),
+                ),
+              ),
             Divider(height: 1, color: theme.dividerColor),
             Expanded(
               child: root == null
@@ -532,6 +573,57 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
                     ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 收藏条上的单个条目：图标 + 名称的小胶囊，点按打开/定位，长按弹条目菜单
+/// （含「取消收藏」）。
+class _PinnedChip extends StatelessWidget {
+  const _PinnedChip({
+    required this.entry,
+    required this.onTap,
+    this.onLongPress,
+  });
+
+  final WorkspaceEntry entry;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(15),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(15),
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                entry.isDirectory ? LucideIcons.folder : LucideIcons.file,
+                size: 14,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 5),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 120),
+                child: Text(
+                  entry.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

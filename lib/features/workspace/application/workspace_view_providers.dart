@@ -428,6 +428,87 @@ class RecentFilesNotifier extends Notifier<List<WorkspaceEntry>> {
   }
 }
 
+/// 当前工作区收藏（固定）的文件/目录（收藏顺序，上限 [kMaxPinnedFiles]）。
+/// 持久化为 workspaceId → entries 的单个 JSON 对象
+/// （[kWorkspacePinnedFilesKey]），切换工作区时重新加载对应列表。
+const int kMaxPinnedFiles = 20;
+
+final pinnedFilesProvider =
+    NotifierProvider<PinnedFilesNotifier, List<WorkspaceEntry>>(
+  PinnedFilesNotifier.new,
+);
+
+class PinnedFilesNotifier extends Notifier<List<WorkspaceEntry>> {
+  @override
+  List<WorkspaceEntry> build() {
+    final workspace = ref.watch(currentWorkspaceProvider);
+    if (workspace != null) {
+      ref
+          .read(appSettingsStoreProvider)
+          .getSetting(kWorkspacePinnedFilesKey)
+          .then((raw) {
+        final entries = _decodeMap(raw)[workspace.id];
+        if (entries != null && entries.isNotEmpty) state = entries;
+      });
+    }
+    return const [];
+  }
+
+  bool isPinned(String path) => state.any((e) => e.path == path);
+
+  /// 收藏/取消收藏切换；新收藏追加到末尾，超上限时拒绝并返回 `false`。
+  bool toggle(WorkspaceEntry entry) {
+    final workspace = ref.read(currentWorkspaceProvider);
+    if (workspace == null) return false;
+    List<WorkspaceEntry> next;
+    if (isPinned(entry.path)) {
+      next = [...state.where((e) => e.path != entry.path)];
+    } else {
+      if (state.length >= kMaxPinnedFiles) return false;
+      next = [...state, entry];
+    }
+    state = next;
+    _persist(workspace.id, next);
+    return true;
+  }
+
+  /// 收藏条目被重命名/移动后同步（旧路径 → 新条目）。
+  void replace(String oldPath, WorkspaceEntry entry) {
+    final workspace = ref.read(currentWorkspaceProvider);
+    if (workspace == null || !isPinned(oldPath)) return;
+    final next = [
+      for (final e in state) e.path == oldPath ? entry : e,
+    ];
+    state = next;
+    _persist(workspace.id, next);
+  }
+
+  /// 收藏条目被删除后移除。
+  void remove(String path) {
+    final workspace = ref.read(currentWorkspaceProvider);
+    if (workspace == null || !isPinned(path)) return;
+    final next = [...state.where((e) => e.path != path)];
+    state = next;
+    _persist(workspace.id, next);
+  }
+
+  Future<void> _persist(String workspaceId, List<WorkspaceEntry> entries) async {
+    final store = ref.read(appSettingsStoreProvider);
+    final map = _decodeMap(await store.getSetting(kWorkspacePinnedFilesKey));
+    map[workspaceId] = entries;
+    await store.saveSetting(
+      kWorkspacePinnedFilesKey,
+      jsonEncode({
+        for (final e in map.entries)
+          e.key: [for (final t in e.value) t.toJson()],
+      }),
+    );
+  }
+
+  static Map<String, List<WorkspaceEntry>> _decodeMap(String? raw) =>
+      RecentFilesNotifier._decodeMap(raw);
+}
+
 /// Whether the three-page horizontal pager is locked. When `true` the shell
 /// disables page swiping so pinch-zoom / drag inside the editor can't
 /// accidentally flip pages. Toggled from the editor header's lock button.

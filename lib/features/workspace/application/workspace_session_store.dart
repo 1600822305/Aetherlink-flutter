@@ -41,6 +41,10 @@ const String kEditorFindHistoryKey = 'workspace_find_history';
 /// workspaceId → list of `WorkspaceEntry.toJson()`, most recent first).
 const String kWorkspaceRecentFilesKey = 'workspace_recent_files';
 
+/// Setting key for the per-workspace pinned (收藏) entries map (a JSON object:
+/// workspaceId → list of `WorkspaceEntry.toJson()`, pin order preserved).
+const String kWorkspacePinnedFilesKey = 'workspace_pinned_files';
+
 /// The persisted middle-page session: the open file tabs of [workspaceId] and
 /// which one was active.
 class WorkspaceSession {
