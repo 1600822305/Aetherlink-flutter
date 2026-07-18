@@ -4,7 +4,9 @@ import 'package:aetherlink_flutter/shared/services/web_search/bing_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/bocha_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/brave_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/duckduckgo_search.dart';
+import 'package:aetherlink_flutter/shared/services/web_search/exa_mcp_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/exa_search.dart';
+import 'package:aetherlink_flutter/shared/services/web_search/fetch_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/firecrawl_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/grok_search.dart';
 import 'package:aetherlink_flutter/shared/services/web_search/jina_search.dart';
@@ -63,6 +65,10 @@ class WebSearchService {
         return TavilySearch.search(config, query, maxResults, timeoutDuration);
       case 'exa':
         return ExaSearch.search(config, query, maxResults, timeoutDuration);
+      case 'exa-mcp':
+        return ExaMcpSearch.search(config, query, maxResults, timeoutDuration);
+      case 'fetch':
+        return FetchSearch.search(config, query, maxResults, timeoutDuration);
       case 'brave':
         return BraveSearch.search(config, query, maxResults, timeoutDuration);
       case 'serper':

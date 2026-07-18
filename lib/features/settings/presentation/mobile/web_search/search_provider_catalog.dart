@@ -59,6 +59,22 @@ const List<SearchProviderPreset> kSearchProviderPresets = [
     apiHost: 'https://www.bing.com',
   ),
   SearchProviderPreset(
+    id: 'exa-mcp',
+    name: 'Exa MCP',
+    description: 'Exa 官方 MCP 搜索端点，无需密钥即可用',
+    icon: LucideIcons.brain,
+    accent: Color(0xFFEC4899),
+    assetPath: '$_base/exa.svg',
+    apiHost: 'https://mcp.exa.ai/mcp',
+  ),
+  SearchProviderPreset(
+    id: 'fetch',
+    name: '网页抓取 (Fetch)',
+    description: '直接抓取查询中的 URL 并提取正文，无需 API 密钥',
+    icon: LucideIcons.fileDown,
+    accent: Color(0xFF14B8A6),
+  ),
+  SearchProviderPreset(
     id: 'duckduckgo',
     name: 'DuckDuckGo',
     description: '注重隐私的免费搜索，无需 API 密钥',
