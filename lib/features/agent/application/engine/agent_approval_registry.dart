@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/data/agent_notification_service.dart';
+import 'package:aetherlink_flutter/features/agent/domain/permission_rule.dart';
 
 /// 用户批准时的授权范围（审批卡三档，初稿 §6.3）。
 enum AgentApprovalScope {
@@ -37,19 +38,28 @@ class AgentApprovalDecision {
 }
 
 /// 一条挂起中的审批请求（UI 据此渲染可交互的审批卡）。
+/// [permission] / [alwaysPatterns] 由审批门映射好传入：批准的授权范围
+/// （taskTool / whitelist）按它们落成规则。
 class PendingAgentApproval {
-  PendingAgentApproval({required this.taskId, required this.call});
+  PendingAgentApproval({
+    required this.taskId,
+    required this.call,
+    this.permission = '',
+    this.alwaysPatterns = const [],
+  });
 
   final String taskId;
   final AgentToolCallRequest call;
+  final String permission;
+  final List<String> alwaysPatterns;
   final Completer<AgentApprovalDecision> completer =
       Completer<AgentApprovalDecision>();
 }
 
 class AgentApprovalRegistryNotifier
     extends Notifier<Map<String, PendingAgentApproval>> {
-  /// 运行级宽限：taskId → 本任务内免审的工具名集合。
-  final Map<String, Set<String>> _taskGrace = {};
+  /// 会话临时规则层：taskId → 本任务内生效的授权规则（随任务结束丢弃）。
+  final Map<String, List<PermissionRule>> _sessionRules = {};
 
   @override
   Map<String, PendingAgentApproval> build() {
@@ -62,13 +72,20 @@ class AgentApprovalRegistryNotifier
   /// 引擎挂起等待用户裁决（同任务旧挂起先按拒绝清掉，防御性兜底）。
   Future<AgentApprovalDecision> request(
     String taskId,
-    AgentToolCallRequest call,
-  ) {
+    AgentToolCallRequest call, {
+    String permission = '',
+    List<String> alwaysPatterns = const [],
+  }) {
     respond(
       taskId,
       const AgentApprovalDecision(approved: false, reason: '被新的审批请求顶替'),
     );
-    final pending = PendingAgentApproval(taskId: taskId, call: call);
+    final pending = PendingAgentApproval(
+      taskId: taskId,
+      call: call,
+      permission: permission,
+      alwaysPatterns: alwaysPatterns,
+    );
     state = {...state, taskId: pending};
     // App 在后台时发系统通知提醒审批（初稿 §6.3）。
     final task = ref
@@ -90,17 +107,25 @@ class AgentApprovalRegistryNotifier
     state = Map.of(state)..remove(taskId);
     unawaited(AgentNotificationService().cancelApprovalRequest(taskId));
     if (decision.approved && decision.scope == AgentApprovalScope.taskTool) {
-      (_taskGrace[taskId] ??= <String>{}).add(pending.call.name);
+      final permission = pending.permission.isEmpty
+          ? pending.call.name
+          : pending.permission;
+      (_sessionRules[taskId] ??= <PermissionRule>[]).add(PermissionRule(
+        permission: permission,
+        action: PermissionAction.allow,
+        layer: PermissionRuleLayer.session,
+      ));
     }
     if (!pending.completer.isCompleted) pending.completer.complete(decision);
   }
 
-  bool hasTaskGrace(String taskId, String toolName) =>
-      _taskGrace[taskId]?.contains(toolName) ?? false;
+  /// 本任务内生效的会话临时规则层（审批门拼进规则引擎的最高优先级层）。
+  List<PermissionRule> sessionRules(String taskId) =>
+      _sessionRules[taskId] ?? const [];
 
-  /// 任务终态（done/cancelled/failed）时清掉运行级宽限，
+  /// 任务终态（done/cancelled/failed）时清掉会话临时规则，
   /// 保证「随任务结束失效」的语义并避免 map 只增不减。
-  void clearTaskGrace(String taskId) => _taskGrace.remove(taskId);
+  void clearTaskGrace(String taskId) => _sessionRules.remove(taskId);
 }
 
 final agentApprovalRegistryProvider = NotifierProvider<

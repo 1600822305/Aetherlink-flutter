@@ -11,6 +11,7 @@ import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/remote_mcp_access.dart';
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_permission_rules.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
@@ -24,6 +25,9 @@ import 'package:aetherlink_flutter/features/agent/application/engine/approval_ga
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/features/agent/domain/permission_request.dart';
+import 'package:aetherlink_flutter/features/agent/domain/permission_rule.dart';
+import 'package:aetherlink_flutter/features/agent/domain/shell_command_patterns.dart';
 import 'package:aetherlink_flutter/features/agent/domain/subagent_profile.dart';
 import 'package:aetherlink_flutter/features/chat/application/parameter_settings_controller.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_confirmation.dart';
@@ -882,11 +886,12 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
   }
 }
 
-/// 真实审批门（三层策略，初稿 §七）：
+/// 真实审批门（审批重构 PR2：统一规则引擎）：
 /// ① 工具风险分级——只读直通（`toolNeedsConfirmation`，终端命令按
-///    root 内风险评级）；② 运行级宽限——本任务内用户点过「此工具不再
-///    询问」；③ 持久白名单——工具授权白名单命中免审。
-/// 越出工作区 root 的终端命令为硬约束：宽限/白名单均不可覆盖。
+///    root 内风险评级）；② 规则引擎——旧工具授权白名单（换算层）、
+///    用户全局规则、会话临时规则低→高拼接，任一 pattern 命中 deny
+///    即策略禁止，全部 allow 免审；③ auto 模式——绑定工作区内直通。
+/// 越出工作区 root 的终端命令为硬约束：任何 allow 规则/auto 均不可覆盖。
 /// 挂起走 [agentApprovalRegistryProvider]，无超时（用户可能锁屏离场）；
 /// 任务被暂停/终止时挂起按拒绝回填，循环在下一个安全点收敛。
 class _PolicyApprovalGate implements ApprovalGate {
@@ -921,44 +926,80 @@ class _PolicyApprovalGate implements ApprovalGate {
         workspaces: workspaces)) {
       return ApprovalRequirement.allow;
     }
-    if (toolAutoApprovedByPolicy(
-      ref.read(toolAuthPolicyProvider),
-      route,
-      call.name,
-      args,
-      workspaces: workspaces,
-    )) {
-      return ApprovalRequirement.allow;
+
+    final decision = evaluatePermissionRequest(
+      _permissionOf(route, call.name),
+      _patternsOf(route, call.name, args),
+      _ruleLayers(ref, task),
+    );
+    if (decision.action == PermissionAction.deny) {
+      return ApprovalRequirement.forbid;
     }
-    // 外部 MCP 工具（远程 / stdio）：外部代码无法静态判定副作用，
-    // Code 模式逐次审批（可用运行级宽限）；auto 模式免审直通。
-    if (route is RemoteToolRoute || route is StdioToolRoute) {
-      if (task.mode == AgentSessionMode.auto) {
-        return ApprovalRequirement.allow;
-      }
-      if (ref
-          .read(agentApprovalRegistryProvider.notifier)
-          .hasTaskGrace(task.id, call.name)) {
-        return ApprovalRequirement.allow;
-      }
+    // 硬约束：越出工作区 root 的终端命令强制审批，任何 allow
+    // 规则 / auto 模式均不覆盖（双作用域设计稿 §4.1）。
+    if (route is TerminalToolRoute &&
+        terminalCommandEscapesRoot(call.name, args, workspaces: workspaces)) {
       return ApprovalRequirement.needsUser;
     }
+    // 外部 MCP 工具（远程 / stdio）：外部代码无法静态判定副作用，
+    // auto 模式免审直通；其余模式靠规则（含会话临时层）放行。
+    if ((route is RemoteToolRoute || route is StdioToolRoute) &&
+        task.mode == AgentSessionMode.auto) {
+      return ApprovalRequirement.allow;
+    }
     // auto 模式：任务绑定工作区内的写/执行免审批直通；未绑定工作区
-    // 或调用越出绑定 root 时不免审（硬约束，与白名单同级）。
+    // 或调用越出绑定 root 时不免审。
     if (task.mode == AgentSessionMode.auto &&
         _autoModeBypasses(task, route, call.name, args, workspaces)) {
       return ApprovalRequirement.allow;
     }
-    // 运行级宽限；越界命令不受宽限覆盖（硬约束）。
-    final escapesRoot = route is TerminalToolRoute &&
-        terminalCommandEscapesRoot(call.name, args, workspaces: workspaces);
-    if (!escapesRoot &&
-        ref
-            .read(agentApprovalRegistryProvider.notifier)
-            .hasTaskGrace(task.id, call.name)) {
+    if (decision.action == PermissionAction.allow) {
       return ApprovalRequirement.allow;
     }
     return ApprovalRequirement.needsUser;
+  }
+
+  /// 工具调用 → 权限域：内置工具用工具名（write / terminal_execute …，
+  /// 规则可用 `terminal_*` 这类通配整组）；外部 MCP 工具用
+  /// `mcp:<server>/<tool>`（可用 `mcp:*` 整体管控）。
+  String _permissionOf(ToolRoute route, String toolName) {
+    if (route is RemoteToolRoute) return 'mcp:${route.server.name}/$toolName';
+    if (route is StdioToolRoute) return 'mcp:${route.server.name}/$toolName';
+    return toolName;
+  }
+
+  /// 工具调用 → 参与判定的 patterns：终端命令按子命令拆分（注入特征
+  /// 退化为整条原文），文件编辑取路径参数，其余按整工具（`*`）。
+  List<String> _patternsOf(
+    ToolRoute route,
+    String toolName,
+    Map<String, Object?> args,
+  ) {
+    if (route is TerminalToolRoute) {
+      final command = terminalCommandText(toolName, args);
+      if (command != null) return terminalPermissionPatterns(command);
+      return const ['*'];
+    }
+    if (route is FileEditorToolRoute) return fileEditorPermissionPatterns(args);
+    return const ['*'];
+  }
+
+  /// 规则层低→高：旧工具授权白名单（换算为整工具 allow，保留存量
+  /// 授权）→ 用户全局规则 → 会话临时规则（审批卡「本任务允许」）。
+  List<List<PermissionRule>> _ruleLayers(Ref ref, AgentTask task) {
+    final whitelist = ref.read(toolAuthPolicyProvider).autoApproved;
+    return [
+      [
+        for (final key in whitelist)
+          PermissionRule(
+            permission: key.split('::').last,
+            action: PermissionAction.allow,
+            layer: PermissionRuleLayer.userGlobal,
+          ),
+      ],
+      ref.read(agentPermissionRulesProvider),
+      ref.read(agentApprovalRegistryProvider.notifier).sessionRules(task.id),
+    ];
   }
 
   @override
@@ -968,7 +1009,17 @@ class _PolicyApprovalGate implements ApprovalGate {
     AgentCancellationToken cancel,
   ) async {
     final registry = _refOf().read(agentApprovalRegistryProvider.notifier);
-    final future = registry.request(task.id, call);
+    final route = _routes[call.name];
+    final args = _decodeArgs(call.argsJson);
+    final command = route is TerminalToolRoute
+        ? terminalCommandText(call.name, args)
+        : null;
+    final future = registry.request(
+      task.id,
+      call,
+      permission: route == null ? call.name : _permissionOf(route, call.name),
+      alwaysPatterns: command == null ? const [] : terminalAlwaysPatterns(command),
+    );
     // 挂起期间任务被暂停/终止 → 按拒绝回填，循环在安全点收敛。
     void onCancelSignal() {
       if (cancel.stopRequested) {
@@ -989,7 +1040,6 @@ class _PolicyApprovalGate implements ApprovalGate {
     }
     if (decision.approved &&
         decision.scope == AgentApprovalScope.whitelist) {
-      final route = _routes[call.name];
       final server = switch (route) {
         FileEditorToolRoute() => kFileEditorServerName,
         TerminalToolRoute() => kTerminalServerName,
