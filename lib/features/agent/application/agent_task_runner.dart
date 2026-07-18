@@ -444,6 +444,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       budget: AgentBudget(),
       subagents: _RunnerSubagentLauncher(this),
       toolStream: ref.read(agentToolStreamProvider.notifier),
+      stopGuard: runtime.stopGuard,
     );
     engine.run(task, token).whenComplete(() {
       _tokens.remove(task.id);
@@ -764,6 +765,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       gateway: _ProviderTaskGateway(this),
       budget: AgentBudget(maxRounds: 15, maxTokens: 200000),
       toolStream: ref.read(agentToolStreamProvider.notifier),
+      stopGuard: runtime.stopGuard,
     );
     await engine.run(child, childToken);
 
