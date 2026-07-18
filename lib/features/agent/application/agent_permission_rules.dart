@@ -66,14 +66,20 @@ final agentPermissionRulesProvider =
 );
 
 class AgentPermissionRulesNotifier extends Notifier<List<PermissionRule>> {
+  /// 异步加载完成前不写库，避免加载期间 [add] 的规则把存量规则覆盖掉。
+  bool _loaded = false;
+
   @override
   List<PermissionRule> build() {
     ref
         .read(appSettingsStoreProvider)
         .getSetting(kAgentPermissionRulesKey)
         .then((raw) {
-      final rules = decodeAgentPermissionRules(raw);
-      if (rules != null) state = rules;
+      final stored = decodeAgentPermissionRules(raw) ?? const <PermissionRule>[];
+      final pendingAdds = state;
+      _loaded = true;
+      if (stored.isNotEmpty) state = [...stored, ...pendingAdds];
+      if (pendingAdds.isNotEmpty) _persist();
     });
     return const [];
   }
@@ -90,6 +96,7 @@ class AgentPermissionRulesNotifier extends Notifier<List<PermissionRule>> {
   }
 
   void _persist() {
+    if (!_loaded) return;
     ref
         .read(appSettingsStoreProvider)
         .saveSetting(kAgentPermissionRulesKey, encodeAgentPermissionRules(state));

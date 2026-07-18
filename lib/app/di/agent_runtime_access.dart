@@ -1090,6 +1090,14 @@ class _PolicyApprovalGate implements ApprovalGate {
         _refOf()
             .read(toolAuthPolicyProvider.notifier)
             .setTool(server, call.name, autoApprove: true);
+      } else if (route != null) {
+        // 旧白名单只覆盖文件/终端两组内置工具；MCP 等其余工具的
+        // 永久放行落成用户全局 allow 规则，效果等价。
+        _refOf().read(agentPermissionRulesProvider.notifier).add(PermissionRule(
+              permission: _permissionOf(route, call.name),
+              action: PermissionAction.allow,
+              layer: PermissionRuleLayer.userGlobal,
+            ));
       }
     }
     return decision.approved
