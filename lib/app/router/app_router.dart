@@ -228,8 +228,10 @@ abstract final class AppRouter {
       GoRoute(
         path: terminalPath,
         name: 'terminal',
-        pageBuilder: (context, state) =>
-            _instant(state, const TerminalRoutePage()),
+        pageBuilder: (context, state) => _instant(
+          state,
+          TerminalRoutePage(initialDirectory: state.extra as String?),
+        ),
       ),
       GoRoute(
         path: sshConnectionPath,

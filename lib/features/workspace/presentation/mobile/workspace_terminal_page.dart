@@ -38,9 +38,12 @@ import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 单个终端 tab：独立的 xterm 缓冲 + PTY 会话与连接状态。
 class _TerminalTab {
-  _TerminalTab({required this.name});
+  _TerminalTab({required this.name, this.initialDirectory});
 
   String name;
+
+  /// PTY 启动时的工作目录；null ⇒ workspace root。
+  final String? initialDirectory;
   final Terminal terminal = Terminal(maxLines: 10000);
   final TerminalController controller = TerminalController();
 
@@ -89,7 +92,11 @@ class _AiSessionView {
 /// 所以先跑一遍上次工作区的自动恢复，再渲染终端页（否则 currentWorkspace
 /// 为空，只会看到「请先打开一个工作区」）。
 class TerminalRoutePage extends ConsumerStatefulWidget {
-  const TerminalRoutePage({super.key});
+  const TerminalRoutePage({super.key, this.initialDirectory});
+
+  /// 首个终端 tab 的初始工作目录（文件树「在终端打开」传入）；
+  /// null ⇒ workspace root。
+  final String? initialDirectory;
 
   @override
   ConsumerState<TerminalRoutePage> createState() => _TerminalRoutePageState();
@@ -115,6 +122,7 @@ class _TerminalRoutePageState extends ConsumerState<TerminalRoutePage> {
           : WorkspaceTerminalPage(
               topInset: 0,
               onBack: () => Navigator.of(context).pop(),
+              initialDirectory: widget.initialDirectory,
             ),
     );
   }
@@ -124,11 +132,15 @@ class WorkspaceTerminalPage extends ConsumerStatefulWidget {
   const WorkspaceTerminalPage({
     required this.topInset,
     required this.onBack,
+    this.initialDirectory,
     super.key,
   });
 
   final double topInset;
   final VoidCallback onBack;
+
+  /// 首个 tab 的初始工作目录；null ⇒ workspace root。
+  final String? initialDirectory;
 
   @override
   ConsumerState<WorkspaceTerminalPage> createState() =>
@@ -154,7 +166,10 @@ class _WorkspaceTerminalPageState
   @override
   void initState() {
     super.initState();
-    _tabs.add(_TerminalTab(name: '${_nextTabNumber++}'));
+    _tabs.add(_TerminalTab(
+      name: '${_nextTabNumber++}',
+      initialDirectory: widget.initialDirectory,
+    ));
     final manager = ref.read(workspaceSessionPoolManagerProvider);
     manager.addListener(_onPoolChanged);
     _poolManager = manager;
@@ -272,7 +287,7 @@ class _WorkspaceTerminalPageState
       final session = await backend.startShell(
         columns: tab.terminal.viewWidth,
         rows: tab.terminal.viewHeight,
-        workingDirectory: workspace.root,
+        workingDirectory: tab.initialDirectory ?? workspace.root,
       );
       // Wire xterm <-> session: keystrokes out, remote bytes in, size changes.
       // 输入先过额外按键条的 Ctrl / Alt 粘滞转换再写进 PTY。
@@ -301,7 +316,7 @@ class _WorkspaceTerminalPageState
         // 远程后端不动对方 shell 配置，只在本地终端视图里写横幅。
         tab.terminal.write(
           '\x1b[1;36mAetherlink 终端\x1b[0m · ${workspace.name}\r\n'
-          '目录: ${workspace.root}\r\n\r\n',
+          '目录: ${tab.initialDirectory ?? workspace.root}\r\n\r\n',
         );
       }
       session.done.whenComplete(() {

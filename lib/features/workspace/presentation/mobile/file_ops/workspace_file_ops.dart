@@ -43,6 +43,7 @@ class WorkspaceFileOps {
     this.onGitDiff,
     this.onFileHistory,
     this.onShare,
+    this.onOpenTerminal,
   }) : service = WorkspaceFileOpService(
           backend: backend,
           rootPath: rootPath,
@@ -93,6 +94,10 @@ class WorkspaceFileOps {
   /// Null ⇒ the action is hidden.
   final Future<void> Function(WorkspaceEntry entry)? onShare;
 
+  /// 在终端中打开 [entry]（目录）。Null 或非 exec 后端 ⇒ the action is
+  /// hidden.
+  final void Function(WorkspaceEntry entry)? onOpenTerminal;
+
   WorkspaceBackend get backend => service.backend;
 
   String get rootPath => service.rootPath;
@@ -117,6 +122,9 @@ class WorkspaceFileOps {
         showGitDiff: canGitDiff?.call(entry) ?? false,
         showFileHistory: onFileHistory != null && !entry.isDirectory,
         showShare: onShare != null && !entry.isDirectory,
+        showPermissions: service.canExec,
+        showOpenTerminal:
+            onOpenTerminal != null && service.canExec && entry.isDirectory,
       ),
     );
     if (action == null || !context.mounted) return;
@@ -153,6 +161,10 @@ class WorkspaceFileOps {
         await copyPath(entry);
       case FileEntryAction.details:
         await showDetails(entry);
+      case FileEntryAction.permissions:
+        await showPermissions(entry);
+      case FileEntryAction.openTerminal:
+        onOpenTerminal?.call(entry);
       case FileEntryAction.gitDiff:
         await onGitDiff?.call(entry);
       case FileEntryAction.fileHistory:
@@ -193,6 +205,32 @@ class WorkspaceFileOps {
         onCopyPath: () => copyPath(info),
       ),
     );
+  }
+
+  /// 权限对话框（exec 后端专属）：展示 stat 结果，可输入新模式 chmod，
+  /// 目录可选递归。
+  Future<void> showPermissions(WorkspaceEntry entry) async {
+    EntryPermissions perms;
+    try {
+      perms = await service.statPermissions(entry);
+    } catch (e) {
+      _snack('读取权限失败 · $e');
+      return;
+    }
+    if (!context.mounted) return;
+    final req = await promptChmod(
+      context,
+      name: entry.name,
+      isDirectory: entry.isDirectory,
+      permissions: perms,
+    );
+    if (req == null) return;
+    try {
+      await service.chmod(entry, req.mode, recursive: req.recursive);
+      _snack('已修改权限为 ${req.mode}');
+    } catch (e) {
+      _snack('修改权限失败 · $e');
+    }
   }
 
   Future<void> newFile(String parentPath) async {

@@ -327,6 +327,8 @@ class _WorkspaceFileTreeState extends ConsumerState<WorkspaceFileTree>
             },
             onShare: (entry) =>
                 shareWorkspaceFile(context, ref, entry: entry),
+            onOpenTerminal: (entry) =>
+                context.push(AppRouter.terminalPath, extra: entry.path),
           )
         : null;
     _ops = ops;

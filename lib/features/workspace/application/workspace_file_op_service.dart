@@ -1,8 +1,29 @@
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:aetherlink_flutter/features/workspace/application/workspace_git_status.dart'
+    show shellQuoteArg;
 import 'package:aetherlink_flutter/features/workspace/application/workspace_name_conflicts.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+
+/// An entry's POSIX permissions as reported by `stat`（exec 后端专属）.
+@immutable
+class EntryPermissions {
+  const EntryPermissions({
+    required this.octal,
+    required this.symbolic,
+    required this.owner,
+  });
+
+  /// e.g. `755`
+  final String octal;
+
+  /// e.g. `drwxr-xr-x`
+  final String symbolic;
+
+  /// e.g. `user:group`
+  final String owner;
+}
 
 /// A file picked outside the workspace, waiting to be imported into it.
 @immutable
@@ -129,6 +150,8 @@ class WorkspaceFileOpService {
   static const String kTrashDirName = '.aetherlink_trash';
 
   bool get canWrite => backend.capabilities.canWrite;
+
+  bool get canExec => backend.capabilities.canExec;
 
   bool isProtected(String path) => backend.isProtectedPath(path);
 
@@ -259,6 +282,54 @@ class WorkspaceFileOpService {
     final name = resolveDuplicateName(entry.name, await siblingNames(parent));
     await backend.copy(entry.path, parent, newName: name);
     return name;
+  }
+
+  // ===== permissions (exec 后端专属) =====
+
+  /// `chmod` 模式合法性：3–4 位八进制（如 644 / 0755）或符号模式
+  /// （如 u+x / go-w / a=r）。
+  static final RegExp _chmodMode =
+      RegExp(r'^([0-7]{3,4}|[ugoa]*[-+=][rwxXst]+(,[ugoa]*[-+=][rwxXst]+)*)$');
+
+  static bool isValidChmodMode(String mode) => _chmodMode.hasMatch(mode);
+
+  /// 读取 [entry] 的权限（八进制 + 符号 + 属主）。仅 exec 后端可用，
+  /// 此时路径是真实 POSIX 路径。
+  Future<EntryPermissions> statPermissions(WorkspaceEntry entry) async {
+    final result = await backend.exec(
+      "stat -c '%a %A %U:%G' ${shellQuoteArg(entry.path)}",
+    );
+    if (result.exitCode != 0) {
+      throw StateError(result.stderr.trim().isEmpty
+          ? 'stat 失败（exit ${result.exitCode}）'
+          : result.stderr.trim());
+    }
+    final parts = result.stdout.trim().split(RegExp(r'\s+'));
+    if (parts.length < 3) throw StateError('无法解析：${result.stdout}');
+    return EntryPermissions(
+      octal: parts[0],
+      symbolic: parts[1],
+      owner: parts[2],
+    );
+  }
+
+  /// 对 [entry] 执行 chmod。[mode] 必须通过 [isValidChmodMode]。
+  Future<void> chmod(
+    WorkspaceEntry entry,
+    String mode, {
+    bool recursive = false,
+  }) async {
+    if (!isValidChmodMode(mode)) {
+      throw ArgumentError('无效的权限模式：$mode');
+    }
+    final result = await backend.exec(
+      'chmod ${recursive ? '-R ' : ''}$mode ${shellQuoteArg(entry.path)}',
+    );
+    if (result.exitCode != 0) {
+      throw StateError(result.stderr.trim().isEmpty
+          ? 'chmod 失败（exit ${result.exitCode}）'
+          : result.stderr.trim());
+    }
   }
 
   // ===== import / zip =====

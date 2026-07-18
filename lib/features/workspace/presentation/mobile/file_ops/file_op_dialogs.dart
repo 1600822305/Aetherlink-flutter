@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'package:aetherlink_flutter/features/workspace/application/workspace_file_op_service.dart'
+    show EntryPermissions, WorkspaceFileOpService;
+
 /// Small reusable dialogs shared by the file-tree write operations. Kept free
 /// of any backend/plugin types so they stay pure UI.
 
@@ -183,4 +186,97 @@ Future<bool> confirmDelete(
     },
   );
   return ok ?? false;
+}
+
+/// A confirmed chmod request from [promptChmod].
+class ChmodRequest {
+  const ChmodRequest({required this.mode, required this.recursive});
+
+  final String mode;
+  final bool recursive;
+}
+
+/// 权限对话框（exec 后端专属）：展示 [permissions]，可输入新模式（八进制如
+/// 755，或符号模式如 u+x）；目录可勾选「递归应用」。取消返回 `null`。
+Future<ChmodRequest?> promptChmod(
+  BuildContext context, {
+  required String name,
+  required bool isDirectory,
+  required EntryPermissions permissions,
+}) async {
+  final controller = TextEditingController(text: permissions.octal);
+  controller.selection = TextSelection(
+    baseOffset: 0,
+    extentOffset: controller.text.length,
+  );
+  var recursive = false;
+  String? errorText;
+  final result = await showDialog<ChmodRequest>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setState) {
+        void submit() {
+          final mode = controller.text.trim();
+          if (!WorkspaceFileOpService.isValidChmodMode(mode)) {
+            setState(() => errorText = '无效的模式（如 755 或 u+x）');
+            return;
+          }
+          Navigator.of(context)
+              .pop(ChmodRequest(mode: mode, recursive: recursive));
+        }
+
+        return AlertDialog(
+          title: const Text('权限'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${permissions.symbolic} (${permissions.octal}) · '
+                '${permissions.owner}',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontFamily: 'monospace',
+                    ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: '新模式',
+                  hintText: '755 或 u+x',
+                  errorText: errorText,
+                ),
+                onSubmitted: (_) => submit(),
+              ),
+              if (isDirectory)
+                CheckboxListTile(
+                  value: recursive,
+                  onChanged: (v) => setState(() => recursive = v ?? false),
+                  title: const Text('递归应用到子项'),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  dense: true,
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(onPressed: submit, child: const Text('应用')),
+          ],
+        );
+      },
+    ),
+  );
+  return result;
 }
