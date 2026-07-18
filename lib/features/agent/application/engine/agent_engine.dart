@@ -35,6 +35,7 @@ class AgentEngine {
     required this.budget,
     this.subagents,
     this.toolStream,
+    this.stopGuard,
   });
 
   final AgentLlmClient llm;
@@ -49,6 +50,26 @@ class AgentEngine {
 
   /// 工具参数流式生成的实时通道（纯内存）；null = 不做实时预览。
   final AgentToolStreamSink? toolStream;
+
+  /// 收尾校验（stop hook）：返回 null 放行收尾；返回原因则阻止本次
+  /// 收尾，原因以用户消息回填继续跑。每次运行最多阻止一次
+  /// （防 hook 永远不满意导致死循环）。
+  final Future<String?> Function()? stopGuard;
+
+  bool _stopGuardFired = false;
+
+  Future<String?> _checkStopGuard() async {
+    final guard = stopGuard;
+    if (guard == null || _stopGuardFired) return null;
+    String? reason;
+    try {
+      reason = await guard();
+    } catch (_) {
+      return null; // hook 自身异常不阻断收尾
+    }
+    if (reason != null) _stopGuardFired = true;
+    return reason;
+  }
 
   /// 压缩失败只提示一次（每次运行一个引擎实例）。
   bool _compactionFailureNotified = false;
@@ -85,6 +106,7 @@ class AgentEngine {
       // waitingApproval）按失败回填，重放时模型可重新发起并重过审批。
       await _backfillInterruptedToolCalls(current.id);
 
+      outer:
       while (true) {
         // ① 安全点：排队消息正式进上下文（L3）。
         await store.consumeQueuedUserMessages(current.id);
@@ -237,6 +259,12 @@ class AgentEngine {
 
         // ⑤ 无工具调用 → 兜底判收尾（L1）。
         if (turn.toolCalls.isEmpty) {
+          final blocked = await _checkStopGuard();
+          if (blocked != null) {
+            await store.appendUserMessage(
+                current.id, '[stop hook 阻止收尾] $blocked');
+            continue;
+          }
           current = await transition(AgentTaskStatus.done, '任务完成');
           return;
         }
@@ -270,6 +298,12 @@ class AgentEngine {
             return;
           }
           if (call.name == kToolFinishTask) {
+            final blocked = await _checkStopGuard();
+            if (blocked != null) {
+              await store.appendUserMessage(
+                  current.id, '[stop hook 阻止收尾] $blocked');
+              continue outer;
+            }
             final summary = _stringArg(call, 'summary') ?? '任务完成';
             current = await transition(AgentTaskStatus.done, summary);
             return;

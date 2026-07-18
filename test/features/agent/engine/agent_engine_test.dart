@@ -559,6 +559,35 @@ void main() {
     expect(seqs.toSet().length, seqs.length);
   });
 
+  test('stop hook 阻止收尾：原因回填继续跑，放行后 done（最多阻一次）', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    var guardCalls = 0;
+    final engine = AgentEngine(
+      llm: const FakeAgentLlmClient(chunkDelay: Duration.zero),
+      tools: const FakeAgentToolExecutor(delay: Duration.zero),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(),
+      stopGuard: () async {
+        guardCalls++;
+        return '还有测试没跑';
+      },
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '帮我看看项目结构');
+
+    await engine.run(task, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.done);
+    // 每次运行最多阻一次：第二次收尾不再调 guard，直接放行（防死循环）。
+    expect(guardCalls, 1);
+    final messages =
+        (await store.getEvents(task.id)).whereType<UserMessageEvent>();
+    expect(messages.any((m) => m.text.contains('还有测试没跑')), isTrue);
+  });
+
   test('连续失败达到预算上限 → paused 而非 failed', () async {
     final store = InMemoryAgentEventStore();
     final gateway = RecordingTaskGateway();
