@@ -24,6 +24,9 @@ enum AgentHookEvent {
   /// 工具成功执行后：可把反馈追加进工具结果（如格式化/编译报错）。
   postToolUse,
 
+  /// 工具执行失败后：可把反馈追加进失败结果（如失败原因分析/补救提示）。
+  postToolUseFailure,
+
   /// 每轮结束（本轮工具全部执行完，不阻断）。
   turnEnd,
 

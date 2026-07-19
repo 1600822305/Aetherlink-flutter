@@ -43,6 +43,28 @@ void main() {
       expect(config.hooks.single.command, 'ok');
     });
 
+    test('postToolUseFailure 事件解析与匹配', () {
+      final config = decodeAgentHooksConfig('''
+{"postToolUseFailure": [{"matcher": "terminal_*", "command": "diagnose.sh"}]}
+''')!;
+      final hooks = hooksForToolCall(
+        config,
+        AgentHookEvent.postToolUseFailure,
+        'terminal_execute',
+        ['git push origin main'],
+      );
+      expect(hooks.single.command, 'diagnose.sh');
+      expect(
+        hooksForToolCall(
+          config,
+          AgentHookEvent.postToolUse,
+          'terminal_execute',
+          ['ls'],
+        ),
+        isEmpty,
+      );
+    });
+
     test('非法 timeout 回退默认', () {
       final config = decodeAgentHooksConfig(
         '{"stop":[{"command":"c","timeout":-5}]}',

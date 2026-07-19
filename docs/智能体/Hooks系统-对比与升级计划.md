@@ -112,7 +112,7 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 > 状态标记：⬜ 未开始 ｜ 🚧 进行中 ｜ ✅ 已完成（附日期 + commit/PR）
 > 每阶段必做：改动文件跑 `flutter analyze`；纯逻辑改动补/改 `test/features/agent/` 下单测；更新本文档状态。
 
-### - [ ] 阶段 1：postToolUse 失败也触发 + 传工具输出 ⬜
+### - [x] 阶段 1：postToolUse 失败也触发 + 传工具输出 ✅（2026-07-19）
 **目标**：对齐 CC 的 PostToolUse/PostToolUseFailure 语义。
 - 新增事件 `postToolUseFailure`（工具失败时触发；现有 postToolUse 保持只在成功时触发）。
 - `_runHook` 增加环境变量 `AETHER_TOOL_OUTPUT`（工具结果 detail，截断 4000 字符）与 `AETHER_TOOL_OK`（true/false），postToolUse / postToolUseFailure 均传入。
@@ -174,4 +174,5 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 
 | 日期 | 阶段 | 状态 | commit / PR | 备注 |
 |---|---|---|---|---|
-| 2026-07-19 | 文档建立 | ✅ | （本提交） | 初版对比分析 + 9 阶段计划 |
+| 2026-07-19 | 文档建立 | ✅ | 867da359 | 初版对比分析 + 9 阶段计划 |
+| 2026-07-19 | 阶段 1 | ✅ | （本提交） | 新增 postToolUseFailure 事件；post 事件传入 AETHER_TOOL_OUTPUT / AETHER_TOOL_OK |

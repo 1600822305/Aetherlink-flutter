@@ -66,6 +66,13 @@ _EventMeta _metaOf(AgentHookEvent event, ColorScheme scheme) =>
           description: '工具成功执行后触发；输出可回填给模型（如格式化报错）。',
           canBlock: true,
         ),
+      AgentHookEvent.postToolUseFailure => (
+          stage: 'TOOL 阶段',
+          color: Colors.orange,
+          title: 'postToolUseFailure',
+          description: '工具执行失败后触发；输出可回填给模型（如失败原因分析）。',
+          canBlock: true,
+        ),
       AgentHookEvent.turnEnd => (
           stage: 'TURN 阶段',
           color: Colors.blue,
@@ -380,7 +387,8 @@ class _ManualHookFormState extends State<_ManualHookForm> {
 
   bool get _toolEvent =>
       widget.event == AgentHookEvent.preToolUse ||
-      widget.event == AgentHookEvent.postToolUse;
+      widget.event == AgentHookEvent.postToolUse ||
+      widget.event == AgentHookEvent.postToolUseFailure;
 
   @override
   Widget build(BuildContext context) {

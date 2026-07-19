@@ -1275,13 +1275,19 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
     }
 
     final toolResult = await _inner.execute(call, cancel);
-    if (!toolResult.ok) return toolResult;
+    final postEvent = toolResult.ok
+        ? AgentHookEvent.postToolUse
+        : AgentHookEvent.postToolUseFailure;
 
     final feedback = <String>[];
-    for (final hook in hooksForToolCall(
-        config, AgentHookEvent.postToolUse, permission, patterns)) {
+    for (final hook
+        in hooksForToolCall(config, postEvent, permission, patterns)) {
       final result = await _runHook(hook,
-          toolName: call.name, argsJson: call.argsJson, filePath: filePath);
+          toolName: call.name,
+          argsJson: call.argsJson,
+          filePath: filePath,
+          toolOutput: toolResult.detail ?? toolResult.summary,
+          toolOk: toolResult.ok);
       if (result.outcome == AgentHookOutcome.block) {
         feedback.add(result.message.isEmpty
             ? 'hook（${hook.command}）报告了问题（无输出）。'
@@ -1292,7 +1298,7 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
     return AgentToolResult(
       ok: toolResult.ok,
       summary: toolResult.summary,
-      detail: '${toolResult.detail ?? ''}\n\n[postToolUse hook 反馈]\n'
+      detail: '${toolResult.detail ?? ''}\n\n[${postEvent.name} hook 反馈]\n'
           '${feedback.join('\n')}',
       overflowPath: toolResult.overflowPath,
     );
@@ -1329,22 +1335,32 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
   }
 
   /// 在绑定工作区里跑一条 hook 命令：现场上下文经环境变量传入
-  /// （AETHER_TOOL / AETHER_ARGS_JSON / AETHER_FILE_PATH），超时/异常
-  /// 按 hook 自身失败处理（不阻断）。
+  /// （AETHER_TOOL / AETHER_ARGS_JSON / AETHER_FILE_PATH，post 事件另有
+  /// AETHER_TOOL_OUTPUT / AETHER_TOOL_OK），超时/异常按 hook 自身失败
+  /// 处理（不阻断）。
   Future<AgentHookResult> _runHook(
     AgentHook hook, {
     required String toolName,
     required String argsJson,
     String? filePath,
+    String? toolOutput,
+    bool? toolOk,
   }) async {
     try {
       final cappedArgs =
           argsJson.length > 4000 ? argsJson.substring(0, 4000) : argsJson;
+      final cappedOutput = toolOutput != null && toolOutput.length > 4000
+          ? toolOutput.substring(0, 4000)
+          : toolOutput;
       final exports = [
         'export AETHER_TOOL=${_shellQuote(toolName)}',
         'export AETHER_ARGS_JSON=${_shellQuote(cappedArgs)}',
         if (filePath != null && filePath.isNotEmpty)
           'export AETHER_FILE_PATH=${_shellQuote(filePath)}',
+        if (cappedOutput != null)
+          'export AETHER_TOOL_OUTPUT=${_shellQuote(cappedOutput)}',
+        if (toolOk != null)
+          'export AETHER_TOOL_OK=${toolOk ? 'true' : 'false'}',
       ].join('; ');
       final result = await runTerminalTool(_refOf(), 'terminal_execute', {
         'command': '$exports; ${hook.command}',
