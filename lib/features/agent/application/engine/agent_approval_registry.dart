@@ -182,14 +182,19 @@ class AgentApprovalRegistryNotifier
           : pending.permission,
       patterns: pending.alwaysPatterns,
     );
-    for (final rule in grants) {
-      if (rule.layer == PermissionRuleLayer.session) {
-        (_sessionRules[taskId] ??= <PermissionRule>[]).add(rule);
-      } else {
-        ref.read(agentPermissionRulesProvider.notifier).add(rule);
+    // 落规则失败不能吞掉裁决：无论如何都要完成挂起，否则引擎会
+    // 永远卡在等待审批（卡片已消失，看起来像「通过了但没执行」）。
+    try {
+      for (final rule in grants) {
+        if (rule.layer == PermissionRuleLayer.session) {
+          (_sessionRules[taskId] ??= <PermissionRule>[]).add(rule);
+        } else {
+          ref.read(agentPermissionRulesProvider.notifier).add(rule);
+        }
       }
+    } finally {
+      if (!pending.completer.isCompleted) pending.completer.complete(decision);
     }
-    if (!pending.completer.isCompleted) pending.completer.complete(decision);
   }
 
   /// 本任务内生效的会话临时规则层（审批门拼进规则引擎的最高优先级层）。
