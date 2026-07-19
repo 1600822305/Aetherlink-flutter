@@ -282,6 +282,10 @@ enum AgentHookOutcome {
 /// [stopReason] 展示给用户；可与任意裁决同时出现。
 /// [isAsync] 为首行输出 `{"async":true}` 的 async hook（对标
 /// Claude Code）：不参与裁决（按放行处理），余下输出忽略。
+/// [updatedArgsJson] 为 stdout JSON `updatedInput`（对标 Claude
+/// Code，仅 preToolUse 生效）：非空时工具改用该入参执行（block
+/// 裁决下忽略）。[systemMessage]（对标 Claude Code）为展示给
+/// 用户的提示（不进模型上下文）。
 class AgentHookResult {
   const AgentHookResult({
     required this.outcome,
@@ -290,6 +294,8 @@ class AgentHookResult {
     this.preventContinuation = false,
     this.stopReason = '',
     this.isAsync = false,
+    this.updatedArgsJson = '',
+    this.systemMessage = '',
   });
 
   final AgentHookOutcome outcome;
@@ -298,22 +304,31 @@ class AgentHookResult {
   final bool preventContinuation;
   final String stopReason;
   final bool isAsync;
+  final String updatedArgsJson;
+  final String systemMessage;
 }
 
 /// 同一事件多条 hooks（并行执行）的裁决聚合：
 /// - outcome 优先级 block > ask > allow > proceed（failed 视为 proceed）；
 /// - message 取全部 block 的原因拼接（无 block 时取胜出裁决的 message）；
-/// - additionalContext 非空项拼接；
+/// - additionalContext / systemMessage 非空项拼接；
+/// - updatedArgsJson 取首个非空（多条 hook 同时改写入参不叠加）；
 /// - preventContinuation 任一为 true 即 true，stopReason 取首个非空。
 AgentHookResult aggregateAgentHookResults(Iterable<AgentHookResult> results) {
   var outcome = AgentHookOutcome.proceed;
   final blockMessages = <String>[];
   final contexts = <String>[];
+  final systemMessages = <String>[];
+  var updatedArgsJson = '';
   var prevent = false;
   var stopReason = '';
   String winnerMessage = '';
   for (final r in results) {
     if (r.additionalContext.isNotEmpty) contexts.add(r.additionalContext);
+    if (r.systemMessage.isNotEmpty) systemMessages.add(r.systemMessage);
+    if (updatedArgsJson.isEmpty && r.updatedArgsJson.isNotEmpty) {
+      updatedArgsJson = r.updatedArgsJson;
+    }
     if (r.preventContinuation) {
       prevent = true;
       if (stopReason.isEmpty && r.stopReason.isNotEmpty) {
@@ -349,6 +364,8 @@ AgentHookResult aggregateAgentHookResults(Iterable<AgentHookResult> results) {
     additionalContext: contexts.join('\n'),
     preventContinuation: prevent,
     stopReason: stopReason,
+    updatedArgsJson: updatedArgsJson,
+    systemMessage: systemMessages.join('\n'),
   );
 }
 
@@ -509,13 +526,28 @@ AgentHookResult? _decodeDecision(String stdout) {
     final prevent = decoded['continue'] == false;
     final stopReason = decoded['stopReason'];
     final stopReasonStr = prevent && stopReason is String ? stopReason : '';
+    final updatedInput = decoded['updatedInput'];
+    // block 裁决下 updatedInput 无意义（调用已被拦截），丢弃。
+    final updatedArgsJson =
+        updatedInput is Map<String, dynamic> && outcome != AgentHookOutcome.block
+            ? jsonEncode(updatedInput)
+            : '';
+    final systemMessage = decoded['systemMessage'];
+    final systemMessageStr = systemMessage is String ? systemMessage : '';
     if (outcome == null) {
-      if (contextStr.isEmpty && !prevent) return null;
+      if (contextStr.isEmpty &&
+          !prevent &&
+          updatedArgsJson.isEmpty &&
+          systemMessageStr.isEmpty) {
+        return null;
+      }
       return AgentHookResult(
         outcome: AgentHookOutcome.proceed,
         additionalContext: contextStr,
         preventContinuation: prevent,
         stopReason: stopReasonStr,
+        updatedArgsJson: updatedArgsJson,
+        systemMessage: systemMessageStr,
       );
     }
     final reason = decoded['reason'];
@@ -525,8 +557,112 @@ AgentHookResult? _decodeDecision(String stdout) {
       additionalContext: contextStr,
       preventContinuation: prevent,
       stopReason: stopReasonStr,
+      updatedArgsJson: updatedArgsJson,
+      systemMessage: systemMessageStr,
     );
   } catch (_) {
     return null;
   }
+}
+
+/// http hook 的 SSRF 防护（对标 Claude Code ssrfGuard）：判定解析出的
+/// IP 是否属于 http hook 不应触达的地址段——私网、链路本地/云
+/// metadata（169.254.169.254 等）、CGNAT 共享段、未指定地址。
+/// loopback（127.0.0.0/8、::1）刻意放行：本机策略服务是 http hook 的
+/// 主要使用场景。非法 IP 字面量返回 false（交给真实 DNS 路径处理）。
+bool isBlockedAgentHookAddress(String address) {
+  final v4 = _parseIPv4(address);
+  if (v4 != null) return _isBlockedV4(v4);
+  final v6 = _parseIPv6Groups(address);
+  if (v6 != null) return _isBlockedV6(v6);
+  return false;
+}
+
+List<int>? _parseIPv4(String address) {
+  final parts = address.split('.');
+  if (parts.length != 4) return null;
+  final octets = <int>[];
+  for (final p in parts) {
+    final n = int.tryParse(p);
+    if (n == null || n < 0 || n > 255) return null;
+    octets.add(n);
+  }
+  return octets;
+}
+
+bool _isBlockedV4(List<int> o) {
+  final a = o[0], b = o[1];
+  // loopback 刻意放行
+  if (a == 127) return false;
+  // 0.0.0.0/8「本」网络
+  if (a == 0) return true;
+  // 10.0.0.0/8 私网
+  if (a == 10) return true;
+  // 169.254.0.0/16 链路本地（云 metadata）
+  if (a == 169 && b == 254) return true;
+  // 172.16.0.0/12 私网
+  if (a == 172 && b >= 16 && b <= 31) return true;
+  // 100.64.0.0/10 CGNAT 共享段（部分云 metadata，如阿里云 100.100.100.200）
+  if (a == 100 && b >= 64 && b <= 127) return true;
+  // 192.168.0.0/16 私网
+  if (a == 192 && b == 168) return true;
+  return false;
+}
+
+/// 把 IPv6 展开为 8 个 16 位组（支持 `::` 压缩与尾部点分 IPv4）；
+/// 非法返回 null。
+List<int>? _parseIPv6Groups(String address) {
+  var addr = address.toLowerCase();
+  if (!addr.contains(':')) return null;
+  var tail = <int>[];
+  if (addr.contains('.')) {
+    final lastColon = addr.lastIndexOf(':');
+    final v4 = _parseIPv4(addr.substring(lastColon + 1));
+    if (v4 == null) return null;
+    tail = [(v4[0] << 8) | v4[1], (v4[2] << 8) | v4[3]];
+    addr = addr.substring(0, lastColon);
+  }
+  final dbl = addr.indexOf('::');
+  List<String> head, rest;
+  if (dbl == -1) {
+    head = addr.split(':');
+    rest = [];
+  } else {
+    if (addr.indexOf('::', dbl + 1) != -1) return null;
+    final headStr = addr.substring(0, dbl);
+    final restStr = addr.substring(dbl + 2);
+    head = headStr.isEmpty ? [] : headStr.split(':');
+    rest = restStr.isEmpty ? [] : restStr.split(':');
+  }
+  final target = 8 - tail.length;
+  final fill = target - head.length - rest.length;
+  if (dbl == -1 && fill != 0) return null;
+  if (fill < 0) return null;
+  final groups = <int>[];
+  for (final h in [...head, ...List.filled(fill, '0'), ...rest]) {
+    if (h.isEmpty || h.length > 4) return null;
+    final n = int.tryParse(h, radix: 16);
+    if (n == null || n < 0 || n > 0xffff) return null;
+    groups.add(n);
+  }
+  groups.addAll(tail);
+  return groups.length == 8 ? groups : null;
+}
+
+bool _isBlockedV6(List<int> g) {
+  // ::1 loopback 刻意放行
+  if (g.sublist(0, 7).every((n) => n == 0) && g[7] == 1) return false;
+  // :: 未指定地址
+  if (g.every((n) => n == 0)) return true;
+  // IPv4-mapped（::ffff:a.b.c.d，含十六进制表示）→ 按内嵌 v4 判定，
+  // 否则 ::ffff:a9fe:a9fe（=169.254.169.254）可绕过防护。
+  if (g.sublist(0, 5).every((n) => n == 0) && g[5] == 0xffff) {
+    return _isBlockedV4([g[6] >> 8, g[6] & 0xff, g[7] >> 8, g[7] & 0xff]);
+  }
+  final first = g[0];
+  // fc00::/7 唯一本地地址
+  if (first >= 0xfc00 && first <= 0xfdff) return true;
+  // fe80::/10 链路本地
+  if (first >= 0xfe80 && first <= 0xfebf) return true;
+  return false;
 }

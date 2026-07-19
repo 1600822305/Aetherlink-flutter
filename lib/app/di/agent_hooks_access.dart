@@ -9,6 +9,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -255,10 +256,11 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
           return result;
         }(),
     ]);
+    final aggregate = aggregateAgentHookResults(results);
     if (updateStatus != null && label != null) {
       updateStatus(formatAgentHookStatusLine(
         label: label,
-        aggregate: aggregateAgentHookResults(results),
+        aggregate: aggregate,
         count: unique.length,
         failedCount: results
             .where((r) => r.outcome == AgentHookOutcome.failed)
@@ -266,6 +268,13 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
         asyncCount: results.where((r) => r.isAsync).length,
         elapsed: sw.elapsed,
       ));
+    }
+    // systemMessage（对标 CC）：hook 给用户的提示，单独落一条时间线
+    // 状态行（不进模型上下文）。
+    if (aggregate.systemMessage.isNotEmpty && sink != null) {
+      try {
+        await sink('[hook] 💬 ${aggregate.systemMessage}');
+      } catch (_) {}
     }
     return results;
   }
@@ -311,7 +320,25 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
       );
     }
 
-    final toolResult = await _inner.execute(call, cancel);
+    // updatedInput（对标 CC）：preToolUse hook 改写入参后放行，工具
+    // 改用新入参执行；改写事实落时间线告知用户。
+    var effectiveCall = call;
+    if (preVerdict != null && preVerdict.updatedArgsJson.isNotEmpty) {
+      effectiveCall = AgentToolCallRequest(
+        id: call.id,
+        name: call.name,
+        argsJson: preVerdict.updatedArgsJson,
+        argSummary: call.argSummary,
+      );
+      final sink = timeline;
+      if (sink != null) {
+        try {
+          await sink('[hook] preToolUse(${call.name}) 改写了工具入参');
+        } catch (_) {}
+      }
+    }
+
+    final toolResult = await _inner.execute(effectiveCall, cancel);
     final postEvent = toolResult.ok
         ? AgentHookEvent.postToolUse
         : AgentHookEvent.postToolUseFailure;
@@ -321,7 +348,7 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
       (hook) => _runHook(hook,
           eventName: postEvent.name,
           toolName: call.name,
-          argsJson: call.argsJson,
+          argsJson: effectiveCall.argsJson,
           filePath: filePath,
           toolOutput: toolResult.detail ?? toolResult.summary,
           toolOk: toolResult.ok),
@@ -612,13 +639,21 @@ Future<AgentHookResult> _execPromptHook(
 /// 跑一条 http 型 hook：把 hook 输入 JSON POST 到配置的 URL
 /// （Content-Type: application/json，可附自定义 headers），响应协议见
 /// [interpretAgentHttpHookResponse]。网络错误/超时按 hook 自身失败
-/// 处理（不阻断）。
+/// 处理（不阻断）。发请求前先过 SSRF 防护（[_ssrfCheck]）：目标
+/// 解析到私网/云 metadata 地址段时拒绝执行。
 Future<AgentHookResult> _execHttpHook(
   Ref ref,
   AgentHook hook,
   String stdinJson,
 ) async {
   try {
+    final ssrfError = await _ssrfCheck(hook.url);
+    if (ssrfError != null) {
+      return AgentHookResult(
+        outcome: AgentHookOutcome.failed,
+        message: ssrfError,
+      );
+    }
     final dio = buildLlmDio(proxy: ref.read(appNetworkProxyConfigProvider));
     final timeout = Duration(seconds: hook.timeoutSeconds);
     final response = await dio
@@ -653,6 +688,40 @@ Future<AgentHookResult> _execHttpHook(
     );
   }
 }
+
+/// http hook 的 SSRF 防护（对标 Claude Code ssrfGuard）：先解析
+/// 目标主机（IP 字面量直接判，域名过 DNS），任一解析结果命中私网/
+/// 链路本地/云 metadata 地址段（[isBlockedAgentHookAddress]，
+/// loopback 放行）即拒绝；返回错误文案，null = 放行。DNS 失败
+/// 不拦截（交给真实请求报网络错）。局限：检查与实际请求是两次
+/// 独立解析，极端 DNS rebinding 场景下可能绕过（CC 同款设计在
+/// lookup 钩子里做，我们的 dio 链路不暴露该钩子）。
+Future<String?> _ssrfCheck(String url) async {
+  final uri = Uri.tryParse(url);
+  final host = uri?.host ?? '';
+  if (host.isEmpty) return null;
+  // Uri.host 对 IPv6 字面量已去方括号
+  if (isBlockedAgentHookAddress(host)) {
+    return 'http hook 目标地址 $host 属于私网/保留地址段，已拒绝（SSRF 防护）';
+  }
+  if (_parseAsIpLiteral(host)) return null;
+  try {
+    final addresses = await InternetAddress.lookup(host)
+        .timeout(const Duration(seconds: 10));
+    for (final addr in addresses) {
+      if (isBlockedAgentHookAddress(addr.address)) {
+        return 'http hook 目标 $host 解析到私网/保留地址 '
+            '${addr.address}，已拒绝（SSRF 防护）';
+      }
+    }
+  } catch (_) {
+    // DNS 失败不在这里拦截，后续真实请求会报网络错误
+  }
+  return null;
+}
+
+bool _parseAsIpLiteral(String host) =>
+    InternetAddress.tryParse(host) != null;
 
 /// 跑一条 hook 命令：现场上下文两路传入——
 /// ① stdin JSON（字段命名对齐 Claude Code，见

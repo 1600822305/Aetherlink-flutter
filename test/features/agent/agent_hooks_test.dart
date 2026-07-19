@@ -640,4 +640,120 @@ void main() {
       expect(interpretAgentHookExit(127, '', '').message, 'exit 127');
     });
   });
+
+  group('updatedInput / systemMessage', () {
+    test('updatedInput 解析为 updatedArgsJson（allow / 无裁决）', () {
+      final r = interpretAgentHookExit(
+        0,
+        '{"decision":"allow","updatedInput":{"command":"rm -i x"}}',
+        '',
+      );
+      expect(r.outcome, AgentHookOutcome.allow);
+      expect(r.updatedArgsJson, '{"command":"rm -i x"}');
+      final passthrough = interpretAgentHookExit(
+        0,
+        '{"updatedInput":{"path":"safe/tmp.txt"}}',
+        '',
+      );
+      expect(passthrough.outcome, AgentHookOutcome.proceed);
+      expect(passthrough.updatedArgsJson, '{"path":"safe/tmp.txt"}');
+    });
+
+    test('block 裁决下 updatedInput 丢弃', () {
+      final r = interpretAgentHookExit(
+        0,
+        '{"decision":"block","reason":"危险","updatedInput":{"a":1}}',
+        '',
+      );
+      expect(r.outcome, AgentHookOutcome.block);
+      expect(r.updatedArgsJson, isEmpty);
+    });
+
+    test('systemMessage 解析（可与任意裁决同现）', () {
+      final r = interpretAgentHookExit(
+        0,
+        '{"systemMessage":"⚠️ 本次改动没跑测试"}',
+        '',
+      );
+      expect(r.outcome, AgentHookOutcome.proceed);
+      expect(r.systemMessage, '⚠️ 本次改动没跑测试');
+      final withDecision = interpretAgentHookExit(
+        0,
+        '{"decision":"ask","systemMessage":"请人工确认"}',
+        '',
+      );
+      expect(withDecision.outcome, AgentHookOutcome.ask);
+      expect(withDecision.systemMessage, '请人工确认');
+    });
+
+    test('聚合：systemMessage 拼接、updatedArgsJson 取首个非空', () {
+      final agg = aggregateAgentHookResults(const [
+        AgentHookResult(
+          outcome: AgentHookOutcome.proceed,
+          systemMessage: 'A',
+        ),
+        AgentHookResult(
+          outcome: AgentHookOutcome.proceed,
+          updatedArgsJson: '{"x":1}',
+          systemMessage: 'B',
+        ),
+        AgentHookResult(
+          outcome: AgentHookOutcome.proceed,
+          updatedArgsJson: '{"x":2}',
+        ),
+      ]);
+      expect(agg.systemMessage, 'A\nB');
+      expect(agg.updatedArgsJson, '{"x":1}');
+    });
+  });
+
+  group('isBlockedAgentHookAddress（SSRF 防护）', () {
+    test('私网 / 链路本地 / CGNAT / 未指定 v4 → 阻断', () {
+      for (final addr in [
+        '10.0.0.1',
+        '172.16.0.1',
+        '172.31.255.255',
+        '192.168.1.1',
+        '169.254.169.254',
+        '100.100.100.200',
+        '0.0.0.0',
+      ]) {
+        expect(isBlockedAgentHookAddress(addr), isTrue, reason: addr);
+      }
+    });
+
+    test('loopback 与公网 v4 → 放行', () {
+      for (final addr in [
+        '127.0.0.1',
+        '8.8.8.8',
+        '172.15.0.1',
+        '172.32.0.1',
+        '100.63.0.1',
+        '100.128.0.1',
+      ]) {
+        expect(isBlockedAgentHookAddress(addr), isFalse, reason: addr);
+      }
+    });
+
+    test('v6：本地/链路本地/未指定阻断，::1 与公网放行', () {
+      for (final addr in ['::', 'fc00::1', 'fd12:3456::1', 'fe80::1']) {
+        expect(isBlockedAgentHookAddress(addr), isTrue, reason: addr);
+      }
+      for (final addr in ['::1', '2001:4860:4860::8888']) {
+        expect(isBlockedAgentHookAddress(addr), isFalse, reason: addr);
+      }
+    });
+
+    test('IPv4-mapped v6 按内嵌 v4 判定（含十六进制形式）', () {
+      expect(isBlockedAgentHookAddress('::ffff:169.254.169.254'), isTrue);
+      expect(isBlockedAgentHookAddress('::ffff:a9fe:a9fe'), isTrue);
+      expect(isBlockedAgentHookAddress('::ffff:8.8.8.8'), isFalse);
+      expect(isBlockedAgentHookAddress('::ffff:127.0.0.1'), isFalse);
+    });
+
+    test('非 IP 字面量（域名）→ false（交给 DNS 路径）', () {
+      expect(isBlockedAgentHookAddress('example.com'), isFalse);
+      expect(isBlockedAgentHookAddress(''), isFalse);
+    });
+  });
 }
