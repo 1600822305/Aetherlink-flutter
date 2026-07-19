@@ -158,11 +158,18 @@ List<AgentHook> hooksForToolCall(
 
 /// hook 命令执行结果的裁决。
 enum AgentHookOutcome {
-  /// 放行（exit 0 且无阻断输出）。
+  /// 放行（exit 0 且无裁决输出）：不干预审批门。
   proceed,
 
   /// 阻断：preToolUse 拦截调用 / postToolUse 回填反馈 / stop 阻止收尾。
   block,
+
+  /// 免审放行（仅 preToolUse）：跳过审批门直接执行（对标 CC
+  /// permissionDecision: allow；越 root 硬约束不可覆盖）。
+  allow,
+
+  /// 强制审批（仅 preToolUse）：即使规则/auto 本已放行也弹审批。
+  ask,
 
   /// hook 自身失败（超时 / 其他 exit code）：只记日志，不阻断。
   failed,
@@ -178,8 +185,9 @@ class AgentHookResult {
 
 /// 退出协议（对标 Claude Code）：
 /// - exit 2 → block，stderr（为空则 stdout）作为回给模型的原因；
-/// - exit 0 → 默认放行；stdout 若是 `{"decision":"block"|"deny",
-///   "reason":...}` JSON 也算 block；
+/// - exit 0 → 默认放行；stdout 若是 `{"decision":...}` JSON 则按裁决：
+///   `"block"|"deny"` → block，`"allow"|"approve"` → allow（免审），
+///   `"ask"` → ask（强制审批）；
 /// - 其他 exit code → hook 自身失败，不阻断。
 AgentHookResult interpretAgentHookExit(
   int exitCode,
@@ -208,10 +216,16 @@ AgentHookResult? _decodeDecision(String stdout) {
     final decoded = jsonDecode(trimmed);
     if (decoded is! Map<String, dynamic>) return null;
     final decision = decoded['decision'];
-    if (decision != 'block' && decision != 'deny') return null;
+    final outcome = switch (decision) {
+      'block' || 'deny' => AgentHookOutcome.block,
+      'allow' || 'approve' => AgentHookOutcome.allow,
+      'ask' => AgentHookOutcome.ask,
+      _ => null,
+    };
+    if (outcome == null) return null;
     final reason = decoded['reason'];
     return AgentHookResult(
-      outcome: AgentHookOutcome.block,
+      outcome: outcome,
       message: reason is String ? reason : '',
     );
   } catch (_) {

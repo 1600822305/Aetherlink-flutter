@@ -113,7 +113,7 @@ class AgentRuntime {
     return (
       llm: _GatewayAgentLlmClient(_refOf, profile, catalog.definitions),
       tools: hooked,
-      approval: _PolicyApprovalGate(_refOf, catalog.routes),
+      approval: _PolicyApprovalGate(_refOf, catalog.routes, hooks: hooked),
       stopGuard: hooked.runStopHooks,
       lifecycleHooks: hooked.runLifecycleHooks,
     );
@@ -927,10 +927,12 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
 /// 挂起走 [agentApprovalRegistryProvider]，无超时（用户可能锁屏离场）；
 /// 任务被暂停/终止时挂起按拒绝回填，循环在下一个安全点收敛。
 class _PolicyApprovalGate implements ApprovalGate {
-  _PolicyApprovalGate(this._refOf, this._routes);
+  _PolicyApprovalGate(this._refOf, this._routes, {_HookedAgentToolExecutor? hooks})
+      : _hookExecutor = hooks;
 
   final Ref Function() _refOf;
   final Map<String, ToolRoute> _routes;
+  final _HookedAgentToolExecutor? _hookExecutor;
 
   @override
   Future<ApprovalRequirement> evaluate(
@@ -954,6 +956,26 @@ class _PolicyApprovalGate implements ApprovalGate {
     } catch (_) {
       workspaces = const [];
     }
+    // preToolUse hook 裁决（一次调用只跑一遍，结果缓存给执行器复用）：
+    // block → 直接放行到执行器由其拦截（避免先弹审批再被拦）；
+    // ask → 强制审批；allow → 免审直通（越 root 硬约束不可覆盖）。
+    final hookVerdict = await _hookExecutor?.preToolUseVerdict(call);
+    switch (hookVerdict?.outcome) {
+      case AgentHookOutcome.block:
+        return ApprovalRequirement.allow;
+      case AgentHookOutcome.ask:
+        return ApprovalRequirement.needsUser;
+      case AgentHookOutcome.allow:
+        if (route is TerminalToolRoute &&
+            terminalCommandEscapesRoot(call.name, args,
+                workspaces: workspaces)) {
+          return ApprovalRequirement.needsUser;
+        }
+        return ApprovalRequirement.allow;
+      default:
+        break;
+    }
+
     if (!toolNeedsConfirmation(route, call.name, args,
         workspaces: workspaces)) {
       return ApprovalRequirement.allow;
@@ -1211,6 +1233,63 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
   bool _configLoaded = false;
   String? _workspaceRoot;
 
+  /// preToolUse 裁决缓存：审批门先跑一遍，执行器复用后移除，
+  /// 保证同一次调用 hooks 只执行一次。
+  final Map<String, AgentHookResult> _preVerdicts = {};
+
+  String _verdictKey(AgentToolCallRequest call) =>
+      '${call.name}\u0000${call.argsJson}';
+
+  /// preToolUse hooks 的聚合裁决（审批门与执行器共用）：优先级
+  /// block > ask > allow > proceed；block 时携带回给模型的原因。
+  /// 无 hooks 配置或无命中时返回 null / proceed。
+  Future<AgentHookResult?> preToolUseVerdict(AgentToolCallRequest call) async {
+    final key = _verdictKey(call);
+    final cached = _preVerdicts[key];
+    if (cached != null) return cached;
+    final config = await _hooks();
+    if (config == null || config.isEmpty) return null;
+
+    final route = _routes[call.name];
+    final args = _decodeArgsJson(call.argsJson);
+    final permission =
+        route == null ? call.name : _permissionOfRoute(route, call.name);
+    final patterns = route == null
+        ? const <String>['*']
+        : _patternsOfCall(route, call.name, args);
+    final path = args['path'];
+    final filePath = path is String && path.isNotEmpty ? path : null;
+
+    AgentHookResult? aggregate;
+    for (final hook in hooksForToolCall(
+        config, AgentHookEvent.preToolUse, permission, patterns)) {
+      final result = await _runHook(hook,
+          eventName: AgentHookEvent.preToolUse.name,
+          toolName: call.name,
+          argsJson: call.argsJson,
+          filePath: filePath);
+      if (result.outcome == AgentHookOutcome.block) {
+        aggregate = AgentHookResult(
+          outcome: AgentHookOutcome.block,
+          message: result.message.isEmpty
+              ? 'hook（${hook.command}）拦截了本次调用。'
+              : result.message,
+        );
+        break;
+      }
+      if (result.outcome == AgentHookOutcome.ask) {
+        aggregate = result;
+      } else if (result.outcome == AgentHookOutcome.allow &&
+          aggregate?.outcome != AgentHookOutcome.ask) {
+        aggregate = result;
+      }
+    }
+    final verdict =
+        aggregate ?? const AgentHookResult(outcome: AgentHookOutcome.proceed);
+    _preVerdicts[key] = verdict;
+    return verdict;
+  }
+
   /// hooks 配置（任务运行内只读一次）：设置页手动添加的 hooks（天然
   /// 可信，不走文件信任门槛）+ 已信任的仓库 hooks.json。无绑定
   /// 工作区或两者均无 → null（不执行任何 hook）。
@@ -1261,22 +1340,16 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
 
     final path = args['path'];
     final filePath = path is String && path.isNotEmpty ? path : null;
-    for (final hook in hooksForToolCall(
-        config, AgentHookEvent.preToolUse, permission, patterns)) {
-      final result = await _runHook(hook,
-          eventName: AgentHookEvent.preToolUse.name,
-          toolName: call.name,
-          argsJson: call.argsJson,
-          filePath: filePath);
-      if (result.outcome == AgentHookOutcome.block) {
-        return AgentToolResult(
-          ok: false,
-          summary: '被 preToolUse hook 拦截 ✗',
-          detail: result.message.isEmpty
-              ? 'hook（${hook.command}）拦截了本次调用。'
-              : result.message,
-        );
-      }
+    final preVerdict = await preToolUseVerdict(call);
+    _preVerdicts.remove(_verdictKey(call));
+    if (preVerdict != null && preVerdict.outcome == AgentHookOutcome.block) {
+      return AgentToolResult(
+        ok: false,
+        summary: '被 preToolUse hook 拦截 ✗',
+        detail: preVerdict.message.isEmpty
+            ? 'preToolUse hook 拦截了本次调用。'
+            : preVerdict.message,
+      );
     }
 
     final toolResult = await _inner.execute(call, cancel);

@@ -56,7 +56,8 @@ _EventMeta _metaOf(AgentHookEvent event, ColorScheme scheme) =>
           stage: 'TOOL 阶段',
           color: Colors.orange,
           title: 'preToolUse',
-          description: '工具执行前触发；退出码 2 可拦截本次调用。',
+          description: '工具执行前触发；退出码 2 可拦截本次调用，'
+              '输出 {"decision":"allow"|"ask"} 可免审/强制审批。',
           canBlock: true,
         ),
       AgentHookEvent.postToolUse => (

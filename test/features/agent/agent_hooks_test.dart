@@ -195,6 +195,25 @@ void main() {
       );
     });
 
+    test('exit 0 + stdout JSON decision allow/approve → allow（免审）', () {
+      final r = interpretAgentHookExit(
+        0,
+        '{"decision":"allow","reason":"白名单命令"}',
+        '',
+      );
+      expect(r.outcome, AgentHookOutcome.allow);
+      expect(r.message, '白名单命令');
+      expect(
+        interpretAgentHookExit(0, '{"decision":"approve"}', '').outcome,
+        AgentHookOutcome.allow,
+      );
+    });
+
+    test('exit 0 + stdout JSON decision ask → ask（强制审批）', () {
+      final r = interpretAgentHookExit(0, '{"decision":"ask"}', '');
+      expect(r.outcome, AgentHookOutcome.ask);
+    });
+
     test('exit 0 + 非 decision JSON / 普通输出 → proceed', () {
       expect(interpretAgentHookExit(0, '{"foo":1}', '').outcome,
           AgentHookOutcome.proceed);

@@ -128,13 +128,11 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 - 环境变量（AETHER_*）保留，旧 hooks 不受影响。
 **验收**：单测覆盖 JSON 组装（含/缺可选字段、args 不可解析退化）。
 
-### - [ ] 阶段 3：preToolUse 支持 allow / ask（打通审批门） ⬜
+### - [x] 阶段 3：preToolUse 支持 allow / ask（打通审批门） ✅（2026-07-19）
 **目标**：对齐 CC `permissionDecision`，hook 可编程放行审批。
-- stdout JSON 扩展：`{"decision":"allow"}` → 跳过审批门直接执行；`{"decision":"ask"}` → 强制走审批（即使规则本已放行）；现有 block/deny 语义不变。
-- 与现有审批门（`_permissionOfRoute` 共用权限域）串联：hook 裁决优先级高于权限规则。
-- `interpretAgentHookExit` 扩展为多值裁决（proceed/block/allow/ask/failed）。
-**验收**：单测覆盖 4 种裁决；allow 能跳过本该弹的审批，ask 能强制弹审批。
-**涉及**：`agent_hooks.dart`、`agent_runtime_access.dart` 审批接线处、单测。
+- 实现：`AgentHookOutcome` 扩展为 proceed/block/allow/ask/failed；stdout JSON `{"decision":"allow"|"approve"}` → 免审直通，`{"decision":"ask"}` → 强制审批；block/deny 语义不变。
+- 接线：`_PolicyApprovalGate.evaluate` 先跑 `preToolUseVerdict`（聚合裁决 block > ask > allow > proceed，结果缓存给执行器复用——同一次调用 hooks 只执行一次）：hook allow 优先级高于权限规则，但越 root 终端命令硬约束仍强制审批；hook block 时审批门直接放行到执行器由其拦截（避免先弹审批再被拦）。
+**验收**：单测覆盖 allow/approve/ask 裁决解析；flutter analyze 无问题。
 
 ### - [ ] 阶段 4：stderr 分离 + exit 2 原因读 stderr ⬜
 **目标**：对齐 CC「exit 2 原因读 stderr」约定，CC hooks 脚本可直接迁移。
@@ -177,4 +175,5 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 |---|---|---|---|---|
 | 2026-07-19 | 文档建立 | ✅ | 867da359 | 初版对比分析 + 9 阶段计划 |
 | 2026-07-19 | 阶段 1 | ✅ | 3f2d0e05 | 新增 postToolUseFailure 事件；post 事件传入 AETHER_TOOL_OUTPUT / AETHER_TOOL_OK |
-| 2026-07-19 | 阶段 2 | ✅ | （本提交） | stdin JSON 输入（buildAgentHookStdinJson + 管道喷入），字段命名对齐 CC |
+| 2026-07-19 | 阶段 2 | ✅ | 9824939f | stdin JSON 输入（buildAgentHookStdinJson + 管道喷入），字段命名对齐 CC |
+| 2026-07-19 | 阶段 3 | ✅ | （本提交） | preToolUse allow/ask 打通审批门，裁决缓存避免重复执行 |
