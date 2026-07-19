@@ -46,6 +46,21 @@ void main() {
     expect(decoded[2].hook.event, AgentHookEvent.taskStart);
   });
 
+  test('turnStart/turnEnd 生命周期事件可编码解码', () {
+    final decoded = decodeAgentManualHooks(encodeAgentManualHooks(const [
+      AgentManualHook(
+        name: '轮次开始',
+        hook: AgentHook(event: AgentHookEvent.turnStart, command: 'echo s'),
+      ),
+      AgentManualHook(
+        name: '轮次结束',
+        hook: AgentHook(event: AgentHookEvent.turnEnd, command: 'echo e'),
+      ),
+    ]))!;
+    expect(decoded[0].hook.event, AgentHookEvent.turnStart);
+    expect(decoded[1].hook.event, AgentHookEvent.turnEnd);
+  });
+
   test('坏数据返回 null，坏条目丢弃', () {
     expect(decodeAgentManualHooks('not json'), isNull);
     expect(decodeAgentManualHooks('{"a":1}'), isNull);

@@ -9,16 +9,23 @@ import 'dart:convert';
 
 import 'package:aetherlink_flutter/features/agent/domain/permission_rule.dart';
 
-/// Hook 事件。
+/// Hook 事件（生命周期对标 LiveAgent：agent_start / turn_start /
+/// tool_execution_start / tool_execution_end / turn_end / agent_end）。
 enum AgentHookEvent {
   /// 任务启动/续跑时（不阻断，只观测/准备环境）。
   taskStart,
+
+  /// 每轮开始（LLM 调用前，不阻断）。
+  turnStart,
 
   /// 工具执行前：可阻断本次调用（阻断信息作为工具失败结果回给模型）。
   preToolUse,
 
   /// 工具成功执行后：可把反馈追加进工具结果（如格式化/编译报错）。
   postToolUse,
+
+  /// 每轮结束（本轮工具全部执行完，不阻断）。
+  turnEnd,
 
   /// 任务将要完成前：可阻止收尾并把原因作为新输入续跑（收尾校验）。
   stop,
