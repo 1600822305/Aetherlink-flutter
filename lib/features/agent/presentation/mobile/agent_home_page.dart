@@ -9,7 +9,9 @@ import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_hooks_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_mcp_page.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_permission_rules_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_profile_edit_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_skills_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_task_shell.dart';
@@ -103,7 +105,7 @@ class AgentHomePage extends ConsumerWidget {
                 ],
               ),
         // 三点下拉菜单（决策 30）：智能体专属能力入口。当前有
-        // 「技能」「MCP」，记忆/工作流/rules 后续逐项加入。
+        // 「技能」「MCP」「权限规则」「Hooks」，记忆/工作流后续逐项加入。
         actions: [
           Builder(
             builder: (context) => PopupMenuButton<String>(
@@ -115,6 +117,10 @@ class AgentHomePage extends ConsumerWidget {
               onSelected: (value) {
                 if (value == 'skills') showAgentSkillsPage(context);
                 if (value == 'mcp') showAgentMcpPage(context);
+                if (value == 'permissions') {
+                  showAgentPermissionRulesPage(context);
+                }
+                if (value == 'hooks') showAgentHooksPage(context);
                 if (value == 'settings') {
                   context.push('${AppRouter.settingsPath}?mode=agent');
                 }
@@ -149,6 +155,38 @@ class AgentHomePage extends ConsumerWidget {
                       ),
                       const SizedBox(width: 10),
                       const Text('MCP'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'permissions',
+                  child: Row(
+                    children: [
+                      Icon(
+                        LucideIcons.shieldCheck,
+                        size: 16,
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.7,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      const Text('权限规则'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'hooks',
+                  child: Row(
+                    children: [
+                      Icon(
+                        LucideIcons.webhook,
+                        size: 16,
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.7,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      const Text('Hooks'),
                     ],
                   ),
                 ),
