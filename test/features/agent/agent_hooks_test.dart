@@ -167,6 +167,28 @@ void main() {
     });
   });
 
+  group('splitAgentHookOutput', () {
+    test('标记行前后拆为 stdout / stderr', () {
+      final r = splitAgentHookOutput(
+        'hook stdout\n$kAgentHookStderrMarker\n违规：禁止 push\n',
+      );
+      expect(r.stdout, 'hook stdout');
+      expect(r.stderr, '违规：禁止 push');
+    });
+
+    test('无标记时全部视为 stdout', () {
+      final r = splitAgentHookOutput('plain output');
+      expect(r.stdout, 'plain output');
+      expect(r.stderr, '');
+    });
+
+    test('stderr 为空时返回空串', () {
+      final r = splitAgentHookOutput('out\n$kAgentHookStderrMarker\n');
+      expect(r.stdout, 'out');
+      expect(r.stderr, '');
+    });
+  });
+
   group('interpretAgentHookExit', () {
     test('exit 0 无输出 → proceed', () {
       final r = interpretAgentHookExit(0, '', '');

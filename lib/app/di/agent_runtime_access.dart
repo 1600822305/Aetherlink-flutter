@@ -1471,9 +1471,14 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
           cwd: _workspaceRoot,
         );
       }
+      // stderr 经临时文件 + 标记行回传（终端后端合流，见
+      // [kAgentHookStderrMarker]）；末尾子 shell 把 hook 退出码透传回来。
       final result = await runTerminalTool(_refOf(), 'terminal_execute', {
-        'command': '$exports; printf %s ${_shellQuote(stdinJson)} | '
-            '( ${hook.command} )',
+        'command': '__ahs="\${TMPDIR:-/tmp}/.aether_hook_stderr.\$\$"; '
+            '$exports; printf %s ${_shellQuote(stdinJson)} | '
+            '( ${hook.command} ) 2>"\$__ahs"; __ahc=\$?; '
+            "printf '\\n%s\\n' ${_shellQuote(kAgentHookStderrMarker)}; "
+            'cat "\$__ahs" 2>/dev/null; rm -f "\$__ahs"; ( exit \$__ahc )',
         'workspace': _boundWorkspaceId,
         'timeout_ms': hook.timeoutSeconds * 1000,
       });
@@ -1509,10 +1514,11 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
       }
       final exitCode = data['exitCode'];
       final stdout = data['stdout'];
+      final split = splitAgentHookOutput(stdout is String ? stdout : '');
       return interpretAgentHookExit(
         exitCode is int ? exitCode : 0,
-        stdout is String ? stdout : '',
-        '',
+        split.stdout,
+        split.stderr,
       );
     } catch (e) {
       return AgentHookResult(

@@ -134,12 +134,11 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 - 接线：`_PolicyApprovalGate.evaluate` 先跑 `preToolUseVerdict`（聚合裁决 block > ask > allow > proceed，结果缓存给执行器复用——同一次调用 hooks 只执行一次）：hook allow 优先级高于权限规则，但越 root 终端命令硬约束仍强制审批；hook block 时审批门直接放行到执行器由其拦截（避免先弹审批再被拦）。
 **验收**：单测覆盖 allow/approve/ask 裁决解析；flutter analyze 无问题。
 
-### - [ ] 阶段 4：stderr 分离 + exit 2 原因读 stderr ⬜
+### - [x] 阶段 4：stderr 分离 + exit 2 原因读 stderr ✅（2026-07-19）
 **目标**：对齐 CC「exit 2 原因读 stderr」约定，CC hooks 脚本可直接迁移。
-- 终端执行结果需分离 stdout/stderr（若 `terminal_execute` 后端不支持，评估加 `2>` 重定向到临时文件或扩展后端返回结构）。
-- `interpretAgentHookExit` 已支持 stderr 参数，接线处把真实 stderr 传入（当前传空串）。
-**验收**：hook 脚本 `echo reason >&2; exit 2` 的 reason 能回给模型。
-**涉及**：终端后端返回结构、`agent_runtime_access.dart`。
+- 实现：终端后端 stdout/stderr 合流（PTY 会话），包装命令把 hook stderr `2>` 重定向到临时文件，命令结束后紧跟标记行 `<<<AETHER_HOOK_STDERR>>>` 回放；`splitAgentHookOutput`（agent_hooks.dart，可单测）拆回两路，末尾子 shell `( exit $? )` 透传 hook 退出码。
+- `interpretAgentHookExit` 接线处传入真实 stderr：exit 2 时 stderr 优先作为原因，hook 自身失败时 stderr 作为错误信息。
+**验收**：单测覆盖拆分（有/无标记、空 stderr）；hook 脚本 `echo reason >&2; exit 2` 的 reason 能回给模型。
 
 ### - [ ] 阶段 5：additionalContext 注入 + userPromptSubmit 事件 ⬜
 **目标**：hook 能向对话注入上下文；用户发消息时可拦截/加工。
@@ -176,4 +175,5 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 | 2026-07-19 | 文档建立 | ✅ | 867da359 | 初版对比分析 + 9 阶段计划 |
 | 2026-07-19 | 阶段 1 | ✅ | 3f2d0e05 | 新增 postToolUseFailure 事件；post 事件传入 AETHER_TOOL_OUTPUT / AETHER_TOOL_OK |
 | 2026-07-19 | 阶段 2 | ✅ | 9824939f | stdin JSON 输入（buildAgentHookStdinJson + 管道喷入），字段命名对齐 CC |
-| 2026-07-19 | 阶段 3 | ✅ | （本提交） | preToolUse allow/ask 打通审批门，裁决缓存避免重复执行 |
+| 2026-07-19 | 阶段 3 | ✅ | 13104088 | preToolUse allow/ask 打通审批门，裁决缓存避免重复执行 |
+| 2026-07-19 | 阶段 4 | ✅ | （本提交） | stderr 经临时文件+标记行回传，exit 2 原因读 stderr |

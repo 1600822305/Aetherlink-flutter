@@ -156,6 +156,24 @@ List<AgentHook> hooksForToolCall(
   ];
 }
 
+/// hook 命令包装层回传 stderr 用的分隔标记（终端后端 stdout/stderr
+/// 合流，包装命令把 stderr 重定向到临时文件，命令结束后紧跟标记行
+/// 回放，由 [splitAgentHookOutput] 拆回两路）。
+const String kAgentHookStderrMarker = '<<<AETHER_HOOK_STDERR>>>';
+
+/// 拆分 hook 终端合流输出：标记行前为 stdout，标记行后为 stderr；
+/// 无标记时全部视为 stdout。
+({String stdout, String stderr}) splitAgentHookOutput(String combined) {
+  final idx = combined.indexOf(kAgentHookStderrMarker);
+  if (idx < 0) return (stdout: combined, stderr: '');
+  return (
+    stdout: combined.substring(0, idx).trimRight(),
+    stderr: combined
+        .substring(idx + kAgentHookStderrMarker.length)
+        .trim(),
+  );
+}
+
 /// hook 命令执行结果的裁决。
 enum AgentHookOutcome {
   /// 放行（exit 0 且无裁决输出）：不干预审批门。
