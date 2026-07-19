@@ -198,3 +198,4 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 | 2026-07-19 | 差距补齐 ①② | ✅ | 136d2086 | http hook SSRF 防护（对标 CC ssrfGuard：DNS 解析后阻断私网/链路本地/云 metadata/CGNAT，loopback 放行）+ 输出协议新增 updatedInput（preToolUse 改写工具入参后放行，改写事实落时间线）与 systemMessage（展示给用户的提示，落时间线不进模型上下文） |
 | 2026-07-19 | 差距补齐 ③④ | ✅ | 623bba6d | 配置字段 once（本次任务内只触发一次）/ statusMessage（运行中自定义时间线文案）/ model（prompt/agent 型按模型 id 指定裁决模型，缺省回退当前默认模型）+ 新增 agent 型 hook（对标 CC execAgentHook：多轮函数调用循环的小智能体校验器，工具为工作区终端 run_command + submit_result 结构化交回 {"ok":...} 裁决，协议同 prompt 型；轮数上限 10）；设置页支持 agent 类型表单与新字段 |
 | 2026-07-19 | 差距补齐 ⑤ | ✅ | 0ce3b323 | asyncRewake（command 型配置字段，对标 CC）：hook 直接转后台不阻塞主链，后台跑完若阻断（退出码 2）把反馈作为排队消息注入任务，引擎在安全点消费叫醒模型（任务已结束时留待续跑进上下文）；时间线落「转后台→后台完成/后台阻断·反馈已注入」；设置页 command 型加 asyncRewake 开关 |
+| 2026-07-19 | 剩余任务 ⑥ | ✅ | （本提交） | disableAllHooks 全局开关（对标 CC settings）：App 级布尔设置（agent_hooks_settings.dart，默认 false），执行层 _hooks() / runUserPromptSubmitHooks 统一短路（所有事件不执行，配置与信任状态不变，试跑不受限）；开且本有配置时落时间线提示；设置页顶部警告色总开关 |

@@ -17,6 +17,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/network_proxy_access.dart';
 import 'package:aetherlink_flutter/core/network/dio_client.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_hooks_settings.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_hooks_trust.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_manual_hooks.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
@@ -352,12 +353,25 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
   }
 
   /// hooks 配置（任务运行内只读一次），见 [loadAgentHooksConfig]。
+  /// disableAllHooks 全局开关（对标 CC）打开时返回 null 短路所有
+  /// 事件；本可命中 hooks 时落一条时间线提示，避免用户以为
+  /// hooks 生效了。
   Future<AgentHooksConfig?> _hooks() async {
     if (_configLoaded) return _config;
     _configLoaded = true;
     if (_boundWorkspaceId == null) return null;
     final loaded = await loadAgentHooksConfig(_refOf(), _boundWorkspaceId);
     _workspaceRoot = loaded.root;
+    if (_refOf().read(agentDisableAllHooksProvider)) {
+      final sink = timeline;
+      if (loaded.config != null && sink != null) {
+        try {
+          await sink('[hook] 已被全局开关停用（本次任务内所有 hooks 不执行）');
+        } catch (_) {}
+      }
+      _config = null;
+      return null;
+    }
     _config = loaded.config;
     return _config;
   }
@@ -523,6 +537,8 @@ Future<AgentHookResult?> runUserPromptSubmitHooks(
   required String workspaceId,
   required String prompt,
 }) async {
+  // disableAllHooks 全局开关：打开时 userPromptSubmit 同样短路。
+  if (ref.read(agentDisableAllHooksProvider)) return null;
   final loaded = await loadAgentHooksConfig(ref, workspaceId);
   final config = loaded.config;
   if (config == null) return null;

@@ -15,6 +15,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/agent_runtime_access.dart';
 import 'package:aetherlink_flutter/app/di/workspace_access.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_hooks_settings.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_hooks_trust.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_manual_hooks.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_hooks.dart';
@@ -323,6 +324,9 @@ class AgentHooksPage extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 12),
+          // disableAllHooks 全局总开关：应急/调试时一键停用所有 hooks。
+          const _DisableAllHooksCard(),
+          const SizedBox(height: 12),
           // 仓库 hooks 置顶：待审阅/内容变更是安全敏感状态，必须先看到。
           const _RepoHooksEntry(),
           const SizedBox(height: 12),
@@ -342,6 +346,62 @@ class AgentHooksPage extends ConsumerWidget {
             const SizedBox(height: 8),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// disableAllHooks 全局总开关（对标 Claude Code 的 disableAllHooks）：
+/// 开时所有事件的 hooks 暂停执行（含已信任的仓库 hooks），配置与
+/// 信任状态不变，关掉即恢复；试跑是显式用户操作，不受开关限制。
+/// 开时用警告色醒目提示，避免用户忘记关回。
+class _DisableAllHooksCard extends ConsumerWidget {
+  const _DisableAllHooksCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final disabled = ref.watch(agentDisableAllHooksProvider);
+    final color = disabled ? theme.colorScheme.error : theme.dividerColor;
+    return Container(
+      decoration: BoxDecoration(
+        color: disabled
+            ? theme.colorScheme.errorContainer.withValues(alpha: 0.35)
+            : theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color),
+      ),
+      child: SwitchListTile(
+        value: disabled,
+        onChanged: (v) =>
+            ref.read(agentDisableAllHooksProvider.notifier).set(v),
+        secondary: Icon(
+          disabled ? LucideIcons.octagonPause : LucideIcons.power,
+          size: 18,
+          color: disabled
+              ? theme.colorScheme.error
+              : theme.colorScheme.onSurfaceVariant,
+        ),
+        title: Text(
+          '停用所有 Hooks',
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: disabled ? theme.colorScheme.error : null,
+          ),
+        ),
+        subtitle: Text(
+          disabled
+              ? '所有事件的 hooks 已暂停执行（含已信任的仓库 hooks）。'
+                  '配置与信任状态不受影响，关闭开关即恢复；试跑不受限制。'
+              : '应急/调试用总开关：打开后所有事件的 hooks 暂停执行，'
+                  '不改配置与信任状态。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: disabled
+                ? theme.colorScheme.error
+                : theme.colorScheme.onSurfaceVariant,
+            height: 1.4,
+          ),
+        ),
       ),
     );
   }
