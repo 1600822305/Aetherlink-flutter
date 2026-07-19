@@ -145,6 +145,22 @@ _EventMeta _metaOf(AgentHookEvent event, ColorScheme scheme) =>
           description: '工具执行失败后触发；hook 反馈会回填给模型（如失败原因分析）。',
           canBlock: true,
         ),
+      AgentHookEvent.permissionRequest => (
+          stage: 'TOOL',
+          color: Colors.orange,
+          title: 'permissionRequest',
+          description: '审批弹窗弹出前触发（仅本要弹审批时）；hook 可免审放行、'
+              '强制拒绝或照常审批（越工作区 root 的命令不可免审）。',
+          canBlock: true,
+        ),
+      AgentHookEvent.permissionDenied => (
+          stage: 'TOOL',
+          color: Colors.orange,
+          title: 'permissionDenied',
+          description: '用户拒绝审批后触发（观测型，不阻断）；拒绝原因经 '
+              'tool_response 传入，可用于记录/通知。',
+          canBlock: false,
+        ),
       AgentHookEvent.turnEnd => (
           stage: 'TURN',
           color: Colors.blue,
@@ -200,6 +216,8 @@ const List<(String, List<AgentHookEvent>)> _kStageGroups = [
       AgentHookEvent.preToolUse,
       AgentHookEvent.postToolUse,
       AgentHookEvent.postToolUseFailure,
+      AgentHookEvent.permissionRequest,
+      AgentHookEvent.permissionDenied,
     ]
   ),
   (

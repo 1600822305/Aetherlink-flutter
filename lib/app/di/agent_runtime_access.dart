@@ -958,6 +958,49 @@ class _PolicyApprovalGate implements ApprovalGate {
     AgentToolCallRequest call,
     AgentTask task,
   ) async {
+    final base = await _evaluateBase(call, task);
+    if (base != ApprovalRequirement.needsUser) return base;
+    // permissionRequest hooks（对标 CC）：仅在即将弹审批时触发，
+    // hook 可免审放行（越 root 硬约束不可覆盖）/ 强制拒绝 / 照常审批。
+    final verdict = await _hookExecutor?.permissionRequestVerdict(call);
+    switch (verdict?.outcome) {
+      case AgentHookOutcome.block:
+        return ApprovalRequirement.forbid;
+      case AgentHookOutcome.allow:
+        if (await _escapesRootHardConstraint(call, task)) {
+          return ApprovalRequirement.needsUser;
+        }
+        return ApprovalRequirement.allow;
+      default:
+        return ApprovalRequirement.needsUser;
+    }
+  }
+
+  /// 越出工作区 root 的终端命令硬约束（任何 allow 均不可覆盖）。
+  Future<bool> _escapesRootHardConstraint(
+    AgentToolCallRequest call,
+    AgentTask task,
+  ) async {
+    final route = _routes[call.name];
+    if (route is! TerminalToolRoute) return false;
+    var args = _decodeArgs(call.argsJson);
+    if (args['workspace'] == null ||
+        args['workspace'].toString().trim().isEmpty) {
+      args = {...args, 'workspace': task.workspaceId};
+    }
+    List<Workspace> workspaces;
+    try {
+      workspaces = await loadWorkspaces(_refOf());
+    } catch (_) {
+      workspaces = const [];
+    }
+    return terminalCommandEscapesRoot(call.name, args, workspaces: workspaces);
+  }
+
+  Future<ApprovalRequirement> _evaluateBase(
+    AgentToolCallRequest call,
+    AgentTask task,
+  ) async {
     final route = _routes[call.name];
     if (route == null) return ApprovalRequirement.allow; // 未知工具由执行器兜底
     var args = _decodeArgs(call.argsJson);
@@ -1140,9 +1183,17 @@ class _PolicyApprovalGate implements ApprovalGate {
             ));
       }
     }
-    return decision.approved
-        ? const ApprovalVerdict.approved()
-        : ApprovalVerdict.denied(decision.reason);
+    if (!decision.approved) {
+      // permissionDenied hooks（对标 CC，观测型）：用户拒绝审批后
+      // fire-and-forget，不阻断任务继续。
+      final hooks = _hookExecutor;
+      if (hooks != null) {
+        unawaited(
+            hooks.runPermissionDeniedHooks(call, reason: decision.reason));
+      }
+      return ApprovalVerdict.denied(decision.reason);
+    }
+    return const ApprovalVerdict.approved();
   }
 
   /// auto 模式的免审范围：只覆盖文件编辑与终端两组工作区工具，且所有

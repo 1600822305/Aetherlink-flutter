@@ -31,6 +31,15 @@ enum AgentHookEvent {
   /// 工具执行失败后：可把反馈追加进失败结果（如失败原因分析/补救提示）。
   postToolUseFailure,
 
+  /// 审批弹窗弹出前（对标 Claude Code PermissionRequest）：可
+  /// allow（免审放行，越 root 硬约束不可覆盖）/ block（强制拒绝，
+  /// 按策略禁止处理）/ ask（照常审批）。仅在本要弹审批时触发。
+  permissionRequest,
+
+  /// 审批被拒绝后（对标 Claude Code PermissionDenied，观测型不阻断）；
+  /// 拒绝原因经 `tool_response` 传入。
+  permissionDenied,
+
   /// 每轮结束（本轮工具全部执行完，不阻断）。
   turnEnd,
 

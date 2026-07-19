@@ -103,6 +103,41 @@ void main() {
       );
     });
 
+    test('permissionRequest / permissionDenied 事件解析与匹配', () {
+      final config = decodeAgentHooksConfig('''
+{
+  "permissionRequest": [
+    {"type": "command", "matcher": "terminal_*",
+     "pattern": "git push *", "command": "gate.sh"}],
+  "permissionDenied": [
+    {"type": "command", "command": "notify.sh"}]
+}
+''')!;
+      final request = hooksForToolCall(
+        config,
+        AgentHookEvent.permissionRequest,
+        'terminal_execute',
+        ['git push origin main'],
+      );
+      expect(request.single.command, 'gate.sh');
+      expect(
+        hooksForToolCall(
+          config,
+          AgentHookEvent.permissionRequest,
+          'terminal_execute',
+          ['ls'],
+        ),
+        isEmpty,
+      );
+      final denied = hooksForToolCall(
+        config,
+        AgentHookEvent.permissionDenied,
+        'write',
+        const [],
+      );
+      expect(denied.single.command, 'notify.sh');
+    });
+
     test('subagentStart / subagentStop / taskEnd 事件解析', () {
       final config = decodeAgentHooksConfig('''
 {

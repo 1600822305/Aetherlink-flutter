@@ -227,6 +227,79 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     return verdict;
   }
 
+  /// permissionRequest hooks 的聚合裁决（审批门在挂起审批前调用，
+  /// 仅本要弹审批时触发）：allow → 免审直通（越 root 硬约束不可
+  /// 覆盖）；block → 强制拒绝（按策略禁止处理）；其余照常审批。
+  /// 无 hooks 配置或无命中时返回 null。
+  Future<AgentHookResult?> permissionRequestVerdict(
+    AgentToolCallRequest call,
+  ) async {
+    final config = await _hooks();
+    if (config == null || config.isEmpty) return null;
+
+    final route = _routes[call.name];
+    final args = decodeToolArgsJson(call.argsJson);
+    final permission =
+        route == null ? call.name : permissionOfToolRoute(route, call.name);
+    final patterns = route == null
+        ? const <String>['*']
+        : patternsOfToolCall(route, call.name, args);
+    final path = args['path'];
+    final filePath = path is String && path.isNotEmpty ? path : null;
+
+    final hooks = hooksForToolCall(
+        config, AgentHookEvent.permissionRequest, permission, patterns);
+    if (hooks.isEmpty) return null;
+    final results = await _runHooksParallel(
+      hooks,
+      (hook) => _runHook(hook,
+          eventName: AgentHookEvent.permissionRequest.name,
+          toolName: call.name,
+          argsJson: call.argsJson,
+          filePath: filePath),
+      emptyBlockMessage: (hook) => 'hook（${hook.payload}）拒绝了本次审批请求。',
+      label: '${AgentHookEvent.permissionRequest.name}(${call.name})',
+    );
+    final verdict = aggregateAgentHookResults(results);
+    _recordStopSignal(verdict);
+    return verdict;
+  }
+
+  /// permissionDenied hooks（观测型，用户拒绝审批后 fire-and-forget）：
+  /// 拒绝原因经 `tool_response` 传入，不影响任务继续。
+  Future<void> runPermissionDeniedHooks(
+    AgentToolCallRequest call, {
+    String reason = '',
+  }) async {
+    try {
+      final config = await _hooks();
+      if (config == null || config.isEmpty) return;
+      final route = _routes[call.name];
+      final args = decodeToolArgsJson(call.argsJson);
+      final permission =
+          route == null ? call.name : permissionOfToolRoute(route, call.name);
+      final patterns = route == null
+          ? const <String>['*']
+          : patternsOfToolCall(route, call.name, args);
+      final path = args['path'];
+      final filePath = path is String && path.isNotEmpty ? path : null;
+      final hooks = hooksForToolCall(
+          config, AgentHookEvent.permissionDenied, permission, patterns);
+      if (hooks.isEmpty) return;
+      final results = await _runHooksParallel(
+        hooks,
+        (hook) => _runHook(hook,
+            eventName: AgentHookEvent.permissionDenied.name,
+            toolName: call.name,
+            argsJson: call.argsJson,
+            filePath: filePath,
+            toolOutput: reason.isEmpty ? null : reason),
+        label: '${AgentHookEvent.permissionDenied.name}(${call.name})',
+      );
+      _recordStopSignal(aggregateAgentHookResults(results));
+    } catch (_) {}
+  }
+
   /// 同事件命中的多条 hooks 并行执行（对标 Claude Code）：同命令
   /// 去重，裁决由 [aggregateAgentHookResults] 聚合；可选把空原因的
   /// block 补上含 hook 命令的默认文案。[label] 非空且接了时间线
@@ -592,7 +665,9 @@ Future<AgentHookResult> tryRunAgentHook(
 }) {
   final toolEvent = hook.event == AgentHookEvent.preToolUse ||
       hook.event == AgentHookEvent.postToolUse ||
-      hook.event == AgentHookEvent.postToolUseFailure;
+      hook.event == AgentHookEvent.postToolUseFailure ||
+      hook.event == AgentHookEvent.permissionRequest ||
+      hook.event == AgentHookEvent.permissionDenied;
   return _execAgentHook(
     ref,
     hook,
