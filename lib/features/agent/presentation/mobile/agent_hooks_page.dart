@@ -13,6 +13,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:aetherlink_flutter/app/di/agent_runtime_access.dart';
 import 'package:aetherlink_flutter/app/di/workspace_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_hooks_trust.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_manual_hooks.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_hooks.dart';
 
 /// 打开 Hooks 设置页。
@@ -73,14 +74,36 @@ class AgentHooksPage extends ConsumerWidget {
         children: [
           _HintCard(
             theme: theme,
-            text: '在工作区根目录放 .aetherlink/hooks.json 可声明智能体 hooks：'
+            text: 'hook 在任务的关键节点自动执行命令：taskStart（任务启动）、'
                 'preToolUse（工具执行前校验，可拦截）、postToolUse（执行后反馈，'
                 '如自动格式化报错）、stop（收尾校验，不满足可要求继续）。'
-                'hook 命令跑在该工作区终端里，退出码 2 = 阻断（输出回给模型）。\n'
-                'hook 是任意命令，出于安全必须先在这里审阅内容并信任后才会执行；'
-                '文件内容一变，信任自动失效，需重新审阅。',
+                '命令跑在任务绑定工作区的终端里，退出码 2 = 阻断（输出回给模型）。',
           ),
           const SizedBox(height: 12),
+          Text(
+            '我的 hooks',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const _ManualHooksSection(),
+          const SizedBox(height: 20),
+          Text(
+            '仓库 hooks（.aetherlink/hooks.json）',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '仓库携带的 hooks 必须先审阅并信任后才会执行；文件内容一变，'
+            '信任自动失效。',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
           if (workspaces.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 32),
@@ -249,6 +272,284 @@ class _WorkspaceHooksRow extends ConsumerWidget {
                   },
                   child: const Text('信任并启用这些 hooks'),
                 ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 「我的 hooks」：设置页手动管理的全局 hooks（增/改/删/启用开关），
+/// 不依赖仓库文件，天然可信。
+class _ManualHooksSection extends ConsumerWidget {
+  const _ManualHooksSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final hooks = ref.watch(agentManualHooksProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (hooks.isNotEmpty)
+          Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.dividerColor),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                for (var i = 0; i < hooks.length; i++) ...[
+                  if (i > 0)
+                    Divider(height: 1, indent: 12, color: theme.dividerColor),
+                  ListTile(
+                    dense: true,
+                    title: Text(
+                      hooks[i].name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      '${hooks[i].hook.event.name} · ${hooks[i].hook.command}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                    trailing: Switch(
+                      value: hooks[i].enabled,
+                      onChanged: (value) => ref
+                          .read(agentManualHooksProvider.notifier)
+                          .updateAt(i, hooks[i].copyWith(enabled: value)),
+                    ),
+                    onTap: () => _showEditSheet(context, ref, index: i),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        if (hooks.isNotEmpty) const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => _showEditSheet(context, ref),
+          icon: const Icon(LucideIcons.plus, size: 16),
+          label: const Text('添加 hook'),
+        ),
+      ],
+    );
+  }
+
+  /// 添加/编辑弹层；[index] 为空 = 新增。
+  void _showEditSheet(BuildContext context, WidgetRef ref, {int? index}) {
+    final existing =
+        index == null ? null : ref.read(agentManualHooksProvider)[index];
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+        ),
+        child: _ManualHookForm(
+          existing: existing,
+          onSubmit: (hook) {
+            final notifier = ref.read(agentManualHooksProvider.notifier);
+            if (index == null) {
+              notifier.add(hook);
+            } else {
+              notifier.updateAt(index, hook);
+            }
+            Navigator.of(sheetContext).pop();
+          },
+          onDelete: index == null
+              ? null
+              : () {
+                  ref.read(agentManualHooksProvider.notifier).removeAt(index);
+                  Navigator.of(sheetContext).pop();
+                },
+        ),
+      ),
+    );
+  }
+}
+
+class _ManualHookForm extends StatefulWidget {
+  const _ManualHookForm({
+    this.existing,
+    required this.onSubmit,
+    this.onDelete,
+  });
+
+  final AgentManualHook? existing;
+  final void Function(AgentManualHook hook) onSubmit;
+  final VoidCallback? onDelete;
+
+  @override
+  State<_ManualHookForm> createState() => _ManualHookFormState();
+}
+
+class _ManualHookFormState extends State<_ManualHookForm> {
+  late AgentHookEvent _event =
+      widget.existing?.hook.event ?? AgentHookEvent.preToolUse;
+  late final TextEditingController _name =
+      TextEditingController(text: widget.existing?.name ?? '');
+  late final TextEditingController _command =
+      TextEditingController(text: widget.existing?.hook.command ?? '');
+  late final TextEditingController _matcher =
+      TextEditingController(text: widget.existing?.hook.matcher ?? '*');
+  late final TextEditingController _pattern =
+      TextEditingController(text: widget.existing?.hook.pattern ?? '*');
+  late final TextEditingController _timeout = TextEditingController(
+    text: '${widget.existing?.hook.timeoutSeconds ?? kAgentHookDefaultTimeoutSeconds}',
+  );
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _command.dispose();
+    _matcher.dispose();
+    _pattern.dispose();
+    _timeout.dispose();
+    super.dispose();
+  }
+
+  bool get _toolEvent =>
+      _event == AgentHookEvent.preToolUse ||
+      _event == AgentHookEvent.postToolUse;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                widget.existing == null ? '添加 hook' : '编辑 hook',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<AgentHookEvent>(
+                initialValue: _event,
+                decoration: const InputDecoration(
+                  labelText: '事件',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items: [
+                  for (final event in AgentHookEvent.values)
+                    DropdownMenuItem(
+                      value: event,
+                      child: Text(switch (event) {
+                        AgentHookEvent.taskStart => 'taskStart · 任务启动',
+                        AgentHookEvent.preToolUse => 'preToolUse · 工具执行前',
+                        AgentHookEvent.postToolUse =>
+                          'postToolUse · 工具执行后',
+                        AgentHookEvent.stop => 'stop · 收尾校验',
+                      }),
+                    ),
+                ],
+                onChanged: (value) {
+                  if (value != null) setState(() => _event = value);
+                },
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _name,
+                decoration: const InputDecoration(
+                  labelText: '名称（可选）',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _command,
+                maxLines: 3,
+                minLines: 1,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                decoration: const InputDecoration(
+                  labelText: '命令（必填，跑在任务绑定工作区的终端里）',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              if (_toolEvent) ...[
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _matcher,
+                  decoration: const InputDecoration(
+                    labelText: '匹配工具（* 全部；如 terminal_execute / write_file）',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _pattern,
+                  decoration: const InputDecoration(
+                    labelText: '匹配 pattern（* 全部；如 git push * / lib/**）',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 10),
+              TextField(
+                controller: _timeout,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: '超时（秒）',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 14),
+              FilledButton(
+                onPressed: () {
+                  final command = _command.text.trim();
+                  if (command.isEmpty) return;
+                  final name = _name.text.trim();
+                  final matcher = _matcher.text.trim();
+                  final pattern = _pattern.text.trim();
+                  final timeout = int.tryParse(_timeout.text.trim());
+                  widget.onSubmit(AgentManualHook(
+                    name: name.isEmpty ? command : name,
+                    enabled: widget.existing?.enabled ?? true,
+                    hook: AgentHook(
+                      event: _event,
+                      matcher: matcher.isEmpty ? '*' : matcher,
+                      pattern: pattern.isEmpty ? '*' : pattern,
+                      command: command,
+                      timeoutSeconds: timeout != null && timeout > 0
+                          ? timeout
+                          : kAgentHookDefaultTimeoutSeconds,
+                    ),
+                  ));
+                },
+                child: const Text('保存'),
+              ),
+              if (widget.onDelete != null) ...[
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: widget.onDelete,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: theme.colorScheme.error,
+                  ),
+                  child: const Text('删除此 hook'),
+                ),
+              ],
             ],
           ),
         ),

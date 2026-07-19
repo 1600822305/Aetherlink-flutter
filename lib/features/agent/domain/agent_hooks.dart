@@ -9,8 +9,11 @@ import 'dart:convert';
 
 import 'package:aetherlink_flutter/features/agent/domain/permission_rule.dart';
 
-/// Hook 事件（第一期三个）。
+/// Hook 事件。
 enum AgentHookEvent {
+  /// 任务启动/续跑时（不阻断，只观测/准备环境）。
+  taskStart,
+
   /// 工具执行前：可阻断本次调用（阻断信息作为工具失败结果回给模型）。
   preToolUse,
 
