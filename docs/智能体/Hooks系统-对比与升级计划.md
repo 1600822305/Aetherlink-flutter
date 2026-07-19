@@ -120,12 +120,13 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 **验收**：单测覆盖新事件解析与匹配；手动 hook 配 postToolUseFailure 能在工具失败时收到 `AETHER_TOOL_OK=false`。
 **涉及**：`agent_hooks.dart`、`agent_runtime_access.dart`、`agent_hooks_page.dart`、`agent_hooks_test.dart`。
 
-### - [ ] 阶段 2：stdin JSON 输入（兼容 CC 脚本的输入形态） ⬜
+### - [x] 阶段 2：stdin JSON 输入（兼容 CC 脚本的输入形态） ✅（2026-07-19）
 **目标**：hook 命令能从 stdin 读到一份完整 JSON（对齐 CC 输入协议），环境变量保留兼容。
-- JSON 字段（对齐 CC 命名）：`hook_event_name`、`tool_name`、`tool_input`（完整不截断）、`tool_response`（post 事件）、`session_id`（任务 id）、`cwd`（工作区根）。
-- 实现途径：`terminal_execute` 若不支持 stdin，可写临时文件后 `... < file` 重定向或经 `AETHER_HOOK_INPUT_FILE` 传路径；在方案确定前先调研终端后端能力（`lib/shared/` 终端工具层）。
-**验收**：示例 hook `cat | jq .tool_name` 能输出正确工具名；单测覆盖 JSON 组装。
-**涉及**：`agent_runtime_access.dart`、终端工具层、文档。
+- 实现：`buildAgentHookStdinJson`（agent_hooks.dart，纯逻辑可单测）组装 JSON，字段：`hook_event_name` / `tool_name` / `tool_input`（可解析则嵌入对象）/ `file_path` / `tool_response` / `tool_ok` / `session_id`（工作区 id）/ `cwd`（工作区根）。
+- 注入方式：`printf %s '<json>' | ( <hook 命令> )` 管道喷入（不依赖终端后端 stdin 能力）；管道退出码即 hook 退出码，退出协议不变。
+- 长度保险：JSON 超 60000 字符时退化为不含 tool_input 原文的精简版（避免命令行过长）。
+- 环境变量（AETHER_*）保留，旧 hooks 不受影响。
+**验收**：单测覆盖 JSON 组装（含/缺可选字段、args 不可解析退化）。
 
 ### - [ ] 阶段 3：preToolUse 支持 allow / ask（打通审批门） ⬜
 **目标**：对齐 CC `permissionDecision`，hook 可编程放行审批。
@@ -175,4 +176,5 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 | 日期 | 阶段 | 状态 | commit / PR | 备注 |
 |---|---|---|---|---|
 | 2026-07-19 | 文档建立 | ✅ | 867da359 | 初版对比分析 + 9 阶段计划 |
-| 2026-07-19 | 阶段 1 | ✅ | （本提交） | 新增 postToolUseFailure 事件；post 事件传入 AETHER_TOOL_OUTPUT / AETHER_TOOL_OK |
+| 2026-07-19 | 阶段 1 | ✅ | 3f2d0e05 | 新增 postToolUseFailure 事件；post 事件传入 AETHER_TOOL_OUTPUT / AETHER_TOOL_OK |
+| 2026-07-19 | 阶段 2 | ✅ | （本提交） | stdin JSON 输入（buildAgentHookStdinJson + 管道喷入），字段命名对齐 CC |

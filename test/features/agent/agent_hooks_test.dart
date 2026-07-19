@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_hooks.dart';
@@ -124,6 +126,44 @@ void main() {
         ),
         isEmpty,
       );
+    });
+  });
+
+  group('buildAgentHookStdinJson', () {
+    test('args 可解析时以 JSON 对象嵌入，含全部上下文字段', () {
+      final raw = buildAgentHookStdinJson(
+        eventName: 'postToolUse',
+        toolName: 'terminal_execute',
+        argsJson: '{"command":"ls -la"}',
+        filePath: '/ws/a.dart',
+        toolOutput: 'total 0',
+        toolOk: true,
+        sessionId: 'ws-1',
+        cwd: '/ws',
+      );
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      expect(json['hook_event_name'], 'postToolUse');
+      expect(json['tool_name'], 'terminal_execute');
+      expect((json['tool_input'] as Map)['command'], 'ls -la');
+      expect(json['file_path'], '/ws/a.dart');
+      expect(json['tool_response'], 'total 0');
+      expect(json['tool_ok'], true);
+      expect(json['session_id'], 'ws-1');
+      expect(json['cwd'], '/ws');
+    });
+
+    test('args 不可解析时按原文字符串；可选字段缺省不输出', () {
+      final json = jsonDecode(buildAgentHookStdinJson(
+        eventName: 'preToolUse',
+        toolName: 'write',
+        argsJson: 'not json',
+      )) as Map<String, dynamic>;
+      expect(json['tool_input'], 'not json');
+      expect(json.containsKey('tool_response'), isFalse);
+      expect(json.containsKey('tool_ok'), isFalse);
+      expect(json.containsKey('file_path'), isFalse);
+      expect(json.containsKey('session_id'), isFalse);
+      expect(json.containsKey('cwd'), isFalse);
     });
   });
 

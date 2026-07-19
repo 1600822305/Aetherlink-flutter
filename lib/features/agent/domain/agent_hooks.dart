@@ -108,6 +108,37 @@ AgentHooksConfig? decodeAgentHooksConfig(String? raw) {
   return AgentHooksConfig(hooks: hooks);
 }
 
+/// 组装 hook 命令的 stdin JSON（字段命名对齐 Claude Code 输入协议：
+/// `hook_event_name` / `tool_name` / `tool_input` / `tool_response`）。
+/// [argsJson] 可解析时以 JSON 对象嵌入 `tool_input`，否则按原文字符串。
+String buildAgentHookStdinJson({
+  required String eventName,
+  required String toolName,
+  required String argsJson,
+  String? filePath,
+  String? toolOutput,
+  bool? toolOk,
+  String? sessionId,
+  String? cwd,
+}) {
+  Object? toolInput;
+  try {
+    toolInput = jsonDecode(argsJson);
+  } catch (_) {
+    toolInput = argsJson;
+  }
+  return jsonEncode({
+    'hook_event_name': eventName,
+    'tool_name': toolName,
+    'tool_input': toolInput,
+    if (filePath != null && filePath.isNotEmpty) 'file_path': filePath,
+    if (toolOutput != null) 'tool_response': toolOutput,
+    if (toolOk != null) 'tool_ok': toolOk,
+    if (sessionId != null) 'session_id': sessionId,
+    if (cwd != null) 'cwd': cwd,
+  });
+}
+
 /// 一次工具调用命中的 hooks：matcher 命中权限域，且任一调用 pattern
 /// 命中 hook 的 pattern。[patterns] 为空按 `*` 处理（非终端/文件工具）。
 List<AgentHook> hooksForToolCall(

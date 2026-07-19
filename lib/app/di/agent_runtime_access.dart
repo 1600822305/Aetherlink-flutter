@@ -1209,6 +1209,7 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
 
   AgentHooksConfig? _config;
   bool _configLoaded = false;
+  String? _workspaceRoot;
 
   /// hooks 配置（任务运行内只读一次）：设置页手动添加的 hooks（天然
   /// 可信，不走文件信任门槛）+ 已信任的仓库 hooks.json。无绑定
@@ -1228,6 +1229,7 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
       final workspaces = await loadWorkspaces(ref);
       final bound = workspaces.where((w) => w.id == workspaceId).firstOrNull;
       if (bound != null) {
+        _workspaceRoot = bound.root;
         final raw =
             await _readWorkspaceFile(ref, bound, '.aetherlink/hooks.json');
         if (raw != null &&
@@ -1262,7 +1264,10 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
     for (final hook in hooksForToolCall(
         config, AgentHookEvent.preToolUse, permission, patterns)) {
       final result = await _runHook(hook,
-          toolName: call.name, argsJson: call.argsJson, filePath: filePath);
+          eventName: AgentHookEvent.preToolUse.name,
+          toolName: call.name,
+          argsJson: call.argsJson,
+          filePath: filePath);
       if (result.outcome == AgentHookOutcome.block) {
         return AgentToolResult(
           ok: false,
@@ -1283,6 +1288,7 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
     for (final hook
         in hooksForToolCall(config, postEvent, permission, patterns)) {
       final result = await _runHook(hook,
+          eventName: postEvent.name,
           toolName: call.name,
           argsJson: call.argsJson,
           filePath: filePath,
@@ -1315,7 +1321,8 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
       final config = await _hooks();
       if (config == null) return;
       for (final hook in config.ofEvent(event)) {
-        await _runHook(hook, toolName: event.name, argsJson: '{}');
+        await _runHook(hook,
+            eventName: event.name, toolName: event.name, argsJson: '{}');
       }
     } catch (_) {}
   }
@@ -1324,7 +1331,10 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
     final config = await _hooks();
     if (config == null) return null;
     for (final hook in config.ofEvent(AgentHookEvent.stop)) {
-      final result = await _runHook(hook, toolName: 'stop', argsJson: '{}');
+      final result = await _runHook(hook,
+          eventName: AgentHookEvent.stop.name,
+          toolName: 'stop',
+          argsJson: '{}');
       if (result.outcome == AgentHookOutcome.block) {
         return result.message.isEmpty
             ? 'hook（${hook.command}）阻止了收尾。'
@@ -1334,12 +1344,15 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
     return null;
   }
 
-  /// 在绑定工作区里跑一条 hook 命令：现场上下文经环境变量传入
-  /// （AETHER_TOOL / AETHER_ARGS_JSON / AETHER_FILE_PATH，post 事件另有
-  /// AETHER_TOOL_OUTPUT / AETHER_TOOL_OK），超时/异常按 hook 自身失败
-  /// 处理（不阻断）。
+  /// 在绑定工作区里跑一条 hook 命令：现场上下文两路传入——
+  /// ① stdin JSON（字段命名对齐 Claude Code，见
+  /// [buildAgentHookStdinJson]）；② 环境变量（AETHER_TOOL /
+  /// AETHER_ARGS_JSON / AETHER_FILE_PATH，post 事件另有
+  /// AETHER_TOOL_OUTPUT / AETHER_TOOL_OK）。超时/异常按 hook 自身
+  /// 失败处理（不阻断）。
   Future<AgentHookResult> _runHook(
     AgentHook hook, {
+    required String eventName,
     required String toolName,
     required String argsJson,
     String? filePath,
@@ -1362,8 +1375,32 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
         if (toolOk != null)
           'export AETHER_TOOL_OK=${toolOk ? 'true' : 'false'}',
       ].join('; ');
+      var stdinJson = buildAgentHookStdinJson(
+        eventName: eventName,
+        toolName: toolName,
+        argsJson: argsJson,
+        filePath: filePath,
+        toolOutput: toolOutput,
+        toolOk: toolOk,
+        sessionId: _boundWorkspaceId,
+        cwd: _workspaceRoot,
+      );
+      // 命令行长度保险：超长时退化为不含 tool_input 原文的精简版。
+      if (stdinJson.length > 60000) {
+        stdinJson = buildAgentHookStdinJson(
+          eventName: eventName,
+          toolName: toolName,
+          argsJson: '{}',
+          filePath: filePath,
+          toolOutput: cappedOutput,
+          toolOk: toolOk,
+          sessionId: _boundWorkspaceId,
+          cwd: _workspaceRoot,
+        );
+      }
       final result = await runTerminalTool(_refOf(), 'terminal_execute', {
-        'command': '$exports; ${hook.command}',
+        'command': '$exports; printf %s ${_shellQuote(stdinJson)} | '
+            '( ${hook.command} )',
         'workspace': _boundWorkspaceId,
         'timeout_ms': hook.timeoutSeconds * 1000,
       });
