@@ -131,6 +131,18 @@ class AgentRuntime {
   }
 }
 
+/// Hooks 设置页「试跑」入口：用示例上下文单独执行一条 hook。
+/// command 型需要 workspaceId（跑在该工作区的终端里）。
+typedef AgentHookTryRun = Future<AgentHookResult> Function(
+  AgentHook hook, {
+  String? workspaceId,
+});
+
+@Riverpod(keepAlive: true)
+AgentHookTryRun agentHookTryRun(Ref ref) =>
+    (AgentHook hook, {String? workspaceId}) =>
+        tryRunAgentHook(ref, hook, workspaceId: workspaceId);
+
 /// 某工作区 hooks.json 原文（Hooks 设置页审阅/信任用）；工作区不存在
 /// 或无文件返回 null。
 @riverpod

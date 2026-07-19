@@ -467,6 +467,37 @@ Future<AgentHookResult?> runUserPromptSubmitHooks(
   return aggregate;
 }
 
+/// 设置页「试跑」：用示例上下文单独执行一条 hook，返回裁决结果。
+/// 工具事件用示例工具调用上下文；userPromptSubmit 用示例消息；
+/// command 型需要 [workspaceId]（跑在该工作区的终端里）。
+Future<AgentHookResult> tryRunAgentHook(
+  Ref ref,
+  AgentHook hook, {
+  String? workspaceId,
+}) {
+  final toolEvent = hook.event == AgentHookEvent.preToolUse ||
+      hook.event == AgentHookEvent.postToolUse ||
+      hook.event == AgentHookEvent.postToolUseFailure;
+  return _execAgentHook(
+    ref,
+    hook,
+    eventName: hook.event.name,
+    toolName: toolEvent ? 'terminal_execute' : '',
+    argsJson: toolEvent ? '{"command":"echo hook 试跑示例"}' : '{}',
+    toolOutput: hook.event == AgentHookEvent.postToolUse ||
+            hook.event == AgentHookEvent.postToolUseFailure
+        ? 'hook 试跑示例输出'
+        : null,
+    toolOk: hook.event == AgentHookEvent.postToolUse
+        ? true
+        : hook.event == AgentHookEvent.postToolUseFailure
+            ? false
+            : null,
+    prompt: hook.event == AgentHookEvent.userPromptSubmit ? 'hook 试跑示例消息' : null,
+    workspaceId: workspaceId,
+  );
+}
+
 /// 跑一条 hook：按类型分派——command 型走工作区终端
 /// （[_execHookCommand]），prompt 型走一次 LLM 裁决
 /// （[_execPromptHook]），http 型 POST 到回调 URL（[_execHttpHook]）。
