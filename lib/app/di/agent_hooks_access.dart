@@ -146,6 +146,10 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
   /// [takeHookStopSignal] 消费并终止整个任务。
   String? _stopSignal;
 
+  /// hooks 运行状态写入任务时间线的通道（任务运行器在引擎启动时
+  /// 注入，携带 taskId）；null = 静默执行。
+  AgentHookTimelineSink? timeline;
+
   /// 取并清除 hook 的任务终止信号（continue:false）。
   String? takeHookStopSignal() {
     final signal = _stopSignal;
@@ -192,6 +196,7 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
           argsJson: call.argsJson,
           filePath: filePath),
       emptyBlockMessage: (hook) => 'hook（${hook.command}）拦截了本次调用。',
+      label: '${AgentHookEvent.preToolUse.name}(${call.name})',
     );
     final verdict = aggregateAgentHookResults(results);
     _recordStopSignal(verdict);
@@ -201,15 +206,26 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
 
   /// 同事件命中的多条 hooks 并行执行（对标 Claude Code）：同命令
   /// 去重，裁决由 [aggregateAgentHookResults] 聚合；可选把空原因的
-  /// block 补上含 hook 命令的默认文案。
+  /// block 补上含 hook 命令的默认文案。[label] 非空且接了时间线
+  /// 通道时，落一条「运行中」状态事件并在完成后原位改写为结果。
   Future<List<AgentHookResult>> _runHooksParallel(
     List<AgentHook> hooks,
     Future<AgentHookResult> Function(AgentHook hook) run, {
     String Function(AgentHook hook)? emptyBlockMessage,
-  }) {
+    String? label,
+  }) async {
     final seen = <String>{};
     final unique = [for (final h in hooks) if (seen.add(h.command)) h];
-    return Future.wait([
+    void Function(String line)? updateStatus;
+    final sink = timeline;
+    if (label != null && sink != null && unique.isNotEmpty) {
+      try {
+        updateStatus =
+            await sink('[hook] $label 运行中 · ${unique.length} 条');
+      } catch (_) {}
+    }
+    final sw = Stopwatch()..start();
+    final results = await Future.wait([
       for (final hook in unique)
         () async {
           final result = await run(hook);
@@ -227,6 +243,19 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
           return result;
         }(),
     ]);
+    if (updateStatus != null && label != null) {
+      updateStatus(formatAgentHookStatusLine(
+        label: label,
+        aggregate: aggregateAgentHookResults(results),
+        count: unique.length,
+        failedCount: results
+            .where((r) => r.outcome == AgentHookOutcome.failed)
+            .length,
+        asyncCount: results.where((r) => r.isAsync).length,
+        elapsed: sw.elapsed,
+      ));
+    }
+    return results;
   }
 
   /// hooks 配置（任务运行内只读一次），见 [loadAgentHooksConfig]。
@@ -285,6 +314,7 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
           toolOutput: toolResult.detail ?? toolResult.summary,
           toolOk: toolResult.ok),
       emptyBlockMessage: (hook) => 'hook（${hook.command}）报告了问题（无输出）。',
+      label: '${postEvent.name}(${call.name})',
     );
     final post = aggregateAgentHookResults(results);
     _recordStopSignal(post);
@@ -321,6 +351,7 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
         config.ofEvent(event),
         (hook) => _runHook(hook,
             eventName: event.name, toolName: event.name, argsJson: '{}'),
+        label: event.name,
       );
       _recordStopSignal(aggregateAgentHookResults(results));
     } catch (_) {}
@@ -341,6 +372,7 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
       (hook) => _runHook(hook,
           eventName: event.name, toolName: event.name, argsJson: '{}'),
       emptyBlockMessage: (hook) => 'hook（${hook.command}）阻止了收尾。',
+      label: event.name,
     );
     final aggregate = aggregateAgentHookResults(results);
     if (aggregate.outcome == AgentHookOutcome.block) return aggregate.message;

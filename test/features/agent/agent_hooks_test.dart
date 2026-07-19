@@ -272,6 +272,74 @@ void main() {
     });
   });
 
+  group('async hooks（{"async":true} 首行协议）', () {
+    test('首行 {"async":true} → isAsync，按放行处理，余下输出忽略', () {
+      final r = interpretAgentHookExit(
+        0,
+        '{"async":true}\n{"decision":"block","reason":"忽略我"}',
+        '',
+      );
+      expect(r.isAsync, isTrue);
+      expect(r.outcome, AgentHookOutcome.proceed);
+      expect(r.message, '');
+    });
+
+    test('async hook 的非 0 退出码也忽略', () {
+      final r = interpretAgentHookExit(2, '{"async":true,"asyncTimeout":5}', '');
+      expect(r.isAsync, isTrue);
+      expect(r.outcome, AgentHookOutcome.proceed);
+    });
+
+    test('非首行 / async!=true 不触发', () {
+      expect(
+        interpretAgentHookExit(0, 'log line\n{"async":true}', '').isAsync,
+        isFalse,
+      );
+      expect(
+        interpretAgentHookExit(0, '{"async":false}', '').isAsync,
+        isFalse,
+      );
+      expect(
+        interpretAgentHookExit(0, '{"decision":"block"}', '').isAsync,
+        isFalse,
+      );
+    });
+  });
+
+  group('formatAgentHookStatusLine', () {
+    test('放行文案含条数与耗时', () {
+      final line = formatAgentHookStatusLine(
+        label: 'preToolUse(write)',
+        aggregate: const AgentHookResult(outcome: AgentHookOutcome.proceed),
+        count: 2,
+        failedCount: 0,
+        asyncCount: 0,
+        elapsed: const Duration(milliseconds: 840),
+      );
+      expect(line, '[hook] preToolUse(write) ✓ 放行 · 2 条 · 0.8s');
+    });
+
+    test('阻断带原因；async/失败/终止标注', () {
+      final line = formatAgentHookStatusLine(
+        label: 'stop',
+        aggregate: const AgentHookResult(
+          outcome: AgentHookOutcome.block,
+          message: '还有 TODO',
+          preventContinuation: true,
+        ),
+        count: 3,
+        failedCount: 1,
+        asyncCount: 1,
+        elapsed: const Duration(seconds: 2),
+      );
+      expect(line, contains('✗ 阻断：还有 TODO'));
+      expect(line, contains('⏹ 要求终止任务'));
+      expect(line, contains('1 条转后台'));
+      expect(line, contains('1 条失败（不阻断）'));
+      expect(line, contains('· 3 条 · 2.0s'));
+    });
+  });
+
   group('aggregateAgentHookResults', () {
     test('任一 block 即 block，原因拼接', () {
       final r = aggregateAgentHookResults(const [

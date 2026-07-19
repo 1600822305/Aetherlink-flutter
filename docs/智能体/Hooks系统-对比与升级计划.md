@@ -160,9 +160,12 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 **验收**：单测覆盖 3 个新事件解析（共 35 个全部通过）；flutter analyze 无问题。
 **涉及**：`agent_hooks.dart`、`agent_hooks_access.dart`、`agent_runtime_access.dart`、`agent_engine.dart`、`agent_task_runner.dart`、`agent_hooks_page.dart`。
 
-### - [ ] 阶段 8：async hooks + 进度可视化 ⬜
+### - [x] 阶段 8：async hooks + 进度可视化 ✅（2026-07-19）
 **目标**：stdout `{"async":true}` → hook 转后台不阻塞主链；任务时间线上展示 hook 运行状态（运行中/放行/阻断），替代当前静默执行。
-**涉及**：`agent_runtime_access.dart`、任务事件流 + 时间线 UI。
+- async 协议（对标 CC）：hook 把 `{"async":true}` 作为 stdout 首行输出即视为 async hook——不参与裁决（按放行处理），余下输出/退出码忽略（`AgentHookResult.isAsync`）。注：执行走 terminal_execute（无流式首行检测），要真正不阻塞主链，hook 需自行把耗时部分放后台（`(long_task &)`）并在输出 async 首行后立即退出；与 CC 的流式首行检测存在实现差异。
+- 进度可视化：执行层新增 `AgentHookTimelineSink` 通道（任务运行器在引擎启动时注入，携带 taskId，主任务/子智能体各自接线）；每批命中的 hooks 先落一条「[hook] 事件(工具) 运行中 · N 条」状态事件，完成后原位改写为结果（放行/阻断+原因/免审/强制审批，另标注转后台/失败条数/要求终止，含耗时）；文案由纯函数 `formatAgentHookStatusLine` 生成；`AgentEventStore` 新增 `updateStatusChange`（状态行原位改写，id/seq 不变）。
+**验收**：单测覆盖 async 首行解析（含非首行/async!=true 不触发）与状态行文案（5 个新用例，hooks 40 个 + 引擎 12 个全部通过）；flutter analyze 无问题。
+**涉及**：`agent_hooks.dart`、`agent_hooks_access.dart`、`agent_runtime_access.dart`、`agent_task_runner.dart`、`agent_event_store.dart`。
 
 ### - [ ] 阶段 9（可选，低优先级）：扩展 hook 类型 ⬜
 **目标**：参考 CC 的 `prompt`（LLM 判定型，用一次模型调用当裁决器）与 `http`（HTTP 回调）hook 类型；`agent` 型（子 agent 验证器）视需求。
@@ -182,4 +185,5 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 | 2026-07-19 | 阶段 5 | ✅ | 54bb2a87 | userPromptSubmit 事件 + additionalContext 注入（prompt/pre/post） |
 | 2026-07-19 | 阶段 5.5 | ✅ | b79d36ec | 重构：hooks 执行层拆到 app/di/agent_hooks_access.dart，统一配置加载 |
 | 2026-07-19 | 阶段 6 | ✅ | c3d857c4 | continue:false 全局终止（hookStopSignal 接线引擎）+ 同事件 hooks 并行执行（同命令去重，aggregateAgentHookResults 聚合） |
-| 2026-07-19 | 阶段 7 | ✅ | （本提交） | 新事件 subagentStart / subagentStop（子引擎 stopGuard，可 block 收尾）/ taskEnd（引擎 onTaskEnd 回调） |
+| 2026-07-19 | 阶段 7 | ✅ | b19a999e | 新事件 subagentStart / subagentStop（子引擎 stopGuard，可 block 收尾）/ taskEnd（引擎 onTaskEnd 回调） |
+| 2026-07-19 | 阶段 8 | ✅ | （本提交） | async hooks（首行 {"async":true} 协议）+ hook 运行状态写入任务时间线（运行中→结果原位改写） |

@@ -85,6 +85,13 @@ abstract class AgentEventStore {
     String description,
   );
 
+  /// 状态行原位改写（id/seq 不变）：hook 运行状态「运行中 → 结果」。
+  Future<StatusChangeEvent> updateStatusChange(
+    String taskId,
+    StatusChangeEvent event,
+    String description,
+  );
+
   Future<CheckpointEvent> appendCheckpoint(
     String taskId, {
     required String commit,
@@ -343,6 +350,22 @@ class DriftAgentEventStore implements AgentEventStore {
     );
     await _dao.upsertEvents(taskId, [event]);
     return event;
+  }
+
+  @override
+  Future<StatusChangeEvent> updateStatusChange(
+    String taskId,
+    StatusChangeEvent event,
+    String description,
+  ) async {
+    final updated = StatusChangeEvent(
+      id: event.id,
+      seq: event.seq,
+      at: event.at,
+      description: description,
+    );
+    await _dao.upsertEvents(taskId, [updated]);
+    return updated;
   }
 
   @override

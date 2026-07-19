@@ -214,6 +214,8 @@ enum AgentHookOutcome {
 /// 可与任意裁决同时出现）。[preventContinuation] 为 stdout JSON
 /// `{"continue":false}`（对标 Claude Code）：终止整个任务，
 /// [stopReason] 展示给用户；可与任意裁决同时出现。
+/// [isAsync] 为首行输出 `{"async":true}` 的 async hook（对标
+/// Claude Code）：不参与裁决（按放行处理），余下输出忽略。
 class AgentHookResult {
   const AgentHookResult({
     required this.outcome,
@@ -221,6 +223,7 @@ class AgentHookResult {
     this.additionalContext = '',
     this.preventContinuation = false,
     this.stopReason = '',
+    this.isAsync = false,
   });
 
   final AgentHookOutcome outcome;
@@ -228,6 +231,7 @@ class AgentHookResult {
   final String additionalContext;
   final bool preventContinuation;
   final String stopReason;
+  final bool isAsync;
 }
 
 /// 同一事件多条 hooks（并行执行）的裁决聚合：
@@ -282,7 +286,44 @@ AgentHookResult aggregateAgentHookResults(Iterable<AgentHookResult> results) {
   );
 }
 
+/// hooks 运行状态写入任务时间线的通道：以「运行中」文案落一条状态
+/// 事件，返回原位覆盖该条文案的更新函数（hooks 跑完后改写为结果）。
+typedef AgentHookTimelineSink = Future<void Function(String line)> Function(
+  String line,
+);
+
+/// 一批 hooks 的时间线状态行（完成态）。[label] 形如
+/// `preToolUse(write)`；异步/失败条数单独标注。
+String formatAgentHookStatusLine({
+  required String label,
+  required AgentHookResult aggregate,
+  required int count,
+  required int failedCount,
+  required int asyncCount,
+  required Duration elapsed,
+}) {
+  final verdict = switch (aggregate.outcome) {
+    AgentHookOutcome.block => aggregate.message.isEmpty
+        ? '✗ 阻断'
+        : '✗ 阻断：${aggregate.message}',
+    AgentHookOutcome.ask => '? 强制审批',
+    AgentHookOutcome.allow => '✓ 免审放行',
+    AgentHookOutcome.proceed || AgentHookOutcome.failed => '✓ 放行',
+  };
+  final extras = [
+    if (aggregate.preventContinuation) '⏹ 要求终止任务',
+    if (asyncCount > 0) '$asyncCount 条转后台',
+    if (failedCount > 0) '$failedCount 条失败（不阻断）',
+  ];
+  final seconds = (elapsed.inMilliseconds / 1000).toStringAsFixed(1);
+  return '[hook] $label $verdict'
+      '${extras.isEmpty ? '' : '（${extras.join('，')}）'}'
+      ' · $count 条 · ${seconds}s';
+}
+
 /// 退出协议（对标 Claude Code）：
+/// - stdout 首行若是 `{"async":true}` → async hook：不参与裁决
+///   （按放行处理），余下输出/退出码忽略；
 /// - exit 2 → block，stderr（为空则 stdout）作为回给模型的原因；
 /// - exit 0 → 默认放行；stdout 若是 `{"decision":...}` JSON 则按裁决：
 ///   `"block"|"deny"` → block，`"allow"|"approve"` → allow（免审），
@@ -293,6 +334,12 @@ AgentHookResult interpretAgentHookExit(
   String stdout,
   String stderr,
 ) {
+  if (_isAsyncFirstLine(stdout)) {
+    return const AgentHookResult(
+      outcome: AgentHookOutcome.proceed,
+      isAsync: true,
+    );
+  }
   if (exitCode == 2) {
     final reason = stderr.trim().isNotEmpty ? stderr.trim() : stdout.trim();
     return AgentHookResult(outcome: AgentHookOutcome.block, message: reason);
@@ -306,6 +353,19 @@ AgentHookResult interpretAgentHookExit(
   final decision = _decodeDecision(stdout);
   if (decision != null) return decision;
   return const AgentHookResult(outcome: AgentHookOutcome.proceed);
+}
+
+/// async 协议（对标 Claude Code）：hook 把 `{"async":true}` 作为
+/// stdout 第一行输出即转后台——只解析首行，后续输出不影响判定。
+bool _isAsyncFirstLine(String stdout) {
+  final firstLine = stdout.trimLeft().split('\n').first.trim();
+  if (!firstLine.startsWith('{')) return false;
+  try {
+    final decoded = jsonDecode(firstLine);
+    return decoded is Map<String, dynamic> && decoded['async'] == true;
+  } catch (_) {
+    return false;
+  }
 }
 
 AgentHookResult? _decodeDecision(String stdout) {

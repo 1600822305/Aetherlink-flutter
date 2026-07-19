@@ -257,6 +257,22 @@ class InMemoryAgentEventStore implements AgentEventStore {
   }
 
   @override
+  Future<StatusChangeEvent> updateStatusChange(
+    String taskId,
+    StatusChangeEvent event,
+    String description,
+  ) async {
+    final updated = StatusChangeEvent(
+      id: event.id,
+      seq: event.seq,
+      at: event.at,
+      description: description,
+    );
+    _upsert(taskId, updated);
+    return updated;
+  }
+
+  @override
   Future<CheckpointEvent> appendCheckpoint(
     String taskId, {
     required String commit,

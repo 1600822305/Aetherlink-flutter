@@ -89,6 +89,7 @@ class AgentRuntime {
         Future<String?> Function() subagentStopGuard,
         String? Function() hookStopSignal,
         Future<void> Function(AgentHookEvent event) lifecycleHooks,
+        void Function(AgentHookTimelineSink? sink) setHookTimeline,
       })> forProfile(
     AgentProfile profile, {
     AgentSessionMode mode = AgentSessionMode.code,
@@ -119,6 +120,7 @@ class AgentRuntime {
       subagentStopGuard: hooked.runSubagentStopHooks,
       hookStopSignal: hooked.takeHookStopSignal,
       lifecycleHooks: hooked.runLifecycleHooks,
+      setHookTimeline: (AgentHookTimelineSink? sink) => hooked.timeline = sink,
     );
   }
 
