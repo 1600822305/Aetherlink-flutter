@@ -87,7 +87,7 @@ class AgentRuntime {
         AgentToolExecutor tools,
         ApprovalGate approval,
         Future<String?> Function() stopGuard,
-        Future<void> Function() taskStartHooks,
+        Future<void> Function(AgentHookEvent event) lifecycleHooks,
       })> forProfile(
     AgentProfile profile, {
     AgentSessionMode mode = AgentSessionMode.code,
@@ -115,7 +115,7 @@ class AgentRuntime {
       tools: hooked,
       approval: _PolicyApprovalGate(_refOf, catalog.routes),
       stopGuard: hooked.runStopHooks,
-      taskStartHooks: hooked.runTaskStartHooks,
+      lifecycleHooks: hooked.runLifecycleHooks,
     );
   }
 
@@ -1302,13 +1302,14 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
   /// hook 阻断则返回阻断原因（收尾被阻止，原因回填继续跑），
   /// 全部放行/失败返回 null。stop hook 不按工具匹配，matcher/pattern
   /// 忽略。
-  /// 任务启动/续跑时跑 taskStart hooks（fire-and-forget，不阻断）。
-  Future<void> runTaskStartHooks() async {
+  /// 生命周期事件 hooks（taskStart / turnStart / turnEnd）：
+  /// fire-and-forget，不阻断任务。
+  Future<void> runLifecycleHooks(AgentHookEvent event) async {
     try {
       final config = await _hooks();
       if (config == null) return;
-      for (final hook in config.ofEvent(AgentHookEvent.taskStart)) {
-        await _runHook(hook, toolName: 'taskStart', argsJson: '{}');
+      for (final hook in config.ofEvent(event)) {
+        await _runHook(hook, toolName: event.name, argsJson: '{}');
       }
     } catch (_) {}
   }

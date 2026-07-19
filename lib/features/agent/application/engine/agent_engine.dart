@@ -36,6 +36,8 @@ class AgentEngine {
     this.subagents,
     this.toolStream,
     this.stopGuard,
+    this.onTurnStart,
+    this.onTurnEnd,
   });
 
   final AgentLlmClient llm;
@@ -55,6 +57,12 @@ class AgentEngine {
   /// 收尾，原因以用户消息回填继续跑。每次运行最多阻止一次
   /// （防 hook 永远不满意导致死循环）。
   final Future<String?> Function()? stopGuard;
+
+  /// 每轮开始（LLM 调用前）/ 每轮结束（本轮工具全部执行完）的
+  /// 生命周期回调（turnStart/turnEnd hooks）：同步触发、不等待、
+  /// 不阻断循环。
+  final void Function()? onTurnStart;
+  final void Function()? onTurnEnd;
 
   bool _stopGuardFired = false;
 
@@ -132,6 +140,7 @@ class AgentEngine {
           rounds: current.rounds + 1,
           updatedAt: DateTime.now(),
         ));
+        onTurnStart?.call();
         final events = await store.getEvents(current.id);
         final writer = _StreamingEventWriter(store, current.id);
         // 工具调用参数一流完就先落「执行中」事件（不等整轮结束），
@@ -378,6 +387,8 @@ class AgentEngine {
             break;
           }
         }
+
+        onTurnEnd?.call();
 
         // ⑦ 自动 compaction（设计初稿 §5.3）：重放视图超阈值时把最早
         // 一段摘要成 CompactionEvent；失败不阻断任务（下轮再试）。

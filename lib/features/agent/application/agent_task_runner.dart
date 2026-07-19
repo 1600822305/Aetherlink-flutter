@@ -18,6 +18,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_subag
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
+import 'package:aetherlink_flutter/features/agent/domain/agent_hooks.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/domain/subagent_profile.dart';
@@ -436,7 +437,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           boundWorkspaceId: task.workspaceId,
         );
     // taskStart hooks：任务启动/续跑时触发，fire-and-forget 不阻断。
-    unawaited(runtime.taskStartHooks());
+    unawaited(runtime.lifecycleHooks(AgentHookEvent.taskStart));
     final engine = AgentEngine(
       llm: runtime.llm,
       tools: runtime.tools,
@@ -447,6 +448,10 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       subagents: _RunnerSubagentLauncher(this),
       toolStream: ref.read(agentToolStreamProvider.notifier),
       stopGuard: runtime.stopGuard,
+      onTurnStart: () =>
+          unawaited(runtime.lifecycleHooks(AgentHookEvent.turnStart)),
+      onTurnEnd: () =>
+          unawaited(runtime.lifecycleHooks(AgentHookEvent.turnEnd)),
     );
     engine.run(task, token).whenComplete(() {
       _tokens.remove(task.id);
