@@ -6,13 +6,12 @@ import 'dart:math';
 import 'package:path_provider/path_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/app/di/agent_hooks_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_subagent_access.dart';
 import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
 import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/remote_mcp_access.dart';
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
-import 'package:aetherlink_flutter/features/agent/application/agent_hooks_trust.dart';
-import 'package:aetherlink_flutter/features/agent/application/agent_manual_hooks.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_permission_rules.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
@@ -100,7 +99,7 @@ class AgentRuntime {
       enableSubagents: enableSubagents,
     );
     await _addMcpServerTools(_refOf(), profile, mode, catalog);
-    final hooked = _HookedAgentToolExecutor(
+    final hooked = HookedAgentToolExecutor(
       _refOf,
       _McpAgentToolExecutor(
         _refOf,
@@ -138,7 +137,7 @@ Future<String?> workspaceHooksFile(Ref ref, String workspaceId) async {
   }
   final bound = workspaces.where((w) => w.id == workspaceId).firstOrNull;
   if (bound == null) return null;
-  return _readWorkspaceFile(ref, bound, '.aetherlink/hooks.json');
+  return readWorkspaceConfigFile(ref, bound, '.aetherlink/hooks.json');
 }
 
 /// 只读硬约束（Ask/Plan 模式，参考 Roo Code 模式×工具组 /
@@ -927,12 +926,12 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
 /// 挂起走 [agentApprovalRegistryProvider]，无超时（用户可能锁屏离场）；
 /// 任务被暂停/终止时挂起按拒绝回填，循环在下一个安全点收敛。
 class _PolicyApprovalGate implements ApprovalGate {
-  _PolicyApprovalGate(this._refOf, this._routes, {_HookedAgentToolExecutor? hooks})
+  _PolicyApprovalGate(this._refOf, this._routes, {HookedAgentToolExecutor? hooks})
       : _hookExecutor = hooks;
 
   final Ref Function() _refOf;
   final Map<String, ToolRoute> _routes;
-  final _HookedAgentToolExecutor? _hookExecutor;
+  final HookedAgentToolExecutor? _hookExecutor;
 
   @override
   Future<ApprovalRequirement> evaluate(
@@ -982,8 +981,8 @@ class _PolicyApprovalGate implements ApprovalGate {
     }
 
     final decision = evaluatePermissionRequest(
-      _permissionOfRoute(route, call.name),
-      _patternsOfCall(route, call.name, args),
+      permissionOfToolRoute(route, call.name),
+      patternsOfToolCall(route, call.name, args),
       await _ruleLayers(ref, task, workspaces),
     );
     if (decision.action == PermissionAction.deny) {
@@ -1052,7 +1051,7 @@ class _PolicyApprovalGate implements ApprovalGate {
     final cached = _workspaceRulesCache[bound.id];
     if (cached != null) return cached;
     final rules = decodeAgentPermissionRules(
-          await _readWorkspaceFile(
+          await readWorkspaceConfigFile(
               ref, bound, '.aetherlink/permissions.json'),
           layer: PermissionRuleLayer.workspace,
         ) ??
@@ -1079,7 +1078,7 @@ class _PolicyApprovalGate implements ApprovalGate {
       task.id,
       call,
       permission:
-          route == null ? call.name : _permissionOfRoute(route, call.name),
+          route == null ? call.name : permissionOfToolRoute(route, call.name),
       alwaysPatterns: command == null ? const [] : terminalAlwaysPatterns(command),
     );
     // 挂起期间任务被暂停/终止 → 按拒绝回填，循环在安全点收敛。
@@ -1115,7 +1114,7 @@ class _PolicyApprovalGate implements ApprovalGate {
         // 旧白名单只覆盖文件/终端两组内置工具；MCP 等其余工具的
         // 永久放行落成用户全局 allow 规则，效果等价。
         _refOf().read(agentPermissionRulesProvider.notifier).add(PermissionRule(
-              permission: _permissionOfRoute(route, call.name),
+              permission: permissionOfToolRoute(route, call.name),
               action: PermissionAction.allow,
               layer: PermissionRuleLayer.userGlobal,
             ));
@@ -1152,501 +1151,5 @@ class _PolicyApprovalGate implements ApprovalGate {
     return false;
   }
 
-  Map<String, Object?> _decodeArgs(String argsJson) => _decodeArgsJson(argsJson);
+  Map<String, Object?> _decodeArgs(String argsJson) => decodeToolArgsJson(argsJson);
 }
-
-Map<String, Object?> _decodeArgsJson(String argsJson) {
-  try {
-    final decoded = jsonDecode(argsJson);
-    if (decoded is Map<String, dynamic>) return decoded;
-  } catch (_) {}
-  return const <String, Object?>{};
-}
-
-/// 工具调用 → 权限域：内置工具用工具名（write / terminal_execute …，
-/// 规则/hook 可用 `terminal_*` 这类通配整组）；外部 MCP 工具用
-/// `mcp:<server>/<tool>`（可用 `mcp:*` 整体管控）。审批门与 hooks 共用。
-String _permissionOfRoute(ToolRoute route, String toolName) {
-  if (route is RemoteToolRoute) return 'mcp:${route.server.name}/$toolName';
-  if (route is StdioToolRoute) return 'mcp:${route.server.name}/$toolName';
-  return toolName;
-}
-
-/// 工具调用 → 参与判定的 patterns：终端命令按子命令拆分（注入特征
-/// 退化为整条原文），文件编辑取路径参数，其余按整工具（`*`）。
-List<String> _patternsOfCall(
-  ToolRoute route,
-  String toolName,
-  Map<String, Object?> args,
-) {
-  if (route is TerminalToolRoute) {
-    final command = terminalCommandText(toolName, args);
-    if (command != null) return terminalPermissionPatterns(command);
-    return const ['*'];
-  }
-  if (route is FileEditorToolRoute) return fileEditorPermissionPatterns(args);
-  return const ['*'];
-}
-
-/// 读工作区根目录下的配置文件（`.aetherlink/permissions.json` /
-/// `.aetherlink/hooks.json`）；不存在或读取失败返回 null。
-Future<String?> _readWorkspaceFile(
-  Ref ref,
-  Workspace bound,
-  String relative,
-) async {
-  try {
-    final root = bound.root.endsWith('/')
-        ? bound.root.substring(0, bound.root.length - 1)
-        : bound.root;
-    final path = '$root/$relative';
-    final backend = await backendForPath(ref, path);
-    return await backend.readFile(path);
-  } catch (_) {
-    return null;
-  }
-}
-
-/// preToolUse / postToolUse hooks 的执行器装饰层（Hooks H2）。
-///
-/// 任务绑定工作区根目录的 `.aetherlink/hooks.json` 声明 hooks；内容
-/// 必须与用户已信任的原文一致才执行（[agentHooksTrustProvider]，
-/// 防恶意仓库携带 hooks 直接拿到执行权；未信任则静默跳过）。
-/// hook 命令经 terminal_execute 跑在绑定工作区的长驻会话里，
-/// 退出协议见 [interpretAgentHookExit]：preToolUse 阻断时本次调用
-/// 不执行（阻断原因作为失败结果回给模型）；postToolUse 阻断时
-/// 把反馈追加进工具结果（如格式化/编译报错）。
-class _HookedAgentToolExecutor implements AgentToolExecutor {
-  _HookedAgentToolExecutor(
-    this._refOf,
-    this._inner,
-    this._routes, {
-    String? boundWorkspaceId,
-  }) : _boundWorkspaceId = boundWorkspaceId;
-
-  final Ref Function() _refOf;
-  final AgentToolExecutor _inner;
-  final Map<String, ToolRoute> _routes;
-  final String? _boundWorkspaceId;
-
-  AgentHooksConfig? _config;
-  bool _configLoaded = false;
-  String? _workspaceRoot;
-
-  /// preToolUse 裁决缓存：审批门先跑一遍，执行器复用后移除，
-  /// 保证同一次调用 hooks 只执行一次。
-  final Map<String, AgentHookResult> _preVerdicts = {};
-
-  String _verdictKey(AgentToolCallRequest call) =>
-      '${call.name}\u0000${call.argsJson}';
-
-  /// preToolUse hooks 的聚合裁决（审批门与执行器共用）：优先级
-  /// block > ask > allow > proceed；block 时携带回给模型的原因。
-  /// 无 hooks 配置或无命中时返回 null / proceed。
-  Future<AgentHookResult?> preToolUseVerdict(AgentToolCallRequest call) async {
-    final key = _verdictKey(call);
-    final cached = _preVerdicts[key];
-    if (cached != null) return cached;
-    final config = await _hooks();
-    if (config == null || config.isEmpty) return null;
-
-    final route = _routes[call.name];
-    final args = _decodeArgsJson(call.argsJson);
-    final permission =
-        route == null ? call.name : _permissionOfRoute(route, call.name);
-    final patterns = route == null
-        ? const <String>['*']
-        : _patternsOfCall(route, call.name, args);
-    final path = args['path'];
-    final filePath = path is String && path.isNotEmpty ? path : null;
-
-    AgentHookResult? aggregate;
-    final contexts = <String>[];
-    for (final hook in hooksForToolCall(
-        config, AgentHookEvent.preToolUse, permission, patterns)) {
-      final result = await _runHook(hook,
-          eventName: AgentHookEvent.preToolUse.name,
-          toolName: call.name,
-          argsJson: call.argsJson,
-          filePath: filePath);
-      if (result.additionalContext.isNotEmpty) {
-        contexts.add(result.additionalContext);
-      }
-      if (result.outcome == AgentHookOutcome.block) {
-        aggregate = AgentHookResult(
-          outcome: AgentHookOutcome.block,
-          message: result.message.isEmpty
-              ? 'hook（${hook.command}）拦截了本次调用。'
-              : result.message,
-        );
-        break;
-      }
-      if (result.outcome == AgentHookOutcome.ask) {
-        aggregate = result;
-      } else if (result.outcome == AgentHookOutcome.allow &&
-          aggregate?.outcome != AgentHookOutcome.ask) {
-        aggregate = result;
-      }
-    }
-    final base =
-        aggregate ?? const AgentHookResult(outcome: AgentHookOutcome.proceed);
-    final verdict = contexts.isEmpty
-        ? base
-        : AgentHookResult(
-            outcome: base.outcome,
-            message: base.message,
-            additionalContext: contexts.join('\n'),
-          );
-    _preVerdicts[key] = verdict;
-    return verdict;
-  }
-
-  /// hooks 配置（任务运行内只读一次）：设置页手动添加的 hooks（天然
-  /// 可信，不走文件信任门槛）+ 已信任的仓库 hooks.json。无绑定
-  /// 工作区或两者均无 → null（不执行任何 hook）。
-  Future<AgentHooksConfig?> _hooks() async {
-    if (_configLoaded) return _config;
-    _configLoaded = true;
-    final workspaceId = _boundWorkspaceId;
-    if (workspaceId == null) return null;
-    final ref = _refOf();
-    final manual = [
-      for (final m in ref.read(agentManualHooksProvider))
-        if (m.enabled) m.hook,
-    ];
-    AgentHooksConfig? fileConfig;
-    try {
-      final workspaces = await loadWorkspaces(ref);
-      final bound = workspaces.where((w) => w.id == workspaceId).firstOrNull;
-      if (bound != null) {
-        _workspaceRoot = bound.root;
-        final raw =
-            await _readWorkspaceFile(ref, bound, '.aetherlink/hooks.json');
-        if (raw != null &&
-            raw.trim().isNotEmpty &&
-            ref.read(agentHooksTrustProvider)[workspaceId] == raw) {
-          fileConfig = decodeAgentHooksConfig(raw);
-        }
-      }
-    } catch (_) {}
-    final hooks = [...manual, ...?fileConfig?.hooks];
-    _config = hooks.isEmpty ? null : AgentHooksConfig(hooks: hooks);
-    return _config;
-  }
-
-  @override
-  Future<AgentToolResult> execute(
-    AgentToolCallRequest call,
-    AgentCancellationToken cancel,
-  ) async {
-    final config = await _hooks();
-    if (config == null || config.isEmpty) return _inner.execute(call, cancel);
-
-    final route = _routes[call.name];
-    final args = _decodeArgsJson(call.argsJson);
-    final permission =
-        route == null ? call.name : _permissionOfRoute(route, call.name);
-    final patterns =
-        route == null ? const <String>['*'] : _patternsOfCall(route, call.name, args);
-
-    final path = args['path'];
-    final filePath = path is String && path.isNotEmpty ? path : null;
-    final preVerdict = await preToolUseVerdict(call);
-    _preVerdicts.remove(_verdictKey(call));
-    if (preVerdict != null && preVerdict.outcome == AgentHookOutcome.block) {
-      return AgentToolResult(
-        ok: false,
-        summary: '被 preToolUse hook 拦截 ✗',
-        detail: preVerdict.message.isEmpty
-            ? 'preToolUse hook 拦截了本次调用。'
-            : preVerdict.message,
-      );
-    }
-
-    final toolResult = await _inner.execute(call, cancel);
-    final postEvent = toolResult.ok
-        ? AgentHookEvent.postToolUse
-        : AgentHookEvent.postToolUseFailure;
-
-    final feedback = <String>[];
-    final contexts = <String>[
-      if (preVerdict != null && preVerdict.additionalContext.isNotEmpty)
-        preVerdict.additionalContext,
-    ];
-    for (final hook
-        in hooksForToolCall(config, postEvent, permission, patterns)) {
-      final result = await _runHook(hook,
-          eventName: postEvent.name,
-          toolName: call.name,
-          argsJson: call.argsJson,
-          filePath: filePath,
-          toolOutput: toolResult.detail ?? toolResult.summary,
-          toolOk: toolResult.ok);
-      if (result.additionalContext.isNotEmpty) {
-        contexts.add(result.additionalContext);
-      }
-      if (result.outcome == AgentHookOutcome.block) {
-        feedback.add(result.message.isEmpty
-            ? 'hook（${hook.command}）报告了问题（无输出）。'
-            : result.message);
-      }
-    }
-    if (feedback.isEmpty && contexts.isEmpty) return toolResult;
-    final sections = [
-      if (feedback.isNotEmpty)
-        '[${postEvent.name} hook 反馈]\n${feedback.join('\n')}',
-      if (contexts.isNotEmpty)
-        '[hook additionalContext]\n${contexts.join('\n')}',
-    ];
-    return AgentToolResult(
-      ok: toolResult.ok,
-      summary: toolResult.summary,
-      detail: '${toolResult.detail ?? ''}\n\n${sections.join('\n\n')}',
-      overflowPath: toolResult.overflowPath,
-    );
-  }
-
-  /// 任务收尾前跑 stop hooks（引擎 [AgentEngine.stopGuard]）：任一
-  /// hook 阻断则返回阻断原因（收尾被阻止，原因回填继续跑），
-  /// 全部放行/失败返回 null。stop hook 不按工具匹配，matcher/pattern
-  /// 忽略。
-  /// 生命周期事件 hooks（taskStart / turnStart / turnEnd）：
-  /// fire-and-forget，不阻断任务。
-  Future<void> runLifecycleHooks(AgentHookEvent event) async {
-    try {
-      final config = await _hooks();
-      if (config == null) return;
-      for (final hook in config.ofEvent(event)) {
-        await _runHook(hook,
-            eventName: event.name, toolName: event.name, argsJson: '{}');
-      }
-    } catch (_) {}
-  }
-
-  Future<String?> runStopHooks() async {
-    final config = await _hooks();
-    if (config == null) return null;
-    for (final hook in config.ofEvent(AgentHookEvent.stop)) {
-      final result = await _runHook(hook,
-          eventName: AgentHookEvent.stop.name,
-          toolName: 'stop',
-          argsJson: '{}');
-      if (result.outcome == AgentHookOutcome.block) {
-        return result.message.isEmpty
-            ? 'hook（${hook.command}）阻止了收尾。'
-            : result.message;
-      }
-    }
-    return null;
-  }
-
-  /// 在绑定工作区里跑一条 hook 命令（委托 [_execHookCommand]）。
-  Future<AgentHookResult> _runHook(
-    AgentHook hook, {
-    required String eventName,
-    required String toolName,
-    required String argsJson,
-    String? filePath,
-    String? toolOutput,
-    bool? toolOk,
-  }) =>
-      _execHookCommand(
-        _refOf(),
-        hook,
-        eventName: eventName,
-        toolName: toolName,
-        argsJson: argsJson,
-        filePath: filePath,
-        toolOutput: toolOutput,
-        toolOk: toolOk,
-        workspaceId: _boundWorkspaceId,
-        cwd: _workspaceRoot,
-      );
-}
-
-/// userPromptSubmit hooks（任务运行器在用户消息进入任务前调用）：
-/// 配置来源与执行器一致（手动 hooks + 已信任的工作区 hooks.json）。
-/// 任一 hook block → 返回 block 裁决（消息应被拦截）；各 hook 的
-/// additionalContext 合并返回；无 hooks 配置/无命中且无注入 → null。
-Future<AgentHookResult?> runUserPromptSubmitHooks(
-  Ref ref, {
-  required String workspaceId,
-  required String prompt,
-}) async {
-  final manual = [
-    for (final m in ref.read(agentManualHooksProvider))
-      if (m.enabled) m.hook,
-  ];
-  AgentHooksConfig? fileConfig;
-  String? root;
-  try {
-    final workspaces = await loadWorkspaces(ref);
-    final bound = workspaces.where((w) => w.id == workspaceId).firstOrNull;
-    if (bound != null) {
-      root = bound.root;
-      final raw =
-          await _readWorkspaceFile(ref, bound, '.aetherlink/hooks.json');
-      if (raw != null &&
-          raw.trim().isNotEmpty &&
-          ref.read(agentHooksTrustProvider)[workspaceId] == raw) {
-        fileConfig = decodeAgentHooksConfig(raw);
-      }
-    }
-  } catch (_) {}
-  final hooks = [...manual, ...?fileConfig?.hooks];
-  if (hooks.isEmpty) return null;
-  final config = AgentHooksConfig(hooks: hooks);
-  final contexts = <String>[];
-  for (final hook in config.ofEvent(AgentHookEvent.userPromptSubmit)) {
-    final result = await _execHookCommand(
-      ref,
-      hook,
-      eventName: AgentHookEvent.userPromptSubmit.name,
-      toolName: '',
-      argsJson: '{}',
-      prompt: prompt,
-      workspaceId: workspaceId.isEmpty ? null : workspaceId,
-      cwd: root,
-    );
-    if (result.outcome == AgentHookOutcome.block) {
-      return AgentHookResult(
-        outcome: AgentHookOutcome.block,
-        message: result.message.isEmpty
-            ? 'hook（${hook.command}）拦截了本条消息。'
-            : result.message,
-      );
-    }
-    if (result.additionalContext.isNotEmpty) {
-      contexts.add(result.additionalContext);
-    }
-  }
-  if (contexts.isEmpty) return null;
-  return AgentHookResult(
-    outcome: AgentHookOutcome.proceed,
-    additionalContext: contexts.join('\n'),
-  );
-}
-
-/// 跑一条 hook 命令：现场上下文两路传入——
-/// ① stdin JSON（字段命名对齐 Claude Code，见
-/// [buildAgentHookStdinJson]）；② 环境变量（AETHER_TOOL /
-/// AETHER_ARGS_JSON / AETHER_FILE_PATH / AETHER_PROMPT，post 事件另有
-/// AETHER_TOOL_OUTPUT / AETHER_TOOL_OK）。超时/异常按 hook 自身
-/// 失败处理（不阻断）。
-Future<AgentHookResult> _execHookCommand(
-  Ref ref,
-  AgentHook hook, {
-  required String eventName,
-  required String toolName,
-  required String argsJson,
-  String? filePath,
-  String? toolOutput,
-  bool? toolOk,
-  String? prompt,
-  String? workspaceId,
-  String? cwd,
-}) async {
-  try {
-    final cappedArgs =
-        argsJson.length > 4000 ? argsJson.substring(0, 4000) : argsJson;
-    final cappedOutput = toolOutput != null && toolOutput.length > 4000
-        ? toolOutput.substring(0, 4000)
-        : toolOutput;
-    final cappedPrompt = prompt != null && prompt.length > 4000
-        ? prompt.substring(0, 4000)
-        : prompt;
-    final exports = [
-      'export AETHER_TOOL=${_shellQuote(toolName)}',
-      'export AETHER_ARGS_JSON=${_shellQuote(cappedArgs)}',
-      if (filePath != null && filePath.isNotEmpty)
-        'export AETHER_FILE_PATH=${_shellQuote(filePath)}',
-      if (cappedOutput != null)
-        'export AETHER_TOOL_OUTPUT=${_shellQuote(cappedOutput)}',
-      if (toolOk != null)
-        'export AETHER_TOOL_OK=${toolOk ? 'true' : 'false'}',
-      if (cappedPrompt != null)
-        'export AETHER_PROMPT=${_shellQuote(cappedPrompt)}',
-    ].join('; ');
-    var stdinJson = buildAgentHookStdinJson(
-      eventName: eventName,
-      toolName: toolName,
-      argsJson: argsJson,
-      filePath: filePath,
-      toolOutput: toolOutput,
-      toolOk: toolOk,
-      prompt: prompt,
-      sessionId: workspaceId,
-      cwd: cwd,
-    );
-    // 命令行长度保险：超长时退化为不含 tool_input 原文的精简版。
-    if (stdinJson.length > 60000) {
-      stdinJson = buildAgentHookStdinJson(
-        eventName: eventName,
-        toolName: toolName,
-        argsJson: '{}',
-        filePath: filePath,
-        toolOutput: cappedOutput,
-        toolOk: toolOk,
-        prompt: cappedPrompt,
-        sessionId: workspaceId,
-        cwd: cwd,
-      );
-    }
-    // stderr 经临时文件 + 标记行回传（终端后端合流，见
-    // [kAgentHookStderrMarker]）；末尾子 shell 把 hook 退出码透传回来。
-    final result = await runTerminalTool(ref, 'terminal_execute', {
-      'command': '__ahs="\${TMPDIR:-/tmp}/.aether_hook_stderr.\$\$"; '
-          '$exports; printf %s ${_shellQuote(stdinJson)} | '
-          '( ${hook.command} ) 2>"\$__ahs"; __ahc=\$?; '
-          "printf '\\n%s\\n' ${_shellQuote(kAgentHookStderrMarker)}; "
-          'cat "\$__ahs" 2>/dev/null; rm -f "\$__ahs"; ( exit \$__ahc )',
-      'workspace': workspaceId,
-      'timeout_ms': hook.timeoutSeconds * 1000,
-    });
-    return _interpretTerminalResult(result);
-  } catch (e) {
-    return AgentHookResult(
-      outcome: AgentHookOutcome.failed,
-      message: 'hook 执行异常：$e',
-    );
-  }
-}
-
-/// terminal_execute 结果（`{success, data: {exitCode, stdout, timedOut…}}`）
-/// → hook 退出协议。
-AgentHookResult _interpretTerminalResult(McpToolResult result) {
-  try {
-    final decoded = jsonDecode(result.text);
-    if (decoded is! Map<String, dynamic> || decoded['success'] != true) {
-      return AgentHookResult(
-        outcome: AgentHookOutcome.failed,
-        message: result.text,
-      );
-    }
-    final data = decoded['data'];
-    if (data is! Map<String, dynamic>) {
-      return const AgentHookResult(outcome: AgentHookOutcome.failed);
-    }
-    if (data['timedOut'] == true || data['canceled'] == true) {
-      return const AgentHookResult(
-        outcome: AgentHookOutcome.failed,
-        message: 'hook 超时/被中断',
-      );
-    }
-    final exitCode = data['exitCode'];
-    final stdout = data['stdout'];
-    final split = splitAgentHookOutput(stdout is String ? stdout : '');
-    return interpretAgentHookExit(
-      exitCode is int ? exitCode : 0,
-      split.stdout,
-      split.stderr,
-    );
-  } catch (e) {
-    return AgentHookResult(
-      outcome: AgentHookOutcome.failed,
-      message: 'hook 结果解析失败：$e',
-    );
-  }
-}
-
-String _shellQuote(String value) => "'${value.replaceAll("'", r"'\''")}'";

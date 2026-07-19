@@ -176,4 +176,5 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 | 2026-07-19 | 阶段 2 | ✅ | 9824939f | stdin JSON 输入（buildAgentHookStdinJson + 管道喷入），字段命名对齐 CC |
 | 2026-07-19 | 阶段 3 | ✅ | 13104088 | preToolUse allow/ask 打通审批门，裁决缓存避免重复执行 |
 | 2026-07-19 | 阶段 4 | ✅ | c9e1a905 | stderr 经临时文件+标记行回传，exit 2 原因读 stderr |
-| 2026-07-19 | 阶段 5 | ✅ | （本提交） | userPromptSubmit 事件 + additionalContext 注入（prompt/pre/post） |
+| 2026-07-19 | 阶段 5 | ✅ | 54bb2a87 | userPromptSubmit 事件 + additionalContext 注入（prompt/pre/post） |
+| 2026-07-19 | 阶段 5.5 | ✅ | （本提交） | 重构：hooks 执行层拆到 app/di/agent_hooks_access.dart，统一配置加载 |
