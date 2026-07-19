@@ -1261,6 +1261,7 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
     final filePath = path is String && path.isNotEmpty ? path : null;
 
     AgentHookResult? aggregate;
+    final contexts = <String>[];
     for (final hook in hooksForToolCall(
         config, AgentHookEvent.preToolUse, permission, patterns)) {
       final result = await _runHook(hook,
@@ -1268,6 +1269,9 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
           toolName: call.name,
           argsJson: call.argsJson,
           filePath: filePath);
+      if (result.additionalContext.isNotEmpty) {
+        contexts.add(result.additionalContext);
+      }
       if (result.outcome == AgentHookOutcome.block) {
         aggregate = AgentHookResult(
           outcome: AgentHookOutcome.block,
@@ -1284,8 +1288,15 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
         aggregate = result;
       }
     }
-    final verdict =
+    final base =
         aggregate ?? const AgentHookResult(outcome: AgentHookOutcome.proceed);
+    final verdict = contexts.isEmpty
+        ? base
+        : AgentHookResult(
+            outcome: base.outcome,
+            message: base.message,
+            additionalContext: contexts.join('\n'),
+          );
     _preVerdicts[key] = verdict;
     return verdict;
   }
@@ -1358,6 +1369,10 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
         : AgentHookEvent.postToolUseFailure;
 
     final feedback = <String>[];
+    final contexts = <String>[
+      if (preVerdict != null && preVerdict.additionalContext.isNotEmpty)
+        preVerdict.additionalContext,
+    ];
     for (final hook
         in hooksForToolCall(config, postEvent, permission, patterns)) {
       final result = await _runHook(hook,
@@ -1367,18 +1382,26 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
           filePath: filePath,
           toolOutput: toolResult.detail ?? toolResult.summary,
           toolOk: toolResult.ok);
+      if (result.additionalContext.isNotEmpty) {
+        contexts.add(result.additionalContext);
+      }
       if (result.outcome == AgentHookOutcome.block) {
         feedback.add(result.message.isEmpty
             ? 'hook（${hook.command}）报告了问题（无输出）。'
             : result.message);
       }
     }
-    if (feedback.isEmpty) return toolResult;
+    if (feedback.isEmpty && contexts.isEmpty) return toolResult;
+    final sections = [
+      if (feedback.isNotEmpty)
+        '[${postEvent.name} hook 反馈]\n${feedback.join('\n')}',
+      if (contexts.isNotEmpty)
+        '[hook additionalContext]\n${contexts.join('\n')}',
+    ];
     return AgentToolResult(
       ok: toolResult.ok,
       summary: toolResult.summary,
-      detail: '${toolResult.detail ?? ''}\n\n[${postEvent.name} hook 反馈]\n'
-          '${feedback.join('\n')}',
+      detail: '${toolResult.detail ?? ''}\n\n${sections.join('\n\n')}',
       overflowPath: toolResult.overflowPath,
     );
   }
@@ -1417,12 +1440,7 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
     return null;
   }
 
-  /// 在绑定工作区里跑一条 hook 命令：现场上下文两路传入——
-  /// ① stdin JSON（字段命名对齐 Claude Code，见
-  /// [buildAgentHookStdinJson]）；② 环境变量（AETHER_TOOL /
-  /// AETHER_ARGS_JSON / AETHER_FILE_PATH，post 事件另有
-  /// AETHER_TOOL_OUTPUT / AETHER_TOOL_OK）。超时/异常按 hook 自身
-  /// 失败处理（不阻断）。
+  /// 在绑定工作区里跑一条 hook 命令（委托 [_execHookCommand]）。
   Future<AgentHookResult> _runHook(
     AgentHook hook, {
     required String eventName,
@@ -1431,101 +1449,203 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
     String? filePath,
     String? toolOutput,
     bool? toolOk,
-  }) async {
-    try {
-      final cappedArgs =
-          argsJson.length > 4000 ? argsJson.substring(0, 4000) : argsJson;
-      final cappedOutput = toolOutput != null && toolOutput.length > 4000
-          ? toolOutput.substring(0, 4000)
-          : toolOutput;
-      final exports = [
-        'export AETHER_TOOL=${_shellQuote(toolName)}',
-        'export AETHER_ARGS_JSON=${_shellQuote(cappedArgs)}',
-        if (filePath != null && filePath.isNotEmpty)
-          'export AETHER_FILE_PATH=${_shellQuote(filePath)}',
-        if (cappedOutput != null)
-          'export AETHER_TOOL_OUTPUT=${_shellQuote(cappedOutput)}',
-        if (toolOk != null)
-          'export AETHER_TOOL_OK=${toolOk ? 'true' : 'false'}',
-      ].join('; ');
-      var stdinJson = buildAgentHookStdinJson(
+  }) =>
+      _execHookCommand(
+        _refOf(),
+        hook,
         eventName: eventName,
         toolName: toolName,
         argsJson: argsJson,
         filePath: filePath,
         toolOutput: toolOutput,
         toolOk: toolOk,
-        sessionId: _boundWorkspaceId,
+        workspaceId: _boundWorkspaceId,
         cwd: _workspaceRoot,
       );
-      // 命令行长度保险：超长时退化为不含 tool_input 原文的精简版。
-      if (stdinJson.length > 60000) {
-        stdinJson = buildAgentHookStdinJson(
-          eventName: eventName,
-          toolName: toolName,
-          argsJson: '{}',
-          filePath: filePath,
-          toolOutput: cappedOutput,
-          toolOk: toolOk,
-          sessionId: _boundWorkspaceId,
-          cwd: _workspaceRoot,
-        );
+}
+
+/// userPromptSubmit hooks（任务运行器在用户消息进入任务前调用）：
+/// 配置来源与执行器一致（手动 hooks + 已信任的工作区 hooks.json）。
+/// 任一 hook block → 返回 block 裁决（消息应被拦截）；各 hook 的
+/// additionalContext 合并返回；无 hooks 配置/无命中且无注入 → null。
+Future<AgentHookResult?> runUserPromptSubmitHooks(
+  Ref ref, {
+  required String workspaceId,
+  required String prompt,
+}) async {
+  final manual = [
+    for (final m in ref.read(agentManualHooksProvider))
+      if (m.enabled) m.hook,
+  ];
+  AgentHooksConfig? fileConfig;
+  String? root;
+  try {
+    final workspaces = await loadWorkspaces(ref);
+    final bound = workspaces.where((w) => w.id == workspaceId).firstOrNull;
+    if (bound != null) {
+      root = bound.root;
+      final raw =
+          await _readWorkspaceFile(ref, bound, '.aetherlink/hooks.json');
+      if (raw != null &&
+          raw.trim().isNotEmpty &&
+          ref.read(agentHooksTrustProvider)[workspaceId] == raw) {
+        fileConfig = decodeAgentHooksConfig(raw);
       }
-      // stderr 经临时文件 + 标记行回传（终端后端合流，见
-      // [kAgentHookStderrMarker]）；末尾子 shell 把 hook 退出码透传回来。
-      final result = await runTerminalTool(_refOf(), 'terminal_execute', {
-        'command': '__ahs="\${TMPDIR:-/tmp}/.aether_hook_stderr.\$\$"; '
-            '$exports; printf %s ${_shellQuote(stdinJson)} | '
-            '( ${hook.command} ) 2>"\$__ahs"; __ahc=\$?; '
-            "printf '\\n%s\\n' ${_shellQuote(kAgentHookStderrMarker)}; "
-            'cat "\$__ahs" 2>/dev/null; rm -f "\$__ahs"; ( exit \$__ahc )',
-        'workspace': _boundWorkspaceId,
-        'timeout_ms': hook.timeoutSeconds * 1000,
-      });
-      return _interpretTerminalResult(result);
-    } catch (e) {
+    }
+  } catch (_) {}
+  final hooks = [...manual, ...?fileConfig?.hooks];
+  if (hooks.isEmpty) return null;
+  final config = AgentHooksConfig(hooks: hooks);
+  final contexts = <String>[];
+  for (final hook in config.ofEvent(AgentHookEvent.userPromptSubmit)) {
+    final result = await _execHookCommand(
+      ref,
+      hook,
+      eventName: AgentHookEvent.userPromptSubmit.name,
+      toolName: '',
+      argsJson: '{}',
+      prompt: prompt,
+      workspaceId: workspaceId.isEmpty ? null : workspaceId,
+      cwd: root,
+    );
+    if (result.outcome == AgentHookOutcome.block) {
       return AgentHookResult(
-        outcome: AgentHookOutcome.failed,
-        message: 'hook 执行异常：$e',
+        outcome: AgentHookOutcome.block,
+        message: result.message.isEmpty
+            ? 'hook（${hook.command}）拦截了本条消息。'
+            : result.message,
       );
+    }
+    if (result.additionalContext.isNotEmpty) {
+      contexts.add(result.additionalContext);
     }
   }
+  if (contexts.isEmpty) return null;
+  return AgentHookResult(
+    outcome: AgentHookOutcome.proceed,
+    additionalContext: contexts.join('\n'),
+  );
+}
 
-  /// terminal_execute 结果（`{success, data: {exitCode, stdout, timedOut…}}`）
-  /// → hook 退出协议。
-  AgentHookResult _interpretTerminalResult(McpToolResult result) {
-    try {
-      final decoded = jsonDecode(result.text);
-      if (decoded is! Map<String, dynamic> || decoded['success'] != true) {
-        return AgentHookResult(
-          outcome: AgentHookOutcome.failed,
-          message: result.text,
-        );
-      }
-      final data = decoded['data'];
-      if (data is! Map<String, dynamic>) {
-        return const AgentHookResult(outcome: AgentHookOutcome.failed);
-      }
-      if (data['timedOut'] == true || data['canceled'] == true) {
-        return const AgentHookResult(
-          outcome: AgentHookOutcome.failed,
-          message: 'hook 超时/被中断',
-        );
-      }
-      final exitCode = data['exitCode'];
-      final stdout = data['stdout'];
-      final split = splitAgentHookOutput(stdout is String ? stdout : '');
-      return interpretAgentHookExit(
-        exitCode is int ? exitCode : 0,
-        split.stdout,
-        split.stderr,
-      );
-    } catch (e) {
-      return AgentHookResult(
-        outcome: AgentHookOutcome.failed,
-        message: 'hook 结果解析失败：$e',
+/// 跑一条 hook 命令：现场上下文两路传入——
+/// ① stdin JSON（字段命名对齐 Claude Code，见
+/// [buildAgentHookStdinJson]）；② 环境变量（AETHER_TOOL /
+/// AETHER_ARGS_JSON / AETHER_FILE_PATH / AETHER_PROMPT，post 事件另有
+/// AETHER_TOOL_OUTPUT / AETHER_TOOL_OK）。超时/异常按 hook 自身
+/// 失败处理（不阻断）。
+Future<AgentHookResult> _execHookCommand(
+  Ref ref,
+  AgentHook hook, {
+  required String eventName,
+  required String toolName,
+  required String argsJson,
+  String? filePath,
+  String? toolOutput,
+  bool? toolOk,
+  String? prompt,
+  String? workspaceId,
+  String? cwd,
+}) async {
+  try {
+    final cappedArgs =
+        argsJson.length > 4000 ? argsJson.substring(0, 4000) : argsJson;
+    final cappedOutput = toolOutput != null && toolOutput.length > 4000
+        ? toolOutput.substring(0, 4000)
+        : toolOutput;
+    final cappedPrompt = prompt != null && prompt.length > 4000
+        ? prompt.substring(0, 4000)
+        : prompt;
+    final exports = [
+      'export AETHER_TOOL=${_shellQuote(toolName)}',
+      'export AETHER_ARGS_JSON=${_shellQuote(cappedArgs)}',
+      if (filePath != null && filePath.isNotEmpty)
+        'export AETHER_FILE_PATH=${_shellQuote(filePath)}',
+      if (cappedOutput != null)
+        'export AETHER_TOOL_OUTPUT=${_shellQuote(cappedOutput)}',
+      if (toolOk != null)
+        'export AETHER_TOOL_OK=${toolOk ? 'true' : 'false'}',
+      if (cappedPrompt != null)
+        'export AETHER_PROMPT=${_shellQuote(cappedPrompt)}',
+    ].join('; ');
+    var stdinJson = buildAgentHookStdinJson(
+      eventName: eventName,
+      toolName: toolName,
+      argsJson: argsJson,
+      filePath: filePath,
+      toolOutput: toolOutput,
+      toolOk: toolOk,
+      prompt: prompt,
+      sessionId: workspaceId,
+      cwd: cwd,
+    );
+    // 命令行长度保险：超长时退化为不含 tool_input 原文的精简版。
+    if (stdinJson.length > 60000) {
+      stdinJson = buildAgentHookStdinJson(
+        eventName: eventName,
+        toolName: toolName,
+        argsJson: '{}',
+        filePath: filePath,
+        toolOutput: cappedOutput,
+        toolOk: toolOk,
+        prompt: cappedPrompt,
+        sessionId: workspaceId,
+        cwd: cwd,
       );
     }
+    // stderr 经临时文件 + 标记行回传（终端后端合流，见
+    // [kAgentHookStderrMarker]）；末尾子 shell 把 hook 退出码透传回来。
+    final result = await runTerminalTool(ref, 'terminal_execute', {
+      'command': '__ahs="\${TMPDIR:-/tmp}/.aether_hook_stderr.\$\$"; '
+          '$exports; printf %s ${_shellQuote(stdinJson)} | '
+          '( ${hook.command} ) 2>"\$__ahs"; __ahc=\$?; '
+          "printf '\\n%s\\n' ${_shellQuote(kAgentHookStderrMarker)}; "
+          'cat "\$__ahs" 2>/dev/null; rm -f "\$__ahs"; ( exit \$__ahc )',
+      'workspace': workspaceId,
+      'timeout_ms': hook.timeoutSeconds * 1000,
+    });
+    return _interpretTerminalResult(result);
+  } catch (e) {
+    return AgentHookResult(
+      outcome: AgentHookOutcome.failed,
+      message: 'hook 执行异常：$e',
+    );
+  }
+}
+
+/// terminal_execute 结果（`{success, data: {exitCode, stdout, timedOut…}}`）
+/// → hook 退出协议。
+AgentHookResult _interpretTerminalResult(McpToolResult result) {
+  try {
+    final decoded = jsonDecode(result.text);
+    if (decoded is! Map<String, dynamic> || decoded['success'] != true) {
+      return AgentHookResult(
+        outcome: AgentHookOutcome.failed,
+        message: result.text,
+      );
+    }
+    final data = decoded['data'];
+    if (data is! Map<String, dynamic>) {
+      return const AgentHookResult(outcome: AgentHookOutcome.failed);
+    }
+    if (data['timedOut'] == true || data['canceled'] == true) {
+      return const AgentHookResult(
+        outcome: AgentHookOutcome.failed,
+        message: 'hook 超时/被中断',
+      );
+    }
+    final exitCode = data['exitCode'];
+    final stdout = data['stdout'];
+    final split = splitAgentHookOutput(stdout is String ? stdout : '');
+    return interpretAgentHookExit(
+      exitCode is int ? exitCode : 0,
+      split.stdout,
+      split.stderr,
+    );
+  } catch (e) {
+    return AgentHookResult(
+      outcome: AgentHookOutcome.failed,
+      message: 'hook 结果解析失败：$e',
+    );
   }
 }
 

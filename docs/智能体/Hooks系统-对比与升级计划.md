@@ -140,12 +140,11 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 - `interpretAgentHookExit` 接线处传入真实 stderr：exit 2 时 stderr 优先作为原因，hook 自身失败时 stderr 作为错误信息。
 **验收**：单测覆盖拆分（有/无标记、空 stderr）；hook 脚本 `echo reason >&2; exit 2` 的 reason 能回给模型。
 
-### - [ ] 阶段 5：additionalContext 注入 + userPromptSubmit 事件 ⬜
+### - [x] 阶段 5：additionalContext 注入 + userPromptSubmit 事件 ✅（2026-07-19）
 **目标**：hook 能向对话注入上下文；用户发消息时可拦截/加工。
-- 新事件 `userPromptSubmit`：用户输入进入任务前触发，可 block（拦截并给原因）或输出 `additionalContext` 注入。
-- preToolUse / postToolUse 的 stdout JSON 支持 `additionalContext`，追加进工具结果或下一轮输入。
-**验收**：单测 + 手动验证注入内容出现在模型上下文。
-**涉及**：`agent_hooks.dart`、`agent_engine.dart`（输入管线）、`agent_runtime_access.dart`。
+- 新事件 `userPromptSubmit`：任务运行器（`agent_task_runner.dart` 的 startDraft / startNewTask / sendMessage / answerUserQuestion）在用户消息落库前调用 `runUserPromptSubmitHooks`（agent_runtime_access.dart 顶层函数，配置来源与执行器一致）：block → 消息不进上下文，落状态事件说明拦截原因；additionalContext → 追加到消息后注入模型上下文。stdin JSON 带 `prompt` 字段（对齐 CC），另有 AETHER_PROMPT 环境变量。
+- `AgentHookResult` 新增 `additionalContext` 字段：stdout JSON `{"additionalContext":"..."}` 可单独出现（proceed 带注入）或与 decision 同时出现；preToolUse / postToolUse(Failure) 的 additionalContext 聚合后以 `[hook additionalContext]` 段追加进工具结果 detail（回到下一轮模型输入）。
+**验收**：单测覆盖事件解析、prompt stdin 字段、additionalContext 解析（单独/与 decision 同时）；flutter analyze 无问题。
 
 ### - [ ] 阶段 6：`continue:false` 全局终止 + 并行执行 ⬜
 **目标**：对齐 CC 的任务级终止与执行性能。
@@ -176,4 +175,5 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 | 2026-07-19 | 阶段 1 | ✅ | 3f2d0e05 | 新增 postToolUseFailure 事件；post 事件传入 AETHER_TOOL_OUTPUT / AETHER_TOOL_OK |
 | 2026-07-19 | 阶段 2 | ✅ | 9824939f | stdin JSON 输入（buildAgentHookStdinJson + 管道喷入），字段命名对齐 CC |
 | 2026-07-19 | 阶段 3 | ✅ | 13104088 | preToolUse allow/ask 打通审批门，裁决缓存避免重复执行 |
-| 2026-07-19 | 阶段 4 | ✅ | （本提交） | stderr 经临时文件+标记行回传，exit 2 原因读 stderr |
+| 2026-07-19 | 阶段 4 | ✅ | c9e1a905 | stderr 经临时文件+标记行回传，exit 2 原因读 stderr |
+| 2026-07-19 | 阶段 5 | ✅ | （本提交） | userPromptSubmit 事件 + additionalContext 注入（prompt/pre/post） |

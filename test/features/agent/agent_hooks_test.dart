@@ -167,6 +167,51 @@ void main() {
     });
   });
 
+  group('userPromptSubmit / additionalContext', () {
+    test('userPromptSubmit 事件解析', () {
+      final config = decodeAgentHooksConfig(
+        '{"userPromptSubmit":[{"command":"check_prompt.sh"}]}',
+      );
+      final hooks = config!.ofEvent(AgentHookEvent.userPromptSubmit);
+      expect(hooks, hasLength(1));
+      expect(hooks.single.command, 'check_prompt.sh');
+    });
+
+    test('stdin JSON：prompt 事件带 prompt 字段，不带 tool_name/tool_input', () {
+      final raw = buildAgentHookStdinJson(
+        eventName: 'userPromptSubmit',
+        toolName: '',
+        argsJson: '{}',
+        prompt: '帮我删库',
+      );
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      expect(json['hook_event_name'], 'userPromptSubmit');
+      expect(json['prompt'], '帮我删库');
+      expect(json.containsKey('tool_name'), isFalse);
+      expect(json.containsKey('tool_input'), isFalse);
+    });
+
+    test('exit 0 + additionalContext（无 decision）→ proceed 带注入', () {
+      final r = interpretAgentHookExit(
+        0,
+        '{"additionalContext":"当前分支是 main"}',
+        '',
+      );
+      expect(r.outcome, AgentHookOutcome.proceed);
+      expect(r.additionalContext, '当前分支是 main');
+    });
+
+    test('decision + additionalContext 同时输出均保留', () {
+      final r = interpretAgentHookExit(
+        0,
+        '{"decision":"allow","additionalContext":"lint 已通过"}',
+        '',
+      );
+      expect(r.outcome, AgentHookOutcome.allow);
+      expect(r.additionalContext, 'lint 已通过');
+    });
+  });
+
   group('splitAgentHookOutput', () {
     test('标记行前后拆为 stdout / stderr', () {
       final r = splitAgentHookOutput(

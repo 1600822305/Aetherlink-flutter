@@ -45,6 +45,14 @@ _EventMeta _metaOf(AgentHookEvent event, ColorScheme scheme) =>
           description: '任务启动/续跑时触发。',
           canBlock: false,
         ),
+      AgentHookEvent.userPromptSubmit => (
+          stage: 'AGENT 阶段',
+          color: Colors.purple,
+          title: 'userPromptSubmit',
+          description: '用户消息进入任务前触发；退出码 2 可拦截消息，'
+              '输出 {"additionalContext":"..."} 可注入上下文。',
+          canBlock: true,
+        ),
       AgentHookEvent.turnStart => (
           stage: 'TURN 阶段',
           color: Colors.blue,

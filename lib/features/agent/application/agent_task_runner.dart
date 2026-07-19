@@ -80,6 +80,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     required AgentSessionMode mode,
     List<AgentUserAttachment> attachments = const [],
   }) async {
+    final processed = await _promptAfterHooks(task.id, task.workspaceId, text);
+    if (processed == null) return;
     final updated = task.copyWith(
       title: _titleFrom(text),
       status: AgentTaskStatus.running,
@@ -90,7 +92,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     await ref.read(agentTasksProvider.notifier).apply(updated);
     await _checkpoint(updated, text);
     await _store()
-        .appendUserMessage(updated.id, text, attachments: attachments);
+        .appendUserMessage(updated.id, processed, attachments: attachments);
     _run(updated);
   }
 
@@ -117,8 +119,15 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       lastEventSummary: text,
     );
     await ref.read(agentTasksProvider.notifier).apply(task);
+    final processed = await _promptAfterHooks(task.id, task.workspaceId, text);
+    if (processed == null) {
+      final blocked = task.copyWith(status: AgentTaskStatus.draft);
+      await ref.read(agentTasksProvider.notifier).apply(blocked);
+      return blocked;
+    }
     await _checkpoint(task, text);
-    await _store().appendUserMessage(task.id, text, attachments: attachments);
+    await _store()
+        .appendUserMessage(task.id, processed, attachments: attachments);
     _run(task);
     return task;
   }
@@ -132,6 +141,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     AgentSessionMode? mode,
     List<AgentUserAttachment> attachments = const [],
   }) async {
+    final processed = await _promptAfterHooks(task.id, task.workspaceId, text);
+    if (processed == null) return;
     if (!queued && mode != null && mode != task.mode) {
       await _store().appendStatusChange(
         task.id,
@@ -143,7 +154,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     }
     await _store().appendUserMessage(
       task.id,
-      text,
+      processed,
       queued: queued,
       attachments: attachments,
     );
@@ -176,10 +187,12 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       throw StateError('该提问已失效或任务不再等待回答');
     }
 
+    final processed = await _promptAfterHooks(task.id, task.workspaceId, text);
+    if (processed == null) return;
     await _checkpoint(task, text);
     await _store().appendUserMessage(
       task.id,
-      text,
+      processed,
       replyToQuestionId: question.id,
     );
     final updated = task.copyWith(
@@ -398,6 +411,37 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   void pause(String taskId) => _tokens[taskId]?.requestPause();
 
   void forceStop(String taskId) => _tokens[taskId]?.requestCancel();
+
+  /// userPromptSubmit hooks：用户消息进入任务前过一遍 hooks——
+  /// block → 消息不进上下文，落状态事件说明拦截原因并返回 null；
+  /// additionalContext → 追加到消息后注入模型上下文；无 hooks /
+  /// hook 自身异常 → 原样返回。
+  Future<String?> _promptAfterHooks(
+    String taskId,
+    String workspaceId,
+    String text,
+  ) async {
+    try {
+      final result = await runUserPromptSubmitHooks(
+        ref,
+        workspaceId: workspaceId,
+        prompt: text,
+      );
+      if (result == null) return text;
+      if (result.outcome == AgentHookOutcome.block) {
+        await _store().appendStatusChange(
+          taskId,
+          '[userPromptSubmit hook 拦截] ${result.message}',
+        );
+        return null;
+      }
+      if (result.additionalContext.isNotEmpty) {
+        return '$text\n\n[userPromptSubmit hook additionalContext]\n'
+            '${result.additionalContext}';
+      }
+    } catch (_) {}
+    return text;
+  }
 
   Future<void> _run(AgentTask task) async {
     if (state.contains(task.id)) return;

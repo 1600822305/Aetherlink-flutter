@@ -15,6 +15,10 @@ enum AgentHookEvent {
   /// 任务启动/续跑时（不阻断，只观测/准备环境）。
   taskStart,
 
+  /// 用户消息进入任务前：可 block（拦截并给原因）或输出
+  /// additionalContext 注入上下文。
+  userPromptSubmit,
+
   /// 每轮开始（LLM 调用前，不阻断）。
   turnStart,
 
@@ -118,6 +122,7 @@ String buildAgentHookStdinJson({
   String? filePath,
   String? toolOutput,
   bool? toolOk,
+  String? prompt,
   String? sessionId,
   String? cwd,
 }) {
@@ -129,8 +134,9 @@ String buildAgentHookStdinJson({
   }
   return jsonEncode({
     'hook_event_name': eventName,
-    'tool_name': toolName,
-    'tool_input': toolInput,
+    if (toolName.isNotEmpty) 'tool_name': toolName,
+    if (toolName.isNotEmpty) 'tool_input': toolInput,
+    if (prompt != null) 'prompt': prompt,
     if (filePath != null && filePath.isNotEmpty) 'file_path': filePath,
     if (toolOutput != null) 'tool_response': toolOutput,
     if (toolOk != null) 'tool_ok': toolOk,
@@ -193,12 +199,19 @@ enum AgentHookOutcome {
   failed,
 }
 
-/// hook 裁决 + 回给模型的信息。
+/// hook 裁决 + 回给模型的信息。[additionalContext] 为 hook 要注入
+/// 对话/工具结果的额外上下文（stdout JSON `additionalContext` 字段，
+/// 可与任意裁决同时出现）。
 class AgentHookResult {
-  const AgentHookResult({required this.outcome, this.message = ''});
+  const AgentHookResult({
+    required this.outcome,
+    this.message = '',
+    this.additionalContext = '',
+  });
 
   final AgentHookOutcome outcome;
   final String message;
+  final String additionalContext;
 }
 
 /// 退出协议（对标 Claude Code）：
@@ -240,11 +253,20 @@ AgentHookResult? _decodeDecision(String stdout) {
       'ask' => AgentHookOutcome.ask,
       _ => null,
     };
-    if (outcome == null) return null;
+    final context = decoded['additionalContext'];
+    final contextStr = context is String ? context : '';
+    if (outcome == null) {
+      if (contextStr.isEmpty) return null;
+      return AgentHookResult(
+        outcome: AgentHookOutcome.proceed,
+        additionalContext: contextStr,
+      );
+    }
     final reason = decoded['reason'];
     return AgentHookResult(
       outcome: outcome,
       message: reason is String ? reason : '',
+      additionalContext: contextStr,
     );
   } catch (_) {
     return null;
