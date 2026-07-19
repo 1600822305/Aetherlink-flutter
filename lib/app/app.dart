@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/app/di/behavior_settings_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/app/theme/app_theme.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
+import 'package:aetherlink_flutter/shared/widgets/ime_editing_panel_support.dart';
 import 'package:aetherlink_flutter/features/settings/application/font_settings_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/font_size_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/dev_tools_button_controller.dart';
@@ -111,7 +112,8 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
     // 主界面模式（聊天/智能体）同样在建路由前解析：退出前在智能体模式，
     // 冷启动就直接落 /agent（welcome 优先）。
     final mainMode = ref.watch(appMainModeControllerProvider);
-    final settled = (onboarding.hasValue || onboarding.hasError) &&
+    final settled =
+        (onboarding.hasValue || onboarding.hasError) &&
         (mainMode.hasValue || mainMode.hasError);
     if (_router == null && settled) {
       _router = AppRouter.create(
@@ -122,8 +124,7 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
       // attributed to a screen (e.g. "/chat"). setRoute is a no-op while the
       // monitor is stopped, so this is harmless when the overlay is off.
       final provider = _router!.routeInformationProvider;
-      void report() =>
-          PerfMonitor.instance.setRoute(provider.value.uri.path);
+      void report() => PerfMonitor.instance.setRoute(provider.value.uri.path);
       provider.addListener(report);
       report();
     }
@@ -165,46 +166,48 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
         );
         return AnnotatedRegion<SystemUiOverlayStyle>(
           value: overlay,
-          child: MediaQuery(
-            data: MediaQuery.of(
-              context,
-            ).copyWith(textScaler: TextScaler.linear(textScale)),
-            child: Builder(
-              builder: (context) {
-                // Recomputed on every navigation (the router rebuilds this
-                // subtree): drives the button's green "on DevTools" state and
-                // remembers the page to return to.
-                final currentPath =
-                    router.routeInformationProvider.value.uri.path;
-                final onDevTools = currentPath == AppRouter.devToolsPath;
-                if (!onDevTools) _lastNonDevToolsPath = currentPath;
-                return DevToolsFloatingButtonHost(
-                  enabled: devToolsButtonEnabled,
-                  active: onDevTools,
-                  initialPosition: devToolsButtonPosition,
-                  onPositionChanged: (pos) => ref
-                      .read(devToolsButtonPositionProvider.notifier)
-                      .set(pos),
-                  // Tap toggles: open DevTools, or return to the previous page
-                  // when already there (no route stacking on repeat taps).
-                  onPressed: () {
-                    if (router.routeInformationProvider.value.uri.path ==
-                        AppRouter.devToolsPath) {
-                      if (router.canPop()) {
-                        router.pop();
+          child: ImeEditingPanelSupport(
+            child: MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(textScale)),
+              child: Builder(
+                builder: (context) {
+                  // Recomputed on every navigation (the router rebuilds this
+                  // subtree): drives the button's green "on DevTools" state and
+                  // remembers the page to return to.
+                  final currentPath =
+                      router.routeInformationProvider.value.uri.path;
+                  final onDevTools = currentPath == AppRouter.devToolsPath;
+                  if (!onDevTools) _lastNonDevToolsPath = currentPath;
+                  return DevToolsFloatingButtonHost(
+                    enabled: devToolsButtonEnabled,
+                    active: onDevTools,
+                    initialPosition: devToolsButtonPosition,
+                    onPositionChanged: (pos) => ref
+                        .read(devToolsButtonPositionProvider.notifier)
+                        .set(pos),
+                    // Tap toggles: open DevTools, or return to the previous page
+                    // when already there (no route stacking on repeat taps).
+                    onPressed: () {
+                      if (router.routeInformationProvider.value.uri.path ==
+                          AppRouter.devToolsPath) {
+                        if (router.canPop()) {
+                          router.pop();
+                        } else {
+                          router.go(_lastNonDevToolsPath);
+                        }
                       } else {
-                        router.go(_lastNonDevToolsPath);
+                        router.push(AppRouter.devToolsPath);
                       }
-                    } else {
-                      router.push(AppRouter.devToolsPath);
-                    }
-                  },
-                  child: PerfOverlayHost(
-                    enabled: perfEnabled,
-                    child: child ?? const SizedBox.shrink(),
-                  ),
-                );
-              },
+                    },
+                    child: PerfOverlayHost(
+                      enabled: perfEnabled,
+                      child: child ?? const SizedBox.shrink(),
+                    ),
+                  );
+                },
+              ),
             ),
           ),
         );
