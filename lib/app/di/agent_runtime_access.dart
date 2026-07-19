@@ -12,6 +12,7 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/remote_mcp_access.dart';
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_hooks_trust.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_manual_hooks.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_permission_rules.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
@@ -86,6 +87,7 @@ class AgentRuntime {
         AgentToolExecutor tools,
         ApprovalGate approval,
         Future<String?> Function() stopGuard,
+        Future<void> Function() taskStartHooks,
       })> forProfile(
     AgentProfile profile, {
     AgentSessionMode mode = AgentSessionMode.code,
@@ -113,6 +115,7 @@ class AgentRuntime {
       tools: hooked,
       approval: _PolicyApprovalGate(_refOf, catalog.routes),
       stopGuard: hooked.runStopHooks,
+      taskStartHooks: hooked.runTaskStartHooks,
     );
   }
 
@@ -1207,27 +1210,35 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
   AgentHooksConfig? _config;
   bool _configLoaded = false;
 
-  /// hooks 配置（任务运行内只读一次）：无绑定工作区 / 无文件 /
-  /// 未信任或内容已变更 → null（不执行任何 hook）。
+  /// hooks 配置（任务运行内只读一次）：设置页手动添加的 hooks（天然
+  /// 可信，不走文件信任门槛）+ 已信任的仓库 hooks.json。无绑定
+  /// 工作区或两者均无 → null（不执行任何 hook）。
   Future<AgentHooksConfig?> _hooks() async {
     if (_configLoaded) return _config;
     _configLoaded = true;
     final workspaceId = _boundWorkspaceId;
     if (workspaceId == null) return null;
     final ref = _refOf();
-    List<Workspace> workspaces;
+    final manual = [
+      for (final m in ref.read(agentManualHooksProvider))
+        if (m.enabled) m.hook,
+    ];
+    AgentHooksConfig? fileConfig;
     try {
-      workspaces = await loadWorkspaces(ref);
-    } catch (_) {
-      return null;
-    }
-    final bound = workspaces.where((w) => w.id == workspaceId).firstOrNull;
-    if (bound == null) return null;
-    final raw = await _readWorkspaceFile(ref, bound, '.aetherlink/hooks.json');
-    if (raw == null || raw.trim().isEmpty) return null;
-    final trusted = ref.read(agentHooksTrustProvider)[workspaceId];
-    if (trusted != raw) return null;
-    _config = decodeAgentHooksConfig(raw);
+      final workspaces = await loadWorkspaces(ref);
+      final bound = workspaces.where((w) => w.id == workspaceId).firstOrNull;
+      if (bound != null) {
+        final raw =
+            await _readWorkspaceFile(ref, bound, '.aetherlink/hooks.json');
+        if (raw != null &&
+            raw.trim().isNotEmpty &&
+            ref.read(agentHooksTrustProvider)[workspaceId] == raw) {
+          fileConfig = decodeAgentHooksConfig(raw);
+        }
+      }
+    } catch (_) {}
+    final hooks = [...manual, ...?fileConfig?.hooks];
+    _config = hooks.isEmpty ? null : AgentHooksConfig(hooks: hooks);
     return _config;
   }
 
@@ -1291,6 +1302,17 @@ class _HookedAgentToolExecutor implements AgentToolExecutor {
   /// hook 阻断则返回阻断原因（收尾被阻止，原因回填继续跑），
   /// 全部放行/失败返回 null。stop hook 不按工具匹配，matcher/pattern
   /// 忽略。
+  /// 任务启动/续跑时跑 taskStart hooks（fire-and-forget，不阻断）。
+  Future<void> runTaskStartHooks() async {
+    try {
+      final config = await _hooks();
+      if (config == null) return;
+      for (final hook in config.ofEvent(AgentHookEvent.taskStart)) {
+        await _runHook(hook, toolName: 'taskStart', argsJson: '{}');
+      }
+    } catch (_) {}
+  }
+
   Future<String?> runStopHooks() async {
     final config = await _hooks();
     if (config == null) return null;

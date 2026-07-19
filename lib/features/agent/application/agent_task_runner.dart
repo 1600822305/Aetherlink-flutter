@@ -435,6 +435,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           mode: task.mode,
           boundWorkspaceId: task.workspaceId,
         );
+    // taskStart hooks：任务启动/续跑时触发，fire-and-forget 不阻断。
+    unawaited(runtime.taskStartHooks());
     final engine = AgentEngine(
       llm: runtime.llm,
       tools: runtime.tools,
