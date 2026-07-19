@@ -201,17 +201,75 @@ enum AgentHookOutcome {
 
 /// hook 裁决 + 回给模型的信息。[additionalContext] 为 hook 要注入
 /// 对话/工具结果的额外上下文（stdout JSON `additionalContext` 字段，
-/// 可与任意裁决同时出现）。
+/// 可与任意裁决同时出现）。[preventContinuation] 为 stdout JSON
+/// `{"continue":false}`（对标 Claude Code）：终止整个任务，
+/// [stopReason] 展示给用户；可与任意裁决同时出现。
 class AgentHookResult {
   const AgentHookResult({
     required this.outcome,
     this.message = '',
     this.additionalContext = '',
+    this.preventContinuation = false,
+    this.stopReason = '',
   });
 
   final AgentHookOutcome outcome;
   final String message;
   final String additionalContext;
+  final bool preventContinuation;
+  final String stopReason;
+}
+
+/// 同一事件多条 hooks（并行执行）的裁决聚合：
+/// - outcome 优先级 block > ask > allow > proceed（failed 视为 proceed）；
+/// - message 取全部 block 的原因拼接（无 block 时取胜出裁决的 message）；
+/// - additionalContext 非空项拼接；
+/// - preventContinuation 任一为 true 即 true，stopReason 取首个非空。
+AgentHookResult aggregateAgentHookResults(Iterable<AgentHookResult> results) {
+  var outcome = AgentHookOutcome.proceed;
+  final blockMessages = <String>[];
+  final contexts = <String>[];
+  var prevent = false;
+  var stopReason = '';
+  String winnerMessage = '';
+  for (final r in results) {
+    if (r.additionalContext.isNotEmpty) contexts.add(r.additionalContext);
+    if (r.preventContinuation) {
+      prevent = true;
+      if (stopReason.isEmpty && r.stopReason.isNotEmpty) {
+        stopReason = r.stopReason;
+      }
+    }
+    switch (r.outcome) {
+      case AgentHookOutcome.block:
+        if (outcome != AgentHookOutcome.block) {
+          outcome = AgentHookOutcome.block;
+        }
+        if (r.message.isNotEmpty) blockMessages.add(r.message);
+      case AgentHookOutcome.ask:
+        if (outcome != AgentHookOutcome.block) {
+          outcome = AgentHookOutcome.ask;
+          winnerMessage = r.message;
+        }
+      case AgentHookOutcome.allow:
+        if (outcome == AgentHookOutcome.proceed) {
+          outcome = AgentHookOutcome.allow;
+          winnerMessage = r.message;
+        }
+      case AgentHookOutcome.proceed:
+      case AgentHookOutcome.failed:
+        break;
+    }
+  }
+  return AgentHookResult(
+    outcome: outcome,
+    message: outcome == AgentHookOutcome.block
+        ? blockMessages.join('\n')
+        : winnerMessage,
+    additionalContext: contexts.join('\n'),
+    preventContinuation: prevent,
+    stopReason: stopReason,
+  );
 }
 
 /// 退出协议（对标 Claude Code）：
@@ -255,11 +313,16 @@ AgentHookResult? _decodeDecision(String stdout) {
     };
     final context = decoded['additionalContext'];
     final contextStr = context is String ? context : '';
+    final prevent = decoded['continue'] == false;
+    final stopReason = decoded['stopReason'];
+    final stopReasonStr = prevent && stopReason is String ? stopReason : '';
     if (outcome == null) {
-      if (contextStr.isEmpty) return null;
+      if (contextStr.isEmpty && !prevent) return null;
       return AgentHookResult(
         outcome: AgentHookOutcome.proceed,
         additionalContext: contextStr,
+        preventContinuation: prevent,
+        stopReason: stopReasonStr,
       );
     }
     final reason = decoded['reason'];
@@ -267,6 +330,8 @@ AgentHookResult? _decodeDecision(String stdout) {
       outcome: outcome,
       message: reason is String ? reason : '',
       additionalContext: contextStr,
+      preventContinuation: prevent,
+      stopReason: stopReasonStr,
     );
   } catch (_) {
     return null;

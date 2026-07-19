@@ -212,6 +212,127 @@ void main() {
     });
   });
 
+  group('continue:false / stopReason', () {
+    test('exit 0 + {"continue":false,"stopReason":...} → 终止信号', () {
+      final r = interpretAgentHookExit(
+        0,
+        '{"continue":false,"stopReason":"预算已超"}',
+        '',
+      );
+      expect(r.outcome, AgentHookOutcome.proceed);
+      expect(r.preventContinuation, isTrue);
+      expect(r.stopReason, '预算已超');
+    });
+
+    test('continue:false 可与 decision 同时出现', () {
+      final r = interpretAgentHookExit(
+        0,
+        '{"decision":"block","reason":"违规","continue":false,'
+        '"stopReason":"终止任务"}',
+        '',
+      );
+      expect(r.outcome, AgentHookOutcome.block);
+      expect(r.message, '违规');
+      expect(r.preventContinuation, isTrue);
+      expect(r.stopReason, '终止任务');
+    });
+
+    test('continue:true / 缺省不产生终止信号', () {
+      expect(
+        interpretAgentHookExit(0, '{"continue":true}', '').preventContinuation,
+        isFalse,
+      );
+      expect(
+        interpretAgentHookExit(0, '{"decision":"ask"}', '')
+            .preventContinuation,
+        isFalse,
+      );
+    });
+
+    test('continue:false 无 stopReason 时 stopReason 为空', () {
+      final r = interpretAgentHookExit(0, '{"continue":false}', '');
+      expect(r.preventContinuation, isTrue);
+      expect(r.stopReason, '');
+    });
+  });
+
+  group('aggregateAgentHookResults', () {
+    test('任一 block 即 block，原因拼接', () {
+      final r = aggregateAgentHookResults(const [
+        AgentHookResult(outcome: AgentHookOutcome.allow, message: '白名单'),
+        AgentHookResult(outcome: AgentHookOutcome.block, message: '违规 A'),
+        AgentHookResult(outcome: AgentHookOutcome.block, message: '违规 B'),
+      ]);
+      expect(r.outcome, AgentHookOutcome.block);
+      expect(r.message, '违规 A\n违规 B');
+    });
+
+    test('优先级 block > ask > allow > proceed', () {
+      expect(
+        aggregateAgentHookResults(const [
+          AgentHookResult(outcome: AgentHookOutcome.allow),
+          AgentHookResult(outcome: AgentHookOutcome.ask),
+        ]).outcome,
+        AgentHookOutcome.ask,
+      );
+      expect(
+        aggregateAgentHookResults(const [
+          AgentHookResult(outcome: AgentHookOutcome.proceed),
+          AgentHookResult(outcome: AgentHookOutcome.allow),
+        ]).outcome,
+        AgentHookOutcome.allow,
+      );
+      expect(
+        aggregateAgentHookResults(const [
+          AgentHookResult(outcome: AgentHookOutcome.failed, message: 'boom'),
+        ]).outcome,
+        AgentHookOutcome.proceed,
+      );
+    });
+
+    test('additionalContext 非空项拼接', () {
+      final r = aggregateAgentHookResults(const [
+        AgentHookResult(
+            outcome: AgentHookOutcome.proceed, additionalContext: '上下文1'),
+        AgentHookResult(outcome: AgentHookOutcome.proceed),
+        AgentHookResult(
+            outcome: AgentHookOutcome.block,
+            message: 'x',
+            additionalContext: '上下文2'),
+      ]);
+      expect(r.additionalContext, '上下文1\n上下文2');
+    });
+
+    test('preventContinuation 任一为 true 即 true，stopReason 取首个非空', () {
+      final r = aggregateAgentHookResults(const [
+        AgentHookResult(
+            outcome: AgentHookOutcome.proceed, preventContinuation: true),
+        AgentHookResult(
+            outcome: AgentHookOutcome.proceed,
+            preventContinuation: true,
+            stopReason: '第一个原因'),
+        AgentHookResult(
+            outcome: AgentHookOutcome.proceed,
+            preventContinuation: true,
+            stopReason: '第二个原因'),
+      ]);
+      expect(r.preventContinuation, isTrue);
+      expect(r.stopReason, '第一个原因');
+      expect(
+        aggregateAgentHookResults(const [
+          AgentHookResult(outcome: AgentHookOutcome.proceed),
+        ]).preventContinuation,
+        isFalse,
+      );
+    });
+
+    test('空列表 → proceed', () {
+      final r = aggregateAgentHookResults(const []);
+      expect(r.outcome, AgentHookOutcome.proceed);
+      expect(r.preventContinuation, isFalse);
+    });
+  });
+
   group('splitAgentHookOutput', () {
     test('标记行前后拆为 stdout / stderr', () {
       final r = splitAgentHookOutput(

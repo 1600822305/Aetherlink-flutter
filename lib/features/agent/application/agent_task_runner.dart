@@ -429,6 +429,13 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         prompt: text,
       );
       if (result == null) return text;
+      if (result.preventContinuation) {
+        await _store().appendStatusChange(
+          taskId,
+          '[userPromptSubmit hook 终止] ${result.stopReason.isNotEmpty ? result.stopReason : 'hook 要求终止任务（continue:false）'}',
+        );
+        return null;
+      }
       if (result.outcome == AgentHookOutcome.block) {
         await _store().appendStatusChange(
           taskId,
@@ -493,6 +500,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       subagents: _RunnerSubagentLauncher(this),
       toolStream: ref.read(agentToolStreamProvider.notifier),
       stopGuard: runtime.stopGuard,
+      hookStopSignal: runtime.hookStopSignal,
       onTurnStart: () =>
           unawaited(runtime.lifecycleHooks(AgentHookEvent.turnStart)),
       onTurnEnd: () =>
@@ -818,6 +826,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       budget: AgentBudget(maxRounds: 15, maxTokens: 200000),
       toolStream: ref.read(agentToolStreamProvider.notifier),
       stopGuard: runtime.stopGuard,
+      hookStopSignal: runtime.hookStopSignal,
     );
     await engine.run(child, childToken);
 

@@ -141,6 +141,25 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
   /// 保证同一次调用 hooks 只执行一次。
   final Map<String, AgentHookResult> _preVerdicts = {};
 
+  /// 任一 hook 输出 `{"continue":false}` 后的待处理终止信号
+  /// （stopReason，无则默认文案）；引擎在安全点经
+  /// [takeHookStopSignal] 消费并终止整个任务。
+  String? _stopSignal;
+
+  /// 取并清除 hook 的任务终止信号（continue:false）。
+  String? takeHookStopSignal() {
+    final signal = _stopSignal;
+    _stopSignal = null;
+    return signal;
+  }
+
+  void _recordStopSignal(AgentHookResult result) {
+    if (!result.preventContinuation) return;
+    _stopSignal ??= result.stopReason.isNotEmpty
+        ? result.stopReason
+        : 'hook 要求终止任务（continue:false）';
+  }
+
   String _verdictKey(AgentToolCallRequest call) =>
       '${call.name}\u0000${call.argsJson}';
 
@@ -164,45 +183,50 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     final path = args['path'];
     final filePath = path is String && path.isNotEmpty ? path : null;
 
-    AgentHookResult? aggregate;
-    final contexts = <String>[];
-    for (final hook in hooksForToolCall(
-        config, AgentHookEvent.preToolUse, permission, patterns)) {
-      final result = await _runHook(hook,
+    final results = await _runHooksParallel(
+      hooksForToolCall(
+          config, AgentHookEvent.preToolUse, permission, patterns),
+      (hook) => _runHook(hook,
           eventName: AgentHookEvent.preToolUse.name,
           toolName: call.name,
           argsJson: call.argsJson,
-          filePath: filePath);
-      if (result.additionalContext.isNotEmpty) {
-        contexts.add(result.additionalContext);
-      }
-      if (result.outcome == AgentHookOutcome.block) {
-        aggregate = AgentHookResult(
-          outcome: AgentHookOutcome.block,
-          message: result.message.isEmpty
-              ? 'hook（${hook.command}）拦截了本次调用。'
-              : result.message,
-        );
-        break;
-      }
-      if (result.outcome == AgentHookOutcome.ask) {
-        aggregate = result;
-      } else if (result.outcome == AgentHookOutcome.allow &&
-          aggregate?.outcome != AgentHookOutcome.ask) {
-        aggregate = result;
-      }
-    }
-    final base =
-        aggregate ?? const AgentHookResult(outcome: AgentHookOutcome.proceed);
-    final verdict = contexts.isEmpty
-        ? base
-        : AgentHookResult(
-            outcome: base.outcome,
-            message: base.message,
-            additionalContext: contexts.join('\n'),
-          );
+          filePath: filePath),
+      emptyBlockMessage: (hook) => 'hook（${hook.command}）拦截了本次调用。',
+    );
+    final verdict = aggregateAgentHookResults(results);
+    _recordStopSignal(verdict);
     _preVerdicts[key] = verdict;
     return verdict;
+  }
+
+  /// 同事件命中的多条 hooks 并行执行（对标 Claude Code）：同命令
+  /// 去重，裁决由 [aggregateAgentHookResults] 聚合；可选把空原因的
+  /// block 补上含 hook 命令的默认文案。
+  Future<List<AgentHookResult>> _runHooksParallel(
+    List<AgentHook> hooks,
+    Future<AgentHookResult> Function(AgentHook hook) run, {
+    String Function(AgentHook hook)? emptyBlockMessage,
+  }) {
+    final seen = <String>{};
+    final unique = [for (final h in hooks) if (seen.add(h.command)) h];
+    return Future.wait([
+      for (final hook in unique)
+        () async {
+          final result = await run(hook);
+          if (emptyBlockMessage != null &&
+              result.outcome == AgentHookOutcome.block &&
+              result.message.isEmpty) {
+            return AgentHookResult(
+              outcome: AgentHookOutcome.block,
+              message: emptyBlockMessage(hook),
+              additionalContext: result.additionalContext,
+              preventContinuation: result.preventContinuation,
+              stopReason: result.stopReason,
+            );
+          }
+          return result;
+        }(),
+    ]);
   }
 
   /// hooks 配置（任务运行内只读一次），见 [loadAgentHooksConfig]。
@@ -251,33 +275,28 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
         ? AgentHookEvent.postToolUse
         : AgentHookEvent.postToolUseFailure;
 
-    final feedback = <String>[];
-    final contexts = <String>[
-      if (preVerdict != null && preVerdict.additionalContext.isNotEmpty)
-        preVerdict.additionalContext,
-    ];
-    for (final hook
-        in hooksForToolCall(config, postEvent, permission, patterns)) {
-      final result = await _runHook(hook,
+    final results = await _runHooksParallel(
+      hooksForToolCall(config, postEvent, permission, patterns),
+      (hook) => _runHook(hook,
           eventName: postEvent.name,
           toolName: call.name,
           argsJson: call.argsJson,
           filePath: filePath,
           toolOutput: toolResult.detail ?? toolResult.summary,
-          toolOk: toolResult.ok);
-      if (result.additionalContext.isNotEmpty) {
-        contexts.add(result.additionalContext);
-      }
-      if (result.outcome == AgentHookOutcome.block) {
-        feedback.add(result.message.isEmpty
-            ? 'hook（${hook.command}）报告了问题（无输出）。'
-            : result.message);
-      }
-    }
+          toolOk: toolResult.ok),
+      emptyBlockMessage: (hook) => 'hook（${hook.command}）报告了问题（无输出）。',
+    );
+    final post = aggregateAgentHookResults(results);
+    _recordStopSignal(post);
+    final feedback = post.outcome == AgentHookOutcome.block ? post.message : '';
+    final contexts = <String>[
+      if (preVerdict != null && preVerdict.additionalContext.isNotEmpty)
+        preVerdict.additionalContext,
+      if (post.additionalContext.isNotEmpty) post.additionalContext,
+    ];
     if (feedback.isEmpty && contexts.isEmpty) return toolResult;
     final sections = [
-      if (feedback.isNotEmpty)
-        '[${postEvent.name} hook 反馈]\n${feedback.join('\n')}',
+      if (feedback.isNotEmpty) '[${postEvent.name} hook 反馈]\n$feedback',
       if (contexts.isNotEmpty)
         '[hook additionalContext]\n${contexts.join('\n')}',
     ];
@@ -298,27 +317,28 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     try {
       final config = await _hooks();
       if (config == null) return;
-      for (final hook in config.ofEvent(event)) {
-        await _runHook(hook,
-            eventName: event.name, toolName: event.name, argsJson: '{}');
-      }
+      final results = await _runHooksParallel(
+        config.ofEvent(event),
+        (hook) => _runHook(hook,
+            eventName: event.name, toolName: event.name, argsJson: '{}'),
+      );
+      _recordStopSignal(aggregateAgentHookResults(results));
     } catch (_) {}
   }
 
   Future<String?> runStopHooks() async {
     final config = await _hooks();
     if (config == null) return null;
-    for (final hook in config.ofEvent(AgentHookEvent.stop)) {
-      final result = await _runHook(hook,
+    final results = await _runHooksParallel(
+      config.ofEvent(AgentHookEvent.stop),
+      (hook) => _runHook(hook,
           eventName: AgentHookEvent.stop.name,
           toolName: 'stop',
-          argsJson: '{}');
-      if (result.outcome == AgentHookOutcome.block) {
-        return result.message.isEmpty
-            ? 'hook（${hook.command}）阻止了收尾。'
-            : result.message;
-      }
-    }
+          argsJson: '{}'),
+      emptyBlockMessage: (hook) => 'hook（${hook.command}）阻止了收尾。',
+    );
+    final aggregate = aggregateAgentHookResults(results);
+    if (aggregate.outcome == AgentHookOutcome.block) return aggregate.message;
     return null;
   }
 
@@ -358,35 +378,44 @@ Future<AgentHookResult?> runUserPromptSubmitHooks(
   final loaded = await loadAgentHooksConfig(ref, workspaceId);
   final config = loaded.config;
   if (config == null) return null;
-  final contexts = <String>[];
-  for (final hook in config.ofEvent(AgentHookEvent.userPromptSubmit)) {
-    final result = await _execHookCommand(
-      ref,
-      hook,
-      eventName: AgentHookEvent.userPromptSubmit.name,
-      toolName: '',
-      argsJson: '{}',
-      prompt: prompt,
-      workspaceId: workspaceId.isEmpty ? null : workspaceId,
-      cwd: loaded.root,
-    );
-    if (result.outcome == AgentHookOutcome.block) {
-      return AgentHookResult(
-        outcome: AgentHookOutcome.block,
-        message: result.message.isEmpty
-            ? 'hook（${hook.command}）拦截了本条消息。'
-            : result.message,
-      );
-    }
-    if (result.additionalContext.isNotEmpty) {
-      contexts.add(result.additionalContext);
-    }
+  final seen = <String>{};
+  final unique = [
+    for (final h in config.ofEvent(AgentHookEvent.userPromptSubmit))
+      if (seen.add(h.command)) h,
+  ];
+  final results = await Future.wait([
+    for (final hook in unique)
+      () async {
+        final result = await _execHookCommand(
+          ref,
+          hook,
+          eventName: AgentHookEvent.userPromptSubmit.name,
+          toolName: '',
+          argsJson: '{}',
+          prompt: prompt,
+          workspaceId: workspaceId.isEmpty ? null : workspaceId,
+          cwd: loaded.root,
+        );
+        if (result.outcome == AgentHookOutcome.block &&
+            result.message.isEmpty) {
+          return AgentHookResult(
+            outcome: AgentHookOutcome.block,
+            message: 'hook（${hook.command}）拦截了本条消息。',
+            additionalContext: result.additionalContext,
+            preventContinuation: result.preventContinuation,
+            stopReason: result.stopReason,
+          );
+        }
+        return result;
+      }(),
+  ]);
+  final aggregate = aggregateAgentHookResults(results);
+  if (aggregate.outcome == AgentHookOutcome.proceed &&
+      aggregate.additionalContext.isEmpty &&
+      !aggregate.preventContinuation) {
+    return null;
   }
-  if (contexts.isEmpty) return null;
-  return AgentHookResult(
-    outcome: AgentHookOutcome.proceed,
-    additionalContext: contexts.join('\n'),
-  );
+  return aggregate;
 }
 
 /// 跑一条 hook 命令：现场上下文两路传入——

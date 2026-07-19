@@ -146,12 +146,12 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 - `AgentHookResult` 新增 `additionalContext` 字段：stdout JSON `{"additionalContext":"..."}` 可单独出现（proceed 带注入）或与 decision 同时出现；preToolUse / postToolUse(Failure) 的 additionalContext 聚合后以 `[hook additionalContext]` 段追加进工具结果 detail（回到下一轮模型输入）。
 **验收**：单测覆盖事件解析、prompt stdin 字段、additionalContext 解析（单独/与 decision 同时）；flutter analyze 无问题。
 
-### - [ ] 阶段 6：`continue:false` 全局终止 + 并行执行 ⬜
+### - [x] 阶段 6：`continue:false` 全局终止 + 并行执行 ✅（2026-07-19）
 **目标**：对齐 CC 的任务级终止与执行性能。
-- stdout JSON 支持 `{"continue":false,"stopReason":...}`：任一 hook 返回即终止整个任务，stopReason 展示给用户。
-- 同事件命中的多条 hooks 由顺序 await 改为 `Future.wait` 并行（同命令去重），裁决聚合：任一 block 即 block。
-**验收**：单测覆盖聚合逻辑；两个 sleep hook 并行耗时 ≈ 单个。
-**涉及**：`agent_runtime_access.dart`、`agent_engine.dart`。
+- stdout JSON 支持 `{"continue":false,"stopReason":...}`：任一 hook 返回即终止整个任务，stopReason 展示给用户。实现：`AgentHookResult` 新增 `preventContinuation`/`stopReason` 字段（可与任意 decision 同时出现）；执行层（`HookedAgentToolExecutor`）收集终止信号，引擎经新增 `hookStopSignal` 回调（与 stopGuard 同款注入）在安全点（循环顶部 / 每个工具执行后）消费并转 cancelled，stopReason 落状态事件展示给用户；userPromptSubmit 的 continue:false 在任务运行器拦截消息并落状态事件。
+- 同事件命中的多条 hooks 由顺序 await 改为 `Future.wait` 并行（同命令去重），裁决由新增纯函数 `aggregateAgentHookResults` 聚合：任一 block 即 block（原因拼接），优先级 block > ask > allow > proceed；pre/post/stop/生命周期/userPromptSubmit 全部切换为并行。
+**验收**：单测覆盖 continue:false 解析（单独/与 decision 同时）与聚合逻辑（9 个新用例，共 34 个全部通过）；flutter analyze 无问题。
+**涉及**：`agent_hooks.dart`、`agent_hooks_access.dart`、`agent_runtime_access.dart`、`agent_engine.dart`、`agent_task_runner.dart`。
 
 ### - [ ] 阶段 7：subagent / session 生命周期事件 ⬜
 **目标**：`subagentStart` / `subagentStop`（可 block 子智能体收尾）、`taskEnd`（任务正常结束，观测型）。
@@ -177,4 +177,5 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 | 2026-07-19 | 阶段 3 | ✅ | 13104088 | preToolUse allow/ask 打通审批门，裁决缓存避免重复执行 |
 | 2026-07-19 | 阶段 4 | ✅ | c9e1a905 | stderr 经临时文件+标记行回传，exit 2 原因读 stderr |
 | 2026-07-19 | 阶段 5 | ✅ | 54bb2a87 | userPromptSubmit 事件 + additionalContext 注入（prompt/pre/post） |
-| 2026-07-19 | 阶段 5.5 | ✅ | （本提交） | 重构：hooks 执行层拆到 app/di/agent_hooks_access.dart，统一配置加载 |
+| 2026-07-19 | 阶段 5.5 | ✅ | b79d36ec | 重构：hooks 执行层拆到 app/di/agent_hooks_access.dart，统一配置加载 |
+| 2026-07-19 | 阶段 6 | ✅ | （本提交） | continue:false 全局终止（hookStopSignal 接线引擎）+ 同事件 hooks 并行执行（同命令去重，aggregateAgentHookResults 聚合） |

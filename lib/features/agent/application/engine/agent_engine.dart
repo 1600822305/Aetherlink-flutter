@@ -36,6 +36,7 @@ class AgentEngine {
     this.subagents,
     this.toolStream,
     this.stopGuard,
+    this.hookStopSignal,
     this.onTurnStart,
     this.onTurnEnd,
   });
@@ -57,6 +58,11 @@ class AgentEngine {
   /// 收尾，原因以用户消息回填继续跑。每次运行最多阻止一次
   /// （防 hook 永远不满意导致死循环）。
   final Future<String?> Function()? stopGuard;
+
+  /// hook 的任务终止信号（stdout JSON `{"continue":false}`，对标
+  /// Claude Code）：返回非 null（stopReason）即在安全点终止整个
+  /// 任务，stopReason 展示给用户；调用即消费（取后清除）。
+  final String? Function()? hookStopSignal;
 
   /// 每轮开始（LLM 调用前）/ 每轮结束（本轮工具全部执行完）的
   /// 生命周期回调（turnStart/turnEnd hooks）：同步触发、不等待、
@@ -122,6 +128,12 @@ class AgentEngine {
         // ② 取消/暂停/预算检查。
         if (cancel.cancelRequested) {
           current = await transition(AgentTaskStatus.cancelled, '用户强制终止');
+          return;
+        }
+        final hookStop = hookStopSignal?.call();
+        if (hookStop != null) {
+          current =
+              await transition(AgentTaskStatus.cancelled, 'hook 终止任务：$hookStop');
           return;
         }
         if (cancel.pauseRequested) {
@@ -385,6 +397,15 @@ class AgentEngine {
           budget.recordToolResult(ok: result.ok);
 
           if (cancel.stopRequested) break;
+          // hook 输出 continue:false：中止本轮剩余工具并终止整个任务，
+          // stopReason 展示给用户。
+          final toolHookStop = hookStopSignal?.call();
+          if (toolHookStop != null) {
+            await failPendingToolEvents();
+            current = await transition(
+                AgentTaskStatus.cancelled, 'hook 终止任务：$toolHookStop');
+            return;
+          }
           // 「立即打断并发送」在工具阶段命中：中止本轮剩余工具，
           // 剩余预建事件按中断回填，回到循环顶部先注入排队消息。
           if (cancel.consumeToolInterrupt()) {
