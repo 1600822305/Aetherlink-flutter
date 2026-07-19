@@ -119,6 +119,49 @@ void main() {
           config.ofEvent(AgentHookEvent.taskEnd).single.command, 'notify.sh');
     });
 
+    test('agent 类型解析：prompt 载体 + model/statusMessage/once', () {
+      final config = decodeAgentHooksConfig('''
+{
+  "stop": [
+    {"type": "agent", "prompt": "验证测试真的跑过：\$ARGUMENTS",
+     "model": "gpt-4o-mini", "statusMessage": "校验中…", "once": true,
+     "timeout": 120}
+  ]
+}
+''')!;
+      final hook = config.hooks.single;
+      expect(hook.type, AgentHookType.agent);
+      expect(hook.prompt, '验证测试真的跑过：\$ARGUMENTS');
+      expect(hook.payload, hook.prompt);
+      expect(hook.model, 'gpt-4o-mini');
+      expect(hook.statusMessage, '校验中…');
+      expect(hook.once, isTrue);
+      expect(hook.timeoutSeconds, 120);
+    });
+
+    test('model/statusMessage/once 缺省值；model 仅 prompt/agent 型生效', () {
+      final config = decodeAgentHooksConfig('''
+{
+  "preToolUse": [
+    {"type": "command", "command": "check.sh", "model": "x"},
+    {"type": "prompt", "prompt": "p", "model": "claude-haiku"}
+  ]
+}
+''')!;
+      final command = config.hooks[0];
+      expect(command.model, '');
+      expect(command.statusMessage, '');
+      expect(command.once, isFalse);
+      expect(config.hooks[1].model, 'claude-haiku');
+    });
+
+    test('agent 型缺 prompt 载体丢弃', () {
+      final config = decodeAgentHooksConfig(
+        '{"stop":[{"type":"agent","command":"c"}]}',
+      )!;
+      expect(config.hooks, isEmpty);
+    });
+
     test('非法 timeout 回退默认', () {
       final config = decodeAgentHooksConfig(
         '{"stop":[{"type":"command","command":"c","timeout":-5}]}',

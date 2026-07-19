@@ -49,6 +49,11 @@ _TypeMeta _typeMetaOf(AgentHookType type) => switch (type) {
           color: Colors.green,
           icon: LucideIcons.globe,
         ),
+      AgentHookType.agent => (
+          label: '智能体',
+          color: Colors.deepPurple,
+          icon: LucideIcons.bot,
+        ),
     };
 
 /// 类型徽标（图标 + 文字，不只靠颜色区分）。
@@ -726,6 +731,11 @@ class _HookEditPageState extends ConsumerState<_HookEditPage> {
   late final TextEditingController _timeout = TextEditingController(
     text: '${_initial?.hook.timeoutSeconds ?? kAgentHookDefaultTimeoutSeconds}',
   );
+  late final TextEditingController _model =
+      TextEditingController(text: _initial?.hook.model ?? '');
+  late final TextEditingController _statusMessage =
+      TextEditingController(text: _initial?.hook.statusMessage ?? '');
+  late bool _once = _initial?.hook.once ?? false;
   late final List<_HeaderRow> _headers = [
     for (final e in (_initial?.hook.headers ?? const {}).entries)
       _HeaderRow(e.key, e.value),
@@ -742,6 +752,8 @@ class _HookEditPageState extends ConsumerState<_HookEditPage> {
     _matcher.dispose();
     _pattern.dispose();
     _timeout.dispose();
+    _model.dispose();
+    _statusMessage.dispose();
     for (final row in _headers) {
       row.dispose();
     }
@@ -885,6 +897,36 @@ class _HookEditPageState extends ConsumerState<_HookEditPage> {
               isDense: true,
             ),
           ),
+          if (_type == AgentHookType.prompt ||
+              _type == AgentHookType.agent) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _model,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+              decoration: const InputDecoration(
+                labelText: '裁决模型 id（可选，缺省用当前默认模型）',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          TextField(
+            controller: _statusMessage,
+            decoration: const InputDecoration(
+              labelText: '运行中文案（可选，显示在任务时间线）',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+          SwitchListTile(
+            value: _once,
+            onChanged: (v) => setState(() => _once = v),
+            title: const Text('只触发一次（once）'),
+            subtitle: const Text('本次任务内命中一次后不再触发'),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
           if (_error != null) ...[
             const SizedBox(height: 8),
             Text(
@@ -961,6 +1003,23 @@ class _HookEditPageState extends ConsumerState<_HookEditPage> {
                 labelText: '提示词（必填）',
                 helperText: '用当前默认模型做一次裁决；\$ARGUMENTS 替换为 hook 输入 '
                     'JSON（缺省追加到末尾），模型回 {"ok":false,"reason":"..."} 即阻断',
+                helperMaxLines: 3,
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+        AgentHookType.agent => [
+            TextField(
+              controller: _prompt,
+              maxLines: 10,
+              minLines: 4,
+              style: const TextStyle(fontSize: 13),
+              decoration: const InputDecoration(
+                labelText: '校验提示词（必填）',
+                helperText: '多轮带工具（工作区终端）的小智能体校验；'
+                    '\$ARGUMENTS 替换为 hook 输入 JSON，智能体通过 '
+                    'submit_result 交回 {"ok":false,"reason":"..."} 即阻断',
                 helperMaxLines: 3,
                 border: OutlineInputBorder(),
                 isDense: true,
@@ -1062,13 +1121,15 @@ class _HookEditPageState extends ConsumerState<_HookEditPage> {
   AgentManualHook? _validate() {
     final payload = switch (_type) {
       AgentHookType.command => _command.text.trim(),
-      AgentHookType.prompt => _prompt.text.trim(),
+      AgentHookType.prompt || AgentHookType.agent => _prompt.text.trim(),
       AgentHookType.http => _url.text.trim(),
     };
     if (payload.isEmpty) {
       setState(() => _error = switch (_type) {
             AgentHookType.command => '命令不能为空',
-            AgentHookType.prompt => '提示词不能为空',
+            AgentHookType.prompt ||
+            AgentHookType.agent =>
+              '提示词不能为空',
             AgentHookType.http => 'URL 不能为空',
           });
       return null;
@@ -1106,12 +1167,19 @@ class _HookEditPageState extends ConsumerState<_HookEditPage> {
         matcher: matcher.isEmpty ? '*' : matcher,
         pattern: pattern.isEmpty ? '*' : pattern,
         command: _type == AgentHookType.command ? payload : '',
-        prompt: _type == AgentHookType.prompt ? payload : '',
+        prompt: _type == AgentHookType.prompt || _type == AgentHookType.agent
+            ? payload
+            : '',
         url: _type == AgentHookType.http ? payload : '',
         headers: _type == AgentHookType.http ? headers : const {},
         timeoutSeconds: timeout != null && timeout > 0
             ? timeout
             : kAgentHookDefaultTimeoutSeconds,
+        model: _type == AgentHookType.prompt || _type == AgentHookType.agent
+            ? _model.text.trim()
+            : '',
+        statusMessage: _statusMessage.text.trim(),
+        once: _once,
       ),
     );
   }
@@ -1160,10 +1228,10 @@ class _HookEditPageState extends ConsumerState<_HookEditPage> {
     final manual = _validate();
     if (manual == null) return;
     String? workspaceId;
-    if (_type == AgentHookType.command) {
+    if (_type == AgentHookType.command || _type == AgentHookType.agent) {
       final workspaces = ref.read(recentWorkspacesViewProvider);
       if (workspaces.isEmpty) {
-        setState(() => _error = '试跑命令型 hook 需要先打开过一个工作区');
+        setState(() => _error = '试跑此类型 hook 需要先打开过一个工作区');
         return;
       }
       if (!mounted) return;

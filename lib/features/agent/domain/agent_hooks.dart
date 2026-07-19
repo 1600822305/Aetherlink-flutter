@@ -48,7 +48,7 @@ enum AgentHookEvent {
   taskEnd,
 }
 
-/// hook 类型（对标 Claude Code 的 command / prompt / http）。
+/// hook 类型（对标 Claude Code 的 command / prompt / http / agent）。
 enum AgentHookType {
   /// shell 命令：跑在任务绑定工作区的终端里，退出协议见
   /// [interpretAgentHookExit]。
@@ -61,13 +61,20 @@ enum AgentHookType {
   /// HTTP 回调：把 hook 输入 JSON POST 到 URL，响应协议见
   /// [interpretAgentHttpHookResponse]。
   http,
+
+  /// 智能体校验器：多轮带工具（工作区终端）的小智能体验证
+  /// 提示词条件，通过 submit_result 工具交回 {"ok":...} 裁决。
+  agent,
 }
 
 /// 一条 hook 配置。[matcher] 匹配权限域（工具名 / `mcp:<server>/<tool>`），
 /// [pattern] 匹配调用 pattern（终端子命令 / 文件路径），两者语义与
 /// 权限规则一致（复用 [permissionWildcardMatch]，`*` 通配）。
-/// 按 [type] 取对应载体：command 型用 [command]，prompt 型用
-/// [prompt]，http 型用 [url]（+可选 [headers]）。
+/// 按 [type] 取对应载体：command 型用 [command]，prompt / agent 型用
+/// [prompt]，http 型用 [url]（+可选 [headers]）。通用可选字段
+/// （对标 Claude Code）：[model] 为 prompt / agent 型指定裁决模型
+/// （空 = 当前默认模型）；[statusMessage] 为运行中的自定义时间线
+/// 文案；[once] 为真时本次任务内只触发一次。
 class AgentHook {
   const AgentHook({
     required this.event,
@@ -79,6 +86,9 @@ class AgentHook {
     this.url = '',
     this.headers = const {},
     this.timeoutSeconds = kAgentHookDefaultTimeoutSeconds,
+    this.model = '',
+    this.statusMessage = '',
+    this.once = false,
   });
 
   final AgentHookEvent event;
@@ -90,11 +100,14 @@ class AgentHook {
   final String url;
   final Map<String, String> headers;
   final int timeoutSeconds;
+  final String model;
+  final String statusMessage;
+  final bool once;
 
   /// 类型对应的载体（去重键 / 展示用）。
   String get payload => switch (type) {
         AgentHookType.command => command,
-        AgentHookType.prompt => prompt,
+        AgentHookType.prompt || AgentHookType.agent => prompt,
         AgentHookType.http => url,
       };
 
@@ -122,6 +135,8 @@ class AgentHooksConfig {
 /// - `{"type":"command","command":"..."}`
 /// - `{"type":"prompt","prompt":"..."}`（`$ARGUMENTS` 占位 hook 输入 JSON）
 /// - `{"type":"http","url":"...","headers":{...}}`
+/// - `{"type":"agent","prompt":"..."}`（多轮带工具的智能体校验器）
+/// 通用可选字段：`model`（prompt/agent 型）、`statusMessage`、`once`。
 /// 坏 JSON / 非对象返回 null；缺 type、type 未知或缺对应载体的条目
 /// 丢弃；stop hook 忽略 matcher/pattern（收尾校验与具体工具无关）。
 AgentHooksConfig? decodeAgentHooksConfig(String? raw) {
@@ -160,7 +175,7 @@ AgentHook? decodeAgentHookEntry(
   if (type == null) return null;
   final payload = item[switch (type) {
     AgentHookType.command => 'command',
-    AgentHookType.prompt => 'prompt',
+    AgentHookType.prompt || AgentHookType.agent => 'prompt',
     AgentHookType.http => 'url',
   }];
   if (payload is! String || payload.trim().isEmpty) return null;
@@ -173,18 +188,28 @@ AgentHook? decodeAgentHookEntry(
   final matcher = item['matcher'];
   final pattern = item['pattern'];
   final timeout = item['timeout'];
+  final model = item['model'];
+  final statusMessage = item['statusMessage'];
   return AgentHook(
     event: event,
     type: type,
     matcher: matcher is String && matcher.isNotEmpty ? matcher : '*',
     pattern: pattern is String && pattern.isNotEmpty ? pattern : '*',
     command: type == AgentHookType.command ? payload : '',
-    prompt: type == AgentHookType.prompt ? payload : '',
+    prompt: type == AgentHookType.prompt || type == AgentHookType.agent
+        ? payload
+        : '',
     url: type == AgentHookType.http ? payload : '',
     headers: headers,
     timeoutSeconds: timeout is int && timeout > 0
         ? timeout
         : kAgentHookDefaultTimeoutSeconds,
+    model: (type == AgentHookType.prompt || type == AgentHookType.agent) &&
+            model is String
+        ? model.trim()
+        : '',
+    statusMessage: statusMessage is String ? statusMessage.trim() : '',
+    once: item['once'] == true,
   );
 }
 

@@ -48,11 +48,15 @@ String encodeAgentManualHooks(List<AgentManualHook> hooks) => jsonEncode([
           'pattern': h.hook.pattern,
           switch (h.hook.type) {
             AgentHookType.command => 'command',
-            AgentHookType.prompt => 'prompt',
+            AgentHookType.prompt || AgentHookType.agent => 'prompt',
             AgentHookType.http => 'url',
           }: h.hook.payload,
           if (h.hook.headers.isNotEmpty) 'headers': h.hook.headers,
           'timeout': h.hook.timeoutSeconds,
+          if (h.hook.model.isNotEmpty) 'model': h.hook.model,
+          if (h.hook.statusMessage.isNotEmpty)
+            'statusMessage': h.hook.statusMessage,
+          if (h.hook.once) 'once': true,
         },
     ]);
 

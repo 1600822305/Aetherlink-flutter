@@ -90,6 +90,28 @@ void main() {
     expect(decoded[1].hook.headers, {'Authorization': 'Bearer x'});
   });
 
+  test('agent 类型 + model/statusMessage/once 编码解码往返', () {
+    final decoded = decodeAgentManualHooks(encodeAgentManualHooks(const [
+      AgentManualHook(
+        name: '收尾校验',
+        hook: AgentHook(
+          event: AgentHookEvent.stop,
+          type: AgentHookType.agent,
+          prompt: r'验证单测真的跑过：$ARGUMENTS',
+          model: 'gpt-4o-mini',
+          statusMessage: '校验中…',
+          once: true,
+        ),
+      ),
+    ]))!;
+    final hook = decoded.single.hook;
+    expect(hook.type, AgentHookType.agent);
+    expect(hook.prompt, r'验证单测真的跑过：$ARGUMENTS');
+    expect(hook.model, 'gpt-4o-mini');
+    expect(hook.statusMessage, '校验中…');
+    expect(hook.once, isTrue);
+  });
+
   test('存量数据无 type 字段按 command 型读（存储迁移）', () {
     final decoded = decodeAgentManualHooks(
       '[{"event":"stop","command":"flutter analyze"}]',

@@ -30,9 +30,11 @@ import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.da
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
 import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_tool_call.dart';
 import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
+import 'package:aetherlink_flutter/shared/domain/model_provider.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/terminal/terminal_tools.dart';
 
@@ -161,6 +163,10 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
   /// 注入，携带 taskId）；null = 静默执行。
   AgentHookTimelineSink? timeline;
 
+  /// once hooks 的已执行集（对标 CC 的 once：运行一次后移除）：
+  /// 本执行器实例 = 一次任务运行，命中后同一 hook 不再触发。
+  final Set<String> _onceDone = {};
+
   /// 取并清除 hook 的任务终止信号（continue:false）。
   String? takeHookStopSignal() {
     final signal = _stopSignal;
@@ -226,15 +232,24 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     String? label,
   }) async {
     final seen = <String>{};
-    final unique = [
-      for (final h in hooks) if (seen.add('${h.type.name}\u0000${h.payload}')) h,
-    ];
+    final unique = <AgentHook>[];
+    for (final h in hooks) {
+      final key = '${h.type.name}\u0000${h.payload}';
+      if (!seen.add(key)) continue;
+      // once（对标 CC）：本次任务内只触发一次。
+      if (h.once && !_onceDone.add(key)) continue;
+      unique.add(h);
+    }
     void Function(String line)? updateStatus;
     final sink = timeline;
     if (label != null && sink != null && unique.isNotEmpty) {
+      final status = unique
+          .map((h) => h.statusMessage)
+          .firstWhere((s) => s.isNotEmpty, orElse: () => '');
       try {
-        updateStatus =
-            await sink('[hook] $label 运行中 · ${unique.length} 条');
+        updateStatus = await sink(
+            '[hook] $label 运行中 · ${unique.length} 条'
+            '${status.isEmpty ? '' : ' · $status'}');
       } catch (_) {}
     }
     final sw = Stopwatch()..start();
@@ -558,6 +573,7 @@ Future<AgentHookResult> _execAgentHook(
       );
     case AgentHookType.prompt:
     case AgentHookType.http:
+    case AgentHookType.agent:
       final stdinJson = buildAgentHookStdinJson(
         eventName: eventName,
         toolName: toolName,
@@ -571,10 +587,28 @@ Future<AgentHookResult> _execAgentHook(
         sessionId: workspaceId,
         cwd: cwd,
       );
-      return hook.type == AgentHookType.prompt
-          ? _execPromptHook(ref, hook, stdinJson)
-          : _execHttpHook(ref, hook, stdinJson);
+      return switch (hook.type) {
+        AgentHookType.prompt => _execPromptHook(ref, hook, stdinJson),
+        AgentHookType.http => _execHttpHook(ref, hook, stdinJson),
+        _ => _execAgentVerifierHook(ref, hook, stdinJson,
+            workspaceId: workspaceId),
+      };
   }
+}
+
+/// 解析 prompt / agent 型 hook 的裁决模型：配了 [AgentHook.model]
+/// 时按模型 id 在全部供应商里查找，未配/找不到回退当前默认模型。
+CurrentModel? _resolveHookModel(List<ModelProvider> providers, String modelId) {
+  if (modelId.isNotEmpty) {
+    for (final provider in providers) {
+      for (final model in provider.models) {
+        if (model.id == modelId) {
+          return CurrentModel(provider: provider, model: model);
+        }
+      }
+    }
+  }
+  return findCurrentModel(providers);
 }
 
 /// prompt 型 hook 的系统提示词：要求模型只回协议 JSON。
@@ -594,7 +628,7 @@ Future<AgentHookResult> _execPromptHook(
 ) async {
   try {
     final providers = await ref.read(appModelProvidersProvider.future);
-    final current = findCurrentModel(providers);
+    final current = _resolveHookModel(providers, hook.model);
     if (current == null) {
       return const AgentHookResult(
         outcome: AgentHookOutcome.failed,
@@ -632,6 +666,145 @@ Future<AgentHookResult> _execPromptHook(
     return AgentHookResult(
       outcome: AgentHookOutcome.failed,
       message: 'prompt hook 执行异常：$e',
+    );
+  }
+}
+
+/// agent 型 hook 的系统提示词：多轮带工具的校验器，结果必须经
+/// submit_result 工具交回。
+const String _kAgentVerifierSystem =
+    '你是一个 hook 校验智能体：根据用户给出的校验条件与 hook 输入，'
+    '用可用工具检查工作区后判断条件是否满足。尽量用最少的步骤、'
+    '直接高效地验证。完成后必须调用 submit_result 工具交回结果：'
+    '条件满足时 ok=true，不满足时 ok=false 并在 reason 里给简短原因。';
+
+const int _kAgentVerifierMaxTurns = 10;
+
+/// 跑一条 agent 型 hook（对标 Claude Code execAgentHook）：多轮
+/// 函数调用循环的小智能体校验器——工具只有工作区终端
+/// （run_command，绑定工作区时）与 submit_result（结构化交回
+/// {"ok":...} 裁决，协议同 prompt 型）。超过轮数上限/超时/异常
+/// 按 hook 自身失败处理（不阻断）。
+Future<AgentHookResult> _execAgentVerifierHook(
+  Ref ref,
+  AgentHook hook,
+  String stdinJson, {
+  String? workspaceId,
+}) async {
+  try {
+    final providers = await ref.read(appModelProvidersProvider.future);
+    final current = _resolveHookModel(providers, hook.model);
+    if (current == null) {
+      return const AgentHookResult(
+        outcome: AgentHookOutcome.failed,
+        message: 'agent hook 失败：未配置默认模型',
+      );
+    }
+    final effective = effectiveModelFor(current);
+    final gateway = ref.read(appLlmGatewayFactoryProvider).forModel(effective);
+    final tools = <McpToolDefinition>[
+      if (workspaceId != null && workspaceId.isNotEmpty)
+        const McpToolDefinition(
+          name: 'run_command',
+          description: '在任务绑定的工作区终端里执行一条 shell 命令，'
+              '返回退出码与输出（用于检查文件/跑测试/搜索）。',
+          inputSchema: {
+            'type': 'object',
+            'properties': {
+              'command': {'type': 'string', 'description': 'shell 命令'},
+            },
+            'required': ['command'],
+          },
+        ),
+      const McpToolDefinition(
+        name: 'submit_result',
+        description: '交回校验结果（必须调用，且只调一次）。',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'ok': {'type': 'boolean', 'description': '条件是否满足'},
+            'reason': {'type': 'string', 'description': '不满足时的简短原因'},
+          },
+          'required': ['ok'],
+        },
+      ),
+    ];
+    final messages = <LlmMessage>[
+      LlmMessage(
+        role: MessageRole.user,
+        content: buildAgentPromptHookText(hook.prompt, stdinJson),
+      ),
+    ];
+    return await () async {
+      for (var turn = 0; turn < _kAgentVerifierMaxTurns; turn++) {
+        final request = LlmChatRequest(
+          model: effective,
+          system: _kAgentVerifierSystem,
+          messages: messages,
+          tools: tools,
+          extraHeaders: effective.providerExtraHeaders,
+          extraBody: effective.providerExtraBody,
+        );
+        final text = StringBuffer();
+        final calls = <LlmToolCall>[];
+        await for (final chunk in gateway.streamChat(request)) {
+          if (chunk is LlmTextDelta) text.write(chunk.text);
+          if (chunk is LlmToolCallChunk) calls.add(chunk.call);
+        }
+        if (calls.isEmpty) {
+          // 未走工具直接回文本：容忍按 prompt 型同款协议解析。
+          return interpretAgentPromptHookResponse(text.toString());
+        }
+        messages.add(LlmMessage(
+          role: MessageRole.assistant,
+          content: text.toString(),
+          toolCalls: calls,
+        ));
+        for (final call in calls) {
+          if (call.name == 'submit_result') {
+            return interpretAgentPromptHookResponse(call.arguments);
+          }
+          String resultText;
+          if (call.name == 'run_command') {
+            final args = decodeToolArgsJson(call.arguments);
+            final command = args['command'];
+            if (command is String && command.trim().isNotEmpty) {
+              final result = await runTerminalTool(ref, 'terminal_execute', {
+                'command': command,
+                'workspace': workspaceId,
+              });
+              resultText = result.text.length > 8000
+                  ? result.text.substring(0, 8000)
+                  : result.text;
+            } else {
+              resultText = '参数错误：缺 command';
+            }
+          } else {
+            resultText = '未知工具：${call.name}';
+          }
+          messages.add(LlmMessage(
+            role: MessageRole.user,
+            content: resultText,
+            toolCallId: call.id,
+            toolName: call.name,
+          ));
+        }
+      }
+      return const AgentHookResult(
+        outcome: AgentHookOutcome.failed,
+        message: 'agent hook 超过轮数上限未交回结果',
+      );
+    }()
+        .timeout(Duration(seconds: hook.timeoutSeconds));
+  } on TimeoutException {
+    return const AgentHookResult(
+      outcome: AgentHookOutcome.failed,
+      message: 'agent hook 超时',
+    );
+  } catch (e) {
+    return AgentHookResult(
+      outcome: AgentHookOutcome.failed,
+      message: 'agent hook 执行异常：$e',
     );
   }
 }
