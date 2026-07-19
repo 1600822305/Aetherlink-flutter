@@ -351,6 +351,11 @@ class AgentEngine {
             event = await store.updateToolCall(current.id, event,
                 state: AgentToolCallState.running);
             current = await transition(AgentTaskStatus.running, '审批通过，继续执行');
+            // 审批等待期间遗留的打断标记是针对「挂起中的审批」的（打断
+            // 发送会同步把挂起审批按拒绝回填）；能走到这里说明用户最终
+            // 选择了批准，先消费掉陈旧标记，避免刚批准的工具被瞬间打断
+            // 而没有真正执行。排队消息仍会在下一轮循环顶部正常注入。
+            cancel.consumeToolInterrupt();
           }
 
           final stopwatch = Stopwatch()..start();

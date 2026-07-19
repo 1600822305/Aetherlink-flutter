@@ -466,6 +466,99 @@ class StructuredAskUserLlm implements AgentLlmClient {
       '摘要';
 }
 
+/// 发一次工具调用，下一轮 finish_task 收尾。
+class OneToolThenFinishLlm implements AgentLlmClient {
+  var _round = 0;
+
+  @override
+  Future<AgentLlmTurn> completeTurn(
+    AgentLlmContext context, {
+    void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
+    Future<void> Function(
+      String streamKey,
+      String? toolName,
+      String argsTextSoFar,
+    )? onToolCallDelta,
+    Future<void> Function(AgentToolCallRequest call, String? streamKey)?
+        onToolCall,
+    AgentCancellationToken? cancel,
+  }) async {
+    _round++;
+    if (_round > 1) {
+      return AgentLlmTurn(
+        toolCalls: [
+          AgentToolCallRequest(
+            id: 'finish-1',
+            name: kToolFinishTask,
+            argsJson: jsonEncode({'summary': '完成'}),
+            argSummary: '完成',
+          ),
+        ],
+      );
+    }
+    return AgentLlmTurn(
+      toolCalls: [
+        AgentToolCallRequest(
+          id: 'call-1',
+          name: 'terminal_execute',
+          argsJson: jsonEncode({'command': 'git push'}),
+          argSummary: 'git push',
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events,
+  ) async =>
+      '摘要';
+}
+
+/// 需要审批的门：模拟审批等待期间有陈旧的工具打断标记（如用户
+/// 打断发送与点击批准几乎同时），最终裁决为批准。
+class InterruptDuringWaitApprovalGate implements ApprovalGate {
+  var _asked = false;
+
+  @override
+  Future<ApprovalRequirement> evaluate(
+    AgentToolCallRequest call,
+    AgentTask task,
+  ) async {
+    if (call.name != 'terminal_execute' || _asked) {
+      return ApprovalRequirement.allow;
+    }
+    _asked = true;
+    return ApprovalRequirement.needsUser;
+  }
+
+  @override
+  Future<ApprovalVerdict> waitForVerdict(
+    AgentToolCallRequest call,
+    AgentTask task,
+    AgentCancellationToken cancel,
+  ) async {
+    cancel.requestToolInterrupt();
+    return const ApprovalVerdict.approved();
+  }
+}
+
+/// 记录执行时刻的打断标记状态（真实执行器会据此瞬间中断命令）。
+class InterruptFlagRecordingExecutor implements AgentToolExecutor {
+  final List<bool> interruptFlagsAtExecute = [];
+
+  @override
+  Future<AgentToolResult> execute(
+    AgentToolCallRequest call,
+    AgentCancellationToken cancel,
+  ) async {
+    interruptFlagsAtExecute.add(cancel.toolInterruptRequested);
+    return const AgentToolResult(ok: true, summary: 'ok ✓');
+  }
+}
+
 AgentTask newTask() {
   final now = DateTime.now();
   return AgentTask(
@@ -482,6 +575,32 @@ AgentTask newTask() {
 }
 
 void main() {
+  test('审批通过后当前工具真正执行：审批等待期间的陈旧打断标记不生效', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    final executor = InterruptFlagRecordingExecutor();
+    final engine = AgentEngine(
+      llm: OneToolThenFinishLlm(),
+      tools: executor,
+      approval: InterruptDuringWaitApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(),
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '推送代码');
+
+    await engine.run(task, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.done);
+    // 批准后的这一次调用必须执行，且执行时刻打断标记已被消费。
+    expect(executor.interruptFlagsAtExecute, [false]);
+    final toolEvent = (await store.getEvents(task.id))
+        .whereType<ToolCallEvent>()
+        .single;
+    expect(toolEvent.state, AgentToolCallState.success);
+  });
+
   test('ask_user 提问落库、等待回答并可恢复完成', () async {
     final store = InMemoryAgentEventStore();
     final gateway = RecordingTaskGateway();
