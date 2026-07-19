@@ -74,7 +74,9 @@ enum AgentHookType {
 /// [prompt]，http 型用 [url]（+可选 [headers]）。通用可选字段
 /// （对标 Claude Code）：[model] 为 prompt / agent 型指定裁决模型
 /// （空 = 当前默认模型）；[statusMessage] 为运行中的自定义时间线
-/// 文案；[once] 为真时本次任务内只触发一次。
+/// 文案；[once] 为真时本次任务内只触发一次；[asyncRewake]（command 型）
+/// 为真时 hook 直接转后台不阻塞主链，后台跑完若阻断（退出码 2）
+/// 把反馈排队注入任务叫醒模型。
 class AgentHook {
   const AgentHook({
     required this.event,
@@ -89,6 +91,7 @@ class AgentHook {
     this.model = '',
     this.statusMessage = '',
     this.once = false,
+    this.asyncRewake = false,
   });
 
   final AgentHookEvent event;
@@ -103,6 +106,7 @@ class AgentHook {
   final String model;
   final String statusMessage;
   final bool once;
+  final bool asyncRewake;
 
   /// 类型对应的载体（去重键 / 展示用）。
   String get payload => switch (type) {
@@ -136,7 +140,8 @@ class AgentHooksConfig {
 /// - `{"type":"prompt","prompt":"..."}`（`$ARGUMENTS` 占位 hook 输入 JSON）
 /// - `{"type":"http","url":"...","headers":{...}}`
 /// - `{"type":"agent","prompt":"..."}`（多轮带工具的智能体校验器）
-/// 通用可选字段：`model`（prompt/agent 型）、`statusMessage`、`once`。
+/// 通用可选字段：`model`（prompt/agent 型）、`statusMessage`、`once`、
+/// `asyncRewake`（command 型）。
 /// 坏 JSON / 非对象返回 null；缺 type、type 未知或缺对应载体的条目
 /// 丢弃；stop hook 忽略 matcher/pattern（收尾校验与具体工具无关）。
 AgentHooksConfig? decodeAgentHooksConfig(String? raw) {
@@ -210,6 +215,8 @@ AgentHook? decodeAgentHookEntry(
         : '',
     statusMessage: statusMessage is String ? statusMessage.trim() : '',
     once: item['once'] == true,
+    asyncRewake:
+        type == AgentHookType.command && item['asyncRewake'] == true,
   );
 }
 
@@ -399,6 +406,11 @@ AgentHookResult aggregateAgentHookResults(Iterable<AgentHookResult> results) {
 typedef AgentHookTimelineSink = Future<void Function(String line)> Function(
   String line,
 );
+
+/// asyncRewake 反馈注入任务的通道：后台 hook 阻断（退出码 2）时把
+/// 反馈作为排队消息注入，引擎在安全点消费叫醒模型（任务已结束时
+/// 留待续跑进上下文）。
+typedef AgentHookRewakeSink = Future<void> Function(String feedback);
 
 /// 一批 hooks 的时间线状态行（完成态）。[label] 形如
 /// `preToolUse(write)`；异步/失败条数单独标注。

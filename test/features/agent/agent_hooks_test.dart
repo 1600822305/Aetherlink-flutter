@@ -155,6 +155,19 @@ void main() {
       expect(config.hooks[1].model, 'claude-haiku');
     });
 
+    test('asyncRewake 仅 command 型解析', () {
+      final config = decodeAgentHooksConfig('''
+{
+  "stop": [
+    {"type": "command", "command": "run_tests.sh", "asyncRewake": true},
+    {"type": "prompt", "prompt": "p", "asyncRewake": true}
+  ]
+}
+''')!;
+      expect(config.hooks[0].asyncRewake, isTrue);
+      expect(config.hooks[1].asyncRewake, isFalse);
+    });
+
     test('agent 型缺 prompt 载体丢弃', () {
       final config = decodeAgentHooksConfig(
         '{"stop":[{"type":"agent","command":"c"}]}',

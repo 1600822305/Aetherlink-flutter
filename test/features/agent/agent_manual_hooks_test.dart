@@ -103,8 +103,19 @@ void main() {
           once: true,
         ),
       ),
+      AgentManualHook(
+        name: '后台测试',
+        hook: AgentHook(
+          event: AgentHookEvent.stop,
+          type: AgentHookType.command,
+          command: 'run_tests.sh',
+          asyncRewake: true,
+        ),
+      ),
     ]))!;
-    final hook = decoded.single.hook;
+    expect(decoded[1].hook.type, AgentHookType.command);
+    expect(decoded[1].hook.asyncRewake, isTrue);
+    final hook = decoded[0].hook;
     expect(hook.type, AgentHookType.agent);
     expect(hook.prompt, r'验证单测真的跑过：$ARGUMENTS');
     expect(hook.model, 'gpt-4o-mini');

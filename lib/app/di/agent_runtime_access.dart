@@ -90,6 +90,7 @@ class AgentRuntime {
         String? Function() hookStopSignal,
         Future<void> Function(AgentHookEvent event) lifecycleHooks,
         void Function(AgentHookTimelineSink? sink) setHookTimeline,
+        void Function(AgentHookRewakeSink? sink) setHookRewake,
       })> forProfile(
     AgentProfile profile, {
     AgentSessionMode mode = AgentSessionMode.code,
@@ -121,6 +122,7 @@ class AgentRuntime {
       hookStopSignal: hooked.takeHookStopSignal,
       lifecycleHooks: hooked.runLifecycleHooks,
       setHookTimeline: (AgentHookTimelineSink? sink) => hooked.timeline = sink,
+      setHookRewake: (AgentHookRewakeSink? sink) => hooked.rewake = sink,
     );
   }
 

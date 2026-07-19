@@ -163,6 +163,11 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
   /// 注入，携带 taskId）；null = 静默执行。
   AgentHookTimelineSink? timeline;
 
+  /// asyncRewake 反馈注入任务的通道（任务运行器注入，把反馈作为
+  /// 排队消息落库，引擎安全点消费）；null = 不支持叫醒，
+  /// asyncRewake hooks 退化为同步执行。
+  AgentHookRewakeSink? rewake;
+
   /// once hooks 的已执行集（对标 CC 的 once：运行一次后移除）：
   /// 本执行器实例 = 一次任务运行，命中后同一 hook 不再触发。
   final Set<String> _onceDone = {};
@@ -233,11 +238,18 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
   }) async {
     final seen = <String>{};
     final unique = <AgentHook>[];
+    final rewakeSink = rewake;
     for (final h in hooks) {
       final key = '${h.type.name}\u0000${h.payload}';
       if (!seen.add(key)) continue;
       // once（对标 CC）：本次任务内只触发一次。
       if (h.once && !_onceDone.add(key)) continue;
+      // asyncRewake（对标 CC）：直接转后台不参与本批裁决，
+      // 后台跑完若阻断把反馈排队注入任务叫醒模型。
+      if (h.asyncRewake && rewakeSink != null) {
+        unawaited(_runRewakeHook(h, run, rewakeSink, label: label));
+        continue;
+      }
       unique.add(h);
     }
     void Function(String line)? updateStatus;
@@ -292,6 +304,51 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
       } catch (_) {}
     }
     return results;
+  }
+
+  /// 跑一条 asyncRewake hook（后台）：时间线落「转后台」状态行，
+  /// 跑完原位改写为结果；阻断（退出码 2）时把反馈经 [rewake]
+  /// 排队注入任务；也消费 continue:false 终止信号。
+  Future<void> _runRewakeHook(
+    AgentHook hook,
+    Future<AgentHookResult> Function(AgentHook hook) run,
+    AgentHookRewakeSink rewakeSink, {
+    String? label,
+  }) async {
+    final tag = label ?? hook.event.name;
+    void Function(String line)? updateStatus;
+    final sink = timeline;
+    if (sink != null) {
+      try {
+        updateStatus = await sink(
+            '[hook] $tag 转后台（rewake）· ${hook.statusMessage.isNotEmpty ? hook.statusMessage : hook.payload}');
+      } catch (_) {}
+    }
+    final sw = Stopwatch()..start();
+    AgentHookResult result;
+    try {
+      result = await run(hook);
+    } catch (e) {
+      result = AgentHookResult(
+        outcome: AgentHookOutcome.failed,
+        message: 'hook 执行异常：$e',
+      );
+    }
+    _recordStopSignal(result);
+    final seconds = (sw.elapsedMilliseconds / 1000).toStringAsFixed(1);
+    if (result.outcome == AgentHookOutcome.block) {
+      final feedback = result.message.isNotEmpty
+          ? result.message
+          : 'hook（${hook.payload}）报告了问题（无输出）。';
+      updateStatus?.call(
+          '[hook] $tag 后台阻断 ✗ 反馈已注入任务（${seconds}s）');
+      try {
+        await rewakeSink('[后台 hook 反馈] $tag（${hook.payload}）：\n$feedback');
+      } catch (_) {}
+    } else {
+      updateStatus?.call(
+          '[hook] $tag 后台完成 · ${result.outcome == AgentHookOutcome.failed ? '失败' : '放行'}（${seconds}s）');
+    }
   }
 
   /// hooks 配置（任务运行内只读一次），见 [loadAgentHooksConfig]。

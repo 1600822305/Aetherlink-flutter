@@ -491,6 +491,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     // hooks 运行状态写进任务时间线（阶段 8）：落「运行中」状态行，
     // 完成后原位改写为结果（放行/阻断/转后台…）。
     runtime.setHookTimeline(_hookTimelineFor(task.id));
+    runtime.setHookRewake(_hookRewakeFor(task.id));
     // taskStart hooks：任务启动/续跑时触发，fire-and-forget 不阻断。
     unawaited(runtime.lifecycleHooks(AgentHookEvent.taskStart));
     final engine = AgentEngine(
@@ -531,6 +532,13 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         final event = await _store().appendStatusChange(taskId, line);
         return (String updated) =>
             unawaited(_store().updateStatusChange(taskId, event, updated));
+      };
+
+  /// asyncRewake 反馈注入通道：反馈作为排队消息落库，引擎在安全点
+  /// 消费叫醒模型；任务已结束时留待续跑进上下文。
+  AgentHookRewakeSink _hookRewakeFor(String taskId) =>
+      (String feedback) async {
+        await _store().appendUserMessage(taskId, feedback, queued: true);
       };
 
   /// 子代理专属提示（系统提示第 3 层）：强调独立上下文 + 结论自包含。
@@ -832,6 +840,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           boundWorkspaceId: child.workspaceId,
         );
     runtime.setHookTimeline(_hookTimelineFor(child.id));
+    runtime.setHookRewake(_hookRewakeFor(child.id));
     // subagentStart hooks：子智能体启动时触发，fire-and-forget 不阻断；
     // 收尾校验用 subagentStop hooks（而非主任务的 stop）。
     unawaited(runtime.lifecycleHooks(AgentHookEvent.subagentStart));

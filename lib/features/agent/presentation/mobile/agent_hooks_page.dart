@@ -736,6 +736,7 @@ class _HookEditPageState extends ConsumerState<_HookEditPage> {
   late final TextEditingController _statusMessage =
       TextEditingController(text: _initial?.hook.statusMessage ?? '');
   late bool _once = _initial?.hook.once ?? false;
+  late bool _asyncRewake = _initial?.hook.asyncRewake ?? false;
   late final List<_HeaderRow> _headers = [
     for (final e in (_initial?.hook.headers ?? const {}).entries)
       _HeaderRow(e.key, e.value),
@@ -927,6 +928,16 @@ class _HookEditPageState extends ConsumerState<_HookEditPage> {
             dense: true,
             contentPadding: EdgeInsets.zero,
           ),
+          if (_type == AgentHookType.command)
+            SwitchListTile(
+              value: _asyncRewake,
+              onChanged: (v) => setState(() => _asyncRewake = v),
+              title: const Text('后台运行并叫醒（asyncRewake）'),
+              subtitle: const Text(
+                  '不阻塞主链；后台跑完若阻断（退出码 2）把反馈注入任务叫醒模型'),
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+            ),
           if (_error != null) ...[
             const SizedBox(height: 8),
             Text(
@@ -1180,6 +1191,7 @@ class _HookEditPageState extends ConsumerState<_HookEditPage> {
             : '',
         statusMessage: _statusMessage.text.trim(),
         once: _once,
+        asyncRewake: _type == AgentHookType.command ? _asyncRewake : false,
       ),
     );
   }

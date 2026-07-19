@@ -57,6 +57,7 @@ String encodeAgentManualHooks(List<AgentManualHook> hooks) => jsonEncode([
           if (h.hook.statusMessage.isNotEmpty)
             'statusMessage': h.hook.statusMessage,
           if (h.hook.once) 'once': true,
+          if (h.hook.asyncRewake) 'asyncRewake': true,
         },
     ]);
 
