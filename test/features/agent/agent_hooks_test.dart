@@ -67,6 +67,22 @@ void main() {
       );
     });
 
+    test('subagentStart / subagentStop / taskEnd 事件解析', () {
+      final config = decodeAgentHooksConfig('''
+{
+  "subagentStart": [{"command": "log_start.sh"}],
+  "subagentStop": [{"command": "verify.sh"}],
+  "taskEnd": [{"command": "notify.sh"}]
+}
+''')!;
+      expect(config.ofEvent(AgentHookEvent.subagentStart).single.command,
+          'log_start.sh');
+      expect(config.ofEvent(AgentHookEvent.subagentStop).single.command,
+          'verify.sh');
+      expect(
+          config.ofEvent(AgentHookEvent.taskEnd).single.command, 'notify.sh');
+    });
+
     test('非法 timeout 回退默认', () {
       final config = decodeAgentHooksConfig(
         '{"stop":[{"command":"c","timeout":-5}]}',

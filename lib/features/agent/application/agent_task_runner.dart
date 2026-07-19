@@ -505,6 +505,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           unawaited(runtime.lifecycleHooks(AgentHookEvent.turnStart)),
       onTurnEnd: () =>
           unawaited(runtime.lifecycleHooks(AgentHookEvent.turnEnd)),
+      onTaskEnd: () =>
+          unawaited(runtime.lifecycleHooks(AgentHookEvent.taskEnd)),
     );
     engine.run(task, token).whenComplete(() {
       _tokens.remove(task.id);
@@ -817,6 +819,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           enableSubagents: false,
           boundWorkspaceId: child.workspaceId,
         );
+    // subagentStart hooks：子智能体启动时触发，fire-and-forget 不阻断；
+    // 收尾校验用 subagentStop hooks（而非主任务的 stop）。
+    unawaited(runtime.lifecycleHooks(AgentHookEvent.subagentStart));
     final engine = AgentEngine(
       llm: runtime.llm,
       tools: runtime.tools,
@@ -825,7 +830,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       gateway: _ProviderTaskGateway(this),
       budget: AgentBudget(maxRounds: 15, maxTokens: 200000),
       toolStream: ref.read(agentToolStreamProvider.notifier),
-      stopGuard: runtime.stopGuard,
+      stopGuard: runtime.subagentStopGuard,
       hookStopSignal: runtime.hookStopSignal,
     );
     await engine.run(child, childToken);

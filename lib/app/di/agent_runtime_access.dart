@@ -86,6 +86,7 @@ class AgentRuntime {
         AgentToolExecutor tools,
         ApprovalGate approval,
         Future<String?> Function() stopGuard,
+        Future<String?> Function() subagentStopGuard,
         String? Function() hookStopSignal,
         Future<void> Function(AgentHookEvent event) lifecycleHooks,
       })> forProfile(
@@ -115,6 +116,7 @@ class AgentRuntime {
       tools: hooked,
       approval: _PolicyApprovalGate(_refOf, catalog.routes, hooks: hooked),
       stopGuard: hooked.runStopHooks,
+      subagentStopGuard: hooked.runSubagentStopHooks,
       hookStopSignal: hooked.takeHookStopSignal,
       lifecycleHooks: hooked.runLifecycleHooks,
     );

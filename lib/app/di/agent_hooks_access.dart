@@ -326,15 +326,20 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     } catch (_) {}
   }
 
-  Future<String?> runStopHooks() async {
+  Future<String?> runStopHooks() => _runFinalizeHooks(AgentHookEvent.stop);
+
+  /// 子智能体收尾前跑 subagentStop hooks（子引擎 stopGuard），语义同
+  /// [runStopHooks]。
+  Future<String?> runSubagentStopHooks() =>
+      _runFinalizeHooks(AgentHookEvent.subagentStop);
+
+  Future<String?> _runFinalizeHooks(AgentHookEvent event) async {
     final config = await _hooks();
     if (config == null) return null;
     final results = await _runHooksParallel(
-      config.ofEvent(AgentHookEvent.stop),
+      config.ofEvent(event),
       (hook) => _runHook(hook,
-          eventName: AgentHookEvent.stop.name,
-          toolName: 'stop',
-          argsJson: '{}'),
+          eventName: event.name, toolName: event.name, argsJson: '{}'),
       emptyBlockMessage: (hook) => 'hook（${hook.command}）阻止了收尾。',
     );
     final aggregate = aggregateAgentHookResults(results);

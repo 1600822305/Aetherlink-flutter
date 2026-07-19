@@ -39,6 +39,7 @@ class AgentEngine {
     this.hookStopSignal,
     this.onTurnStart,
     this.onTurnEnd,
+    this.onTaskEnd,
   });
 
   final AgentLlmClient llm;
@@ -69,6 +70,10 @@ class AgentEngine {
   /// 不阻断循环。
   final void Function()? onTurnStart;
   final void Function()? onTurnEnd;
+
+  /// 任务正常结束（转 done）后的生命周期回调（taskEnd hooks）：
+  /// 同步触发、不等待、不阻断。
+  final void Function()? onTaskEnd;
 
   bool _stopGuardFired = false;
 
@@ -287,6 +292,7 @@ class AgentEngine {
             continue;
           }
           current = await transition(AgentTaskStatus.done, '任务完成');
+          onTaskEnd?.call();
           return;
         }
 
@@ -327,6 +333,7 @@ class AgentEngine {
             }
             final summary = _stringArg(call, 'summary') ?? '任务完成';
             current = await transition(AgentTaskStatus.done, summary);
+            onTaskEnd?.call();
             return;
           }
 

@@ -153,9 +153,12 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 **验收**：单测覆盖 continue:false 解析（单独/与 decision 同时）与聚合逻辑（9 个新用例，共 34 个全部通过）；flutter analyze 无问题。
 **涉及**：`agent_hooks.dart`、`agent_hooks_access.dart`、`agent_runtime_access.dart`、`agent_engine.dart`、`agent_task_runner.dart`。
 
-### - [ ] 阶段 7：subagent / session 生命周期事件 ⬜
+### - [x] 阶段 7：subagent / session 生命周期事件 ✅（2026-07-19）
 **目标**：`subagentStart` / `subagentStop`（可 block 子智能体收尾）、`taskEnd`（任务正常结束，观测型）。
-**涉及**：子智能体运行器（`agent_task_runner.dart` / subagent 相关）、`agent_hooks.dart`。
+- 新事件 3 个：`subagentStart`（子智能体启动时，观测型，`_runChildEngine` fire-and-forget 触发）；`subagentStop`（子智能体收尾前，对标 CC SubagentStop，作为子引擎的 stopGuard 接入——子智能体不再跑主任务的 stop hooks，改跑 subagentStop，可 block 收尾并把原因作为新输入续跑）；`taskEnd`（主任务转 done 后，观测型，引擎新增 `onTaskEnd` 回调接线）。
+- `HookedAgentToolExecutor` 新增 `runSubagentStopHooks`（与 runStopHooks 共用 `_runFinalizeHooks`，并行 + 聚合）；`forProfile` 返回记录新增 `subagentStopGuard`；Hooks 设置页新增 SUBAGENT 阶段分组与 taskEnd 文案。
+**验收**：单测覆盖 3 个新事件解析（共 35 个全部通过）；flutter analyze 无问题。
+**涉及**：`agent_hooks.dart`、`agent_hooks_access.dart`、`agent_runtime_access.dart`、`agent_engine.dart`、`agent_task_runner.dart`、`agent_hooks_page.dart`。
 
 ### - [ ] 阶段 8：async hooks + 进度可视化 ⬜
 **目标**：stdout `{"async":true}` → hook 转后台不阻塞主链；任务时间线上展示 hook 运行状态（运行中/放行/阻断），替代当前静默执行。
@@ -178,4 +181,5 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 | 2026-07-19 | 阶段 4 | ✅ | c9e1a905 | stderr 经临时文件+标记行回传，exit 2 原因读 stderr |
 | 2026-07-19 | 阶段 5 | ✅ | 54bb2a87 | userPromptSubmit 事件 + additionalContext 注入（prompt/pre/post） |
 | 2026-07-19 | 阶段 5.5 | ✅ | b79d36ec | 重构：hooks 执行层拆到 app/di/agent_hooks_access.dart，统一配置加载 |
-| 2026-07-19 | 阶段 6 | ✅ | （本提交） | continue:false 全局终止（hookStopSignal 接线引擎）+ 同事件 hooks 并行执行（同命令去重，aggregateAgentHookResults 聚合） |
+| 2026-07-19 | 阶段 6 | ✅ | c3d857c4 | continue:false 全局终止（hookStopSignal 接线引擎）+ 同事件 hooks 并行执行（同命令去重，aggregateAgentHookResults 聚合） |
+| 2026-07-19 | 阶段 7 | ✅ | （本提交） | 新事件 subagentStart / subagentStop（子引擎 stopGuard，可 block 收尾）/ taskEnd（引擎 onTaskEnd 回调） |

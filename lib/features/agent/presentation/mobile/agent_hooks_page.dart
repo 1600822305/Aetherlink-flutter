@@ -96,6 +96,27 @@ _EventMeta _metaOf(AgentHookEvent event, ColorScheme scheme) =>
           description: '任务收尾前触发；退出码 2 可阻止收尾并要求继续。',
           canBlock: true,
         ),
+      AgentHookEvent.subagentStart => (
+          stage: 'SUBAGENT 阶段',
+          color: Colors.teal,
+          title: 'subagentStart',
+          description: '子智能体启动时触发。',
+          canBlock: false,
+        ),
+      AgentHookEvent.subagentStop => (
+          stage: 'SUBAGENT 阶段',
+          color: Colors.teal,
+          title: 'subagentStop',
+          description: '子智能体收尾前触发；退出码 2 可阻止收尾并要求继续。',
+          canBlock: true,
+        ),
+      AgentHookEvent.taskEnd => (
+          stage: 'AGENT 阶段',
+          color: Colors.purple,
+          title: 'taskEnd',
+          description: '任务正常结束后触发。',
+          canBlock: false,
+        ),
     };
 
 class AgentHooksPage extends ConsumerWidget {

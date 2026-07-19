@@ -36,6 +36,16 @@ enum AgentHookEvent {
 
   /// 任务将要完成前：可阻止收尾并把原因作为新输入续跑（收尾校验）。
   stop,
+
+  /// 子智能体启动时（不阻断，只观测）。
+  subagentStart,
+
+  /// 子智能体将要收尾前：可阻止收尾并把原因作为新输入续跑
+  /// （对标 Claude Code 的 SubagentStop）。
+  subagentStop,
+
+  /// 主任务正常结束后（不阻断，只观测）。
+  taskEnd,
 }
 
 /// 一条 hook 配置。[matcher] 匹配权限域（工具名 / `mcp:<server>/<tool>`），
