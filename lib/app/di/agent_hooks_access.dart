@@ -300,6 +300,39 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     } catch (_) {}
   }
 
+  /// notification hooks（观测型，对标 CC Notification）：需要用户
+  /// 注意时（审批挂起 / ask_user 等待）fire-and-forget；matcher 匹配
+  /// 通知类型（approval / question），pattern 忽略；消息经 stdin JSON
+  /// `message` / `notification_type` 传入。
+  Future<void> runNotificationHooks(
+    String message, {
+    String notificationType = '',
+  }) async {
+    try {
+      final config = await _hooks();
+      if (config == null || config.isEmpty) return;
+      final hooks = hooksForToolCall(
+        config,
+        AgentHookEvent.notification,
+        notificationType.isEmpty ? '*' : notificationType,
+        const [],
+      );
+      if (hooks.isEmpty) return;
+      final results = await _runHooksParallel(
+        hooks,
+        (hook) => _runHook(hook,
+            eventName: AgentHookEvent.notification.name,
+            toolName: '',
+            argsJson: '{}',
+            message: message,
+            notificationType: notificationType),
+        label: '${AgentHookEvent.notification.name}'
+            '${notificationType.isEmpty ? '' : '($notificationType)'}',
+      );
+      _recordStopSignal(aggregateAgentHookResults(results));
+    } catch (_) {}
+  }
+
   /// 同事件命中的多条 hooks 并行执行（对标 Claude Code）：同命令
   /// 去重，裁决由 [aggregateAgentHookResults] 聚合；可选把空原因的
   /// block 补上含 hook 命令的默认文案。[label] 非空且接了时间线
@@ -586,6 +619,8 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     String? filePath,
     String? toolOutput,
     bool? toolOk,
+    String? message,
+    String? notificationType,
   }) =>
       _execAgentHook(
         _refOf(),
@@ -596,6 +631,8 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
         filePath: filePath,
         toolOutput: toolOutput,
         toolOk: toolOk,
+        message: message,
+        notificationType: notificationType,
         workspaceId: _boundWorkspaceId,
         cwd: _workspaceRoot,
       );
@@ -684,6 +721,9 @@ Future<AgentHookResult> tryRunAgentHook(
             ? false
             : null,
     prompt: hook.event == AgentHookEvent.userPromptSubmit ? 'hook 试跑示例消息' : null,
+    message: hook.event == AgentHookEvent.notification ? 'hook 试跑示例通知' : null,
+    notificationType:
+        hook.event == AgentHookEvent.notification ? 'approval' : null,
     workspaceId: workspaceId,
   );
 }
@@ -701,6 +741,8 @@ Future<AgentHookResult> _execAgentHook(
   String? toolOutput,
   bool? toolOk,
   String? prompt,
+  String? message,
+  String? notificationType,
   String? workspaceId,
   String? cwd,
 }) {
@@ -716,6 +758,8 @@ Future<AgentHookResult> _execAgentHook(
         toolOutput: toolOutput,
         toolOk: toolOk,
         prompt: prompt,
+        message: message,
+        notificationType: notificationType,
         workspaceId: workspaceId,
         cwd: cwd,
       );
@@ -732,6 +776,8 @@ Future<AgentHookResult> _execAgentHook(
             : toolOutput,
         toolOk: toolOk,
         prompt: prompt,
+        message: message,
+        notificationType: notificationType,
         sessionId: workspaceId,
         cwd: cwd,
       );
@@ -1060,6 +1106,8 @@ Future<AgentHookResult> _execHookCommand(
   String? toolOutput,
   bool? toolOk,
   String? prompt,
+  String? message,
+  String? notificationType,
   String? workspaceId,
   String? cwd,
 }) async {
@@ -1083,6 +1131,10 @@ Future<AgentHookResult> _execHookCommand(
         'export AETHER_TOOL_OK=${toolOk ? 'true' : 'false'}',
       if (cappedPrompt != null)
         'export AETHER_PROMPT=${_shellQuote(cappedPrompt)}',
+      if (message != null && message.isNotEmpty)
+        'export AETHER_MESSAGE=${_shellQuote(message)}',
+      if (notificationType != null && notificationType.isNotEmpty)
+        'export AETHER_NOTIFICATION_TYPE=${_shellQuote(notificationType)}',
     ].join('; ');
     var stdinJson = buildAgentHookStdinJson(
       eventName: eventName,
@@ -1092,6 +1144,8 @@ Future<AgentHookResult> _execHookCommand(
       toolOutput: toolOutput,
       toolOk: toolOk,
       prompt: prompt,
+      message: message,
+      notificationType: notificationType,
       sessionId: workspaceId,
       cwd: cwd,
     );
@@ -1105,6 +1159,8 @@ Future<AgentHookResult> _execHookCommand(
         toolOutput: cappedOutput,
         toolOk: toolOk,
         prompt: cappedPrompt,
+        message: message,
+        notificationType: notificationType,
         sessionId: workspaceId,
         cwd: cwd,
       );

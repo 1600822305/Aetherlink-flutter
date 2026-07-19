@@ -161,6 +161,14 @@ _EventMeta _metaOf(AgentHookEvent event, ColorScheme scheme) =>
               'tool_response 传入，可用于记录/通知。',
           canBlock: false,
         ),
+      AgentHookEvent.notification => (
+          stage: 'TOOL',
+          color: Colors.orange,
+          title: 'notification',
+          description: '需要用户注意时触发（审批挂起 / 提问等待；观测型，不阻断）；'
+              '可接外部通知。matcher 匹配通知类型（approval / question）。',
+          canBlock: false,
+        ),
       AgentHookEvent.turnEnd => (
           stage: 'TURN',
           color: Colors.blue,
@@ -218,6 +226,7 @@ const List<(String, List<AgentHookEvent>)> _kStageGroups = [
       AgentHookEvent.postToolUseFailure,
       AgentHookEvent.permissionRequest,
       AgentHookEvent.permissionDenied,
+      AgentHookEvent.notification,
     ]
   ),
   (

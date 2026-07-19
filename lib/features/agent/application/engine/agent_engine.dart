@@ -40,6 +40,7 @@ class AgentEngine {
     this.onTurnStart,
     this.onTurnEnd,
     this.onTaskEnd,
+    this.onNotification,
   });
 
   final AgentLlmClient llm;
@@ -74,6 +75,11 @@ class AgentEngine {
   /// 任务正常结束（转 done）后的生命周期回调（taskEnd hooks）：
   /// 同步触发、不等待、不阻断。
   final void Function()? onTaskEnd;
+
+  /// 需要用户注意的时刻（notification hooks，对标 CC
+  /// Notification）：审批挂起（type=approval）/ ask_user 等待
+  /// （type=question）时同步触发、不等待、不阻断。
+  final void Function(String message, String type)? onNotification;
 
   bool _stopGuardFired = false;
 
@@ -322,6 +328,7 @@ class AgentEngine {
                 argsJson: call.argsJson);
             current = await transition(
                 AgentTaskStatus.waitingInput, '等待回答：$question');
+            onNotification?.call('等待回答：$question', 'question');
             return;
           }
           if (call.name == kToolFinishTask) {
@@ -357,6 +364,7 @@ class AgentEngine {
                 state: AgentToolCallState.waitingApproval);
             current = await transition(
                 AgentTaskStatus.waitingApproval, '等待审批：${call.name}');
+            onNotification?.call('等待审批：${call.name}', 'approval');
             final verdict =
                 await approval.waitForVerdict(call, current, cancel);
             if (!verdict.approved) {

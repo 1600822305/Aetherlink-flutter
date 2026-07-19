@@ -138,6 +138,28 @@ void main() {
       expect(denied.single.command, 'notify.sh');
     });
 
+    test('notification 事件解析与通知类型匹配', () {
+      final config = decodeAgentHooksConfig('''
+{"notification": [
+  {"type": "command", "matcher": "approval", "command": "notify.sh"},
+  {"type": "command", "command": "all.sh"}]}
+''')!;
+      final approval = hooksForToolCall(
+        config,
+        AgentHookEvent.notification,
+        'approval',
+        const [],
+      );
+      expect([for (final h in approval) h.command], ['notify.sh', 'all.sh']);
+      final question = hooksForToolCall(
+        config,
+        AgentHookEvent.notification,
+        'question',
+        const [],
+      );
+      expect(question.single.command, 'all.sh');
+    });
+
     test('subagentStart / subagentStop / taskEnd 事件解析', () {
       final config = decodeAgentHooksConfig('''
 {
@@ -308,6 +330,20 @@ void main() {
       expect(json.containsKey('file_path'), isFalse);
       expect(json.containsKey('session_id'), isFalse);
       expect(json.containsKey('cwd'), isFalse);
+      expect(json.containsKey('message'), isFalse);
+      expect(json.containsKey('notification_type'), isFalse);
+    });
+
+    test('notification 事件带 message / notification_type', () {
+      final json = jsonDecode(buildAgentHookStdinJson(
+        eventName: 'notification',
+        toolName: '',
+        argsJson: '{}',
+        message: '等待审批：terminal_execute',
+        notificationType: 'approval',
+      )) as Map<String, dynamic>;
+      expect(json['message'], '等待审批：terminal_execute');
+      expect(json['notification_type'], 'approval');
     });
   });
 

@@ -89,6 +89,8 @@ class AgentRuntime {
         Future<String?> Function() subagentStopGuard,
         String? Function() hookStopSignal,
         Future<void> Function(AgentHookEvent event) lifecycleHooks,
+        Future<void> Function(String message, {String notificationType})
+            notificationHooks,
         void Function(AgentHookTimelineSink? sink) setHookTimeline,
         void Function(AgentHookRewakeSink? sink) setHookRewake,
       })> forProfile(
@@ -121,6 +123,7 @@ class AgentRuntime {
       subagentStopGuard: hooked.runSubagentStopHooks,
       hookStopSignal: hooked.takeHookStopSignal,
       lifecycleHooks: hooked.runLifecycleHooks,
+      notificationHooks: hooked.runNotificationHooks,
       setHookTimeline: (AgentHookTimelineSink? sink) => hooked.timeline = sink,
       setHookRewake: (AgentHookRewakeSink? sink) => hooked.rewake = sink,
     );

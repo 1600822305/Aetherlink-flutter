@@ -40,6 +40,12 @@ enum AgentHookEvent {
   /// 拒绝原因经 `tool_response` 传入。
   permissionDenied,
 
+  /// 需要用户注意的时刻（对标 Claude Code Notification，观测型
+  /// 不阻断）：审批挂起 / ask_user 等待时触发，可接外部通知。
+  /// matcher 匹配通知类型（approval / question），pattern 忽略；
+  /// 消息经 `message` / `notification_type` 传入。
+  notification,
+
   /// 每轮结束（本轮工具全部执行完，不阻断）。
   turnEnd,
 
@@ -240,6 +246,8 @@ String buildAgentHookStdinJson({
   String? toolOutput,
   bool? toolOk,
   String? prompt,
+  String? message,
+  String? notificationType,
   String? sessionId,
   String? cwd,
 }) {
@@ -254,6 +262,9 @@ String buildAgentHookStdinJson({
     if (toolName.isNotEmpty) 'tool_name': toolName,
     if (toolName.isNotEmpty) 'tool_input': toolInput,
     if (prompt != null) 'prompt': prompt,
+    if (message != null && message.isNotEmpty) 'message': message,
+    if (notificationType != null && notificationType.isNotEmpty)
+      'notification_type': notificationType,
     if (filePath != null && filePath.isNotEmpty) 'file_path': filePath,
     if (toolOutput != null) 'tool_response': toolOutput,
     if (toolOk != null) 'tool_ok': toolOk,
