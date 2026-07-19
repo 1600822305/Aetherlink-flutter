@@ -7,10 +7,15 @@
 // userPromptSubmit hooks。因依赖 chat 侧工具路由（agent 与 chat 互不
 // import 的架构硬约束），与 DI 同层放在 `app/di`。
 
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/app/di/model_access.dart';
+import 'package:aetherlink_flutter/app/di/network_proxy_access.dart';
+import 'package:aetherlink_flutter/core/network/dio_client.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_hooks_trust.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_manual_hooks.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
@@ -20,6 +25,11 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_hooks.dart';
 import 'package:aetherlink_flutter/features/agent/domain/permission_request.dart';
 import 'package:aetherlink_flutter/features/agent/domain/shell_command_patterns.dart';
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
+import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_chat_request.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_message.dart';
+import 'package:aetherlink_flutter/features/chat/domain/gateways/llm_stream_chunk.dart';
+import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
@@ -195,7 +205,7 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
           toolName: call.name,
           argsJson: call.argsJson,
           filePath: filePath),
-      emptyBlockMessage: (hook) => 'hook（${hook.command}）拦截了本次调用。',
+      emptyBlockMessage: (hook) => 'hook（${hook.payload}）拦截了本次调用。',
       label: '${AgentHookEvent.preToolUse.name}(${call.name})',
     );
     final verdict = aggregateAgentHookResults(results);
@@ -215,7 +225,9 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     String? label,
   }) async {
     final seen = <String>{};
-    final unique = [for (final h in hooks) if (seen.add(h.command)) h];
+    final unique = [
+      for (final h in hooks) if (seen.add('${h.type.name}\u0000${h.payload}')) h,
+    ];
     void Function(String line)? updateStatus;
     final sink = timeline;
     if (label != null && sink != null && unique.isNotEmpty) {
@@ -313,7 +325,7 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
           filePath: filePath,
           toolOutput: toolResult.detail ?? toolResult.summary,
           toolOk: toolResult.ok),
-      emptyBlockMessage: (hook) => 'hook（${hook.command}）报告了问题（无输出）。',
+      emptyBlockMessage: (hook) => 'hook（${hook.payload}）报告了问题（无输出）。',
       label: '${postEvent.name}(${call.name})',
     );
     final post = aggregateAgentHookResults(results);
@@ -371,7 +383,7 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
       config.ofEvent(event),
       (hook) => _runHook(hook,
           eventName: event.name, toolName: event.name, argsJson: '{}'),
-      emptyBlockMessage: (hook) => 'hook（${hook.command}）阻止了收尾。',
+      emptyBlockMessage: (hook) => 'hook（${hook.payload}）阻止了收尾。',
       label: event.name,
     );
     final aggregate = aggregateAgentHookResults(results);
@@ -379,7 +391,7 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     return null;
   }
 
-  /// 在绑定工作区里跑一条 hook 命令（委托 [_execHookCommand]）。
+  /// 跑一条 hook（按类型分派，委托 [_execAgentHook]）。
   Future<AgentHookResult> _runHook(
     AgentHook hook, {
     required String eventName,
@@ -389,7 +401,7 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     String? toolOutput,
     bool? toolOk,
   }) =>
-      _execHookCommand(
+      _execAgentHook(
         _refOf(),
         hook,
         eventName: eventName,
@@ -418,12 +430,12 @@ Future<AgentHookResult?> runUserPromptSubmitHooks(
   final seen = <String>{};
   final unique = [
     for (final h in config.ofEvent(AgentHookEvent.userPromptSubmit))
-      if (seen.add(h.command)) h,
+      if (seen.add('${h.type.name}\u0000${h.payload}')) h,
   ];
   final results = await Future.wait([
     for (final hook in unique)
       () async {
-        final result = await _execHookCommand(
+        final result = await _execAgentHook(
           ref,
           hook,
           eventName: AgentHookEvent.userPromptSubmit.name,
@@ -437,7 +449,7 @@ Future<AgentHookResult?> runUserPromptSubmitHooks(
             result.message.isEmpty) {
           return AgentHookResult(
             outcome: AgentHookOutcome.block,
-            message: 'hook（${hook.command}）拦截了本条消息。',
+            message: 'hook（${hook.payload}）拦截了本条消息。',
             additionalContext: result.additionalContext,
             preventContinuation: result.preventContinuation,
             stopReason: result.stopReason,
@@ -453,6 +465,162 @@ Future<AgentHookResult?> runUserPromptSubmitHooks(
     return null;
   }
   return aggregate;
+}
+
+/// 跑一条 hook：按类型分派——command 型走工作区终端
+/// （[_execHookCommand]），prompt 型走一次 LLM 裁决
+/// （[_execPromptHook]），http 型 POST 到回调 URL（[_execHttpHook]）。
+Future<AgentHookResult> _execAgentHook(
+  Ref ref,
+  AgentHook hook, {
+  required String eventName,
+  required String toolName,
+  required String argsJson,
+  String? filePath,
+  String? toolOutput,
+  bool? toolOk,
+  String? prompt,
+  String? workspaceId,
+  String? cwd,
+}) {
+  switch (hook.type) {
+    case AgentHookType.command:
+      return _execHookCommand(
+        ref,
+        hook,
+        eventName: eventName,
+        toolName: toolName,
+        argsJson: argsJson,
+        filePath: filePath,
+        toolOutput: toolOutput,
+        toolOk: toolOk,
+        prompt: prompt,
+        workspaceId: workspaceId,
+        cwd: cwd,
+      );
+    case AgentHookType.prompt:
+    case AgentHookType.http:
+      final stdinJson = buildAgentHookStdinJson(
+        eventName: eventName,
+        toolName: toolName,
+        argsJson: argsJson,
+        filePath: filePath,
+        toolOutput: toolOutput != null && toolOutput.length > 4000
+            ? toolOutput.substring(0, 4000)
+            : toolOutput,
+        toolOk: toolOk,
+        prompt: prompt,
+        sessionId: workspaceId,
+        cwd: cwd,
+      );
+      return hook.type == AgentHookType.prompt
+          ? _execPromptHook(ref, hook, stdinJson)
+          : _execHttpHook(ref, hook, stdinJson);
+  }
+}
+
+/// prompt 型 hook 的系统提示词：要求模型只回协议 JSON。
+const String _kPromptHookSystem =
+    '你是一个 hook 裁决器：根据用户给出的条件与 hook 输入判断条件是否满足。'
+    '只输出一行 JSON，不要任何其他文字：满足时输出 {"ok":true}，'
+    '不满足时输出 {"ok":false,"reason":"简短原因"}。';
+
+/// 跑一条 prompt 型 hook：把 hook 输入 JSON 替换进提示词的
+/// `$ARGUMENTS` 占位符，用当前默认模型做一次非交互裁决，回复
+/// 协议见 [interpretAgentPromptHookResponse]。未配模型/超时/异常
+/// 按 hook 自身失败处理（不阻断）。
+Future<AgentHookResult> _execPromptHook(
+  Ref ref,
+  AgentHook hook,
+  String stdinJson,
+) async {
+  try {
+    final providers = await ref.read(appModelProvidersProvider.future);
+    final current = findCurrentModel(providers);
+    if (current == null) {
+      return const AgentHookResult(
+        outcome: AgentHookOutcome.failed,
+        message: 'prompt hook 失败：未配置默认模型',
+      );
+    }
+    final effective = effectiveModelFor(current);
+    final request = LlmChatRequest(
+      model: effective,
+      system: _kPromptHookSystem,
+      messages: [
+        LlmMessage(
+          role: MessageRole.user,
+          content: buildAgentPromptHookText(hook.prompt, stdinJson),
+        ),
+      ],
+      extraHeaders: effective.providerExtraHeaders,
+      extraBody: effective.providerExtraBody,
+    );
+    final gateway = ref.read(appLlmGatewayFactoryProvider).forModel(effective);
+    final buffer = StringBuffer();
+    await () async {
+      await for (final chunk in gateway.streamChat(request)) {
+        if (chunk is LlmTextDelta) buffer.write(chunk.text);
+      }
+    }()
+        .timeout(Duration(seconds: hook.timeoutSeconds));
+    return interpretAgentPromptHookResponse(buffer.toString());
+  } on TimeoutException {
+    return const AgentHookResult(
+      outcome: AgentHookOutcome.failed,
+      message: 'prompt hook 超时',
+    );
+  } catch (e) {
+    return AgentHookResult(
+      outcome: AgentHookOutcome.failed,
+      message: 'prompt hook 执行异常：$e',
+    );
+  }
+}
+
+/// 跑一条 http 型 hook：把 hook 输入 JSON POST 到配置的 URL
+/// （Content-Type: application/json，可附自定义 headers），响应协议见
+/// [interpretAgentHttpHookResponse]。网络错误/超时按 hook 自身失败
+/// 处理（不阻断）。
+Future<AgentHookResult> _execHttpHook(
+  Ref ref,
+  AgentHook hook,
+  String stdinJson,
+) async {
+  try {
+    final dio = buildLlmDio(proxy: ref.read(appNetworkProxyConfigProvider));
+    final timeout = Duration(seconds: hook.timeoutSeconds);
+    final response = await dio
+        .post<String>(
+          hook.url,
+          data: stdinJson,
+          options: Options(
+            headers: {
+              'Content-Type': 'application/json',
+              ...hook.headers,
+            },
+            responseType: ResponseType.plain,
+            sendTimeout: timeout,
+            receiveTimeout: timeout,
+            validateStatus: (_) => true,
+          ),
+        )
+        .timeout(timeout);
+    return interpretAgentHttpHookResponse(
+      response.statusCode ?? 0,
+      response.data ?? '',
+    );
+  } on TimeoutException {
+    return const AgentHookResult(
+      outcome: AgentHookOutcome.failed,
+      message: 'http hook 超时',
+    );
+  } catch (e) {
+    return AgentHookResult(
+      outcome: AgentHookOutcome.failed,
+      message: 'http hook 执行异常：$e',
+    );
+  }
 }
 
 /// 跑一条 hook 命令：现场上下文两路传入——

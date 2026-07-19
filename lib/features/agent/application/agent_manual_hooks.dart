@@ -35,22 +35,29 @@ class AgentManualHook {
       );
 }
 
-/// JSON 编码（list of {name, enabled, event, matcher, pattern, command,
-/// timeout}）。
+/// JSON 编码（list of {name, enabled, event, type, matcher, pattern,
+/// command/prompt/url, headers, timeout}，载体字段与 hooks.json 同款）。
 String encodeAgentManualHooks(List<AgentManualHook> hooks) => jsonEncode([
       for (final h in hooks)
         {
           'name': h.name,
           'enabled': h.enabled,
           'event': h.hook.event.name,
+          'type': h.hook.type.name,
           'matcher': h.hook.matcher,
           'pattern': h.hook.pattern,
-          'command': h.hook.command,
+          switch (h.hook.type) {
+            AgentHookType.command => 'command',
+            AgentHookType.prompt => 'prompt',
+            AgentHookType.http => 'url',
+          }: h.hook.payload,
+          if (h.hook.headers.isNotEmpty) 'headers': h.hook.headers,
           'timeout': h.hook.timeoutSeconds,
         },
     ]);
 
-/// 解码；坏数据返回 null，缺 command / 未知事件的条目丢弃。
+/// 解码；坏数据返回 null，非法条目 / 未知事件的条目丢弃。
+/// 存量数据没有 type 字段时按 command 型读（存储迁移）。
 List<AgentManualHook>? decodeAgentManualHooks(String? raw) {
   if (raw == null || raw.isEmpty) return null;
   try {
@@ -59,28 +66,21 @@ List<AgentManualHook>? decodeAgentManualHooks(String? raw) {
     final hooks = <AgentManualHook>[];
     for (final item in list) {
       if (item is! Map<String, dynamic>) continue;
-      final command = item['command'];
-      if (command is! String || command.trim().isEmpty) continue;
       final event = AgentHookEvent.values
           .where((e) => e.name == item['event'])
           .firstOrNull;
       if (event == null) continue;
+      final entry = {
+        ...item,
+        if (item['type'] is! String) 'type': AgentHookType.command.name,
+      };
+      final hook = decodeAgentHookEntry(event, entry);
+      if (hook == null) continue;
       final name = item['name'];
-      final matcher = item['matcher'];
-      final pattern = item['pattern'];
-      final timeout = item['timeout'];
       hooks.add(AgentManualHook(
-        name: name is String && name.isNotEmpty ? name : command,
+        name: name is String && name.isNotEmpty ? name : hook.payload,
         enabled: item['enabled'] != false,
-        hook: AgentHook(
-          event: event,
-          matcher: matcher is String && matcher.isNotEmpty ? matcher : '*',
-          pattern: pattern is String && pattern.isNotEmpty ? pattern : '*',
-          command: command,
-          timeoutSeconds: timeout is int && timeout > 0
-              ? timeout
-              : kAgentHookDefaultTimeoutSeconds,
-        ),
+        hook: hook,
       ));
     }
     return hooks;

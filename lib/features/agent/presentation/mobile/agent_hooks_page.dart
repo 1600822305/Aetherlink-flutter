@@ -177,8 +177,9 @@ class AgentHooksPage extends ConsumerWidget {
         ),
         children: [
           Text(
-            '为任务生命周期事件配置 shell 命令：命令跑在任务绑定工作区的'
-            '终端里，按事件自动触发。',
+            '为任务生命周期事件配置 hooks，按事件自动触发：命令型跑在任务'
+            '绑定工作区的终端里，提示词型用一次模型调用裁决，HTTP 型 POST '
+            '到回调 URL。',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
               height: 1.5,
@@ -314,7 +315,7 @@ class _EventSection extends ConsumerWidget {
                 overflow: TextOverflow.ellipsis,
               ),
               subtitle: Text(
-                entry.hook.hook.command,
+                '${entry.hook.hook.type.name} · ${entry.hook.hook.payload}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall?.copyWith(
@@ -392,10 +393,12 @@ class _ManualHookForm extends StatefulWidget {
 }
 
 class _ManualHookFormState extends State<_ManualHookForm> {
+  late AgentHookType _type =
+      widget.existing?.hook.type ?? AgentHookType.command;
   late final TextEditingController _name =
       TextEditingController(text: widget.existing?.name ?? '');
   late final TextEditingController _command =
-      TextEditingController(text: widget.existing?.hook.command ?? '');
+      TextEditingController(text: widget.existing?.hook.payload ?? '');
   late final TextEditingController _matcher =
       TextEditingController(text: widget.existing?.hook.matcher ?? '*');
   late final TextEditingController _pattern =
@@ -448,6 +451,29 @@ class _ManualHookFormState extends State<_ManualHookForm> {
                 ),
               ),
               const SizedBox(height: 12),
+              SegmentedButton<AgentHookType>(
+                segments: const [
+                  ButtonSegment(
+                    value: AgentHookType.command,
+                    label: Text('命令'),
+                  ),
+                  ButtonSegment(
+                    value: AgentHookType.prompt,
+                    label: Text('提示词'),
+                  ),
+                  ButtonSegment(
+                    value: AgentHookType.http,
+                    label: Text('HTTP'),
+                  ),
+                ],
+                selected: {_type},
+                onSelectionChanged: (selection) =>
+                    setState(() => _type = selection.first),
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+              const SizedBox(height: 10),
               TextField(
                 controller: _name,
                 decoration: const InputDecoration(
@@ -462,9 +488,15 @@ class _ManualHookFormState extends State<_ManualHookForm> {
                 maxLines: 3,
                 minLines: 1,
                 style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                decoration: const InputDecoration(
-                  labelText: '命令（必填，跑在任务绑定工作区的终端里）',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: switch (_type) {
+                    AgentHookType.command =>
+                      '命令（必填，跑在任务绑定工作区的终端里）',
+                    AgentHookType.prompt =>
+                      '提示词（必填，\$ARGUMENTS 占位 hook 输入 JSON）',
+                    AgentHookType.http => 'URL（必填，POST hook 输入 JSON）',
+                  },
+                  border: const OutlineInputBorder(),
                   isDense: true,
                 ),
               ),
@@ -501,20 +533,23 @@ class _ManualHookFormState extends State<_ManualHookForm> {
               const SizedBox(height: 14),
               FilledButton(
                 onPressed: () {
-                  final command = _command.text.trim();
-                  if (command.isEmpty) return;
+                  final payload = _command.text.trim();
+                  if (payload.isEmpty) return;
                   final name = _name.text.trim();
                   final matcher = _matcher.text.trim();
                   final pattern = _pattern.text.trim();
                   final timeout = int.tryParse(_timeout.text.trim());
                   widget.onSubmit(AgentManualHook(
-                    name: name.isEmpty ? command : name,
+                    name: name.isEmpty ? payload : name,
                     enabled: widget.existing?.enabled ?? true,
                     hook: AgentHook(
                       event: widget.event,
+                      type: _type,
                       matcher: matcher.isEmpty ? '*' : matcher,
                       pattern: pattern.isEmpty ? '*' : pattern,
-                      command: command,
+                      command: _type == AgentHookType.command ? payload : '',
+                      prompt: _type == AgentHookType.prompt ? payload : '',
+                      url: _type == AgentHookType.http ? payload : '',
                       timeoutSeconds: timeout != null && timeout > 0
                           ? timeout
                           : kAgentHookDefaultTimeoutSeconds,

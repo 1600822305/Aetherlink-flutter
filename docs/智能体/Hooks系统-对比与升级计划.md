@@ -167,9 +167,14 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 **验收**：单测覆盖 async 首行解析（含非首行/async!=true 不触发）与状态行文案（5 个新用例，hooks 40 个 + 引擎 12 个全部通过）；flutter analyze 无问题。
 **涉及**：`agent_hooks.dart`、`agent_hooks_access.dart`、`agent_runtime_access.dart`、`agent_task_runner.dart`、`agent_event_store.dart`。
 
-### - [ ] 阶段 9（可选，低优先级）：扩展 hook 类型 ⬜
-**目标**：参考 CC 的 `prompt`（LLM 判定型，用一次模型调用当裁决器）与 `http`（HTTP 回调）hook 类型；`agent` 型（子 agent 验证器）视需求。
-**涉及**：`agent_hooks.dart` 配置格式扩展（`type` 字段，缺省 `command` 向后兼容）、执行器分派。
+### - [x] 阶段 9：扩展 hook 类型（command / prompt / http） ✅（2026-07-19）
+**目标**：对标 CC 的 `prompt`（LLM 判定型）与 `http`（HTTP 回调）hook 类型；`agent` 型暂不做。
+- 配置格式标准重构（按用户要求不做兼容层）：hooks.json 每条 hook **必须**带 `type` 字段（`command` / `prompt` / `http` 区分联合，对标 CC 的 discriminatedUnion），缺 type、type 未知或缺对应载体（command/prompt/url）的条目丢弃；旧的无 type 格式不再默认按 command 解释。仅手动 hooks 的 App 内存储解码保留无 type → command 的存储迁移（避免用户已保存的手动 hooks 静默丢失）。
+- `prompt` 型：提示词里 `$ARGUMENTS` 替换为 hook 输入 JSON（无占位符时追加到末尾），用当前默认模型做一次非交互裁决；回复协议 `{"ok":true}` → 放行，`{"ok":false,"reason":...}` → block 带原因（容忍 围栏 包裹）；非 JSON / 不符合协议 / 未配模型 / 超时 → hook 自身失败（不阻断）。CC 的 `model` 字段未实现（固定用当前默认模型），后续可加。
+- `http` 型：把 hook 输入 JSON POST 到配置 URL（Content-Type: application/json，可选自定义 `headers`，走带代理配置的 dio）；2xx 响应体按 stdout 同款协议解析（decision / additionalContext / continue:false / 首行 async）；非 2xx / 网络错误 / 超时 → hook 自身失败（不阻断）。CC 的 `allowedEnvVars` header 插值未实现（不读任何环境变量，避免意外泄露）；URL 不做 allowlist，但 hooks 本身受手动添加/仓库信任门槛管控。
+- 执行器按 type 分派（`_execAgentHook` → command/prompt/http），并行/聚合/时间线/stop signal 全部复用；同事件去重键由 `hook.command` 改为 `type + payload`（不同类型同文本不会误去重）；设置页新增类型切换（命令/提示词/HTTP）与对应载体输入。
+**验收**：单测覆盖新类型解析（含丢弃规则/headers 过滤）、prompt 协议、http 协议、手动 hooks 往返+存储迁移（hooks 51 个 + 手动 5 个 + 引擎 12 个全部通过）；flutter analyze 无问题。
+**涉及**：`agent_hooks.dart`、`agent_manual_hooks.dart`、`agent_hooks_access.dart`、`agent_hooks_page.dart`。
 
 ---
 
@@ -186,4 +191,5 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 | 2026-07-19 | 阶段 5.5 | ✅ | b79d36ec | 重构：hooks 执行层拆到 app/di/agent_hooks_access.dart，统一配置加载 |
 | 2026-07-19 | 阶段 6 | ✅ | c3d857c4 | continue:false 全局终止（hookStopSignal 接线引擎）+ 同事件 hooks 并行执行（同命令去重，aggregateAgentHookResults 聚合） |
 | 2026-07-19 | 阶段 7 | ✅ | b19a999e | 新事件 subagentStart / subagentStop（子引擎 stopGuard，可 block 收尾）/ taskEnd（引擎 onTaskEnd 回调） |
-| 2026-07-19 | 阶段 8 | ✅ | （本提交） | async hooks（首行 {"async":true} 协议）+ hook 运行状态写入任务时间线（运行中→结果原位改写） |
+| 2026-07-19 | 阶段 8 | ✅ | ac539994 | async hooks（首行 {"async":true} 协议）+ hook 运行状态写入任务时间线（运行中→结果原位改写） |
+| 2026-07-19 | 阶段 9 | ✅ | （本提交） | hook 类型扩展：配置标准重构（必带 type，不兼容无 type 旧格式）+ prompt（LLM 裁决）/ http（POST 回调）型 hook |

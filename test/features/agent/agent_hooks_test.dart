@@ -10,11 +10,13 @@ void main() {
       final config = decodeAgentHooksConfig('''
 {
   "preToolUse": [
-    {"matcher": "terminal_execute", "pattern": "git push *",
-     "command": "sh check.sh", "timeout": 10}
+    {"type": "command", "matcher": "terminal_execute",
+     "pattern": "git push *", "command": "sh check.sh", "timeout": 10}
   ],
-  "postToolUse": [{"matcher": "write", "command": "dart format ."}],
-  "stop": [{"command": "flutter analyze"}]
+  "postToolUse": [
+    {"type": "command", "matcher": "write", "command": "dart format ."}
+  ],
+  "stop": [{"type": "command", "command": "flutter analyze"}]
 }
 ''')!;
       expect(config.hooks.length, 3);
@@ -35,19 +37,53 @@ void main() {
       expect(decodeAgentHooksConfig(null), isNull);
     });
 
-    test('缺 command / 类型不对的条目丢弃，未知事件键忽略', () {
+    test('缺 type / 缺载体 / 类型不对的条目丢弃，未知事件键忽略', () {
       final config = decodeAgentHooksConfig('''
 {
-  "preToolUse": [{"matcher": "x"}, "junk", {"command": "ok"}],
-  "unknownEvent": [{"command": "nope"}]
+  "preToolUse": [
+    {"matcher": "x"}, "junk",
+    {"command": "无 type 不再默认 command"},
+    {"type": "weird", "command": "x"},
+    {"type": "command"},
+    {"type": "prompt", "command": "载体字段不对"},
+    {"type": "http"},
+    {"type": "command", "command": "ok"}
+  ],
+  "unknownEvent": [{"type": "command", "command": "nope"}]
 }
 ''')!;
       expect(config.hooks.single.command, 'ok');
     });
 
+    test('新类型解析：prompt / http（含 headers）', () {
+      final config = decodeAgentHooksConfig('''
+{
+  "preToolUse": [
+    {"type": "prompt", "matcher": "write",
+     "prompt": "安全吗？\$ARGUMENTS", "timeout": 20},
+    {"type": "http", "url": "https://example.com/hook",
+     "headers": {"Authorization": "Bearer x", "bad": 1}}
+  ]
+}
+''')!;
+      final prompt = config.hooks[0];
+      expect(prompt.type, AgentHookType.prompt);
+      expect(prompt.prompt, '安全吗？\$ARGUMENTS');
+      expect(prompt.payload, prompt.prompt);
+      expect(prompt.matcher, 'write');
+      expect(prompt.timeoutSeconds, 20);
+      expect(prompt.command, '');
+      final http = config.hooks[1];
+      expect(http.type, AgentHookType.http);
+      expect(http.url, 'https://example.com/hook');
+      expect(http.payload, http.url);
+      expect(http.headers, {'Authorization': 'Bearer x'});
+    });
+
     test('postToolUseFailure 事件解析与匹配', () {
       final config = decodeAgentHooksConfig('''
-{"postToolUseFailure": [{"matcher": "terminal_*", "command": "diagnose.sh"}]}
+{"postToolUseFailure": [
+  {"type": "command", "matcher": "terminal_*", "command": "diagnose.sh"}]}
 ''')!;
       final hooks = hooksForToolCall(
         config,
@@ -70,9 +106,9 @@ void main() {
     test('subagentStart / subagentStop / taskEnd 事件解析', () {
       final config = decodeAgentHooksConfig('''
 {
-  "subagentStart": [{"command": "log_start.sh"}],
-  "subagentStop": [{"command": "verify.sh"}],
-  "taskEnd": [{"command": "notify.sh"}]
+  "subagentStart": [{"type": "command", "command": "log_start.sh"}],
+  "subagentStop": [{"type": "command", "command": "verify.sh"}],
+  "taskEnd": [{"type": "command", "command": "notify.sh"}]
 }
 ''')!;
       expect(config.ofEvent(AgentHookEvent.subagentStart).single.command,
@@ -85,7 +121,7 @@ void main() {
 
     test('非法 timeout 回退默认', () {
       final config = decodeAgentHooksConfig(
-        '{"stop":[{"command":"c","timeout":-5}]}',
+        '{"stop":[{"type":"command","command":"c","timeout":-5}]}',
       )!;
       expect(config.hooks.single.timeoutSeconds, kAgentHookDefaultTimeoutSeconds);
     });
@@ -95,9 +131,10 @@ void main() {
     final config = decodeAgentHooksConfig('''
 {
   "preToolUse": [
-    {"matcher": "terminal_execute", "pattern": "git push *", "command": "a"},
-    {"matcher": "terminal_*", "command": "b"},
-    {"matcher": "write", "command": "c"}
+    {"type": "command", "matcher": "terminal_execute",
+     "pattern": "git push *", "command": "a"},
+    {"type": "command", "matcher": "terminal_*", "command": "b"},
+    {"type": "command", "matcher": "write", "command": "c"}
   ]
 }
 ''')!;
@@ -186,7 +223,7 @@ void main() {
   group('userPromptSubmit / additionalContext', () {
     test('userPromptSubmit 事件解析', () {
       final config = decodeAgentHooksConfig(
-        '{"userPromptSubmit":[{"command":"check_prompt.sh"}]}',
+        '{"userPromptSubmit":[{"type":"command","command":"check_prompt.sh"}]}',
       );
       final hooks = config!.ofEvent(AgentHookEvent.userPromptSubmit);
       expect(hooks, hasLength(1));
@@ -436,6 +473,109 @@ void main() {
       final r = splitAgentHookOutput('out\n$kAgentHookStderrMarker\n');
       expect(r.stdout, 'out');
       expect(r.stderr, '');
+    });
+  });
+
+  group('buildAgentPromptHookText / interpretAgentPromptHookResponse', () {
+    test(r'$ARGUMENTS 替换；无占位符时追加到末尾', () {
+      expect(
+        buildAgentPromptHookText(r'检查：$ARGUMENTS 完', '{"a":1}'),
+        '检查：{"a":1} 完',
+      );
+      expect(
+        buildAgentPromptHookText('检查输入', '{"a":1}'),
+        '检查输入\n\n{"a":1}',
+      );
+    });
+
+    test('{"ok":true} → proceed', () {
+      final r = interpretAgentPromptHookResponse('{"ok":true}');
+      expect(r.outcome, AgentHookOutcome.proceed);
+    });
+
+    test('{"ok":false,"reason":...} → block 带原因', () {
+      final r = interpretAgentPromptHookResponse(
+        '{"ok":false,"reason":"命令不安全"}',
+      );
+      expect(r.outcome, AgentHookOutcome.block);
+      expect(r.message, '命令不安全');
+    });
+
+    test('容忍 围栏 包裹的 JSON', () {
+      final r = interpretAgentPromptHookResponse(
+        '```json\n{"ok":false,"reason":"违规"}\n```',
+      );
+      expect(r.outcome, AgentHookOutcome.block);
+      expect(r.message, '违规');
+    });
+
+    test('非 JSON / 不符合协议 → failed（不阻断）', () {
+      expect(
+        interpretAgentPromptHookResponse('我觉得可以').outcome,
+        AgentHookOutcome.failed,
+      );
+      expect(
+        interpretAgentPromptHookResponse('{"verdict":"yes"}').outcome,
+        AgentHookOutcome.failed,
+      );
+      expect(
+        interpretAgentPromptHookResponse('{"ok":"yes"}').outcome,
+        AgentHookOutcome.failed,
+      );
+    });
+  });
+
+  group('interpretAgentHttpHookResponse', () {
+    test('2xx + decision JSON → 同 stdout 协议', () {
+      final r = interpretAgentHttpHookResponse(
+        200,
+        '{"decision":"deny","reason":"禁止"}',
+      );
+      expect(r.outcome, AgentHookOutcome.block);
+      expect(r.message, '禁止');
+      expect(
+        interpretAgentHttpHookResponse(201, '{"decision":"allow"}').outcome,
+        AgentHookOutcome.allow,
+      );
+    });
+
+    test('2xx + continue:false / additionalContext 保留', () {
+      final r = interpretAgentHttpHookResponse(
+        200,
+        '{"continue":false,"stopReason":"预算超",'
+        '"additionalContext":"上下文"}',
+      );
+      expect(r.preventContinuation, isTrue);
+      expect(r.stopReason, '预算超');
+      expect(r.additionalContext, '上下文');
+    });
+
+    test('2xx 首行 {"async":true} → isAsync', () {
+      expect(
+        interpretAgentHttpHookResponse(200, '{"async":true}').isAsync,
+        isTrue,
+      );
+    });
+
+    test('2xx 空体 / 非 JSON → proceed', () {
+      expect(
+        interpretAgentHttpHookResponse(200, '').outcome,
+        AgentHookOutcome.proceed,
+      );
+      expect(
+        interpretAgentHttpHookResponse(204, 'ok').outcome,
+        AgentHookOutcome.proceed,
+      );
+    });
+
+    test('非 2xx → failed（不阻断）', () {
+      final r = interpretAgentHttpHookResponse(500, 'boom');
+      expect(r.outcome, AgentHookOutcome.failed);
+      expect(r.message, contains('HTTP 500'));
+      expect(
+        interpretAgentHttpHookResponse(404, '').outcome,
+        AgentHookOutcome.failed,
+      );
     });
   });
 

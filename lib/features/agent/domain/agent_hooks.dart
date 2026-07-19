@@ -48,27 +48,59 @@ enum AgentHookEvent {
   taskEnd,
 }
 
+/// hook 类型（对标 Claude Code 的 command / prompt / http）。
+enum AgentHookType {
+  /// shell 命令：跑在任务绑定工作区的终端里，退出协议见
+  /// [interpretAgentHookExit]。
+  command,
+
+  /// LLM 裁决器：用一次模型调用评估提示词条件，回复协议见
+  /// [interpretAgentPromptHookResponse]。
+  prompt,
+
+  /// HTTP 回调：把 hook 输入 JSON POST 到 URL，响应协议见
+  /// [interpretAgentHttpHookResponse]。
+  http,
+}
+
 /// 一条 hook 配置。[matcher] 匹配权限域（工具名 / `mcp:<server>/<tool>`），
 /// [pattern] 匹配调用 pattern（终端子命令 / 文件路径），两者语义与
 /// 权限规则一致（复用 [permissionWildcardMatch]，`*` 通配）。
+/// 按 [type] 取对应载体：command 型用 [command]，prompt 型用
+/// [prompt]，http 型用 [url]（+可选 [headers]）。
 class AgentHook {
   const AgentHook({
     required this.event,
+    this.type = AgentHookType.command,
     this.matcher = '*',
     this.pattern = '*',
-    required this.command,
+    this.command = '',
+    this.prompt = '',
+    this.url = '',
+    this.headers = const {},
     this.timeoutSeconds = kAgentHookDefaultTimeoutSeconds,
   });
 
   final AgentHookEvent event;
+  final AgentHookType type;
   final String matcher;
   final String pattern;
   final String command;
+  final String prompt;
+  final String url;
+  final Map<String, String> headers;
   final int timeoutSeconds;
+
+  /// 类型对应的载体（去重键 / 展示用）。
+  String get payload => switch (type) {
+        AgentHookType.command => command,
+        AgentHookType.prompt => prompt,
+        AgentHookType.http => url,
+      };
 
   @override
   String toString() =>
-      'AgentHook(${event.name}, $matcher, $pattern, $command)';
+      'AgentHook(${event.name}, ${type.name}, $matcher, $pattern, $payload)';
 }
 
 const int kAgentHookDefaultTimeoutSeconds = 30;
@@ -86,8 +118,12 @@ class AgentHooksConfig {
 }
 
 /// 解析 hooks.json（`{"preToolUse":[{...}],"postToolUse":[...],"stop":[...]}`）。
-/// 坏 JSON / 非对象返回 null；缺 command 或字段类型不对的条目丢弃；
-/// stop hook 忽略 matcher/pattern（收尾校验与具体工具无关）。
+/// 每条 hook 用 `type` 字段区分类型（对标 Claude Code 的区分联合）：
+/// - `{"type":"command","command":"..."}`
+/// - `{"type":"prompt","prompt":"..."}`（`$ARGUMENTS` 占位 hook 输入 JSON）
+/// - `{"type":"http","url":"...","headers":{...}}`
+/// 坏 JSON / 非对象返回 null；缺 type、type 未知或缺对应载体的条目
+/// 丢弃；stop hook 忽略 matcher/pattern（收尾校验与具体工具无关）。
 AgentHooksConfig? decodeAgentHooksConfig(String? raw) {
   if (raw == null || raw.trim().isEmpty) return null;
   final Object? decoded;
@@ -103,23 +139,53 @@ AgentHooksConfig? decodeAgentHooksConfig(String? raw) {
     if (list is! List) continue;
     for (final item in list) {
       if (item is! Map<String, dynamic>) continue;
-      final command = item['command'];
-      if (command is! String || command.trim().isEmpty) continue;
-      final matcher = item['matcher'];
-      final pattern = item['pattern'];
-      final timeout = item['timeout'];
-      hooks.add(AgentHook(
-        event: event,
-        matcher: matcher is String && matcher.isNotEmpty ? matcher : '*',
-        pattern: pattern is String && pattern.isNotEmpty ? pattern : '*',
-        command: command,
-        timeoutSeconds: timeout is int && timeout > 0
-            ? timeout
-            : kAgentHookDefaultTimeoutSeconds,
-      ));
+      final hook = decodeAgentHookEntry(event, item);
+      if (hook != null) hooks.add(hook);
     }
   }
   return AgentHooksConfig(hooks: hooks);
+}
+
+/// 解析单条 hook 配置（hooks.json 与手动 hooks 存储共用）：按
+/// `type` 区分联合取对应载体，非法条目返回 null。
+AgentHook? decodeAgentHookEntry(
+  AgentHookEvent event,
+  Map<String, dynamic> item,
+) {
+  final typeName = item['type'];
+  AgentHookType? type;
+  for (final t in AgentHookType.values) {
+    if (t.name == typeName) type = t;
+  }
+  if (type == null) return null;
+  final payload = item[switch (type) {
+    AgentHookType.command => 'command',
+    AgentHookType.prompt => 'prompt',
+    AgentHookType.http => 'url',
+  }];
+  if (payload is! String || payload.trim().isEmpty) return null;
+  final rawHeaders = item['headers'];
+  final headers = <String, String>{
+    if (type == AgentHookType.http && rawHeaders is Map<String, dynamic>)
+      for (final e in rawHeaders.entries)
+        if (e.value is String) e.key: e.value as String,
+  };
+  final matcher = item['matcher'];
+  final pattern = item['pattern'];
+  final timeout = item['timeout'];
+  return AgentHook(
+    event: event,
+    type: type,
+    matcher: matcher is String && matcher.isNotEmpty ? matcher : '*',
+    pattern: pattern is String && pattern.isNotEmpty ? pattern : '*',
+    command: type == AgentHookType.command ? payload : '',
+    prompt: type == AgentHookType.prompt ? payload : '',
+    url: type == AgentHookType.http ? payload : '',
+    headers: headers,
+    timeoutSeconds: timeout is int && timeout > 0
+        ? timeout
+        : kAgentHookDefaultTimeoutSeconds,
+  );
 }
 
 /// 组装 hook 命令的 stdin JSON（字段命名对齐 Claude Code 输入协议：
@@ -366,6 +432,63 @@ bool _isAsyncFirstLine(String stdout) {
   } catch (_) {
     return false;
   }
+}
+
+/// prompt 型 hook 占位符：提示词里的 `$ARGUMENTS` 替换为 hook 输入
+/// JSON；没有占位符时把输入追加到提示词末尾（对标 Claude Code）。
+String buildAgentPromptHookText(String prompt, String inputJson) =>
+    prompt.contains(r'$ARGUMENTS')
+        ? prompt.replaceAll(r'$ARGUMENTS', inputJson)
+        : '$prompt\n\n$inputJson';
+
+/// prompt 型 hook 的回复协议（对标 Claude Code）：模型输出
+/// `{"ok":true}` → 放行；`{"ok":false,"reason":"..."}` → block（原因
+/// 回给模型）；非 JSON / 不符合协议 → hook 自身失败（不阻断）。
+AgentHookResult interpretAgentPromptHookResponse(String response) {
+  final trimmed = response.trim();
+  // 容忍模型把 JSON 包在 ```围栏```里。
+  final unfenced = trimmed.startsWith('```')
+      ? trimmed
+          .replaceFirst(RegExp(r'^```[a-zA-Z]*\s*'), '')
+          .replaceFirst(RegExp(r'```\s*$'), '')
+          .trim()
+      : trimmed;
+  try {
+    final decoded = jsonDecode(unfenced);
+    if (decoded is! Map<String, dynamic> || decoded['ok'] is! bool) {
+      return AgentHookResult(
+        outcome: AgentHookOutcome.failed,
+        message: 'prompt hook 回复不符合协议：$trimmed',
+      );
+    }
+    if (decoded['ok'] == true) {
+      return const AgentHookResult(outcome: AgentHookOutcome.proceed);
+    }
+    final reason = decoded['reason'];
+    return AgentHookResult(
+      outcome: AgentHookOutcome.block,
+      message: reason is String ? reason : '',
+    );
+  } catch (_) {
+    return AgentHookResult(
+      outcome: AgentHookOutcome.failed,
+      message: 'prompt hook 回复不是 JSON：$trimmed',
+    );
+  }
+}
+
+/// http 型 hook 的响应协议（对标 Claude Code）：非 2xx → hook 自身
+/// 失败（不阻断）；2xx → 响应体按 stdout 同款协议解析（首行
+/// `{"async":true}` / `{"decision":...}` / `{"continue":false}` /
+/// additionalContext，空体默认放行）。
+AgentHookResult interpretAgentHttpHookResponse(int statusCode, String body) {
+  if (statusCode < 200 || statusCode >= 300) {
+    return AgentHookResult(
+      outcome: AgentHookOutcome.failed,
+      message: 'HTTP $statusCode${body.trim().isEmpty ? '' : '：${body.trim()}'}',
+    );
+  }
+  return interpretAgentHookExit(0, body, '');
 }
 
 AgentHookResult? _decodeDecision(String stdout) {

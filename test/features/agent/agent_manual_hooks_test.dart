@@ -61,6 +61,43 @@ void main() {
     expect(decoded[1].hook.event, AgentHookEvent.turnEnd);
   });
 
+  test('prompt / http 类型编码解码往返', () {
+    final decoded = decodeAgentManualHooks(encodeAgentManualHooks(const [
+      AgentManualHook(
+        name: '安全裁决',
+        hook: AgentHook(
+          event: AgentHookEvent.preToolUse,
+          type: AgentHookType.prompt,
+          matcher: 'write',
+          prompt: r'这次调用安全吗？$ARGUMENTS',
+        ),
+      ),
+      AgentManualHook(
+        name: '外部审计',
+        hook: AgentHook(
+          event: AgentHookEvent.preToolUse,
+          type: AgentHookType.http,
+          url: 'https://example.com/hook',
+          headers: {'Authorization': 'Bearer x'},
+        ),
+      ),
+    ]))!;
+    expect(decoded[0].hook.type, AgentHookType.prompt);
+    expect(decoded[0].hook.prompt, r'这次调用安全吗？$ARGUMENTS');
+    expect(decoded[0].hook.command, '');
+    expect(decoded[1].hook.type, AgentHookType.http);
+    expect(decoded[1].hook.url, 'https://example.com/hook');
+    expect(decoded[1].hook.headers, {'Authorization': 'Bearer x'});
+  });
+
+  test('存量数据无 type 字段按 command 型读（存储迁移）', () {
+    final decoded = decodeAgentManualHooks(
+      '[{"event":"stop","command":"flutter analyze"}]',
+    )!;
+    expect(decoded.single.hook.type, AgentHookType.command);
+    expect(decoded.single.hook.command, 'flutter analyze');
+  });
+
   test('坏数据返回 null，坏条目丢弃', () {
     expect(decodeAgentManualHooks('not json'), isNull);
     expect(decodeAgentManualHooks('{"a":1}'), isNull);
