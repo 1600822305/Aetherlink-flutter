@@ -192,4 +192,5 @@ CC 共 **27 个**事件（`coreTypes.ts` L25-53）。对映射关系：
 | 2026-07-19 | 阶段 6 | ✅ | c3d857c4 | continue:false 全局终止（hookStopSignal 接线引擎）+ 同事件 hooks 并行执行（同命令去重，aggregateAgentHookResults 聚合） |
 | 2026-07-19 | 阶段 7 | ✅ | b19a999e | 新事件 subagentStart / subagentStop（子引擎 stopGuard，可 block 收尾）/ taskEnd（引擎 onTaskEnd 回调） |
 | 2026-07-19 | 阶段 8 | ✅ | ac539994 | async hooks（首行 {"async":true} 协议）+ hook 运行状态写入任务时间线（运行中→结果原位改写） |
-| 2026-07-19 | 阶段 9 | ✅ | （本提交） | hook 类型扩展：配置标准重构（必带 type，不兼容无 type 旧格式）+ prompt（LLM 裁决）/ http（POST 回调）型 hook |
+| 2026-07-19 | 阶段 9 | ✅ | 8642afb5 | hook 类型扩展：配置标准重构（必带 type，不兼容无 type 旧格式）+ prompt（LLM 裁决）/ http（POST 回调）型 hook |
+| 2026-07-19 | 设置 UI 重构 | ✅ | （本提交） | 按类型的编辑表单（http headers 键值编辑 + URL 校验）、列表类型徽标、事件文案类型中立化、仓库 hooks 结构化审阅（http URL 高亮） |
