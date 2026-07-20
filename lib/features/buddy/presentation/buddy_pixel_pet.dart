@@ -1,9 +1,11 @@
-// 像素宠物动画组件：CustomPainter 渲染 32×32 像素图，Ticker 驱动
-// 60fps 补间动画 —— 呼吸起伏、周期眨眼、被摸时挤压回弹 + 爱心粒子，
-// 闪光个体金色调 + 星光闪烁。帽子像素图锚定在头顶叠加。
+// 像素宠物动画组件：像素图（含帽子/眼部高光/闪光色调）首次使用时
+// 烘焙成 ui.Image 纹理（睛开/眨眼两张），之后每帧只贴图；分辨率
+// 再高也不吃逐格重画开销。Ticker 驱动 60fps 补间动画 —— 呼吸起伏、
+// 周期眨眼、被摸时挤压回弹 + 爱心粒子，闪光个体金色调 + 星光闪烁。
 
 import 'dart:io';
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -14,7 +16,6 @@ import 'package:aetherlink_flutter/features/buddy/application/buddy_codex_skin_c
 import 'package:aetherlink_flutter/features/buddy/domain/buddy_types.dart';
 import 'package:aetherlink_flutter/features/buddy/domain/pixel_arts/pixel_arts.dart';
 import 'package:aetherlink_flutter/features/buddy/presentation/sheet_pets/buddy_sheet_pet.dart';
-import 'package:aetherlink_flutter/features/buddy/presentation/vector_pets/vector_pet.dart';
 
 /// 眨眼周期：每 ~3.7s 闭眼 0.15s。
 const double _blinkCycle = 3.7;
@@ -184,13 +185,17 @@ class _PetPainter extends CustomPainter {
 
   static final Map<BuddySpecies, int> _bodyColorCache = {};
 
+  /// 烘焙纹理缓存：键为 物种-帽子-闪光-是否眨眼。
+  static final Map<String, ui.Image> _spriteCache = {};
+
+  /// 烘焙分辨率倍率（每像素格烘 4×4 物理像素，保留亚像素细节）。
+  static const double _bakeScale = 4;
+
   @override
   void paint(Canvas canvas, Size size) {
     final art = kBuddyPixelArts[bones.species]!;
     final t = _time.value;
-    final cols = art.rows.first.length;
-    final rows = art.rows.length;
-    final px = size.width / cols;
+    final px = size.width / art.rows.first.length;
 
     final petT = t - petStartOf();
     final squashing = petT >= 0 && petT < _squashLen;
@@ -215,21 +220,42 @@ class _PetPainter extends CustomPainter {
     canvas.translate(-size.width / 2, -size.height);
 
     final blink = (t % _blinkCycle) < _blinkLen;
-    final bodyColor = _bodyColor(art);
     final paint = Paint();
 
-    // 有矢量版的物种优先用矢量渲染（任意缩放不糊）。
-    final vector = kBuddyVectorArts[bones.species];
-    if (vector != null) {
-      vector.paint(canvas, size, blink: blink, tint: _tint);
-      _paintVectorHat(canvas, size, paint);
-      canvas.restore();
-      if (bones.shiny) _paintSparkles(canvas, size, t, paint);
-      if (petT >= 0 && petT < _heartsLen) {
-        _paintHearts(canvas, size, petT / _heartsLen, paint);
-      }
-      return;
+    final sprite = _bakedSprite(art, blink);
+    canvas.drawImageRect(
+      sprite,
+      Rect.fromLTWH(0, 0, sprite.width.toDouble(), sprite.height.toDouble()),
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint()..filterQuality = FilterQuality.medium,
+    );
+
+    canvas.restore();
+
+    // 闪光个体：金色星光在四周闪烁。
+    if (bones.shiny) _paintSparkles(canvas, size, t, paint);
+
+    // 被摸：爱心粒子上浮渐隐。
+    if (petT >= 0 && petT < _heartsLen) {
+      _paintHearts(canvas, size, petT / _heartsLen, paint);
     }
+  }
+
+  /// 烘焙（或取缓存）一张完整精灵纹理：身体 + 眼睛/眼睑 + 高光 +
+  /// 帽子，闪光色调也烘进去。每个组合只烘一次。
+  ui.Image _bakedSprite(BuddyPixelArt art, bool blink) {
+    final key = '${bones.species.name}-${bones.hat.name}-${bones.shiny}-$blink';
+    return _spriteCache.putIfAbsent(key, () => _bake(art, blink));
+  }
+
+  ui.Image _bake(BuddyPixelArt art, bool blink) {
+    final cols = art.rows.first.length;
+    final rows = art.rows.length;
+    const px = _bakeScale;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final bodyColor = _bodyColor(art);
+    final paint = Paint();
 
     for (var r = 0; r < rows; r++) {
       final row = art.rows[r];
@@ -267,41 +293,8 @@ class _PetPainter extends CustomPainter {
 
     _paintHat(canvas, art, px, paint);
 
-    canvas.restore();
-
-    // 闪光个体：金色星光在四周闪烁。
-    if (bones.shiny) _paintSparkles(canvas, size, t, paint);
-
-    // 被摸：爱心粒子上浮渐隐。
-    if (petT >= 0 && petT < _heartsLen) {
-      _paintHearts(canvas, size, petT / _heartsLen, paint);
-    }
-  }
-
-  /// 矢量物种的帽子：仍用帽子像素图，按 32 格居中压在头顶。
-  void _paintVectorHat(Canvas canvas, Size size, Paint paint) {
-    if (bones.hat == BuddyHat.none) return;
-    final hat = kBuddyHatArts[bones.hat];
-    if (hat == null) return;
-    final px = size.width / 32;
-    final hatW = hat.rows.first.length;
-    final hatH = hat.rows.length;
-    final startC = (16 - hatW / 2).round();
-    final lift = bones.hat == BuddyHat.halo ? 2 : 1;
-    final startR = 1 - hatH + lift;
-    for (var r = 0; r < hatH; r++) {
-      final row = hat.rows[r];
-      for (var c = 0; c < row.length; c++) {
-        final ch = row[c];
-        if (ch == '.') continue;
-        paint.color = _tint(Color(hat.palette[ch] ?? 0xFF000000));
-        canvas.drawRect(
-          Rect.fromLTWH((startC + c) * px, (startR + r) * px, px, px)
-              .inflate(0.5),
-          paint,
-        );
-      }
-    }
+    final picture = recorder.endRecording();
+    return picture.toImageSync((cols * px).round(), (rows * px).round());
   }
 
   void _paintHat(Canvas canvas, BuddyPixelArt art, double px, Paint paint) {
