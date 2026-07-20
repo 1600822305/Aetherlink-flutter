@@ -59,14 +59,14 @@ void main() {
     }
   });
 
-  test('每个物种都有 16×16 像素图，字符全部在调色板里且带眼睛', () {
+  test('每个物种都有 32×32 像素图，字符全部在调色板里且带眼睛', () {
     for (final species in BuddySpecies.values) {
       final art = kBuddyPixelArts[species];
       expect(art, isNotNull, reason: '$species 缺少像素图');
-      expect(art!.rows, hasLength(16), reason: '$species 行数不是 16');
+      expect(art!.rows, hasLength(32), reason: '$species 行数不是 32');
       var hasEye = false;
       for (final row in art.rows) {
-        expect(row.length, 16, reason: '$species 行 "$row" 长度不是 16');
+        expect(row.length, 32, reason: '$species 行 "$row" 长度不是 32');
         for (final ch in row.split('')) {
           if (ch == '.') continue;
           if (ch == 'E') hasEye = true;
