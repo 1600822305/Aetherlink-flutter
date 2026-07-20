@@ -237,20 +237,34 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
     }
     final activeTab = _activeTab ?? 'all';
 
+    // Search results are grouped by provider: a header row per vendor followed
+    // by its matching models, in the same provider order as the '全部' tab.
     final query = _query.trim().toLowerCase();
-    final displayed = query.isNotEmpty
-        ? [
-            for (final e in available)
-              if (e.model.name.toLowerCase().contains(query) ||
-                  e.model.id.toLowerCase().contains(query) ||
-                  e.provider.name.toLowerCase().contains(query))
-                e,
-          ]
-        : _displayed(available, groups, currentProviderId, activeTab);
+    final List<Object> rows;
+    if (query.isNotEmpty) {
+      final matches = [
+        for (final e in available)
+          if (e.model.name.toLowerCase().contains(query) ||
+              e.model.id.toLowerCase().contains(query) ||
+              e.provider.name.toLowerCase().contains(query))
+            e,
+      ];
+      rows = <Object>[];
+      String? lastProviderId;
+      for (final e in matches) {
+        if (e.provider.id != lastProviderId) {
+          lastProviderId = e.provider.id;
+          rows.add(e.provider);
+        }
+        rows.add(e);
+      }
+    } else {
+      rows = _displayed(available, groups, currentProviderId, activeTab);
+    }
 
     _scheduleArrowUpdate();
     if (query.isEmpty) {
-      _scrollSelectedIntoView(displayed, selectedKey, activeTab);
+      _scrollSelectedIntoView(rows.cast<_Entry>(), selectedKey, activeTab);
     }
 
     final body = _DialogBody(
@@ -268,7 +282,7 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
               currentProviderId,
               activeTab,
             ),
-      content: _content(t, fullScreen, mq, displayed, selectedKey),
+      content: _content(t, fullScreen, mq, rows, selectedKey),
     );
 
     // The raw showGeneralDialog route has no Scaffold/Dialog inset handling,
@@ -551,7 +565,7 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
     _Tokens t,
     bool fullScreen,
     MediaQueryData mq,
-    List<_Entry> displayed,
+    List<Object> displayed,
     String? selectedKey,
   ) {
     // .solid-dialog-content padding: 8px 12px 12px (mobile media query);
@@ -561,6 +575,18 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
         : 16.0;
     final horizontal = fullScreen ? 12.0 : 16.0;
     final topBottomDefault = fullScreen ? 12.0 : 16.0;
+
+    if (displayed.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            '没有匹配的模型',
+            style: TextStyle(fontSize: 14, color: t.textSecondary),
+          ),
+        ),
+      );
+    }
 
     return ListView.separated(
       controller: _listController,
@@ -574,7 +600,11 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
       // .solid-model-list gap: 4px
       separatorBuilder: (_, _) => const SizedBox(height: 4),
       itemBuilder: (context, i) {
-        final e = displayed[i];
+        final row = displayed[i];
+        if (row is ModelProvider) {
+          return _GroupHeader(tokens: t, provider: row, isFirst: i == 0);
+        }
+        final e = row as _Entry;
         final isSelected = selectedKey == _identity(e.provider.id, e.model.id);
         return _ModelItem(
           tokens: t,
@@ -892,6 +922,59 @@ class _ScrollArrow extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Provider group header shown between search-result groups — provider icon +
+/// uppercase vendor name, styled like a section label.
+class _GroupHeader extends StatelessWidget {
+  const _GroupHeader({
+    required this.tokens,
+    required this.provider,
+    required this.isFirst,
+  });
+
+  final _Tokens tokens;
+  final ModelProvider provider;
+  final bool isFirst;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = tokens.brightness == Brightness.dark;
+    final asset = getModelOrProviderIcon('', provider.id, isDark: isDark);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(12, isFirst ? 4 : 12, 12, 2),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: Image.asset(
+              asset,
+              width: 16,
+              height: 16,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              provider.name.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+                color: tokens.textSecondary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Divider(color: tokens.border, height: 1)),
+        ],
       ),
     );
   }
