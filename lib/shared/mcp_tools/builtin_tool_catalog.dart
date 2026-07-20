@@ -712,9 +712,12 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'search_files',
       description: '在目录中搜索文件。支持按文件名或内容搜索，可选正则、glob 路径过滤、大小写开关。'
+          '结果按修改时间降序（最近改过的在前）。'
           '内容搜索（content/both）默认返回每个命中文件的 matches：命中行的行号与内容'
-          '（每文件最多 5 条，可带上下文行），可直接定位而无需再读整个文件；'
-          'output_mode 可切换为仅文件列表或按文件计数。',
+          '（每文件默认最多 5 条，可用 max_matches_per_file 调大，命中被截断时带'
+          ' matchesTruncated=true；可带上下文行），可直接定位而无需再读整个文件；'
+          'output_mode 可切换为仅文件列表或按文件计数。'
+          '结果超过 max_results 时返回 hasMore=true 与 nextOffset，用 offset 翻页。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -755,6 +758,16 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           'max_results': {
             'type': 'number',
             'description': '最多返回多少个文件（1-1000，默认 200）',
+          },
+          'max_matches_per_file': {
+            'type': 'number',
+            'description': '每文件最多返回多少条命中行（1-100，默认 5）。'
+                '命中密集时调大以免漏结果',
+          },
+          'offset': {
+            'type': 'number',
+            'description': '跳过前 N 个命中文件（翻页用，默认 0）。'
+                '搭配上次返回的 nextOffset 使用',
           },
         },
         'required': ['directory', 'query'],

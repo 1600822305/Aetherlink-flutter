@@ -839,8 +839,10 @@ class RemoteSshBackend extends WorkspaceBackend {
   }
 
   /// Server-side search: file names via `find -iname`, content via
-  /// `grep -rIli` (`-I` skips binaries, `-i` matches the walk's
-  /// case-insensitive semantics). Returns null when this path can't be used,
+  /// `rg -il` when the remote has ripgrep (parallel walk, honours .gitignore,
+  /// skips binaries/hidden files) falling back to `grep -rIli` (`-I` skips
+  /// binaries; `-i` matches the walk's case-insensitive semantics).
+  /// Returns null when this path can't be used,
   /// so the caller falls back to the SFTP walk:
   /// · regex name matching (`find -iname` is glob-only);
   /// · name search with an extension filter (the walk handles it);
@@ -874,16 +876,26 @@ class RemoteSshBackend extends WorkspaceBackend {
         paths.addAll(const LineSplitter().convert(r.stdout));
       }
       if (wantsContent) {
-        final includes = [
-          for (final t in fileTypes) '--include=${_shellQuote('*$t')}',
-        ].join(' ');
-        final mode = useRegex ? '-E' : '-F';
-        final r = await exec(
-          'grep -rIli $mode $includes -e ${_shellQuote(query)} '
-          '-- ${_shellQuote(directory)}',
-          timeout: timeout,
-        );
-        // grep: 0 = hits, 1 = no hits, >1 = error (kept if partial output).
+        // 优先用远端 ripgrep（并行遍历 + 自动跳过二进制/.gitignore，大仓库
+        // 快一个量级），不可用时退回 grep。
+        final String cmd;
+        if (await _hasRemoteRg()) {
+          final globs = [
+            for (final t in fileTypes) '--glob ${_shellQuote('*$t')}',
+          ].join(' ');
+          final mode = useRegex ? '' : '-F ';
+          cmd = 'rg -il --no-messages $mode$globs-e ${_shellQuote(query)} '
+              '-- ${_shellQuote(directory)}';
+        } else {
+          final includes = [
+            for (final t in fileTypes) '--include=${_shellQuote('*$t')}',
+          ].join(' ');
+          final mode = useRegex ? '-E' : '-F';
+          cmd = 'grep -rIli $mode $includes -e ${_shellQuote(query)} '
+              '-- ${_shellQuote(directory)}';
+        }
+        final r = await exec(cmd, timeout: timeout);
+        // rg/grep: 0 = hits, 1 = no hits, >1 = error (kept if partial output).
         if (r.timedOut || (r.exitCode > 1 && r.stdout.trim().isEmpty)) {
           return null;
         }
@@ -913,6 +925,24 @@ class RemoteSshBackend extends WorkspaceBackend {
   // pattern.
   static String _globEscape(String s) =>
       s.replaceAllMapped(RegExp(r'[\\*?\[\]]'), (m) => '\\${m[0]}');
+
+  /// 远端是否有 ripgrep。每个连接只探测一次（结果缓存）；探测失败
+  /// 视为不可用，退回 grep。
+  Future<bool> _hasRemoteRg() {
+    return _hasRgFuture ??= () async {
+      try {
+        final r = await exec(
+          'command -v rg',
+          timeout: const Duration(seconds: 10),
+        );
+        return !r.timedOut && r.exitCode == 0 && r.stdout.trim().isNotEmpty;
+      } catch (_) {
+        return false;
+      }
+    }();
+  }
+
+  Future<bool>? _hasRgFuture;
 
   // ===== command execution (SSH-3) =====
 

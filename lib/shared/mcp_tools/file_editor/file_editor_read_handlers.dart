@@ -159,7 +159,9 @@ Future<McpToolResult> getFileInfo(Ref ref, Map<String, Object?> args) async {
 
 /// `search_files` — search by file name and/or content under `directory`.
 /// ripgrep 级参数：`glob` 路径过滤、`case_sensitive`、`context_lines` 上下文、
-/// `output_mode`（content / files_with_matches / count）。
+/// `output_mode`（content / files_with_matches / count）、
+/// `max_matches_per_file` 每文件命中条数上限、`offset` 文件级翻页。
+/// 结果按 mtime 降序（最近改过的文件在前）。
 Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
   final rawDirectory = requireString(args, 'directory');
   final query = requireString(args, 'query');
@@ -177,6 +179,10 @@ Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
   final caseSensitive = optionalBool(args, 'case_sensitive');
   final contextLines = (optionalInt(args, 'context_lines') ?? 0).clamp(0, 10);
   final maxResults = (optionalInt(args, 'max_results') ?? 200).clamp(1, 1000);
+  final perFileLimit = (optionalInt(args, 'max_matches_per_file') ??
+          kMaxMatchesPerFile)
+      .clamp(1, 100);
+  final offset = (optionalInt(args, 'offset') ?? 0).clamp(0, 1 << 30);
   final outputMode = optionalString(args, 'output_mode') ?? 'content';
   if (!const {'content', 'files_with_matches', 'count'}.contains(outputMode)) {
     throw FileEditorError(
@@ -209,6 +215,8 @@ Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
     query,
     searchType: searchType,
     fileTypes: fileTypes,
+    // 多要一条用于 hasMore 探测；offset 翻页需要后端给出足够多的候选。
+    maxResults: (maxResults + offset + 1).clamp(1, 2000),
     useRegex: useRegex,
   );
   if (globPattern != null) {
@@ -223,6 +231,8 @@ Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
           e,
     ];
   }
+  // 按 mtime 降序：模型优先看到「最近在改」的文件（同 CC GlobTool）。
+  results.sort((a, b) => b.mtime.compareTo(a.mtime));
 
   // 内容搜索时把命中行（行号 + 内容 + 可选上下文）一并带回，模型不用再
   // 整读文件定位；count 模式给每文件命中行数；files_with_matches 只回文件。
@@ -232,35 +242,64 @@ Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
       (outputMode != 'files_with_matches' || caseSensitive);
   final files = <Map<String, Object?>>[];
   var totalMatches = 0;
+  var skipped = 0; // 已跳过的命中文件数（offset 翻页）
+  var hasMore = false; // 达到 max_results 后仍有候选未处理
   for (final e in results) {
-    if (files.length >= maxResults) break;
+    if (files.length >= maxResults) {
+      // 剩余候选未处理即视为还有更多（case_sensitive 下可能略高估——
+      // 候选来自大小写不敏感的后端搜索，未逐个收紧确认）。
+      hasMore = true;
+      break;
+    }
     final json = entryJson(e);
+    int? matchCount;
+    List<LineMatch>? matches;
+    var matchesTruncated = false;
     if (needLines && !e.isDirectory) {
       final String? content = await _tryRead(backend, e.path);
       if (content != null) {
         if (outputMode == 'count') {
-          final count = countMatchingLines(content, matcher);
-          if (count == 0 &&
+          matchCount = countMatchingLines(content, matcher);
+          if (matchCount == 0 &&
               caseSensitive &&
               searchType == WorkspaceSearchType.content) {
             continue; // 大小写不敏感的候选，在敏感模式下实际没命中
           }
-          totalMatches += count;
-          json['matchCount'] = count;
         } else {
-          final matches = totalMatches < kMaxTotalMatches
-              ? findMatchingLines(content, matcher, contextLines: contextLines)
+          // 多要一条探测「还有更多命中」，命中满限时标记 matchesTruncated。
+          final probed = totalMatches < kMaxTotalMatches
+              ? findMatchingLines(
+                  content,
+                  matcher,
+                  maxMatches: perFileLimit + 1,
+                  contextLines: contextLines,
+                )
               : const <LineMatch>[];
-          if (matches.isEmpty &&
+          if (probed.isEmpty &&
               caseSensitive &&
               searchType == WorkspaceSearchType.content) {
             continue;
           }
-          totalMatches += matches.length;
-          if (outputMode == 'content') {
-            json['matches'] = [for (final m in matches) m.toJson()];
-          }
+          matchesTruncated = probed.length > perFileLimit;
+          matches =
+              matchesTruncated ? probed.sublist(0, perFileLimit) : probed;
         }
+      }
+    }
+    // offset 翻页：确认命中后才计数跳过，被跳过的文件不占全局命中预算。
+    if (skipped < offset) {
+      skipped++;
+      continue;
+    }
+    if (matchCount != null) {
+      totalMatches += matchCount;
+      json['matchCount'] = matchCount;
+    }
+    if (matches != null) {
+      totalMatches += matches.length;
+      if (outputMode == 'content') {
+        json['matches'] = [for (final m in matches) m.toJson()];
+        if (matchesTruncated) json['matchesTruncated'] = true;
       }
     }
     files.add(json);
@@ -274,7 +313,10 @@ Future<McpToolResult> searchFiles(Ref ref, Map<String, Object?> args) async {
     if (caseSensitive) 'caseSensitive': true,
     if (glob != null) 'glob': glob,
     if (outputMode == 'count') 'totalMatches': totalMatches,
+    if (offset > 0) 'offset': offset,
     'count': files.length,
+    if (hasMore) 'hasMore': true,
+    if (hasMore) 'nextOffset': offset + files.length,
     'files': files,
   });
 }
