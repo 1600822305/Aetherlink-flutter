@@ -655,6 +655,17 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
             'type': 'number',
             'description': '递归时的最大深度（可选，默认 3）。仅当 recursive=true 时有效',
           },
+          'pattern': {
+            'type': 'string',
+            'description': '文件名 glob 过滤（可选，支持 * 和 ?），如 "*.dart"。'
+                '设置后只返回名称匹配的文件（目录不进结果，递归时仍会下探）',
+          },
+          'sort': {
+            'type': 'string',
+            'enum': ['name', 'mtime'],
+            'description': '排序方式（可选，默认 name：目录在前按名称）。mtime 为最近修改在前，'
+                '适合找「最近在改的文件」',
+          },
         },
       },
     ),

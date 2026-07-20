@@ -351,11 +351,16 @@ class RecursiveListing {
 /// list of entry JSON maps (directories first within each level). [maxDepth]
 /// of 1 means the immediate children only. Stops once [kMaxRecursiveEntries]
 /// entries are collected (`truncated == true`).
+///
+/// [fileNamePattern] 非空时只收集文件名匹配的文件条目（目录仍照常
+/// 下探但不进结果）；[sortByMtime] 时最终结果按 mtime 降序。
 Future<RecursiveListing> listRecursive(
   WorkspaceBackend backend,
   String path,
-  int maxDepth,
-) async {
+  int maxDepth, {
+  RegExp? fileNamePattern,
+  bool sortByMtime = false,
+}) async {
   final out = <Map<String, Object?>>[];
   var truncated = false;
   Future<void> walk(String dir, int depth) async {
@@ -370,7 +375,10 @@ Future<RecursiveListing> listRecursive(
         truncated = true;
         return;
       }
-      out.add(entryJson(e));
+      final include = fileNamePattern == null
+          ? true
+          : !e.isDirectory && fileNamePattern.hasMatch(e.name);
+      if (include) out.add(entryJson(e));
       if (e.isDirectory &&
           depth < maxDepth &&
           !kListIgnoredDirs.contains(e.name)) {
@@ -380,6 +388,9 @@ Future<RecursiveListing> listRecursive(
   }
 
   await walk(path, 1);
+  if (sortByMtime) {
+    out.sort((a, b) => (b['mtime'] as int).compareTo(a['mtime'] as int));
+  }
   return RecursiveListing(out, truncated: truncated);
 }
 

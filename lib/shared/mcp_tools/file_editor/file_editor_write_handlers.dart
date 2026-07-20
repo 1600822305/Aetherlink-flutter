@@ -351,9 +351,11 @@ Future<McpToolResult> editFile(
       caseSensitive: caseSensitive,
     );
     if (counted.replacements == 0) {
+      final hint =
+          isRegex ? null : text_ops.searchMissHint(content, edit.search);
       throw FileEditorError(
         '${label}search 内容命中 0 处，未做任何修改。'
-        '请用 read_file 确认最新内容（含缩进/空白，不含行号前缀）后重试。',
+        '${hint ?? '请用 read_file 确认最新内容（含缩进/空白，不含行号前缀）后重试。'}',
       );
     }
     if (!edit.replaceAll && counted.replacements > 1) {

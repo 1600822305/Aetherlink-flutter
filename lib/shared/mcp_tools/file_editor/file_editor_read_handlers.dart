@@ -39,27 +39,55 @@ Future<McpToolResult> listFiles(Ref ref, Map<String, Object?> args) async {
     throw const FileEditorError('缺少参数：workspace 与 path 二选一。');
   }
 
+  final rawPattern = optionalString(args, 'pattern');
+  RegExp? pattern;
+  if (rawPattern != null) {
+    pattern = globToRegExp(rawPattern);
+    if (pattern == null) {
+      throw FileEditorError('pattern 不是合法的 glob：$rawPattern');
+    }
+  }
+  final sortByMtime = optionalString(args, 'sort') == 'mtime';
+
   if (optionalBool(args, 'recursive')) {
     final maxDepth = (optionalInt(args, 'max_depth') ?? 3).clamp(1, 10);
-    final listing = await listRecursive(backend, dir, maxDepth);
+    final listing = await listRecursive(
+      backend,
+      dir,
+      maxDepth,
+      fileNamePattern: pattern,
+      sortByMtime: sortByMtime,
+    );
     return fileEditorOk({
       if (workspaceName != null) 'workspace': workspaceName,
       'path': dir,
       'recursive': true,
       'maxDepth': maxDepth,
+      if (rawPattern != null) 'pattern': rawPattern,
       'count': listing.entries.length,
       if (listing.truncated) 'truncated': true,
       'files': listing.entries,
     });
   }
-  final entries = await backend.listDir(dir);
-  entries.sort(_dirsFirst);
+  var entries = await backend.listDir(dir);
+  if (pattern != null) {
+    entries = [
+      for (final e in entries)
+        if (!e.isDirectory && pattern.hasMatch(e.name)) e,
+    ];
+  }
+  if (sortByMtime) {
+    entries.sort((a, b) => b.mtime.compareTo(a.mtime));
+  } else {
+    entries.sort(_dirsFirst);
+  }
   final truncated = entries.length > kMaxRecursiveEntries;
   final shown =
       truncated ? entries.sublist(0, kMaxRecursiveEntries) : entries;
   return fileEditorOk({
     if (workspaceName != null) 'workspace': workspaceName,
     'path': dir,
+    if (rawPattern != null) 'pattern': rawPattern,
     'count': entries.length,
     if (truncated) 'truncated': true,
     if (truncated) 'shown': shown.length,

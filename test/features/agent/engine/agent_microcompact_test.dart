@@ -104,6 +104,51 @@ void main() {
       }
     });
 
+    test('applyToolResultBudget：未超预算原样返回同一实例', () {
+      final entries = <AgentEvent>[_user(0, 'hi'), _tool(1)];
+      final result = applyToolResultBudget(entries, budgetChars: 100000);
+      expect(identical(result, entries), isTrue);
+    });
+
+    test('applyToolResultBudget：超预算从最旧省略（不限白名单）到预算内', () {
+      final entries = <AgentEvent>[
+        _tool(0, name: 'edit', detailChars: 30000),
+        for (var i = 1; i < 10; i++) _tool(i, detailChars: 10000),
+      ];
+      final result = applyToolResultBudget(entries, budgetChars: 60000);
+      // edit 不在 microcompact 白名单，但预算兜底照样省略。
+      expect(
+        (result[0] as ToolCallEvent).resultDetail,
+        kToolResultBudgetStub,
+      );
+      var total = 0;
+      for (final e in result) {
+        if (e is ToolCallEvent) total += e.resultDetail?.length ?? 0;
+      }
+      expect(total, lessThanOrEqualTo(60000));
+      // 事件流本体未改写。
+      expect((entries[0] as ToolCallEvent).resultDetail, 'x' * 30000);
+    });
+
+    test('applyToolResultBudget：最近 N 条工具调用受保护', () {
+      final entries = <AgentEvent>[
+        for (var i = 0; i < 6; i++) _tool(i, detailChars: 20000),
+      ];
+      final result = applyToolResultBudget(
+        entries,
+        budgetChars: 1,
+        keepRecentToolCalls: 5,
+      );
+      expect(
+        (result[0] as ToolCallEvent).resultDetail,
+        kToolResultBudgetStub,
+      );
+      for (var i = 1; i < 6; i++) {
+        expect((result[i] as ToolCallEvent).resultDetail, 'x' * 20000,
+            reason: '近期第 $i 条应受保护');
+      }
+    });
+
     test('清除只动 resultDetail，其余字段原样保留', () {
       final entries = <AgentEvent>[
         for (var i = 0; i < 8; i++) _tool(i),

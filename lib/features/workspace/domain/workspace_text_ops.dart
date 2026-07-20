@@ -358,3 +358,50 @@ TextDiffOutcome _applyUnified(String content, String diff) {
     linesDeleted: deleted,
   );
 }
+
+/// `edit` search 未命中时的智能提示（对标 Claude Code FileEditTool 的
+/// 失败体验）：空白归一化后能命中 → 提示是空白/缩进差异并给出候选行号；
+/// 否则按 search 首个非空行找 trimmed 相等/前缀相似的候选行。都找不到
+/// 返回 null（调用方回退到通用错误文案）。仅用于字面量搜索。
+String? searchMissHint(String content, String search) {
+  String norm(String s) => s.replaceAll(RegExp(r'\s+'), ' ').trim();
+  final normSearch = norm(search);
+  if (normSearch.isEmpty) return null;
+
+  final contentLines = content.split('\n');
+  final firstLine = search
+      .split('\n')
+      .map((l) => l.trim())
+      .firstWhere((l) => l.isNotEmpty, orElse: () => '');
+  if (firstLine.isEmpty) return null;
+
+  // 1. 空白归一化后全文命中：内容一致但空白/缩进不同。
+  if (norm(content).contains(normSearch)) {
+    final hits = <int>[];
+    for (var i = 0; i < contentLines.length && hits.length < 3; i++) {
+      if (norm(contentLines[i]) == firstLine.replaceAll(RegExp(r'\s+'), ' ')) {
+        hits.add(i + 1);
+      }
+    }
+    final loc = hits.isEmpty ? '' : '（首行在第 ${hits.join('、')} 行附近）';
+    return '文件中存在内容相同但空白/缩进不同的相似段落$loc，'
+        '请用 read_file 核对该处的精确缩进与空白后重试。';
+  }
+
+  // 2. 按首个非空行找 trimmed 相等 / 前缀相似的候选行。
+  final exact = <int>[];
+  final prefix = <int>[];
+  final probe = firstLine.length > 24 ? firstLine.substring(0, 24) : firstLine;
+  for (var i = 0; i < contentLines.length && exact.length < 3; i++) {
+    final t = contentLines[i].trim();
+    if (t == firstLine) {
+      exact.add(i + 1);
+    } else if (prefix.length < 3 && t.startsWith(probe)) {
+      prefix.add(i + 1);
+    }
+  }
+  final candidates = exact.isNotEmpty ? exact : prefix;
+  if (candidates.isEmpty) return null;
+  return 'search 的首行在第 ${candidates.join('、')} 行有相似内容，'
+      '但整段未能完全匹配，请用 read_file 读取该处最新内容后重试。';
+}

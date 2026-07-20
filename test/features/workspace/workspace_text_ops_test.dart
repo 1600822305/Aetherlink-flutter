@@ -257,4 +257,30 @@ void main() {
       expect(r.success, isFalse);
     });
   });
+
+  group('searchMissHint（edit 未命中智能提示）', () {
+    const content = 'void main() {\n'
+        '  final value = 1;\n'
+        '  print(value);\n'
+        '}\n';
+
+    test('空白/缩进差异：归一化后命中并给出候选行号', () {
+      final hint = ops.searchMissHint(content, 'final value=1;'
+          .replaceAll('=', ' =  ')); // 空白量不同
+      expect(hint, isNotNull);
+      expect(hint, contains('空白/缩进'));
+      expect(hint, contains('第 2 行'));
+    });
+
+    test('首行相同但后续不一致：给出首行候选位置', () {
+      final hint =
+          ops.searchMissHint(content, '  print(value);\n  return 0;\n');
+      expect(hint, isNotNull);
+      expect(hint, contains('第 3 行'));
+    });
+
+    test('完全无相似内容返回 null', () {
+      expect(ops.searchMissHint(content, 'nonexistent_symbol_xyz'), isNull);
+    });
+  });
 }

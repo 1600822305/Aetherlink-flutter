@@ -678,12 +678,12 @@ class AgentEngine {
     // 与重放侧同款视图：先折叠、再 microcompact，确保 LLM 压缩的
     // 触发判断基于模型实际看到的内容量（两级降压：先 micro 后 LLM）。
     final folded = foldCompactedEvents(events);
-    final entries = budget.microCompactEnabled
+    final entries = applyToolResultBudget(budget.microCompactEnabled
         ? microCompactEntries(
             folded,
             triggerChars: budget.microCompactTriggerChars,
           )
-        : folded;
+        : folded);
     // 手动压缩（升级计划 ⑤）：用户主动触发时跳过阈值/预警/熔断，
     // 直接走 keep 前缀选择。
     final manualRequest = manualCompactSignal?.call();

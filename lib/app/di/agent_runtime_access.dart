@@ -629,12 +629,14 @@ List<LlmMessage> _replayMessages(
   // 先折叠、再 microcompact（与引擎 _maybeCompact 同款视图）：超阈值时
   // 较旧的可重取工具输出以占位符进上下文，不改事件流本体。
   // 生效值经 AgentLlmContext 来自引擎 budget，两侧视图保持一致。
-  final folded = microCompactEnabled
+  // 工具结果总预算在 microcompact 之后兜底（先清可重取旧输出，仍超
+  // 才省略其余最旧结果），两侧视图一致。
+  final folded = applyToolResultBudget(microCompactEnabled
       ? microCompactEntries(
           foldCompactedEvents(events),
           triggerChars: microCompactTriggerChars,
         )
-      : foldCompactedEvents(events);
+      : foldCompactedEvents(events));
   // 提问索引建在折叠后的事件上：提问若已被压缩折叠，其回答退化为
   // 普通用户消息，避免回放出没有前置 tool_call 的 tool 结果。
   final questionsById = {

@@ -84,7 +84,62 @@ List<AgentEvent> microCompactEntries(
   return result ?? entries;
 }
 
-ToolCallEvent _withClearedResult(ToolCallEvent event) => ToolCallEvent(
+// ── 工具结果聚合预算（对标 CC tool result budget）──
+
+/// 超出总预算被省略的工具结果在上下文里的存根文本。
+const String kToolResultBudgetStub = '[工具结果已省略：超出上下文工具结果总预算，需要时可重新调用工具获取]';
+
+/// 全部工具结果（resultDetail）在上下文视图里的总字符预算。
+/// 单条已有 8000 字符截断落盘，但并发读取后一轮可产出十条以上，
+/// 总量仍可能塞爆上下文；本预算在 microcompact 之后作为硬上限兜底。
+const int kToolResultBudgetChars = 60000;
+
+/// 工具结果总预算裁剪：所有 ToolCallEvent 的 resultDetail 总字符量超
+/// [budgetChars] 时，从最旧开始把结果替换为存根（不限工具白名单，
+/// 但最近 [keepRecentToolCalls] 条不动），直到降到预算内。与
+/// [microCompactEntries] 同款确定性纯函数：事件流本体永不改写，
+/// 引擎与重放侧共用同一视图。应在 microcompact 之后调用：先清
+/// 可重取的旧输出，仍超预算才兜底省略其余最旧结果。
+List<AgentEvent> applyToolResultBudget(
+  List<AgentEvent> entries, {
+  int budgetChars = kToolResultBudgetChars,
+  int keepRecentToolCalls = kMicroCompactKeepRecentToolCalls,
+}) {
+  var total = 0;
+  for (final event in entries) {
+    if (event is ToolCallEvent) total += event.resultDetail?.length ?? 0;
+  }
+  if (total <= budgetChars) return entries;
+
+  var protectedFrom = entries.length;
+  var seen = 0;
+  for (var i = entries.length - 1; i >= 0; i--) {
+    if (entries[i] is! ToolCallEvent) continue;
+    seen++;
+    protectedFrom = i;
+    if (seen >= keepRecentToolCalls) break;
+  }
+
+  List<AgentEvent>? result;
+  for (var i = 0; i < protectedFrom && total > budgetChars; i++) {
+    final event = entries[i];
+    if (event is! ToolCallEvent) continue;
+    final detail = event.resultDetail;
+    if (detail == null || detail.length <= kToolResultBudgetStub.length) {
+      continue;
+    }
+    result ??= List.of(entries);
+    result[i] = _withClearedResult(event, placeholder: kToolResultBudgetStub);
+    total -= detail.length - kToolResultBudgetStub.length;
+  }
+  return result ?? entries;
+}
+
+ToolCallEvent _withClearedResult(
+  ToolCallEvent event, {
+  String placeholder = kMicroCompactClearedPlaceholder,
+}) =>
+    ToolCallEvent(
       id: event.id,
       seq: event.seq,
       at: event.at,
@@ -94,6 +149,6 @@ ToolCallEvent _withClearedResult(ToolCallEvent event) => ToolCallEvent(
       resultSummary: event.resultSummary,
       elapsed: event.elapsed,
       argsDetail: event.argsDetail,
-      resultDetail: kMicroCompactClearedPlaceholder,
+      resultDetail: placeholder,
       resultOverflowPath: event.resultOverflowPath,
     );
