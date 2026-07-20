@@ -13,6 +13,14 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_micro
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 
+/// 手动压缩请求（引擎信号路携带）：[customInstructions] 是用户对
+/// 本次摘要的关注点（升级计划 ⑦，对标 CC `/compact <说明>`）。
+class ManualCompactRequest {
+  const ManualCompactRequest({this.customInstructions});
+
+  final String? customInstructions;
+}
+
 /// 一次手动压缩的结果。
 sealed class ManualCompactionOutcome {
   const ManualCompactionOutcome();
@@ -47,6 +55,7 @@ Future<ManualCompactionOutcome> runManualCompaction({
   bool microCompactEnabled = true,
   int microCompactTriggerChars = kMicroCompactTriggerChars,
   bool Function()? isCancelled,
+  String? customInstructions,
 }) async {
   final entries = microCompactEnabled
       ? microCompactEntries(
@@ -56,7 +65,11 @@ Future<ManualCompactionOutcome> runManualCompaction({
       : foldCompactedEvents(events);
   final covered = selectCompactionPrefix(entries, keepChars: keepChars);
   if (covered.isEmpty) return const ManualCompactionNothingToCover();
-  final summary = await llm.summarizeForCompaction(task, covered);
+  final summary = await llm.summarizeForCompaction(
+    task,
+    covered,
+    customInstructions: customInstructions,
+  );
   // 协作式取消：LLM 调用本身不中断，但结果丢弃、不落库。
   if (isCancelled?.call() ?? false) return const ManualCompactionCancelled();
   if (summary.trim().isEmpty) {

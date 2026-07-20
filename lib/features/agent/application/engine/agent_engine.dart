@@ -10,6 +10,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_compa
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_manual_compaction.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
@@ -93,10 +94,10 @@ class AgentEngine {
   final void Function()? onPreCompact;
   final void Function(String summary)? onPostCompact;
 
-  /// 手动压缩信号（升级计划 ⑤，对标 CC /compact）：返回 true 即在下一个
-  /// 安全点强制压缩一次（忽略触发阈值与熔断，仍走 keep 规则）；
-  /// 调用即消费（取后清除）。
-  final bool Function()? manualCompactSignal;
+  /// 手动压缩信号（升级计划 ⑤，对标 CC /compact）：返回非空请求即在
+  /// 下一个安全点强制压缩一次（忽略触发阈值与熔断，仍走 keep 规则），
+  /// 请求可携带用户关注点（升级计划 ⑦）；调用即消费（取后清除）。
+  final ManualCompactRequest? Function()? manualCompactSignal;
 
   bool _stopGuardFired = false;
 
@@ -578,7 +579,8 @@ class AgentEngine {
         : folded;
     // 手动压缩（升级计划 ⑤）：用户主动触发时跳过阈值/预警/熔断，
     // 直接走 keep 前缀选择。
-    final forced = manualCompactSignal?.call() ?? false;
+    final manualRequest = manualCompactSignal?.call();
+    final forced = manualRequest != null;
     // 触发判定（升级计划 ③）：优先用 API usage 的真实上下文 token 对比
     // 模型窗口（减摘要预留、乘触发比例），拿不到 usage 时回退字符估算。
     final overThreshold = shouldTriggerCompaction(
@@ -629,7 +631,11 @@ class AgentEngine {
       return;
     }
     onPreCompact?.call();
-    final summary = await llm.summarizeForCompaction(task, covered);
+    final summary = await llm.summarizeForCompaction(
+      task,
+      covered,
+      customInstructions: manualRequest?.customInstructions,
+    );
     if (summary.trim().isEmpty) {
       throw StateError('压缩摘要为空（可能是模型未配置或模型返回空结果）');
     }

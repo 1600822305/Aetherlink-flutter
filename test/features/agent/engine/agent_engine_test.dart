@@ -373,8 +373,9 @@ class AlwaysFailingToolLlm implements AgentLlmClient {
   @override
   Future<String> summarizeForCompaction(
     AgentTask task,
-    List<AgentEvent> events,
-  ) async =>
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async =>
       '摘要：覆盖 ${events.length} 条';
 }
 
@@ -427,8 +428,9 @@ class BigOutputLlm implements AgentLlmClient {
   @override
   Future<String> summarizeForCompaction(
     AgentTask task,
-    List<AgentEvent> events,
-  ) async =>
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async =>
       '摘要：覆盖 ${events.length} 条';
 }
 
@@ -469,8 +471,9 @@ class ContextCapturingLlm implements AgentLlmClient {
   @override
   Future<String> summarizeForCompaction(
     AgentTask task,
-    List<AgentEvent> events,
-  ) async =>
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async =>
       '摘要';
 }
 
@@ -540,8 +543,9 @@ class StructuredAskUserLlm implements AgentLlmClient {
   @override
   Future<String> summarizeForCompaction(
     AgentTask task,
-    List<AgentEvent> events,
-  ) async =>
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async =>
       '摘要';
 }
 
@@ -591,8 +595,9 @@ class OneToolThenFinishLlm implements AgentLlmClient {
   @override
   Future<String> summarizeForCompaction(
     AgentTask task,
-    List<AgentEvent> events,
-  ) async =>
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async =>
       '摘要';
 }
 

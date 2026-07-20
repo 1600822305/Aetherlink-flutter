@@ -36,6 +36,24 @@ void main() {
     });
   });
 
+  group('compactionSummarySystemPrompt（升级计划 ⑦）', () {
+    test('无自定义指令时返回基础提示词', () {
+      expect(compactionSummarySystemPrompt(), kCompactionSummarySystemPrompt);
+      expect(
+        compactionSummarySystemPrompt(customInstructions: '  '),
+        kCompactionSummarySystemPrompt,
+      );
+    });
+
+    test('有自定义指令时附在基础提示词后', () {
+      final prompt =
+          compactionSummarySystemPrompt(customInstructions: '重点保留报错细节');
+      expect(prompt, startsWith(kCompactionSummarySystemPrompt));
+      expect(prompt, contains('附加指令'));
+      expect(prompt, endsWith('重点保留报错细节'));
+    });
+  });
+
   test('系统提示词包含关键小节要求', () {
     expect(kCompactionSummarySystemPrompt, contains('<analysis>'));
     expect(kCompactionSummarySystemPrompt, contains('<summary>'));

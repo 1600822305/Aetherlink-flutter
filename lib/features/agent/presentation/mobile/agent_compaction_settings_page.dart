@@ -34,14 +34,32 @@ Future<void> confirmAndCompactNow(
   AgentTask task,
 ) async {
   final runner = ref.read(agentTaskRunnerProvider.notifier);
+  final instructionsController = TextEditingController();
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('立即压缩'),
-      content: const Text(
-        '把较早的执行过程压缩为一段摘要，释放上下文空间。'
-        '摘要只影响进入模型的上下文，事件流原文保留可审计。'
-        '运行中任务将在下一个安全点执行。',
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            '把较早的执行过程压缩为一段摘要，释放上下文空间。'
+            '摘要只影响进入模型的上下文，事件流原文保留可审计。'
+            '运行中任务将在下一个安全点执行。',
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: instructionsController,
+            maxLines: 2,
+            minLines: 1,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+              labelText: '摘要关注点（可选）',
+              hintText: '如：重点保留报错细节和文件路径',
+            ),
+          ),
+        ],
       ),
       actions: [
         TextButton(
@@ -55,9 +73,14 @@ Future<void> confirmAndCompactNow(
       ],
     ),
   );
+  final instructions = instructionsController.text.trim();
+  instructionsController.dispose();
   if (confirmed != true || !context.mounted) return;
   try {
-    final message = await runner.compactNow(task);
+    final message = await runner.compactNow(
+      task,
+      customInstructions: instructions.isEmpty ? null : instructions,
+    );
     if (context.mounted) AppToast.success(context, message);
   } catch (e) {
     if (context.mounted) AppToast.error(context, '压缩失败 · $e');

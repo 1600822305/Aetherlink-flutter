@@ -77,8 +77,9 @@ class TwoSpawnLlm implements AgentLlmClient {
   @override
   Future<String> summarizeForCompaction(
     AgentTask task,
-    List<AgentEvent> events,
-  ) async =>
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async =>
       '摘要';
 }
 

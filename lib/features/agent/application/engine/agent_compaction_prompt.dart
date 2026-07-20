@@ -31,6 +31,15 @@ const String kCompactionSummarySystemPrompt = '''
 
 输出格式：<analysis>…</analysis> 换行后 <summary>…</summary>，不要其他文字。''';
 
+/// 组装摘要系统提示词：有用户关注点（升级计划 ⑦，对标 CC
+/// `/compact <说明>` 的 Additional Instructions）时附在基础提示词后。
+String compactionSummarySystemPrompt({String? customInstructions}) {
+  final extra = customInstructions?.trim();
+  if (extra == null || extra.isEmpty) return kCompactionSummarySystemPrompt;
+  return '$kCompactionSummarySystemPrompt\n\n'
+      '附加指令（用户对本次摘要的关注点，优先满足）：\n$extra';
+}
+
 /// 从模型输出提取摘要正文：剥离 `<analysis>` 草稿块，解包 `<summary>`
 /// 标签；模型未按格式输出时（无标签）原样返回修剪后的全文，保证
 /// 摘要永不因格式问题丢失。

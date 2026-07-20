@@ -482,8 +482,9 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   @override
   Future<String> summarizeForCompaction(
     AgentTask task,
-    List<AgentEvent> events,
-  ) async {
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async {
     final ref = _refOf();
     // 模型未配置等失败向上抛：引擎会追加一次可见状态事件提示原因，
     // 而不是每轮静默失败导致上下文持续膨胀。
@@ -498,7 +499,9 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
           content: _compactionTranscript(events),
         ),
       ],
-      system: kCompactionSummarySystemPrompt,
+      system: compactionSummarySystemPrompt(
+        customInstructions: customInstructions,
+      ),
     );
 
     final buffer = StringBuffer();

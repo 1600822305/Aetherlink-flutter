@@ -86,8 +86,11 @@ abstract class AgentLlmClient {
 
   /// 上下文压缩（设计初稿 §5.3）：把一段较早的事件压缩成一条摘要文本，
   /// 供 CompactionEvent 在后续重放中替代被覆盖区间。非流式、不带工具。
+  /// [customInstructions]：手动压缩的用户关注点（升级计划 ⑦，对标
+  /// CC `/compact <说明>`），并入摘要提示词。
   Future<String> summarizeForCompaction(
     AgentTask task,
-    List<AgentEvent> events,
-  );
+    List<AgentEvent> events, {
+    String? customInstructions,
+  });
 }

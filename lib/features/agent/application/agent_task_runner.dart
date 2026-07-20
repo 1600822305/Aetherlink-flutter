@@ -49,9 +49,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   /// 检查点不可用的提示每个任务只出一次（避免每条消息刷屏）。
   final Set<String> _checkpointHintShown = {};
 
-  /// 手动压缩挂起集（升级计划 ⑤）：运行中任务的手动压缩请求，
-  /// 引擎在下一个安全点消费（取后清除）。
-  final Set<String> _pendingManualCompact = {};
+  /// 手动压缩挂起（升级计划 ⑤/⑦）：运行中任务的手动压缩请求，
+  /// taskId → 用户关注点（可为 null），引擎在下一个安全点消费。
+  final Map<String, String?> _pendingManualCompact = {};
 
   /// 正在运行的任务 id 集合（UI 可 watch）。
   @override
@@ -422,10 +422,10 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   /// 安全点由引擎强制压缩（忽略触发阈值，仍走 keep 规则）；空闲任务
   /// （暂停/完成/失败）直接调共享的 [runManualCompaction] 落
   /// CompactionEvent。返回给 UI 的提示文案；摘要失败时抛错由调用方提示。
-  Future<String> compactNow(AgentTask task) async {
+  Future<String> compactNow(AgentTask task, {String? customInstructions}) async {
     final progress = ref.read(agentCompactionProgressProvider.notifier);
     if (state.contains(task.id)) {
-      _pendingManualCompact.add(task.id);
+      _pendingManualCompact[task.id] = customInstructions;
       progress.start(
         task.id,
         phase: AgentCompactionPhase.queued,
@@ -468,6 +468,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         microCompactEnabled: compaction.microCompactEnabled,
         microCompactTriggerChars: compaction.microCompactTriggerChars,
         isCancelled: () => progress.isCancelRequested(task.id),
+        customInstructions: customInstructions,
       );
       return switch (outcome) {
         ManualCompactionDone(:final coveredCount) =>
@@ -484,7 +485,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   /// 置取消标记，结果丢弃不落库。
   void cancelCompactNow(String taskId) {
     final progress = ref.read(agentCompactionProgressProvider.notifier);
-    if (_pendingManualCompact.remove(taskId)) {
+    if (_pendingManualCompact.containsKey(taskId)) {
+      _pendingManualCompact.remove(taskId);
       progress.finish(taskId);
       return;
     }
@@ -634,7 +636,12 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         unawaited(runtime.compactionHooks(AgentHookEvent.postCompact,
             summary: summary));
       },
-      manualCompactSignal: () => _pendingManualCompact.remove(task.id),
+      manualCompactSignal: () {
+        if (!_pendingManualCompact.containsKey(task.id)) return null;
+        return ManualCompactRequest(
+          customInstructions: _pendingManualCompact.remove(task.id),
+        );
+      },
     );
     // fileChanged hooks 的工作区文件 watcher：与本次运行同生命周期
     // （无配置时 start 内部不订阅）。

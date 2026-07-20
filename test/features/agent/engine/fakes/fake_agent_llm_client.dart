@@ -92,8 +92,9 @@ class FakeAgentLlmClient implements AgentLlmClient {
   @override
   Future<String> summarizeForCompaction(
     AgentTask task,
-    List<AgentEvent> events,
-  ) async =>
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async =>
       '（演示摘要）已压缩 ${events.length} 条早期事件。';
 
   Future<void> _streamText(
