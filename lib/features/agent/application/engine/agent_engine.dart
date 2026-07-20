@@ -49,6 +49,7 @@ class AgentEngine {
     this.onNotification,
     this.onPreCompact,
     this.onPostCompact,
+    this.onCompactionFailed,
     this.manualCompactSignal,
   });
 
@@ -94,6 +95,10 @@ class AgentEngine {
   /// 对标 CC）：同步触发、不等待、不阻断；postCompact 带压缩摘要。
   final void Function()? onPreCompact;
   final void Function(String summary)? onPostCompact;
+
+  /// 压缩失败（onPreCompact 已触发但摘要未落库）时回调：调用方据此
+  /// 清理「压缩中」实况 UI，避免失败后状态行挂死到任务结束。
+  final void Function()? onCompactionFailed;
 
   /// 手动压缩信号（升级计划 ⑤，对标 CC /compact）：返回非空请求即在
   /// 下一个安全点强制压缩一次（忽略触发阈值与熔断，仍走 keep 规则），
@@ -279,6 +284,8 @@ class AgentEngine {
             rethrow;
           }
           _reactiveCompactAttempted = true;
+          // 半途流出的思考/正文定格落库，避免流式事件永久 streaming。
+          await writer.finish('');
           // 本轮已流式预建的工具事件按中断回填，避免永久 running。
           for (final event in streamingEvents.values) {
             toolStream?.clear(event.id);
@@ -504,6 +511,8 @@ class AgentEngine {
         try {
           await _maybeCompact(current, events);
         } catch (e) {
+          // 压缩中实况行随失败清理（onPostCompact 不会再触发）。
+          onCompactionFailed?.call();
           // 压缩失败不阻断任务（下轮再试），但给一次可见提示，
           // 避免上下文持续膨胀到预算暂停时用户不知原因。
           final justOpened = _compactionBreaker.recordFailure();
@@ -669,6 +678,8 @@ class AgentEngine {
         try {
           await store.appendStatusChange(task.id, '内容太少，无需压缩');
         } catch (_) {}
+        // 强制请求已消费但没有落压缩事件：清理「压缩中」实况行。
+        onCompactionFailed?.call();
       }
       return;
     }

@@ -601,6 +601,19 @@ class OneToolThenFinishLlm implements AgentLlmClient {
       '摘要';
 }
 
+/// 摘要始终返回空（压缩必失败）的大输出 LLM（测压缩失败回调）。
+class EmptySummaryBigOutputLlm extends BigOutputLlm {
+  EmptySummaryBigOutputLlm({required super.roundsBeforeFinish});
+
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async =>
+      '';
+}
+
 /// 前 [overflowTurns] 轮抛「上下文超限」错误，之后 finish
 /// （测反应式压缩，升级计划 ⑧）。
 class OverflowThenFinishLlm implements AgentLlmClient {
@@ -1063,6 +1076,38 @@ void main() {
         .where((e) => e.description.contains('自动压缩已关闭'))
         .toList();
     expect(warnings, hasLength(1));
+  });
+
+  test('压缩失败 → onCompactionFailed 回调（清理压缩中实况行）', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    var preCompact = 0;
+    var postCompact = 0;
+    var compactionFailed = 0;
+    final engine = AgentEngine(
+      llm: EmptySummaryBigOutputLlm(roundsBeforeFinish: 12),
+      tools: BigOutputToolExecutor(),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(
+        compactionTriggerChars: 1200,
+        compactionKeepChars: 600,
+      ),
+      onPreCompact: () => preCompact++,
+      onPostCompact: (_) => postCompact++,
+      onCompactionFailed: () => compactionFailed++,
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '连续读大文件');
+
+    await engine.run(task, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.done);
+    expect(preCompact, greaterThan(0));
+    expect(postCompact, 0);
+    // 每次失败都回调，压缩中实况行不会挂死。
+    expect(compactionFailed, preCompact);
   });
 
   test('上下文超限 → 反应式压缩后重试本轮并完成（升级计划 ⑧）', () async {

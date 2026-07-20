@@ -636,6 +636,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         unawaited(runtime.compactionHooks(AgentHookEvent.postCompact,
             summary: summary));
       },
+      onCompactionFailed: () =>
+          ref.read(agentCompactionProgressProvider.notifier).finish(task.id),
       manualCompactSignal: () {
         if (!_pendingManualCompact.containsKey(task.id)) return null;
         return ManualCompactRequest(
