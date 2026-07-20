@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_cance
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_file_restore.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_guard.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_context_overflow.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_trigger.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
@@ -118,6 +119,10 @@ class AgentEngine {
   bool _compactionFailureNotified = false;
   bool _compactionWarningNotified = false;
 
+  /// 反应式压缩（升级计划 ⑧，对标 CC hasAttemptedReactiveCompact）：
+  /// 每次运行只兜底一次，压缩后重试仍超限则直接报错（防死循环）。
+  bool _reactiveCompactAttempted = false;
+
   /// 压缩熔断器（升级计划 ④）：连续失败达上限后本次运行内不再尝试，
   /// 成功一次即重置；随引擎实例生灭，续跑重新计数。
   final CompactionCircuitBreaker _compactionBreaker =
@@ -199,7 +204,7 @@ class AgentEngine {
         // 参数仍在流式生成中的调用：streamKey → 事件（节流落库更新）。
         final streamingEvents = <String, ToolCallEvent>{};
         final streamingWriteAt = <String, DateTime>{};
-        final turn = await llm.completeTurn(
+        Future<AgentLlmTurn> callTurn() => llm.completeTurn(
           AgentLlmContext(
             task: current,
             events: events,
@@ -263,6 +268,38 @@ class AgentEngine {
             preCreated.putIfAbsent(call.id, () => []).add(event);
           },
         );
+        final AgentLlmTurn turn;
+        try {
+          turn = await callTurn();
+        } catch (e) {
+          // 反应式压缩（升级计划 ⑧，对标 CC prompt-too-long recovery）：
+          // 供应商拒绝超长 prompt 时兜底强制压缩一次后重试本轮；
+          // 每次运行只尝试一次，仍超限则报错（防死循环）。
+          if (_reactiveCompactAttempted || !isContextOverflowError(e)) {
+            rethrow;
+          }
+          _reactiveCompactAttempted = true;
+          // 本轮已流式预建的工具事件按中断回填，避免永久 running。
+          for (final event in streamingEvents.values) {
+            toolStream?.clear(event.id);
+            await store.updateToolCall(current.id, event,
+                state: AgentToolCallState.failure, resultSummary: '已中断 ✗');
+          }
+          streamingEvents.clear();
+          for (final entry in preCreated.values) {
+            for (final event in entry) {
+              await store.updateToolCall(current.id, event,
+                  state: AgentToolCallState.failure, resultSummary: '已中断 ✗');
+            }
+            entry.clear();
+          }
+          await store.appendStatusChange(
+              current.id, '上下文超限（供应商拒绝），兜底压缩后重试本轮');
+          // 强制压缩（失败向上抛 → 任务 failed，因为不压缩重试也必然超限）；
+          // 压缩后回到循环顶部重试本轮（重读事件，折叠视图已缩小）。
+          await _maybeCompact(current, events, force: true);
+          continue;
+        }
         await writer.finish(turn.text);
         // 流中断时未闭合/未回到 turn 的预建事件按失败回填，避免永久 running。
         for (final event in streamingEvents.values) {
@@ -567,7 +604,11 @@ class AgentEngine {
     }
   }
 
-  Future<void> _maybeCompact(AgentTask task, List<AgentEvent> events) async {
+  Future<void> _maybeCompact(
+    AgentTask task,
+    List<AgentEvent> events, {
+    bool force = false,
+  }) async {
     // 与重放侧同款视图：先折叠、再 microcompact，确保 LLM 压缩的
     // 触发判断基于模型实际看到的内容量（两级降压：先 micro 后 LLM）。
     final folded = foldCompactedEvents(events);
@@ -580,7 +621,8 @@ class AgentEngine {
     // 手动压缩（升级计划 ⑤）：用户主动触发时跳过阈值/预警/熔断，
     // 直接走 keep 前缀选择。
     final manualRequest = manualCompactSignal?.call();
-    final forced = manualRequest != null;
+    // force：反应式压缩（升级计划 ⑧）与手动压缩同样跳过阈值/预警/熔断。
+    final forced = force || manualRequest != null;
     // 触发判定（升级计划 ③）：优先用 API usage 的真实上下文 token 对比
     // 模型窗口（减摘要预留、乘触发比例），拿不到 usage 时回退字符估算。
     final overThreshold = shouldTriggerCompaction(

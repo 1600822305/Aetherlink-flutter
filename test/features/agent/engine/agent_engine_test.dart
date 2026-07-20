@@ -601,6 +601,53 @@ class OneToolThenFinishLlm implements AgentLlmClient {
       '摘要';
 }
 
+/// 前 [overflowTurns] 轮抛「上下文超限」错误，之后 finish
+/// （测反应式压缩，升级计划 ⑧）。
+class OverflowThenFinishLlm implements AgentLlmClient {
+  OverflowThenFinishLlm({this.overflowTurns = 1});
+
+  final int overflowTurns;
+  int _turn = 0;
+
+  @override
+  Future<AgentLlmTurn> completeTurn(
+    AgentLlmContext context, {
+    void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
+    Future<void> Function(
+      String streamKey,
+      String? toolName,
+      String argsTextSoFar,
+    )? onToolCallDelta,
+    Future<void> Function(AgentToolCallRequest call, String? streamKey)?
+        onToolCall,
+    AgentCancellationToken? cancel,
+  }) async {
+    _turn++;
+    if (_turn <= overflowTurns) {
+      throw Exception('prompt is too long: 137500 tokens > 135000 maximum');
+    }
+    return AgentLlmTurn(
+      toolCalls: [
+        AgentToolCallRequest(
+          id: 'finish-1',
+          name: kToolFinishTask,
+          argsJson: jsonEncode({'summary': '完成'}),
+          argSummary: '收尾',
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async =>
+      '摘要：覆盖 ${events.length} 条';
+}
+
 /// 需要审批的门：模拟审批等待期间有陈旧的工具打断标记（如用户
 /// 打断发送与点击批准几乎同时），最终裁决为批准。
 class InterruptDuringWaitApprovalGate implements ApprovalGate {
@@ -1016,6 +1063,59 @@ void main() {
         .where((e) => e.description.contains('自动压缩已关闭'))
         .toList();
     expect(warnings, hasLength(1));
+  });
+
+  test('上下文超限 → 反应式压缩后重试本轮并完成（升级计划 ⑧）', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    final engine = AgentEngine(
+      llm: OverflowThenFinishLlm(),
+      tools: BigOutputToolExecutor(),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(compactionKeepChars: 600),
+    );
+    final task = newTask();
+    for (var i = 0; i < 12; i++) {
+      await store.appendUserMessage(task.id, '消息$i：${'长' * 500}');
+    }
+
+    await engine.run(task, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.done);
+    final events = await store.getEvents(task.id);
+    expect(events.whereType<CompactionEvent>(), hasLength(1));
+    expect(
+      events
+          .whereType<StatusChangeEvent>()
+          .where((e) => e.description.contains('兜底压缩后重试本轮')),
+      hasLength(1),
+    );
+  });
+
+  test('上下文超限持续 → 只兜底一次，第二次直接 failed（防死循环）', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    final engine = AgentEngine(
+      llm: OverflowThenFinishLlm(overflowTurns: 99),
+      tools: BigOutputToolExecutor(),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(compactionKeepChars: 600),
+    );
+    final task = newTask();
+    for (var i = 0; i < 12; i++) {
+      await store.appendUserMessage(task.id, '消息$i：${'长' * 500}');
+    }
+
+    await engine.run(task, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.failed);
+    final events = await store.getEvents(task.id);
+    // 兜底压缩发生过一次，但第二次超限不再重试。
+    expect(events.whereType<CompactionEvent>(), hasLength(1));
   });
 
   test('budget 的 microcompact 设置随 AgentLlmContext 传给重放侧', () async {
