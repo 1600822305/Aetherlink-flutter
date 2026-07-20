@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_block.dart';
+import 'package:aetherlink_flutter/features/chat/presentation/widgets/blocks/file_block_preview.dart';
 
 /// Resolves an [ImageBlock] to an [ImageProvider]. Prefers inline base64
 /// (`base64Data` or a `data:` URL) and falls back to a network URL. The
@@ -365,8 +366,8 @@ String _formatBytes(int? bytes) {
 }
 
 /// Renders a `FILE` block, mirroring `FileBlock.tsx`: a compact card with a
-/// file icon, the file name and its size. The download affordance is a later
-/// (request/file-layer) slice.
+/// file icon, the file name and its size. Tapping it opens the attachment
+/// preview (text / image inline, other types via the OS share sheet).
 class FileBlockView extends StatelessWidget {
   const FileBlockView({required this.block, super.key});
 
@@ -376,7 +377,7 @@ class FileBlockView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final size = _formatBytes(block.size);
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
@@ -416,6 +417,10 @@ class FileBlockView extends StatelessWidget {
           ),
         ],
       ),
+    );
+    return GestureDetector(
+      onTap: () => showFileBlockPreview(context, block),
+      child: card,
     );
   }
 }
