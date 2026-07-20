@@ -132,6 +132,10 @@ class _ModelSelectorView extends ConsumerStatefulWidget {
 class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
   final ScrollController _tabsController = ScrollController();
   final ScrollController _listController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  bool _searching = false;
+  String _query = '';
 
   // null until the first build resolves the open-time default (the original's
   // createEffect that switches 'all' -> 'frequently-used' when a model is set).
@@ -153,6 +157,8 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
       ..removeListener(_updateScrollButtons)
       ..dispose();
     _listController.dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -231,12 +237,16 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
     }
     final activeTab = _activeTab ?? 'all';
 
-    final displayed = _displayed(
-      available,
-      groups,
-      currentProviderId,
-      activeTab,
-    );
+    final query = _query.trim().toLowerCase();
+    final displayed = query.isNotEmpty
+        ? [
+            for (final e in available)
+              if (e.model.name.toLowerCase().contains(query) ||
+                  e.model.id.toLowerCase().contains(query) ||
+                  e.provider.name.toLowerCase().contains(query))
+                e,
+          ]
+        : _displayed(available, groups, currentProviderId, activeTab);
 
     _scheduleArrowUpdate();
     _scrollSelectedIntoView(displayed, selectedKey, activeTab);
@@ -246,7 +256,9 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
       fullScreen: fullScreen,
       mediaQuery: mq,
       header: _header(t),
-      tabs: _tabs(
+      tabs: query.isNotEmpty
+          ? const SizedBox.shrink()
+          : _tabs(
         t,
         fullScreen,
         groups,
@@ -315,42 +327,94 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
       child: Row(
         children: [
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Flexible(
-                  child: Text(
-                    '选择模型',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 20, // 1.25rem
-                      fontWeight: FontWeight.w500,
-                      height: 1.6,
-                      color: t.textPrimary,
-                    ),
-                  ),
-                ),
-                // <span style="margin-left:8px;font-size:12px;color:#90caf9">
-                //   ⚡ SolidJS
-                // </span>
-                const SizedBox(width: 8),
-                const Text(
-                  '⚡ Flutter',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w400,
-                    color: _Tokens.badge,
-                  ),
-                ),
-              ],
-            ),
+            child: _searching ? _searchField(t) : _title(t),
           ),
-          // .solid-dialog-close-btn : 8px padding, 50% radius, text-secondary.
-          _CloseButton(tokens: t, onTap: () => Navigator.of(context).pop()),
+          _HeaderIconButton(
+            tokens: t,
+            icon: _searching ? Icons.search_off : Icons.search,
+            onTap: _toggleSearch,
+          ),
+          _HeaderIconButton(
+            tokens: t,
+            icon: Icons.close,
+            onTap: () => Navigator.of(context).pop(),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _searchField(_Tokens t) {
+    return TextField(
+      controller: _searchController,
+      focusNode: _searchFocusNode,
+      autofocus: true,
+      onChanged: (v) => setState(() => _query = v),
+      style: TextStyle(fontSize: 16, color: t.textPrimary),
+      cursorColor: t.primary,
+      decoration: InputDecoration(
+        isDense: true,
+        hintText: '搜索模型',
+        hintStyle: TextStyle(fontSize: 16, color: t.textSecondary),
+        border: InputBorder.none,
+        suffixIcon: _query.isEmpty
+            ? null
+            : GestureDetector(
+                onTap: () {
+                  _searchController.clear();
+                  setState(() => _query = '');
+                },
+                child: Icon(Icons.clear, size: 18, color: t.textSecondary),
+              ),
+        suffixIconConstraints: const BoxConstraints(
+          minWidth: 24,
+          minHeight: 24,
+        ),
+      ),
+    );
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _searching = !_searching;
+      if (!_searching) {
+        _searchController.clear();
+        _query = '';
+      }
+    });
+  }
+
+  Widget _title(_Tokens t) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        Flexible(
+          child: Text(
+            '选择模型',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 20, // 1.25rem
+              fontWeight: FontWeight.w500,
+              height: 1.6,
+              color: t.textPrimary,
+            ),
+          ),
+        ),
+        // <span style="margin-left:8px;font-size:12px;color:#90caf9">
+        //   ⚡ SolidJS
+        // </span>
+        const SizedBox(width: 8),
+        const Text(
+          '⚡ Flutter',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w400,
+            color: _Tokens.badge,
+          ),
+        ),
+      ],
     );
   }
 
@@ -658,16 +722,23 @@ class _DialogBody extends StatelessWidget {
   }
 }
 
-class _CloseButton extends StatefulWidget {
-  const _CloseButton({required this.tokens, required this.onTap});
+/// .solid-dialog-close-btn : 8px padding, 50% radius, text-secondary — shared
+/// by the search toggle and the close button.
+class _HeaderIconButton extends StatefulWidget {
+  const _HeaderIconButton({
+    required this.tokens,
+    required this.icon,
+    required this.onTap,
+  });
   final _Tokens tokens;
+  final IconData icon;
   final VoidCallback onTap;
 
   @override
-  State<_CloseButton> createState() => _CloseButtonState();
+  State<_HeaderIconButton> createState() => _HeaderIconButtonState();
 }
 
-class _CloseButtonState extends State<_CloseButton> {
+class _HeaderIconButtonState extends State<_HeaderIconButton> {
   bool _hover = false;
 
   @override
@@ -686,9 +757,8 @@ class _CloseButtonState extends State<_CloseButton> {
             shape: BoxShape.circle,
             color: _hover ? widget.tokens.hover : Colors.transparent,
           ),
-          // X icon: svg 24x24, stroke-width 2.
           child: Icon(
-            Icons.close,
+            widget.icon,
             size: 24,
             color: widget.tokens.textSecondary,
           ),
