@@ -147,23 +147,44 @@ class _StaticArtPainter extends CustomPainter {
 
   final BuddyPixelArt art;
 
+  /// 静态图烘焙缓存：64×64 高清像素图逐格 drawRect 一帧要画数千矩形，
+  /// 自选物种面板一屏十几只会掉帧；同动画宠物一样烘成纹理后每帧只贴图。
+  static final Map<BuddyPixelArt, ui.Image> _cache = {};
+
+  static const double _bakeScale = 4;
+
+  static ui.Image _baked(BuddyPixelArt art) => _cache.putIfAbsent(art, () {
+        final cols = art.rows.first.length;
+        final rows = art.rows.length;
+        const px = _bakeScale;
+        final recorder = ui.PictureRecorder();
+        final canvas = Canvas(recorder);
+        final paint = Paint();
+        for (var r = 0; r < rows; r++) {
+          final row = art.rows[r];
+          for (var c = 0; c < row.length; c++) {
+            final ch = row[c];
+            if (ch == '.') continue;
+            paint.color = Color(art.palette[ch] ?? 0xFF000000);
+            canvas.drawRect(
+              Rect.fromLTWH(c * px, r * px, px, px).inflate(0.5),
+              paint,
+            );
+          }
+        }
+        final picture = recorder.endRecording();
+        return picture.toImageSync((cols * px).round(), (rows * px).round());
+      });
+
   @override
   void paint(Canvas canvas, Size size) {
-    final cols = art.rows.first.length;
-    final px = size.width / cols;
-    final paint = Paint();
-    for (var r = 0; r < art.rows.length; r++) {
-      final row = art.rows[r];
-      for (var c = 0; c < row.length; c++) {
-        final ch = row[c];
-        if (ch == '.') continue;
-        paint.color = Color(art.palette[ch] ?? 0xFF000000);
-        canvas.drawRect(
-          Rect.fromLTWH(c * px, r * px, px, px).inflate(0.5),
-          paint,
-        );
-      }
-    }
+    final sprite = _baked(art);
+    canvas.drawImageRect(
+      sprite,
+      Rect.fromLTWH(0, 0, sprite.width.toDouble(), sprite.height.toDouble()),
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint()..filterQuality = FilterQuality.medium,
+    );
   }
 
   @override

@@ -150,21 +150,23 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
                       InkWell(
                         borderRadius: BorderRadius.circular(12),
                         onTap: () => Navigator.of(context).pop(s),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            border:
-                                Border.all(color: theme.dividerColor),
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              BuddyPixelArtView(
-                                  art: kBuddyPixelArts[s]!, size: 44),
-                              const SizedBox(height: 4),
-                              Text(s.label,
-                                  style: theme.textTheme.bodySmall),
-                            ],
+                        child: RepaintBoundary(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              border:
+                                  Border.all(color: theme.dividerColor),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                BuddyPixelArtView(
+                                    art: kBuddyPixelArts[s]!, size: 44),
+                                const SizedBox(height: 4),
+                                Text(s.label,
+                                    style: theme.textTheme.bodySmall),
+                              ],
+                            ),
                           ),
                         ),
                       ),
