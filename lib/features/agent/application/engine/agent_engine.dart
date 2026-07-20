@@ -133,6 +133,21 @@ class AgentEngine {
 
   bool _stopGuardFired = false;
 
+  /// finish_task 无正文拦截只触发一次（防弱模型反复空收尾死循环）。
+  bool _finishGuardFired = false;
+
+  /// 最后一条用户消息之后是否存在非空助手正文：分析/调研类任务的
+  /// 交付物就是正文，没有正文的 finish_task 视为零产出收尾。
+  static bool _hasFinalReply(List<AgentEvent> events) {
+    for (final event in events.reversed) {
+      if (event is UserMessageEvent) return false;
+      if (event is AssistantTextEvent && event.text.trim().isNotEmpty) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   Future<String?> _checkStopGuard() async {
     final guard = stopGuard;
     if (guard == null || _stopGuardFired) return null;
@@ -484,6 +499,15 @@ class AgentEngine {
 
         // ⑤ 无工具调用 → 兜底判收尾（L1）。
         if (turn.toolCalls.isEmpty) {
+          if (!_finishGuardFired &&
+              !_hasFinalReply(await store.getEvents(current.id))) {
+            _finishGuardFired = true;
+            await store.appendUserMessage(
+                current.id,
+                '[系统] 你还没有输出面向用户的正文回复。请先把最终结论/报告'
+                '作为正文完整输出，再结束任务。');
+            continue;
+          }
           final blocked = await _checkStopGuard();
           if (blocked != null) {
             await store.appendUserMessage(
@@ -642,6 +666,19 @@ class AgentEngine {
             continue;
           }
           if (call.name == kToolFinishTask) {
+            if (!_finishGuardFired &&
+                !_hasFinalReply(await store.getEvents(current.id))) {
+              _finishGuardFired = true;
+              await logControlResult(call,
+                  ok: false,
+                  summary: '收尾被拒：缺少正文回复',
+                  detail: '你还没有输出面向用户的正文回复。分析、调研、解答类'
+                      '任务的正文就是交付物：请先把最终结论/报告作为正文完整'
+                      '输出，再调用 finish_task；summary 只是一句话标题，'
+                      '不能替代正文。');
+              budget.recordToolResult(ok: false);
+              continue;
+            }
             final blocked = await _checkStopGuard();
             if (blocked != null) {
               await store.appendUserMessage(

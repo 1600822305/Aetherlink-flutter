@@ -56,11 +56,16 @@ const List<McpToolDefinition> kAgentControlToolDefinitions = [
   ),
   McpToolDefinition(
     name: kToolFinishTask,
-    description: '声明任务完成并结束循环。附一句简要总结说明完成了什么。',
+    description: '声明任务完成并结束循环。调用前必须已把面向用户的最终答复/报告'
+        '作为正文输出（分析、调研、解答类任务的正文就是交付物，没有正文的收尾'
+        '会被拒绝）；summary 只是给任务列表看的一句话标题，不能替代正文。',
     inputSchema: {
       'type': 'object',
       'properties': {
-        'summary': {'type': 'string', 'description': '完成情况的简要总结'},
+        'summary': {
+          'type': 'string',
+          'description': '一句话标题式总结（展示在任务列表，不替代正文）',
+        },
       },
       'required': ['summary'],
     },

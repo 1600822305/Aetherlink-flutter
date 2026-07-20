@@ -754,9 +754,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   /// 子代理专属提示（系统提示第 3 层）：强调独立上下文 + 结论自包含。
   static const String _kExploreSubagentPrompt =
       '你是一个探索子代理：在独立上下文里完成父任务派发的只读调研/搜索子任务。'
-      '你看不到父任务的对话，指令里的信息就是全部上下文。完成后用 finish_task '
-      '返回结论：结论是父任务唯一能看到的内容，必须自包含（关键发现、文件路径、'
-      '结论依据），不要只说“已完成”。不要用 ask_user 提问。';
+      '你看不到父任务的对话，指令里的信息就是全部上下文。完成时先把结论作为'
+      '正文完整输出再调用 finish_task：结论是父任务唯一能看到的内容，必须自包含'
+      '（关键发现、文件路径、结论依据），不要只说“已完成”。不要用 ask_user 提问。';
 
   static const String _kBashSubagentPrompt =
       '你是一个终端子代理：在独立上下文里执行父任务派发的命令型子任务。'
