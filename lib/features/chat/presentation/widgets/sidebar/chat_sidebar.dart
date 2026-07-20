@@ -256,7 +256,7 @@ class _SidebarTab extends StatelessWidget {
   }
 }
 
-/// Bottom action row: 工作区 + 翻译 + 智能体 入口，并排居中。整行随
+/// Bottom action row: 工作区 + 翻译 + 宠物 + 智能体 入口，并排居中。整行随
 /// [showTranslate] 一起在设置 tab 时隐藏。
 class _BottomActionRow extends StatelessWidget {
   const _BottomActionRow();
@@ -276,6 +276,11 @@ class _BottomActionRow extends StatelessWidget {
           _BottomIconButton(
             icon: LucideIcons.languages,
             destination: AppRouter.translatePath,
+          ),
+          SizedBox(width: 8),
+          _BottomIconButton(
+            icon: LucideIcons.pawPrint,
+            destination: AppRouter.buddyPath,
           ),
           SizedBox(width: 8),
           _AgentModeButton(),
