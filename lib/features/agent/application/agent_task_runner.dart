@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_cance
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_manual_compaction.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
@@ -45,6 +46,10 @@ class AgentTaskRunner extends _$AgentTaskRunner {
 
   /// 检查点不可用的提示每个任务只出一次（避免每条消息刷屏）。
   final Set<String> _checkpointHintShown = {};
+
+  /// 手动压缩挂起集（升级计划 ⑤）：运行中任务的手动压缩请求，
+  /// 引擎在下一个安全点消费（取后清除）。
+  final Set<String> _pendingManualCompact = {};
 
   /// 正在运行的任务 id 集合（UI 可 watch）。
   @override
@@ -411,6 +416,48 @@ class AgentTaskRunner extends _$AgentTaskRunner {
 
   void pause(String taskId) => _tokens[taskId]?.requestPause();
 
+  /// 手动压缩（升级计划 ⑤，对标 CC /compact）：运行中任务挂到下一个
+  /// 安全点由引擎强制压缩（忽略触发阈值，仍走 keep 规则）；空闲任务
+  /// （暂停/完成/失败）直接调共享的 [runManualCompaction] 落
+  /// CompactionEvent。返回给 UI 的提示文案；摘要失败时抛错由调用方提示。
+  Future<String> compactNow(AgentTask task) async {
+    if (state.contains(task.id)) {
+      _pendingManualCompact.add(task.id);
+      return '任务运行中：将在下一个安全点压缩';
+    }
+    final profile =
+        ref
+            .read(agentProfilesProvider)
+            .where((p) => p.id == task.profileId)
+            .firstOrNull ??
+        AgentProfile(
+          id: task.profileId,
+          name: '',
+          emoji: '🤖',
+          systemPrompt: '',
+          tools: AgentToolGroup.values.toSet(),
+        );
+    final runtime = await ref
+        .read(agentRuntimeProvider)
+        .forProfile(
+          profile,
+          mode: task.mode,
+          boundWorkspaceId: task.workspaceId,
+        );
+    final outcome = await runManualCompaction(
+      task: task,
+      events: await _store().getEvents(task.id),
+      llm: runtime.llm,
+      store: _store(),
+      keepChars: AgentBudget().compactionKeepChars,
+    );
+    return switch (outcome) {
+      ManualCompactionDone(:final coveredCount) =>
+        '已把 $coveredCount 条较早内容压缩为摘要',
+      ManualCompactionNothingToCover() => '内容太少，无需压缩',
+    };
+  }
+
   void forceStop(String taskId) => _tokens[taskId]?.requestCancel();
 
   /// userPromptSubmit hooks：用户消息进入任务前过一遍 hooks——
@@ -522,6 +569,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           unawaited(runtime.compactionHooks(AgentHookEvent.preCompact)),
       onPostCompact: (summary) => unawaited(runtime
           .compactionHooks(AgentHookEvent.postCompact, summary: summary)),
+      manualCompactSignal: () => _pendingManualCompact.remove(task.id),
     );
     // fileChanged hooks 的工作区文件 watcher：与本次运行同生命周期
     // （无配置时 start 内部不订阅）。

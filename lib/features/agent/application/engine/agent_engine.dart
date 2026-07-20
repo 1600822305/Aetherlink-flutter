@@ -46,6 +46,7 @@ class AgentEngine {
     this.onNotification,
     this.onPreCompact,
     this.onPostCompact,
+    this.manualCompactSignal,
   });
 
   final AgentLlmClient llm;
@@ -90,6 +91,11 @@ class AgentEngine {
   /// 对标 CC）：同步触发、不等待、不阻断；postCompact 带压缩摘要。
   final void Function()? onPreCompact;
   final void Function(String summary)? onPostCompact;
+
+  /// 手动压缩信号（升级计划 ⑤，对标 CC /compact）：返回 true 即在下一个
+  /// 安全点强制压缩一次（忽略触发阈值与熔断，仍走 keep 规则）；
+  /// 调用即消费（取后清除）。
+  final bool Function()? manualCompactSignal;
 
   bool _stopGuardFired = false;
 
@@ -561,14 +567,18 @@ class AgentEngine {
       foldCompactedEvents(events),
       triggerChars: budget.microCompactTriggerChars,
     );
+    // 手动压缩（升级计划 ⑤）：用户主动触发时跳过阈值/预警/熔断，
+    // 直接走 keep 前缀选择。
+    final forced = manualCompactSignal?.call() ?? false;
     // 触发判定（升级计划 ③）：优先用 API usage 的真实上下文 token 对比
     // 模型窗口（减摘要预留、乘触发比例），拿不到 usage 时回退字符估算。
-    final shouldCompact = shouldTriggerCompaction(
+    final shouldCompact = forced ||
+        shouldTriggerCompaction(
       contextTokens: task.contextTokens,
       contextLimitTokens: budget.contextLimitTokens,
       estimatedChars: totalContextChars(entries),
-      fallbackTriggerChars: budget.compactionTriggerChars,
-    );
+          fallbackTriggerChars: budget.compactionTriggerChars,
+        );
     if (!shouldCompact) {
       // 预警（升级计划 ④）：进入触发阈值的 90% 区间时提前提示一次
       // （可见状态行 + notification hook，type=compactWarning）。
@@ -588,12 +598,19 @@ class AgentEngine {
       }
       return;
     }
-    if (_compactionBreaker.isOpen) return;
+    if (!forced && _compactionBreaker.isOpen) return;
     final covered = selectCompactionPrefix(
       entries,
       keepChars: budget.compactionKeepChars,
     );
-    if (covered.isEmpty) return;
+    if (covered.isEmpty) {
+      if (forced) {
+        try {
+          await store.appendStatusChange(task.id, '内容太少，无需压缩');
+        } catch (_) {}
+      }
+      return;
+    }
     onPreCompact?.call();
     final summary = await llm.summarizeForCompaction(task, covered);
     if (summary.trim().isEmpty) {
