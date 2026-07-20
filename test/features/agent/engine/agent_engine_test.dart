@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -479,6 +480,9 @@ class ContextCapturingLlm implements AgentLlmClient {
 
 class BigOutputToolExecutor implements AgentToolExecutor {
   @override
+  bool isConcurrencySafe(AgentToolCallRequest call) => false;
+
+  @override
   Future<AgentToolResult> execute(
     AgentToolCallRequest call,
     AgentCancellationToken cancel,
@@ -487,6 +491,9 @@ class BigOutputToolExecutor implements AgentToolExecutor {
 }
 
 class FailingToolExecutor implements AgentToolExecutor {
+  @override
+  bool isConcurrencySafe(AgentToolCallRequest call) => false;
+
   @override
   Future<AgentToolResult> execute(
     AgentToolCallRequest call,
@@ -601,6 +608,90 @@ class OneToolThenFinishLlm implements AgentLlmClient {
       '摘要';
 }
 
+/// 一轮发两个只读工具调用，下一轮 finish_task 收尾（测只读并发段）。
+class TwoReadToolsThenFinishLlm implements AgentLlmClient {
+  var _round = 0;
+
+  @override
+  Future<AgentLlmTurn> completeTurn(
+    AgentLlmContext context, {
+    void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
+    Future<void> Function(
+      String streamKey,
+      String? toolName,
+      String argsTextSoFar,
+    )? onToolCallDelta,
+    Future<void> Function(AgentToolCallRequest call, String? streamKey)?
+        onToolCall,
+    AgentCancellationToken? cancel,
+  }) async {
+    _round++;
+    if (_round > 1) {
+      return AgentLlmTurn(
+        toolCalls: [
+          AgentToolCallRequest(
+            id: 'finish-1',
+            name: kToolFinishTask,
+            argsJson: jsonEncode({'summary': '完成'}),
+            argSummary: '完成',
+          ),
+        ],
+      );
+    }
+    return AgentLlmTurn(
+      toolCalls: [
+        AgentToolCallRequest(
+          id: 'read-1',
+          name: 'read_file',
+          argsJson: jsonEncode({'path': 'a.txt'}),
+          argSummary: 'a.txt',
+        ),
+        AgentToolCallRequest(
+          id: 'read-2',
+          name: 'read_file',
+          argsJson: jsonEncode({'path': 'b.txt'}),
+          argSummary: 'b.txt',
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async =>
+      '摘要';
+}
+
+/// 记录并发度的只读执行器：两个调用都开始后才放行
+/// （验证只读段真正 Future.wait 并行）。
+class ConcurrencyRecordingExecutor implements AgentToolExecutor {
+  final _bothStarted = Completer<void>();
+  var _running = 0;
+  var maxConcurrent = 0;
+
+  @override
+  bool isConcurrencySafe(AgentToolCallRequest call) => true;
+
+  @override
+  Future<AgentToolResult> execute(
+    AgentToolCallRequest call,
+    AgentCancellationToken cancel,
+  ) async {
+    _running++;
+    if (_running > maxConcurrent) maxConcurrent = _running;
+    if (_running >= 2 && !_bothStarted.isCompleted) {
+      _bothStarted.complete();
+    }
+    await _bothStarted.future.timeout(const Duration(seconds: 5));
+    _running--;
+    return const AgentToolResult(ok: true, summary: 'ok ✓');
+  }
+}
+
 /// 摘要始终返回空（压缩必失败）的大输出 LLM（测压缩失败回调）。
 class EmptySummaryBigOutputLlm extends BigOutputLlm {
   EmptySummaryBigOutputLlm({required super.roundsBeforeFinish});
@@ -694,6 +785,9 @@ class InterruptFlagRecordingExecutor implements AgentToolExecutor {
   final List<bool> interruptFlagsAtExecute = [];
 
   @override
+  bool isConcurrencySafe(AgentToolCallRequest call) => false;
+
+  @override
   Future<AgentToolResult> execute(
     AgentToolCallRequest call,
     AgentCancellationToken cancel,
@@ -743,6 +837,32 @@ void main() {
         .whereType<ToolCallEvent>()
         .single;
     expect(toolEvent.state, AgentToolCallState.success);
+  });
+
+  test('同轮连续只读调用并发执行并全部落库成功', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    final executor = ConcurrencyRecordingExecutor();
+    final engine = AgentEngine(
+      llm: TwoReadToolsThenFinishLlm(),
+      tools: executor,
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(),
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '读两个文件');
+
+    await engine.run(task, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.done);
+    expect(executor.maxConcurrent, 2);
+    final toolEvents =
+        (await store.getEvents(task.id)).whereType<ToolCallEvent>().toList();
+    expect(toolEvents, hasLength(2));
+    expect(toolEvents.map((e) => e.state),
+        everyElement(AgentToolCallState.success));
   });
 
   test('ask_user 提问落库、等待回答并可恢复完成', () async {

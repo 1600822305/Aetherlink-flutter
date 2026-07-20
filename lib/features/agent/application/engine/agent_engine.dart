@@ -375,7 +375,41 @@ class AgentEngine {
           return;
         }
 
-        // ⑥ 逐个执行工具调用；同一轮连续的 spawn_subagent 成批并行。
+        // 单个工具的执行 + 结果落库（串行与只读并发段共用）：
+        // 带超时，超时自己发出的中断信号按代号定向回收，
+        // 不影响同轮其他工具，也不吞窗口内用户的新打断。
+        Future<void> runToolCall(
+          AgentToolCallRequest call,
+          ToolCallEvent event,
+        ) async {
+          final stopwatch = Stopwatch()..start();
+          var timeoutInterruptGen = 0;
+          final result = await tools
+              .execute(call, cancel)
+              .timeout(budget.toolTimeout, onTimeout: () {
+            // 同时中止仍在运行的底层工具，避免模型重发同一命令时
+            // 与旧命令并发（双重执行）。
+            timeoutInterruptGen = cancel.requestToolInterrupt();
+            return const AgentToolResult(ok: false, summary: '超时 ✗');
+          });
+          stopwatch.stop();
+          if (timeoutInterruptGen > 0) {
+            cancel.consumeToolInterruptOf(timeoutInterruptGen);
+          }
+          await store.updateToolCall(current.id, event,
+              state: result.ok
+                  ? AgentToolCallState.success
+                  : AgentToolCallState.failure,
+              resultSummary: result.summary,
+              resultDetail: result.detail,
+              resultOverflowPath: result.overflowPath,
+              elapsed: stopwatch.elapsed);
+          budget.recordToolResult(ok: result.ok);
+        }
+
+        // ⑥ 逐个执行工具调用；同一轮连续的 spawn_subagent 成批并行，
+        // 连续的只读（并发安全）调用成批并发（对标 CC
+        // runToolsConcurrently），写/执行类保持串行。
         for (var i = 0; i < turn.toolCalls.length; i++) {
           final call = turn.toolCalls[i];
           if (call.name == kToolSpawnSubagent) {
@@ -415,6 +449,53 @@ class AgentEngine {
             current = await transition(AgentTaskStatus.done, summary);
             onTaskEnd?.call();
             return;
+          }
+
+          // 只读并发段：连续≥ 2 个并发安全且审批直通（allow）的调用
+          // 成批 Future.wait 并行；遇到需要审批/禁止/不安全的调用在
+          // 其前截断，剩余的回到串行路径逐个处理（evaluate 有缓存，
+          // 重评不重跑 hooks）。
+          if (tools.isConcurrencySafe(call)) {
+            final batch = <AgentToolCallRequest>[];
+            var j = i;
+            while (j < turn.toolCalls.length &&
+                batch.length < kMaxConcurrentReadTools &&
+                !internalTool(turn.toolCalls[j].name) &&
+                tools.isConcurrencySafe(turn.toolCalls[j]) &&
+                await approval.evaluate(turn.toolCalls[j], current) ==
+                    ApprovalRequirement.allow) {
+              batch.add(turn.toolCalls[j]);
+              j++;
+            }
+            if (batch.length >= 2) {
+              i = j - 1;
+              final batchEvents = <ToolCallEvent>[];
+              for (final c in batch) {
+                final pre = preCreated[c.id];
+                batchEvents.add((pre != null && pre.isNotEmpty)
+                    ? pre.removeAt(0)
+                    : await store.appendToolCall(
+                        current.id, c, AgentToolCallState.running));
+              }
+              await Future.wait([
+                for (var k = 0; k < batch.length; k++)
+                  runToolCall(batch[k], batchEvents[k]),
+              ]);
+              if (cancel.stopRequested) break;
+              final batchHookStop = hookStopSignal?.call();
+              if (batchHookStop != null) {
+                await failPendingToolEvents();
+                current = await transition(
+                    AgentTaskStatus.cancelled, 'hook 终止任务：$batchHookStop');
+                return;
+              }
+              if (cancel.consumeToolInterrupt()) {
+                await failPendingToolEvents();
+                break;
+              }
+              continue;
+            }
+            // 不足两个可并发的调用：走下方串行路径。
           }
 
           final pre = preCreated[call.id];
@@ -458,31 +539,7 @@ class AgentEngine {
             cancel.consumeToolInterrupt();
           }
 
-          final stopwatch = Stopwatch()..start();
-          var timeoutInterruptGen = 0;
-          final result = await tools
-              .execute(call, cancel)
-              .timeout(budget.toolTimeout, onTimeout: () {
-            // 同时中止仍在运行的底层工具，避免模型重发同一命令时
-            // 与旧命令并发（双重执行）。
-            timeoutInterruptGen = cancel.requestToolInterrupt();
-            return const AgentToolResult(ok: false, summary: '超时 ✗');
-          });
-          stopwatch.stop();
-          // 超时自己发出的中断信号按代号定向回收：不影响同轮后续工具，
-          // 也不吞掉窗口内用户发起的新打断。
-          if (timeoutInterruptGen > 0) {
-            cancel.consumeToolInterruptOf(timeoutInterruptGen);
-          }
-          await store.updateToolCall(current.id, event,
-              state: result.ok
-                  ? AgentToolCallState.success
-                  : AgentToolCallState.failure,
-              resultSummary: result.summary,
-              resultDetail: result.detail,
-              resultOverflowPath: result.overflowPath,
-              elapsed: stopwatch.elapsed);
-          budget.recordToolResult(ok: result.ok);
+          await runToolCall(call, event);
 
           if (cancel.stopRequested) break;
           // hook 输出 continue:false：中止本轮剩余工具并终止整个任务，

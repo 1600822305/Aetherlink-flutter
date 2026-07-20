@@ -22,6 +22,10 @@ class AgentToolResult {
   final String? overflowPath;
 }
 
+/// 同一只读并发段内最多并行执行的工具数（对标 CC
+/// MAX_TOOL_USE_CONCURRENCY=10）。
+const int kMaxConcurrentReadTools = 10;
+
 /// 工具分发抽象：骨架期用假实现；接真实现时经 app/di 复用 ToolRoute
 /// 分发（下沉共享 helper，初稿 §5.1）。
 abstract class AgentToolExecutor {
@@ -29,4 +33,8 @@ abstract class AgentToolExecutor {
     AgentToolCallRequest call,
     AgentCancellationToken cancel,
   );
+
+  /// 该调用是否并发安全（只读，对标 CC isConcurrencySafe）：引擎把同一轮
+  /// 里连续的并发安全调用成批并行执行；不确定时返回 false 保持串行。
+  bool isConcurrencySafe(AgentToolCallRequest call);
 }

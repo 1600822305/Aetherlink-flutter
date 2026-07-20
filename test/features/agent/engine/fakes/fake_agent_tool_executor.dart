@@ -4,9 +4,16 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_
 
 /// 演示用假工具执行器：固定延迟后返回成功；支持被用户打断。
 class FakeAgentToolExecutor implements AgentToolExecutor {
-  const FakeAgentToolExecutor({this.delay = const Duration(milliseconds: 900)});
+  const FakeAgentToolExecutor({
+    this.delay = const Duration(milliseconds: 900),
+    this.concurrencySafe = false,
+  });
 
   final Duration delay;
+  final bool concurrencySafe;
+
+  @override
+  bool isConcurrencySafe(AgentToolCallRequest call) => concurrencySafe;
 
   @override
   Future<AgentToolResult> execute(

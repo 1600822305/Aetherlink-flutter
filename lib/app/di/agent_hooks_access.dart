@@ -546,6 +546,19 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
   }
 
   @override
+  bool isConcurrencySafe(AgentToolCallRequest call) {
+    // 配置未加载完（首次调用前）或存在任何 hooks 时保持串行：hook 命令
+    // 跑在工作区终端会话里，跨调用并发的交错行为未定义。
+    if (!_configLoaded) {
+      unawaited(_hooks());
+      return false;
+    }
+    final config = _config;
+    if (config != null && !config.isEmpty) return false;
+    return _inner.isConcurrencySafe(call);
+  }
+
+  @override
   Future<AgentToolResult> execute(
     AgentToolCallRequest call,
     AgentCancellationToken cancel,

@@ -85,6 +85,9 @@ class TwoSpawnLlm implements AgentLlmClient {
 
 class NoToolExecutor implements AgentToolExecutor {
   @override
+  bool isConcurrencySafe(AgentToolCallRequest call) => false;
+
+  @override
   Future<AgentToolResult> execute(
     AgentToolCallRequest call,
     AgentCancellationToken cancel,

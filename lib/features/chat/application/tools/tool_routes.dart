@@ -120,6 +120,64 @@ class StdioToolRoute extends ToolRoute {
   final McpServer server;
 }
 
+// ── 只读（并发安全）工具分类 ────────────────────────────────────────────────
+
+/// `@aether/file-editor` 中的只读工具。get_diagnostics 虽语义只读，
+/// 但会在工作区跑分析进程，不视为并发安全。
+const Set<String> _kReadOnlyFileEditorTools = {
+  'list_files',
+  'read_file',
+  'get_file_info',
+  'search_files',
+};
+
+const Set<String> _kReadOnlyKnowledgeTools = {'kb_list', 'kb_search', 'kb_read'};
+
+const Set<String> _kReadOnlySettingsTools = {
+  'list_providers',
+  'get_provider',
+  'list_models',
+  'get_current_model',
+};
+
+/// 内置 server（时间/计算/搜索/抓取/日历读取）中的只读工具。
+const Set<String> _kReadOnlyBuiltinServerTools = {
+  'get_current_time',
+  'calculate',
+  'convert_base',
+  'convert_unit',
+  'statistics',
+  'searxng_search',
+  'searxng_read_url',
+  'fetch',
+  'metaso_search',
+  'metaso_reader',
+  'metaso_chat',
+  'web_search',
+  'get_calendars',
+  'get_calendar_events',
+  'show_alarms',
+};
+
+/// 该工具调用是否只读（并发安全，对标 CC isConcurrencySafe）：同一轮内
+/// 可与其他只读调用并行执行。写入/执行命令/语义未知（远端 MCP、bridge）
+/// 一律视为不安全，保持串行。
+bool toolRouteIsReadOnly(ToolRoute route) => switch (route) {
+      FileEditorToolRoute() =>
+        _kReadOnlyFileEditorTools.contains(route.toolName),
+      KnowledgeToolRoute() => _kReadOnlyKnowledgeTools.contains(route.toolName),
+      SettingsToolRoute() => _kReadOnlySettingsTools.contains(route.toolName),
+      BuiltinToolRoute() =>
+        _kReadOnlyBuiltinServerTools.contains(route.toolName),
+      SkillReadToolRoute() => true,
+      WebSearchToolRoute() => true,
+      MemorySearchToolRoute() => true,
+      BridgeToolRoute() => false,
+      TerminalToolRoute() => false,
+      RemoteToolRoute() => false,
+      StdioToolRoute() => false,
+    };
+
 // ── Web Search tool definition ──────────────────────────────────────────────
 
 const String kBuiltinWebSearchToolName = 'builtin_web_search';

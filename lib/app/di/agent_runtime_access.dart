@@ -876,6 +876,12 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
   late final ChatToolExecutor _executor;
 
   @override
+  bool isConcurrencySafe(AgentToolCallRequest call) {
+    final route = _routes[call.name];
+    return route != null && toolRouteIsReadOnly(route);
+  }
+
+  @override
   Future<AgentToolResult> execute(
     AgentToolCallRequest call,
     AgentCancellationToken cancel,
