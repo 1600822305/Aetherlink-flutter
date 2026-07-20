@@ -22,10 +22,9 @@ const double _idleCycleSec = 8.4;
 /// 被摸「挥手」一轮播放时长。
 const double _waveCycleSec = 1.6;
 
-/// 内置 Codex 精灵图的物种映射（asset 路径）。
-const Map<String, String> kBuddyBuiltinSheetAssets = {
-  'nailong': 'assets/buddy/nailong0.webp',
-};
+/// 内置 Codex 精灵图的物种映射（asset 路径）。奶龙已改用统一的
+/// 64×64 像素风内置版，想要官方动画可用 Codex 皮肤导入。
+const Map<String, String> kBuddyBuiltinSheetAssets = {};
 
 class BuddySheetPet extends StatefulWidget {
   const BuddySheetPet({
