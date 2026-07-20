@@ -91,6 +91,8 @@ class AgentRuntime {
         Future<void> Function(AgentHookEvent event) lifecycleHooks,
         Future<void> Function(String message, {String notificationType})
             notificationHooks,
+        Future<void> Function(AgentHookEvent event, {String summary})
+            compactionHooks,
         void Function(AgentHookTimelineSink? sink) setHookTimeline,
         void Function(AgentHookRewakeSink? sink) setHookRewake,
       })> forProfile(
@@ -124,6 +126,7 @@ class AgentRuntime {
       hookStopSignal: hooked.takeHookStopSignal,
       lifecycleHooks: hooked.runLifecycleHooks,
       notificationHooks: hooked.runNotificationHooks,
+      compactionHooks: hooked.runCompactionHooks,
       setHookTimeline: (AgentHookTimelineSink? sink) => hooked.timeline = sink,
       setHookRewake: (AgentHookRewakeSink? sink) => hooked.rewake = sink,
     );

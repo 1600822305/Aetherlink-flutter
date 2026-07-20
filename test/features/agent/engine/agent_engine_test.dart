@@ -877,6 +877,8 @@ void main() {
   test('上下文超阈值 → 自动 compaction（摘要落库且折叠视图变小）', () async {
     final store = InMemoryAgentEventStore();
     final gateway = RecordingTaskGateway();
+    var preCompactCalls = 0;
+    final postCompactSummaries = <String>[];
     final engine = AgentEngine(
       llm: BigOutputLlm(roundsBeforeFinish: 12),
       tools: BigOutputToolExecutor(),
@@ -887,6 +889,8 @@ void main() {
         compactionTriggerChars: 1200,
         compactionKeepChars: 600,
       ),
+      onPreCompact: () => preCompactCalls++,
+      onPostCompact: postCompactSummaries.add,
     );
     final task = newTask();
     await store.appendUserMessage(task.id, '连续读大文件');
@@ -910,6 +914,10 @@ void main() {
       ),
     );
     expect(events.whereType<ToolCallEvent>().length, greaterThanOrEqualTo(12));
+    // preCompact / postCompact 回调（hooks 接线点）：压缩前后各触发，
+    // postCompact 带落库的摘要。
+    expect(preCompactCalls, compactions.length);
+    expect(postCompactSummaries, [for (final c in compactions) c.summary]);
   });
 
   test('foldCompactedEvents：覆盖最早条目并把摘要插到队首', () async {

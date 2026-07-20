@@ -41,6 +41,8 @@ class AgentEngine {
     this.onTurnEnd,
     this.onTaskEnd,
     this.onNotification,
+    this.onPreCompact,
+    this.onPostCompact,
   });
 
   final AgentLlmClient llm;
@@ -80,6 +82,11 @@ class AgentEngine {
   /// Notification）：审批挂起（type=approval）/ ask_user 等待
   /// （type=question）时同步触发、不等待、不阻断。
   final void Function(String message, String type)? onNotification;
+
+  /// 上下文压缩前 / 后的回调（preCompact / postCompact hooks，
+  /// 对标 CC）：同步触发、不等待、不阻断；postCompact 带压缩摘要。
+  final void Function()? onPreCompact;
+  final void Function(String summary)? onPostCompact;
 
   bool _stopGuardFired = false;
 
@@ -535,6 +542,7 @@ class AgentEngine {
       keepChars: budget.compactionKeepChars,
     );
     if (covered.isEmpty) return;
+    onPreCompact?.call();
     final summary = await llm.summarizeForCompaction(task, covered);
     if (summary.trim().isEmpty) {
       throw StateError('压缩摘要为空（可能是模型未配置或模型返回空结果）');
@@ -544,6 +552,7 @@ class AgentEngine {
       coveredCount: covered.length,
       summary: summary.trim(),
     );
+    onPostCompact?.call(summary.trim());
   }
 
   List<AgentPlanItem> _parsePlan(AgentToolCallRequest call) {

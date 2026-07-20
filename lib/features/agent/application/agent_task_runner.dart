@@ -513,6 +513,10 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           unawaited(runtime.lifecycleHooks(AgentHookEvent.taskEnd)),
       onNotification: (message, type) => unawaited(
           runtime.notificationHooks(message, notificationType: type)),
+      onPreCompact: () =>
+          unawaited(runtime.compactionHooks(AgentHookEvent.preCompact)),
+      onPostCompact: (summary) => unawaited(runtime
+          .compactionHooks(AgentHookEvent.postCompact, summary: summary)),
     );
     engine.run(task, token).whenComplete(() {
       _tokens.remove(task.id);

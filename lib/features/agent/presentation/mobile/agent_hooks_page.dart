@@ -204,6 +204,22 @@ _EventMeta _metaOf(AgentHookEvent event, ColorScheme scheme) =>
           description: '主任务正常完成后触发。',
           canBlock: false,
         ),
+      AgentHookEvent.preCompact => (
+          stage: 'AGENT',
+          color: Colors.purple,
+          title: 'preCompact',
+          description: '上下文压缩前触发（观测型，不阻断）；matcher 匹配触发'
+              '方式（目前仅 auto）。',
+          canBlock: false,
+        ),
+      AgentHookEvent.postCompact => (
+          stage: 'AGENT',
+          color: Colors.purple,
+          title: 'postCompact',
+          description: '上下文压缩后触发（观测型，不阻断）；压缩摘要经 '
+              'tool_response 传入；matcher 匹配触发方式（目前仅 auto）。',
+          canBlock: false,
+        ),
     };
 
 /// 添加区的阶段分组顺序（同阶段事件聚在一起，与枚举顺序解耦）。
@@ -215,6 +231,8 @@ const List<(String, List<AgentHookEvent>)> _kStageGroups = [
       AgentHookEvent.userPromptSubmit,
       AgentHookEvent.stop,
       AgentHookEvent.taskEnd,
+      AgentHookEvent.preCompact,
+      AgentHookEvent.postCompact,
     ]
   ),
   ('TURN 阶段', [AgentHookEvent.turnStart, AgentHookEvent.turnEnd]),

@@ -61,6 +61,15 @@ enum AgentHookEvent {
 
   /// 主任务正常结束后（不阻断，只观测）。
   taskEnd,
+
+  /// 上下文压缩前（对标 Claude Code PreCompact，观测型不阻断）；
+  /// matcher 匹配触发方式（目前仅 auto），pattern 忽略。
+  preCompact,
+
+  /// 上下文压缩后（对标 Claude Code PostCompact，观测型不阻断）；
+  /// 压缩摘要经 `tool_response` 传入；matcher 匹配触发方式（目前仅
+  /// auto），pattern 忽略。
+  postCompact,
 }
 
 /// hook 类型（对标 Claude Code 的 command / prompt / http / agent）。

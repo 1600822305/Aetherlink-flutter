@@ -333,6 +333,32 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     } catch (_) {}
   }
 
+  /// preCompact / postCompact hooks（观测型，对标 CC PreCompact /
+  /// PostCompact）：上下文压缩前后 fire-and-forget；matcher 匹配触发
+  /// 方式（目前仅 auto），pattern 忽略；压缩摘要（postCompact）经
+  /// stdin JSON `tool_response` 传入。
+  Future<void> runCompactionHooks(
+    AgentHookEvent event, {
+    String summary = '',
+  }) async {
+    try {
+      final config = await _hooks();
+      if (config == null || config.isEmpty) return;
+      final hooks = hooksForToolCall(config, event, 'auto', const []);
+      if (hooks.isEmpty) return;
+      final results = await _runHooksParallel(
+        hooks,
+        (hook) => _runHook(hook,
+            eventName: event.name,
+            toolName: '',
+            argsJson: '{}',
+            toolOutput: summary.isEmpty ? null : summary),
+        label: event.name,
+      );
+      _recordStopSignal(aggregateAgentHookResults(results));
+    } catch (_) {}
+  }
+
   /// 同事件命中的多条 hooks 并行执行（对标 Claude Code）：同命令
   /// 去重，裁决由 [aggregateAgentHookResults] 聚合；可选把空原因的
   /// block 补上含 hook 命令的默认文案。[label] 非空且接了时间线

@@ -160,6 +160,31 @@ void main() {
       expect(question.single.command, 'all.sh');
     });
 
+    test('preCompact / postCompact 事件解析与触发方式匹配', () {
+      final config = decodeAgentHooksConfig('''
+{
+  "preCompact": [{"type": "command", "command": "before.sh"}],
+  "postCompact": [
+    {"type": "command", "matcher": "auto", "command": "after.sh"},
+    {"type": "command", "matcher": "manual", "command": "never.sh"}]
+}
+''')!;
+      final pre = hooksForToolCall(
+        config,
+        AgentHookEvent.preCompact,
+        'auto',
+        const [],
+      );
+      expect(pre.single.command, 'before.sh');
+      final post = hooksForToolCall(
+        config,
+        AgentHookEvent.postCompact,
+        'auto',
+        const [],
+      );
+      expect(post.single.command, 'after.sh');
+    });
+
     test('subagentStart / subagentStop / taskEnd 事件解析', () {
       final config = decodeAgentHooksConfig('''
 {
