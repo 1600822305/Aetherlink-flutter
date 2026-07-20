@@ -612,23 +612,43 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     );
     final post = aggregateAgentHookResults(results);
     _recordStopSignal(post);
+    // updatedMCPToolOutput（对标 CC）：postToolUse hook 改写回给模型的
+    // 工具输出（与 updatedInput 对称）；仅成功结果（postToolUse）生效
+    // （CC 的 PostToolUseFailure 协议无此字段）；block 裁决下不改写
+    // （结果已被反馈替代）；改写事实落时间线告知用户。
+    var effectiveResult = toolResult;
+    if (postEvent == AgentHookEvent.postToolUse &&
+        post.outcome != AgentHookOutcome.block &&
+        post.updatedToolOutput.isNotEmpty) {
+      effectiveResult = AgentToolResult(
+        ok: toolResult.ok,
+        summary: toolResult.summary,
+        detail: post.updatedToolOutput,
+      );
+      final sink = timeline;
+      if (sink != null) {
+        try {
+          await sink('[hook] ${postEvent.name}(${call.name}) 改写了工具输出');
+        } catch (_) {}
+      }
+    }
     final feedback = post.outcome == AgentHookOutcome.block ? post.message : '';
     final contexts = <String>[
       if (preVerdict != null && preVerdict.additionalContext.isNotEmpty)
         preVerdict.additionalContext,
       if (post.additionalContext.isNotEmpty) post.additionalContext,
     ];
-    if (feedback.isEmpty && contexts.isEmpty) return toolResult;
+    if (feedback.isEmpty && contexts.isEmpty) return effectiveResult;
     final sections = [
       if (feedback.isNotEmpty) '[${postEvent.name} hook 反馈]\n$feedback',
       if (contexts.isNotEmpty)
         '[hook additionalContext]\n${contexts.join('\n')}',
     ];
     return AgentToolResult(
-      ok: toolResult.ok,
-      summary: toolResult.summary,
-      detail: '${toolResult.detail ?? ''}\n\n${sections.join('\n\n')}',
-      overflowPath: toolResult.overflowPath,
+      ok: effectiveResult.ok,
+      summary: effectiveResult.summary,
+      detail: '${effectiveResult.detail ?? ''}\n\n${sections.join('\n\n')}',
+      overflowPath: effectiveResult.overflowPath,
     );
   }
 

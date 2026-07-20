@@ -353,7 +353,10 @@ enum AgentHookOutcome {
 /// Claude Code）：不参与裁决（按放行处理），余下输出忽略。
 /// [updatedArgsJson] 为 stdout JSON `updatedInput`（对标 Claude
 /// Code，仅 preToolUse 生效）：非空时工具改用该入参执行（block
-/// 裁决下忽略）。[systemMessage]（对标 Claude Code）为展示给
+/// 裁决下忽略）。[updatedToolOutput] 为 stdout JSON
+/// `updatedMCPToolOutput`（对标 Claude Code，仅 postToolUse 生效）：
+/// 非空时回给模型的工具输出改用该内容（block 裁决下忽略）。
+/// [systemMessage]（对标 Claude Code）为展示给
 /// 用户的提示（不进模型上下文）。
 class AgentHookResult {
   const AgentHookResult({
@@ -364,6 +367,7 @@ class AgentHookResult {
     this.stopReason = '',
     this.isAsync = false,
     this.updatedArgsJson = '',
+    this.updatedToolOutput = '',
     this.systemMessage = '',
   });
 
@@ -374,6 +378,7 @@ class AgentHookResult {
   final String stopReason;
   final bool isAsync;
   final String updatedArgsJson;
+  final String updatedToolOutput;
   final String systemMessage;
 }
 
@@ -381,7 +386,7 @@ class AgentHookResult {
 /// - outcome 优先级 block > ask > allow > proceed（failed 视为 proceed）；
 /// - message 取全部 block 的原因拼接（无 block 时取胜出裁决的 message）；
 /// - additionalContext / systemMessage 非空项拼接；
-/// - updatedArgsJson 取首个非空（多条 hook 同时改写入参不叠加）；
+/// - updatedArgsJson / updatedToolOutput 取首个非空（多条 hook 同时改写不叠加）；
 /// - preventContinuation 任一为 true 即 true，stopReason 取首个非空。
 AgentHookResult aggregateAgentHookResults(Iterable<AgentHookResult> results) {
   var outcome = AgentHookOutcome.proceed;
@@ -389,6 +394,7 @@ AgentHookResult aggregateAgentHookResults(Iterable<AgentHookResult> results) {
   final contexts = <String>[];
   final systemMessages = <String>[];
   var updatedArgsJson = '';
+  var updatedToolOutput = '';
   var prevent = false;
   var stopReason = '';
   String winnerMessage = '';
@@ -397,6 +403,9 @@ AgentHookResult aggregateAgentHookResults(Iterable<AgentHookResult> results) {
     if (r.systemMessage.isNotEmpty) systemMessages.add(r.systemMessage);
     if (updatedArgsJson.isEmpty && r.updatedArgsJson.isNotEmpty) {
       updatedArgsJson = r.updatedArgsJson;
+    }
+    if (updatedToolOutput.isEmpty && r.updatedToolOutput.isNotEmpty) {
+      updatedToolOutput = r.updatedToolOutput;
     }
     if (r.preventContinuation) {
       prevent = true;
@@ -434,6 +443,7 @@ AgentHookResult aggregateAgentHookResults(Iterable<AgentHookResult> results) {
     preventContinuation: prevent,
     stopReason: stopReason,
     updatedArgsJson: updatedArgsJson,
+    updatedToolOutput: updatedToolOutput,
     systemMessage: systemMessages.join('\n'),
   );
 }
@@ -606,12 +616,22 @@ AgentHookResult? _decodeDecision(String stdout) {
         updatedInput is Map<String, dynamic> && outcome != AgentHookOutcome.block
             ? jsonEncode(updatedInput)
             : '';
+    // updatedMCPToolOutput（对标 CC，仅 postToolUse 生效）：字符串直接用，
+    // 其他 JSON 值序列化后用；block 裁决下无意义（结果已被反馈替代），丢弃。
+    final updatedOutput = decoded['updatedMCPToolOutput'];
+    final updatedToolOutput = updatedOutput == null ||
+            outcome == AgentHookOutcome.block
+        ? ''
+        : updatedOutput is String
+            ? updatedOutput
+            : jsonEncode(updatedOutput);
     final systemMessage = decoded['systemMessage'];
     final systemMessageStr = systemMessage is String ? systemMessage : '';
     if (outcome == null) {
       if (contextStr.isEmpty &&
           !prevent &&
           updatedArgsJson.isEmpty &&
+          updatedToolOutput.isEmpty &&
           systemMessageStr.isEmpty) {
         return null;
       }
@@ -621,6 +641,7 @@ AgentHookResult? _decodeDecision(String stdout) {
         preventContinuation: prevent,
         stopReason: stopReasonStr,
         updatedArgsJson: updatedArgsJson,
+        updatedToolOutput: updatedToolOutput,
         systemMessage: systemMessageStr,
       );
     }
@@ -632,6 +653,7 @@ AgentHookResult? _decodeDecision(String stdout) {
       preventContinuation: prevent,
       stopReason: stopReasonStr,
       updatedArgsJson: updatedArgsJson,
+      updatedToolOutput: updatedToolOutput,
       systemMessage: systemMessageStr,
     );
   } catch (_) {

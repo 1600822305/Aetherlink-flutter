@@ -865,6 +865,48 @@ void main() {
       expect(r.updatedArgsJson, isEmpty);
     });
 
+    test('updatedMCPToolOutput 解析为 updatedToolOutput（字符串直用/JSON 序列化）', () {
+      final str = interpretAgentHookExit(
+        0,
+        '{"updatedMCPToolOutput":"改写后的输出"}',
+        '',
+      );
+      expect(str.outcome, AgentHookOutcome.proceed);
+      expect(str.updatedToolOutput, '改写后的输出');
+      final json = interpretAgentHookExit(
+        0,
+        '{"decision":"allow","updatedMCPToolOutput":{"rows":[1,2]}}',
+        '',
+      );
+      expect(json.outcome, AgentHookOutcome.allow);
+      expect(json.updatedToolOutput, '{"rows":[1,2]}');
+    });
+
+    test('block 裁决下 updatedMCPToolOutput 丢弃', () {
+      final r = interpretAgentHookExit(
+        0,
+        '{"decision":"block","reason":"结果有毒","updatedMCPToolOutput":"x"}',
+        '',
+      );
+      expect(r.outcome, AgentHookOutcome.block);
+      expect(r.updatedToolOutput, isEmpty);
+    });
+
+    test('聚合：updatedToolOutput 取首个非空', () {
+      final agg = aggregateAgentHookResults(const [
+        AgentHookResult(outcome: AgentHookOutcome.proceed),
+        AgentHookResult(
+          outcome: AgentHookOutcome.proceed,
+          updatedToolOutput: '第一份',
+        ),
+        AgentHookResult(
+          outcome: AgentHookOutcome.proceed,
+          updatedToolOutput: '第二份',
+        ),
+      ]);
+      expect(agg.updatedToolOutput, '第一份');
+    });
+
     test('systemMessage 解析（可与任意裁决同现）', () {
       final r = interpretAgentHookExit(
         0,
