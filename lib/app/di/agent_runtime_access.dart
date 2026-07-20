@@ -17,6 +17,7 @@ import 'package:aetherlink_flutter/features/agent/application/agent_permission_r
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_prompt.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_control_tools.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart' show kToolAskUser;
@@ -493,17 +494,15 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
           content: _compactionTranscript(events),
         ),
       ],
-      system: '你是上下文压缩器。把下面一段智能体执行过程压缩成简洁摘要，'
-          '供后续循环替代原文继续任务。必须保留：用户的目标与约束、已完成的'
-          '关键动作及结果、重要文件路径/命令/数据、当前待办与未解决问题。'
-          '直接输出摘要正文，不要寒暄。',
+      system: kCompactionSummarySystemPrompt,
     );
 
     final buffer = StringBuffer();
     await for (final chunk in gateway.streamChat(request)) {
       if (chunk is LlmTextDelta) buffer.write(chunk.text);
     }
-    return buffer.toString();
+    // <analysis> 是草稿纸，落库前剥离，只存 <summary> 正文。
+    return extractCompactionSummary(buffer.toString());
   }
 
   /// [2 环境上下文]：平台 + 工作区摘要 + 本轮可用工具清单
