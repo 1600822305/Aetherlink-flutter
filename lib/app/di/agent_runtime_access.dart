@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:path_provider/path_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'package:aetherlink_flutter/app/di/agent_file_watch_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_hooks_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_subagent_access.dart';
 import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
@@ -93,6 +94,7 @@ class AgentRuntime {
             notificationHooks,
         Future<void> Function(AgentHookEvent event, {String summary})
             compactionHooks,
+        AgentWorkspaceFileWatcher fileWatcher,
         void Function(AgentHookTimelineSink? sink) setHookTimeline,
         void Function(AgentHookRewakeSink? sink) setHookRewake,
       })> forProfile(
@@ -127,6 +129,12 @@ class AgentRuntime {
       lifecycleHooks: hooked.runLifecycleHooks,
       notificationHooks: hooked.runNotificationHooks,
       compactionHooks: hooked.runCompactionHooks,
+      fileWatcher: AgentWorkspaceFileWatcher(
+        _refOf,
+        hasHooks: hooked.hasFileChangedHooks,
+        runHooks: hooked.runFileChangedHooks,
+        boundWorkspaceId: boundWorkspaceId,
+      ),
       setHookTimeline: (AgentHookTimelineSink? sink) => hooked.timeline = sink,
       setHookRewake: (AgentHookRewakeSink? sink) => hooked.rewake = sink,
     );

@@ -185,6 +185,38 @@ void main() {
       expect(post.single.command, 'after.sh');
     });
 
+    test('fileChanged 事件解析与变更类型/路径匹配', () {
+      final config = decodeAgentHooksConfig('''
+{
+  "fileChanged": [
+    {"type": "command", "matcher": "modified",
+     "pattern": "*.dart", "command": "lint.sh"},
+    {"type": "command", "command": "all.sh"}]
+}
+''')!;
+      final dartModified = hooksForToolCall(
+        config,
+        AgentHookEvent.fileChanged,
+        'modified',
+        const ['lib/a.dart'],
+      );
+      expect(dartModified.map((h) => h.command), ['lint.sh', 'all.sh']);
+      final created = hooksForToolCall(
+        config,
+        AgentHookEvent.fileChanged,
+        'created',
+        const ['lib/a.dart'],
+      );
+      expect(created.single.command, 'all.sh');
+      final other = hooksForToolCall(
+        config,
+        AgentHookEvent.fileChanged,
+        'modified',
+        const ['README.md'],
+      );
+      expect(other.single.command, 'all.sh');
+    });
+
     test('subagentStart / subagentStop / taskEnd 事件解析', () {
       final config = decodeAgentHooksConfig('''
 {
@@ -369,6 +401,18 @@ void main() {
       )) as Map<String, dynamic>;
       expect(json['message'], '等待审批：terminal_execute');
       expect(json['notification_type'], 'approval');
+    });
+
+    test('fileChanged 事件带 file_path / event', () {
+      final json = jsonDecode(buildAgentHookStdinJson(
+        eventName: 'fileChanged',
+        toolName: '',
+        argsJson: '{}',
+        filePath: 'lib/a.dart',
+        fileEvent: 'modified',
+      )) as Map<String, dynamic>;
+      expect(json['file_path'], 'lib/a.dart');
+      expect(json['event'], 'modified');
     });
   });
 

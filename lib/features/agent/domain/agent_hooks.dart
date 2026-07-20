@@ -70,6 +70,12 @@ enum AgentHookEvent {
   /// 压缩摘要经 `tool_response` 传入；matcher 匹配触发方式（目前仅
   /// auto），pattern 忽略。
   postCompact,
+
+  /// 工作区文件变更时（对标 Claude Code FileChanged，观测型不阻断）：
+  /// 后端 watch 流 + 去抖后触发；matcher 匹配变更类型
+  /// （created/modified/deleted/moved），pattern 匹配文件路径；
+  /// 路径经 `file_path`、变更类型经 `event` 传入。
+  fileChanged,
 }
 
 /// hook 类型（对标 Claude Code 的 command / prompt / http / agent）。
@@ -257,6 +263,7 @@ String buildAgentHookStdinJson({
   String? prompt,
   String? message,
   String? notificationType,
+  String? fileEvent,
   String? sessionId,
   String? cwd,
 }) {
@@ -274,6 +281,7 @@ String buildAgentHookStdinJson({
     if (message != null && message.isNotEmpty) 'message': message,
     if (notificationType != null && notificationType.isNotEmpty)
       'notification_type': notificationType,
+    if (fileEvent != null && fileEvent.isNotEmpty) 'event': fileEvent,
     if (filePath != null && filePath.isNotEmpty) 'file_path': filePath,
     if (toolOutput != null) 'tool_response': toolOutput,
     if (toolOk != null) 'tool_ok': toolOk,

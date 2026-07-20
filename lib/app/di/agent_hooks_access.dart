@@ -359,6 +359,43 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     } catch (_) {}
   }
 
+  /// 是否配有 fileChanged hooks（含 disableAllHooks 短路）：文件
+  /// watcher 启动前探询，无配置时不订阅后端 watch 流。
+  Future<bool> hasFileChangedHooks() async {
+    try {
+      final config = await _hooks();
+      return config != null &&
+          config.ofEvent(AgentHookEvent.fileChanged).isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// fileChanged hooks（观测型，对标 CC FileChanged）：工作区文件
+  /// 变更去抖后 fire-and-forget；matcher 匹配变更类型
+  /// （created/modified/deleted/moved），pattern 匹配文件路径；路径
+  /// 经 `file_path`、变更类型经 `event` 传入。
+  Future<void> runFileChangedHooks(String path, String changeKind) async {
+    try {
+      final config = await _hooks();
+      if (config == null || config.isEmpty) return;
+      final hooks = hooksForToolCall(
+          config, AgentHookEvent.fileChanged, changeKind, [path]);
+      if (hooks.isEmpty) return;
+      final results = await _runHooksParallel(
+        hooks,
+        (hook) => _runHook(hook,
+            eventName: AgentHookEvent.fileChanged.name,
+            toolName: '',
+            argsJson: '{}',
+            filePath: path,
+            fileEvent: changeKind),
+        label: '${AgentHookEvent.fileChanged.name}($changeKind)',
+      );
+      _recordStopSignal(aggregateAgentHookResults(results));
+    } catch (_) {}
+  }
+
   /// 同事件命中的多条 hooks 并行执行（对标 Claude Code）：同命令
   /// 去重，裁决由 [aggregateAgentHookResults] 聚合；可选把空原因的
   /// block 补上含 hook 命令的默认文案。[label] 非空且接了时间线
@@ -647,6 +684,7 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
     bool? toolOk,
     String? message,
     String? notificationType,
+    String? fileEvent,
   }) =>
       _execAgentHook(
         _refOf(),
@@ -659,6 +697,7 @@ class HookedAgentToolExecutor implements AgentToolExecutor {
         toolOk: toolOk,
         message: message,
         notificationType: notificationType,
+        fileEvent: fileEvent,
         workspaceId: _boundWorkspaceId,
         cwd: _workspaceRoot,
       );
@@ -750,6 +789,9 @@ Future<AgentHookResult> tryRunAgentHook(
     message: hook.event == AgentHookEvent.notification ? 'hook 试跑示例通知' : null,
     notificationType:
         hook.event == AgentHookEvent.notification ? 'approval' : null,
+    filePath:
+        hook.event == AgentHookEvent.fileChanged ? '试跑示例/文件.dart' : null,
+    fileEvent: hook.event == AgentHookEvent.fileChanged ? 'modified' : null,
     workspaceId: workspaceId,
   );
 }
@@ -769,6 +811,7 @@ Future<AgentHookResult> _execAgentHook(
   String? prompt,
   String? message,
   String? notificationType,
+  String? fileEvent,
   String? workspaceId,
   String? cwd,
 }) {
@@ -786,6 +829,7 @@ Future<AgentHookResult> _execAgentHook(
         prompt: prompt,
         message: message,
         notificationType: notificationType,
+        fileEvent: fileEvent,
         workspaceId: workspaceId,
         cwd: cwd,
       );
@@ -804,6 +848,7 @@ Future<AgentHookResult> _execAgentHook(
         prompt: prompt,
         message: message,
         notificationType: notificationType,
+        fileEvent: fileEvent,
         sessionId: workspaceId,
         cwd: cwd,
       );
@@ -1134,6 +1179,7 @@ Future<AgentHookResult> _execHookCommand(
   String? prompt,
   String? message,
   String? notificationType,
+  String? fileEvent,
   String? workspaceId,
   String? cwd,
 }) async {
@@ -1161,6 +1207,8 @@ Future<AgentHookResult> _execHookCommand(
         'export AETHER_MESSAGE=${_shellQuote(message)}',
       if (notificationType != null && notificationType.isNotEmpty)
         'export AETHER_NOTIFICATION_TYPE=${_shellQuote(notificationType)}',
+      if (fileEvent != null && fileEvent.isNotEmpty)
+        'export AETHER_FILE_EVENT=${_shellQuote(fileEvent)}',
     ].join('; ');
     var stdinJson = buildAgentHookStdinJson(
       eventName: eventName,
@@ -1172,6 +1220,7 @@ Future<AgentHookResult> _execHookCommand(
       prompt: prompt,
       message: message,
       notificationType: notificationType,
+      fileEvent: fileEvent,
       sessionId: workspaceId,
       cwd: cwd,
     );
@@ -1187,6 +1236,7 @@ Future<AgentHookResult> _execHookCommand(
         prompt: cappedPrompt,
         message: message,
         notificationType: notificationType,
+        fileEvent: fileEvent,
         sessionId: workspaceId,
         cwd: cwd,
       );

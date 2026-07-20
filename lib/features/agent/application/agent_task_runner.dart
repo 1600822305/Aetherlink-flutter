@@ -518,7 +518,11 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       onPostCompact: (summary) => unawaited(runtime
           .compactionHooks(AgentHookEvent.postCompact, summary: summary)),
     );
+    // fileChanged hooks 的工作区文件 watcher：与本次运行同生命周期
+    // （无配置时 start 内部不订阅）。
+    unawaited(runtime.fileWatcher.start());
     engine.run(task, token).whenComplete(() {
+      unawaited(runtime.fileWatcher.stop());
       _tokens.remove(task.id);
       _clearGraceIfFinished(task.id);
       state = {

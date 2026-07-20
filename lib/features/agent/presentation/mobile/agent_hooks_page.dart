@@ -169,6 +169,15 @@ _EventMeta _metaOf(AgentHookEvent event, ColorScheme scheme) =>
               '可接外部通知。matcher 匹配通知类型（approval / question）。',
           canBlock: false,
         ),
+      AgentHookEvent.fileChanged => (
+          stage: 'TOOL',
+          color: Colors.orange,
+          title: 'fileChanged',
+          description: '工作区文件变更时触发（去抖后；观测型，不阻断）。'
+              'matcher 匹配变更类型（created / modified / deleted / moved），'
+              'pattern 匹配文件路径；路径经 file_path、变更类型经 event 传入。',
+          canBlock: false,
+        ),
       AgentHookEvent.turnEnd => (
           stage: 'TURN',
           color: Colors.blue,
@@ -245,6 +254,7 @@ const List<(String, List<AgentHookEvent>)> _kStageGroups = [
       AgentHookEvent.permissionRequest,
       AgentHookEvent.permissionDenied,
       AgentHookEvent.notification,
+      AgentHookEvent.fileChanged,
     ]
   ),
   (
