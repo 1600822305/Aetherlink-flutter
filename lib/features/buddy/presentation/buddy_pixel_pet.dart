@@ -10,6 +10,7 @@ import 'package:flutter/scheduler.dart';
 
 import 'package:aetherlink_flutter/features/buddy/domain/buddy_types.dart';
 import 'package:aetherlink_flutter/features/buddy/domain/pixel_arts/pixel_arts.dart';
+import 'package:aetherlink_flutter/features/buddy/presentation/vector_pets/vector_pet.dart';
 
 /// 眨眼周期：每 ~3.7s 闭眼 0.15s。
 const double _blinkCycle = 3.7;
@@ -179,6 +180,19 @@ class _PetPainter extends CustomPainter {
     final bodyColor = _bodyColor(art);
     final paint = Paint();
 
+    // 有矢量版的物种优先用矢量渲染（任意缩放不糊）。
+    final vector = kBuddyVectorArts[bones.species];
+    if (vector != null) {
+      vector.paint(canvas, size, blink: blink, tint: _tint);
+      _paintVectorHat(canvas, size, paint);
+      canvas.restore();
+      if (bones.shiny) _paintSparkles(canvas, size, t, paint);
+      if (petT >= 0 && petT < _heartsLen) {
+        _paintHearts(canvas, size, petT / _heartsLen, paint);
+      }
+      return;
+    }
+
     for (var r = 0; r < rows; r++) {
       final row = art.rows[r];
       for (var c = 0; c < cols; c++) {
@@ -223,6 +237,32 @@ class _PetPainter extends CustomPainter {
     // 被摸：爱心粒子上浮渐隐。
     if (petT >= 0 && petT < _heartsLen) {
       _paintHearts(canvas, size, petT / _heartsLen, paint);
+    }
+  }
+
+  /// 矢量物种的帽子：仍用帽子像素图，按 32 格居中压在头顶。
+  void _paintVectorHat(Canvas canvas, Size size, Paint paint) {
+    if (bones.hat == BuddyHat.none) return;
+    final hat = kBuddyHatArts[bones.hat];
+    if (hat == null) return;
+    final px = size.width / 32;
+    final hatW = hat.rows.first.length;
+    final hatH = hat.rows.length;
+    final startC = (16 - hatW / 2).round();
+    final lift = bones.hat == BuddyHat.halo ? 2 : 1;
+    final startR = 1 - hatH + lift;
+    for (var r = 0; r < hatH; r++) {
+      final row = hat.rows[r];
+      for (var c = 0; c < row.length; c++) {
+        final ch = row[c];
+        if (ch == '.') continue;
+        paint.color = _tint(Color(hat.palette[ch] ?? 0xFF000000));
+        canvas.drawRect(
+          Rect.fromLTWH((startC + c) * px, (startR + r) * px, px, px)
+              .inflate(0.5),
+          paint,
+        );
+      }
     }
   }
 
