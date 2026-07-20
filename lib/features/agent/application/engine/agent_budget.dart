@@ -1,3 +1,4 @@
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_trigger.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
 
 /// 预算护栏（循环设计稿 §3.3 L5）：无限轮循环的成本/失控保险。
@@ -12,6 +13,9 @@ class AgentBudget {
     this.compactionKeepChars = 40000,
     this.microCompactTriggerChars = kMicroCompactTriggerChars,
     this.contextLimitTokens = 0,
+    this.autoCompactEnabled = true,
+    this.microCompactEnabled = true,
+    this.compactionTriggerRatio = kCompactionTriggerRatio,
   });
 
   final int maxRounds;
@@ -30,13 +34,23 @@ class AgentBudget {
   final int compactionKeepChars;
 
   /// microcompact（不调 LLM 的旧工具输出占位清除）触发阈值：低于
-  /// [compactionTriggerChars]，先 micro 后 LLM 的两级降压。重放侧直接用
-  /// 默认常量 [kMicroCompactTriggerChars]，自定义时两侧需保持一致。
+  /// [compactionTriggerChars]，先 micro 后 LLM 的两级降压。重放侧经
+  /// AgentLlmContext 拿到同一生效值，两侧视图必须一致。
   final int microCompactTriggerChars;
 
   /// 模型上下文窗口（token）：与 API usage 回报的真实上下文占用配合
   /// 做按 token 的压缩触发判定；0 = 未知，回退字符估算。
   final int contextLimitTokens;
+
+  /// 自动压缩总开关：关掉后阈值不再自动触发（预警照发、手动压缩
+  /// 不受影响）。
+  final bool autoCompactEnabled;
+
+  /// microcompact 开关：关掉后引擎与重放侧都不做旧工具输出清除。
+  final bool microCompactEnabled;
+
+  /// 有效窗口的自动压缩触发比例（token 路径）。
+  final double compactionTriggerRatio;
 
   int _rounds = 0;
   int _consecutiveFailures = 0;

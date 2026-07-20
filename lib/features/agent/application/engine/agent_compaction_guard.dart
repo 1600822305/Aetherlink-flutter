@@ -22,9 +22,11 @@ bool isNearCompactionThreshold({
   required int contextLimitTokens,
   required int estimatedChars,
   required int fallbackTriggerChars,
+  double triggerRatio = kCompactionTriggerRatio,
 }) {
   if (contextTokens > 0 && contextLimitTokens > 0) {
-    final trigger = compactionTriggerTokens(contextLimitTokens);
+    final trigger = compactionTriggerTokens(contextLimitTokens,
+        triggerRatio: triggerRatio);
     return contextTokens >= (trigger * kCompactionWarningRatio).floor() &&
         contextTokens <= trigger;
   }

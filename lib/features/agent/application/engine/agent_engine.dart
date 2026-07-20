@@ -198,7 +198,12 @@ class AgentEngine {
         final streamingEvents = <String, ToolCallEvent>{};
         final streamingWriteAt = <String, DateTime>{};
         final turn = await llm.completeTurn(
-          AgentLlmContext(task: current, events: events),
+          AgentLlmContext(
+            task: current,
+            events: events,
+            microCompactEnabled: budget.microCompactEnabled,
+            microCompactTriggerChars: budget.microCompactTriggerChars,
+          ),
           cancel: cancel,
           onReasoningDelta: writer.onReasoningDelta,
           onTextDelta: writer.onTextDelta,
@@ -563,34 +568,45 @@ class AgentEngine {
   Future<void> _maybeCompact(AgentTask task, List<AgentEvent> events) async {
     // 与重放侧同款视图：先折叠、再 microcompact，确保 LLM 压缩的
     // 触发判断基于模型实际看到的内容量（两级降压：先 micro 后 LLM）。
-    final entries = microCompactEntries(
-      foldCompactedEvents(events),
-      triggerChars: budget.microCompactTriggerChars,
-    );
+    final folded = foldCompactedEvents(events);
+    final entries = budget.microCompactEnabled
+        ? microCompactEntries(
+            folded,
+            triggerChars: budget.microCompactTriggerChars,
+          )
+        : folded;
     // 手动压缩（升级计划 ⑤）：用户主动触发时跳过阈值/预警/熔断，
     // 直接走 keep 前缀选择。
     final forced = manualCompactSignal?.call() ?? false;
     // 触发判定（升级计划 ③）：优先用 API usage 的真实上下文 token 对比
     // 模型窗口（减摘要预留、乘触发比例），拿不到 usage 时回退字符估算。
-    final shouldCompact = forced ||
-        shouldTriggerCompaction(
+    final overThreshold = shouldTriggerCompaction(
       contextTokens: task.contextTokens,
       contextLimitTokens: budget.contextLimitTokens,
       estimatedChars: totalContextChars(entries),
-          fallbackTriggerChars: budget.compactionTriggerChars,
-        );
+      fallbackTriggerChars: budget.compactionTriggerChars,
+      triggerRatio: budget.compactionTriggerRatio,
+    );
+    // 自动压缩总开关：关掉后阈值不再自动触发（预警照发），
+    // 手动压缩（forced）不受影响。
+    final shouldCompact = forced || (budget.autoCompactEnabled && overThreshold);
     if (!shouldCompact) {
       // 预警（升级计划 ④）：进入触发阈值的 90% 区间时提前提示一次
-      // （可见状态行 + notification hook，type=compactWarning）。
+      // （可见状态行 + notification hook，type=compactWarning）；
+      // 自动压缩关闭且已超阈值时同样只提示一次，提醒可手动压缩。
       if (!_compactionWarningNotified &&
-          isNearCompactionThreshold(
-            contextTokens: task.contextTokens,
-            contextLimitTokens: budget.contextLimitTokens,
-            estimatedChars: totalContextChars(entries),
-            fallbackTriggerChars: budget.compactionTriggerChars,
-          )) {
+          (overThreshold ||
+              isNearCompactionThreshold(
+                contextTokens: task.contextTokens,
+                contextLimitTokens: budget.contextLimitTokens,
+                estimatedChars: totalContextChars(entries),
+                fallbackTriggerChars: budget.compactionTriggerChars,
+                triggerRatio: budget.compactionTriggerRatio,
+              ))) {
         _compactionWarningNotified = true;
-        const message = '上下文即将达到压缩阈值，稍后将自动压缩';
+        final message = overThreshold
+            ? '上下文已超过压缩阈值（自动压缩已关闭），可手动压缩'
+            : '上下文即将达到压缩阈值，稍后将自动压缩';
         try {
           await store.appendStatusChange(task.id, message);
         } catch (_) {}

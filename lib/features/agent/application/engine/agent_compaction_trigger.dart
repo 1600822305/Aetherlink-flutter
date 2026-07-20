@@ -18,11 +18,13 @@ int effectiveContextWindowTokens(int contextLimitTokens) =>
     contextLimitTokens -
     min(kCompactionSummaryReserveTokens, contextLimitTokens ~/ 4);
 
-/// 按 token 的压缩触发阈值。
-int compactionTriggerTokens(int contextLimitTokens) =>
-    (effectiveContextWindowTokens(contextLimitTokens) *
-            kCompactionTriggerRatio)
-        .floor();
+/// 按 token 的压缩触发阈值；[triggerRatio] 可调（设置页档位），
+/// 默认 [kCompactionTriggerRatio] 保持向后一致。
+int compactionTriggerTokens(
+  int contextLimitTokens, {
+  double triggerRatio = kCompactionTriggerRatio,
+}) =>
+    (effectiveContextWindowTokens(contextLimitTokens) * triggerRatio).floor();
 
 /// 是否触发压缩：[contextTokens]（API usage 的真实上下文占用，0 = 未知）
 /// 与 [contextLimitTokens]（模型窗口，0 = 未知）都已知时走 token 判定；
@@ -32,9 +34,12 @@ bool shouldTriggerCompaction({
   required int contextLimitTokens,
   required int estimatedChars,
   required int fallbackTriggerChars,
+  double triggerRatio = kCompactionTriggerRatio,
 }) {
   if (contextTokens > 0 && contextLimitTokens > 0) {
-    return contextTokens > compactionTriggerTokens(contextLimitTokens);
+    return contextTokens >
+        compactionTriggerTokens(contextLimitTokens,
+            triggerRatio: triggerRatio);
   }
   return estimatedChars > fallbackTriggerChars;
 }

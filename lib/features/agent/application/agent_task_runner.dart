@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/app/di/agent_data_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_hooks_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_runtime_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_subagent_access.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_compaction_settings.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_budget.dart';
@@ -444,12 +445,15 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           mode: task.mode,
           boundWorkspaceId: task.workspaceId,
         );
+    final compaction = ref.read(agentCompactionSettingsProvider);
     final outcome = await runManualCompaction(
       task: task,
       events: await _store().getEvents(task.id),
       llm: runtime.llm,
       store: _store(),
-      keepChars: AgentBudget().compactionKeepChars,
+      keepChars: compaction.keepChars,
+      microCompactEnabled: compaction.microCompactEnabled,
+      microCompactTriggerChars: compaction.microCompactTriggerChars,
     );
     return switch (outcome) {
       ManualCompactionDone(:final coveredCount) =>
@@ -459,6 +463,25 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   }
 
   void forceStop(String taskId) => _tokens[taskId]?.requestCancel();
+
+  /// 从设置组装引擎预算：上下文窗口取侧栏设置，压缩开关/阈值取
+  /// 压缩设置页；主任务与 subagent 共用同一来源，任务启动时一次性
+  /// 快照。
+  AgentBudget _budgetFromSettings({int? maxRounds, int? maxTokens}) {
+    final compaction = ref.read(agentCompactionSettingsProvider);
+    return AgentBudget(
+      maxRounds: maxRounds ?? 50,
+      maxTokens: maxTokens ?? 500000,
+      contextLimitTokens:
+          ref.read(agentUiSettingsControllerProvider).contextLimit,
+      autoCompactEnabled: compaction.autoCompactEnabled,
+      microCompactEnabled: compaction.microCompactEnabled,
+      compactionTriggerRatio: compaction.triggerRatio,
+      compactionTriggerChars: compaction.compactionTriggerChars,
+      compactionKeepChars: compaction.keepChars,
+      microCompactTriggerChars: compaction.microCompactTriggerChars,
+    );
+  }
 
   /// userPromptSubmit hooks：用户消息进入任务前过一遍 hooks——
   /// block → 消息不进上下文，落状态事件说明拦截原因并返回 null；
@@ -548,11 +571,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       store: _store(),
       gateway: _ProviderTaskGateway(this),
       // 设置页的上下文窗口作为按 token 压缩触发的依据（usage 拿不到时
-      // 回退字符估算）。
-      budget: AgentBudget(
-        contextLimitTokens:
-            ref.read(agentUiSettingsControllerProvider).contextLimit,
-      ),
+      // 回退字符估算）；压缩设置页的开关/阈值在任务启动时一次性填入
+      // budget（本次运行内不变）。
+      budget: _budgetFromSettings(),
       subagents: _RunnerSubagentLauncher(this),
       toolStream: ref.read(agentToolStreamProvider.notifier),
       stopGuard: runtime.stopGuard,
@@ -913,12 +934,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       approval: runtime.approval,
       store: _store(),
       gateway: _ProviderTaskGateway(this),
-      budget: AgentBudget(
-        maxRounds: 15,
-        maxTokens: 200000,
-        contextLimitTokens:
-            ref.read(agentUiSettingsControllerProvider).contextLimit,
-      ),
+      budget: _budgetFromSettings(maxRounds: 15, maxTokens: 200000),
       toolStream: ref.read(agentToolStreamProvider.notifier),
       stopGuard: runtime.subagentStopGuard,
       hookStopSignal: runtime.hookStopSignal,

@@ -1,4 +1,5 @@
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 
@@ -41,11 +42,24 @@ class AgentLlmTurn {
 }
 
 /// 一轮调用的上下文：任务 + 事件流（压缩视图后续在引擎内做）。
+/// 引擎把本轮生效的 microcompact 设置一并带给重放侧，保证同一轮
+/// 引擎核算的字符量与真实进模型的视图一致（设置可配后的一致性硬点）。
 class AgentLlmContext {
-  const AgentLlmContext({required this.task, required this.events});
+  const AgentLlmContext({
+    required this.task,
+    required this.events,
+    this.microCompactEnabled = true,
+    this.microCompactTriggerChars = kMicroCompactTriggerChars,
+  });
 
   final AgentTask task;
   final List<AgentEvent> events;
+
+  /// 本轮生效的 microcompact 开关（取自引擎 budget）。
+  final bool microCompactEnabled;
+
+  /// 本轮生效的 microcompact 触发阈值（取自引擎 budget）。
+  final int microCompactTriggerChars;
 }
 
 /// LLM 调用抽象：骨架期用假实现跑通状态机，接真实现时经 app/di

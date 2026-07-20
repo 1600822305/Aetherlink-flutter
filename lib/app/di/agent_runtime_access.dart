@@ -366,7 +366,11 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     final thinkParams = _reasoningParams(ref);
     final request = LlmChatRequest(
       model: model,
-      messages: _replayMessages(context.events),
+      messages: _replayMessages(
+        context.events,
+        microCompactEnabled: context.microCompactEnabled,
+        microCompactTriggerChars: context.microCompactTriggerChars,
+      ),
       system: system,
       tools: _definitions,
       reasoningEffort: thinkParams.effort,
@@ -613,14 +617,21 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
 /// 早期事件换成摘要条目，再展开：用户消息/助手叙述原样；每个工具事件
 /// 展开为 assistant tool_call + 结果回填两条；压缩摘要以标记段落进入
 /// 用户消息。计划/状态事件不进消息（计划走系统提示置尾）。
-List<LlmMessage> _replayMessages(List<AgentEvent> events) {
+List<LlmMessage> _replayMessages(
+  List<AgentEvent> events, {
+  bool microCompactEnabled = true,
+  int microCompactTriggerChars = kMicroCompactTriggerChars,
+}) {
   final messages = <LlmMessage>[];
   // 先折叠、再 microcompact（与引擎 _maybeCompact 同款视图）：超阈值时
   // 较旧的可重取工具输出以占位符进上下文，不改事件流本体。
-  final folded = microCompactEntries(
-    foldCompactedEvents(events),
-    triggerChars: kMicroCompactTriggerChars,
-  );
+  // 生效值经 AgentLlmContext 来自引擎 budget，两侧视图保持一致。
+  final folded = microCompactEnabled
+      ? microCompactEntries(
+          foldCompactedEvents(events),
+          triggerChars: microCompactTriggerChars,
+        )
+      : foldCompactedEvents(events);
   // 提问索引建在折叠后的事件上：提问若已被压缩折叠，其回答退化为
   // 普通用户消息，避免回放出没有前置 tool_call 的 tool 结果。
   final questionsById = {

@@ -411,6 +411,48 @@ class BigOutputLlm implements AgentLlmClient {
       '摘要：覆盖 ${events.length} 条';
 }
 
+/// 记录每轮 AgentLlmContext 的 microcompact 生效值后直接 finish
+/// （测 budget → 重放侧的一致性接线）。
+class ContextCapturingLlm implements AgentLlmClient {
+  final capturedMicroEnabled = <bool>[];
+  final capturedMicroTriggerChars = <int>[];
+
+  @override
+  Future<AgentLlmTurn> completeTurn(
+    AgentLlmContext context, {
+    void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
+    Future<void> Function(
+      String streamKey,
+      String? toolName,
+      String argsTextSoFar,
+    )? onToolCallDelta,
+    Future<void> Function(AgentToolCallRequest call, String? streamKey)?
+        onToolCall,
+    AgentCancellationToken? cancel,
+  }) async {
+    capturedMicroEnabled.add(context.microCompactEnabled);
+    capturedMicroTriggerChars.add(context.microCompactTriggerChars);
+    return AgentLlmTurn(
+      toolCalls: [
+        AgentToolCallRequest(
+          id: 'finish-1',
+          name: kToolFinishTask,
+          argsJson: jsonEncode({'summary': '完成'}),
+          argSummary: '收尾',
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events,
+  ) async =>
+      '摘要';
+}
+
 class BigOutputToolExecutor implements AgentToolExecutor {
   @override
   Future<AgentToolResult> execute(
@@ -918,6 +960,61 @@ void main() {
     // postCompact 带落库的摘要。
     expect(preCompactCalls, compactions.length);
     expect(postCompactSummaries, [for (final c in compactions) c.summary]);
+  });
+
+  test('关自动压缩 → 超阈值不触发压缩，预警提示一次可手动压缩', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    final engine = AgentEngine(
+      llm: BigOutputLlm(roundsBeforeFinish: 12),
+      tools: BigOutputToolExecutor(),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(
+        compactionTriggerChars: 1200,
+        compactionKeepChars: 600,
+        autoCompactEnabled: false,
+      ),
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '连续读大文件');
+
+    await engine.run(task, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.done);
+    final events = await store.getEvents(task.id);
+    expect(events.whereType<CompactionEvent>(), isEmpty);
+    final warnings = events
+        .whereType<StatusChangeEvent>()
+        .where((e) => e.description.contains('自动压缩已关闭'))
+        .toList();
+    expect(warnings, hasLength(1));
+  });
+
+  test('budget 的 microcompact 设置随 AgentLlmContext 传给重放侧', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    final llm = ContextCapturingLlm();
+    final engine = AgentEngine(
+      llm: llm,
+      tools: BigOutputToolExecutor(),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(
+        microCompactEnabled: false,
+        microCompactTriggerChars: 12345,
+      ),
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '你好');
+
+    await engine.run(task, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.done);
+    expect(llm.capturedMicroEnabled, everyElement(isFalse));
+    expect(llm.capturedMicroTriggerChars, everyElement(12345));
   });
 
   test('foldCompactedEvents：覆盖最早条目并把摘要插到队首', () async {

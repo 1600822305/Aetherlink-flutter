@@ -38,12 +38,15 @@ Future<ManualCompactionOutcome> runManualCompaction({
   required AgentLlmClient llm,
   required AgentEventStore store,
   required int keepChars,
+  bool microCompactEnabled = true,
   int microCompactTriggerChars = kMicroCompactTriggerChars,
 }) async {
-  final entries = microCompactEntries(
-    foldCompactedEvents(events),
-    triggerChars: microCompactTriggerChars,
-  );
+  final entries = microCompactEnabled
+      ? microCompactEntries(
+          foldCompactedEvents(events),
+          triggerChars: microCompactTriggerChars,
+        )
+      : foldCompactedEvents(events);
   final covered = selectCompactionPrefix(entries, keepChars: keepChars);
   if (covered.isEmpty) return const ManualCompactionNothingToCover();
   final summary = await llm.summarizeForCompaction(task, covered);

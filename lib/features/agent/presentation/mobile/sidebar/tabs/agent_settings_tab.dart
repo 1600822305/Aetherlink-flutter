@@ -8,12 +8,11 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
-import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_compaction_settings_page.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_profile_edit_page.dart';
 import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
-import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 class AgentSettingsTab extends ConsumerWidget {
   const AgentSettingsTab({super.key});
@@ -118,8 +117,13 @@ class AgentSettingsTab extends ConsumerWidget {
               _EntryRow(
                 title: '立即压缩',
                 description: '把较早内容压缩成摘要释放上下文；事件流原文保留可审计',
-                onTap: () => _compactNow(context, ref, task),
+                onTap: () => confirmAndCompactNow(context, ref, task),
               ),
+            _EntryRow(
+              title: '压缩设置',
+              description: '自动压缩开关、触发比例、保留量与轻量清理阈值',
+              onTap: () => showAgentCompactionSettingsPage(context),
+            ),
           ],
         ),
         const _GroupDivider(),
@@ -159,45 +163,6 @@ class AgentSettingsTab extends ConsumerWidget {
   }
 }
 
-/// 手动压缩（压缩升级计划 ⑤，对标 CC /compact）：入口对齐聊天的
-/// 「压缩上下文」（确认后执行 + toast 反馈），但语义不同——只影响进入
-/// 模型的上下文视图，事件流原文保留可审计，故用轻量确认而非聊天的
-/// 不可恢复警告弹窗。
-Future<void> _compactNow(
-  BuildContext context,
-  WidgetRef ref,
-  AgentTask task,
-) async {
-  final runner = ref.read(agentTaskRunnerProvider.notifier);
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('立即压缩'),
-      content: const Text(
-        '把较早的执行过程压缩为一段摘要，释放上下文空间。'
-        '摘要只影响进入模型的上下文，事件流原文保留可审计。'
-        '运行中任务将在下一个安全点执行。',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text('开始压缩'),
-        ),
-      ],
-    ),
-  );
-  if (confirmed != true || !context.mounted) return;
-  try {
-    final message = await runner.compactNow(task);
-    if (context.mounted) AppToast.success(context, message);
-  } catch (e) {
-    if (context.mounted) AppToast.error(context, '压缩失败 · $e');
-  }
-}
 
 String _formatK(int tokens) => tokens >= 1000000
     ? '${(tokens / 1000000).toStringAsFixed(tokens % 1000000 == 0 ? 0 : 1)}M'
