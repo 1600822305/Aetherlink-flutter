@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/buddy/application/buddy_codex_skin_controller.dart';
 import 'package:aetherlink_flutter/features/buddy/application/buddy_controller.dart';
 import 'package:aetherlink_flutter/features/buddy/domain/buddy_phrases.dart';
 import 'package:aetherlink_flutter/features/buddy/domain/buddy_types.dart';
@@ -107,10 +108,75 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
     setState(() => _say(pickBuddyPhrase(_random, kBuddyIdleChatter)));
   }
 
-  void _hatch() {
+  void _hatch([BuddySpecies? species]) {
     Haptics.instance.medium();
-    ref.read(buddyControllerProvider.notifier).hatch();
+    ref.read(buddyControllerProvider.notifier).hatch(species: species);
     setState(() => _say(pickBuddyPhrase(_random, kBuddyHatchGreetings)));
+  }
+
+  Future<void> _pickSpecies() async {
+    final theme = Theme.of(context);
+    final species = await showModalBottomSheet<BuddySpecies>(
+      context: context,
+      backgroundColor: theme.colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('选一个物种',
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text('物种由你决定，稀有度、属性和闪光仍由孵化瞬间注定。',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color:
+                        theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  )),
+              const SizedBox(height: 12),
+              Flexible(
+                child: GridView.count(
+                  shrinkWrap: true,
+                  crossAxisCount: 4,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  children: [
+                    for (final s in BuddySpecies.values)
+                      InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => Navigator.of(context).pop(s),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border:
+                                Border.all(color: theme.dividerColor),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              BuddyPixelArtView(
+                                  art: kBuddyPixelArts[s]!, size: 44),
+                              const SizedBox(height: 4),
+                              Text(s.label,
+                                  style: theme.textTheme.bodySmall),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (species != null) _hatch(species);
   }
 
   @override
@@ -164,7 +230,7 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
       body: !state.loaded
           ? const Center(child: CircularProgressIndicator())
           : state.soul == null
-              ? _HatchView(onHatch: _hatch)
+              ? _HatchView(onHatch: _hatch, onPick: _pickSpecies)
               : _buildPetView(theme, state.soul!, state.bones!),
     );
   }
@@ -236,7 +302,8 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
             ),
             const SizedBox(height: 2),
             Text(
-              '${bones.rarity.stars} ${bones.rarity.label} · ${bones.species.label}',
+              '${bones.rarity.stars} ${bones.rarity.label} · '
+              '${ref.watch(buddyCodexSkinProvider).skin?.name ?? bones.species.label}',
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: _rarityColor(bones.rarity, cs)),
             ),
@@ -351,11 +418,12 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
   }
 }
 
-/// 孵化视图：一颗蛋 + 孵化按钮。
+/// 孵化视图：一颗蛋 + 随机孵化 / 自选物种。
 class _HatchView extends StatelessWidget {
-  const _HatchView({required this.onHatch});
+  const _HatchView({required this.onHatch, required this.onPick});
 
   final VoidCallback onHatch;
+  final VoidCallback onPick;
 
   @override
   Widget build(BuildContext context) {
@@ -375,10 +443,21 @@ class _HatchView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          FilledButton.icon(
-            onPressed: onHatch,
-            icon: const Icon(LucideIcons.egg, size: 18),
-            label: const Text('孵化'),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              FilledButton.icon(
+                onPressed: onHatch,
+                icon: const Icon(LucideIcons.egg, size: 18),
+                label: const Text('随机孵化'),
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton.icon(
+                onPressed: onPick,
+                icon: const Icon(LucideIcons.listChecks, size: 18),
+                label: const Text('自选物种'),
+              ),
+            ],
           ),
         ],
       ),

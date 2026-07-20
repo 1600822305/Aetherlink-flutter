@@ -84,11 +84,14 @@ const int _kSpeciesCountV1 = 18;
 /// 选取（v2 含奶龙），旧种子只从初代 18 种里抽，存量宠物不受影响。
 BuddyBones rollBuddy(String seed) {
   final rng = Mulberry32(fnv1aHash(seed + kBuddySalt));
-  final speciesPool = seed.startsWith('v2-')
-      ? BuddySpecies.values
-      : BuddySpecies.values.sublist(0, _kSpeciesCountV1);
+  final speciesPool = _isLegacySeed(seed)
+      ? BuddySpecies.values.sublist(0, _kSpeciesCountV1)
+      : BuddySpecies.values;
   final rarity = _rollRarity(rng);
-  final species = rng.pick(speciesPool);
+  // v3 自选物种种子（v3-<物种名>-…）：物种由用户指定，其余仍随机；
+  // 抽取调用照常进行，保证后续随机流与随机孵化一致。
+  final rolled = rng.pick(speciesPool);
+  final species = _chosenSpecies(seed) ?? rolled;
   final eye = rng.pick(kBuddyEyes);
   final hat = rarity == BuddyRarity.common
       ? BuddyHat.none
@@ -103,4 +106,18 @@ BuddyBones rollBuddy(String seed) {
     shiny: shiny,
     stats: stats,
   );
+}
+
+/// 老种子（无 v2/v3 前缀）只从初代 18 种里抽，保持存量宠物不变。
+bool _isLegacySeed(String seed) =>
+    !seed.startsWith('v2-') && !seed.startsWith('v3-');
+
+/// v3 种子格式：v3-<物种 enum 名>-<时间戳>-<随机数>。
+BuddySpecies? _chosenSpecies(String seed) {
+  if (!seed.startsWith('v3-')) return null;
+  final name = seed.split('-')[1];
+  for (final s in BuddySpecies.values) {
+    if (s.name == name) return s;
+  }
+  return null;
 }

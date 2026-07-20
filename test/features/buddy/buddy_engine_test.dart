@@ -33,6 +33,14 @@ void main() {
     expect(seen.length, 18);
   });
 
+  test('v3 自选物种种子：物种固定为所选，其余仍确定性', () {
+    for (final s in BuddySpecies.values) {
+      final bones = rollBuddy('v3-${s.name}-123-456');
+      expect(bones.species, s);
+      expect(rollBuddy('v3-${s.name}-123-456').rarity, bones.rarity);
+    }
+  });
+
   test('稀有度分布大致符合 60/25/10/4/1 权重', () {
     final counts = <BuddyRarity, int>{};
     const n = 20000;

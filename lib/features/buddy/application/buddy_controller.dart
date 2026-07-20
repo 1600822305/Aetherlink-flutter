@@ -42,14 +42,18 @@ class BuddyController extends Notifier<BuddyState> {
   }
 
   /// 孵化：生成一次性的随机种子（之后骨架永远由它决定），名字/性格从
-  /// 本地池随机抽取并持久化。已孵化时无操作。
-  BuddySoul hatch() {
+  /// 本地池随机抽取并持久化。传 [species] 则自选物种（稀有度等仍
+  /// 随机），不传则全随机。已孵化时无操作。
+  BuddySoul hatch({BuddySpecies? species}) {
     final existing = state.soul;
     if (existing != null) return existing;
     final random = Random();
     final now = DateTime.now().millisecondsSinceEpoch;
-    // v2 种子：物种池含后续新增物种（如奶龙），见 rollBuddy。
-    final seed = 'v2-$now-${random.nextInt(1 << 32)}';
+    // v2 种子：全随机（物种池含后续新增物种）；v3 种子：自选物种，
+    // 见 rollBuddy。
+    final seed = species == null
+        ? 'v2-$now-${random.nextInt(1 << 32)}'
+        : 'v3-${species.name}-$now-${random.nextInt(1 << 32)}';
     final soul = BuddySoul(
       name: pickBuddyPhrase(random, kBuddyNames),
       personality: pickBuddyPhrase(random, kBuddyPersonalities),
@@ -61,6 +65,22 @@ class BuddyController extends Notifier<BuddyState> {
         .read(appSettingsStoreProvider)
         .saveSetting(kBuddySoulKey, encodeBuddySoul(soul));
     return soul;
+  }
+
+  /// 改名（如导入 Codex 皮肤后同步成皮肤名）。
+  void rename(String name) {
+    final soul = state.soul;
+    if (soul == null || name.isEmpty || name == soul.name) return;
+    final renamed = BuddySoul(
+      name: name,
+      personality: soul.personality,
+      hatchedAt: soul.hatchedAt,
+      seed: soul.seed,
+    );
+    state = BuddyState(soul: renamed, loaded: true);
+    ref
+        .read(appSettingsStoreProvider)
+        .saveSetting(kBuddySoulKey, encodeBuddySoul(renamed));
   }
 
   /// 放生：清掉灵魂（含种子），回到未孵化状态；之后可重新孵化一只新宠物。

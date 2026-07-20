@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
+import 'package:aetherlink_flutter/features/buddy/application/buddy_controller.dart';
 
 /// Settings-store key（单键 JSON）。
 const String kBuddyCodexSkinKey = 'buddy_codex_skin';
@@ -93,6 +94,8 @@ class BuddyCodexSkinController extends Notifier<BuddyCodexSkinState> {
             kBuddyCodexSkinKey,
             jsonEncode({'id': skin.id, 'name': skin.name, 'path': skin.path}),
           );
+      // 导入即“变身”：宠物名字同步成皮肤名（物种显示也会跟随皮肤）。
+      ref.read(buddyControllerProvider.notifier).rename(name);
       return true;
     } catch (_) {
       state = BuddyCodexSkinState(skin: state.skin, error: '导入失败，请检查链接和网络');
