@@ -638,6 +638,9 @@ class AgentEngine {
       summary: summary.trim(),
     );
     _compactionBreaker.recordSuccess();
+    // 压缩成功后允许再次预警（对齐 CC suppressCompactWarning 语义：
+    // 压缩把上下文降下来了，之后再逼近阈值应再次提醒）。
+    _compactionWarningNotified = false;
     onPostCompact?.call(summary.trim());
   }
 
