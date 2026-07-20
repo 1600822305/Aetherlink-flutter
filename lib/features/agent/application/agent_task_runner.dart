@@ -500,7 +500,12 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       approval: runtime.approval,
       store: _store(),
       gateway: _ProviderTaskGateway(this),
-      budget: AgentBudget(),
+      // 设置页的上下文窗口作为按 token 压缩触发的依据（usage 拿不到时
+      // 回退字符估算）。
+      budget: AgentBudget(
+        contextLimitTokens:
+            ref.read(agentUiSettingsControllerProvider).contextLimit,
+      ),
       subagents: _RunnerSubagentLauncher(this),
       toolStream: ref.read(agentToolStreamProvider.notifier),
       stopGuard: runtime.stopGuard,
@@ -860,7 +865,12 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       approval: runtime.approval,
       store: _store(),
       gateway: _ProviderTaskGateway(this),
-      budget: AgentBudget(maxRounds: 15, maxTokens: 200000),
+      budget: AgentBudget(
+        maxRounds: 15,
+        maxTokens: 200000,
+        contextLimitTokens:
+            ref.read(agentUiSettingsControllerProvider).contextLimit,
+      ),
       toolStream: ref.read(agentToolStreamProvider.notifier),
       stopGuard: runtime.subagentStopGuard,
       hookStopSignal: runtime.hookStopSignal,

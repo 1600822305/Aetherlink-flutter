@@ -11,6 +11,7 @@ class AgentBudget {
     this.compactionTriggerChars = 120000,
     this.compactionKeepChars = 40000,
     this.microCompactTriggerChars = kMicroCompactTriggerChars,
+    this.contextLimitTokens = 0,
   });
 
   final int maxRounds;
@@ -32,6 +33,10 @@ class AgentBudget {
   /// [compactionTriggerChars]，先 micro 后 LLM 的两级降压。重放侧直接用
   /// 默认常量 [kMicroCompactTriggerChars]，自定义时两侧需保持一致。
   final int microCompactTriggerChars;
+
+  /// 模型上下文窗口（token）：与 API usage 回报的真实上下文占用配合
+  /// 做按 token 的压缩触发判定；0 = 未知，回退字符估算。
+  final int contextLimitTokens;
 
   int _rounds = 0;
   int _consecutiveFailures = 0;

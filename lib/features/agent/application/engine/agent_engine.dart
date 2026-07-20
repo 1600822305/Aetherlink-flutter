@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_budget.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_trigger.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
@@ -542,7 +543,15 @@ class AgentEngine {
       foldCompactedEvents(events),
       triggerChars: budget.microCompactTriggerChars,
     );
-    if (totalContextChars(entries) <= budget.compactionTriggerChars) return;
+    // 触发判定（升级计划 ③）：优先用 API usage 的真实上下文 token 对比
+    // 模型窗口（减摘要预留、乘触发比例），拿不到 usage 时回退字符估算。
+    final shouldCompact = shouldTriggerCompaction(
+      contextTokens: task.contextTokens,
+      contextLimitTokens: budget.contextLimitTokens,
+      estimatedChars: totalContextChars(entries),
+      fallbackTriggerChars: budget.compactionTriggerChars,
+    );
+    if (!shouldCompact) return;
     final covered = selectCompactionPrefix(
       entries,
       keepChars: budget.compactionKeepChars,
