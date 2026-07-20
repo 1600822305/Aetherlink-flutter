@@ -32,10 +32,11 @@ Future<void> _openUrl(String url) async {
 
 const Color _toolSuccessColor = Color(0xFF2E7D32);
 
-/// Renders a `TOOL` block, mirroring `ToolBlock.tsx`: a collapsible card whose
-/// header carries a status-driven icon + colour (执行中 转圈 / 错误 / 成功) and
-/// the `@toolName` in monospace. Expanding reveals the JSON-pretty-printed
-/// 请求参数 and 执行结果 (错误标红), each copyable, separated by a dashed divider.
+/// Renders a `TOOL` block as a minimal timeline row: a thin vertical rail
+/// with a status dot (执行中 转圈 / 错误 / 成功) beside the tool name in
+/// monospace—consecutive tool rows visually chain into a timeline. Tapping
+/// expands an inset panel with the JSON-pretty-printed 请求参数 and 执行结果
+/// (错误标红), each copyable.
 class ToolBlockView extends ConsumerStatefulWidget {
   const ToolBlockView({required this.block, super.key});
 
@@ -106,102 +107,123 @@ class _ToolBlockViewState extends ConsumerState<ToolBlockView> {
     final params = _cachedParams ?? '';
     final result = _cachedResult ?? '';
 
-    final headerBg = isDark
-        ? theme.colorScheme.surface.withValues(alpha: 0.5)
-        : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4);
+    final railColor = theme.dividerColor.withValues(alpha: isDark ? 0.5 : 0.7);
 
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 4),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: needsConfirmation
-              ? const Color(0xFFF59E0B).withValues(alpha: 0.5)
-              : theme.dividerColor,
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
-            child: Container(
-              color: headerBg,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-              child: Row(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 时间线导轨：贯穿整行的竖线 + 状态点，相邻工具行自然连成一条。
+            SizedBox(
+              width: 14,
+              child: Stack(
+                alignment: Alignment.topCenter,
                 children: [
-                  needsConfirmation
-                      ? Icon(
-                          LucideIcons.shieldAlert,
-                          size: 13,
-                          color: statusColor,
-                        )
-                      : _ToolStatusIcon(status: status, color: statusColor),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      '@$name',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        fontFamily: 'monospace',
-                        fontWeight: FontWeight.w600,
-                        fontSize: 11,
-                      ),
+                  Positioned.fill(
+                    child: Center(
+                      child: Container(width: 1.5, color: railColor),
                     ),
                   ),
-                  if (needsConfirmation)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Text(
-                        '需要确认',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFFF59E0B),
-                        ),
-                      ),
-                    ),
-                  const SizedBox(width: 4),
-                  AnimatedRotation(
-                    turns: _expanded ? 0.25 : 0,
-                    duration: const Duration(milliseconds: 200),
-                    child: Icon(
-                      LucideIcons.chevronRight,
-                      size: 14,
-                      color: theme.colorScheme.onSurfaceVariant,
+                  Positioned(
+                    top: 6,
+                    child: _TimelineStatusDot(
+                      status: status,
+                      color: statusColor,
+                      needsConfirmation: needsConfirmation,
+                      background: theme.colorScheme.surface,
                     ),
                   ),
                 ],
               ),
             ),
-          ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeInOut,
-            alignment: Alignment.topCenter,
-            child: _expanded
-                ? _content(
-                    context,
-                    params: params,
-                    result: result,
-                    isProcessing: isProcessing,
-                    hasError: hasError,
-                    confirmationRequest: pending,
-                  )
-                : const SizedBox(width: double.infinity),
-          ),
-        ],
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  InkWell(
+                    onTap: () => setState(() => _expanded = !_expanded),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 2, vertical: 3),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontFamily: 'monospace',
+                                fontWeight: FontWeight.w500,
+                                fontSize: 11.5,
+                                color: hasError
+                                    ? theme.colorScheme.error
+                                    : theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          if (needsConfirmation) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF59E0B)
+                                    .withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Text(
+                                '需要确认',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFFF59E0B),
+                                ),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(width: 3),
+                          AnimatedRotation(
+                            turns: _expanded ? 0.25 : 0,
+                            duration: const Duration(milliseconds: 200),
+                            child: Icon(
+                              LucideIcons.chevronRight,
+                              size: 12,
+                              color: theme.colorScheme.onSurfaceVariant
+                                  .withValues(alpha: 0.6),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeInOut,
+                    alignment: Alignment.topCenter,
+                    child: _expanded
+                        ? _content(
+                            context,
+                            params: params,
+                            result: result,
+                            isProcessing: isProcessing,
+                            hasError: hasError,
+                            confirmationRequest: pending,
+                          )
+                        : const SizedBox(width: double.infinity),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -217,9 +239,12 @@ class _ToolBlockViewState extends ConsumerState<ToolBlockView> {
     final theme = Theme.of(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(top: 2, bottom: 6, right: 2),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: theme.dividerColor)),
+        color: theme.colorScheme.surfaceContainerHighest
+            .withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -390,32 +415,52 @@ class _ConfirmButton extends StatelessWidget {
   }
 }
 
-/// Status-driven leading glyph for [ToolBlockView]: a spinner while running,
-/// an alert circle on error, a check on success.
-class _ToolStatusIcon extends StatelessWidget {
-  const _ToolStatusIcon({required this.status, required this.color});
+/// Timeline status dot for [ToolBlockView]: a tiny spinner while running,
+/// a shield while awaiting confirmation, otherwise a status-coloured dot.
+/// [background] paints a halo so the dot sits cleanly on the rail.
+class _TimelineStatusDot extends StatelessWidget {
+  const _TimelineStatusDot({
+    required this.status,
+    required this.color,
+    required this.needsConfirmation,
+    required this.background,
+  });
 
   final MessageBlockStatus status;
   final Color color;
+  final bool needsConfirmation;
+  final Color background;
 
   @override
   Widget build(BuildContext context) {
-    switch (status) {
-      case MessageBlockStatus.error:
-        return Icon(LucideIcons.circleAlert, size: 13, color: color);
-      case MessageBlockStatus.success:
-        return Icon(LucideIcons.circleCheck, size: 13, color: color);
-      case MessageBlockStatus.paused:
-        return Icon(LucideIcons.pause, size: 13, color: color);
-      case MessageBlockStatus.pending:
-      case MessageBlockStatus.processing:
-      case MessageBlockStatus.streaming:
-        return SizedBox(
-          width: 13,
-          height: 13,
-          child: CircularProgressIndicator(strokeWidth: 1.5, color: color),
-        );
+    final Widget core;
+    if (needsConfirmation) {
+      core = Icon(LucideIcons.shieldAlert, size: 11, color: color);
+    } else {
+      switch (status) {
+        case MessageBlockStatus.pending:
+        case MessageBlockStatus.processing:
+        case MessageBlockStatus.streaming:
+          core = SizedBox(
+            width: 9,
+            height: 9,
+            child: CircularProgressIndicator(strokeWidth: 1.5, color: color),
+          );
+        case MessageBlockStatus.error:
+        case MessageBlockStatus.success:
+        case MessageBlockStatus.paused:
+          core = Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+          );
+      }
     }
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(shape: BoxShape.circle, color: background),
+      child: core,
+    );
   }
 }
 
