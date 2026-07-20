@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/features/workspace/application/editor_auto_save.dart';
 import 'package:aetherlink_flutter/features/workspace/application/workspace_view_providers.dart';
 import 'package:aetherlink_flutter/shared/widgets/editor_zoom_pill.dart';
@@ -80,47 +81,47 @@ class EditorSettingsPage extends ConsumerWidget {
                   onChanged: (v) => update(settings.copyWith(tabWidth: v)),
                 ),
                 Divider(height: 1, indent: 16, color: theme.dividerColor),
-                SwitchListTile(
-                  title: const Text('软换行'),
-                  subtitle: const Text('编辑态长行自动换行（换行模式下无行号栏）'),
+                _SwitchTile(
+                  title: '软换行',
+                  subtitle: '编辑态长行自动换行（换行模式下无行号栏）',
                   value: settings.softWrap,
                   onChanged: (v) => update(settings.copyWith(softWrap: v)),
                 ),
                 Divider(height: 1, indent: 16, color: theme.dividerColor),
-                SwitchListTile(
-                  title: const Text('语法高亮'),
-                  subtitle: const Text('只读视图按文件类型着色（超大文件自动跳过）'),
+                _SwitchTile(
+                  title: '语法高亮',
+                  subtitle: '只读视图按文件类型着色（超大文件自动跳过）',
                   value: settings.syntaxHighlight,
                   onChanged: (v) =>
                       update(settings.copyWith(syntaxHighlight: v)),
                 ),
                 Divider(height: 1, indent: 16, color: theme.dividerColor),
-                SwitchListTile(
-                  title: const Text('括号自动补全'),
-                  subtitle: const Text('输入括号/引号自动补右半，成对删除'),
+                _SwitchTile(
+                  title: '括号自动补全',
+                  subtitle: '输入括号/引号自动补右半，成对删除',
                   value: settings.autoClosePairs,
                   onChanged: (v) =>
                       update(settings.copyWith(autoClosePairs: v)),
                 ),
                 Divider(height: 1, indent: 16, color: theme.dividerColor),
-                SwitchListTile(
-                  title: const Text('回车自动缩进'),
-                  subtitle: const Text('换行时继承上一行缩进'),
+                _SwitchTile(
+                  title: '回车自动缩进',
+                  subtitle: '换行时继承上一行缩进',
                   value: settings.autoIndent,
                   onChanged: (v) => update(settings.copyWith(autoIndent: v)),
                 ),
                 Divider(height: 1, indent: 16, color: theme.dividerColor),
-                SwitchListTile(
-                  title: const Text('当前行高亮'),
-                  subtitle: const Text('编辑态光标所在行背景着色'),
+                _SwitchTile(
+                  title: '当前行高亮',
+                  subtitle: '编辑态光标所在行背景着色',
                   value: settings.currentLineHighlight,
                   onChanged: (v) =>
                       update(settings.copyWith(currentLineHighlight: v)),
                 ),
                 Divider(height: 1, indent: 16, color: theme.dividerColor),
-                SwitchListTile(
-                  title: const Text('自动保存'),
-                  subtitle: const Text('编辑停顿后自动写盘，切到后台也会保存'),
+                _SwitchTile(
+                  title: '自动保存',
+                  subtitle: '编辑停顿后自动写盘，切到后台也会保存',
                   value: settings.autoSave,
                   onChanged: (v) => update(settings.copyWith(autoSave: v)),
                 ),
@@ -159,9 +160,7 @@ class _FontSizeRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              Expanded(
-                child: Text('默认字体大小', style: theme.textTheme.bodyLarge),
-              ),
+              Expanded(child: Text('默认字体大小', style: theme.textTheme.bodyLarge)),
               Text(
                 '${value.round()}',
                 style: theme.textTheme.bodyMedium?.copyWith(
@@ -220,9 +219,7 @@ class _TabWidthRow extends StatelessWidget {
           ),
           SegmentedButton<int>(
             showSelectedIcon: false,
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-            ),
+            style: const ButtonStyle(visualDensity: VisualDensity.compact),
             segments: const [
               ButtonSegment(value: 2, label: Text('2')),
               ButtonSegment(value: 4, label: Text('4')),
@@ -267,9 +264,7 @@ class _AutoSaveDelayRow extends StatelessWidget {
           ),
           SegmentedButton<int>(
             showSelectedIcon: false,
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-            ),
+            style: const ButtonStyle(visualDensity: VisualDensity.compact),
             segments: [
               for (final secs in kAutoSaveDelayOptions)
                 ButtonSegment(value: secs, label: Text('$secs秒')),
@@ -279,6 +274,31 @@ class _AutoSaveDelayRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 带标题/副标题的开关行，用项目统一的 [CustomSwitch]。
+class _SwitchTile extends StatelessWidget {
+  const _SwitchTile({
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: CustomSwitch(value: value, onChanged: onChanged),
+      onTap: () => onChanged(!value),
     );
   }
 }

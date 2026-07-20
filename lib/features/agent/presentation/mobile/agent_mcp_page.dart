@@ -15,6 +15,7 @@ import 'package:aetherlink_flutter/app/di/mcp_servers_access.dart';
 import 'package:aetherlink_flutter/app/di/remote_mcp_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_server.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/stdio/stdio_mcp_connection_manager.dart';
 
@@ -234,9 +235,9 @@ class AgentMcpPage extends ConsumerWidget {
                             StdioMcpStatus.starting => ('启动中', Colors.amber),
                             StdioMcpStatus.error => ('错误', cs.error),
                             StdioMcpStatus.stopped => (
-                                server.isActive ? '未运行' : '已停用',
-                                cs.onSurfaceVariant,
-                              ),
+                              server.isActive ? '未运行' : '已停用',
+                              cs.onSurfaceVariant,
+                            ),
                           };
                           return Text(
                             'stdio · $label · ${server.command ?? ''}',
@@ -264,7 +265,7 @@ class AgentMcpPage extends ConsumerWidget {
                   ],
                 ),
               ),
-              Switch(
+              CustomSwitch(
                 value: enabled,
                 onChanged: (v) => _toggle(ref, server, enabled: v),
               ),

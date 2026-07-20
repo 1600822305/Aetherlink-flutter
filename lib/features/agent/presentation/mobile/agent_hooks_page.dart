@@ -19,6 +19,7 @@ import 'package:aetherlink_flutter/features/agent/application/agent_hooks_settin
 import 'package:aetherlink_flutter/features/agent/application/agent_hooks_trust.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_manual_hooks.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_hooks.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 
 /// 打开 Hooks 设置页。
 Future<void> showAgentHooksPage(BuildContext context) {
@@ -35,27 +36,27 @@ Future<void> showAgentHooksPage(BuildContext context) {
 typedef _TypeMeta = ({String label, Color color, IconData icon});
 
 _TypeMeta _typeMetaOf(AgentHookType type) => switch (type) {
-      AgentHookType.command => (
-          label: '命令',
-          color: Colors.blueGrey,
-          icon: LucideIcons.terminal,
-        ),
-      AgentHookType.prompt => (
-          label: '提示词',
-          color: Colors.indigo,
-          icon: LucideIcons.sparkles,
-        ),
-      AgentHookType.http => (
-          label: 'HTTP',
-          color: Colors.green,
-          icon: LucideIcons.globe,
-        ),
-      AgentHookType.agent => (
-          label: '智能体',
-          color: Colors.deepPurple,
-          icon: LucideIcons.bot,
-        ),
-    };
+  AgentHookType.command => (
+    label: '命令',
+    color: Colors.blueGrey,
+    icon: LucideIcons.terminal,
+  ),
+  AgentHookType.prompt => (
+    label: '提示词',
+    color: Colors.indigo,
+    icon: LucideIcons.sparkles,
+  ),
+  AgentHookType.http => (
+    label: 'HTTP',
+    color: Colors.green,
+    icon: LucideIcons.globe,
+  ),
+  AgentHookType.agent => (
+    label: '智能体',
+    color: Colors.deepPurple,
+    icon: LucideIcons.bot,
+  ),
+};
 
 /// 类型徽标（图标 + 文字，不只靠颜色区分）。
 class _TypeBadge extends StatelessWidget {
@@ -80,9 +81,9 @@ class _TypeBadge extends StatelessWidget {
           Text(
             meta.label,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: meta.color,
-                  fontWeight: FontWeight.w700,
-                ),
+              color: meta.color,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -99,137 +100,144 @@ typedef _EventMeta = ({
   bool canBlock,
 });
 
-_EventMeta _metaOf(AgentHookEvent event, ColorScheme scheme) =>
-    switch (event) {
-      AgentHookEvent.taskStart => (
-          stage: 'AGENT',
-          color: Colors.purple,
-          title: 'taskStart',
-          description: '任务启动/续跑时触发。',
-          canBlock: false,
-        ),
-      AgentHookEvent.userPromptSubmit => (
-          stage: 'AGENT',
-          color: Colors.purple,
-          title: 'userPromptSubmit',
-          description: '用户消息进入任务前触发；hook 可拦截本条消息，'
-              '也可注入 additionalContext 上下文。',
-          canBlock: true,
-        ),
-      AgentHookEvent.turnStart => (
-          stage: 'TURN',
-          color: Colors.blue,
-          title: 'turnStart',
-          description: '每轮开始（模型调用前）触发。',
-          canBlock: false,
-        ),
-      AgentHookEvent.preToolUse => (
-          stage: 'TOOL',
-          color: Colors.orange,
-          title: 'preToolUse',
-          description: '工具执行前触发；hook 可拦截本次调用，'
-              '也可裁决免审 / 强制审批。',
-          canBlock: true,
-        ),
-      AgentHookEvent.postToolUse => (
-          stage: 'TOOL',
-          color: Colors.orange,
-          title: 'postToolUse',
-          description: '工具成功执行后触发；hook 反馈会回填给模型（如格式化报错）。',
-          canBlock: true,
-        ),
-      AgentHookEvent.postToolUseFailure => (
-          stage: 'TOOL',
-          color: Colors.orange,
-          title: 'postToolUseFailure',
-          description: '工具执行失败后触发；hook 反馈会回填给模型（如失败原因分析）。',
-          canBlock: true,
-        ),
-      AgentHookEvent.permissionRequest => (
-          stage: 'TOOL',
-          color: Colors.orange,
-          title: 'permissionRequest',
-          description: '审批弹窗弹出前触发（仅本要弹审批时）；hook 可免审放行、'
-              '强制拒绝或照常审批（越工作区 root 的命令不可免审）。',
-          canBlock: true,
-        ),
-      AgentHookEvent.permissionDenied => (
-          stage: 'TOOL',
-          color: Colors.orange,
-          title: 'permissionDenied',
-          description: '用户拒绝审批后触发（观测型，不阻断）；拒绝原因经 '
-              'tool_response 传入，可用于记录/通知。',
-          canBlock: false,
-        ),
-      AgentHookEvent.notification => (
-          stage: 'TOOL',
-          color: Colors.orange,
-          title: 'notification',
-          description: '需要用户注意时触发（审批挂起 / 提问等待；观测型，不阻断）；'
-              '可接外部通知。matcher 匹配通知类型（approval / question）。',
-          canBlock: false,
-        ),
-      AgentHookEvent.fileChanged => (
-          stage: 'TOOL',
-          color: Colors.orange,
-          title: 'fileChanged',
-          description: '工作区文件变更时触发（去抖后；观测型，不阻断）。'
-              'matcher 匹配变更类型（created / modified / deleted / moved），'
-              'pattern 匹配文件路径；路径经 file_path、变更类型经 event 传入。',
-          canBlock: false,
-        ),
-      AgentHookEvent.turnEnd => (
-          stage: 'TURN',
-          color: Colors.blue,
-          title: 'turnEnd',
-          description: '每轮结束（本轮工具全部执行完）触发。',
-          canBlock: false,
-        ),
-      AgentHookEvent.stop => (
-          stage: 'AGENT',
-          color: Colors.purple,
-          title: 'stop',
-          description: '任务收尾前触发；hook 可阻止收尾并要求继续。',
-          canBlock: true,
-        ),
-      AgentHookEvent.subagentStart => (
-          stage: 'SUBAGENT',
-          color: Colors.teal,
-          title: 'subagentStart',
-          description: '子智能体启动时触发。',
-          canBlock: false,
-        ),
-      AgentHookEvent.subagentStop => (
-          stage: 'SUBAGENT',
-          color: Colors.teal,
-          title: 'subagentStop',
-          description: '子智能体收尾前触发；hook 可阻止收尾并要求继续。',
-          canBlock: true,
-        ),
-      AgentHookEvent.taskEnd => (
-          stage: 'AGENT',
-          color: Colors.purple,
-          title: 'taskEnd',
-          description: '主任务正常完成后触发。',
-          canBlock: false,
-        ),
-      AgentHookEvent.preCompact => (
-          stage: 'AGENT',
-          color: Colors.purple,
-          title: 'preCompact',
-          description: '上下文压缩前触发（观测型，不阻断）；matcher 匹配触发'
-              '方式（目前仅 auto）。',
-          canBlock: false,
-        ),
-      AgentHookEvent.postCompact => (
-          stage: 'AGENT',
-          color: Colors.purple,
-          title: 'postCompact',
-          description: '上下文压缩后触发（观测型，不阻断）；压缩摘要经 '
-              'tool_response 传入；matcher 匹配触发方式（目前仅 auto）。',
-          canBlock: false,
-        ),
-    };
+_EventMeta _metaOf(AgentHookEvent event, ColorScheme scheme) => switch (event) {
+  AgentHookEvent.taskStart => (
+    stage: 'AGENT',
+    color: Colors.purple,
+    title: 'taskStart',
+    description: '任务启动/续跑时触发。',
+    canBlock: false,
+  ),
+  AgentHookEvent.userPromptSubmit => (
+    stage: 'AGENT',
+    color: Colors.purple,
+    title: 'userPromptSubmit',
+    description:
+        '用户消息进入任务前触发；hook 可拦截本条消息，'
+        '也可注入 additionalContext 上下文。',
+    canBlock: true,
+  ),
+  AgentHookEvent.turnStart => (
+    stage: 'TURN',
+    color: Colors.blue,
+    title: 'turnStart',
+    description: '每轮开始（模型调用前）触发。',
+    canBlock: false,
+  ),
+  AgentHookEvent.preToolUse => (
+    stage: 'TOOL',
+    color: Colors.orange,
+    title: 'preToolUse',
+    description:
+        '工具执行前触发；hook 可拦截本次调用，'
+        '也可裁决免审 / 强制审批。',
+    canBlock: true,
+  ),
+  AgentHookEvent.postToolUse => (
+    stage: 'TOOL',
+    color: Colors.orange,
+    title: 'postToolUse',
+    description: '工具成功执行后触发；hook 反馈会回填给模型（如格式化报错）。',
+    canBlock: true,
+  ),
+  AgentHookEvent.postToolUseFailure => (
+    stage: 'TOOL',
+    color: Colors.orange,
+    title: 'postToolUseFailure',
+    description: '工具执行失败后触发；hook 反馈会回填给模型（如失败原因分析）。',
+    canBlock: true,
+  ),
+  AgentHookEvent.permissionRequest => (
+    stage: 'TOOL',
+    color: Colors.orange,
+    title: 'permissionRequest',
+    description:
+        '审批弹窗弹出前触发（仅本要弹审批时）；hook 可免审放行、'
+        '强制拒绝或照常审批（越工作区 root 的命令不可免审）。',
+    canBlock: true,
+  ),
+  AgentHookEvent.permissionDenied => (
+    stage: 'TOOL',
+    color: Colors.orange,
+    title: 'permissionDenied',
+    description:
+        '用户拒绝审批后触发（观测型，不阻断）；拒绝原因经 '
+        'tool_response 传入，可用于记录/通知。',
+    canBlock: false,
+  ),
+  AgentHookEvent.notification => (
+    stage: 'TOOL',
+    color: Colors.orange,
+    title: 'notification',
+    description:
+        '需要用户注意时触发（审批挂起 / 提问等待；观测型，不阻断）；'
+        '可接外部通知。matcher 匹配通知类型（approval / question）。',
+    canBlock: false,
+  ),
+  AgentHookEvent.fileChanged => (
+    stage: 'TOOL',
+    color: Colors.orange,
+    title: 'fileChanged',
+    description:
+        '工作区文件变更时触发（去抖后；观测型，不阻断）。'
+        'matcher 匹配变更类型（created / modified / deleted / moved），'
+        'pattern 匹配文件路径；路径经 file_path、变更类型经 event 传入。',
+    canBlock: false,
+  ),
+  AgentHookEvent.turnEnd => (
+    stage: 'TURN',
+    color: Colors.blue,
+    title: 'turnEnd',
+    description: '每轮结束（本轮工具全部执行完）触发。',
+    canBlock: false,
+  ),
+  AgentHookEvent.stop => (
+    stage: 'AGENT',
+    color: Colors.purple,
+    title: 'stop',
+    description: '任务收尾前触发；hook 可阻止收尾并要求继续。',
+    canBlock: true,
+  ),
+  AgentHookEvent.subagentStart => (
+    stage: 'SUBAGENT',
+    color: Colors.teal,
+    title: 'subagentStart',
+    description: '子智能体启动时触发。',
+    canBlock: false,
+  ),
+  AgentHookEvent.subagentStop => (
+    stage: 'SUBAGENT',
+    color: Colors.teal,
+    title: 'subagentStop',
+    description: '子智能体收尾前触发；hook 可阻止收尾并要求继续。',
+    canBlock: true,
+  ),
+  AgentHookEvent.taskEnd => (
+    stage: 'AGENT',
+    color: Colors.purple,
+    title: 'taskEnd',
+    description: '主任务正常完成后触发。',
+    canBlock: false,
+  ),
+  AgentHookEvent.preCompact => (
+    stage: 'AGENT',
+    color: Colors.purple,
+    title: 'preCompact',
+    description:
+        '上下文压缩前触发（观测型，不阻断）；matcher 匹配触发'
+        '方式（目前仅 auto）。',
+    canBlock: false,
+  ),
+  AgentHookEvent.postCompact => (
+    stage: 'AGENT',
+    color: Colors.purple,
+    title: 'postCompact',
+    description:
+        '上下文压缩后触发（观测型，不阻断）；压缩摘要经 '
+        'tool_response 传入；matcher 匹配触发方式（目前仅 auto）。',
+    canBlock: false,
+  ),
+};
 
 /// 添加区的阶段分组顺序（同阶段事件聚在一起，与枚举顺序解耦）。
 const List<(String, List<AgentHookEvent>)> _kStageGroups = [
@@ -242,7 +250,7 @@ const List<(String, List<AgentHookEvent>)> _kStageGroups = [
       AgentHookEvent.taskEnd,
       AgentHookEvent.preCompact,
       AgentHookEvent.postCompact,
-    ]
+    ],
   ),
   ('TURN 阶段', [AgentHookEvent.turnStart, AgentHookEvent.turnEnd]),
   (
@@ -255,12 +263,9 @@ const List<(String, List<AgentHookEvent>)> _kStageGroups = [
       AgentHookEvent.permissionDenied,
       AgentHookEvent.notification,
       AgentHookEvent.fileChanged,
-    ]
+    ],
   ),
-  (
-    'SUBAGENT 阶段',
-    [AgentHookEvent.subagentStart, AgentHookEvent.subagentStop]
-  ),
+  ('SUBAGENT 阶段', [AgentHookEvent.subagentStart, AgentHookEvent.subagentStop]),
 ];
 
 /// 空状态一键预填模板。
@@ -300,7 +305,8 @@ const List<_HookTemplate> _kTemplates = [
         event: AgentHookEvent.preToolUse,
         type: AgentHookType.prompt,
         matcher: 'write',
-        prompt: r'检查这次写文件调用是否安全（不要覆盖重要配置/删除内容）：'
+        prompt:
+            r'检查这次写文件调用是否安全（不要覆盖重要配置/删除内容）：'
             r'$ARGUMENTS',
       ),
     ),
@@ -426,11 +432,15 @@ class _DisableAllHooksCard extends ConsumerWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: color),
       ),
-      child: SwitchListTile(
-        value: disabled,
-        onChanged: (v) =>
-            ref.read(agentDisableAllHooksProvider.notifier).set(v),
-        secondary: Icon(
+      child: ListTile(
+        onTap: () =>
+            ref.read(agentDisableAllHooksProvider.notifier).set(!disabled),
+        trailing: CustomSwitch(
+          value: disabled,
+          onChanged: (v) =>
+              ref.read(agentDisableAllHooksProvider.notifier).set(v),
+        ),
+        leading: Icon(
           disabled ? LucideIcons.octagonPause : LucideIcons.power,
           size: 18,
           color: disabled
@@ -447,9 +457,9 @@ class _DisableAllHooksCard extends ConsumerWidget {
         subtitle: Text(
           disabled
               ? '所有事件的 hooks 已暂停执行（含已信任的仓库 hooks）。'
-                  '配置与信任状态不受影响，关闭开关即恢复；试跑不受限制。'
+                    '配置与信任状态不受影响，关闭开关即恢复；试跑不受限制。'
               : '应急/调试用总开关：打开后所有事件的 hooks 暂停执行，'
-                  '不改配置与信任状态。',
+                    '不改配置与信任状态。',
           style: theme.textTheme.bodySmall?.copyWith(
             color: disabled
                 ? theme.colorScheme.error
@@ -499,9 +509,7 @@ class _CountBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(
-          alpha: 0.5,
-        ),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
@@ -598,8 +606,10 @@ class _ConfiguredEventCard extends ConsumerWidget {
             child: Row(
               children: [
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: meta.color.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(6),
@@ -659,20 +669,14 @@ class _ConfiguredEventCard extends ConsumerWidget {
                   fontFamily: 'monospace',
                 ),
               ),
-              trailing: Switch(
+              trailing: CustomSwitch(
                 value: entry.hook.enabled,
                 onChanged: (value) => ref
                     .read(agentManualHooksProvider.notifier)
-                    .updateAt(
-                      entry.index,
-                      entry.hook.copyWith(enabled: value),
-                    ),
+                    .updateAt(entry.index, entry.hook.copyWith(enabled: value)),
               ),
-              onTap: () => _openHookEditPage(
-                context,
-                event: event,
-                index: entry.index,
-              ),
+              onTap: () =>
+                  _openHookEditPage(context, event: event, index: entry.index),
             ),
           ],
         ],
@@ -733,24 +737,26 @@ class _StageGroup extends ConsumerWidget {
           children: [
             for (final event in events) ...[
               Divider(height: 1, indent: 12, color: theme.dividerColor),
-              Builder(builder: (context) {
-                final meta = _metaOf(event, theme.colorScheme);
-                return ListTile(
-                  dense: true,
-                  title: Text(
-                    meta.title,
-                    style: const TextStyle(fontFamily: 'monospace'),
-                  ),
-                  subtitle: Text(
-                    meta.description,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+              Builder(
+                builder: (context) {
+                  final meta = _metaOf(event, theme.colorScheme);
+                  return ListTile(
+                    dense: true,
+                    title: Text(
+                      meta.title,
+                      style: const TextStyle(fontFamily: 'monospace'),
                     ),
-                  ),
-                  trailing: const Icon(LucideIcons.plus, size: 16),
-                  onTap: () => _openHookEditPage(context, event: event),
-                );
-              }),
+                    subtitle: Text(
+                      meta.description,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    trailing: const Icon(LucideIcons.plus, size: 16),
+                    onTap: () => _openHookEditPage(context, event: event),
+                  );
+                },
+              ),
             ],
           ],
         ),
@@ -768,11 +774,8 @@ void _openHookEditPage(
 }) {
   Navigator.of(context).push(
     PageRouteBuilder<void>(
-      pageBuilder: (_, _, _) => _HookEditPage(
-        event: event,
-        index: index,
-        template: template,
-      ),
+      pageBuilder: (_, _, _) =>
+          _HookEditPage(event: event, index: index, template: template),
       transitionDuration: Duration.zero,
       reverseTransitionDuration: Duration.zero,
     ),
@@ -796,8 +799,8 @@ const List<String> _kMatcherSuggestions = [
 /// http header 行（值默认遮蔽，可切换明文）。
 class _HeaderRow {
   _HeaderRow(String key, String value)
-      : keyCtrl = TextEditingController(text: key),
-        valueCtrl = TextEditingController(text: value);
+    : keyCtrl = TextEditingController(text: key),
+      valueCtrl = TextEditingController(text: value);
 
   final TextEditingController keyCtrl;
   final TextEditingController valueCtrl;
@@ -826,30 +829,39 @@ class _HookEditPageState extends ConsumerState<_HookEditPage> {
       ? null
       : ref.read(agentManualHooksProvider)[widget.index!];
 
-  late final AgentManualHook? _initial =
-      widget.index != null ? _existing : widget.template;
+  late final AgentManualHook? _initial = widget.index != null
+      ? _existing
+      : widget.template;
 
   late AgentHookType _type = _initial?.hook.type ?? AgentHookType.command;
-  late final TextEditingController _name =
-      TextEditingController(text: _initial?.name ?? '');
+  late final TextEditingController _name = TextEditingController(
+    text: _initial?.name ?? '',
+  );
   // 三种类型各自的载体输入，切换类型不丢已输入内容。
-  late final TextEditingController _command =
-      TextEditingController(text: _initial?.hook.command ?? '');
-  late final TextEditingController _prompt =
-      TextEditingController(text: _initial?.hook.prompt ?? '');
-  late final TextEditingController _url =
-      TextEditingController(text: _initial?.hook.url ?? '');
-  late final TextEditingController _matcher =
-      TextEditingController(text: _initial?.hook.matcher ?? '*');
-  late final TextEditingController _pattern =
-      TextEditingController(text: _initial?.hook.pattern ?? '*');
+  late final TextEditingController _command = TextEditingController(
+    text: _initial?.hook.command ?? '',
+  );
+  late final TextEditingController _prompt = TextEditingController(
+    text: _initial?.hook.prompt ?? '',
+  );
+  late final TextEditingController _url = TextEditingController(
+    text: _initial?.hook.url ?? '',
+  );
+  late final TextEditingController _matcher = TextEditingController(
+    text: _initial?.hook.matcher ?? '*',
+  );
+  late final TextEditingController _pattern = TextEditingController(
+    text: _initial?.hook.pattern ?? '*',
+  );
   late final TextEditingController _timeout = TextEditingController(
     text: '${_initial?.hook.timeoutSeconds ?? kAgentHookDefaultTimeoutSeconds}',
   );
-  late final TextEditingController _model =
-      TextEditingController(text: _initial?.hook.model ?? '');
-  late final TextEditingController _statusMessage =
-      TextEditingController(text: _initial?.hook.statusMessage ?? '');
+  late final TextEditingController _model = TextEditingController(
+    text: _initial?.hook.model ?? '',
+  );
+  late final TextEditingController _statusMessage = TextEditingController(
+    text: _initial?.hook.statusMessage ?? '',
+  );
   late bool _once = _initial?.hook.once ?? false;
   late bool _asyncRewake = _initial?.hook.asyncRewake ?? false;
   late final List<_HeaderRow> _headers = [
@@ -986,8 +998,7 @@ class _HookEditPageState extends ConsumerState<_HookEditPage> {
                       ),
                     ),
                     visualDensity: VisualDensity.compact,
-                    onPressed: () =>
-                        setState(() => _matcher.text = suggestion),
+                    onPressed: () => setState(() => _matcher.text = suggestion),
                   ),
               ],
             ),
@@ -1035,21 +1046,26 @@ class _HookEditPageState extends ConsumerState<_HookEditPage> {
               isDense: true,
             ),
           ),
-          SwitchListTile(
-            value: _once,
-            onChanged: (v) => setState(() => _once = v),
+          ListTile(
+            onTap: () => setState(() => _once = !_once),
+            trailing: CustomSwitch(
+              value: _once,
+              onChanged: (v) => setState(() => _once = v),
+            ),
             title: const Text('只触发一次（once）'),
             subtitle: const Text('本次任务内命中一次后不再触发'),
             dense: true,
             contentPadding: EdgeInsets.zero,
           ),
           if (_type == AgentHookType.command)
-            SwitchListTile(
-              value: _asyncRewake,
-              onChanged: (v) => setState(() => _asyncRewake = v),
+            ListTile(
+              onTap: () => setState(() => _asyncRewake = !_asyncRewake),
+              trailing: CustomSwitch(
+                value: _asyncRewake,
+                onChanged: (v) => setState(() => _asyncRewake = v),
+              ),
               title: const Text('后台运行并叫醒（asyncRewake）'),
-              subtitle: const Text(
-                  '不阻塞主链；后台跑完若阻断（退出码 2）把反馈注入任务叫醒模型'),
+              subtitle: const Text('不阻塞主链；后台跑完若阻断（退出码 2）把反馈注入任务叫醒模型'),
               dense: true,
               contentPadding: EdgeInsets.zero,
             ),
@@ -1103,145 +1119,144 @@ class _HookEditPageState extends ConsumerState<_HookEditPage> {
 
   /// 按类型的载体输入区：命令 / 提示词 / URL+headers。
   List<Widget> _payloadFields(ThemeData theme) => switch (_type) {
-        AgentHookType.command => [
-            TextField(
-              controller: _command,
-              maxLines: 4,
-              minLines: 1,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-              decoration: const InputDecoration(
-                labelText: '命令（必填）',
-                helperText: '跑在任务绑定工作区的终端里；stdin 喷入 hook 输入 JSON，'
-                    '退出码 2 阻断，stdout 可输出 decision JSON',
-                helperMaxLines: 3,
-                border: OutlineInputBorder(),
-                isDense: true,
+    AgentHookType.command => [
+      TextField(
+        controller: _command,
+        maxLines: 4,
+        minLines: 1,
+        style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+        decoration: const InputDecoration(
+          labelText: '命令（必填）',
+          helperText:
+              '跑在任务绑定工作区的终端里；stdin 喷入 hook 输入 JSON，'
+              '退出码 2 阻断，stdout 可输出 decision JSON',
+          helperMaxLines: 3,
+          border: OutlineInputBorder(),
+          isDense: true,
+        ),
+      ),
+    ],
+    AgentHookType.prompt => [
+      TextField(
+        controller: _prompt,
+        maxLines: 10,
+        minLines: 4,
+        style: const TextStyle(fontSize: 13),
+        decoration: const InputDecoration(
+          labelText: '提示词（必填）',
+          helperText:
+              '用当前默认模型做一次裁决；\$ARGUMENTS 替换为 hook 输入 '
+              'JSON（缺省追加到末尾），模型回 {"ok":false,"reason":"..."} 即阻断',
+          helperMaxLines: 3,
+          border: OutlineInputBorder(),
+          isDense: true,
+        ),
+      ),
+    ],
+    AgentHookType.agent => [
+      TextField(
+        controller: _prompt,
+        maxLines: 10,
+        minLines: 4,
+        style: const TextStyle(fontSize: 13),
+        decoration: const InputDecoration(
+          labelText: '校验提示词（必填）',
+          helperText:
+              '多轮带工具（工作区终端）的小智能体校验；'
+              '\$ARGUMENTS 替换为 hook 输入 JSON，智能体通过 '
+              'submit_result 交回 {"ok":false,"reason":"..."} 即阻断',
+          helperMaxLines: 3,
+          border: OutlineInputBorder(),
+          isDense: true,
+        ),
+      ),
+    ],
+    AgentHookType.http => [
+      TextField(
+        controller: _url,
+        keyboardType: TextInputType.url,
+        style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+        decoration: const InputDecoration(
+          labelText: 'URL（必填，http/https）',
+          helperText: 'POST hook 输入 JSON；响应体按 decision JSON 协议解析',
+          helperMaxLines: 2,
+          border: OutlineInputBorder(),
+          isDense: true,
+        ),
+      ),
+      const SizedBox(height: 12),
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              '自定义 headers（可选）',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-          ],
-        AgentHookType.prompt => [
-            TextField(
-              controller: _prompt,
-              maxLines: 10,
-              minLines: 4,
-              style: const TextStyle(fontSize: 13),
-              decoration: const InputDecoration(
-                labelText: '提示词（必填）',
-                helperText: '用当前默认模型做一次裁决；\$ARGUMENTS 替换为 hook 输入 '
-                    'JSON（缺省追加到末尾），模型回 {"ok":false,"reason":"..."} 即阻断',
-                helperMaxLines: 3,
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-          ],
-        AgentHookType.agent => [
-            TextField(
-              controller: _prompt,
-              maxLines: 10,
-              minLines: 4,
-              style: const TextStyle(fontSize: 13),
-              decoration: const InputDecoration(
-                labelText: '校验提示词（必填）',
-                helperText: '多轮带工具（工作区终端）的小智能体校验；'
-                    '\$ARGUMENTS 替换为 hook 输入 JSON，智能体通过 '
-                    'submit_result 交回 {"ok":false,"reason":"..."} 即阻断',
-                helperMaxLines: 3,
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-          ],
-        AgentHookType.http => [
-            TextField(
-              controller: _url,
-              keyboardType: TextInputType.url,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-              decoration: const InputDecoration(
-                labelText: 'URL（必填，http/https）',
-                helperText: 'POST hook 输入 JSON；响应体按 decision JSON 协议解析',
-                helperMaxLines: 2,
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '自定义 headers（可选）',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
+          ),
+          TextButton.icon(
+            onPressed: () => setState(() => _headers.add(_HeaderRow('', ''))),
+            icon: const Icon(LucideIcons.plus, size: 14),
+            label: const Text('添加'),
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+          ),
+        ],
+      ),
+      for (var i = 0; i < _headers.length; i++) ...[
+        if (i > 0) const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: TextField(
+                controller: _headers[i].keyCtrl,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                decoration: const InputDecoration(
+                  labelText: 'Header',
+                  border: OutlineInputBorder(),
+                  isDense: true,
                 ),
-                TextButton.icon(
-                  onPressed: () =>
-                      setState(() => _headers.add(_HeaderRow('', ''))),
-                  icon: const Icon(LucideIcons.plus, size: 14),
-                  label: const Text('添加'),
-                  style: TextButton.styleFrom(
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 3,
+              child: TextField(
+                controller: _headers[i].valueCtrl,
+                obscureText: _headers[i].obscure,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                decoration: InputDecoration(
+                  labelText: '值',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                  suffixIcon: IconButton(
+                    onPressed: () => setState(
+                      () => _headers[i].obscure = !_headers[i].obscure,
+                    ),
+                    icon: Icon(
+                      _headers[i].obscure
+                          ? LucideIcons.eye
+                          : LucideIcons.eyeOff,
+                      size: 14,
+                    ),
                     visualDensity: VisualDensity.compact,
                   ),
                 ),
-              ],
-            ),
-            for (var i = 0; i < _headers.length; i++) ...[
-              if (i > 0) const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: TextField(
-                      controller: _headers[i].keyCtrl,
-                      style: const TextStyle(
-                          fontFamily: 'monospace', fontSize: 12),
-                      decoration: const InputDecoration(
-                        labelText: 'Header',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    flex: 3,
-                    child: TextField(
-                      controller: _headers[i].valueCtrl,
-                      obscureText: _headers[i].obscure,
-                      style: const TextStyle(
-                          fontFamily: 'monospace', fontSize: 12),
-                      decoration: InputDecoration(
-                        labelText: '值',
-                        border: const OutlineInputBorder(),
-                        isDense: true,
-                        suffixIcon: IconButton(
-                          onPressed: () => setState(() =>
-                              _headers[i].obscure = !_headers[i].obscure),
-                          icon: Icon(
-                            _headers[i].obscure
-                                ? LucideIcons.eye
-                                : LucideIcons.eyeOff,
-                            size: 14,
-                          ),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => setState(() {
-                      _headers.removeAt(i).dispose();
-                    }),
-                    icon: const Icon(LucideIcons.x, size: 16),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ],
               ),
-            ],
+            ),
+            IconButton(
+              onPressed: () => setState(() {
+                _headers.removeAt(i).dispose();
+              }),
+              icon: const Icon(LucideIcons.x, size: 16),
+              visualDensity: VisualDensity.compact,
+            ),
           ],
-      };
+        ),
+      ],
+    ],
+  };
 
   /// 表单校验；通过时返回构建好的 hook，否则设置 [_error] 并返回 null。
   AgentManualHook? _validate() {
@@ -1251,13 +1266,13 @@ class _HookEditPageState extends ConsumerState<_HookEditPage> {
       AgentHookType.http => _url.text.trim(),
     };
     if (payload.isEmpty) {
-      setState(() => _error = switch (_type) {
-            AgentHookType.command => '命令不能为空',
-            AgentHookType.prompt ||
-            AgentHookType.agent =>
-              '提示词不能为空',
-            AgentHookType.http => 'URL 不能为空',
-          });
+      setState(
+        () => _error = switch (_type) {
+          AgentHookType.command => '命令不能为空',
+          AgentHookType.prompt || AgentHookType.agent => '提示词不能为空',
+          AgentHookType.http => 'URL 不能为空',
+        },
+      );
       return null;
     }
     if (_type == AgentHookType.http) {
@@ -1406,30 +1421,26 @@ class _TryRunResultDialog extends StatelessWidget {
     final theme = Theme.of(context);
     final (icon, color, label) = switch (result.outcome) {
       AgentHookOutcome.proceed => (
-          LucideIcons.check,
-          theme.colorScheme.tertiary,
-          result.isAsync ? '放行（async 转后台）' : '放行',
-        ),
+        LucideIcons.check,
+        theme.colorScheme.tertiary,
+        result.isAsync ? '放行（async 转后台）' : '放行',
+      ),
       AgentHookOutcome.allow => (
-          LucideIcons.check,
-          theme.colorScheme.tertiary,
-          '免审放行',
-        ),
-      AgentHookOutcome.ask => (
-          LucideIcons.circleHelp,
-          Colors.orange,
-          '强制审批',
-        ),
+        LucideIcons.check,
+        theme.colorScheme.tertiary,
+        '免审放行',
+      ),
+      AgentHookOutcome.ask => (LucideIcons.circleHelp, Colors.orange, '强制审批'),
       AgentHookOutcome.block => (
-          LucideIcons.ban,
-          theme.colorScheme.error,
-          '阻断',
-        ),
+        LucideIcons.ban,
+        theme.colorScheme.error,
+        '阻断',
+      ),
       AgentHookOutcome.failed => (
-          LucideIcons.triangleAlert,
-          Colors.orange,
-          'hook 自身失败（不阻断）',
-        ),
+        LucideIcons.triangleAlert,
+        Colors.orange,
+        'hook 自身失败（不阻断）',
+      ),
     };
     final seconds = (elapsed.inMilliseconds / 1000).toStringAsFixed(1);
     return AlertDialog(
@@ -1449,8 +1460,9 @@ class _TryRunResultDialog extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               result.message,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(fontFamily: 'monospace'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+              ),
             ),
             const SizedBox(height: 8),
           ],
@@ -1459,8 +1471,9 @@ class _TryRunResultDialog extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               result.additionalContext,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(fontFamily: 'monospace'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+              ),
             ),
             const SizedBox(height: 8),
           ],
@@ -1629,11 +1642,7 @@ class _RepoHooksPage extends ConsumerWidget {
                 children: [
                   for (var i = 0; i < workspaces.length; i++) ...[
                     if (i > 0)
-                      Divider(
-                        height: 1,
-                        indent: 12,
-                        color: theme.dividerColor,
-                      ),
+                      Divider(height: 1, indent: 12, color: theme.dividerColor),
                     _WorkspaceHooksRow(
                       theme: theme,
                       workspaceId: workspaces[i].id,
@@ -1675,10 +1684,7 @@ class _WorkspaceHooksRow extends ConsumerWidget {
       (true, _, _) => (theme.colorScheme.onSurfaceVariant, '读取中…'),
       (_, false, _) => (theme.colorScheme.onSurfaceVariant, '未配置'),
       (_, true, true) => (theme.colorScheme.tertiary, '已信任'),
-      _ => (
-          theme.colorScheme.error,
-          trustedContent == null ? '待审阅' : '内容已变更',
-        ),
+      _ => (theme.colorScheme.error, trustedContent == null ? '待审阅' : '内容已变更'),
     };
 
     return ListTile(
@@ -1776,9 +1782,7 @@ class _WorkspaceHooksRow extends ConsumerWidget {
                           const SizedBox(height: 8),
                         ],
                       Theme(
-                        data: theme.copyWith(
-                          dividerColor: Colors.transparent,
-                        ),
+                        data: theme.copyWith(dividerColor: Colors.transparent),
                         child: ExpansionTile(
                           tilePadding: EdgeInsets.zero,
                           childrenPadding: EdgeInsets.zero,
@@ -1793,8 +1797,7 @@ class _WorkspaceHooksRow extends ConsumerWidget {
                               width: double.infinity,
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: theme
-                                    .colorScheme.surfaceContainerHighest
+                                color: theme.colorScheme.surfaceContainerHighest
                                     .withValues(alpha: 0.5),
                                 borderRadius: BorderRadius.circular(12),
                               ),
@@ -1978,8 +1981,9 @@ class _RepoHookCard extends StatelessWidget {
               color: hook.type == AgentHookType.http
                   ? theme.colorScheme.error
                   : null,
-              fontWeight:
-                  hook.type == AgentHookType.http ? FontWeight.w600 : null,
+              fontWeight: hook.type == AgentHookType.http
+                  ? FontWeight.w600
+                  : null,
             ),
           ),
           if (hook.type == AgentHookType.http && hook.headers.isNotEmpty) ...[

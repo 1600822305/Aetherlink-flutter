@@ -13,6 +13,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_compa
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_trigger.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 打开上下文压缩设置页（零动画，同 hooks 页）。
@@ -95,15 +96,17 @@ class AgentCompactionSettingsPage extends ConsumerWidget {
     final theme = Theme.of(context);
     final settings = ref.watch(agentCompactionSettingsProvider);
     final notifier = ref.read(agentCompactionSettingsProvider.notifier);
-    final contextLimit =
-        ref.watch(agentUiSettingsControllerProvider).contextLimit;
+    final contextLimit = ref
+        .watch(agentUiSettingsControllerProvider)
+        .contextLimit;
     final taskId = ref.watch(selectedAgentTaskIdProvider);
     final task = ref
         .watch(agentTasksProvider)
         .where((t) => t.id == taskId)
         .firstOrNull;
-    final compactableTask =
-        task != null && task.status != AgentTaskStatus.draft ? task : null;
+    final compactableTask = task != null && task.status != AgentTaskStatus.draft
+        ? task
+        : null;
 
     final triggerTokens = compactionTriggerTokens(
       contextLimit,
@@ -161,7 +164,8 @@ class AgentCompactionSettingsPage extends ConsumerWidget {
             children: [
               _SwitchRow(
                 title: '自动压缩',
-                description: '上下文达到触发阈值时自动摘要化较早内容；'
+                description:
+                    '上下文达到触发阈值时自动摘要化较早内容；'
                     '关闭后仍会预警，手动压缩不受影响',
                 value: settings.autoCompactEnabled,
                 onChanged: (v) =>
@@ -184,16 +188,13 @@ class AgentCompactionSettingsPage extends ConsumerWidget {
                 title: '压缩保留量',
                 description: '压缩后保留给近期内容的字符预算，其余摘要化',
                 value: settings.keepChars,
-                options: const [
-                  (20000, '20k'),
-                  (40000, '40k'),
-                  (60000, '60k'),
-                ],
+                options: const [(20000, '20k'), (40000, '40k'), (60000, '60k')],
                 onChanged: (v) => notifier.set(settings.copyWith(keepChars: v)),
               ),
               _ReadonlyRow(
                 title: '当前换算',
-                value: '窗口 ${_formatK(contextLimit)} → '
+                value:
+                    '窗口 ${_formatK(contextLimit)} → '
                     '约 ${_formatK(triggerTokens)} tokens 触发',
               ),
             ],
@@ -204,7 +205,8 @@ class AgentCompactionSettingsPage extends ConsumerWidget {
             children: [
               _SwitchRow(
                 title: '轻量清理',
-                description: '不调模型：超阈值时把较旧的可重取工具输出'
+                description:
+                    '不调模型：超阈值时把较旧的可重取工具输出'
                     '（终端/读文件/搜索等）替换成占位符，事件流原文保留',
                 value: settings.microCompactEnabled,
                 onChanged: (v) =>
@@ -212,7 +214,8 @@ class AgentCompactionSettingsPage extends ConsumerWidget {
               ),
               _ChipSelectRow<int>(
                 title: '触发阈值',
-                description: '上下文字符量超过该值时开始清理（低于压缩阈值，'
+                description:
+                    '上下文字符量超过该值时开始清理（低于压缩阈值，'
                     '构成先轻量后摘要的两级降压）',
                 value: settings.microCompactTriggerChars,
                 options: const [
@@ -220,8 +223,9 @@ class AgentCompactionSettingsPage extends ConsumerWidget {
                   (80000, '80k'),
                   (100000, '100k'),
                 ],
-                onChanged: (v) => notifier
-                    .set(settings.copyWith(microCompactTriggerChars: v)),
+                onChanged: (v) => notifier.set(
+                  settings.copyWith(microCompactTriggerChars: v),
+                ),
               ),
             ],
           ),
@@ -231,22 +235,26 @@ class AgentCompactionSettingsPage extends ConsumerWidget {
             children: [
               _ReadonlyRow(
                 title: '压缩预警',
-                value: '达到触发阈值的 '
+                value:
+                    '达到触发阈值的 '
                     '${(kCompactionWarningRatio * 100).round()}% 时提示一次',
               ),
               const _ReadonlyRow(
                 title: '失败熔断',
-                value: '连续 $kCompactionMaxConsecutiveFailures 次压缩失败后'
+                value:
+                    '连续 $kCompactionMaxConsecutiveFailures 次压缩失败后'
                     '本任务内停止重试',
               ),
               const _ReadonlyRow(
                 title: '近期保护',
-                value: '最近 $kMicroCompactKeepRecentToolCalls 条工具输出'
+                value:
+                    '最近 $kMicroCompactKeepRecentToolCalls 条工具输出'
                     '永不清除',
               ),
               _ReadonlyRow(
                 title: '摘要预留',
-                value: '为压缩摘要输出预留 '
+                value:
+                    '为压缩摘要输出预留 '
                     '${_formatK(kCompactionSummaryReserveTokens)} tokens'
                     '（小窗口按 1/4 封顶）',
               ),
@@ -277,8 +285,8 @@ class AgentCompactionSettingsPage extends ConsumerWidget {
 String _formatK(int tokens) => tokens >= 1000000
     ? '${(tokens / 1000000).toStringAsFixed(tokens % 1000000 == 0 ? 0 : 1)}M'
     : tokens >= 1000
-        ? '${(tokens / 1000).toStringAsFixed(tokens % 1000 == 0 ? 0 : 1)}k'
-        : '$tokens';
+    ? '${(tokens / 1000).toStringAsFixed(tokens % 1000 == 0 ? 0 : 1)}k'
+    : '$tokens';
 
 class _SectionCard extends StatelessWidget {
   const _SectionCard({required this.title, required this.children});
@@ -331,8 +339,10 @@ class _SwitchRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          Expanded(child: _RowText(title: title, description: description)),
-          Switch(value: value, onChanged: onChanged),
+          Expanded(
+            child: _RowText(title: title, description: description),
+          ),
+          CustomSwitch(value: value, onChanged: onChanged),
         ],
       ),
     );
@@ -383,9 +393,7 @@ class _ChipSelectRow<T> extends StatelessWidget {
                   checkmarkColor: cs.primary,
                   side: v == value
                       ? BorderSide(color: cs.primary)
-                      : BorderSide(
-                          color: cs.onSurface.withValues(alpha: 0.15),
-                        ),
+                      : BorderSide(color: cs.onSurface.withValues(alpha: 0.15)),
                   onSelected: (_) => onChanged(v),
                 ),
             ],

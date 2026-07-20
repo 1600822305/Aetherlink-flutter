@@ -10,6 +10,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/domain/skill.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
@@ -258,7 +259,7 @@ class _AgentSkillsPageState extends ConsumerState<AgentSkillsPage> {
                     ],
                   ),
                 ),
-                Switch(
+                CustomSwitch(
                   value: skill.enabled,
                   onChanged: (v) => _toggle(skill, v),
                 ),
