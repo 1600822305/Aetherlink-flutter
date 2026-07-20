@@ -6,6 +6,7 @@ import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_home_page.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/chat_page.dart';
 import 'package:aetherlink_flutter/features/buddy/presentation/buddy_page.dart';
+import 'package:aetherlink_flutter/features/buddy/presentation/buddy_settings_page.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/mobile/translate_page.dart';
 import 'package:aetherlink_flutter/features/backup/presentation/backup_settings_page.dart';
 import 'package:aetherlink_flutter/features/notes/presentation/mobile/note_editor_page.dart';
@@ -137,6 +138,9 @@ abstract final class AppRouter {
   /// 电子宠物页：侧边栏底部按钮入口，独立页面压栈。
   static const String buddyPath = '/buddy';
 
+  /// 宠物设置页：宠物页顶栏设置按钮入口（悬浮开关/放生）。
+  static const String buddySettingsPath = '/buddy/settings';
+
   /// 智能体模式主界面：与聊天同级，侧栏底部按钮互切；冷启动落点由
   /// `app_main_mode` 持久化决定（智能体架构稿 §三）。
   static const String agentPath = '/agent';
@@ -228,6 +232,12 @@ abstract final class AppRouter {
         path: buddyPath,
         name: 'buddy',
         pageBuilder: (context, state) => _instant(state, const BuddyPage()),
+      ),
+      GoRoute(
+        path: buddySettingsPath,
+        name: 'buddySettings',
+        pageBuilder: (context, state) =>
+            _instant(state, const BuddySettingsPage()),
       ),
       GoRoute(
         path: agentPath,

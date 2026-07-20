@@ -61,4 +61,11 @@ class BuddyController extends Notifier<BuddyState> {
         .saveSetting(kBuddySoulKey, encodeBuddySoul(soul));
     return soul;
   }
+
+  /// 放生：清掉灵魂（含种子），回到未孵化状态；之后可重新孵化一只新宠物。
+  void release() {
+    if (state.soul == null) return;
+    state = const BuddyState(loaded: true);
+    ref.read(appSettingsStoreProvider).saveSetting(kBuddySoulKey, '');
+  }
 }

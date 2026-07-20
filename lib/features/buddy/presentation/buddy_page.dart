@@ -13,7 +13,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/buddy/application/buddy_controller.dart';
-import 'package:aetherlink_flutter/features/buddy/application/buddy_overlay_controller.dart';
 import 'package:aetherlink_flutter/features/buddy/domain/buddy_phrases.dart';
 import 'package:aetherlink_flutter/features/buddy/domain/buddy_types.dart';
 import 'package:aetherlink_flutter/features/buddy/domain/pixel_arts/pixel_arts.dart';
@@ -148,6 +147,19 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
           color: theme.colorScheme.onSurface,
         ),
         title: const Text('宠物'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              constraints:
+                  const BoxConstraints.tightFor(width: 40, height: 40),
+              icon: const Icon(LucideIcons.settings, size: 20),
+              color: theme.colorScheme.onSurface,
+              onPressed: () => context.push(AppRouter.buddySettingsPath),
+            ),
+          ),
+        ],
       ),
       body: !state.loaded
           ? const Center(child: CircularProgressIndicator())
@@ -159,13 +171,16 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
 
   Widget _buildPetView(ThemeData theme, BuddySoul soul, BuddyBones bones) {
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        16 + MediaQuery.of(context).padding.bottom,
+      ),
       children: [
         _spriteCard(theme, soul, bones),
         const SizedBox(height: 16),
         _infoCard(theme, soul, bones),
-        const SizedBox(height: 16),
-        _settingsCard(theme),
       ],
     );
   }
@@ -309,68 +324,6 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
                       ],
                     ),
                   ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 设置卡片：悬浮宠物开关。
-  Widget _settingsCard(ThemeData theme) {
-    final cs = theme.colorScheme;
-    final overlay = ref.watch(buddyOverlayControllerProvider);
-
-    return _OutlinedCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _CardHeader(title: '设置', description: '悬浮宠物与互动方式'),
-          Divider(height: 1, color: theme.dividerColor),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-            child: Row(
-              children: [
-                Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF06B6D4).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    LucideIcons.pictureInPicture2,
-                    size: 16,
-                    color: Color(0xFF06B6D4),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('悬浮宠物',
-                          style: theme.textTheme.bodyMedium
-                              ?.copyWith(fontWeight: FontWeight.w500)),
-                      Text(
-                        '让宠物浮在应用所有页面上，可拖动贴边；展开后可在悬浮窗内直接关闭',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: cs.onSurface.withValues(alpha: 0.55),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Switch(
-                  value: overlay.enabled,
-                  onChanged: (v) {
-                    Haptics.instance.onSwitch();
-                    ref
-                        .read(buddyOverlayControllerProvider.notifier)
-                        .setEnabled(v);
-                  },
-                ),
               ],
             ),
           ),
