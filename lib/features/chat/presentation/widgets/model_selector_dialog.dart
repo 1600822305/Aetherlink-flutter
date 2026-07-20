@@ -492,7 +492,9 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
               ),
             ),
           ),
-          if (_showLeftArrow)
+          // The arrows exist for mouse users; on the phone layout the strip
+          // is swiped directly, so they only take up space over the tabs.
+          if (!compact && _showLeftArrow)
             Positioned(
               left: 0,
               top: 0,
@@ -503,7 +505,7 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
                 onTap: () => _scrollTabs(-200),
               ),
             ),
-          if (_showRightArrow)
+          if (!compact && _showRightArrow)
             Positioned(
               right: 0,
               top: 0,
