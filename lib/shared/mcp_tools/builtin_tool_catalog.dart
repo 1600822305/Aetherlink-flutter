@@ -662,7 +662,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       name: 'read_file',
       description: '读取文件内容。支持单文件(path)或批量(files 数组)读取。大文件建议指定行范围（1-based，含端点）：'
           'start_line/end_line 可单独使用——只给 start_line 表示读到文件末尾，只给 end_line 表示从第 1 行开始。'
-          '超长行会被截断、超大内容会提示改用行范围分段读取；'
+          '超长行会被截断、超大文件会拒绝整读并提示改用行范围分段读取；'
+          '同一文件同一范围的重复读取，若文件未变化会返回 unchanged=true 存根（内容以早前结果为准）；'
           '批量读取有总量上限，超出后剩余文件会被标记 skipped，需分批调用。'
           '返回内容默认每行带「N | 」行号前缀（仅供定位，不是文件内容）；'
           '需要原始文本时传 line_numbers=false。',
@@ -786,7 +787,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '写文件：传 path 覆盖写入已有文件全部内容；传 parent_path + name 新建文件。会触发用户确认。'
           '务必传入完整内容，不要用 "// rest unchanged" 之类的省略标记（会被拒绝）。'
           '覆盖写入时建议传 line_count 以校验内容是否被截断；已有文件的增量修改请优先用 edit。'
-          '若整段内容被代码围栏(```)包裹会自动去除；整体 HTML 转义的内容会自动还原。',
+          '若整段内容被代码围栏(```)包裹会自动去除；整体 HTML 转义的内容会自动还原。'
+          '文件若在本会话读取后被外部修改会拒绝覆盖，需先 read_file 重读。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -894,7 +896,8 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
           '默认只替换一处：search 命中多处时报错不修改（防改错位置），需在 search 中加上下文使其唯一，'
           '或传 replace_all=true 全部替换；命中 0 处也报错。'
           '支持 edits 数组对同一文件做多处替换（每个元素可单独指定 replace_all），'
-          '整体原子生效：任一 edit 失败则文件不会被修改。',
+          '整体原子生效：任一 edit 失败则文件不会被修改。'
+          '文件若在本会话读取后被外部修改会拒绝编辑，需先 read_file 重读。',
       inputSchema: {
         'type': 'object',
         'properties': {

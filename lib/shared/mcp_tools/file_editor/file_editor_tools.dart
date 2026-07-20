@@ -45,18 +45,20 @@ bool fileEditorNeedsConfirmation(String toolName) =>
 
 /// Runs a `@aether/file-editor` [toolName] with [args], using [ref] to reach
 /// the workspace providers. Returns an error [McpToolResult] for unknown tools
-/// or backend failures (never throws).
+/// or backend failures (never throws). [sessionKey] scopes the read-state
+/// registry (读取去重 + 陈旧检测) to the calling conversation / agent task.
 Future<McpToolResult> runFileEditorTool(
   Ref ref,
   String toolName,
-  Map<String, Object?> args,
-) async {
+  Map<String, Object?> args, {
+  String sessionKey = '',
+}) async {
   try {
     switch (toolName) {
       case 'list_files':
         return await listFiles(ref, args);
       case 'read_file':
-        return await readFile(ref, args);
+        return await readFile(ref, args, sessionKey: sessionKey);
       case 'get_file_info':
         return await getFileInfo(ref, args);
       case 'search_files':
@@ -64,7 +66,7 @@ Future<McpToolResult> runFileEditorTool(
       case 'get_diagnostics':
         return await getDiagnostics(ref, args);
       case 'write':
-        return await writeFile(ref, args);
+        return await writeFile(ref, args, sessionKey: sessionKey);
       case 'create_directory':
         return await createDirectory(ref, args);
       case 'move':
@@ -74,7 +76,7 @@ Future<McpToolResult> runFileEditorTool(
       case 'delete_file':
         return await deleteFile(ref, args);
       case 'edit':
-        return await editFile(ref, args);
+        return await editFile(ref, args, sessionKey: sessionKey);
     }
     return fileEditorError('未知的工具: $toolName');
   } on FileEditorError catch (e) {

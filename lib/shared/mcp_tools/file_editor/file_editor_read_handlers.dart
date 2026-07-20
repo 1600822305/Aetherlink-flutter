@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_diagnostics.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_read_state.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_search.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 
@@ -70,7 +71,14 @@ Future<McpToolResult> listFiles(Ref ref, Map<String, Object?> args) async {
 /// to a `start_line`..`end_line` range (1-based, inclusive). Content lines are
 /// prefixed `N | ` by default (`line_numbers=false` for raw text) so the model
 /// can reference exact line ranges without counting.
-Future<McpToolResult> readFile(Ref ref, Map<String, Object?> args) async {
+///
+/// 会话内重复读取（同路径、同范围、文件未变化）返回「文件未变化」存根而非
+/// 全文；整文件读取前先 stat，超过 [kMaxWholeReadBytes] 直接要求行范围读取。
+Future<McpToolResult> readFile(
+  Ref ref,
+  Map<String, Object?> args, {
+  String sessionKey = '',
+}) async {
   final withLineNumbers = optionalBool(args, 'line_numbers', fallback: true);
   final files = args['files'];
   if (files is List && files.isNotEmpty) {
@@ -104,7 +112,7 @@ Future<McpToolResult> readFile(Ref ref, Map<String, Object?> args) async {
         final one = await _readOne(
             ref, args, path,
             optionalInt(m, 'start_line'), optionalInt(m, 'end_line'),
-            withLineNumbers: withLineNumbers);
+            withLineNumbers: withLineNumbers, sessionKey: sessionKey);
         totalChars += (one['content'] as String? ?? '').length;
         results.add({'status': 'success', ...one});
       } on FileEditorError catch (e) {
@@ -127,7 +135,7 @@ Future<McpToolResult> readFile(Ref ref, Map<String, Object?> args) async {
   final one = await _readOne(
       ref, args, path,
       optionalInt(args, 'start_line'), optionalInt(args, 'end_line'),
-      withLineNumbers: withLineNumbers);
+      withLineNumbers: withLineNumbers, sessionKey: sessionKey);
   return fileEditorOk(one);
 }
 
@@ -302,6 +310,16 @@ const int _kMaxReadChars = 60000;
 /// 批量读取时整次调用的内容总量上限；达到后剩余文件被跳过。
 const int kMaxBatchReadChars = 120000;
 
+/// 整文件读取的字节上限（读前 stat 判定）。远超 [_kMaxReadChars]，只为拦住
+/// 「把几 MB 的文件整个读进内存再截断到 6 万字符」的浪费——SAF/SSH 后端
+/// 全量读一遍大文件的 IO 成本不小。超限时要求改用行范围分段读取。
+const int kMaxWholeReadBytes = 512 * 1024;
+
+/// 重复读取命中时返回的存根提示。
+const String _kFileUnchangedNote =
+    '文件自上次读取后未发生变化；本会话早前 read_file 返回的内容仍然有效，'
+    '请直接引用该结果，无需重读。';
+
 /// 对读到的内容做保护：超长行截断 + 总量封顶。返回处理后的文本与提示。
 ({String content, String? note}) _guardContent(String content) {
   var truncatedLines = 0;
@@ -340,10 +358,58 @@ Future<Map<String, Object?>> _readOne(
   int? startLine,
   int? endLine, {
   bool withLineNumbers = true,
+  String sessionKey = '',
 }) async {
   final resolved = await resolvePathArg(ref, args, rawPath);
   final backend = resolved.backend;
   final path = resolved.path;
+
+  // 读前 stat（best-effort：后端不支持 getFileInfo 时跳过守卫与去重）。
+  WorkspaceEntry? info;
+  try {
+    info = await backend.getFileInfo(path);
+  } catch (_) {
+    info = null;
+  }
+  final store = ref.read(fileReadStateProvider);
+  if (info != null && !info.isDirectory) {
+    if (startLine == null && endLine == null && info.size > kMaxWholeReadBytes) {
+      throw FileEditorError(
+        '文件过大（${info.size} 字节，整文件读取上限 $kMaxWholeReadBytes 字节），'
+        '未读取。请用 start_line/end_line 分段读取；'
+        '可先 get_file_info 查看总行数。',
+      );
+    }
+    if (isDuplicateRead(
+      store.lookup(sessionKey, path),
+      mtime: info.mtime,
+      size: info.size,
+      startLine: startLine,
+      endLine: endLine,
+      withLineNumbers: withLineNumbers,
+    )) {
+      return {
+        'path': path,
+        'unchanged': true,
+        'note': _kFileUnchangedNote,
+      };
+    }
+  }
+
+  void recordRead() {
+    if (info == null || info.isDirectory) return;
+    store.record(
+      sessionKey,
+      path,
+      FileReadRecord(
+        mtime: info.mtime,
+        size: info.size,
+        startLine: startLine,
+        endLine: endLine,
+        withLineNumbers: withLineNumbers,
+      ),
+    );
+  }
   // A range read kicks in when *either* bound is given: a missing start means
   // "from line 1", a missing end means "to the last line". (Previously both
   // had to be present or the whole file was returned silently.)
@@ -358,6 +424,7 @@ Future<Map<String, Object?>> _readOne(
     }
     final range = await backend.readFileRange(path, start, end);
     final guarded = _guardContent(range.content);
+    recordRead();
     return {
       'path': path,
       'startLine': start,
@@ -373,6 +440,7 @@ Future<Map<String, Object?>> _readOne(
   }
   final content = await backend.readFile(path);
   final guarded = _guardContent(content);
+  recordRead();
   return {
     'path': path,
     'content': withLineNumbers ? numberLines(guarded.content) : guarded.content,

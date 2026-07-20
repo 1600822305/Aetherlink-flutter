@@ -145,6 +145,7 @@ class ChatController extends _$ChatController
     // holding a disposed Ref.
     () => ref,
     assistantId: () => _assistantId,
+    sessionId: () => _topicId ?? '',
   );
 
   @override

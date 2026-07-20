@@ -15,14 +15,19 @@ import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.d
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_text_ops.dart'
     as text_ops;
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_read_state.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_support.dart';
 
 /// `write` — overwrite an existing file (`path`) or create a new one
 /// (`parent_path` + `name`). On SAF a brand-new file can't be addressed by an
 /// arbitrary path, so creation always goes through an opaque parent dir.
-Future<McpToolResult> writeFile(Ref ref, Map<String, Object?> args) async {
+Future<McpToolResult> writeFile(
+  Ref ref,
+  Map<String, Object?> args, {
+  String sessionKey = '',
+}) async {
   final rawPath = optionalString(args, 'path');
-  if (rawPath == null) return _createFile(ref, args);
+  if (rawPath == null) return _createFile(ref, args, sessionKey: sessionKey);
   final raw = args['content'];
   if (raw == null) throw const FileEditorError('缺少必需参数: content');
   final processed = processIncomingContent(raw is String ? raw : raw.toString());
@@ -65,9 +70,11 @@ Future<McpToolResult> writeFile(Ref ref, Map<String, Object?> args) async {
   if (info.isDirectory) {
     throw const FileEditorError('目标是目录，无法作为文件写入。');
   }
+  _ensureNotStale(ref, sessionKey, path, currentMtime: info.mtime);
 
   await _snapshotBeforeOverwrite(ref, backend, path);
   await backend.writeFile(path, processed);
+  await _refreshReadState(ref, backend, sessionKey, path);
   return fileEditorOk({
     'message': '文件更新成功',
     'path': path,
@@ -76,7 +83,11 @@ Future<McpToolResult> writeFile(Ref ref, Map<String, Object?> args) async {
 }
 
 /// `write` (creation branch) — new file under an opaque [parent_path] dir.
-Future<McpToolResult> _createFile(Ref ref, Map<String, Object?> args) async {
+Future<McpToolResult> _createFile(
+  Ref ref,
+  Map<String, Object?> args, {
+  String sessionKey = '',
+}) async {
   final rawParent = requireString(args, 'parent_path');
   final name = requireString(args, 'name');
   final content = processIncomingContent(optionalString(args, 'content') ?? '');
@@ -93,8 +104,10 @@ Future<McpToolResult> _createFile(Ref ref, Map<String, Object?> args) async {
     if (existing.isDirectory) {
       throw FileEditorError('「$name」是一个目录，无法以文件覆盖。');
     }
+    _ensureNotStale(ref, sessionKey, existing.path, currentMtime: existing.mtime);
     await _snapshotBeforeOverwrite(ref, backend, existing.path);
     await backend.writeFile(existing.path, content);
+    await _refreshReadState(ref, backend, sessionKey, existing.path);
     return fileEditorOk({
       'message': '文件已覆盖',
       'path': existing.path,
@@ -261,7 +274,11 @@ Future<McpToolResult> deleteFile(Ref ref, Map<String, Object?> args) async {
 /// - a search with zero hits is an error (not a silent no-op).
 /// - a literal edit whose `replace` equals `search` is rejected up front —
 ///   it would report "替换完成" while changing nothing.
-Future<McpToolResult> editFile(Ref ref, Map<String, Object?> args) async {
+Future<McpToolResult> editFile(
+  Ref ref,
+  Map<String, Object?> args, {
+  String sessionKey = '',
+}) async {
   final path = requireString(args, 'path');
   final isRegex = optionalBool(args, 'is_regex');
   final globalReplaceAll = optionalBool(args, 'replace_all');
@@ -315,6 +332,7 @@ Future<McpToolResult> editFile(Ref ref, Map<String, Object?> args) async {
   final resolved = await resolvePathArg(ref, args, path);
   final backend = resolved.backend;
   final resolvedPath = resolved.path;
+  await _ensureNotStaleByStat(ref, backend, sessionKey, resolvedPath);
   var content = await backend.readFile(resolvedPath);
   final original = content;
   var total = 0;
@@ -356,6 +374,7 @@ Future<McpToolResult> editFile(Ref ref, Map<String, Object?> args) async {
       source: '智能体编辑',
     );
     await backend.writeFile(resolvedPath, content);
+    await _refreshReadState(ref, backend, sessionKey, resolvedPath);
   }
   return fileEditorOk({
     'message': '替换完成（$total 处${edits.length > 1 ? '，${edits.length} 个 edit' : ''}）',
@@ -363,6 +382,59 @@ Future<McpToolResult> editFile(Ref ref, Map<String, Object?> args) async {
     'replacements': total,
     if (edits.length > 1) 'edits': edits.length,
   });
+}
+
+/// 陈旧检测（Claude Code 的 readFileState 机制）：本会话读过的文件若在读取后
+/// 被外部修改（mtime 变化），拒绝基于过期内容的改动；未读过的文件不拦。
+void _ensureNotStale(
+  Ref ref,
+  String sessionKey,
+  String path, {
+  required int currentMtime,
+}) {
+  final record = ref.read(fileReadStateProvider).lookup(sessionKey, path);
+  if (isStaleForEdit(record, mtime: currentMtime)) {
+    throw const FileEditorError(
+      '文件在上次读取后已被外部修改（mtime 变化），为避免基于过期内容修改，'
+      '本次未做任何改动。请先用 read_file 重新读取最新内容后重试。',
+    );
+  }
+}
+
+/// [_ensureNotStale] 的 stat 变体：自行取 mtime（best-effort，后端不支持
+/// getFileInfo 时跳过检测）。
+Future<void> _ensureNotStaleByStat(
+  Ref ref,
+  WorkspaceBackend backend,
+  String sessionKey,
+  String path,
+) async {
+  final WorkspaceEntry info;
+  try {
+    info = await backend.getFileInfo(path);
+  } catch (_) {
+    return;
+  }
+  _ensureNotStale(ref, sessionKey, path, currentMtime: info.mtime);
+}
+
+/// 本会话自己写入后刷新读取记录：新 mtime 让陈旧检测不误拦后续编辑，
+/// 同时使旧内容退出读取去重（重读会返回真实新内容）。Best-effort。
+Future<void> _refreshReadState(
+  Ref ref,
+  WorkspaceBackend backend,
+  String sessionKey,
+  String path,
+) async {
+  try {
+    final info = await backend.getFileInfo(path);
+    ref
+        .read(fileReadStateProvider)
+        .refreshAfterWrite(sessionKey, path, mtime: info.mtime, size: info.size);
+  } catch (_) {
+    // 后端不支持 getFileInfo 时保持旧记录；下次编辑前的 stat 也会失败，
+    // 陈旧检测同样跳过，不会误拦。
+  }
 }
 
 /// Saves [path]'s current content to the workspace file history before an

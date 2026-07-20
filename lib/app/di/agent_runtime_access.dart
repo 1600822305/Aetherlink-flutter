@@ -854,8 +854,18 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
     Ref Function() refOf,
     this._routes, {
     String? boundWorkspaceId,
-  })  : _boundWorkspaceId = boundWorkspaceId,
-        _executor = ChatToolExecutor(refOf, assistantId: () => '');
+  })  : _boundWorkspaceId = boundWorkspaceId {
+    _executor = ChatToolExecutor(
+      refOf,
+      assistantId: () => '',
+      // 每次 forProfile 组装一个执行器 ≈ 一次智能体运行；用实例级会话键
+      // 隔离 file-editor 的读取去重 / 陈旧检测状态。
+      sessionId: () => 'agent-run-$_runSequence',
+    );
+  }
+
+  static int _nextRunSequence = 0;
+  final int _runSequence = _nextRunSequence++;
 
   final Map<String, ToolRoute> _routes;
 
@@ -863,7 +873,7 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
   /// 锚定它（而不是内置终端/当前工作区），避免智能体越出绑定工作区
   /// 看到/操作其他终端会话。
   final String? _boundWorkspaceId;
-  final ChatToolExecutor _executor;
+  late final ChatToolExecutor _executor;
 
   @override
   Future<AgentToolResult> execute(

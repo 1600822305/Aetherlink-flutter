@@ -32,13 +32,23 @@ import 'package:aetherlink_flutter/shared/services/web_search_service.dart';
 /// (Riverpod 3 invalidates the previous build's Ref), so a Ref captured at
 /// construction would throw once the controller rebuilds mid-turn.
 class ChatToolExecutor {
-  const ChatToolExecutor(this._refOf, {required String Function() assistantId})
-    : _assistantId = assistantId;
+  const ChatToolExecutor(
+    this._refOf, {
+    required String Function() assistantId,
+    String Function()? sessionId,
+  })  : _assistantId = assistantId,
+        _sessionId = sessionId;
 
   final Ref Function() _refOf;
   final String Function() _assistantId;
 
+  /// 会话键（聊天话题 / 智能体任务 ID），用于 file-editor 的读取去重与
+  /// 陈旧检测状态隔离；未提供时共享空串兜底会话。
+  final String Function()? _sessionId;
+
   Ref get _ref => _refOf();
+
+  String get _sessionKey => _sessionId?.call() ?? '';
 
   /// Executes one tool call along its [route]: a built-in runs in-process via
   /// [runBuiltinTool]; a remote tool is dispatched to its server through
@@ -57,7 +67,12 @@ class ChatToolExecutor {
       case SettingsToolRoute():
         return await runSettingsTool(_ref, route.toolName, args);
       case FileEditorToolRoute():
-        return await runFileEditorTool(_ref, route.toolName, args);
+        return await runFileEditorTool(
+          _ref,
+          route.toolName,
+          args,
+          sessionKey: _sessionKey,
+        );
       case BuiltinToolRoute(:final serverName, :final env):
         return await runBuiltinTool(
               serverName,
@@ -252,7 +267,12 @@ class ChatToolExecutor {
     }
     if (kRefDependentBuiltins.contains(server.name)) {
       if (server.name == kFileEditorServerName) {
-        return await runFileEditorTool(_ref, toolName, toolArgs);
+        return await runFileEditorTool(
+          _ref,
+          toolName,
+          toolArgs,
+          sessionKey: _sessionKey,
+        );
       }
       if (server.name == kKnowledgeServerName) {
         return await runKnowledgeTool(_ref, toolName, toolArgs);
