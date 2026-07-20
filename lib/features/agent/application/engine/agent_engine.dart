@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_budget.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_guard.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_trigger.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
@@ -107,6 +108,12 @@ class AgentEngine {
 
   /// 压缩失败只提示一次（每次运行一个引擎实例）。
   bool _compactionFailureNotified = false;
+  bool _compactionWarningNotified = false;
+
+  /// 压缩熔断器（升级计划 ④）：连续失败达上限后本次运行内不再尝试，
+  /// 成功一次即重置；随引擎实例生灭，续跑重新计数。
+  final CompactionCircuitBreaker _compactionBreaker =
+      CompactionCircuitBreaker();
 
   Future<void> run(AgentTask task, AgentCancellationToken cancel) async {
     var current = task;
@@ -449,7 +456,18 @@ class AgentEngine {
         } catch (e) {
           // 压缩失败不阻断任务（下轮再试），但给一次可见提示，
           // 避免上下文持续膨胀到预算暂停时用户不知原因。
-          if (!_compactionFailureNotified) {
+          final justOpened = _compactionBreaker.recordFailure();
+          if (justOpened) {
+            // 熔断（升级计划 ④）：连续失败达上限，本次运行内停止再尝试，
+            // 避免每轮白调一次 LLM；给一次可见提示。
+            try {
+              await store.appendStatusChange(
+                  current.id,
+                  '上下文压缩连续失败 '
+                  '${_compactionBreaker.maxConsecutiveFailures} 次，本次运行内'
+                  '不再尝试（续跑恢复）：$e');
+            } catch (_) {}
+          } else if (!_compactionFailureNotified) {
             _compactionFailureNotified = true;
             try {
               await store.appendStatusChange(
@@ -551,7 +569,26 @@ class AgentEngine {
       estimatedChars: totalContextChars(entries),
       fallbackTriggerChars: budget.compactionTriggerChars,
     );
-    if (!shouldCompact) return;
+    if (!shouldCompact) {
+      // 预警（升级计划 ④）：进入触发阈值的 90% 区间时提前提示一次
+      // （可见状态行 + notification hook，type=compactWarning）。
+      if (!_compactionWarningNotified &&
+          isNearCompactionThreshold(
+            contextTokens: task.contextTokens,
+            contextLimitTokens: budget.contextLimitTokens,
+            estimatedChars: totalContextChars(entries),
+            fallbackTriggerChars: budget.compactionTriggerChars,
+          )) {
+        _compactionWarningNotified = true;
+        const message = '上下文即将达到压缩阈值，稍后将自动压缩';
+        try {
+          await store.appendStatusChange(task.id, message);
+        } catch (_) {}
+        onNotification?.call(message, 'compactWarning');
+      }
+      return;
+    }
+    if (_compactionBreaker.isOpen) return;
     final covered = selectCompactionPrefix(
       entries,
       keepChars: budget.compactionKeepChars,
@@ -567,6 +604,7 @@ class AgentEngine {
       coveredCount: covered.length,
       summary: summary.trim(),
     );
+    _compactionBreaker.recordSuccess();
     onPostCompact?.call(summary.trim());
   }
 
