@@ -514,7 +514,15 @@ class AgentEngine {
                 current.id, '[stop hook 阻止收尾] $blocked');
             continue;
           }
-          current = await transition(AgentTaskStatus.done, '任务完成');
+          // 正文就是结束语；状态行只留元信息，避免重复。
+          await store.appendStatusChange(
+              current.id, '任务完成 · ${current.rounds} 轮');
+          current = await save(current.copyWith(
+            status: AgentTaskStatus.done,
+            updatedAt: DateTime.now(),
+            lastEventSummary:
+                turn.text.isNotEmpty ? turn.text : current.lastEventSummary,
+          ));
           onTaskEnd?.call();
           return;
         }
@@ -685,8 +693,16 @@ class AgentEngine {
                   current.id, '[stop hook 阻止收尾] $blocked');
               continue outer;
             }
+            // summary 只进任务列表（lastEventSummary）；事件流里正文
+            // 就是结束语，状态行只留元信息，不再重复展示 summary。
             final summary = _stringArg(call, 'summary') ?? '任务完成';
-            current = await transition(AgentTaskStatus.done, summary);
+            await store.appendStatusChange(
+                current.id, '任务完成 · ${current.rounds} 轮');
+            current = await save(current.copyWith(
+              status: AgentTaskStatus.done,
+              updatedAt: DateTime.now(),
+              lastEventSummary: summary,
+            ));
             onTaskEnd?.call();
             return;
           }
