@@ -194,9 +194,10 @@ String encodeAgentEventPayload(AgentEvent event) {
             {'content': item.content, 'status': item.status.name},
         ],
       },
-    CompactionEvent(:final coveredCount, :final summary) => {
+    CompactionEvent(:final coveredCount, :final summary, :final revoked) => {
         'coveredCount': coveredCount,
         'summary': summary,
+        'revoked': revoked,
       },
     CheckpointEvent(:final commit, :final label) => {
         'commit': commit,
@@ -307,6 +308,7 @@ AgentEvent decodeAgentEvent({
         at: at,
         coveredCount: p['coveredCount'] as int? ?? 0,
         summary: p['summary'] as String? ?? '',
+        revoked: p['revoked'] as bool? ?? false,
       );
     case 'checkpoint':
       return CheckpointEvent(

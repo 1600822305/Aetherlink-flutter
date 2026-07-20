@@ -23,6 +23,8 @@ List<AgentEvent> foldCompactedEvents(List<AgentEvent> events) {
       case ToolCallEvent():
         entries.add(event);
       case CompactionEvent():
+        // 已撤销的压缩不参与折叠：视图恢复原样（引擎/重放两侧同一函数）。
+        if (event.revoked) break;
         final n = event.coveredCount.clamp(0, entries.length);
         entries.removeRange(0, n);
         entries.insert(0, event);

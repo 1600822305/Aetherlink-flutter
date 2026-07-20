@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aetherlink_flutter/features/agent/application/agent_compaction_progress.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/plan_panel.dart';
@@ -151,9 +153,69 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
             ],
           ),
         ),
+        _CompactionProgressBanner(taskId: widget.task.id),
         AgentFollowupPanel(task: widget.task),
         AgentInputBar(task: widget.task),
       ],
+    );
+  }
+}
+
+/// 压缩实况条：压缩进行中（排队 / 生成摘要）时显示在输入区上方，
+/// 可取消时附「取消」按钮（排队未开始→撤单；摘要生成中→丢弃
+/// 结果不落库）。
+class _CompactionProgressBanner extends ConsumerWidget {
+  const _CompactionProgressBanner({required this.taskId});
+
+  final String taskId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final run = ref.watch(
+      agentCompactionProgressProvider.select((s) => s[taskId]),
+    );
+    if (run == null) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    final label = run.phase == AgentCompactionPhase.queued
+        ? '将在下一个安全点压缩上下文…'
+        : '正在压缩上下文（生成摘要中）…';
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: scheme.primary,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+          if (run.cancellable)
+            TextButton(
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+              onPressed: () => ref
+                  .read(agentTaskRunnerProvider.notifier)
+                  .cancelCompactNow(taskId),
+              child: const Text('取消'),
+            ),
+        ],
+      ),
     );
   }
 }

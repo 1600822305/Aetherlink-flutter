@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/app/di/agent_data_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_hooks_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_runtime_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_subagent_access.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_compaction_progress.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_compaction_settings.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
@@ -422,8 +423,14 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   /// （暂停/完成/失败）直接调共享的 [runManualCompaction] 落
   /// CompactionEvent。返回给 UI 的提示文案；摘要失败时抛错由调用方提示。
   Future<String> compactNow(AgentTask task) async {
+    final progress = ref.read(agentCompactionProgressProvider.notifier);
     if (state.contains(task.id)) {
       _pendingManualCompact.add(task.id);
+      progress.start(
+        task.id,
+        phase: AgentCompactionPhase.queued,
+        cancellable: true,
+      );
       return '任务运行中：将在下一个安全点压缩';
     }
     final profile =
@@ -446,21 +453,48 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           boundWorkspaceId: task.workspaceId,
         );
     final compaction = ref.read(agentCompactionSettingsProvider);
-    final outcome = await runManualCompaction(
-      task: task,
-      events: await _store().getEvents(task.id),
-      llm: runtime.llm,
-      store: _store(),
-      keepChars: compaction.keepChars,
-      microCompactEnabled: compaction.microCompactEnabled,
-      microCompactTriggerChars: compaction.microCompactTriggerChars,
+    progress.start(
+      task.id,
+      phase: AgentCompactionPhase.summarizing,
+      cancellable: true,
     );
-    return switch (outcome) {
-      ManualCompactionDone(:final coveredCount) =>
-        '已把 $coveredCount 条较早内容压缩为摘要',
-      ManualCompactionNothingToCover() => '内容太少，无需压缩',
-    };
+    try {
+      final outcome = await runManualCompaction(
+        task: task,
+        events: await _store().getEvents(task.id),
+        llm: runtime.llm,
+        store: _store(),
+        keepChars: compaction.keepChars,
+        microCompactEnabled: compaction.microCompactEnabled,
+        microCompactTriggerChars: compaction.microCompactTriggerChars,
+        isCancelled: () => progress.isCancelRequested(task.id),
+      );
+      return switch (outcome) {
+        ManualCompactionDone(:final coveredCount) =>
+          '已把 $coveredCount 条较早内容压缩为摘要',
+        ManualCompactionNothingToCover() => '内容太少，无需压缩',
+        ManualCompactionCancelled() => '已取消压缩，未写入摘要',
+      };
+    } finally {
+      progress.finish(task.id);
+    }
   }
+
+  /// 取消进行中的手动压缩：排队未到安全点的直接撤单；摘要生成中的
+  /// 置取消标记，结果丢弃不落库。
+  void cancelCompactNow(String taskId) {
+    final progress = ref.read(agentCompactionProgressProvider.notifier);
+    if (_pendingManualCompact.remove(taskId)) {
+      progress.finish(taskId);
+      return;
+    }
+    progress.requestCancel(taskId);
+  }
+
+  /// 撤销一次压缩：原位标记 revoked，上下文视图恢复原样（事件流原文
+  /// 本就未删）；引擎与重放侧下一轮同步生效。
+  Future<void> revokeCompaction(String taskId, CompactionEvent event) =>
+      _store().updateCompaction(taskId, event, revoked: true);
 
   void forceStop(String taskId) => _tokens[taskId]?.requestCancel();
 
@@ -586,10 +620,20 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           unawaited(runtime.lifecycleHooks(AgentHookEvent.taskEnd)),
       onNotification: (message, type) => unawaited(
           runtime.notificationHooks(message, notificationType: type)),
-      onPreCompact: () =>
-          unawaited(runtime.compactionHooks(AgentHookEvent.preCompact)),
-      onPostCompact: (summary) => unawaited(runtime
-          .compactionHooks(AgentHookEvent.postCompact, summary: summary)),
+      onPreCompact: () {
+        // 事件流实况行：安全点压缩开始（LLM 摘要中不可取消）。
+        ref.read(agentCompactionProgressProvider.notifier).start(
+              task.id,
+              phase: AgentCompactionPhase.summarizing,
+              cancellable: false,
+            );
+        unawaited(runtime.compactionHooks(AgentHookEvent.preCompact));
+      },
+      onPostCompact: (summary) {
+        ref.read(agentCompactionProgressProvider.notifier).finish(task.id);
+        unawaited(runtime.compactionHooks(AgentHookEvent.postCompact,
+            summary: summary));
+      },
       manualCompactSignal: () => _pendingManualCompact.remove(task.id),
     );
     // fileChanged hooks 的工作区文件 watcher：与本次运行同生命周期
@@ -597,6 +641,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     unawaited(runtime.fileWatcher.start());
     engine.run(task, token).whenComplete(() {
       unawaited(runtime.fileWatcher.stop());
+      // 兜底清掉压缩实况行（压缩失败时引擎不回调 onPostCompact）。
+      ref.read(agentCompactionProgressProvider.notifier).finish(task.id);
+      _pendingManualCompact.remove(task.id);
       _tokens.remove(task.id);
       _clearGraceIfFinished(task.id);
       state = {

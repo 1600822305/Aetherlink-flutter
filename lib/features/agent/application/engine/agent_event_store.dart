@@ -104,6 +104,14 @@ abstract class AgentEventStore {
     required String summary,
   });
 
+  /// 压缩撤销标记原位改写（id/seq 不变）：撤销后不再参与上下文
+  /// 视图折叠，事件行保留作审计痕迹。
+  Future<CompactionEvent> updateCompaction(
+    String taskId,
+    CompactionEvent event, {
+    required bool revoked,
+  });
+
   /// 删除话题内 seq 大于 [seq] 的全部事件（回滚对话到检查点）。
   Future<void> truncateEventsAfter(String taskId, int seq);
 }
@@ -414,5 +422,23 @@ class DriftAgentEventStore implements AgentEventStore {
     );
     await _dao.upsertEvents(taskId, [event]);
     return event;
+  }
+
+  @override
+  Future<CompactionEvent> updateCompaction(
+    String taskId,
+    CompactionEvent event, {
+    required bool revoked,
+  }) async {
+    final updated = CompactionEvent(
+      id: event.id,
+      seq: event.seq,
+      at: event.at,
+      coveredCount: event.coveredCount,
+      summary: event.summary,
+      revoked: revoked,
+    );
+    await _dao.upsertEvents(taskId, [updated]);
+    return updated;
   }
 }

@@ -310,6 +310,24 @@ class InMemoryAgentEventStore implements AgentEventStore {
     _upsert(taskId, event);
     return event;
   }
+
+  @override
+  Future<CompactionEvent> updateCompaction(
+    String taskId,
+    CompactionEvent event, {
+    required bool revoked,
+  }) async {
+    final updated = CompactionEvent(
+      id: event.id,
+      seq: event.seq,
+      at: event.at,
+      coveredCount: event.coveredCount,
+      summary: event.summary,
+      revoked: revoked,
+    );
+    _upsert(taskId, updated);
+    return updated;
+  }
 }
 
 class RecordingTaskGateway implements AgentTaskGateway {
@@ -1031,6 +1049,23 @@ void main() {
     expect(folded[0], isA<CompactionEvent>());
     expect((folded[1] as AssistantTextEvent).text, '回应二');
     expect((folded[2] as UserMessageEvent).text, '第二条');
+  });
+
+  test('foldCompactedEvents：已撤销的压缩不参与折叠（视图恢复原样）', () async {
+    final store = InMemoryAgentEventStore();
+    const taskId = 'task-rv';
+    await store.appendUserMessage(taskId, '第一条');
+    await store.appendAssistantText(taskId, '回应一', streaming: false);
+    await store.appendAssistantText(taskId, '回应二', streaming: false);
+    final compaction =
+        await store.appendCompaction(taskId, coveredCount: 2, summary: '早期摘要');
+    await store.appendUserMessage(taskId, '第二条');
+    await store.updateCompaction(taskId, compaction, revoked: true);
+
+    final folded = foldCompactedEvents(await store.getEvents(taskId));
+    expect(folded.whereType<CompactionEvent>(), isEmpty);
+    expect(folded.length, 4);
+    expect((folded[0] as UserMessageEvent).text, '第一条');
   });
 
   test('排队消息在安全点被消费（queued → false）', () async {

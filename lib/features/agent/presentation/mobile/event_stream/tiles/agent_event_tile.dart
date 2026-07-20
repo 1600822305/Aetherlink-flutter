@@ -34,7 +34,7 @@ class AgentEventTile extends StatelessWidget {
       final ToolCallEvent e when e.toolName == kToolSpawnSubagent =>
         SubagentTile(event: e),
       final ToolCallEvent e => ToolRow(event: e, taskId: taskId),
-      final CompactionEvent e => CompactionDivider(event: e),
+      final CompactionEvent e => CompactionDivider(event: e, taskId: taskId),
       final CheckpointEvent e => CheckpointTile(event: e, taskId: taskId),
       final StatusChangeEvent e => StatusChangeTile(event: e),
       PlanUpdateEvent() => const SizedBox.shrink(), // 由顶部计划纪要条渲染

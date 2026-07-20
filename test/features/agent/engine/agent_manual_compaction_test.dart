@@ -54,4 +54,23 @@ void main() {
     final events = await store.getEvents(task.id);
     expect(events.whereType<CompactionEvent>(), isEmpty);
   });
+
+  test('取消后返回 Cancelled 且不落 CompactionEvent', () async {
+    final store = InMemoryAgentEventStore();
+    final task = _task();
+    for (var i = 0; i < 12; i++) {
+      await store.appendUserMessage(task.id, '消息$i：${'长' * 500}');
+    }
+    final outcome = await runManualCompaction(
+      task: task,
+      events: await store.getEvents(task.id),
+      llm: const FakeAgentLlmClient(),
+      store: store,
+      keepChars: 1000,
+      isCancelled: () => true,
+    );
+    expect(outcome, isA<ManualCompactionCancelled>());
+    final events = await store.getEvents(task.id);
+    expect(events.whereType<CompactionEvent>(), isEmpty);
+  });
 }

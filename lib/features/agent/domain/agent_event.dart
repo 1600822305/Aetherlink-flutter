@@ -215,10 +215,15 @@ class CompactionEvent extends AgentEvent {
     required super.at,
     required this.coveredCount,
     required this.summary,
+    this.revoked = false,
   });
 
   final int coveredCount;
   final String summary;
+
+  /// 已撤销：不再参与上下文视图折叠（原始事件本就未删，撤销后
+  /// 视图恢复原样）；事件行保留作审计痕迹。
+  final bool revoked;
 }
 
 /// 检查点（初稿 §5.5 P2）：用户消息落地前对 git 工作区做的基线快照，

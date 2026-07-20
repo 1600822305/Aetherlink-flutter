@@ -29,6 +29,11 @@ class ManualCompactionNothingToCover extends ManualCompactionOutcome {
   const ManualCompactionNothingToCover();
 }
 
+/// 用户已取消：摘要结果丢弃，未落 CompactionEvent。
+class ManualCompactionCancelled extends ManualCompactionOutcome {
+  const ManualCompactionCancelled();
+}
+
 /// 强制压缩一次：折叠 + microcompact 后选 keep 前缀（与自动压缩同款
 /// 规则），调 LLM 摘要并落 CompactionEvent。摘要为空时抛错（与自动
 /// 压缩同语义，调用方自行提示）。
@@ -40,6 +45,7 @@ Future<ManualCompactionOutcome> runManualCompaction({
   required int keepChars,
   bool microCompactEnabled = true,
   int microCompactTriggerChars = kMicroCompactTriggerChars,
+  bool Function()? isCancelled,
 }) async {
   final entries = microCompactEnabled
       ? microCompactEntries(
@@ -50,6 +56,8 @@ Future<ManualCompactionOutcome> runManualCompaction({
   final covered = selectCompactionPrefix(entries, keepChars: keepChars);
   if (covered.isEmpty) return const ManualCompactionNothingToCover();
   final summary = await llm.summarizeForCompaction(task, covered);
+  // 协作式取消：LLM 调用本身不中断，但结果丢弃、不落库。
+  if (isCancelled?.call() ?? false) return const ManualCompactionCancelled();
   if (summary.trim().isEmpty) {
     throw StateError('压缩摘要为空（可能是模型未配置或模型返回空结果）');
   }
