@@ -13,7 +13,8 @@ const String kMicroCompactClearedPlaceholder = '[旧工具输出已清除]';
 
 /// 可被 microcompact 清除输出的工具（对标 CC COMPACTABLE_TOOLS）：
 /// 只清「可重取」的输出——终端 / 文件读 / 搜索 / 网络抓取 / 知识库
-/// 检索类；文件编辑（edit / write）的 diff 是语义结果，不清。
+/// 检索类。CC 的白名单连 edit / write 也清；本项目刻意更保守：
+/// 文件编辑的 diff 是语义结果（非可重取的现场输出），不清。
 const Set<String> kMicroCompactableTools = {
   'terminal_execute',
   'terminal_session',
