@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_budget.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent.dart';
@@ -535,7 +536,12 @@ class AgentEngine {
   }
 
   Future<void> _maybeCompact(AgentTask task, List<AgentEvent> events) async {
-    final entries = foldCompactedEvents(events);
+    // 与重放侧同款视图：先折叠、再 microcompact，确保 LLM 压缩的
+    // 触发判断基于模型实际看到的内容量（两级降压：先 micro 后 LLM）。
+    final entries = microCompactEntries(
+      foldCompactedEvents(events),
+      triggerChars: budget.microCompactTriggerChars,
+    );
     if (totalContextChars(entries) <= budget.compactionTriggerChars) return;
     final covered = selectCompactionPrefix(
       entries,

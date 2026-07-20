@@ -17,6 +17,7 @@ import 'package:aetherlink_flutter/features/agent/application/agent_permission_r
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_control_tools.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart' show kToolAskUser;
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
@@ -615,7 +616,12 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
 /// 用户消息。计划/状态事件不进消息（计划走系统提示置尾）。
 List<LlmMessage> _replayMessages(List<AgentEvent> events) {
   final messages = <LlmMessage>[];
-  final folded = foldCompactedEvents(events);
+  // 先折叠、再 microcompact（与引擎 _maybeCompact 同款视图）：超阈值时
+  // 较旧的可重取工具输出以占位符进上下文，不改事件流本体。
+  final folded = microCompactEntries(
+    foldCompactedEvents(events),
+    triggerChars: kMicroCompactTriggerChars,
+  );
   // 提问索引建在折叠后的事件上：提问若已被压缩折叠，其回答退化为
   // 普通用户消息，避免回放出没有前置 tool_call 的 tool 结果。
   final questionsById = {

@@ -1,3 +1,5 @@
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
+
 /// 预算护栏（循环设计稿 §3.3 L5）：无限轮循环的成本/失控保险。
 /// 超限不是 fail，引擎转 paused + 说明，用户可续跑。
 class AgentBudget {
@@ -8,6 +10,7 @@ class AgentBudget {
     this.maxTokens = 500000,
     this.compactionTriggerChars = 120000,
     this.compactionKeepChars = 40000,
+    this.microCompactTriggerChars = kMicroCompactTriggerChars,
   });
 
   final int maxRounds;
@@ -24,6 +27,11 @@ class AgentBudget {
 
   /// 压缩后保留给尾部近期事件的字符预算。
   final int compactionKeepChars;
+
+  /// microcompact（不调 LLM 的旧工具输出占位清除）触发阈值：低于
+  /// [compactionTriggerChars]，先 micro 后 LLM 的两级降压。重放侧直接用
+  /// 默认常量 [kMicroCompactTriggerChars]，自定义时两侧需保持一致。
+  final int microCompactTriggerChars;
 
   int _rounds = 0;
   int _consecutiveFailures = 0;
