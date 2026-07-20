@@ -22,7 +22,8 @@ enum BuddyRarity {
   final int statFloor;
 }
 
-/// 18 种物种，与原版一致。
+/// 物种：前 18 种与原版一致，之后为新增物种（只能追加在末尾，
+/// 否则会改变老种子的抽取结果）。
 enum BuddySpecies {
   duck('鸭子'),
   goose('鹅'),
@@ -41,7 +42,8 @@ enum BuddySpecies {
   robot('机器人'),
   rabbit('兔子'),
   mushroom('蘑菇'),
-  chonk('胖猫');
+  chonk('胖猫'),
+  nailong('奶龙');
 
   const BuddySpecies(this.label);
 

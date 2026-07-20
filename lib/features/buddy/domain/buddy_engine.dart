@@ -75,12 +75,20 @@ Map<BuddyStat, int> _rollStats(Mulberry32 rng, BuddyRarity rarity) {
   return stats;
 }
 
+/// 初代（无 `v2-` 前缀种子）可抽的物种数：枚举前 18 个。后续新增
+/// 物种只追加在枚举末尾并提升新种子版本，保证老种子的宠物不变。
+const int _kSpeciesCountV1 = 18;
+
 /// 从种子确定性生成骨架。抽取顺序固定：稀有度 → 物种 → 眼睛 → 帽子 →
-/// 闪光(1%) → 属性，改变顺序会改变所有人的宠物。
+/// 闪光(1%) → 属性，改变顺序会改变所有人的宠物。物种池按种子版本
+/// 选取（v2 含奶龙），旧种子只从初代 18 种里抽，存量宠物不受影响。
 BuddyBones rollBuddy(String seed) {
   final rng = Mulberry32(fnv1aHash(seed + kBuddySalt));
+  final speciesPool = seed.startsWith('v2-')
+      ? BuddySpecies.values
+      : BuddySpecies.values.sublist(0, _kSpeciesCountV1);
   final rarity = _rollRarity(rng);
-  final species = rng.pick(BuddySpecies.values);
+  final species = rng.pick(speciesPool);
   final eye = rng.pick(kBuddyEyes);
   final hat = rarity == BuddyRarity.common
       ? BuddyHat.none
