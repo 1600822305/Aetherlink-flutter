@@ -192,6 +192,7 @@ flutter:
     - assets/icons/
     - assets/fonts/google_font_categories.json
     - assets/model_registry/models.json
+    - assets/buddy/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

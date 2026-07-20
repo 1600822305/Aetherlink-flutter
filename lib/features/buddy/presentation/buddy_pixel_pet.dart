@@ -2,14 +2,18 @@
 // 60fps 补间动画 —— 呼吸起伏、周期眨眼、被摸时挤压回弹 + 爱心粒子，
 // 闪光个体金色调 + 星光闪烁。帽子像素图锚定在头顶叠加。
 
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aetherlink_flutter/features/buddy/application/buddy_codex_skin_controller.dart';
 import 'package:aetherlink_flutter/features/buddy/domain/buddy_types.dart';
 import 'package:aetherlink_flutter/features/buddy/domain/pixel_arts/pixel_arts.dart';
+import 'package:aetherlink_flutter/features/buddy/presentation/sheet_pets/buddy_sheet_pet.dart';
 import 'package:aetherlink_flutter/features/buddy/presentation/vector_pets/vector_pet.dart';
 
 /// 眨眼周期：每 ~3.7s 闭眼 0.15s。
@@ -24,7 +28,8 @@ const double _squashLen = 0.6;
 const double _heartsLen = 1.4;
 
 /// 像素宠物。[petTrigger] 每次递增触发一次「被摸」动画。
-class BuddyPixelPet extends StatefulWidget {
+/// 有 Codex 皮肤或内置 Codex 精灵图的物种优先用 spritesheet 渲染。
+class BuddyPixelPet extends ConsumerWidget {
   const BuddyPixelPet({
     super.key,
     required this.bones,
@@ -37,10 +42,43 @@ class BuddyPixelPet extends StatefulWidget {
   final int petTrigger;
 
   @override
-  State<BuddyPixelPet> createState() => _BuddyPixelPetState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final skin = ref.watch(buddyCodexSkinProvider).skin;
+    if (skin != null) {
+      return BuddySheetPet(
+        image: FileImage(File(skin.path)),
+        size: size,
+        petTrigger: petTrigger,
+      );
+    }
+    final builtin = kBuddyBuiltinSheetAssets[bones.species.name];
+    if (builtin != null) {
+      return BuddySheetPet(
+        image: AssetImage(builtin),
+        size: size,
+        petTrigger: petTrigger,
+      );
+    }
+    return _PixelPet(bones: bones, size: size, petTrigger: petTrigger);
+  }
 }
 
-class _BuddyPixelPetState extends State<BuddyPixelPet>
+class _PixelPet extends StatefulWidget {
+  const _PixelPet({
+    required this.bones,
+    this.size = 128,
+    this.petTrigger = 0,
+  });
+
+  final BuddyBones bones;
+  final double size;
+  final int petTrigger;
+
+  @override
+  State<_PixelPet> createState() => _BuddyPixelPetState();
+}
+
+class _BuddyPixelPetState extends State<_PixelPet>
     with SingleTickerProviderStateMixin {
   late final Ticker _ticker;
   final ValueNotifier<double> _time = ValueNotifier(0);
@@ -56,7 +94,7 @@ class _BuddyPixelPetState extends State<BuddyPixelPet>
   }
 
   @override
-  void didUpdateWidget(covariant BuddyPixelPet oldWidget) {
+  void didUpdateWidget(covariant _PixelPet oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.petTrigger != oldWidget.petTrigger) {
       _petStart = _time.value;

@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/app/router/app_router.dart';
+import 'package:aetherlink_flutter/features/buddy/application/buddy_codex_skin_controller.dart';
 import 'package:aetherlink_flutter/features/buddy/application/buddy_controller.dart';
 import 'package:aetherlink_flutter/features/buddy/application/buddy_overlay_controller.dart';
 import 'package:aetherlink_flutter/shared/utils/haptics.dart';
@@ -78,6 +79,14 @@ class BuddySettingsPage extends ConsumerWidget {
                 },
               ),
             ),
+          ),
+          const SizedBox(height: 16),
+          _card(
+            theme,
+            header: const _CardHeader(
+                title: 'Codex 宠物皮肤',
+                description: '兼容 codex-pet.org 宠物包，粘贴宠物页链接一键导入'),
+            child: const _CodexSkinSection(),
           ),
           const SizedBox(height: 16),
           _card(
@@ -205,6 +214,100 @@ class BuddySettingsPage extends ConsumerWidget {
             ),
           ),
           trailing,
+        ],
+      ),
+    );
+  }
+}
+
+class _CodexSkinSection extends ConsumerStatefulWidget {
+  const _CodexSkinSection();
+
+  @override
+  ConsumerState<_CodexSkinSection> createState() => _CodexSkinSectionState();
+}
+
+class _CodexSkinSectionState extends ConsumerState<_CodexSkinSection> {
+  final TextEditingController _url = TextEditingController();
+
+  @override
+  void dispose() {
+    _url.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final skinState = ref.watch(buddyCodexSkinProvider);
+    final skin = skinState.skin;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (skin != null) ...[
+            Row(
+              children: [
+                Icon(LucideIcons.sparkles,
+                    size: 16, color: cs.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('当前皮肤：${skin.name}',
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.w500)),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Haptics.instance.light();
+                    ref.read(buddyCodexSkinProvider.notifier).clear();
+                  },
+                  child: const Text('恢复默认外观'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+          TextField(
+            controller: _url,
+            decoration: InputDecoration(
+              hintText: '例如 https://codex-pet.org/zh/pets/nailong0/',
+              isDense: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: theme.dividerColor),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: theme.dividerColor),
+              ),
+            ),
+            style: theme.textTheme.bodyMedium,
+          ),
+          if (skinState.error != null) ...[
+            const SizedBox(height: 6),
+            Text(skinState.error!,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: const Color(0xFFEF4444))),
+          ],
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.tonal(
+              onPressed: skinState.importing
+                  ? null
+                  : () async {
+                      Haptics.instance.light();
+                      final ok = await ref
+                          .read(buddyCodexSkinProvider.notifier)
+                          .importFromUrl(_url.text);
+                      if (ok) _url.clear();
+                    },
+              child: Text(skinState.importing ? '导入中…' : '导入皮肤'),
+            ),
+          ),
         ],
       ),
     );
