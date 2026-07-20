@@ -3,6 +3,9 @@
 /// 纯函数：环境上下文/项目指令由 composition 层取好传入，本文件不碰 IO。
 library;
 
+import 'dart:convert';
+
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
@@ -89,5 +92,36 @@ String buildAgentSystemPrompt({
     sections.add('[当前计划]\n${lines.join('\n')}');
   }
 
+  // 已批准方案置尾（对标 CC 计划文件）：方案全文只存在工具结果事件里，
+  // 长任务中可能被聚合预算/压缩折叠掉；这里从事件流取最近一次批准的
+  // 方案追加在系统提示末尾，执行阶段全程可见。Plan 模式不注入
+  //（方案尚未批准或正在修订）。
+  if (task.mode != AgentSessionMode.plan) {
+    final approved = events
+        .whereType<ToolCallEvent>()
+        .where((e) =>
+            e.toolName == kToolExitPlanMode &&
+            e.state == AgentToolCallState.success)
+        .lastOrNull;
+    final planText = _approvedPlanOf(approved);
+    if (planText.isNotEmpty) {
+      sections.add('[已批准的实施方案]（用户已批准，按此执行）\n$planText');
+    }
+  }
+
   return sections.join('\n\n');
+}
+
+/// 从 exit_plan_mode 成功事件的参数 JSON 取批准版方案全文。
+String _approvedPlanOf(ToolCallEvent? event) {
+  final argsJson = event?.argsDetail;
+  if (argsJson == null || argsJson.isEmpty) return '';
+  try {
+    final decoded = jsonDecode(argsJson);
+    if (decoded is Map<String, dynamic>) {
+      final plan = decoded['plan'];
+      if (plan is String) return plan.trim();
+    }
+  } catch (_) {}
+  return '';
 }

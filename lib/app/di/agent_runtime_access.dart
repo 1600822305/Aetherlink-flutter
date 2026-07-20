@@ -374,13 +374,25 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     );
 
     final thinkParams = _reasoningParams(ref);
+    final messages = _replayMessages(
+      context.events,
+      microCompactEnabled: context.microCompactEnabled,
+      microCompactTriggerChars: context.microCompactTriggerChars,
+    );
+    // Plan 模式每轮置尾提醒（对标 CC plan_mode attachment）：只进本轮
+    // 上下文不落事件流，长任务中防模型"忘了"自己在计划模式。
+    if (context.task.mode == AgentSessionMode.plan) {
+      messages.add(const LlmMessage(
+        role: MessageRole.user,
+        content: '<system-reminder>当前仍处于计划模式：只做只读探索与方案设计，'
+            '不要修改任何文件或执行写类操作；方案完整后用 exit_plan_mode 提交'
+            '全文请求批准。本提醒由系统注入，与用户消息无关，不要回应它。'
+            '</system-reminder>',
+      ));
+    }
     final request = LlmChatRequest(
       model: model,
-      messages: _replayMessages(
-        context.events,
-        microCompactEnabled: context.microCompactEnabled,
-        microCompactTriggerChars: context.microCompactTriggerChars,
-      ),
+      messages: messages,
       system: system,
       tools: _definitions,
       reasoningEffort: thinkParams.effort,

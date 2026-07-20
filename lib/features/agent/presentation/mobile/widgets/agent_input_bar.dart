@@ -335,12 +335,12 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       // 新话题/草稿态：写回全局默认模式（持久化，与侧边栏执行设置同步）。
       ref.read(agentUiSettingsControllerProvider.notifier).setDefaultMode(mode);
     }
-    if (task != null) {
-      // 立即持久化到话题（切页/重启不丢，侧边栏「执行设置」同步显示）；
-      // 运行中话题下一轮引擎现取该模式。
+    if (task != null && task.status != AgentTaskStatus.draft) {
+      // 经 runner 切模式：落审计事件 + prePlanMode 维护；运行中任务
+      // 在下个安全点暂停后以新模式的工具目录自动续跑。
       await ref
-          .read(agentTasksProvider.notifier)
-          .apply(task.copyWith(mode: mode, updatedAt: DateTime.now()));
+          .read(agentTaskRunnerProvider.notifier)
+          .switchMode(task, mode);
     }
   }
 

@@ -53,6 +53,11 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   /// taskId → 用户关注点（可为 null），引擎在下一个安全点消费。
   final Map<String, String?> _pendingManualCompact = {};
 
+  /// 用户在运行中手动切模式的任务（taskId → 目标模式）：引擎在下个
+  /// 安全点暂停后，whenComplete 里落新模式并以新工具目录自动续跑
+  ///（引擎暂停时会用自己的旧快照回写任务，模式必须在它之后再落）。
+  final Map<String, AgentSessionMode> _pendingUserModeSwitch = {};
+
   /// 正在运行的任务 id 集合（UI 可 watch）。
   @override
   Set<String> build() => const {};
@@ -418,6 +423,42 @@ class AgentTaskRunner extends _$AgentTaskRunner {
 
   void pause(String taskId) => _tokens[taskId]?.requestPause();
 
+  /// 手动切换任务模式（对标运行中切 Plan/Code）：落审计事件 + 更新任务；
+  /// 切入 Plan 时记录 prePlanMode（方案批准退出时恢复），切出 Plan 清标记。
+  /// 运行中的任务：工具目录/系统提示是按模式在运行开始时构建的，
+  /// 请求引擎在下个安全点暂停，完成后自动以新模式续跑。
+  Future<void> switchMode(AgentTask task, AgentSessionMode newMode) async {
+    if (task.mode == newMode) return;
+    await _store().appendStatusChange(
+      task.id,
+      '模式切换：${task.mode.name} → ${newMode.name}（用户手动）',
+    );
+    if (state.contains(task.id)) {
+      // 运行中：不在这里落模式（引擎暂停时会用旧快照回写覆盖掉），
+      // 挂 pending 由 whenComplete 在引擎退出后落模式并续跑。
+      _pendingUserModeSwitch[task.id] = newMode;
+      _tokens[task.id]?.requestPause();
+      return;
+    }
+    await ref
+        .read(agentTasksProvider.notifier)
+        .apply(_withMode(task, newMode));
+  }
+
+  /// 切模式的字段变更：切入 Plan 记 prePlanMode（方案批准退出时恢复），
+  /// 切出 Plan 清标记。
+  static AgentTask _withMode(AgentTask task, AgentSessionMode newMode) {
+    final enteringPlan = newMode == AgentSessionMode.plan &&
+        (task.mode == AgentSessionMode.code ||
+            task.mode == AgentSessionMode.auto);
+    return task.copyWith(
+      mode: newMode,
+      prePlanMode: enteringPlan ? task.mode : null,
+      clearPrePlanMode: !enteringPlan,
+      updatedAt: DateTime.now(),
+    );
+  }
+
   /// 手动压缩（升级计划 ⑤，对标 CC /compact）：运行中任务挂到下一个
   /// 安全点由引擎强制压缩（忽略触发阈值，仍走 keep 规则）；空闲任务
   /// （暂停/完成/失败）直接调共享的 [runManualCompaction] 落
@@ -667,7 +708,30 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         unawaited(StreamingKeepAliveService.release('agent'));
       }
       final restart = modeSwitchRestart;
-      if (restart != null) _run(restart);
+      final userSwitch = _pendingUserModeSwitch.remove(task.id);
+      if (restart != null) {
+        _run(restart);
+      } else if (userSwitch != null) {
+        // 用户运行中手动切模式：引擎已在安全点退出（通常 paused），
+        // 现在落新模式并以新工具目录续跑；若任务已终止/完成则只落
+        // 模式不续跑。
+        final latest = ref
+            .read(agentTasksProvider)
+            .where((t) => t.id == task.id)
+            .firstOrNull;
+        if (latest != null) {
+          final resume = latest.status == AgentTaskStatus.paused;
+          final switched = _withMode(latest, userSwitch).copyWith(
+            status: resume ? AgentTaskStatus.running : null,
+          );
+          unawaited(ref
+              .read(agentTasksProvider.notifier)
+              .apply(switched)
+              .then((_) {
+            if (resume) _run(switched);
+          }));
+        }
+      }
     });
   }
 
