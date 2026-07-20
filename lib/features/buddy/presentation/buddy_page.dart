@@ -1,18 +1,24 @@
-// 电子宠物页面：孵化 → 精灵动画 + 抚摸 + 台词气泡 + 属性卡片。
+// 电子宠物页面：孵化 → 精灵动画 + 抚摸 + 台词气泡 + 属性卡片 + 悬浮窗开关。
 // 玩法移植自 Claude Code 的 BUDDY 隐藏功能（终端拓麻歌子），骨架由种子
 // 确定性生成（见 buddy_engine.dart），台词走本地台词库。
+// UI 采用项目统一的设置页风格：紧凑 AppBar + 描边卡片 + 头部条 + 行内开关。
 
 import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:aetherlink_flutter/app/router/app_router.dart';
 import 'package:aetherlink_flutter/features/buddy/application/buddy_controller.dart';
+import 'package:aetherlink_flutter/features/buddy/application/buddy_overlay_controller.dart';
 import 'package:aetherlink_flutter/features/buddy/domain/buddy_phrases.dart';
-import 'package:aetherlink_flutter/features/buddy/domain/buddy_sprites.dart';
 import 'package:aetherlink_flutter/features/buddy/domain/buddy_types.dart';
+import 'package:aetherlink_flutter/features/buddy/domain/pixel_arts/pixel_arts.dart';
+import 'package:aetherlink_flutter/features/buddy/presentation/buddy_pixel_pet.dart';
+import 'package:aetherlink_flutter/shared/utils/haptics.dart';
 
 /// 动画节拍（原版 TICK_MS = 500ms）。
 const Duration _tick = Duration(milliseconds: 500);
@@ -21,30 +27,21 @@ const Duration _tick = Duration(milliseconds: 500);
 const int _bubbleShowTicks = 20;
 const int _bubbleFadeTicks = 6;
 
-/// 抚摸爱心动画时长（原版 PET_BURST_MS = 2.5s → 5 ticks）。
+/// 抚摸台词冷却（爱心/挤压动画由 [BuddyPixelPet] 自己驱动）。
 const int _petBurstTicks = 5;
-
-/// 爱心上浮帧（原版 PET_HEARTS，figures.heart → ♥）。
-const List<String> _petHearts = [
-  '   ♥    ♥   ',
-  '  ♥  ♥   ♥  ',
-  ' ♥   ♥  ♥   ',
-  '♥  ♥      ♥ ',
-  '·    ·   ·  ',
-];
 
 Color _rarityColor(BuddyRarity rarity, ColorScheme cs) {
   switch (rarity) {
     case BuddyRarity.common:
       return cs.onSurface.withValues(alpha: 0.5);
     case BuddyRarity.uncommon:
-      return Colors.green;
+      return const Color(0xFF22C55E);
     case BuddyRarity.rare:
-      return Colors.blue;
+      return const Color(0xFF3B82F6);
     case BuddyRarity.epic:
-      return Colors.purple;
+      return const Color(0xFF8B5CF6);
     case BuddyRarity.legendary:
-      return Colors.amber.shade700;
+      return const Color(0xFFF59E0B);
   }
 }
 
@@ -59,8 +56,8 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
   Timer? _timer;
   final Random _random = Random();
 
-  int _tickCount = 0;
   int _petTicksLeft = 0;
+  int _petTrigger = 0;
   String? _bubbleText;
   int _bubbleTicksLeft = 0;
 
@@ -79,7 +76,6 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
   void _onTick() {
     if (!mounted) return;
     setState(() {
-      _tickCount++;
       if (_petTicksLeft > 0) _petTicksLeft--;
       if (_bubbleTicksLeft > 0) {
         _bubbleTicksLeft--;
@@ -100,8 +96,10 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
   }
 
   void _pet() {
+    Haptics.instance.light();
     setState(() {
       _petTicksLeft = _petBurstTicks;
+      _petTrigger++;
       _say(pickBuddyPhrase(_random, kBuddyPetReactions));
     });
   }
@@ -111,6 +109,7 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
   }
 
   void _hatch() {
+    Haptics.instance.medium();
     ref.read(buddyControllerProvider.notifier).hatch();
     setState(() => _say(pickBuddyPhrase(_random, kBuddyHatchGreetings)));
   }
@@ -121,7 +120,35 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('宠物'), centerTitle: true),
+      appBar: AppBar(
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.onSurface,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        toolbarHeight: 56,
+        centerTitle: false,
+        titleSpacing: 0,
+        shape: Border(bottom: BorderSide(color: theme.dividerColor)),
+        leadingWidth: 44,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 4),
+          child: IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            icon: const Icon(LucideIcons.arrowLeft, size: 24),
+            color: theme.colorScheme.primary,
+            onPressed: () => context.canPop()
+                ? context.pop()
+                : context.go(AppRouter.chatPath),
+          ),
+        ),
+        titleTextStyle: theme.textTheme.titleLarge?.copyWith(
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onSurface,
+        ),
+        title: const Text('宠物'),
+      ),
       body: !state.loaded
           ? const Center(child: CircularProgressIndicator())
           : state.soul == null
@@ -131,114 +158,241 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
   }
 
   Widget _buildPetView(ThemeData theme, BuddySoul soul, BuddyBones bones) {
-    final cs = theme.colorScheme;
-
-    // 空闲序列：大部分静止、偶尔 fidget、偶尔眨眼；被摸/说话时快速循环。
-    final active = _petTicksLeft > 0 || _bubbleTicksLeft > _bubbleFadeTicks;
-    final int seq = active
-        ? _tickCount % buddyFrameCount(bones.species)
-        : kBuddyIdleSequence[_tickCount % kBuddyIdleSequence.length];
-    final blink = seq == -1;
-    final frame = blink ? 0 : seq;
-
-    final spriteLines = renderBuddySprite(bones, frame: frame, blink: blink);
-    final heartLine = _petTicksLeft > 0
-        ? _petHearts[(_petBurstTicks - _petTicksLeft) % _petHearts.length]
-        : null;
-
-    final spriteColor =
-        bones.shiny ? Colors.amber.shade700 : cs.onSurface;
-
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // ── 气泡 ────────────────────────────────────────────────────────
-        SizedBox(
-          height: 64,
-          child: _bubbleText == null
-              ? null
-              : Center(
-                  child: AnimatedOpacity(
-                    opacity: _bubbleTicksLeft <= _bubbleFadeTicks ? 0.4 : 1,
-                    duration: _tick,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: cs.onSurface.withValues(alpha: 0.06),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                            color: cs.onSurface.withValues(alpha: 0.15)),
-                      ),
-                      child: Text(_bubbleText!,
-                          style: theme.textTheme.bodyMedium),
-                    ),
-                  ),
-                ),
-        ),
-        // ── 精灵 ────────────────────────────────────────────────────────
-        GestureDetector(
-          onTap: _pet,
-          behavior: HitTestBehavior.opaque,
-          child: Column(
-            children: [
-              if (heartLine != null)
-                Text(
-                  heartLine,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 18,
-                    height: 1.1,
-                    color: Colors.pink,
-                  ),
-                ),
-              Text(
-                spriteLines.join('\n'),
-                textAlign: TextAlign.left,
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 22,
-                  height: 1.15,
-                  color: spriteColor,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        Center(
-          child: Text(
-            bones.shiny ? '✨ ${soul.name} ✨' : soul.name,
-            style: theme.textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
-        ),
-        Center(
-          child: Text(
-            '${bones.rarity.stars} ${bones.rarity.label} · ${bones.species.label}',
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: _rarityColor(bones.rarity, cs)),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        _spriteCard(theme, soul, bones),
+        const SizedBox(height: 16),
+        _infoCard(theme, soul, bones),
+        const SizedBox(height: 16),
+        _settingsCard(theme),
+      ],
+    );
+  }
+
+  /// 精灵卡片：气泡 + 动画 + 名字/稀有度 + 抚摸/聊天。
+  Widget _spriteCard(ThemeData theme, BuddySoul soul, BuddyBones bones) {
+    final cs = theme.colorScheme;
+
+    return _OutlinedCard(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+        child: Column(
           children: [
-            FilledButton.tonalIcon(
-              onPressed: _pet,
-              icon: const Icon(LucideIcons.hand, size: 16),
-              label: const Text('抚摸'),
+            SizedBox(
+              height: 48,
+              child: _bubbleText == null
+                  ? null
+                  : Center(
+                      child: AnimatedOpacity(
+                        opacity:
+                            _bubbleTicksLeft <= _bubbleFadeTicks ? 0.4 : 1,
+                        duration: _tick,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: cs.onSurface.withValues(alpha: 0.04),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: theme.dividerColor),
+                          ),
+                          child: Text(_bubbleText!,
+                              style: theme.textTheme.bodySmall),
+                        ),
+                      ),
+                    ),
             ),
-            const SizedBox(width: 12),
-            FilledButton.tonalIcon(
-              onPressed: _chat,
-              icon: const Icon(LucideIcons.messageCircle, size: 16),
-              label: const Text('聊天'),
+            GestureDetector(
+              onTap: _pet,
+              behavior: HitTestBehavior.opaque,
+              child: BuddyPixelPet(
+                bones: bones,
+                size: 160,
+                petTrigger: _petTrigger,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              bones.shiny ? '✨ ${soul.name} ✨' : soul.name,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${bones.rarity.stars} ${bones.rarity.label} · ${bones.species.label}',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: _rarityColor(bones.rarity, cs)),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FilledButton.tonalIcon(
+                  onPressed: _pet,
+                  icon: const Icon(LucideIcons.hand, size: 16),
+                  label: const Text('抚摸'),
+                ),
+                const SizedBox(width: 12),
+                FilledButton.tonalIcon(
+                  onPressed: _chat,
+                  icon: const Icon(LucideIcons.messageCircle, size: 16),
+                  label: const Text('聊天'),
+                ),
+              ],
             ),
           ],
         ),
-        const SizedBox(height: 20),
-        _InfoCard(soul: soul, bones: bones),
+      ),
+    );
+  }
+
+  /// 宠物卡片：性格 / 孵化时间 / 帽子 / 五维属性条。
+  Widget _infoCard(ThemeData theme, BuddySoul soul, BuddyBones bones) {
+    final cs = theme.colorScheme;
+    final hatched = DateTime.fromMillisecondsSinceEpoch(soul.hatchedAt);
+    final hatchedLabel =
+        '${hatched.year}-${hatched.month.toString().padLeft(2, '0')}-${hatched.day.toString().padLeft(2, '0')}';
+
+    return _OutlinedCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CardHeader(title: '宠物卡片', description: rarityFlavor(bones.rarity)),
+          Divider(height: 1, color: theme.dividerColor),
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _kvRow(theme, '性格', soul.personality),
+                const SizedBox(height: 8),
+                _kvRow(theme, '孵化于', hatchedLabel),
+                if (bones.hat != BuddyHat.none) ...[
+                  const SizedBox(height: 8),
+                  _kvRow(theme, '帽子', bones.hat.label),
+                ],
+                const SizedBox(height: 12),
+                Divider(height: 1, color: theme.dividerColor),
+                const SizedBox(height: 8),
+                for (final stat in BuddyStat.values)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 44,
+                          child: Text(stat.label,
+                              style: theme.textTheme.bodySmall),
+                        ),
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: (bones.stats[stat] ?? 0) / 100,
+                              minHeight: 8,
+                              backgroundColor:
+                                  cs.onSurface.withValues(alpha: 0.08),
+                              color: _rarityColor(bones.rarity, cs),
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 36,
+                          child: Text(
+                            '${bones.stats[stat] ?? 0}',
+                            textAlign: TextAlign.end,
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 设置卡片：悬浮宠物开关。
+  Widget _settingsCard(ThemeData theme) {
+    final cs = theme.colorScheme;
+    final overlay = ref.watch(buddyOverlayControllerProvider);
+
+    return _OutlinedCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardHeader(title: '设置', description: '悬浮宠物与互动方式'),
+          Divider(height: 1, color: theme.dividerColor),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            child: Row(
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF06B6D4).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    LucideIcons.pictureInPicture2,
+                    size: 16,
+                    color: Color(0xFF06B6D4),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('悬浮宠物',
+                          style: theme.textTheme.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w500)),
+                      Text(
+                        '让宠物浮在应用所有页面上，可拖动贴边；展开后可在悬浮窗内直接关闭',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: cs.onSurface.withValues(alpha: 0.55),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: overlay.enabled,
+                  onChanged: (v) {
+                    Haptics.instance.onSwitch();
+                    ref
+                        .read(buddyOverlayControllerProvider.notifier)
+                        .setEnabled(v);
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _kvRow(ThemeData theme, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 52,
+          child: Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+            ),
+          ),
+        ),
+        Expanded(child: Text(value, style: theme.textTheme.bodyMedium)),
       ],
     );
   }
@@ -250,12 +404,6 @@ class _HatchView extends StatelessWidget {
 
   final VoidCallback onHatch;
 
-  static const String _egg = '   .-"-.\n'
-      '  /     \\\n'
-      ' |  ? ?  |\n'
-      '  \\     /\n'
-      "   `---´";
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -263,15 +411,7 @@ class _HatchView extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(
-            _egg,
-            style: TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 24,
-              height: 1.2,
-              color: theme.colorScheme.onSurface,
-            ),
-          ),
+          const BuddyPixelArtView(art: kBuddyEggArt, size: 120),
           const SizedBox(height: 16),
           Text('有一颗蛋在等你……', style: theme.textTheme.bodyLarge),
           const SizedBox(height: 6),
@@ -293,84 +433,67 @@ class _HatchView extends StatelessWidget {
   }
 }
 
-/// 宠物卡片：性格 / 孵化时间 / 五维属性条。
-class _InfoCard extends StatelessWidget {
-  const _InfoCard({required this.soul, required this.bones});
+/// 描边卡片：与设置页 `_OutlinedCard` 同款（surface + 16 圆角 + divider 描边
+/// + 轻阴影）。
+class _OutlinedCard extends StatelessWidget {
+  const _OutlinedCard({required this.child});
 
-  final BuddySoul soul;
-  final BuddyBones bones;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    final hatched = DateTime.fromMillisecondsSinceEpoch(soul.hatchedAt);
-    final hatchedLabel =
-        '${hatched.year}-${hatched.month.toString().padLeft(2, '0')}-${hatched.day.toString().padLeft(2, '0')}';
-
     return Container(
-      padding: const EdgeInsets.all(16),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: cs.onSurface.withValues(alpha: 0.04),
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: cs.onSurface.withValues(alpha: 0.1)),
+        border: Border.all(color: theme.dividerColor),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
+      child: child,
+    );
+  }
+}
+
+/// 卡片头部条：与设置页 `_CardHeader` 同款（微染色条 + 标题 + 描述）。
+class _CardHeader extends StatelessWidget {
+  const _CardHeader({required this.title, required this.description});
+
+  final String title;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      color: theme.colorScheme.onSurface.withValues(alpha: 0.015),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('性格', style: theme.textTheme.labelMedium),
-          const SizedBox(height: 4),
-          Text(soul.personality, style: theme.textTheme.bodyMedium),
-          const SizedBox(height: 12),
-          Text(rarityFlavor(bones.rarity),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: _rarityColor(bones.rarity, cs),
-              )),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Text('孵化于 $hatchedLabel', style: theme.textTheme.bodySmall),
-              const Spacer(),
-              if (bones.hat != BuddyHat.none)
-                Text('帽子：${bones.hat.label}',
-                    style: theme.textTheme.bodySmall),
-            ],
-          ),
-          const Divider(height: 24),
-          for (final stat in BuddyStat.values) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 48,
-                    child: Text(stat.label,
-                        style: theme.textTheme.bodySmall),
-                  ),
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: (bones.stats[stat] ?? 0) / 100,
-                        minHeight: 8,
-                        backgroundColor:
-                            cs.onSurface.withValues(alpha: 0.08),
-                        color: _rarityColor(bones.rarity, cs),
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 36,
-                    child: Text(
-                      '${bones.stats[stat] ?? 0}',
-                      textAlign: TextAlign.end,
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ),
-                ],
-              ),
+          Text(
+            title,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
             ),
-          ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            description,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+            ),
+          ),
         ],
       ),
     );

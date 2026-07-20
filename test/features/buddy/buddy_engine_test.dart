@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherlink_flutter/features/buddy/domain/buddy_engine.dart';
-import 'package:aetherlink_flutter/features/buddy/domain/buddy_sprites.dart';
 import 'package:aetherlink_flutter/features/buddy/domain/buddy_types.dart';
+import 'package:aetherlink_flutter/features/buddy/domain/pixel_arts/pixel_arts.dart';
 
 void main() {
   test('同一种子永远生成同一只宠物', () {
@@ -50,22 +50,37 @@ void main() {
     }
   });
 
-  test('精灵图每帧 5 行，每行 12 个字符（眼睛替换后）', () {
+  test('每个物种都有 16×16 像素图，字符全部在调色板里且带眼睛', () {
     for (final species in BuddySpecies.values) {
-      for (var frame = 0; frame < buddyFrameCount(species); frame++) {
-        final bones = BuddyBones(
-          rarity: BuddyRarity.common,
-          species: species,
-          eye: '·',
-          hat: BuddyHat.none,
-          shiny: false,
-          stats: const {},
-        );
-        final lines = renderBuddySprite(bones, frame: frame);
-        expect(lines, hasLength(5));
-        for (final line in lines) {
-          expect(line.length, 12,
-              reason: '$species frame $frame line "$line"');
+      final art = kBuddyPixelArts[species];
+      expect(art, isNotNull, reason: '$species 缺少像素图');
+      expect(art!.rows, hasLength(16), reason: '$species 行数不是 16');
+      var hasEye = false;
+      for (final row in art.rows) {
+        expect(row.length, 16, reason: '$species 行 "$row" 长度不是 16');
+        for (final ch in row.split('')) {
+          if (ch == '.') continue;
+          if (ch == 'E') hasEye = true;
+          expect(art.palette.containsKey(ch), isTrue,
+              reason: '$species 字符 "$ch" 不在调色板里');
+        }
+      }
+      expect(hasEye, isTrue, reason: '$species 没有眼睛像素');
+    }
+  });
+
+  test('每种帽子（除 none）都有像素图，行宽一致且字符在调色板里', () {
+    for (final hat in BuddyHat.values) {
+      if (hat == BuddyHat.none) continue;
+      final art = kBuddyHatArts[hat];
+      expect(art, isNotNull, reason: '$hat 缺少像素图');
+      final width = art!.rows.first.length;
+      for (final row in art.rows) {
+        expect(row.length, width, reason: '$hat 行宽不一致');
+        for (final ch in row.split('')) {
+          if (ch == '.') continue;
+          expect(art.palette.containsKey(ch), isTrue,
+              reason: '$hat 字符 "$ch" 不在调色板里');
         }
       }
     }

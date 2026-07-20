@@ -16,6 +16,8 @@ import 'package:aetherlink_flutter/features/settings/application/font_size_contr
 import 'package:aetherlink_flutter/features/settings/application/dev_tools_button_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/dev_tools_button_position_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/display_refresh_rate_controller.dart';
+import 'package:aetherlink_flutter/features/buddy/application/buddy_overlay_controller.dart';
+import 'package:aetherlink_flutter/features/buddy/presentation/buddy_floating_pet.dart';
 import 'package:aetherlink_flutter/features/settings/application/perf_monitor_controller.dart';
 import 'package:aetherlink_flutter/features/settings/application/theme_mode_controller.dart';
 import 'package:aetherlink_flutter/features/settings/domain/app_theme_mode.dart';
@@ -180,30 +182,40 @@ class _AetherlinkAppState extends ConsumerState<AetherlinkApp> {
                       router.routeInformationProvider.value.uri.path;
                   final onDevTools = currentPath == AppRouter.devToolsPath;
                   if (!onDevTools) _lastNonDevToolsPath = currentPath;
-                  return DevToolsFloatingButtonHost(
-                    enabled: devToolsButtonEnabled,
-                    active: onDevTools,
-                    initialPosition: devToolsButtonPosition,
-                    onPositionChanged: (pos) => ref
-                        .read(devToolsButtonPositionProvider.notifier)
-                        .set(pos),
-                    // Tap toggles: open DevTools, or return to the previous page
-                    // when already there (no route stacking on repeat taps).
-                    onPressed: () {
-                      if (router.routeInformationProvider.value.uri.path ==
-                          AppRouter.devToolsPath) {
-                        if (router.canPop()) {
-                          router.pop();
+                  final buddyOverlayEnabled = ref
+                      .watch(buddyOverlayControllerProvider)
+                      .enabled;
+                  return BuddyFloatingPetHost(
+                    // 宠物页本身隐藏悬浮窗，避免两只重影。
+                    visible: buddyOverlayEnabled &&
+                        currentPath != AppRouter.buddyPath,
+                    onOpenPage: () => router.push(AppRouter.buddyPath),
+                    child: DevToolsFloatingButtonHost(
+                      enabled: devToolsButtonEnabled,
+                      active: onDevTools,
+                      initialPosition: devToolsButtonPosition,
+                      onPositionChanged: (pos) => ref
+                          .read(devToolsButtonPositionProvider.notifier)
+                          .set(pos),
+                      // Tap toggles: open DevTools, or return to the previous
+                      // page when already there (no route stacking on repeat
+                      // taps).
+                      onPressed: () {
+                        if (router.routeInformationProvider.value.uri.path ==
+                            AppRouter.devToolsPath) {
+                          if (router.canPop()) {
+                            router.pop();
+                          } else {
+                            router.go(_lastNonDevToolsPath);
+                          }
                         } else {
-                          router.go(_lastNonDevToolsPath);
+                          router.push(AppRouter.devToolsPath);
                         }
-                      } else {
-                        router.push(AppRouter.devToolsPath);
-                      }
-                    },
-                    child: PerfOverlayHost(
-                      enabled: perfEnabled,
-                      child: child ?? const SizedBox.shrink(),
+                      },
+                      child: PerfOverlayHost(
+                        enabled: perfEnabled,
+                        child: child ?? const SizedBox.shrink(),
+                      ),
                     ),
                   );
                 },

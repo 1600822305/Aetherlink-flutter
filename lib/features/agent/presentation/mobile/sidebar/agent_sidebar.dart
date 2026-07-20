@@ -201,7 +201,7 @@ class _SidebarTab extends StatelessWidget {
   }
 }
 
-/// 底部入口行：工作区 + 回聊天（与聊天侧边栏底部行同款按钮样式）。
+/// 底部入口行：工作区 + 宠物 + 回聊天（与聊天侧边栏底部行同款按钮样式）。
 class _BottomActionRow extends ConsumerWidget {
   const _BottomActionRow();
 
@@ -224,6 +224,24 @@ class _BottomActionRow extends ConsumerWidget {
                 height: 44,
                 child: Icon(
                   LucideIcons.folderTree,
+                  size: 22,
+                  color: textPrimary,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: () => context.push(AppRouter.buddyPath),
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: Icon(
+                  LucideIcons.pawPrint,
                   size: 22,
                   color: textPrimary,
                 ),
