@@ -249,7 +249,9 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
         : _displayed(available, groups, currentProviderId, activeTab);
 
     _scheduleArrowUpdate();
-    _scrollSelectedIntoView(displayed, selectedKey, activeTab);
+    if (query.isEmpty) {
+      _scrollSelectedIntoView(displayed, selectedKey, activeTab);
+    }
 
     final body = _DialogBody(
       tokens: t,
@@ -259,57 +261,68 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
       tabs: query.isNotEmpty
           ? const SizedBox.shrink()
           : _tabs(
-        t,
-        fullScreen,
-        groups,
-        orderedProviders,
-        currentProviderId,
-        activeTab,
-      ),
+              t,
+              fullScreen,
+              groups,
+              orderedProviders,
+              currentProviderId,
+              activeTab,
+            ),
       content: _content(t, fullScreen, mq, displayed, selectedKey),
     );
 
+    // The raw showGeneralDialog route has no Scaffold/Dialog inset handling,
+    // so pad the body above the software keyboard when the search field opens
+    // it — otherwise the bottom of the model list hides behind the keyboard.
+    final keyboardInset = EdgeInsets.only(bottom: mq.viewInsets.bottom);
+
     if (fullScreen) {
-      return Material(color: t.bgPaper, child: body);
+      return Material(
+        color: t.bgPaper,
+        child: Padding(padding: keyboardInset, child: body),
+      );
     }
     // Card mode (>= 600px): centred, 8px radius, max 600px wide / 80vh tall,
     // MUI dialog elevation shadow.
-    return Center(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 600,
-          maxHeight: mq.size.height * 0.8,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: t.bgPaper,
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x33000000),
-                  offset: Offset(0, 11),
-                  blurRadius: 15,
-                  spreadRadius: -7,
-                ),
-                BoxShadow(
-                  color: Color(0x24000000),
-                  offset: Offset(0, 24),
-                  blurRadius: 38,
-                  spreadRadius: 3,
-                ),
-                BoxShadow(
-                  color: Color(0x1F000000),
-                  offset: Offset(0, 9),
-                  blurRadius: 46,
-                  spreadRadius: 8,
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Material(color: Colors.transparent, child: body),
+    return Padding(
+      padding: keyboardInset,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 600,
+            maxHeight: mq.size.height * 0.8,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: t.bgPaper,
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x33000000),
+                    offset: Offset(0, 11),
+                    blurRadius: 15,
+                    spreadRadius: -7,
+                  ),
+                  BoxShadow(
+                    color: Color(0x24000000),
+                    offset: Offset(0, 24),
+                    blurRadius: 38,
+                    spreadRadius: 3,
+                  ),
+                  BoxShadow(
+                    color: Color(0x1F000000),
+                    offset: Offset(0, 9),
+                    blurRadius: 46,
+                    spreadRadius: 8,
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Material(color: Colors.transparent, child: body),
+              ),
             ),
           ),
         ),
@@ -326,9 +339,7 @@ class _ModelSelectorViewState extends ConsumerState<_ModelSelectorView> {
       ),
       child: Row(
         children: [
-          Expanded(
-            child: _searching ? _searchField(t) : _title(t),
-          ),
+          Expanded(child: _searching ? _searchField(t) : _title(t)),
           _HeaderIconButton(
             tokens: t,
             icon: _searching ? Icons.search_off : Icons.search,
