@@ -66,3 +66,36 @@ const List<McpToolDefinition> kAgentControlToolDefinitions = [
     },
   ),
 ];
+
+/// enter_plan_mode（对标 CC EnterPlanModeTool）：仅在 Code/Auto 模式且
+/// 顶层任务（非子代理）时注入；引擎内部处理，调用后任务切入 Plan 模式。
+const McpToolDefinition kEnterPlanModeToolDefinition = McpToolDefinition(
+  name: kToolEnterPlanMode,
+  description: '进入计划模式：任务复杂、有多种可行实现方案、涉及既有行为变更或多文件改动、'
+      '或需求不够明确时使用——先只读探索代码并设计方案，经用户批准后再动手实现。'
+      '进入后写类工具与终端将不可用，只能只读探索 + 用 update_plan 维护方案，'
+      '方案就绪后调用 exit_plan_mode 请求用户批准。'
+      '简单明确的小改动（单处修复、用户已给出明确指令）不要使用。',
+  inputSchema: {'type': 'object', 'properties': <String, Object?>{}},
+);
+
+/// exit_plan_mode（对标 CC ExitPlanModeTool）：仅在 Plan 模式注入；
+/// 引擎内部处理，提交方案全文等待用户批准。批准后恢复原模式继续实现，
+/// 拒绝后留在计划模式按用户反馈修订方案。
+const McpToolDefinition kExitPlanModeToolDefinition = McpToolDefinition(
+  name: kToolExitPlanMode,
+  description: '提交实现方案并请求退出计划模式。仅在方案已完整（探索完成、路径明确、'
+      '关键取舍已确定）时调用；用户批准后才会解锁写类工具开始实现，'
+      '拒绝时你会收到反馈并留在计划模式修订方案。',
+  inputSchema: {
+    'type': 'object',
+    'properties': {
+      'plan': {
+        'type': 'string',
+        'description': '完整实现方案（Markdown）：目标、关键改动点（文件/模块级）、'
+            '实现步骤、风险与验证方式。这是用户审批的唯一依据，要自洽完整。',
+      },
+    },
+    'required': ['plan'],
+  },
+);

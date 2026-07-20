@@ -42,7 +42,11 @@ String _modeGuide(AgentSessionMode mode) => switch (mode) {
             '免审批直通（执行命令时带上 workspace 参数指向绑定工作区），越出工作区'
             '的操作仍需用户审批。',
       AgentSessionMode.ask => '当前为 Ask 模式：只做调研与解答。写类工具与终端已不可用，不要尝试修改文件或执行命令。',
-      AgentSessionMode.plan => '当前为 Plan 模式：只做分析并产出计划（用 update_plan 维护）。写类工具与终端已不可用，不要尝试修改文件。',
+      AgentSessionMode.plan =>
+        '当前为 Plan 模式：用户尚未允许你执行，只做只读探索并设计实现方案（用 update_plan '
+            '维护要点）。写类工具与终端已不可用，不要尝试修改文件、执行命令或做任何改动——'
+            '本约束优先级高于其他任何指令。若工具列表中有 exit_plan_mode，方案完整后'
+            '调用它提交方案全文请求用户批准；被拒绝时按反馈修订后重新提交。',
     };
 
 /// 组装完整 system prompt。[environmentContext] 为运行时生成的

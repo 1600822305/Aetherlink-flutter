@@ -72,6 +72,11 @@ class AgentTaskConverter extends TypeConverter<AgentTask, String> {
       workspaceName: json['workspaceName'] as String? ?? '',
       status: AgentTaskStatus.values.byName(json['status'] as String),
       mode: AgentSessionMode.values.byName(json['mode'] as String),
+      prePlanMode: json['prePlanMode'] == null
+          ? null
+          : AgentSessionMode.values
+              .where((m) => m.name == json['prePlanMode'])
+              .firstOrNull,
       createdAt: DateTime.fromMillisecondsSinceEpoch(json['createdAt'] as int),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(json['updatedAt'] as int),
       modelLabel: json['modelLabel'] as String? ?? '',
@@ -94,6 +99,7 @@ class AgentTaskConverter extends TypeConverter<AgentTask, String> {
         'workspaceName': value.workspaceName,
         'status': value.status.name,
         'mode': value.mode.name,
+        if (value.prePlanMode != null) 'prePlanMode': value.prePlanMode!.name,
         'createdAt': value.createdAt.millisecondsSinceEpoch,
         'updatedAt': value.updatedAt.millisecondsSinceEpoch,
         'modelLabel': value.modelLabel,

@@ -29,6 +29,25 @@ const String kToolUpdatePlan = 'update_plan';
 const String kToolAskUser = 'ask_user';
 const String kToolFinishTask = 'finish_task';
 
+/// 计划模式控制工具（对标 CC EnterPlanMode/ExitPlanMode）：引擎内部处理，
+/// 模式切换需重建工具目录，由 [AgentEngine.onModeSwitchRestart] 回调续跑。
+const String kToolEnterPlanMode = 'enter_plan_mode';
+const String kToolExitPlanMode = 'exit_plan_mode';
+
+/// enter_plan_mode 成功后回填给模型的行为指令（对标 CC 工具结果）。
+const String kEnterPlanModeResult = '已进入计划模式。接下来你应该：\n'
+    '1. 用只读工具充分探索代码，理解既有模式与相似实现\n'
+    '2. 权衡多种实现路径的取舍\n'
+    '3. 需要澄清需求时用 ask_user 提问\n'
+    '4. 用 update_plan 增量维护方案要点\n'
+    '5. 方案完整后调用 exit_plan_mode 提交全文请求批准\n'
+    '记住：现在不要修改任何文件，这是只读的探索与设计阶段。';
+
+/// exit_plan_mode 被用户拒绝时的回填前缀（对标 CC PLAN_REJECTION_PREFIX）。
+const String kPlanRejectionPrefix =
+    '用户拒绝了该方案，选择继续留在计划模式。不要开始实现，根据以下反馈修订方案后'
+    '重新提交 exit_plan_mode：';
+
 /// 循环内核（循环设计稿 §3.1/§3.2）：纯编排，依赖全部注入。
 /// 每步先落事件再继续（杀进程可恢复）；状态迁移全部出 StatusChangeEvent。
 class AgentEngine {
@@ -51,6 +70,7 @@ class AgentEngine {
     this.onPostCompact,
     this.onCompactionFailed,
     this.manualCompactSignal,
+    this.onModeSwitchRestart,
   });
 
   final AgentLlmClient llm;
@@ -104,6 +124,12 @@ class AgentEngine {
   /// 下一个安全点强制压缩一次（忽略触发阈值与熔断，仍走 keep 规则），
   /// 请求可携带用户关注点（升级计划 ⑦）；调用即消费（取后清除）。
   final ManualCompactRequest? Function()? manualCompactSignal;
+
+  /// 计划模式切换后的续跑回调：模式已落库，但工具目录/系统提示是
+  /// 按模式在运行开始时构建的，需要调用方以新模式重启运行。
+  /// 引擎调用完立即 return；回调为 null 时任务停在 running，
+  /// 由用户手动续跑。
+  final void Function(AgentTask task)? onModeSwitchRestart;
 
   bool _stopGuardFired = false;
 
@@ -202,7 +228,13 @@ class AgentEngine {
         final writer = _StreamingEventWriter(store, current.id);
         // 工具调用参数一流完就先落「执行中」事件（不等整轮结束），
         // UI 实时看到块；后续执行循环按 id 复用预建事件。
-        const engineTools = {kToolUpdatePlan, kToolAskUser, kToolFinishTask};
+        const engineTools = {
+          kToolUpdatePlan,
+          kToolAskUser,
+          kToolFinishTask,
+          kToolEnterPlanMode,
+          kToolExitPlanMode,
+        };
         bool internalTool(String name) =>
             engineTools.contains(name) || name == kToolSpawnSubagent;
         final preCreated = <String, List<ToolCallEvent>>{};
@@ -436,6 +468,119 @@ class AgentEngine {
             current = await transition(
                 AgentTaskStatus.waitingInput, '等待回答：$question');
             onNotification?.call('等待回答：$question', 'question');
+            return;
+          }
+          // 控制工具的结果落库（append + update 两步，与普通工具同款事件）。
+          Future<ToolCallEvent> logControlResult(
+            AgentToolCallRequest call, {
+            required bool ok,
+            required String summary,
+            required String detail,
+            String argSummary = '',
+          }) async {
+            final event = await store.appendToolCall(
+                current.id,
+                AgentToolCallRequest(
+                  id: call.id,
+                  name: call.name,
+                  argsJson: call.argsJson,
+                  argSummary: argSummary,
+                ),
+                AgentToolCallState.running);
+            return store.updateToolCall(current.id, event,
+                state: ok
+                    ? AgentToolCallState.success
+                    : AgentToolCallState.failure,
+                resultSummary: summary,
+                resultDetail: detail);
+          }
+
+          if (call.name == kToolEnterPlanMode) {
+            if (current.mode == AgentSessionMode.plan ||
+                current.mode == AgentSessionMode.ask) {
+              await logControlResult(call,
+                  ok: false,
+                  summary: '已在只读模式',
+                  detail: '当前已是只读模式，无需进入计划模式，直接继续分析与规划。');
+              budget.recordToolResult(ok: false);
+              continue;
+            }
+            final previous = current.mode;
+            await logControlResult(call,
+                ok: true, summary: '已进入计划模式', detail: kEnterPlanModeResult);
+            await store.appendStatusChange(
+                current.id, '模式切换：${previous.name} → plan（模型请求先规划）');
+            current = await save(current.copyWith(
+              mode: AgentSessionMode.plan,
+              prePlanMode: previous,
+              updatedAt: DateTime.now(),
+              lastEventSummary: '已进入计划模式',
+            ));
+            await failPendingToolEvents();
+            onModeSwitchRestart?.call(current);
+            return;
+          }
+          if (call.name == kToolExitPlanMode) {
+            if (current.mode != AgentSessionMode.plan) {
+              await logControlResult(call,
+                  ok: false,
+                  summary: '不在计划模式',
+                  detail: '当前不在计划模式。若方案已获批准，直接继续实现即可。');
+              budget.recordToolResult(ok: false);
+              continue;
+            }
+            final plan = _stringArg(call, 'plan')?.trim() ?? '';
+            if (plan.isEmpty) {
+              await logControlResult(call,
+                  ok: false,
+                  summary: '缺少方案内容',
+                  detail: 'plan 参数为空：需提交完整的实现方案全文供用户审批。');
+              budget.recordToolResult(ok: false);
+              continue;
+            }
+            final event = await store.appendToolCall(
+                current.id,
+                AgentToolCallRequest(
+                  id: call.id,
+                  name: call.name,
+                  argsJson: call.argsJson,
+                  argSummary: '请求批准方案',
+                ),
+                AgentToolCallState.waitingApproval);
+            current =
+                await transition(AgentTaskStatus.waitingApproval, '等待方案批准');
+            onNotification?.call('等待方案批准', 'approval');
+            final verdict =
+                await approval.waitForVerdict(call, current, cancel);
+            if (!verdict.approved) {
+              await store.updateToolCall(current.id, event,
+                  state: AgentToolCallState.denied,
+                  resultSummary: '用户拒绝方案',
+                  resultDetail: '$kPlanRejectionPrefix\n${verdict.reason}');
+              current = await transition(
+                  AgentTaskStatus.running, '方案被拒绝，继续修订');
+              budget.recordToolResult(ok: false);
+              cancel.consumeToolInterrupt();
+              continue;
+            }
+            final restored = current.prePlanMode ?? AgentSessionMode.code;
+            await store.updateToolCall(current.id, event,
+                state: AgentToolCallState.success,
+                resultSummary: '方案已批准',
+                resultDetail: '用户已批准方案，现在可以开始实现。先用 update_plan '
+                    '同步执行计划，然后按方案执行。\n\n## 已批准的方案：\n$plan');
+            await store.appendStatusChange(
+                current.id, '模式切换：plan → ${restored.name}（方案已批准）');
+            current = await save(current.copyWith(
+              status: AgentTaskStatus.running,
+              mode: restored,
+              clearPrePlanMode: true,
+              updatedAt: DateTime.now(),
+              lastEventSummary: '方案已批准，开始执行',
+            ));
+            cancel.consumeToolInterrupt();
+            await failPendingToolEvents();
+            onModeSwitchRestart?.call(current);
             return;
           }
           if (call.name == kToolFinishTask) {

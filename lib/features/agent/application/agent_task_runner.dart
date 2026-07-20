@@ -600,6 +600,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     runtime.setHookRewake(_hookRewakeFor(task.id));
     // taskStart hooks：任务启动/续跑时触发，fire-and-forget 不阻断。
     unawaited(runtime.lifecycleHooks(AgentHookEvent.taskStart));
+    // 计划模式切换（enter/exit_plan_mode）：引擎落库新模式后 return，
+    // 这里在本次运行清理完成后以新模式的工具目录重启续跑。
+    AgentTask? modeSwitchRestart;
     final engine = AgentEngine(
       llm: runtime.llm,
       tools: runtime.tools,
@@ -644,6 +647,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           customInstructions: _pendingManualCompact.remove(task.id),
         );
       },
+      onModeSwitchRestart: (updated) => modeSwitchRestart = updated,
     );
     // fileChanged hooks 的工作区文件 watcher：与本次运行同生命周期
     // （无配置时 start 内部不订阅）。
@@ -662,6 +666,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       if (state.isEmpty) {
         unawaited(StreamingKeepAliveService.release('agent'));
       }
+      final restart = modeSwitchRestart;
+      if (restart != null) _run(restart);
     });
   }
 

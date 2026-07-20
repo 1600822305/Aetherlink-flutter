@@ -43,6 +43,7 @@ class AgentTask {
     required this.workspaceName,
     required this.status,
     required this.mode,
+    this.prePlanMode,
     required this.createdAt,
     required this.updatedAt,
     this.modelLabel = '',
@@ -65,6 +66,10 @@ class AgentTask {
 
   final AgentTaskStatus status;
   final AgentSessionMode mode;
+
+  /// 模型主动进入计划模式（enter_plan_mode）前的原模式；
+  /// 方案批准退出时恢复到该模式（对标 CC prePlanMode）。
+  final AgentSessionMode? prePlanMode;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -102,6 +107,8 @@ class AgentTask {
     String? title,
     AgentTaskStatus? status,
     AgentSessionMode? mode,
+    AgentSessionMode? prePlanMode,
+    bool clearPrePlanMode = false,
     DateTime? updatedAt,
     String? modelLabel,
     int? rounds,
@@ -119,6 +126,8 @@ class AgentTask {
       workspaceName: workspaceName,
       status: status ?? this.status,
       mode: mode ?? this.mode,
+      prePlanMode:
+          clearPrePlanMode ? null : (prePlanMode ?? this.prePlanMode),
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       modelLabel: modelLabel ?? this.modelLabel,

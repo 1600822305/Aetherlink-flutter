@@ -1364,4 +1364,235 @@ void main() {
       isTrue,
     );
   });
+
+  group('计划模式（enter/exit_plan_mode）', () {
+    AgentToolCallRequest planCall(String name, [Map<String, Object?>? args]) =>
+        AgentToolCallRequest(
+          id: 'call-$name',
+          name: name,
+          argsJson: jsonEncode(args ?? const {}),
+          argSummary: name,
+        );
+
+    test('enter_plan_mode：切入 plan、记录 prePlanMode 并请求重启续跑', () async {
+      final store = InMemoryAgentEventStore();
+      final gateway = RecordingTaskGateway();
+      final restarts = <AgentTask>[];
+      final engine = AgentEngine(
+        llm: ScriptedLlm([
+          AgentLlmTurn(toolCalls: [planCall(kToolEnterPlanMode)]),
+        ]),
+        tools: const FakeAgentToolExecutor(),
+        approval: const AutoApprovalGate(),
+        store: store,
+        gateway: gateway,
+        budget: AgentBudget(),
+        onModeSwitchRestart: restarts.add,
+      );
+      final task = newTask();
+      await store.appendUserMessage(task.id, '重构整个模块');
+
+      await engine.run(task, AgentCancellationToken());
+
+      expect(gateway.last.mode, AgentSessionMode.plan);
+      expect(gateway.last.prePlanMode, AgentSessionMode.code);
+      expect(gateway.last.status, AgentTaskStatus.running);
+      expect(restarts.single.mode, AgentSessionMode.plan);
+      final toolEvent = (await store.getEvents(task.id))
+          .whereType<ToolCallEvent>()
+          .single;
+      expect(toolEvent.state, AgentToolCallState.success);
+      expect(toolEvent.resultDetail, contains('exit_plan_mode'));
+    });
+
+    test('enter_plan_mode 在只读模式下拒绝并继续循环', () async {
+      final store = InMemoryAgentEventStore();
+      final gateway = RecordingTaskGateway();
+      final restarts = <AgentTask>[];
+      final engine = AgentEngine(
+        llm: ScriptedLlm([
+          AgentLlmTurn(toolCalls: [planCall(kToolEnterPlanMode)]),
+          AgentLlmTurn(toolCalls: [
+            planCall(kToolFinishTask, {'summary': '完成'}),
+          ]),
+        ]),
+        tools: const FakeAgentToolExecutor(),
+        approval: const AutoApprovalGate(),
+        store: store,
+        gateway: gateway,
+        budget: AgentBudget(),
+        onModeSwitchRestart: restarts.add,
+      );
+      final task = newTask().copyWith(mode: AgentSessionMode.plan);
+      await store.appendUserMessage(task.id, '规划');
+
+      await engine.run(task, AgentCancellationToken());
+
+      expect(restarts, isEmpty);
+      expect(gateway.last.status, AgentTaskStatus.done);
+      final toolEvent = (await store.getEvents(task.id))
+          .whereType<ToolCallEvent>()
+          .single;
+      expect(toolEvent.state, AgentToolCallState.failure);
+    });
+
+    test('exit_plan_mode 批准：恢复 prePlanMode、清空标记并回填方案全文', () async {
+      final store = InMemoryAgentEventStore();
+      final gateway = RecordingTaskGateway();
+      final restarts = <AgentTask>[];
+      final engine = AgentEngine(
+        llm: ScriptedLlm([
+          AgentLlmTurn(toolCalls: [
+            planCall(kToolExitPlanMode, {'plan': '## 方案\n分两步实现'}),
+          ]),
+        ]),
+        tools: const FakeAgentToolExecutor(),
+        approval: const AutoApprovalGate(),
+        store: store,
+        gateway: gateway,
+        budget: AgentBudget(),
+        onModeSwitchRestart: restarts.add,
+      );
+      final task = newTask().copyWith(
+        mode: AgentSessionMode.plan,
+        prePlanMode: AgentSessionMode.auto,
+      );
+      await store.appendUserMessage(task.id, '出方案');
+
+      await engine.run(task, AgentCancellationToken());
+
+      expect(gateway.last.mode, AgentSessionMode.auto);
+      expect(gateway.last.prePlanMode, isNull);
+      expect(gateway.last.status, AgentTaskStatus.running);
+      expect(restarts.single.mode, AgentSessionMode.auto);
+      final toolEvent = (await store.getEvents(task.id))
+          .whereType<ToolCallEvent>()
+          .single;
+      expect(toolEvent.state, AgentToolCallState.success);
+      expect(toolEvent.resultDetail, contains('分两步实现'));
+    });
+
+    test('exit_plan_mode 拒绝：留在 plan 模式并把拒绝理由回填给模型', () async {
+      final store = InMemoryAgentEventStore();
+      final gateway = RecordingTaskGateway();
+      final restarts = <AgentTask>[];
+      final engine = AgentEngine(
+        llm: ScriptedLlm([
+          AgentLlmTurn(toolCalls: [
+            planCall(kToolExitPlanMode, {'plan': '## 方案 v1'}),
+          ]),
+          AgentLlmTurn(toolCalls: [
+            planCall(kToolFinishTask, {'summary': '修订中'}),
+          ]),
+        ]),
+        tools: const FakeAgentToolExecutor(),
+        approval: const DenyingApprovalGate('改用方案 B'),
+        store: store,
+        gateway: gateway,
+        budget: AgentBudget(),
+        onModeSwitchRestart: restarts.add,
+      );
+      final task = newTask().copyWith(mode: AgentSessionMode.plan);
+      await store.appendUserMessage(task.id, '出方案');
+
+      await engine.run(task, AgentCancellationToken());
+
+      expect(restarts, isEmpty);
+      expect(gateway.last.mode, AgentSessionMode.plan);
+      expect(gateway.last.status, AgentTaskStatus.done);
+      final toolEvent = (await store.getEvents(task.id))
+          .whereType<ToolCallEvent>()
+          .first;
+      expect(toolEvent.state, AgentToolCallState.denied);
+      expect(toolEvent.resultDetail, contains('改用方案 B'));
+      expect(toolEvent.resultDetail, contains(kPlanRejectionPrefix));
+    });
+
+    test('exit_plan_mode 不在计划模式时按失败回填并继续', () async {
+      final store = InMemoryAgentEventStore();
+      final gateway = RecordingTaskGateway();
+      final engine = AgentEngine(
+        llm: ScriptedLlm([
+          AgentLlmTurn(toolCalls: [
+            planCall(kToolExitPlanMode, {'plan': '方案'}),
+          ]),
+          AgentLlmTurn(toolCalls: [
+            planCall(kToolFinishTask, {'summary': '完成'}),
+          ]),
+        ]),
+        tools: const FakeAgentToolExecutor(),
+        approval: const AutoApprovalGate(),
+        store: store,
+        gateway: gateway,
+        budget: AgentBudget(),
+      );
+      final task = newTask(); // code 模式
+      await store.appendUserMessage(task.id, '继续');
+
+      await engine.run(task, AgentCancellationToken());
+
+      expect(gateway.last.status, AgentTaskStatus.done);
+      final toolEvent = (await store.getEvents(task.id))
+          .whereType<ToolCallEvent>()
+          .first;
+      expect(toolEvent.state, AgentToolCallState.failure);
+      expect(toolEvent.resultDetail, contains('不在计划模式'));
+    });
+  });
+}
+
+/// 按脚本逐轮返回 turn 的 LLM（计划模式流程测试用）。
+class ScriptedLlm implements AgentLlmClient {
+  ScriptedLlm(this.turns);
+
+  final List<AgentLlmTurn> turns;
+  int _index = 0;
+
+  @override
+  Future<AgentLlmTurn> completeTurn(
+    AgentLlmContext context, {
+    void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
+    Future<void> Function(
+      String streamKey,
+      String? toolName,
+      String argsTextSoFar,
+    )? onToolCallDelta,
+    Future<void> Function(AgentToolCallRequest call, String? streamKey)?
+        onToolCall,
+    AgentCancellationToken? cancel,
+  }) async {
+    if (_index >= turns.length) return const AgentLlmTurn(text: '（无更多脚本）');
+    return turns[_index++];
+  }
+
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async =>
+      '摘要';
+}
+
+/// 一律要求审批且裁决为拒绝（测方案被拒流程）。
+class DenyingApprovalGate implements ApprovalGate {
+  const DenyingApprovalGate(this.reason);
+
+  final String reason;
+
+  @override
+  Future<ApprovalRequirement> evaluate(
+    AgentToolCallRequest call,
+    AgentTask task,
+  ) async =>
+      ApprovalRequirement.needsUser;
+
+  @override
+  Future<ApprovalVerdict> waitForVerdict(
+    AgentToolCallRequest call,
+    AgentTask task,
+    AgentCancellationToken cancel,
+  ) async =>
+      ApprovalVerdict.denied(reason);
 }

@@ -201,6 +201,16 @@ const Set<String> _kReadOnlyToolNames = {
   final readOnly =
       mode == AgentSessionMode.ask || mode == AgentSessionMode.plan;
   final definitions = <McpToolDefinition>[...kAgentControlToolDefinitions];
+  // 计划模式控制工具（引擎内部处理，对标 CC Enter/ExitPlanMode）：
+  // 仅顶层任务暴露（子代理不可切模式）；Code/Auto 可请求进入计划模式，
+  // Plan 模式提交方案请求批准退出（Ask 模式两者都不暴露）。
+  if (enableSubagents) {
+    if (mode == AgentSessionMode.code || mode == AgentSessionMode.auto) {
+      definitions.add(kEnterPlanModeToolDefinition);
+    } else if (mode == AgentSessionMode.plan) {
+      definitions.add(kExitPlanModeToolDefinition);
+    }
+  }
   final routes = <String, ToolRoute>{};
 
   void addServer(String server, ToolRoute Function(String name) routeOf) {
