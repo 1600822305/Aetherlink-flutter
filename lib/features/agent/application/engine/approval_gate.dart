@@ -6,15 +6,22 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 enum ApprovalRequirement { allow, needsUser, forbid }
 
 /// 用户裁决（挂起无超时——初稿 §4.2：超时挂起而非拒绝）。
+/// [editedPlan] / [autoAccept] 仅方案审批（exit_plan_mode）使用：
+/// 用户编辑后批准的方案全文 / 批准并切 Auto 模式免审执行。
 class ApprovalVerdict {
-  const ApprovalVerdict.approved()
+  const ApprovalVerdict.approved({this.editedPlan, this.autoAccept = false})
       : approved = true,
         reason = '';
 
-  const ApprovalVerdict.denied(this.reason) : approved = false;
+  const ApprovalVerdict.denied(this.reason)
+      : approved = false,
+        editedPlan = null,
+        autoAccept = false;
 
   final bool approved;
   final String reason;
+  final String? editedPlan;
+  final bool autoAccept;
 }
 
 /// 审批抽象（三层策略：工具风险分级 → 运行级策略 → 白名单，初稿 §七）。

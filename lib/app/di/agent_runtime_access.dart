@@ -1264,7 +1264,10 @@ class _PolicyApprovalGate implements ApprovalGate {
       }
       return ApprovalVerdict.denied(decision.reason);
     }
-    return const ApprovalVerdict.approved();
+    return ApprovalVerdict.approved(
+      editedPlan: decision.editedPlan,
+      autoAccept: decision.autoAccept,
+    );
   }
 
   /// auto 模式的免审范围：只覆盖文件编辑与终端两组工作区工具，且所有

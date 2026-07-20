@@ -40,11 +40,19 @@ class AgentApprovalDecision {
     required this.approved,
     this.reason = '',
     this.scope = AgentApprovalScope.once,
+    this.editedPlan,
+    this.autoAccept = false,
   });
 
   final bool approved;
   final String reason;
   final AgentApprovalScope scope;
+
+  /// 仅方案审批（exit_plan_mode）：用户编辑后批准的方案全文。
+  final String? editedPlan;
+
+  /// 仅方案审批：批准并切 Auto 模式免审执行（工作区内写/命令直通）。
+  final bool autoAccept;
 }
 
 /// 审批裁决 → 要落的授权规则（纯函数）：patterns 为空时按整工具（`*`）。
