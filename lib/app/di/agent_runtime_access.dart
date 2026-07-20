@@ -723,6 +723,16 @@ List<LlmMessage> _replayMessages(
                 '${event.summary}',
           ),
         );
+        // 压缩后文件恢复（升级计划 ⑥）：被覆盖区间里最近读过的
+        // 文件快照随摘要注入，模型不必重读。
+        for (final f in event.restoredFiles) {
+          messages.add(
+            LlmMessage(
+              role: MessageRole.user,
+              content: '[压缩前读过的文件快照] ${f.path}\n${f.content}',
+            ),
+          );
+        }
       case ReasoningEvent() ||
             PlanUpdateEvent() ||
             CheckpointEvent() ||

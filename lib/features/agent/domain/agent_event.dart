@@ -207,6 +207,15 @@ class PlanUpdateEvent extends AgentEvent {
   final List<AgentPlanItem> items;
 }
 
+/// 随压缩恢复的文件快照（升级计划 ⑥）：被覆盖区间里最近读过的
+/// 文件内容，压缩后重新注入上下文视图，模型不必重读。
+class CompactionRestoredFile {
+  const CompactionRestoredFile({required this.path, required this.content});
+
+  final String path;
+  final String content;
+}
+
 /// 上下文压缩：旧事件被摘要替代参与后续上下文（原始事件仍可回看）。
 class CompactionEvent extends AgentEvent {
   const CompactionEvent({
@@ -216,10 +225,15 @@ class CompactionEvent extends AgentEvent {
     required this.coveredCount,
     required this.summary,
     this.revoked = false,
+    this.restoredFiles = const [],
   });
 
   final int coveredCount;
   final String summary;
+
+  /// 随摘要一起注入视图的文件快照（取自被覆盖区间内模型实际
+  /// 看过的读取结果）。
+  final List<CompactionRestoredFile> restoredFiles;
 
   /// 已撤销：不再参与上下文视图折叠（原始事件本就未删，撤销后
   /// 视图恢复原样）；事件行保留作审计痕迹。

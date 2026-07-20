@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_budget.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_file_restore.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_guard.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_trigger.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
@@ -632,10 +633,17 @@ class AgentEngine {
     if (summary.trim().isEmpty) {
       throw StateError('压缩摘要为空（可能是模型未配置或模型返回空结果）');
     }
+    // 压缩后文件恢复（升级计划 ⑥）：被覆盖区间里最近读过的文件
+    // 快照随摘要一起注入视图，模型不必重读。
+    final restored = selectRestoredFiles(
+      covered: covered,
+      kept: entries.sublist(covered.length),
+    );
     await store.appendCompaction(
       task.id,
       coveredCount: covered.length,
       summary: summary.trim(),
+      restoredFiles: restored,
     );
     _compactionBreaker.recordSuccess();
     // 压缩成功后允许再次预警（对齐 CC suppressCompactWarning 语义：

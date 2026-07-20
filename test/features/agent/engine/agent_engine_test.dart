@@ -299,6 +299,7 @@ class InMemoryAgentEventStore implements AgentEventStore {
     String taskId, {
     required int coveredCount,
     required String summary,
+    List<CompactionRestoredFile> restoredFiles = const [],
   }) async {
     final event = CompactionEvent(
       id: _newId(),
@@ -306,6 +307,7 @@ class InMemoryAgentEventStore implements AgentEventStore {
       at: DateTime.now(),
       coveredCount: coveredCount,
       summary: summary,
+      restoredFiles: restoredFiles,
     );
     _upsert(taskId, event);
     return event;
@@ -324,6 +326,7 @@ class InMemoryAgentEventStore implements AgentEventStore {
       coveredCount: event.coveredCount,
       summary: event.summary,
       revoked: revoked,
+      restoredFiles: event.restoredFiles,
     );
     _upsert(taskId, updated);
     return updated;

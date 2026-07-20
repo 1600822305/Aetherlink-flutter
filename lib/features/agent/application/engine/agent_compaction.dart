@@ -48,7 +48,10 @@ int contextCharsOf(AgentEvent event) => switch (event) {
       AssistantTextEvent(:final text) => text.length,
       ToolCallEvent() => (event.argsDetail?.length ?? 0) +
           (event.resultDetail ?? event.resultSummary).length,
-      CompactionEvent(:final summary) => summary.length,
+      CompactionEvent(:final summary, :final restoredFiles) =>
+        summary.length +
+            restoredFiles.fold(
+                0, (sum, f) => sum + f.path.length + f.content.length),
       _ => 0,
     };
 

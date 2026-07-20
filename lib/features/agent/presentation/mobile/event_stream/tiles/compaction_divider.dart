@@ -69,7 +69,23 @@ class CompactionDivider extends ConsumerWidget {
               ? '已撤销的压缩（原覆盖 ${event.coveredCount} 条）'
               : '已压缩 ${event.coveredCount} 条早期事件',
         ),
-        content: SingleChildScrollView(child: Text(event.summary)),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(event.summary),
+              if (event.restoredFiles.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  '已随摘要恢复 ${event.restoredFiles.length} 个文件快照：\n'
+                  '${event.restoredFiles.map((f) => '· ${f.path}').join('\n')}',
+                  style: Theme.of(dialogContext).textTheme.bodySmall,
+                ),
+              ],
+            ],
+          ),
+        ),
         actions: [
           if (canRevoke)
             TextButton(

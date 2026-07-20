@@ -194,10 +194,20 @@ String encodeAgentEventPayload(AgentEvent event) {
             {'content': item.content, 'status': item.status.name},
         ],
       },
-    CompactionEvent(:final coveredCount, :final summary, :final revoked) => {
+    CompactionEvent(
+      :final coveredCount,
+      :final summary,
+      :final revoked,
+      :final restoredFiles,
+    ) =>
+      {
         'coveredCount': coveredCount,
         'summary': summary,
         'revoked': revoked,
+        'restoredFiles': [
+          for (final f in restoredFiles)
+            {'path': f.path, 'content': f.content},
+        ],
       },
     CheckpointEvent(:final commit, :final label) => {
         'commit': commit,
@@ -309,6 +319,14 @@ AgentEvent decodeAgentEvent({
         coveredCount: p['coveredCount'] as int? ?? 0,
         summary: p['summary'] as String? ?? '',
         revoked: p['revoked'] as bool? ?? false,
+        restoredFiles: [
+          for (final f in p['restoredFiles'] as List<dynamic>? ?? const [])
+            if (f is Map<String, dynamic>)
+              CompactionRestoredFile(
+                path: f['path'] as String? ?? '',
+                content: f['content'] as String? ?? '',
+              ),
+        ],
       );
     case 'checkpoint':
       return CheckpointEvent(

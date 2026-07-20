@@ -6,6 +6,7 @@
 library;
 
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_file_restore.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
@@ -65,6 +66,10 @@ Future<ManualCompactionOutcome> runManualCompaction({
     task.id,
     coveredCount: covered.length,
     summary: summary.trim(),
+    restoredFiles: selectRestoredFiles(
+      covered: covered,
+      kept: entries.sublist(covered.length),
+    ),
   );
   return ManualCompactionDone(coveredCount: covered.length);
 }

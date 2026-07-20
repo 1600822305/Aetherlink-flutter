@@ -102,6 +102,7 @@ abstract class AgentEventStore {
     String taskId, {
     required int coveredCount,
     required String summary,
+    List<CompactionRestoredFile> restoredFiles = const [],
   });
 
   /// 压缩撤销标记原位改写（id/seq 不变）：撤销后不再参与上下文
@@ -412,6 +413,7 @@ class DriftAgentEventStore implements AgentEventStore {
     String taskId, {
     required int coveredCount,
     required String summary,
+    List<CompactionRestoredFile> restoredFiles = const [],
   }) async {
     final event = CompactionEvent(
       id: _newId('cp'),
@@ -419,6 +421,7 @@ class DriftAgentEventStore implements AgentEventStore {
       at: DateTime.now(),
       coveredCount: coveredCount,
       summary: summary,
+      restoredFiles: restoredFiles,
     );
     await _dao.upsertEvents(taskId, [event]);
     return event;
@@ -437,6 +440,7 @@ class DriftAgentEventStore implements AgentEventStore {
       coveredCount: event.coveredCount,
       summary: event.summary,
       revoked: revoked,
+      restoredFiles: event.restoredFiles,
     );
     await _dao.upsertEvents(taskId, [updated]);
     return updated;
