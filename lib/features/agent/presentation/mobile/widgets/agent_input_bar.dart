@@ -97,6 +97,7 @@ class _AgentInputBarState extends ConsumerState<AgentInputBar> {
       context,
       ref,
       workspaceId: _workspaceId,
+      task: widget.task,
     );
     _addAttachments(attachments);
   }

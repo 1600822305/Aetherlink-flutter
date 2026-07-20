@@ -113,12 +113,7 @@ class AgentSettingsTab extends ConsumerWidget {
                     ? '${_formatK(task.contextTokens)} / 剩 ${_formatK((s.contextLimit - task.contextTokens).clamp(0, s.contextLimit))}'
                     : '暂无数据（运行一轮后更新）',
               ),
-            if (task != null && task.status != AgentTaskStatus.draft)
-              _EntryRow(
-                title: '立即压缩',
-                description: '把较早内容压缩成摘要释放上下文；事件流原文保留可审计',
-                onTap: () => confirmAndCompactNow(context, ref, task),
-              ),
+            // 「立即压缩」入口移至输入栏「＋」菜单（压缩设置页仍保留一份）。
             _EntryRow(
               title: '压缩设置',
               description: '自动压缩开关、触发比例、保留量与轻量清理阈值',

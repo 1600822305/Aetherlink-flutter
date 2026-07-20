@@ -10,54 +10,62 @@ import 'package:aetherlink_flutter/app/di/agent_attachment_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_terminal_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_workspace_access.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
+import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/agent_compaction_settings_page.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
-/// 输入栏「＋」附件菜单：工作区 @ 引用 / 设备文件 / 图片 /
-/// 当前改动 Diff / 终端输出。返回选中的附件列表（图片可多选；
-/// 取消返回空列表）。
+/// 输入栏「＋」菜单：紧凑图标宫格——附件类（工作区 @ 引用 / 设备文件 /
+/// 图片 / 当前改动 Diff / 终端输出）+ 话题动作（立即压缩）。
+/// 返回选中的附件列表（图片可多选；取消/纯动作返回空列表）。
 Future<List<AgentUserAttachment>> showAgentAttachmentMenu(
   BuildContext context,
   WidgetRef ref, {
   required String? workspaceId,
+  AgentTask? task,
 }) async {
+  // 手动压缩只对已启动的话题有意义（与设置页/侧栏入口同条件）。
+  final canCompact = task != null && task.status != AgentTaskStatus.draft;
   final action = await showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
     builder: (context) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(LucideIcons.atSign, size: 20),
-            title: const Text('引用工作区文件'),
-            subtitle: const Text('模糊搜索工作区文件，内容随消息注入上下文'),
-            onTap: () => Navigator.pop(context, 'workspace'),
-          ),
-          ListTile(
-            leading: const Icon(LucideIcons.folderOpen, size: 20),
-            title: const Text('选择设备文件'),
-            subtitle: const Text('工作区外的任意文件，以只读附件随消息发送'),
-            onTap: () => Navigator.pop(context, 'device'),
-          ),
-          ListTile(
-            leading: const Icon(LucideIcons.image, size: 20),
-            title: const Text('图片'),
-            subtitle: const Text('相册选图（可多选），发给多模态模型'),
-            onTap: () => Navigator.pop(context, 'image'),
-          ),
-          ListTile(
-            leading: const Icon(LucideIcons.gitCompareArrows, size: 20),
-            title: const Text('引用当前改动'),
-            subtitle: const Text('注入工作区未提交改动的文件清单'),
-            onTap: () => Navigator.pop(context, 'diff'),
-          ),
-          ListTile(
-            leading: const Icon(LucideIcons.terminal, size: 20),
-            title: const Text('引用终端输出'),
-            subtitle: const Text('注入最近一段终端输出'),
-            onTap: () => Navigator.pop(context, 'terminal'),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: Wrap(
+          children: [
+            const _MenuGridItem(
+              icon: LucideIcons.atSign,
+              label: '工作区文件',
+              action: 'workspace',
+            ),
+            const _MenuGridItem(
+              icon: LucideIcons.folderOpen,
+              label: '设备文件',
+              action: 'device',
+            ),
+            const _MenuGridItem(
+              icon: LucideIcons.image,
+              label: '图片',
+              action: 'image',
+            ),
+            const _MenuGridItem(
+              icon: LucideIcons.gitCompareArrows,
+              label: '当前改动',
+              action: 'diff',
+            ),
+            const _MenuGridItem(
+              icon: LucideIcons.terminal,
+              label: '终端输出',
+              action: 'terminal',
+            ),
+            _MenuGridItem(
+              icon: LucideIcons.archive,
+              label: '立即压缩',
+              action: 'compact',
+              enabled: canCompact,
+            ),
+          ],
+        ),
       ),
     ),
   );
@@ -78,8 +86,64 @@ Future<List<AgentUserAttachment>> showAgentAttachmentMenu(
     case 'terminal':
       final attachment = await _terminalAttachment(context, ref, workspaceId);
       return [if (attachment != null) attachment];
+    case 'compact':
+      if (task != null) await confirmAndCompactNow(context, ref, task);
+      return const [];
   }
   return const [];
+}
+
+/// 宫格项：四列等宽，圆角图标块 + 小字标签，禁用时降透明度。
+class _MenuGridItem extends StatelessWidget {
+  const _MenuGridItem({
+    required this.icon,
+    required this.label,
+    required this.action,
+    this.enabled = true,
+  });
+
+  final IconData icon;
+  final String label;
+  final String action;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final fg = cs.onSurface.withValues(alpha: enabled ? 0.8 : 0.3);
+    return FractionallySizedBox(
+      widthFactor: 1 / 4,
+      child: InkWell(
+        onTap: enabled ? () => Navigator.pop(context, action) : null,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: cs.onSurface.withValues(alpha: enabled ? 0.06 : 0.03),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, size: 20, color: fg),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                style: theme.textTheme.labelSmall?.copyWith(color: fg),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// 工作区文件模糊搜索浮层（＋菜单与输入框 @ 触发共用）。
