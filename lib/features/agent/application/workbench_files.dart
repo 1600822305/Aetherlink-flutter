@@ -1,18 +1,18 @@
-/// 工作台「文档」tab 的数据推导：从任务事件流里找出智能体写入的
-/// Markdown 文档（write/edit 工具、路径以 .md/.markdown 结尾），
-/// 含「创建中」实况状态与流式参数里的正文提取。纯函数，便于单测。
+/// 工作台「文件」tab 的数据推导：从任务事件流里找出智能体写入的
+/// 文件（write/edit 工具），含「创建中」实况状态与流式参数里的正文
+/// 提取。纯函数，便于单测。
 library;
 
 import 'dart:convert';
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 
-/// 文档条目状态。
-enum AgentDocState { creating, done, failed }
+/// 文件条目状态。
+enum AgentFileState { creating, done, failed }
 
-/// 智能体产出的一份文档（同一路径去重，保留最新事件的状态）。
-class AgentDocEntry {
-  const AgentDocEntry({
+/// 智能体产出的一个文件（同一路径去重，保留最新事件的状态）。
+class AgentFileEntry {
+  const AgentFileEntry({
     required this.path,
     required this.state,
     required this.at,
@@ -21,10 +21,10 @@ class AgentDocEntry {
   });
 
   final String path;
-  final AgentDocState state;
+  final AgentFileState state;
   final DateTime at;
 
-  /// 该文档最新一次写入事件的 seq（内容 provider 的失效键）。
+  /// 该文件最新一次写入事件的 seq（内容 provider 的失效键）。
   final int seq;
 
   /// 创建中时从流式参数提取的正文（可能不完整）；其余状态为 null。
@@ -34,18 +34,22 @@ class AgentDocEntry {
 
   String? get dir =>
       path.contains('/') ? path.substring(0, path.lastIndexOf('/')) : null;
+
+  /// 文件扩展名（小写，不含点）；无扩展名为空串。
+  String get ext {
+    final n = name;
+    final dot = n.lastIndexOf('.');
+    return dot <= 0 ? '' : n.substring(dot + 1).toLowerCase();
+  }
+
+  bool get isMarkdown => ext == 'md' || ext == 'markdown';
 }
 
-bool _isDocPath(String path) {
-  final lower = path.toLowerCase();
-  return lower.endsWith('.md') || lower.endsWith('.markdown');
-}
-
-bool _isDocWriteTool(String toolName) =>
+bool _isWriteTool(String toolName) =>
     toolName == 'write' || toolName == 'edit';
 
 /// 从（可能不完整的）工具参数 JSON 里提取 `path` 字段。
-String? docPathOfArgs(String? argsText) {
+String? filePathOfArgs(String? argsText) {
   if (argsText == null || argsText.isEmpty) return null;
   try {
     final decoded = jsonDecode(argsText);
@@ -65,7 +69,7 @@ String? docPathOfArgs(String? argsText) {
 
 /// 从（可能不完整的）write 参数 JSON 里提取 `content` 正文，用于
 /// 创建中的实况预览。取到多少渲染多少；提不出返回 null。
-String? docContentOfArgs(String? argsText) {
+String? fileContentOfArgs(String? argsText) {
   if (argsText == null || argsText.isEmpty) return null;
   try {
     final decoded = jsonDecode(argsText);
@@ -116,40 +120,41 @@ String _unescapeJsonString(String raw) {
   return sb.toString();
 }
 
-/// 从任务事件流推导文档列表：同一路径按最新事件去重，最新的排最前。
-List<AgentDocEntry> deriveAgentDocs(List<AgentEvent> events) {
-  final byPath = <String, AgentDocEntry>{};
+/// 从任务事件流推导文件列表：同一路径按最新事件去重，最新的排最前。
+List<AgentFileEntry> deriveAgentFiles(List<AgentEvent> events) {
+  final byPath = <String, AgentFileEntry>{};
   for (final event in events) {
     if (event is! ToolCallEvent) continue;
-    if (!_isDocWriteTool(event.toolName)) continue;
+    if (!_isWriteTool(event.toolName)) continue;
     final args = event.argsDetail;
-    final path = docPathOfArgs(args) ?? _pathOfSummary(event.argSummary);
-    if (path == null || !_isDocPath(path)) continue;
+    final path = filePathOfArgs(args) ?? _pathOfSummary(event.argSummary);
+    if (path == null) continue;
     final state = switch (event.state) {
       AgentToolCallState.running ||
       AgentToolCallState.waitingApproval =>
-        AgentDocState.creating,
-      AgentToolCallState.success => AgentDocState.done,
-      _ => AgentDocState.failed,
+        AgentFileState.creating,
+      AgentToolCallState.success => AgentFileState.done,
+      _ => AgentFileState.failed,
     };
     final existing = byPath[path];
     if (existing != null && existing.seq > event.seq) continue;
-    byPath[path] = AgentDocEntry(
+    byPath[path] = AgentFileEntry(
       path: path,
       state: state,
       at: event.at,
       seq: event.seq,
-      streamingContent: state == AgentDocState.creating && event.toolName == 'write'
-          ? docContentOfArgs(args)
-          : null,
+      streamingContent:
+          state == AgentFileState.creating && event.toolName == 'write'
+              ? fileContentOfArgs(args)
+              : null,
     );
   }
   return byPath.values.toList()..sort((a, b) => b.seq.compareTo(a.seq));
 }
 
-/// argSummary 通常是路径尾段或完整相对路径；仅当它本身像 .md 路径时可用。
+/// argSummary 通常是路径尾段或完整相对路径；仅当它像单个路径时可用。
 String? _pathOfSummary(String summary) {
   final s = summary.trim();
   if (s.isEmpty || s.contains(' ')) return null;
-  return _isDocPath(s) ? s : null;
+  return s;
 }
