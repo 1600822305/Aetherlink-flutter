@@ -14,6 +14,7 @@ import 'package:aetherlink_flutter/features/chat/application/message_selection_c
 import 'package:aetherlink_flutter/features/chat/application/sidebar_controllers.dart';
 import 'package:aetherlink_flutter/features/chat/application/sidebar_settings_controller.dart';
 import 'package:aetherlink_flutter/shared/widgets/auto_scroll_controller.dart';
+import 'package:aetherlink_flutter/shared/widgets/no_implicit_scroll_physics.dart';
 import 'package:aetherlink_flutter/features/chat/presentation/widgets/chat_input_bar.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/message_role.dart';
 import 'package:aetherlink_flutter/features/chat/domain/entities/sidebar_settings.dart';
@@ -1078,6 +1079,15 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
     }
   }
 
+  /// 距离自适应滑行时长（千问 FlyOutSmoothScroller 的思路）：时长随剩余距离
+  /// 占视口的比例缩放并 clamp 在 80–350ms —— 目标就在附近时近似瞬时到位，
+  /// 长滑保持现有速度感。
+  static Duration _glideDuration(double distancePx, double viewportPx) {
+    if (viewportPx <= 0) return const Duration(milliseconds: 300);
+    final ms = (distancePx.abs() / viewportPx * 350).clamp(80.0, 350.0);
+    return Duration(milliseconds: ms.round());
+  }
+
   Future<void> _runNavigation(ChatNavigationAction action) async {
     switch (action) {
       case ChatNavigationAction.top:
@@ -1112,7 +1122,10 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         }
         await _scrollController.animateTo(
           0,
-          duration: const Duration(milliseconds: 300),
+          duration: _glideDuration(
+            _scrollController.position.pixels,
+            _scrollController.position.viewportDimension,
+          ),
           curve: Curves.easeOutCubic,
         );
       case ChatNavigationAction.bottom:
@@ -1129,7 +1142,11 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
           if (!_scrollController.hasClients) return;
           await _scrollController.animateTo(
             _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 300),
+            duration: _glideDuration(
+              _scrollController.position.maxScrollExtent -
+                  _scrollController.position.pixels,
+              _scrollController.position.viewportDimension,
+            ),
             curve: Curves.easeOutCubic,
           );
         }
@@ -1174,10 +1191,12 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         // Smooth scroll like the web's `scrollIntoView({behavior: 'smooth'})`.
         // The enlarged scrollCacheExtent keeps the neighbouring bubbles built
         // ahead of time, so the animation runs without mid-flight builds.
+        // 上/下一条只跨一行，短时长快速到位（FlyOutSmoothScroller 的
+        // 短距离快档），消除拖拽感。
         await _observerController.animateTo(
           index: targetRow - _effectiveHiddenRows + _headerCount + _loaderCount,
           alignment: 0,
-          duration: const Duration(milliseconds: 250),
+          duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
         );
         if (mounted && targetRow < widget.rows.length) {
@@ -1278,8 +1297,10 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
       onNotification: (n) {
         if (n is ScrollStartNotification) {
           PerfMonitor.instance.setScrolling(true);
+          DeferredContentScheduler.instance.setScrolling(true);
         } else if (n is ScrollEndNotification) {
           PerfMonitor.instance.setScrolling(false);
+          DeferredContentScheduler.instance.setScrolling(false);
         } else if (n is ScrollUpdateNotification && n.depth == 0) {
           _maybeRevealMore(n.metrics);
         }
@@ -1289,6 +1310,9 @@ class _MessageListViewState extends ConsumerState<_MessageListView> {
         controller: _observerController,
         child: ListView.builder(
           controller: _scrollController,
+        // 千问式拦截：禁用焦点 / showOnScreen 驱动的隐式滚动，气泡内
+        // 文本选择、可聚焦控件获焦都不再拉动列表。
+        physics: const NoImplicitScrollPhysics(),
         // QQ getExtraLayoutSpace pattern: enlarged only while a navigation
         // jump is in flight (so the glide path is pre-built); the framework
         // default otherwise, keeping off-viewport layout and memory small.
