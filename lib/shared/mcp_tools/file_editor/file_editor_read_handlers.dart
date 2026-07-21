@@ -8,6 +8,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/features/workspace/domain/workspace_backend.dart';
+import 'package:aetherlink_flutter/features/workspace/domain/workspace_text_ops.dart'
+    as text_ops;
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_diagnostics.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_read_state.dart';
@@ -466,7 +468,8 @@ Future<Map<String, Object?>> _readOne(
     }
   }
 
-  void recordRead() {
+  // 整文件读取时记录内容 hash（陈旧检测的内容比对兜底）；范围读为 null。
+  void recordRead({String? contentHash}) {
     if (info == null || info.isDirectory) return;
     store.record(
       sessionKey,
@@ -477,6 +480,7 @@ Future<Map<String, Object?>> _readOne(
         startLine: startLine,
         endLine: endLine,
         withLineNumbers: withLineNumbers,
+        contentHash: contentHash,
       ),
     );
   }
@@ -510,7 +514,7 @@ Future<Map<String, Object?>> _readOne(
   }
   final content = await backend.readFile(path);
   final guarded = _guardContent(content);
-  recordRead();
+  recordRead(contentHash: text_ops.fileHash(content));
   return {
     'path': path,
     'content': withLineNumbers ? numberLines(guarded.content) : guarded.content,

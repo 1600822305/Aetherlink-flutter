@@ -359,6 +359,78 @@ TextDiffOutcome _applyUnified(String content, String diff) {
   );
 }
 
+const _kCurlyQuotes = {
+  '\u2018': "'", // ‘
+  '\u2019': "'", // ’
+  '\u201C': '"', // “
+  '\u201D': '"', // ”
+};
+
+String _normalizeQuotes(String s) {
+  var result = s;
+  for (final MapEntry(:key, :value) in _kCurlyQuotes.entries) {
+    result = result.replaceAll(key, value);
+  }
+  return result;
+}
+
+/// `edit` 精确匹配失败后的模糊匹配恢复（对标 Claude Code FileEditTool 的
+/// findActualString/normalizeFileEditInput）：返回文件里与 [search] 内容等价、
+/// 但字面不同的**实际文本**，供调用方改用它做精确替换。恢复不到返回 null。
+///
+/// 依次尝试两种恢复，都只在能定位到唯一形式的实际文本时生效：
+/// 1. 弯引号归一化——模型发直引号、文件里是弯引号（'‘’“”'→`'"`）。所有弯/直
+///    引号都是单个 UTF-16 码元，归一化不改变长度，可按偏移取回原文。
+/// 2. 行尾空白容差——逐行 trimRight 后相等的行窗口（文件里行尾带多余空白）。
+String? findFlexibleSearch(String content, String search) {
+  if (search.isEmpty || content.contains(search)) return null;
+
+  // 1. 弯引号归一化（长度不变，可直接按归一化命中的偏移取回原文）。
+  final normSearch = _normalizeQuotes(search);
+  final normContent = _normalizeQuotes(content);
+  final at = normContent.indexOf(normSearch);
+  if (at >= 0) {
+    final actual = content.substring(at, at + search.length);
+    if (actual != search) return actual;
+  }
+
+  // 2. 行尾空白容差：滑动比较 trimRight 后相等的行窗口。
+  final searchLines = search.split('\n');
+  final contentLines = _splitKeepingEol(content);
+  final trimmedSearch = [for (final l in searchLines) l.trimRight()];
+  // 行首偏移表，用于把命中的窗口映射回原文的精确切片。
+  final offsets = <int>[0];
+  for (final line in contentLines) {
+    offsets.add(offsets.last + line.length);
+  }
+  for (var i = 0; i + searchLines.length <= contentLines.length; i++) {
+    var match = true;
+    for (var k = 0; k < searchLines.length; k++) {
+      // 去掉保留的行终止符再 trimRight 比较。
+      final raw = contentLines[i + k];
+      final line = raw.endsWith('\r\n')
+          ? raw.substring(0, raw.length - 2)
+          : (raw.endsWith('\n') ? raw.substring(0, raw.length - 1) : raw);
+      if (line.trimRight() != trimmedSearch[k]) {
+        match = false;
+        break;
+      }
+    }
+    if (!match) continue;
+    // 窗口末行不含其行终止符（search 末行本身也没有）。
+    final lastRaw = contentLines[i + searchLines.length - 1];
+    final lastEol = lastRaw.endsWith('\r\n')
+        ? 2
+        : (lastRaw.endsWith('\n') ? 1 : 0);
+    final actual = content.substring(
+      offsets[i],
+      offsets[i + searchLines.length] - lastEol,
+    );
+    if (actual != search) return actual;
+  }
+  return null;
+}
+
 /// `edit` search 未命中时的智能提示（对标 Claude Code FileEditTool 的
 /// 失败体验）：空白归一化后能命中 → 提示是空白/缩进差异并给出候选行号；
 /// 否则按 search 首个非空行找 trimmed 相等/前缀相似的候选行。都找不到

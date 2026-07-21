@@ -70,11 +70,19 @@ Future<McpToolResult> writeFile(
   if (info.isDirectory) {
     throw const FileEditorError('目标是目录，无法作为文件写入。');
   }
-  _ensureNotStale(ref, sessionKey, path, currentMtime: info.mtime);
+  await _ensureReadAndFresh(
+    ref,
+    backend,
+    sessionKey,
+    path,
+    currentMtime: info.mtime,
+    requireFullRead: true,
+  );
 
   await _snapshotBeforeOverwrite(ref, backend, path);
   await backend.writeFile(path, processed);
-  await _refreshReadState(ref, backend, sessionKey, path);
+  await _refreshReadState(ref, backend, sessionKey, path,
+      writtenContent: processed);
   return fileEditorOk({
     'message': '文件更新成功',
     'path': path,
@@ -104,10 +112,18 @@ Future<McpToolResult> _createFile(
     if (existing.isDirectory) {
       throw FileEditorError('「$name」是一个目录，无法以文件覆盖。');
     }
-    _ensureNotStale(ref, sessionKey, existing.path, currentMtime: existing.mtime);
+    await _ensureReadAndFresh(
+      ref,
+      backend,
+      sessionKey,
+      existing.path,
+      currentMtime: existing.mtime,
+      requireFullRead: true,
+    );
     await _snapshotBeforeOverwrite(ref, backend, existing.path);
     await backend.writeFile(existing.path, content);
-    await _refreshReadState(ref, backend, sessionKey, existing.path);
+    await _refreshReadState(ref, backend, sessionKey, existing.path,
+        writtenContent: content);
     return fileEditorOk({
       'message': '文件已覆盖',
       'path': existing.path,
@@ -117,6 +133,10 @@ Future<McpToolResult> _createFile(
   }
 
   final created = await backend.createFile(parentPath, name, content: content);
+  // 新建文件记入读取状态：本会话自己写的内容算「已知」，后续 edit/write
+  // 不会被写前必读拦下要求冗余重读。
+  await _refreshReadState(ref, backend, sessionKey, created,
+      writtenContent: content);
   return fileEditorOk({
     'message': '文件创建成功',
     'path': created,
@@ -332,24 +352,43 @@ Future<McpToolResult> editFile(
   final resolved = await resolvePathArg(ref, args, path);
   final backend = resolved.backend;
   final resolvedPath = resolved.path;
-  await _ensureNotStaleByStat(ref, backend, sessionKey, resolvedPath);
+  await _ensureReadAndFreshByStat(ref, backend, sessionKey, resolvedPath);
   var content = await backend.readFile(resolvedPath);
   final original = content;
   var total = 0;
+  var recovered = 0;
 
   for (var i = 0; i < edits.length; i++) {
     final edit = edits[i];
     final label = edits.length > 1 ? '第 ${i + 1} 个 edit 的 ' : '';
     // 单次全量扫描同时完成计数与替换：命中 1 处时全量替换结果与单处
     // 替换结果相同；命中多处且未开 replace_all 时直接报错，无需重跑。
-    final counted = text_ops.replaceInFile(
+    var search = edit.search;
+    var counted = text_ops.replaceInFile(
       content,
-      edit.search,
+      search,
       edit.replace,
       isRegex: isRegex,
       replaceAll: true,
       caseSensitive: caseSensitive,
     );
+    if (counted.replacements == 0 && !isRegex) {
+      // 模糊匹配恢复：弯引号/行尾空白导致的精确失配，改用文件里的
+      // 实际文本重试（对标 Claude Code 的 findActualString）。
+      final actual = text_ops.findFlexibleSearch(content, search);
+      if (actual != null && actual != edit.replace) {
+        search = actual;
+        counted = text_ops.replaceInFile(
+          content,
+          search,
+          edit.replace,
+          isRegex: false,
+          replaceAll: true,
+          caseSensitive: caseSensitive,
+        );
+        if (counted.replacements > 0) recovered++;
+      }
+    }
     if (counted.replacements == 0) {
       final hint =
           isRegex ? null : text_ops.searchMissHint(content, edit.search);
@@ -376,63 +415,107 @@ Future<McpToolResult> editFile(
       source: '智能体编辑',
     );
     await backend.writeFile(resolvedPath, content);
-    await _refreshReadState(ref, backend, sessionKey, resolvedPath);
+    await _refreshReadState(ref, backend, sessionKey, resolvedPath,
+        writtenContent: content);
   }
   return fileEditorOk({
-    'message': '替换完成（$total 处${edits.length > 1 ? '，${edits.length} 个 edit' : ''}）',
+    'message': '替换完成（$total 处${edits.length > 1 ? '，${edits.length} 个 edit' : ''}）'
+        '${recovered > 0 ? '；其中 $recovered 处通过弯引号/行尾空白模糊匹配恢复，'
+            '已按文件实际文本替换' : ''}',
     'path': resolvedPath,
     'replacements': total,
     if (edits.length > 1) 'edits': edits.length,
   });
 }
 
-/// 陈旧检测（Claude Code 的 readFileState 机制）：本会话读过的文件若在读取后
-/// 被外部修改（mtime 变化），拒绝基于过期内容的改动；未读过的文件不拦。
-void _ensureNotStale(
+/// 写前守卫（Claude Code 的 readFileState 机制），两道检查：
+///
+/// 1. **写前必读**：已存在的文件本会话没读过（也没写过）直接拒绝，
+///    防止盲写覆盖模型从没看过的文件。[requireFullRead] 时（write 整文件
+///    覆盖）还要求读的是全文而非行范围——只看过片段就整文件覆盖同样危险；
+///    edit 不要求全文（大文件只能范围读，search 匹配本身已是一道校验）。
+/// 2. **陈旧检测**：读取后被外部修改（mtime 变化）拒绝改动；mtime 变了时
+///    先读当前内容比对 hash 兜底，内容未变（云同步/杀软只碰 mtime）不误拦。
+///
+/// mtime 为 0（后端不提供）时陈旧检测跳过，但写前必读仍生效。
+Future<void> _ensureReadAndFresh(
   Ref ref,
+  WorkspaceBackend backend,
   String sessionKey,
   String path, {
   required int currentMtime,
-}) {
+  bool requireFullRead = false,
+}) async {
   final record = ref.read(fileReadStateProvider).lookup(sessionKey, path);
-  if (isStaleForEdit(record, mtime: currentMtime)) {
+  if (record == null) {
     throw const FileEditorError(
-      '文件在上次读取后已被外部修改（mtime 变化），为避免基于过期内容修改，'
-      '本次未做任何改动。请先用 read_file 重新读取最新内容后重试。',
+      '文件已存在但本会话尚未读取过它，为避免盲写覆盖，本次未做任何改动。'
+      '请先用 read_file 读取它的内容后再修改。',
     );
   }
+  if (requireFullRead && record.isPartialView) {
+    throw const FileEditorError(
+      '本会话只读过这个文件的部分行范围，整文件覆盖写入会丢失未读到的内容，'
+      '本次未做任何改动。请先用 read_file 读取全文，或改用 edit 做局部修改。',
+    );
+  }
+  if (!isStaleForEdit(record, mtime: currentMtime)) return;
+  // mtime 变了：读当前内容比对 hash 兜底（best-effort，读失败则按陈旧处理）。
+  String? currentHash;
+  try {
+    currentHash = text_ops.fileHash(await backend.readFile(path));
+  } catch (_) {
+    currentHash = null;
+  }
+  if (!isStaleForEdit(record, mtime: currentMtime,
+      currentContentHash: currentHash)) {
+    return;
+  }
+  throw const FileEditorError(
+    '文件在上次读取后已被外部修改，为避免基于过期内容修改，'
+    '本次未做任何改动。请先用 read_file 重新读取最新内容后重试。',
+  );
 }
 
-/// [_ensureNotStale] 的 stat 变体：自行取 mtime（best-effort，后端不支持
-/// getFileInfo 时跳过检测）。
-Future<void> _ensureNotStaleByStat(
+/// [_ensureReadAndFresh] 的 stat 变体（edit 用）：自行取 mtime。后端不支持
+/// getFileInfo 时陈旧检测降级跳过，但写前必读仍生效。
+Future<void> _ensureReadAndFreshByStat(
   Ref ref,
   WorkspaceBackend backend,
   String sessionKey,
   String path,
 ) async {
-  final WorkspaceEntry info;
+  int mtime;
   try {
-    info = await backend.getFileInfo(path);
+    mtime = (await backend.getFileInfo(path)).mtime;
   } catch (_) {
-    return;
+    mtime = 0;
   }
-  _ensureNotStale(ref, sessionKey, path, currentMtime: info.mtime);
+  await _ensureReadAndFresh(ref, backend, sessionKey, path,
+      currentMtime: mtime);
 }
 
-/// 本会话自己写入后刷新读取记录：新 mtime 让陈旧检测不误拦后续编辑，
-/// 同时使旧内容退出读取去重（重读会返回真实新内容）。Best-effort。
+/// 本会话自己写入后刷新读取记录：新 mtime + 内容 hash 让陈旧检测不误拦
+/// 后续编辑，同时使旧内容退出读取去重（重读会返回真实新内容）。新建/
+/// 未读过的文件也会记入，让写前必读把本会话自己写的文件算作已知。
+/// Best-effort。
 Future<void> _refreshReadState(
   Ref ref,
   WorkspaceBackend backend,
   String sessionKey,
-  String path,
-) async {
+  String path, {
+  String? writtenContent,
+}) async {
   try {
     final info = await backend.getFileInfo(path);
-    ref
-        .read(fileReadStateProvider)
-        .refreshAfterWrite(sessionKey, path, mtime: info.mtime, size: info.size);
+    ref.read(fileReadStateProvider).refreshAfterWrite(
+          sessionKey,
+          path,
+          mtime: info.mtime,
+          size: info.size,
+          contentHash:
+              writtenContent == null ? null : text_ops.fileHash(writtenContent),
+        );
   } catch (_) {
     // 后端不支持 getFileInfo 时保持旧记录；下次编辑前的 stat 也会失败，
     // 陈旧检测同样跳过，不会误拦。

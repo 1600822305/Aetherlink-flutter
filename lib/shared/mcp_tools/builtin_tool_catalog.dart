@@ -809,6 +809,7 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       name: 'write',
       description:
           '写文件：传 path 覆盖写入已有文件全部内容；传 parent_path + name 新建文件。会触发用户确认。'
+          '覆盖已有文件前必须先用 read_file 读过它的全文（未读过或只读过行范围会被拒绝）。'
           '务必传入完整内容，不要用 "// rest unchanged" 之类的省略标记（会被拒绝）。'
           '覆盖写入时建议传 line_count 以校验内容是否被截断；已有文件的增量修改请优先用 edit。'
           '若整段内容被代码围栏(```)包裹会自动去除；整体 HTML 转义的内容会自动还原。'
@@ -915,7 +916,9 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
     McpToolDefinition(
       name: 'edit',
       description: '在文件中精确查找并替换文本（增量修改首选），支持字面量或正则。会触发用户确认。'
-          'search 需与文件内容完全一致（含缩进/空白，不含 read_file 的行号前缀），'
+          '编辑前必须先用 read_file 读过目标文件（行范围读也可），未读过会被拒绝。'
+          'search 需与文件内容完全一致（含缩进/空白，不含 read_file 的行号前缀；'
+          '仅弯引号/行尾空白差异会自动按文件实际文本恢复匹配），'
           'replace 必须与 search 不同。'
           '默认只替换一处：search 命中多处时报错不修改（防改错位置），需在 search 中加上下文使其唯一，'
           '或传 replace_all=true 全部替换；命中 0 处也报错。'

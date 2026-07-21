@@ -283,4 +283,51 @@ void main() {
       expect(ops.searchMissHint(content, 'nonexistent_symbol_xyz'), isNull);
     });
   });
+
+  group('findFlexibleSearch（edit 模糊匹配恢复）', () {
+    test('精确命中时返回 null（无需恢复）', () {
+      expect(ops.findFlexibleSearch('hello world', 'world'), isNull);
+      expect(ops.findFlexibleSearch('abc', ''), isNull);
+    });
+
+    test('弯引号差异：返回文件里的实际文本', () {
+      const content = 'title = \u201cHello\u201d;\nnote = \u2018hi\u2019;\n';
+      expect(
+        ops.findFlexibleSearch(content, 'title = "Hello";'),
+        'title = \u201cHello\u201d;',
+      );
+      expect(
+        ops.findFlexibleSearch(content, "note = 'hi';"),
+        'note = \u2018hi\u2019;',
+      );
+    });
+
+    test('行尾空白差异：返回含实际行尾空白的原文窗口', () {
+      const content = 'a();  \nb();\t\nc();\n';
+      expect(
+        ops.findFlexibleSearch(content, 'a();\nb();'),
+        'a();  \nb();\t',
+      );
+    });
+
+    test('多行窗口 + CRLF', () {
+      const content = 'x = 1; \r\ny = 2;\r\nz = 3;\r\n';
+      expect(
+        ops.findFlexibleSearch(content, 'x = 1;\ny = 2;'),
+        'x = 1; \r\ny = 2;',
+      );
+    });
+
+    test('search 自身行尾空白多于文件也可恢复', () {
+      const content = 'a();\nb();\n';
+      expect(
+        ops.findFlexibleSearch(content, 'a();  \nb();'),
+        'a();\nb();',
+      );
+    });
+
+    test('内容确实不存在返回 null', () {
+      expect(ops.findFlexibleSearch('a();\nb();\n', 'zzz();'), isNull);
+    });
+  });
 }
