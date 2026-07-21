@@ -118,62 +118,73 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
     final theme = Theme.of(context);
     final species = await showModalBottomSheet<BuddySpecies>(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: theme.colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('选一个物种',
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 4),
-              Text('物种由你决定，稀有度、属性和闪光仍由孵化瞬间注定。',
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.8,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '选一个物种',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '物种由你决定，稀有度、属性和闪光仍由孵化瞬间注定。',
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color:
-                        theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                  )),
-              const SizedBox(height: 12),
-              Flexible(
-                child: GridView.count(
-                  shrinkWrap: true,
-                  crossAxisCount: 4,
-                  mainAxisSpacing: 8,
-                  crossAxisSpacing: 8,
-                  children: [
-                    for (final s in BuddySpecies.values)
-                      InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () => Navigator.of(context).pop(s),
-                        child: RepaintBoundary(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              border:
-                                  Border.all(color: theme.dividerColor),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                BuddyPixelArtView(
-                                    art: kBuddyPixelArts[s]!, size: 44),
-                                const SizedBox(height: 4),
-                                Text(s.label,
-                                    style: theme.textTheme.bodySmall),
-                              ],
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: GridView.count(
+                    crossAxisCount: 4,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    children: [
+                      for (final s in BuddySpecies.values)
+                        InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () => Navigator.of(context).pop(s),
+                          child: RepaintBoundary(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: theme.dividerColor),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  BuddyPixelArtView(
+                                    art: kBuddyPixelArts[s]!,
+                                    size: 44,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    s.label,
+                                    style: theme.textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -220,8 +231,7 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
             padding: const EdgeInsets.only(right: 4),
             child: IconButton(
               padding: EdgeInsets.zero,
-              constraints:
-                  const BoxConstraints.tightFor(width: 40, height: 40),
+              constraints: const BoxConstraints.tightFor(width: 40, height: 40),
               icon: const Icon(LucideIcons.settings, size: 20),
               color: theme.colorScheme.onSurface,
               onPressed: () => context.push(AppRouter.buddySettingsPath),
@@ -232,8 +242,8 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
       body: !state.loaded
           ? const Center(child: CircularProgressIndicator())
           : state.soul == null
-              ? _HatchView(onHatch: _hatch, onPick: _pickSpecies)
-              : _buildPetView(theme, state.soul!, state.bones!),
+          ? _HatchView(onHatch: _hatch, onPick: _pickSpecies)
+          : _buildPetView(theme, state.soul!, state.bones!),
     );
   }
 
@@ -268,19 +278,22 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
                   ? null
                   : Center(
                       child: AnimatedOpacity(
-                        opacity:
-                            _bubbleTicksLeft <= _bubbleFadeTicks ? 0.4 : 1,
+                        opacity: _bubbleTicksLeft <= _bubbleFadeTicks ? 0.4 : 1,
                         duration: _tick,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 6),
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
                             color: cs.onSurface.withValues(alpha: 0.04),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: theme.dividerColor),
                           ),
-                          child: Text(_bubbleText!,
-                              style: theme.textTheme.bodySmall),
+                          child: Text(
+                            _bubbleText!,
+                            style: theme.textTheme.bodySmall,
+                          ),
                         ),
                       ),
                     ),
@@ -306,8 +319,9 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
             Text(
               '${bones.rarity.stars} ${bones.rarity.label} · '
               '${ref.watch(buddyCodexSkinProvider).skin?.name ?? bones.species.label}',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: _rarityColor(bones.rarity, cs)),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: _rarityColor(bones.rarity, cs),
+              ),
             ),
             const SizedBox(height: 12),
             Row(
@@ -367,8 +381,10 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
                       children: [
                         SizedBox(
                           width: 44,
-                          child: Text(stat.label,
-                              style: theme.textTheme.bodySmall),
+                          child: Text(
+                            stat.label,
+                            style: theme.textTheme.bodySmall,
+                          ),
                         ),
                         Expanded(
                           child: ClipRRect(
@@ -376,8 +392,9 @@ class _BuddyPageState extends ConsumerState<BuddyPage> {
                             child: LinearProgressIndicator(
                               value: (bones.stats[stat] ?? 0) / 100,
                               minHeight: 8,
-                              backgroundColor:
-                                  cs.onSurface.withValues(alpha: 0.08),
+                              backgroundColor: cs.onSurface.withValues(
+                                alpha: 0.08,
+                              ),
                               color: _rarityColor(bones.rarity, cs),
                             ),
                           ),
