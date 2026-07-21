@@ -1,21 +1,19 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_budget.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_file_restore.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_guard.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_context_overflow.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_trigger.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_manual_compaction.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/approval_gate.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_context_overflow.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_manual_compaction.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/loop/compaction_coordinator.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/loop/control_tool_parsing.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/loop/streaming_event_writer.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/loop/turn_stream_binder.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 
@@ -161,18 +159,21 @@ class AgentEngine {
     return reason;
   }
 
-  /// 压缩失败只提示一次（每次运行一个引擎实例）。
-  bool _compactionFailureNotified = false;
-  bool _compactionWarningNotified = false;
-
   /// 反应式压缩（升级计划 ⑧，对标 CC hasAttemptedReactiveCompact）：
   /// 每次运行只兜底一次，压缩后重试仍超限则直接报错（防死循环）。
   bool _reactiveCompactAttempted = false;
 
-  /// 压缩熔断器（升级计划 ④）：连续失败达上限后本次运行内不再尝试，
-  /// 成功一次即重置；随引擎实例生灭，续跑重新计数。
-  final CompactionCircuitBreaker _compactionBreaker =
-      CompactionCircuitBreaker();
+  /// 压缩协调器：触发/预警/熔断/摘要落库，状态随引擎实例生灭。
+  late final CompactionCoordinator _compaction = CompactionCoordinator(
+    llm: llm,
+    store: store,
+    budget: budget,
+    onNotification: onNotification,
+    onPreCompact: onPreCompact,
+    onPostCompact: onPostCompact,
+    onCompactionFailed: onCompactionFailed,
+    manualCompactSignal: manualCompactSignal,
+  );
 
   Future<void> run(AgentTask task, AgentCancellationToken cancel) async {
     var current = task;
@@ -274,7 +275,7 @@ class AgentEngine {
         keepPendingPlanApproval: current.mode == AgentSessionMode.plan,
       );
       if (pendingPlanApproval != null) {
-        final plan = _planOfArgs(pendingPlanApproval.argsDetail);
+        final plan = planOfArgs(pendingPlanApproval.argsDetail);
         if (plan.isEmpty) {
           await store.updateToolCall(current.id, pendingPlanApproval,
               state: AgentToolCallState.failure,
@@ -328,7 +329,7 @@ class AgentEngine {
         ));
         onTurnStart?.call();
         final events = await store.getEvents(current.id);
-        final writer = _StreamingEventWriter(store, current.id);
+        final writer = StreamingEventWriter(store, current.id);
         // 工具调用参数一流完就先落「执行中」事件（不等整轮结束），
         // UI 实时看到块；后续执行循环按 id 复用预建事件。
         const engineTools = {
@@ -340,10 +341,12 @@ class AgentEngine {
         };
         bool internalTool(String name) =>
             engineTools.contains(name) || name == kToolSpawnSubagent;
-        final preCreated = <String, List<ToolCallEvent>>{};
-        // 参数仍在流式生成中的调用：streamKey → 事件（节流落库更新）。
-        final streamingEvents = <String, ToolCallEvent>{};
-        final streamingWriteAt = <String, DateTime>{};
+        final binder = TurnStreamBinder(
+          store: store,
+          taskId: current.id,
+          isInternalTool: internalTool,
+          toolStream: toolStream,
+        );
         Future<AgentLlmTurn> callTurn() => llm.completeTurn(
           AgentLlmContext(
             task: current,
@@ -354,59 +357,8 @@ class AgentEngine {
           cancel: cancel,
           onReasoningDelta: writer.onReasoningDelta,
           onTextDelta: writer.onTextDelta,
-          onToolCallDelta: (streamKey, toolName, argsTextSoFar) async {
-            if (toolName == null || internalTool(toolName)) return;
-            final existing = streamingEvents[streamKey];
-            if (existing == null) {
-              final created = await store.appendToolCall(
-                current.id,
-                AgentToolCallRequest(
-                  id: streamKey,
-                  name: toolName,
-                  argsJson: argsTextSoFar,
-                  argSummary: '生成参数中…',
-                ),
-                AgentToolCallState.running,
-              );
-              streamingEvents[streamKey] = created;
-              streamingWriteAt[streamKey] = DateTime.now();
-              toolStream?.update(created.id, toolName, argsTextSoFar);
-              return;
-            }
-            // 实时预览走内存通道，每个 delta 都推（UI 直接监听）；落库只按
-            // 节流做崩溃恢复持久化，不承担实时性。
-            toolStream?.update(existing.id, toolName, argsTextSoFar);
-            final now = DateTime.now();
-            final last = streamingWriteAt[streamKey];
-            if (last != null &&
-                now.difference(last) < const Duration(milliseconds: 500)) {
-              return;
-            }
-            streamingWriteAt[streamKey] = now;
-            streamingEvents[streamKey] = await store.updateToolCall(
-              current.id,
-              existing,
-              state: AgentToolCallState.running,
-              argsDetail: argsTextSoFar,
-            );
-          },
-          onToolCall: (call, streamKey) async {
-            if (internalTool(call.name)) return;
-            final streamed =
-                streamKey == null ? null : streamingEvents.remove(streamKey);
-            if (streamed != null) toolStream?.clear(streamed.id);
-            final event = streamed != null
-                ? await store.updateToolCall(
-                    current.id,
-                    streamed,
-                    state: AgentToolCallState.running,
-                    argSummary: call.argSummary,
-                    argsDetail: call.argsJson,
-                  )
-                : await store.appendToolCall(
-                    current.id, call, AgentToolCallState.running);
-            preCreated.putIfAbsent(call.id, () => []).add(event);
-          },
+          onToolCallDelta: binder.onToolCallDelta,
+          onToolCall: binder.onToolCall,
         );
         final AgentLlmTurn turn;
         try {
@@ -419,57 +371,23 @@ class AgentEngine {
             rethrow;
           }
           _reactiveCompactAttempted = true;
-          // 半途流出的思考/正文定格落库，避免流式事件永久 streaming。
-          await writer.finish('');
+          // 半途流出的思考/正文定格落库，避免流式事件永久 streaming；
           // 本轮已流式预建的工具事件按中断回填，避免永久 running。
-          for (final event in streamingEvents.values) {
-            toolStream?.clear(event.id);
-            await store.updateToolCall(current.id, event,
-                state: AgentToolCallState.failure, resultSummary: '已中断 ✗');
-          }
-          streamingEvents.clear();
-          for (final entry in preCreated.values) {
-            for (final event in entry) {
-              await store.updateToolCall(current.id, event,
-                  state: AgentToolCallState.failure, resultSummary: '已中断 ✗');
-            }
-            entry.clear();
-          }
+          await writer.finish('');
+          await binder.failStreaming();
+          await binder.failAllPending();
           await store.appendStatusChange(
               current.id, '上下文超限（供应商拒绝），兜底压缩后重试本轮');
           // 强制压缩（失败向上抛 → 任务 failed，因为不压缩重试也必然超限）；
           // 压缩后回到循环顶部重试本轮（重读事件，折叠视图已缩小）。
-          await _maybeCompact(current, events, force: true);
+          await _compaction.maybeCompact(current, events, force: true);
           continue;
         }
         await writer.finish(turn.text);
         // 流中断时未闭合/未回到 turn 的预建事件按失败回填，避免永久 running。
-        for (final event in streamingEvents.values) {
-          toolStream?.clear(event.id);
-          await store.updateToolCall(current.id, event,
-              state: AgentToolCallState.failure, resultSummary: '已中断 ✗');
-        }
-        streamingEvents.clear();
-        final returnedIds = {for (final c in turn.toolCalls) c.id};
-        for (final entry in preCreated.entries) {
-          if (returnedIds.contains(entry.key)) continue;
-          for (final event in entry.value) {
-            await store.updateToolCall(current.id, event,
-                state: AgentToolCallState.failure, resultSummary: '已中断 ✗');
-          }
-          entry.value.clear();
-        }
-        // 本轮中止时把尚未执行的预建工具事件按中断回填，避免永久
-        // 停在 running（包括 turn 已返回但未来得及执行的调用）。
-        Future<void> failPendingToolEvents() async {
-          for (final entry in preCreated.values) {
-            for (final event in entry) {
-              await store.updateToolCall(current.id, event,
-                  state: AgentToolCallState.failure, resultSummary: '已中断 ✗');
-            }
-            entry.clear();
-          }
-        }
+        await binder.failStreaming();
+        await binder.failUnreturned({for (final c in turn.toolCalls) c.id});
+        Future<void> failPendingToolEvents() => binder.failAllPending();
 
         budget.recordTokens(turn.tokensUsed);
         current = await save(current.copyWith(
@@ -576,11 +494,11 @@ class AgentEngine {
           }
           // 控制工具在引擎内处理。
           if (call.name == kToolUpdatePlan) {
-            await store.appendPlanUpdate(current.id, _parsePlan(call));
+            await store.appendPlanUpdate(current.id, parsePlanItems(call));
             continue;
           }
           if (call.name == kToolAskUser) {
-            final (question, suggestions) = _parseUserQuestion(call);
+            final (question, suggestions) = parseUserQuestion(call);
             await store.appendUserQuestion(current.id, question,
                 suggestions: suggestions,
                 toolCallId: call.id,
@@ -650,7 +568,7 @@ class AgentEngine {
               budget.recordToolResult(ok: false);
               continue;
             }
-            final plan = _stringArg(call, 'plan')?.trim() ?? '';
+            final plan = stringArgOf(call, 'plan')?.trim() ?? '';
             if (plan.isEmpty) {
               await logControlResult(call,
                   ok: false,
@@ -696,7 +614,7 @@ class AgentEngine {
             }
             // summary 只进任务列表（lastEventSummary）；事件流里正文
             // 就是结束语，状态行只留元信息，不再重复展示 summary。
-            final summary = _stringArg(call, 'summary') ?? '任务完成';
+            final summary = stringArgOf(call, 'summary') ?? '任务完成';
             await failPendingToolEvents();
             await store.appendStatusChange(
                 current.id, '任务完成 · ${current.rounds} 轮');
@@ -729,11 +647,7 @@ class AgentEngine {
               i = j - 1;
               final batchEvents = <ToolCallEvent>[];
               for (final c in batch) {
-                final pre = preCreated[c.id];
-                batchEvents.add((pre != null && pre.isNotEmpty)
-                    ? pre.removeAt(0)
-                    : await store.appendToolCall(
-                        current.id, c, AgentToolCallState.running));
+                batchEvents.add(await binder.claimEvent(c));
               }
               await Future.wait([
                 for (var k = 0; k < batch.length; k++)
@@ -756,11 +670,7 @@ class AgentEngine {
             // 不足两个可并发的调用：走下方串行路径。
           }
 
-          final pre = preCreated[call.id];
-          var event = (pre != null && pre.isNotEmpty)
-              ? pre.removeAt(0)
-              : await store.appendToolCall(
-                  current.id, call, AgentToolCallState.running);
+          var event = await binder.claimEvent(call);
 
           // 审批（L2）：拒绝回填继续跑；挂起无超时。
           final requirement = await approval.evaluate(call, current);
@@ -824,30 +734,9 @@ class AgentEngine {
         // 复用本轮开头读的事件列表（事件只在尾部追加，前缀选择
         // 不受影响），避免每轮额外一次全表读取+解码。
         try {
-          await _maybeCompact(current, events);
+          await _compaction.maybeCompact(current, events);
         } catch (e) {
-          // 压缩中实况行随失败清理（onPostCompact 不会再触发）。
-          onCompactionFailed?.call();
-          // 压缩失败不阻断任务（下轮再试），但给一次可见提示，
-          // 避免上下文持续膨胀到预算暂停时用户不知原因。
-          final justOpened = _compactionBreaker.recordFailure();
-          if (justOpened) {
-            // 熔断（升级计划 ④）：连续失败达上限，本次运行内停止再尝试，
-            // 避免每轮白调一次 LLM；给一次可见提示。
-            try {
-              await store.appendStatusChange(
-                  current.id,
-                  '上下文压缩连续失败 '
-                  '${_compactionBreaker.maxConsecutiveFailures} 次，本次运行内'
-                  '不再尝试（续跑恢复）：$e');
-            } catch (_) {}
-          } else if (!_compactionFailureNotified) {
-            _compactionFailureNotified = true;
-            try {
-              await store.appendStatusChange(
-                  current.id, '上下文压缩失败（不影响任务，下轮重试）：$e');
-            } catch (_) {}
-          }
+          await _compaction.handleFailure(current, e);
         }
       }
     } catch (e) {
@@ -939,292 +828,5 @@ class AgentEngine {
       }
     }
     return pendingPlanApproval;
-  }
-
-  /// 从 exit_plan_mode 的参数 JSON 取方案全文（恢复时用）。
-  static String _planOfArgs(String? argsJson) {
-    if (argsJson == null || argsJson.isEmpty) return '';
-    try {
-      final decoded = jsonDecode(argsJson);
-      if (decoded is Map<String, dynamic>) {
-        final plan = decoded['plan'];
-        if (plan is String) return plan.trim();
-      }
-    } catch (_) {}
-    return '';
-  }
-
-  Future<void> _maybeCompact(
-    AgentTask task,
-    List<AgentEvent> events, {
-    bool force = false,
-  }) async {
-    // 与重放侧同款视图：先折叠、再 microcompact，确保 LLM 压缩的
-    // 触发判断基于模型实际看到的内容量（两级降压：先 micro 后 LLM）。
-    final folded = foldCompactedEvents(events);
-    final entries = applyToolResultBudget(budget.microCompactEnabled
-        ? microCompactEntries(
-            folded,
-            triggerChars: budget.microCompactTriggerChars,
-          )
-        : folded);
-    // 手动压缩（升级计划 ⑤）：用户主动触发时跳过阈值/预警/熔断，
-    // 直接走 keep 前缀选择。
-    final manualRequest = manualCompactSignal?.call();
-    // force：反应式压缩（升级计划 ⑧）与手动压缩同样跳过阈值/预警/熔断。
-    final forced = force || manualRequest != null;
-    // 触发判定（升级计划 ③）：优先用 API usage 的真实上下文 token 对比
-    // 模型窗口（减摘要预留、乘触发比例），拿不到 usage 时回退字符估算。
-    final overThreshold = shouldTriggerCompaction(
-      contextTokens: task.contextTokens,
-      contextLimitTokens: budget.contextLimitTokens,
-      estimatedChars: totalContextChars(entries),
-      fallbackTriggerChars: budget.compactionTriggerChars,
-      triggerRatio: budget.compactionTriggerRatio,
-    );
-    // 自动压缩总开关：关掉后阈值不再自动触发（预警照发），
-    // 手动压缩（forced）不受影响。
-    final shouldCompact = forced || (budget.autoCompactEnabled && overThreshold);
-    if (!shouldCompact) {
-      // 预警（升级计划 ④）：进入触发阈值的 90% 区间时提前提示一次
-      // （可见状态行 + notification hook，type=compactWarning）；
-      // 自动压缩关闭且已超阈值时同样只提示一次，提醒可手动压缩。
-      if (!_compactionWarningNotified &&
-          (overThreshold ||
-              isNearCompactionThreshold(
-                contextTokens: task.contextTokens,
-                contextLimitTokens: budget.contextLimitTokens,
-                estimatedChars: totalContextChars(entries),
-                fallbackTriggerChars: budget.compactionTriggerChars,
-                triggerRatio: budget.compactionTriggerRatio,
-              ))) {
-        _compactionWarningNotified = true;
-        final message = overThreshold
-            ? '上下文已超过压缩阈值（自动压缩已关闭），可手动压缩'
-            : '上下文即将达到压缩阈值，稍后将自动压缩';
-        try {
-          await store.appendStatusChange(task.id, message);
-        } catch (_) {}
-        onNotification?.call(message, 'compactWarning');
-      }
-      return;
-    }
-    if (!forced && _compactionBreaker.isOpen) return;
-    final covered = selectCompactionPrefix(
-      entries,
-      keepChars: budget.compactionKeepChars,
-    );
-    if (covered.isEmpty) {
-      if (forced) {
-        try {
-          await store.appendStatusChange(task.id, '内容太少，无需压缩');
-        } catch (_) {}
-        // 强制请求已消费但没有落压缩事件：清理「压缩中」实况行。
-        onCompactionFailed?.call();
-      }
-      return;
-    }
-    onPreCompact?.call();
-    final summary = await llm.summarizeForCompaction(
-      task,
-      covered,
-      customInstructions: manualRequest?.customInstructions,
-    );
-    if (summary.trim().isEmpty) {
-      throw StateError('压缩摘要为空（可能是模型未配置或模型返回空结果）');
-    }
-    // 压缩后文件恢复（升级计划 ⑥）：被覆盖区间里最近读过的文件
-    // 快照随摘要一起注入视图，模型不必重读。
-    final restored = selectRestoredFiles(
-      covered: covered,
-      kept: entries.sublist(covered.length),
-    );
-    await store.appendCompaction(
-      task.id,
-      coveredCount: covered.length,
-      summary: summary.trim(),
-      restoredFiles: restored,
-    );
-    _compactionBreaker.recordSuccess();
-    // 压缩成功后允许再次预警（对齐 CC suppressCompactWarning 语义：
-    // 压缩把上下文降下来了，之后再逼近阈值应再次提醒）。
-    _compactionWarningNotified = false;
-    onPostCompact?.call(summary.trim());
-  }
-
-  List<AgentPlanItem> _parsePlan(AgentToolCallRequest call) {
-    try {
-      final json = jsonDecode(call.argsJson) as Map<String, dynamic>;
-      final items = json['items'] as List<dynamic>? ?? const [];
-      return [
-        for (final item in items.cast<Map<String, dynamic>>())
-          AgentPlanItem(
-            content: item['content'] as String? ?? '',
-            status: switch (item['status'] as String?) {
-              'in_progress' || 'inProgress' => AgentPlanItemStatus.inProgress,
-              'completed' => AgentPlanItemStatus.completed,
-              _ => AgentPlanItemStatus.pending,
-            },
-          ),
-      ];
-    } catch (_) {
-      return const [];
-    }
-  }
-
-  String? _stringArg(AgentToolCallRequest call, String key) {
-    try {
-      final json = jsonDecode(call.argsJson) as Map<String, dynamic>;
-      return json[key] as String?;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// 解析 ask_user 参数（RooCode ask_followup_question 风格）：
-  /// question + follow_up 建议答案列表。
-  (String, List<String>) _parseUserQuestion(AgentToolCallRequest call) {
-    try {
-      final json = jsonDecode(call.argsJson) as Map<String, dynamic>;
-      final question = (json['question'] as String? ?? '').trim();
-      if (question.isNotEmpty) {
-        return (question, _trimmedStrings(json['follow_up']));
-      }
-    } catch (_) {
-      // 解析失败时仍落一个可回答的问题，避免任务挂起但 UI 无内容。
-    }
-    return ('需要你的输入', const []);
-  }
-
-  static List<String> _trimmedStrings(Object? raw) {
-    if (raw is! List<dynamic>) return const [];
-    final result = <String>[];
-    for (final item in raw.take(4)) {
-      if (item is! String) continue;
-      final normalized = item.trim();
-      if (normalized.isEmpty || result.contains(normalized)) continue;
-      result.add(normalized);
-    }
-    return result;
-  }
-}
-
-/// 流式增量的合并限流落库（L6 原位 upsert 之上的写入节流）。
-///
-/// LLM 每个 SSE 增量都会回调一次；逐条 upsert 会让写库频率跟着网络包走
-/// （每秒几十次），而每次写库都触发 UI watch 对整条事件流的全量重解码——
-/// 长任务（几十轮、几百 KB 工具输出）下 UI isolate 被解码洪流打满，
-/// 表现为整页冻结甚至 ANR。这里按 latest-wins 合并：增量只更新内存态，
-/// 每 [_kMinWriteInterval] 至多落库一次，收尾时 [finish] 强制写终值。
-class _StreamingEventWriter {
-  _StreamingEventWriter(this._store, this._taskId);
-
-  static const Duration _kMinWriteInterval = Duration(milliseconds: 200);
-
-  final AgentEventStore _store;
-  final String _taskId;
-
-  AssistantTextEvent? _textEvent;
-  ReasoningEvent? _reasoningEvent;
-  DateTime? _reasoningStart;
-
-  String _text = '';
-  String _reasoning = '';
-  bool _textDirty = false;
-  bool _reasoningDirty = false;
-
-  bool _writing = false;
-  bool _finished = false;
-  DateTime _lastWrite = DateTime.fromMillisecondsSinceEpoch(0);
-  Timer? _timer;
-  Future<void> _drainFuture = Future<void>.value();
-
-  void onReasoningDelta(String reasoningSoFar) {
-    _reasoningStart ??= DateTime.now();
-    _reasoning = reasoningSoFar;
-    _reasoningDirty = true;
-    _schedule();
-  }
-
-  void onTextDelta(String textSoFar) {
-    _text = textSoFar;
-    _textDirty = true;
-    _schedule();
-  }
-
-  /// 收尾：停掉节流定时器，等在途写入结束，把思考定格、正文以终值
-  /// （非流式）落库。[finalText] 为空时以最后一次增量的全文为准。
-  Future<void> finish(String finalText) async {
-    _finished = true;
-    _timer?.cancel();
-    _timer = null;
-    await _drainFuture;
-    if (_reasoningEvent != null && _reasoningEvent!.streaming) {
-      _reasoningEvent = await _store.updateReasoning(
-        _taskId, _reasoningEvent!, _reasoningEvent!.text,
-        streaming: false,
-        elapsed: _reasoningElapsed(),
-      );
-    }
-    final text = finalText.isEmpty ? _text : finalText;
-    if (_textEvent != null || text.isNotEmpty) {
-      _textEvent = _textEvent == null
-          ? await _store.appendAssistantText(_taskId, text, streaming: false)
-          : await _store.updateAssistantText(_taskId, _textEvent!, text,
-              streaming: false);
-    }
-  }
-
-  Duration? _reasoningElapsed() => _reasoningStart == null
-      ? null
-      : DateTime.now().difference(_reasoningStart!);
-
-  void _schedule() {
-    if (_writing || _finished || _timer != null) return;
-    final wait = _kMinWriteInterval - DateTime.now().difference(_lastWrite);
-    if (wait <= Duration.zero) {
-      _drainFuture = _drain();
-    } else {
-      _timer = Timer(wait, () {
-        _timer = null;
-        if (!_writing && !_finished) _drainFuture = _drain();
-      });
-    }
-  }
-
-  Future<void> _drain() async {
-    _writing = true;
-    try {
-      if (_reasoningDirty) {
-        _reasoningDirty = false;
-        final reasoning = _reasoning;
-        _reasoningEvent = _reasoningEvent == null
-            ? await _store.appendReasoning(_taskId, reasoning,
-                streaming: true)
-            : await _store.updateReasoning(
-                _taskId, _reasoningEvent!, reasoning,
-                streaming: true);
-      }
-      if (_textDirty) {
-        _textDirty = false;
-        // 文本开始 → 思考定格（收起为"思考了 Xs"）。
-        if (_reasoningEvent != null && _reasoningEvent!.streaming) {
-          _reasoningEvent = await _store.updateReasoning(
-            _taskId, _reasoningEvent!, _reasoningEvent!.text,
-            streaming: false,
-            elapsed: _reasoningElapsed(),
-          );
-        }
-        final text = _text;
-        _textEvent = _textEvent == null
-            ? await _store.appendAssistantText(_taskId, text, streaming: true)
-            : await _store.updateAssistantText(_taskId, _textEvent!, text,
-                streaming: true);
-      }
-    } finally {
-      _lastWrite = DateTime.now();
-      _writing = false;
-    }
-    if (!_finished && (_reasoningDirty || _textDirty)) _schedule();
   }
 }

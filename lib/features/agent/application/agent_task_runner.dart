@@ -18,7 +18,7 @@ import 'package:aetherlink_flutter/features/agent/application/engine/agent_cance
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_manual_compaction.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_manual_compaction.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_stream.dart';

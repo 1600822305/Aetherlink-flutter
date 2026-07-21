@@ -1,5 +1,5 @@
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 

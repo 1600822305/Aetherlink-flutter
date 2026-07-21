@@ -11,8 +11,8 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/app/di/app_settings_access.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_trigger.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_compaction_trigger.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_microcompact.dart';
 
 /// Settings-store key（单键 JSON 存整个设置对象）。
 const String kAgentCompactionSettingsKey = 'agent_compaction_settings';

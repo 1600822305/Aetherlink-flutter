@@ -6,7 +6,7 @@
 library;
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_compaction.dart';
 
 /// 被清除的旧工具输出在上下文里的占位文本。
 const String kMicroCompactClearedPlaceholder = '[旧工具输出已清除]';
