@@ -52,10 +52,6 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
   /// （MCP 工具执行可能耗时数分钟，期间尤其需要落盘）。
   static const Duration _kCheckpointInterval = Duration(seconds: 2);
 
-  /// 流式 emit 的帧级合并窗口（≈120Hz 一帧）：同一窗口内的多个 SSE delta
-  /// 合并为一次 UI 刷新，首个 delta 立即发射。
-  static const Duration _kFrameEmitWindow = Duration(milliseconds: 8);
-
   /// Subscribes to the gateway stream for [request] and drives the MCP tool-call
   /// loop. Each round accumulates assistant text into a `main_text` block and
   /// reasoning into a single `thinking` card; if the model asks for a tool
@@ -84,16 +80,26 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
     // preview / memory) — the coordinator does that after all siblings settle.
     bool finalizeTurn = true,
   }) async {
-    // 帧级合并：SSE delta 的到达速率可远高于屏幕刷新率，同一个帧窗口
-    // (~8ms，即 120Hz 一帧) 内的多个 delta 合并为一次 emit：首个 delta 立即
-    // 发射（leading edge，无可感知延迟），窗口内的后续 delta 挂一个尾随定时器。
+    // 帧级合并：SSE delta 的到达速率可远高于屏幕刷新率，两次 vsync 之间的
+    // 多个 delta 合并为一次 emit：空闲时的首个 delta 立即发射（leading edge，
+    // 无可感知延迟），已有帧在排时后续 delta 挂到下一帧的 frame callback——
+    // 合帧窗口严格等于一个 vsync 周期，自适应 60/90/120Hz，不再写死 8ms。
     // 这不是旧的 100ms 节流——每一帧依然拿到最新内容，只是不再在一帧内
     // 重复构建同一个气泡。
-    Timer? pendingEmit;
-    var lastEmitAt = DateTime.fromMillisecondsSinceEpoch(0);
+    int? pendingEmitFrame;
+    // 纯 Dart 测试环境没有 binding（也就没有 vsync），此时退化为每个 delta
+    // 直接 emit。
+    SchedulerBinding? frameScheduler;
+    try {
+      frameScheduler = SchedulerBinding.instance;
+    } catch (_) {
+      frameScheduler = null;
+    }
     void cancelScheduledUpdate() {
-      pendingEmit?.cancel();
-      pendingEmit = null;
+      if (pendingEmitFrame != null) {
+        frameScheduler?.cancelFrameCallbackWithId(pendingEmitFrame!);
+        pendingEmitFrame = null;
+      }
     }
 
     // Terminal emit at the end of *this* stream. For a single-model turn it ends
@@ -229,7 +235,6 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
 
     void update() {
       cancelScheduledUpdate();
-      lastEmitAt = DateTime.now();
       final current = roundDisplay();
       final liveBlocks = <MessageBlock>[
         ...completed,
@@ -266,14 +271,18 @@ mixin _ChatStreaming on _$ChatController, _ChatPostTurn {
     }
 
     void scheduleUpdate() {
-      if (pendingEmit != null) return;
-      final wait = _kFrameEmitWindow - DateTime.now().difference(lastEmitAt);
-      if (wait <= Duration.zero) {
+      if (pendingEmitFrame != null) return;
+      final scheduler = frameScheduler;
+      // Leading edge：无 binding，或空闲且没有帧在排时直接发射（emit 本身会把
+      // 下一帧排上，后续 delta 自然落入下面的合帧分支）。
+      if (scheduler == null ||
+          (scheduler.schedulerPhase == SchedulerPhase.idle &&
+              !scheduler.hasScheduledFrame)) {
         update();
         return;
       }
-      pendingEmit = Timer(wait, () {
-        pendingEmit = null;
+      pendingEmitFrame = scheduler.scheduleFrameCallback((_) {
+        pendingEmitFrame = null;
         update();
       });
     }

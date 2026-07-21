@@ -206,7 +206,9 @@ class _StreamingMarkdownBodyState extends State<StreamingMarkdownBody> {
     if (chunks.length == 1) {
       _chunkTexts.clear();
       _chunkWidgets.clear();
-      return AppMarkdown(content: chunks.first, style: widget.style);
+      return _StreamTailFade(
+        child: AppMarkdown(content: chunks.first, style: widget.style),
+      );
     }
     if (_chunkTexts.length > chunks.length) {
       // Content was reset/shrunk (e.g. 重试) — drop stale cache entries.
@@ -228,7 +230,48 @@ class _StreamingMarkdownBodyState extends State<StreamingMarkdownBody> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: List<Widget>.of(_chunkWidgets),
+      children: <Widget>[
+        for (var i = 0; i < _chunkWidgets.length - 1; i++) _chunkWidgets[i],
+        _StreamTailFade(child: _chunkWidgets.last),
+      ],
+    );
+  }
+}
+
+/// Fades the bottom edge of the active streaming tail so freshly arrived
+/// text “淡入” instead of popping in at full opacity — the Flutter take on
+/// 千问 TypingTextView's per-character alpha gradient cursor trail. The fade
+/// zone covers roughly the last line; as the text grows, earlier lines scroll
+/// out of the zone and turn fully opaque. Only the tail chunk pays the
+/// saveLayer, and only while streaming (finished messages render through
+/// [AppMarkdown] directly).
+class _StreamTailFade extends StatelessWidget {
+  const _StreamTailFade({required this.child});
+
+  final Widget child;
+
+  /// Height (logical px) of the faded zone at the bottom of the tail chunk.
+  static const double _fadeZone = 24;
+
+  /// Alpha at the very end of the gradient — matches 千问's faintest
+  /// cursor-trail step (0x4C ≈ 30%).
+  static const Color _tailColor = Color(0x4CFFFFFF);
+
+  @override
+  Widget build(BuildContext context) {
+    return ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (bounds) {
+        final h = bounds.height;
+        final start = h <= _fadeZone ? 0.0 : 1 - _fadeZone / h;
+        return LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: const [Colors.white, Colors.white, _tailColor],
+          stops: [0, start, 1],
+        ).createShader(bounds);
+      },
+      child: child,
     );
   }
 }
