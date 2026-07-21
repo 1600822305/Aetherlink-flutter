@@ -24,6 +24,7 @@ class FileReadRecord {
     this.endLine,
     this.withLineNumbers = true,
     this.dedupEligible = true,
+    this.contentHash,
   });
 
   final int mtime;
@@ -33,6 +34,15 @@ class FileReadRecord {
   final int? startLine;
   final int? endLine;
   final bool withLineNumbers;
+
+  /// sha256 of the full content this session last saw for the file（整文件
+  /// 读取或本会话写入时记录；范围读取为 null）。陈旧检测在 mtime 变化时用它
+  /// 做内容比对兜底——云同步/杀软等只动 mtime 不动内容的场景不误拦。
+  final String? contentHash;
+
+  /// Whether this record represents only a partial view of the file
+  /// (a range read rather than the whole content).
+  bool get isPartialView => startLine != null || endLine != null;
 
   /// False after this session itself wrote the file: the mtime is fresh (so
   /// the staleness guard stays quiet) but the previously-returned content is
@@ -62,12 +72,23 @@ bool isDuplicateRead(
 
 /// Whether a mutation must be refused because the file changed after this
 /// session last read it (an external edit — user, formatter, another agent).
-/// Files never read this session are not blocked (读前置不强制，保持宽松)。
-bool isStaleForEdit(FileReadRecord? record, {required int mtime}) =>
+/// Files never read this session are not blocked here — the read-first
+/// guard in the write handlers covers that case with a clearer error.
+///
+/// [currentContentHash]（当前磁盘内容的 sha256，可选）提供内容比对兜底：
+/// mtime 变了但内容 hash 与记录一致时不算陈旧（云同步/杀软只碰 mtime）。
+bool isStaleForEdit(
+  FileReadRecord? record, {
+  required int mtime,
+  String? currentContentHash,
+}) =>
     record != null &&
     record.mtime != 0 &&
     mtime != 0 &&
-    record.mtime != mtime;
+    record.mtime != mtime &&
+    (record.contentHash == null ||
+        currentContentHash == null ||
+        record.contentHash != currentContentHash);
 
 /// In-memory, app-lifetime store of [FileReadRecord]s, LRU-capped per session
 /// and across sessions so long-running apps can't grow it unboundedly.
@@ -96,25 +117,29 @@ class FileReadStateStore {
 
   /// Updates a file's metadata after this session itself wrote it: keeps the
   /// staleness guard in sync with the new mtime while disqualifying the old
-  /// content from read-dedup. No-op when the session never read the file.
+  /// content from read-dedup. Records even when the session never read the
+  /// file — a file this session created/wrote counts as "known", so the
+  /// read-first guard won't force a redundant re-read before the next edit.
+  /// [contentHash]（刚写入内容的 sha256）供陈旧检测的内容比对兜底。
   void refreshAfterWrite(
     String session,
     String path, {
     required int mtime,
     required int size,
+    String? contentHash,
   }) {
     final existing = lookup(session, path);
-    if (existing == null) return;
     record(
       session,
       path,
       FileReadRecord(
         mtime: mtime,
         size: size,
-        startLine: existing.startLine,
-        endLine: existing.endLine,
-        withLineNumbers: existing.withLineNumbers,
+        startLine: existing?.startLine,
+        endLine: existing?.endLine,
+        withLineNumbers: existing?.withLineNumbers ?? true,
         dedupEligible: false,
+        contentHash: contentHash ?? existing?.contentHash,
       ),
     );
   }

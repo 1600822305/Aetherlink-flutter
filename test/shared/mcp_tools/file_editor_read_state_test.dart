@@ -85,6 +85,32 @@ void main() {
       const rec2 = FileReadRecord(mtime: 100, size: 10);
       expect(isStaleForEdit(rec2, mtime: 0), isFalse);
     });
+
+    test('mtime 变化但内容 hash 一致 → 不陈旧（内容比对兜底）', () {
+      const rec = FileReadRecord(mtime: 100, size: 10, contentHash: 'h1');
+      expect(
+        isStaleForEdit(rec, mtime: 200, currentContentHash: 'h1'),
+        isFalse,
+      );
+    });
+
+    test('mtime 变化且内容 hash 不同 → 陈旧', () {
+      const rec = FileReadRecord(mtime: 100, size: 10, contentHash: 'h1');
+      expect(
+        isStaleForEdit(rec, mtime: 200, currentContentHash: 'h2'),
+        isTrue,
+      );
+    });
+
+    test('任一侧无 hash 时仍按 mtime 判陈旧（保守）', () {
+      const noHash = FileReadRecord(mtime: 100, size: 10);
+      expect(
+        isStaleForEdit(noHash, mtime: 200, currentContentHash: 'h1'),
+        isTrue,
+      );
+      const rec = FileReadRecord(mtime: 100, size: 10, contentHash: 'h1');
+      expect(isStaleForEdit(rec, mtime: 200), isTrue);
+    });
   });
 
   group('FileReadStateStore', () {
@@ -95,10 +121,13 @@ void main() {
       expect(store.lookup('b', '/f'), isNull);
     });
 
-    test('refreshAfterWrite 更新 mtime 并禁用去重；未读过时是 no-op', () {
+    test('refreshAfterWrite 更新 mtime 并禁用去重；未读过时也记入（本会话自写算已知）', () {
       final store = FileReadStateStore();
-      store.refreshAfterWrite('a', '/f', mtime: 9, size: 9);
-      expect(store.lookup('a', '/f'), isNull);
+      store.refreshAfterWrite('a', '/f', mtime: 9, size: 9, contentHash: 'h');
+      final fresh = store.lookup('a', '/f')!;
+      expect(fresh.mtime, 9);
+      expect(fresh.contentHash, 'h');
+      expect(fresh.dedupEligible, isFalse);
 
       store.record(
         'a',
