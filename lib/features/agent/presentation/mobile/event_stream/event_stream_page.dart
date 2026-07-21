@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:aetherlink_flutter/app/di/markdown_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_compaction_progress.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_task_runner.dart';
@@ -15,6 +16,7 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stre
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_followup_panel.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_input_bar.dart';
 import 'package:aetherlink_flutter/shared/widgets/auto_scroll_controller.dart';
+import 'package:aetherlink_flutter/shared/widgets/no_implicit_scroll_physics.dart';
 
 /// 左页：事件流主视图（UI 稿 §4.1）——计划纪要条 + 时间线 + 底部输入区。
 ///
@@ -119,12 +121,19 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
           child: Stack(
             children: [
               NotificationListener<ScrollNotification>(
-                onNotification: (_) {
+                onNotification: (n) {
+                  if (n is ScrollStartNotification) {
+                    DeferredContentScheduler.instance.setScrolling(true);
+                  } else if (n is ScrollEndNotification) {
+                    DeferredContentScheduler.instance.setScrolling(false);
+                  }
                   _syncJumpButton();
                   return false;
                 },
                 child: ListView.builder(
                   controller: _scrollController,
+                  // 拦截焦点 / showOnScreen 驱动的隐式滚动（与聊天页同机制）。
+                  physics: const NoImplicitScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
                   itemCount: blocks.length + trailing,
                   itemBuilder: (context, i) => i >= blocks.length

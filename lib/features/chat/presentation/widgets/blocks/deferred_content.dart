@@ -201,8 +201,22 @@ class DeferredContentScheduler {
   /// keeps the pump comfortably inside a 120Hz budget even mid-scroll.
   static const int _frameBudget = 6000;
 
+  /// Reduced budget while the message list is actively scrolling — the frame
+  /// budget belongs to the scroll first; queued content catches up at full
+  /// speed as soon as the scroll ends.
+  static const int _scrollingFrameBudget = 2000;
+
   final List<DeferredContentEntry> _stack = [];
   bool _pumpScheduled = false;
+  bool _scrolling = false;
+
+  /// Live scroll state of the hosting list. While true the pump runs under
+  /// [_scrollingFrameBudget]; flipping back to false resumes any queued work.
+  void setScrolling(bool value) {
+    if (_scrolling == value) return;
+    _scrolling = value;
+    if (!value && _stack.isNotEmpty) _schedulePump();
+  }
 
   DeferredContentEntry enqueue(int cost, VoidCallback run) {
     final entry = DeferredContentEntry(cost, run);
@@ -224,8 +238,9 @@ class DeferredContentScheduler {
   }
 
   void _pump() {
+    final budget = _scrolling ? _scrollingFrameBudget : _frameBudget;
     var used = 0;
-    while (_stack.isNotEmpty && used < _frameBudget) {
+    while (_stack.isNotEmpty && used < budget) {
       final entry = _stack.removeLast();
       if (entry._canceled) continue;
       used += entry.cost < 1 ? 1 : entry.cost;
