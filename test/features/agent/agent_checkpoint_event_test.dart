@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_compaction.dart';
@@ -13,7 +15,10 @@ void main() {
         id: 'ck-1',
         seq: 3,
         at: at,
-        commit: 'abc123def456',
+        commits: const {
+          '/ws/app': 'abc123def456',
+          '/ws/lib': 'fed654cba321',
+        },
         label: '修复登录问题',
       );
       expect(agentEventKind(event), 'checkpoint');
@@ -26,15 +31,31 @@ void main() {
       );
       expect(decoded, isA<CheckpointEvent>());
       final checkpoint = decoded as CheckpointEvent;
-      expect(checkpoint.commit, 'abc123def456');
+      expect(checkpoint.commits, {
+        '/ws/app': 'abc123def456',
+        '/ws/lib': 'fed654cba321',
+      });
       expect(checkpoint.label, '修复登录问题');
+    });
+
+    test('旧单仓库 payload（commit 字符串）解码为空键映射', () {
+      final decoded = decodeAgentEvent(
+        id: 'ck-legacy',
+        seq: 1,
+        at: at,
+        kind: 'checkpoint',
+        payloadJson: jsonEncode({'commit': 'abc123', 'label': '旧数据'}),
+      );
+      final checkpoint = decoded as CheckpointEvent;
+      expect(checkpoint.commits, {'': 'abc123'});
+      expect(checkpoint.label, '旧数据');
     });
   });
 
   group('检查点与上下文', () {
     test('foldCompactedEvents 跳过检查点（不进模型上下文）', () {
       final events = <AgentEvent>[
-        CheckpointEvent(id: 'ck-1', seq: 1, at: at, commit: 'abc'),
+        CheckpointEvent(id: 'ck-1', seq: 1, at: at, commits: const {'': 'abc'}),
         UserMessageEvent(id: 'um-1', seq: 2, at: at, text: '你好'),
       ];
       final folded = foldCompactedEvents(events);
@@ -43,8 +64,12 @@ void main() {
     });
 
     test('contextCharsOf 对检查点计 0', () {
-      final event =
-          CheckpointEvent(id: 'ck-1', seq: 1, at: at, commit: 'abc');
+      final event = CheckpointEvent(
+        id: 'ck-1',
+        seq: 1,
+        at: at,
+        commits: const {'': 'abc'},
+      );
       expect(contextCharsOf(event), 0);
     });
   });

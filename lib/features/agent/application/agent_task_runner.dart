@@ -313,7 +313,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         ref,
         task.id,
         task.workspaceId.isEmpty ? null : task.workspaceId,
-        checkpoint.commit,
+        checkpoint.commits,
       );
     }
     // 文件回滚成功后再截断对话（失败时对话保持原样）；保留检查点
@@ -330,19 +330,19 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     if (result != null) {
       await _store().appendCheckpoint(
         task.id,
-        commit: result.safetyCommit,
+        commits: result.safetyCommits,
         label: '回滚前自动快照',
       );
     }
+    final ckpt = _checkpointSummary(checkpoint.commits);
     await _store().appendStatusChange(task.id, switch (mode) {
-      AgentRollbackMode.messagesOnly =>
-        '已回滚对话到检查点 ${_shortCommit(checkpoint.commit)}（工作区文件未变）',
+      AgentRollbackMode.messagesOnly => '已回滚对话到检查点 $ckpt（工作区文件未变）',
       AgentRollbackMode.filesOnly =>
-        '已回滚工作区到检查点 ${_shortCommit(checkpoint.commit)}'
+        '已回滚工作区到检查点 $ckpt'
             '${_fileSummary(result!.files)}'
             '（回滚前状态已保存为新检查点，可再回滚回来）',
       AgentRollbackMode.filesAndMessages =>
-        '已回滚对话与工作区到检查点 ${_shortCommit(checkpoint.commit)}'
+        '已回滚对话与工作区到检查点 $ckpt'
             '${_fileSummary(result!.files)}'
             '（回滚前状态已保存为新检查点，可再回滚回来）',
     });
@@ -370,19 +370,19 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   ) => previewAgentRollback(
     ref,
     task.workspaceId.isEmpty ? null : task.workspaceId,
-    checkpoint.commit,
+    checkpoint.commits,
   );
 
   /// 预览面板里单文件的文本 diff（检查点 vs 当前工作区）。
   Future<String> rollbackFileDiff(
     AgentTask task,
     CheckpointEvent checkpoint,
-    String path,
+    RollbackFileChange file,
   ) => loadRollbackFileDiff(
     ref,
     task.workspaceId.isEmpty ? null : task.workspaceId,
-    checkpoint.commit,
-    path,
+    checkpoint.commits,
+    file,
   );
 
   static String _fileSummary(List<RollbackFileChange> files) {
@@ -402,10 +402,10 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         task.id,
         task.workspaceId.isEmpty ? null : task.workspaceId,
       );
-      if (result.commit != null) {
+      if (result.commits != null) {
         await _store().appendCheckpoint(
           task.id,
-          commit: result.commit!,
+          commits: result.commits!,
           label: _titleFrom(text),
         );
       } else if (_checkpointHintShown.add(task.id)) {
@@ -421,8 +421,12 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     }
   }
 
-  static String _shortCommit(String commit) =>
-      commit.length > 8 ? commit.substring(0, 8) : commit;
+  /// 检查点的短摘要：首个 commit 短哈希，多仓库时附仓库数。
+  static String _checkpointSummary(Map<String, String> commits) {
+    final first = commits.values.firstOrNull ?? '';
+    final short = first.length > 8 ? first.substring(0, 8) : first;
+    return commits.length > 1 ? '$short 等 ${commits.length} 个仓库' : short;
+  }
 
   void pause(String taskId) => _tokens[taskId]?.requestPause();
 

@@ -108,7 +108,8 @@ class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
               Expanded(
                 child: Text(
                   '${snapshot.workspaceName} · '
-                  '${snapshot.changes.length} 个未提交改动',
+                  '${snapshot.changes.length} 个未提交改动'
+                  '${snapshot.repoCount > 1 ? ' · ${snapshot.repoCount} 个仓库' : ''}',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -137,17 +138,25 @@ class _WorkbenchDiffTabState extends ConsumerState<WorkbenchDiffTab> {
                     itemCount: snapshot.changes.length,
                     itemBuilder: (context, i) {
                       final change = snapshot.changes[i];
-                      final expanded = _expanded.contains(change.relPath);
+                      // 多仓库工作区里 relPath 可能跨仓库重名，展开态用
+                      // 唯一的 absPath 作键。
+                      final expanded = _expanded.contains(change.absPath);
+                      // 多仓库时，每个仓库首个文件前插一条仓库分组表头。
+                      final showRepoHeader = snapshot.repoCount > 1 &&
+                          (i == 0 ||
+                              snapshot.changes[i - 1].repoRoot !=
+                                  change.repoRoot);
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          if (showRepoHeader) _RepoHeader(name: change.repoName),
                           _ChangeRow(
                             change: change,
                             expanded: expanded,
                             onTap: () => setState(() {
                               expanded
-                                  ? _expanded.remove(change.relPath)
-                                  : _expanded.add(change.relPath);
+                                  ? _expanded.remove(change.absPath)
+                                  : _expanded.add(change.absPath);
                             }),
                             onCopyPath: () async {
                               await Clipboard.setData(
@@ -281,6 +290,40 @@ final _fileDiffProvider = FutureProvider.autoDispose.family<
     GitFileStatus.renamed => ('Renamed', Colors.blue),
     GitFileStatus.conflicted => ('Conflict', theme.colorScheme.error),
   };
+}
+
+/// 多仓库工作区的仓库分组表头（贴左、浅底）。
+class _RepoHeader extends StatelessWidget {
+  const _RepoHeader({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Container(
+      width: double.infinity,
+      color: cs.onSurface.withValues(alpha: 0.04),
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      child: Row(
+        children: [
+          Icon(LucideIcons.folderGit2, size: 13, color: cs.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              name,
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: cs.onSurfaceVariant,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ChangeRow extends StatelessWidget {

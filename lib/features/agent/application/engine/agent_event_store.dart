@@ -94,7 +94,7 @@ abstract class AgentEventStore {
 
   Future<CheckpointEvent> appendCheckpoint(
     String taskId, {
-    required String commit,
+    required Map<String, String> commits,
     String label = '',
   });
 
@@ -380,14 +380,14 @@ class DriftAgentEventStore implements AgentEventStore {
   @override
   Future<CheckpointEvent> appendCheckpoint(
     String taskId, {
-    required String commit,
+    required Map<String, String> commits,
     String label = '',
   }) async {
     final event = CheckpointEvent(
       id: _newId('ck'),
       seq: await _nextSeq(taskId),
       at: DateTime.now(),
-      commit: commit,
+      commits: commits,
       label: label,
     );
     await _dao.upsertEvents(taskId, [event]);

@@ -23,13 +23,23 @@ class AgentFileChange {
     required this.relPath,
     required this.absPath,
     required this.status,
+    required this.repoRoot,
+    required this.repoName,
     this.additions,
     this.deletions,
   });
 
+  /// 相对**所属仓库根** [repoRoot] 的路径。
   final String relPath;
   final String absPath;
   final GitFileStatus status;
+
+  /// 该文件所属的 git 仓库根（多仓库工作区里每个文件各自归属），
+  /// diff/还原都基于它，而非工作区根。
+  final String repoRoot;
+
+  /// 仓库根尾段，多仓库工作区里 UI 分组表头用。
+  final String repoName;
 
   /// +增/-删行数（git diff --numstat；未跟踪文件用 wc -l），
   /// 二进制文件或统计失败时为 null。
@@ -37,17 +47,19 @@ class AgentFileChange {
   final int? deletions;
 }
 
-/// 一次 git status 快照 + 取 diff 所需的仓库上下文。
+/// 一次 git status 快照：跨工作区下发现的**全部**仓库聚合而成。
 class AgentChangesSnapshot {
   const AgentChangesSnapshot({
     required this.workspaceName,
-    required this.repoRoot,
     required this.changes,
+    required this.repoCount,
   });
 
   final String workspaceName;
-  final String repoRoot;
   final List<AgentFileChange> changes;
+
+  /// 发现并纳入统计的仓库数（>1 时 UI 按仓库分组显示表头）。
+  final int repoCount;
 }
 
 /// 不可用时 [snapshot] 为 null，[unavailableReason] 给 UI 空态文案。
@@ -78,53 +90,64 @@ final agentWorkspaceChangesProvider = FutureProvider.autoDispose
     );
   }
 
-  final top = await backend.exec(
-    'git rev-parse --show-toplevel',
-    workingDirectory: workspace.root,
-    timeout: const Duration(seconds: 10),
-  );
-  final repoRoot = top.stdout.trim();
-  if (top.exitCode != 0 || repoRoot.isEmpty) {
+  // 多仓库工作区：向上 rev-parse（工作区在某仓库内）+ 向下扫描 .git
+  //（工作区是多仓库容器）合并发现全部仓库，与文件树染色同一套逻辑。
+  final roots = await discoverGitRepos(backend, workspace.root);
+  if (roots.isEmpty) {
     return const AgentChangesResult.unavailable(
-      '工作区不在 git 仓库内\n改动清单基于 git status，初始化仓库后可用',
+      '工作区里没有发现 git 仓库\n改动清单基于 git status，初始化仓库后可用',
     );
   }
 
   final status = await backend.exec(
-    'git -c core.quotepath=off status --porcelain=v1 -z',
+    buildBatchStatusCommand(roots),
     workingDirectory: workspace.root,
     timeout: const Duration(seconds: 20),
   );
-  if (status.exitCode != 0) {
+  if (status.exitCode != 0 && status.stdout.isEmpty) {
     return AgentChangesResult.unavailable(
       'git status 执行失败\n${status.stderr.trim()}',
     );
   }
 
-  final files = parseGitPorcelainZ(repoRoot, status.stdout);
-  final prefix = '$repoRoot/';
-  final entries = [
-    for (final MapEntry(key: abs, value: st) in files.entries)
-      if (abs.startsWith(prefix))
-        (relPath: abs.substring(prefix.length), absPath: abs, status: st),
-  ]..sort((a, b) => a.relPath.compareTo(b.relPath));
+  final snapshots = parseBatchStatusOutput(status.stdout);
+  final changes = <AgentFileChange>[];
+  for (final repo in snapshots) {
+    final repoRoot = repo.repoRoot;
+    final repoName = repoRoot.contains('/')
+        ? repoRoot.substring(repoRoot.lastIndexOf('/') + 1)
+        : repoRoot;
+    final prefix = '$repoRoot/';
+    final entries = [
+      for (final MapEntry(key: abs, value: st) in repo.files.entries)
+        if (abs.startsWith(prefix))
+          (relPath: abs.substring(prefix.length), absPath: abs, status: st),
+    ]..sort((a, b) => a.relPath.compareTo(b.relPath));
+    if (entries.isEmpty) continue;
 
-  final stats = await _loadChangeStats(backend, repoRoot, entries);
-  final changes = [
-    for (final e in entries)
-      AgentFileChange(
+    final stats = await _loadChangeStats(backend, repoRoot, entries);
+    for (final e in entries) {
+      changes.add(AgentFileChange(
         relPath: e.relPath,
         absPath: e.absPath,
         status: e.status,
+        repoRoot: repoRoot,
+        repoName: repoName,
         additions: stats[e.relPath]?.$1,
         deletions: stats[e.relPath]?.$2,
-      ),
-  ];
+      ));
+    }
+  }
+  // 多仓库时按 仓库名 → 路径 排序，同仓库文件相邻，UI 好插分组表头。
+  changes.sort((a, b) {
+    final byRepo = a.repoName.compareTo(b.repoName);
+    return byRepo != 0 ? byRepo : a.relPath.compareTo(b.relPath);
+  });
 
   return AgentChangesResult.ok(AgentChangesSnapshot(
     workspaceName: workspace.name,
-    repoRoot: repoRoot,
     changes: changes,
+    repoCount: snapshots.length,
   ));
 });
 
@@ -213,7 +236,7 @@ Future<({String oldText, String newText})> loadAgentFileDiff(
     final show = await backend.exec(
       'git -c core.quotepath=off show '
       '${shellQuoteArg('HEAD:${change.relPath}')}',
-      workingDirectory: snapshot.repoRoot,
+      workingDirectory: change.repoRoot,
       timeout: const Duration(seconds: 20),
     );
     if (show.exitCode == 0) oldText = show.stdout;
@@ -245,7 +268,7 @@ Future<void> revertAgentFileChange(
     'if git cat-file -e $headRef 2>/dev/null; then '
     'git checkout HEAD -- $quoted; '
     'else git rm -f -q --ignore-unmatch -- $quoted; rm -f -- $quoted; fi',
-    workingDirectory: snapshot.repoRoot,
+    workingDirectory: change.repoRoot,
     timeout: const Duration(seconds: 20),
   );
   if (result.exitCode != 0) {
