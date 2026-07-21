@@ -117,6 +117,18 @@ mixin _ChatMultiModel on _$ChatController {
     bool finalizeTurn,
   });
 
+  Future<void> _persistMessageBlocks({
+    required String messageId,
+    required MessageStatus status,
+    required List<MessageBlock> blocks,
+  });
+  Future<ChatMessageView> _reloadView(
+    String messageId,
+    ChatMessageView fallback,
+  );
+  void _replace(List<ChatMessageView> views, ChatMessageView view);
+  String _errorMessage(Object error);
+
   Future<void> _refreshTopicPreview([String? forTopicId]);
   Future<void> _generateTitle([String? forTopicId]);
   Future<void> _maybeGenerateSuggestions(
@@ -297,94 +309,187 @@ mixin _ChatMultiModel on _$ChatController {
 
     // 5. Stream every sibling in parallel; each keeps the turn alive
     //    (finalizeTurn: false) so the others stay visible until all settle.
-    await Future.wait(<Future<void>>[
-      for (final sibling in siblings)
-        () async {
-          final effective = sibling.effective;
-          final provider = sibling.current.provider;
-          final messages = await _buildLlmMessages(
-            contextViews,
-            chatModel: effective,
-            regexRules: regexRules,
-            toolMode: mcp.mode,
-          );
-          final request = LlmChatRequest(
-            model: effective,
-            system: _systemFor(
-              mcp,
-              await _buildSystemPromptWith(
-                _joinInjectionSections(
-                  memInjection.section,
-                  kbInjection.section,
-                ),
-                modelName: effective.name,
-                modelId: effective.id,
-                providerName: provider.name,
-              ),
-            ),
-            messages: messages,
-            maxTokens: ctx.maxTokens,
-            temperature: params.temperature,
-            topP: params.topP,
-            topK: params.topK,
-            frequencyPenalty: params.frequencyPenalty,
-            presencePenalty: params.presencePenalty,
-            seed: params.seed,
-            stopSequences: params.stopSequences,
-            responseFormat: params.responseFormat,
-            parallelToolCalls: params.parallelToolCalls,
-            logprobs: params.logprobs,
-            user: params.user,
-            reasoningEffort: params.reasoningEffort,
-            thinkingBudget: params.thinkingBudget,
-            includeThoughts: params.includeThoughts,
-            cacheControl: params.cacheControl,
-            structuredOutputMode: params.structuredOutputMode,
-            webSearchEnabled: params.webSearchEnabled,
-            codeExecutionEnabled: params.codeExecutionEnabled,
-            useSearchGrounding: params.useSearchGrounding,
-            safetyLevel: params.safetyLevel,
-            stream: params.streamOutput,
-            customParameters: params.customParameters,
-            tools: mcp.useFunctionTools ? mcp.tools : null,
-            useResponsesAPI: provider.useResponsesAPI ?? false,
-            extraHeaders: effective.providerExtraHeaders,
-            extraBody: effective.providerExtraBody,
-          );
-          await _streamInto(
-            request: request,
-            effective: effective,
-            provider: provider,
-            turnTopicId: topicId,
-            assistantMessageId: sibling.assistantMessageId,
-            assistantBlockId: sibling.assistantBlockId,
-            assistantTime: sibling.assistantTime,
+    //    Each sibling is guarded: a failure anywhere in its request building
+    //    or streaming marks that sibling errored instead of escaping the
+    //    Future.wait — an escaped exception would skip step 6 and leave the
+    //    topic in streaming state forever (every send/regenerate becomes a
+    //    no-op until app restart). The final emit runs in `finally` for the
+    //    same reason.
+    try {
+      await Future.wait(<Future<void>>[
+        for (final sibling in siblings)
+          _streamSiblingGuarded(
+            sibling: sibling,
+            topicId: topicId,
             views: views,
-            assistantView: sibling.assistantView,
             mcp: mcp,
-            leadingBlocks: [
-              ..._memoryInjectionBlocks(
-                messageId: sibling.assistantMessageId,
-                createdAt: sibling.assistantTime,
-                injection: memInjection,
-              ),
-              ..._knowledgeReferenceBlocks(
-                messageId: sibling.assistantMessageId,
-                createdAt: sibling.assistantTime,
-                injection: kbInjection,
-              ),
-            ],
-            finalizeTurn: false,
-          );
-        }(),
-    ]);
-
-    // 6. Whole turn done: end streaming and run the once-per-turn side effects.
-    _emitTurn(topicId, views, streaming: false);
+            ctx: ctx,
+            params: params,
+            regexRules: regexRules,
+            contextViews: contextViews,
+            memInjection: memInjection,
+            kbInjection: kbInjection,
+          ),
+      ]);
+    } finally {
+      // 6. Whole turn done: end streaming and run the once-per-turn side
+      //    effects.
+      _emitTurn(topicId, views, streaming: false);
+    }
     unawaited(_refreshTopicPreview(topicId));
     unawaited(_generateTitle(topicId));
     unawaited(_maybeGenerateSuggestions(topicId, List.of(views)));
     unawaited(_maybeExtractMemory(topicId));
+  }
+
+  /// Builds and streams one multi-model sibling, converting any failure into
+  /// an errored sibling message (error block + [MessageStatus.error]) so the
+  /// coordinator's [Future.wait] never rejects.
+  Future<void> _streamSiblingGuarded({
+    required _MultiModelSibling sibling,
+    required String topicId,
+    required List<ChatMessageView> views,
+    required McpSetup mcp,
+    required ({int contextCount, int? maxTokens}) ctx,
+    required List<AssistantRegex>? regexRules,
+    required List<ChatMessageView> contextViews,
+    required ChatMemoryInjection memInjection,
+    required ChatKnowledgeInjection kbInjection,
+    required ({
+      double? temperature,
+      double? topP,
+      int? topK,
+      double? frequencyPenalty,
+      double? presencePenalty,
+      int? seed,
+      List<String>? stopSequences,
+      String? responseFormat,
+      bool? parallelToolCalls,
+      bool? logprobs,
+      String? user,
+      String? reasoningEffort,
+      int? thinkingBudget,
+      bool? includeThoughts,
+      bool? cacheControl,
+      String? structuredOutputMode,
+      bool? webSearchEnabled,
+      bool? codeExecutionEnabled,
+      bool? useSearchGrounding,
+      String? safetyLevel,
+      bool streamOutput,
+      Map<String, dynamic>? customParameters,
+    })
+    params,
+  }) async {
+    try {
+      final effective = sibling.effective;
+      final provider = sibling.current.provider;
+      final messages = await _buildLlmMessages(
+        contextViews,
+        chatModel: effective,
+        regexRules: regexRules,
+        toolMode: mcp.mode,
+      );
+      final request = LlmChatRequest(
+        model: effective,
+        system: _systemFor(
+          mcp,
+          await _buildSystemPromptWith(
+            _joinInjectionSections(memInjection.section, kbInjection.section),
+            modelName: effective.name,
+            modelId: effective.id,
+            providerName: provider.name,
+          ),
+        ),
+        messages: messages,
+        maxTokens: ctx.maxTokens,
+        temperature: params.temperature,
+        topP: params.topP,
+        topK: params.topK,
+        frequencyPenalty: params.frequencyPenalty,
+        presencePenalty: params.presencePenalty,
+        seed: params.seed,
+        stopSequences: params.stopSequences,
+        responseFormat: params.responseFormat,
+        parallelToolCalls: params.parallelToolCalls,
+        logprobs: params.logprobs,
+        user: params.user,
+        reasoningEffort: params.reasoningEffort,
+        thinkingBudget: params.thinkingBudget,
+        includeThoughts: params.includeThoughts,
+        cacheControl: params.cacheControl,
+        structuredOutputMode: params.structuredOutputMode,
+        webSearchEnabled: params.webSearchEnabled,
+        codeExecutionEnabled: params.codeExecutionEnabled,
+        useSearchGrounding: params.useSearchGrounding,
+        safetyLevel: params.safetyLevel,
+        stream: params.streamOutput,
+        customParameters: params.customParameters,
+        tools: mcp.useFunctionTools ? mcp.tools : null,
+        useResponsesAPI: provider.useResponsesAPI ?? false,
+        extraHeaders: effective.providerExtraHeaders,
+        extraBody: effective.providerExtraBody,
+      );
+      await _streamInto(
+        request: request,
+        effective: effective,
+        provider: provider,
+        turnTopicId: topicId,
+        assistantMessageId: sibling.assistantMessageId,
+        assistantBlockId: sibling.assistantBlockId,
+        assistantTime: sibling.assistantTime,
+        views: views,
+        assistantView: sibling.assistantView,
+        mcp: mcp,
+        leadingBlocks: [
+          ..._memoryInjectionBlocks(
+            messageId: sibling.assistantMessageId,
+            createdAt: sibling.assistantTime,
+            injection: memInjection,
+          ),
+          ..._knowledgeReferenceBlocks(
+            messageId: sibling.assistantMessageId,
+            createdAt: sibling.assistantTime,
+            injection: kbInjection,
+          ),
+        ],
+        finalizeTurn: false,
+      );
+    } on Object catch (error) {
+      // Anything that slipped past _streamInto's own handling (request
+      // building, gateway construction, terminal persistence): mark this
+      // sibling errored so the group renders the failure and 重试失败 can
+      // re-run it.
+      final messageText = _errorMessage(error);
+      try {
+        await _persistMessageBlocks(
+          messageId: sibling.assistantMessageId,
+          status: MessageStatus.error,
+          blocks: <MessageBlock>[
+            MessageBlock.error(
+              id: generateId('block'),
+              messageId: sibling.assistantMessageId,
+              status: MessageBlockStatus.error,
+              createdAt: sibling.assistantTime,
+              updatedAt: DateTime.now(),
+              content: '',
+              message: messageText,
+            ),
+          ],
+        );
+      } on Object catch (_) {
+        // Best-effort persistence — the in-memory view below still shows it.
+      }
+      final errored = await _reloadView(
+        sibling.assistantMessageId,
+        sibling.assistantView.copyWith(
+          status: MessageStatus.error,
+          errorText: messageText,
+        ),
+      );
+      _replace(views, errored);
+      _emitTurn(topicId, views, streaming: true);
+    }
   }
 
   /// The next free sibling-group id for [topicId]: one past the largest existing
