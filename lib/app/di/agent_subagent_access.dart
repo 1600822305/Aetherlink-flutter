@@ -47,3 +47,32 @@ Future<List<AgentSubagentProfile>> loadCustomSubagentProfiles(
   }
   return profiles;
 }
+
+/// 子代理持久记忆文件目录（工作区相对路径）。
+const String kSubagentMemoryDir = '.aetherlink/agent-memory';
+
+/// 读取某档案的持久记忆（对标 Claude Code agent-memory）：
+/// 返回记忆文件的工作区绝对路径与现有内容（文件不存在时 content 为
+/// null）；工作区不可用返回 null。文件名对档案名做保守清洗，防路径穿越。
+Future<({String path, String? content})?> readSubagentMemory(
+  Ref ref,
+  String? workspaceId,
+  String profileName,
+) async {
+  final resolved = await resolveAgentWorkspace(ref, workspaceId);
+  if (resolved == null) return null;
+  final (workspace, backend) = resolved;
+  final root = workspace.root.endsWith('/')
+      ? workspace.root.substring(0, workspace.root.length - 1)
+      : workspace.root;
+  final safeName =
+      profileName.replaceAll(RegExp(r'[^A-Za-z0-9_\u4e00-\u9fff-]'), '-');
+  final path = '$root/$kSubagentMemoryDir/$safeName.md';
+  String? content;
+  try {
+    content = await backend.readFile(path);
+  } catch (_) {
+    content = null; // 记忆文件尚不存在：首次运行。
+  }
+  return (path: path, content: content);
+}

@@ -51,6 +51,48 @@ readonly: false
     expect(parseSubagentProfileMarkdown('empty.md', '---\n---\n'), isNull);
   });
 
+  test('frontmatter 扩展字段：tools/model/maxTurns/memory', () {
+    const content = '''
+---
+name: tester
+description: 跑测试
+readonly: false
+tools: terminal, fileEditor
+model: gpt-5.2
+maxTurns: 30
+memory: true
+---
+跑测试并总结。''';
+    final p = parseSubagentProfileMarkdown('tester.md', content);
+    expect(p!.tools, {'terminal', 'fileEditor'});
+    expect(p.model, 'gpt-5.2');
+    expect(p.maxTurns, 30);
+    expect(p.memory, isTrue);
+  });
+
+  test('扩展字段缺省：空 tools/model、null maxTurns、memory 关', () {
+    final p = parseSubagentProfileMarkdown('plain.md', '写文档。');
+    expect(p!.tools, isEmpty);
+    expect(p.model, '');
+    expect(p.maxTurns, isNull);
+    expect(p.memory, isFalse);
+  });
+
+  test('maxTurns 非法值忽略', () {
+    const content = '''
+---
+maxTurns: abc
+---
+正文。''';
+    expect(parseSubagentProfileMarkdown('x.md', content)!.maxTurns, isNull);
+    const zero = '''
+---
+maxTurns: 0
+---
+正文。''';
+    expect(parseSubagentProfileMarkdown('x.md', zero)!.maxTurns, isNull);
+  });
+
   test('description 冒号后带冒号的值完整保留', () {
     const content = '''
 ---
