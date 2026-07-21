@@ -86,9 +86,22 @@ class _WorkSegmentTileState extends State<WorkSegmentTile> {
             ),
           ),
         ),
-        if (_expanded)
-          for (final e in widget.block.events)
-            AgentEventTile(event: e, taskId: widget.taskId),
+        // 与 ReasoningTile 同理：长段落瞬间收起会让滚动偏移来不及钳位、
+        // 闪出空白，用 AnimatedSize 渐变收起让 clamp 逐帧跟随。
+        AnimatedSize(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: _expanded
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final e in widget.block.events)
+                      AgentEventTile(event: e, taskId: widget.taskId),
+                  ],
+                )
+              : const SizedBox(width: double.infinity),
+        ),
       ],
     );
   }

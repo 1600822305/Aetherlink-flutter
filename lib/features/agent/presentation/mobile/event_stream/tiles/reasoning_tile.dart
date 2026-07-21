@@ -62,26 +62,37 @@ class _ReasoningTileState extends State<ReasoningTile> {
             ),
           ),
         ),
-        if (expanded && widget.event.text.isNotEmpty)
-          Container(
-            margin: const EdgeInsets.only(left: 20, bottom: 8),
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-            decoration: BoxDecoration(
-              border: Border(
-                left: BorderSide(
-                  color: cs.onSurface.withValues(alpha: 0.15),
-                  width: 2,
-                ),
-              ),
-            ),
-            child: Text(
-              streaming ? '${widget.event.text}▍' : widget.event.text,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: cs.onSurface.withValues(alpha: 0.7),
-                height: 1.5,
-              ),
-            ),
-          ),
+        // 展开/收起用 AnimatedSize 过渡：长思考瞬间移除会让列表高度单帧塔缩，
+        // 滚动偏移来不及钳位而闪出大片空白；渐变收起让 clamp 逐帧跟随。
+        // 流式增长期间不动画（duration 0），不干扰粘底跟随。
+        AnimatedSize(
+          duration: streaming
+              ? Duration.zero
+              : const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: expanded && widget.event.text.isNotEmpty
+              ? Container(
+                  margin: const EdgeInsets.only(left: 20, bottom: 8),
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      left: BorderSide(
+                        color: cs.onSurface.withValues(alpha: 0.15),
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                  child: Text(
+                    streaming ? '${widget.event.text}▍' : widget.event.text,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.onSurface.withValues(alpha: 0.7),
+                      height: 1.5,
+                    ),
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
       ],
     );
   }
