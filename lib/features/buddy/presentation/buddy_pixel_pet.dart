@@ -147,7 +147,7 @@ class _StaticArtPainter extends CustomPainter {
 
   final BuddyPixelArt art;
 
-  /// 静态图烘焙缓存：64×64 高清像素图逐格 drawRect 一帧要画数千矩形，
+  /// 静态图烘焙缓存：128×128 高清像素图逐格 drawRect 一帧要画数千矩形，
   /// 自选物种面板一屏十几只会掉帧；同动画宠物一样烘成纹理后每帧只贴图。
   static final Map<BuddyPixelArt, ui.Image> _cache = {};
 
