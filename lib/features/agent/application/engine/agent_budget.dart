@@ -3,12 +3,14 @@ import 'package:aetherlink_flutter/features/agent/application/engine/compaction/
 
 /// 预算护栏（循环设计稿 §3.3 L5）：无限轮循环的成本/失控保险。
 /// 超限不是 fail，引擎转 paused + 说明，用户可续跑。
+/// 轮数/token 预算 0 = 不限（对齐 Claude Code：主循环默认无上限，
+/// 上下文靠压缩管；子代理等场景可显式传有限预算）。
 class AgentBudget {
   AgentBudget({
-    this.maxRounds = 50,
+    this.maxRounds = 0,
     this.maxConsecutiveFailures = 5,
     this.toolTimeout = const Duration(minutes: 5),
-    this.maxTokens = 500000,
+    this.maxTokens = 0,
     this.compactionTriggerChars = 120000,
     this.compactionKeepChars = 40000,
     this.microCompactTriggerChars = kMicroCompactTriggerChars,
@@ -18,12 +20,13 @@ class AgentBudget {
     this.compactionTriggerRatio = kCompactionTriggerRatio,
   });
 
+  /// 本次运行的轮数上限；0 = 不限。
   final int maxRounds;
   final int maxConsecutiveFailures;
   final Duration toolTimeout;
 
-  /// 本次运行（启动/续跑一次）的 token 预算；超限 paused，用户点
-  /// 「继续」新建预算实例即续批一份额度（与轮数预算同款语义）。
+  /// 本次运行（启动/续跑一次）的 token 预算；0 = 不限。超限 paused，
+  /// 用户点「继续」新建预算实例即续批一份额度（与轮数预算同款语义）。
   final int maxTokens;
 
   /// 上下文重放内容超过该字符量触发 compaction（字符作 token 的
@@ -70,13 +73,13 @@ class AgentBudget {
 
   /// 非 null = 已超限（返回给用户看的说明）。
   String? get exceededReason {
-    if (_rounds >= maxRounds) {
+    if (maxRounds > 0 && _rounds >= maxRounds) {
       return '已达轮数上限（$maxRounds 轮），任务暂停，可继续';
     }
     if (_consecutiveFailures >= maxConsecutiveFailures) {
       return '连续 $maxConsecutiveFailures 次工具失败，任务暂停，请检查后继续';
     }
-    if (_tokens >= maxTokens) {
+    if (maxTokens > 0 && _tokens >= maxTokens) {
       return '本次运行 token 用量已达预算上限（$maxTokens），任务暂停，可继续';
     }
     return null;

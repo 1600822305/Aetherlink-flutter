@@ -590,12 +590,12 @@ class AgentTaskRunner extends _$AgentTaskRunner {
 
   /// 从设置组装引擎预算：上下文窗口取侧栏设置，压缩开关/阈值取
   /// 压缩设置页；主任务与 subagent 共用同一来源，任务启动时一次性
-  /// 快照。
+  /// 快照。主任务轮数/token 默认不限（0），子代理调用方显式传上限。
   AgentBudget _budgetFromSettings({int? maxRounds, int? maxTokens}) {
     final compaction = ref.read(agentCompactionSettingsProvider);
     return AgentBudget(
-      maxRounds: maxRounds ?? 50,
-      maxTokens: maxTokens ?? 500000,
+      maxRounds: maxRounds ?? 0,
+      maxTokens: maxTokens ?? 0,
       contextLimitTokens:
           ref.read(agentUiSettingsControllerProvider).contextLimit,
       autoCompactEnabled: compaction.autoCompactEnabled,
