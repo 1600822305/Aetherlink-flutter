@@ -6,7 +6,7 @@
 /// 纯逻辑模块，独立于引擎便于单测。
 library;
 
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_trigger.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_compaction_trigger.dart';
 
 /// 预警比例：达到触发阈值的 90%（即距触发 ≤10%）时预警。
 const double kCompactionWarningRatio = 0.9;

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_prompt.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_compaction_prompt.dart';
 
 void main() {
   group('extractCompactionSummary', () {

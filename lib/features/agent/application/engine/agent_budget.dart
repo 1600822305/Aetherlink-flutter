@@ -1,5 +1,5 @@
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_trigger.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_compaction_trigger.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_microcompact.dart';
 
 /// 预算护栏（循环设计稿 §3.3 L5）：无限轮循环的成本/失控保险。
 /// 超限不是 fail，引擎转 paused + 说明，用户可续跑。

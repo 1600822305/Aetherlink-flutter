@@ -5,11 +5,11 @@
 /// 安全点走同一函数。共享逻辑，两路语义一致。
 library;
 
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_file_restore.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_compaction.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_compaction_file_restore.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_event_store.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_guard.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction_trigger.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_compaction_guard.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_compaction_trigger.dart';
 
 void main() {
   group('isNearCompactionThreshold', () {

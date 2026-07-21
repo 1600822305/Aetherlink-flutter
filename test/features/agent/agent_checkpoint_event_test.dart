@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_compaction.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_compaction.dart';
 import 'package:aetherlink_flutter/features/agent/data/datasources/local/agent_converters.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 

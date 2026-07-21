@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_context_overflow.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_context_overflow.dart';
 
 void main() {
   test('识别各供应商上下文超限报错', () {

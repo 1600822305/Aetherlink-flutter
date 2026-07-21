@@ -8,7 +8,7 @@ library;
 
 import 'dart:convert';
 
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_microcompact.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 
 /// 最多恢复的文件数（对标 CC maxFiles=5）。
