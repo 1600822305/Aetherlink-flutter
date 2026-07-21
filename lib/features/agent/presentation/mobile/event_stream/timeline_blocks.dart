@@ -163,7 +163,8 @@ List<TimelineBlock> buildTimelineBlocks(
     if (finishedTool) {
       run.add(e);
       runTools++;
-    } else if (finishedReasoning) {
+    } else if (finishedReasoning || e is PlanUpdateEvent) {
+      // 计划更新与思考同款：随段内联展示，不打断折叠。
       run.add(e);
     } else {
       // 正文/用户消息/状态变化收尾段 → 折叠；执行中工具、流式
@@ -172,7 +173,7 @@ List<TimelineBlock> buildTimelineBlocks(
           e is UserMessageEvent ||
           e is StatusChangeEvent;
       flush(closed: closes);
-      if (e is! PlanUpdateEvent) blocks.add(SingleBlock(e));
+      blocks.add(SingleBlock(e));
     }
   }
   // 列表末尾：任务仍在跑说明段还没收尾，保持实况；已结束则折叠。

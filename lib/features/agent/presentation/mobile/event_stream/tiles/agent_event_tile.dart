@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stre
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/checkpoint_tile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/compaction_divider.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/plan_approval_card.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/plan_update_tile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/reasoning_tile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/status_change_tile.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/subagent_tile.dart';
@@ -43,7 +44,7 @@ class AgentEventTile extends StatelessWidget {
       final CompactionEvent e => CompactionDivider(event: e, taskId: taskId),
       final CheckpointEvent e => CheckpointTile(event: e, taskId: taskId),
       final StatusChangeEvent e => StatusChangeTile(event: e),
-      PlanUpdateEvent() => const SizedBox.shrink(), // 由顶部计划纪要条渲染
+      final PlanUpdateEvent e => PlanUpdateTile(event: e),
     };
   }
 }
