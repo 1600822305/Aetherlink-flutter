@@ -16,12 +16,21 @@ void main() {
     expect(a.stats, b.stats);
   });
 
-  test('不同种子生成不同宠物（v2 大样本下物种覆盖全部）', () {
+  test('不同种子生成不同宠物（v4 大样本下物种覆盖全部）', () {
+    final seen = <BuddySpecies>{};
+    for (var i = 0; i < 2000; i++) {
+      seen.add(rollBuddy('v4-seed-$i').species);
+    }
+    expect(seen, containsAll(BuddySpecies.values));
+  });
+
+  test('v2 种子只从前 19 种里抽，抽不到蓝咕咕', () {
     final seen = <BuddySpecies>{};
     for (var i = 0; i < 2000; i++) {
       seen.add(rollBuddy('v2-seed-$i').species);
     }
-    expect(seen, containsAll(BuddySpecies.values));
+    expect(seen, isNot(contains(BuddySpecies.blueGuga)));
+    expect(seen.length, 19);
   });
 
   test('旧种子（无 v2 前缀）只从初代 18 种里抽，抽不到奶龙', () {

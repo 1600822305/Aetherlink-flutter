@@ -4,6 +4,7 @@
 import '../buddy_types.dart';
 import 'axolotl.dart';
 import 'blob.dart';
+import 'blue_guga.dart';
 import 'cactus.dart';
 import 'capybara.dart';
 import 'cat.dart';
@@ -47,4 +48,5 @@ const Map<BuddySpecies, BuddyPixelArt> kBuddyPixelArts = {
   BuddySpecies.mushroom: mushroomArt,
   BuddySpecies.chonk: chonkArt,
   BuddySpecies.nailong: nailongArt,
+  BuddySpecies.blueGuga: blueGugaArt,
 };

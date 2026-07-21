@@ -49,10 +49,10 @@ class BuddyController extends Notifier<BuddyState> {
     if (existing != null) return existing;
     final random = Random();
     final now = DateTime.now().millisecondsSinceEpoch;
-    // v2 种子：全随机（物种池含后续新增物种）；v3 种子：自选物种，
+    // v4 种子：全随机（物种池含蓝咕咕等最新物种）；v3 种子：自选物种，
     // 见 rollBuddy。
     final seed = species == null
-        ? 'v2-$now-${random.nextInt(1 << 32)}'
+        ? 'v4-$now-${random.nextInt(1 << 32)}'
         : 'v3-${species.name}-$now-${random.nextInt(1 << 32)}';
     final soul = BuddySoul(
       name: pickBuddyPhrase(random, kBuddyNames),

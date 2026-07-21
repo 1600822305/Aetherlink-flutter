@@ -75,18 +75,25 @@ Map<BuddyStat, int> _rollStats(Mulberry32 rng, BuddyRarity rarity) {
   return stats;
 }
 
-/// 初代（无 `v2-` 前缀种子）可抽的物种数：枚举前 18 个。后续新增
+/// 初代（无版本前缀种子）可抽的物种数：枚举前 18 个。后续新增
 /// 物种只追加在枚举末尾并提升新种子版本，保证老种子的宠物不变。
 const int _kSpeciesCountV1 = 18;
 
+/// v2 种子（奶龙时代）可抽的物种数：枚举前 19 个。之后新增物种
+/// （如蓝咕咕）只进 v4 及更新种子的池子，存量 v2 宠物不变。
+const int _kSpeciesCountV2 = 19;
+
 /// 从种子确定性生成骨架。抽取顺序固定：稀有度 → 物种 → 眼睛 → 帽子 →
 /// 闪光(1%) → 属性，改变顺序会改变所有人的宠物。物种池按种子版本
-/// 选取（v2 含奶龙），旧种子只从初代 18 种里抽，存量宠物不受影响。
+/// 选取（v2 含奶龙、v4 起含蓝咕咕），旧种子只从初代 18 种里抽，
+/// 存量宠物不受影响。
 BuddyBones rollBuddy(String seed) {
   final rng = Mulberry32(fnv1aHash(seed + kBuddySalt));
   final speciesPool = _isLegacySeed(seed)
       ? BuddySpecies.values.sublist(0, _kSpeciesCountV1)
-      : BuddySpecies.values;
+      : seed.startsWith('v2-')
+          ? BuddySpecies.values.sublist(0, _kSpeciesCountV2)
+          : BuddySpecies.values;
   final rarity = _rollRarity(rng);
   // v3 自选物种种子（v3-<物种名>-…）：物种由用户指定，其余仍随机；
   // 抽取调用照常进行，保证后续随机流与随机孵化一致。
@@ -108,9 +115,11 @@ BuddyBones rollBuddy(String seed) {
   );
 }
 
-/// 老种子（无 v2/v3 前缀）只从初代 18 种里抽，保持存量宠物不变。
+/// 老种子（无版本前缀）只从初代 18 种里抽，保持存量宠物不变。
 bool _isLegacySeed(String seed) =>
-    !seed.startsWith('v2-') && !seed.startsWith('v3-');
+    !seed.startsWith('v2-') &&
+    !seed.startsWith('v3-') &&
+    !seed.startsWith('v4-');
 
 /// v3 种子格式：v3-<物种 enum 名>-<时间戳>-<随机数>。
 BuddySpecies? _chosenSpecies(String seed) {
