@@ -34,6 +34,22 @@ CurrentModel? findCurrentModel(List<ModelProvider> providers) {
   return null;
 }
 
+/// Finds a model by id or display name (case-insensitive) scanning providers
+/// in user-defined order, or `null` when no configured model matches. Used by
+/// subagent profiles that pin a specific `model:` in their frontmatter.
+CurrentModel? findModelNamed(List<ModelProvider> providers, String query) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return null;
+  for (final provider in providers) {
+    for (final model in provider.models) {
+      if (model.id.toLowerCase() == q || model.name.toLowerCase() == q) {
+        return CurrentModel(provider: provider, model: model);
+      }
+    }
+  }
+  return null;
+}
+
 /// The providers list with the app-level current model set to ([providerId],
 /// [modelId]): `isDefault` is cleared on every other model and set on the
 /// chosen one. Providers whose models are unchanged are returned as-is, so a

@@ -6,6 +6,7 @@ library;
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_tool_executor.dart';
+import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/shared/domain/mcp_tool.dart';
 
@@ -18,6 +19,10 @@ enum AgentSubagentType {
 
   /// 终端执行：跑一串命令并总结，把啰嗦输出隔离在子上下文里。
   bash,
+
+  /// 分身（对标 Claude Code fork）：继承父任务对话上下文的摘录，
+  /// prompt 只需给指令不用重述背景；工具/模式与父任务一致。
+  fork,
 }
 
 /// 模型侧工具定义：同一轮发多个 spawn_subagent 调用即并行执行。
@@ -32,12 +37,13 @@ const kSpawnSubagentToolDefinition = McpToolDefinition(
       'type': {
         'type': 'string',
         'description': '子代理类型：explore 只读探索 / bash 终端执行 / '
+            'fork 分身（继承本对话上下文摘录，prompt 只写指令）/ '
             '自定义档案名（系统提示的「自定义子代理档案」清单里列出的 name）',
       },
       'prompt': {
         'type': 'string',
-        'description': '子任务的完整指令（自带全部必要上下文，'
-            '并说明期望返回什么样的结论）',
+        'description': '子任务的完整指令。fork 之外的类型没有本对话记忆，'
+            '必须自带全部必要上下文，并说明期望返回什么样的结论',
       },
       'description': {
         'type': 'string',
@@ -66,3 +72,36 @@ abstract class AgentSubagentLauncher {
 
 /// 子任务 id 派生规则（launcher 与 UI 共用）。
 String subagentTaskIdFor(String toolEventId) => 'sub-$toolEventId';
+
+/// fork 分身的父上下文摘录（纯函数）：把父任务事件流序列化为可读
+/// 转写文本注入子代理首条消息——用户/助手正文全文、工具调用一行
+/// 摘要、压缩摘要正文；超出 [maxChars] 时从头部截断保留最近内容
+///（越新越相关）。
+String buildSubagentForkContext(
+  List<AgentEvent> events, {
+  int maxChars = 24000,
+}) {
+  final lines = <String>[];
+  for (final e in events) {
+    switch (e) {
+      case UserMessageEvent(:final text):
+        if (text.trim().isNotEmpty) lines.add('[用户] $text');
+      case AssistantTextEvent(:final text, streaming: false):
+        if (text.trim().isNotEmpty) lines.add('[助手] $text');
+      case ToolCallEvent(:final toolName, :final argSummary, :final resultSummary):
+        lines.add(
+          '[工具 $toolName] $argSummary'
+          '${resultSummary.isNotEmpty ? ' → $resultSummary' : ''}',
+        );
+      case CompactionEvent(:final summary, revoked: false):
+        if (summary.trim().isNotEmpty) lines.add('[较早内容摘要] $summary');
+      default:
+        break;
+    }
+  }
+  var text = lines.join('\n\n');
+  if (text.length > maxChars) {
+    text = '（更早内容已截断）\n…${text.substring(text.length - maxChars)}';
+  }
+  return text;
+}

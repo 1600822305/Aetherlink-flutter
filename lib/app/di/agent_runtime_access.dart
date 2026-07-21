@@ -104,6 +104,7 @@ class AgentRuntime {
     AgentSessionMode mode = AgentSessionMode.code,
     bool enableSubagents = true,
     String? boundWorkspaceId,
+    Model? modelOverride,
   }) async {
     final catalog = _catalogFor(
       profile.tools,
@@ -122,7 +123,12 @@ class AgentRuntime {
       boundWorkspaceId: boundWorkspaceId,
     );
     return (
-      llm: _GatewayAgentLlmClient(_refOf, profile, catalog.definitions),
+      llm: _GatewayAgentLlmClient(
+        _refOf,
+        profile,
+        catalog.definitions,
+        modelOverride: modelOverride,
+      ),
       tools: hooked,
       approval: _PolicyApprovalGate(_refOf, catalog.routes, hooks: hooked),
       stopGuard: hooked.runStopHooks,
@@ -326,7 +332,12 @@ Future<void> _addMcpServerTools(
 /// 真实 LLM adapter：把 agent 事件流重放为 provider 中立的
 /// [LlmMessage] 列表，经 [appLlmGatewayFactory] 流式调用当前默认模型。
 class _GatewayAgentLlmClient implements AgentLlmClient {
-  _GatewayAgentLlmClient(this._refOf, this._profile, this._definitions);
+  _GatewayAgentLlmClient(
+    this._refOf,
+    this._profile,
+    this._definitions, {
+    Model? modelOverride,
+  }) : _lockedModel = modelOverride;
 
   final Ref Function() _refOf;
   final AgentProfile _profile;
@@ -335,6 +346,7 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   /// 运行内锁定的模型：首轮解析后本次运行（含压缩）不再跟随默认模型
   /// 切换——重放历史里的 tool_call 结构与 provider 绑定，中途换
   /// provider 会整轮报错把任务打成 failed。暂停/续跑是新运行，会重新解析。
+  /// 子代理档案指定 model 时经构造参数预锁。
   Model? _lockedModel;
 
   Future<Model> _resolveModel(Ref ref) async {
@@ -608,7 +620,9 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     return [
       '自定义子代理档案（spawn_subagent 的 type 可填档案名）：',
       for (final p in profiles)
-        '- ${p.name}（${p.readonly ? '只读' : '可写'}）'
+        '- ${p.name}（${p.readonly ? '只读' : '可写'}'
+            '${p.model.isNotEmpty ? '·模型:${p.model}' : ''}'
+            '${p.memory ? '·持久记忆' : ''}）'
             '${p.description.isNotEmpty ? '：${p.description}' : ''}',
     ];
   }

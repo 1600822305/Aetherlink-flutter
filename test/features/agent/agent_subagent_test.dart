@@ -140,6 +140,54 @@ void main() {
     expect(subagentTaskIdFor('tc-1'), 'sub-tc-1');
   });
 
+  test('内置类型含 fork（分身）', () {
+    expect(
+      {for (final t in AgentSubagentType.values) t.name},
+      containsAll(['explore', 'bash', 'fork']),
+    );
+  });
+
+  test('buildSubagentForkContext：序列化用户/助手/工具/压缩摘要', () {
+    final at = DateTime(2026, 1, 1);
+    final events = <AgentEvent>[
+      UserMessageEvent(id: 'e1', seq: 1, at: at, text: '修复登录 bug'),
+      AssistantTextEvent(id: 'e2', seq: 2, at: at, text: '先看日志'),
+      ToolCallEvent(
+        id: 'e3',
+        seq: 3,
+        at: at,
+        toolName: 'read_file',
+        argSummary: 'auth.dart',
+        state: AgentToolCallState.success,
+        resultSummary: '读取成功',
+      ),
+      CompactionEvent(
+        id: 'e4',
+        seq: 4,
+        at: at,
+        coveredCount: 2,
+        summary: '较早阶段的调查摘要',
+      ),
+    ];
+    final text = buildSubagentForkContext(events);
+    expect(text, contains('[用户] 修复登录 bug'));
+    expect(text, contains('[助手] 先看日志'));
+    expect(text, contains('[工具 read_file] auth.dart → 读取成功'));
+    expect(text, contains('[较早内容摘要] 较早阶段的调查摘要'));
+  });
+
+  test('buildSubagentForkContext：超限从头部截断保留最近内容', () {
+    final at = DateTime(2026, 1, 1);
+    final events = <AgentEvent>[
+      UserMessageEvent(id: 'e1', seq: 1, at: at, text: '旧' * 200),
+      UserMessageEvent(id: 'e2', seq: 2, at: at, text: '新消息在结尾'),
+    ];
+    final text = buildSubagentForkContext(events, maxChars: 60);
+    expect(text, contains('更早内容已截断'));
+    expect(text, contains('新消息在结尾'));
+    expect(text.length, lessThan(120));
+  });
+
   test('AgentTask.parentTaskId 持久化 round trip', () {
     const converter = AgentTaskConverter();
     final task = newTask();

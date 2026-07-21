@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/app/di/agent_data_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_hooks_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_runtime_access.dart';
 import 'package:aetherlink_flutter/app/di/agent_subagent_access.dart';
+import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_compaction_progress.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_compaction_settings.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
@@ -26,6 +27,8 @@ import 'package:aetherlink_flutter/features/agent/domain/agent_hooks.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_profile.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/domain/subagent_profile.dart';
+import 'package:aetherlink_flutter/features/models/domain/current_model.dart';
+import 'package:aetherlink_flutter/shared/domain/model.dart';
 import 'package:aetherlink_flutter/shared/services/streaming_keepalive_service.dart';
 
 export 'package:aetherlink_flutter/app/di/agent_checkpoint_access.dart'
@@ -769,6 +772,13 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       '你看不到父任务的对话，指令里的信息就是全部上下文。完成后用 finish_task '
       '返回自包含的结论（父任务只能看到结论）。不要用 ask_user 提问。';
 
+  /// fork 分身子代理（对标 Claude Code fork）：首条消息带父对话摘录。
+  static const String _kForkSubagentPrompt =
+      '你是主任务的一个分身子代理：首条消息里的「父任务对话摘录」是你与'
+      '主任务共享的背景，指令在摘录之后——直接按指令干活，不要重新调研背景。'
+      '完成时先把结论作为正文完整输出再调用 finish_task：结论是父任务唯一'
+      '能看到的内容，必须自包含。不要用 ask_user 提问。';
+
   /// 派生一个子代理（初稿 §5.5 P2，对标 Cursor）：独立事件流/预算，
   /// 只把最终结论回填父任务；bash / 非只读档案的工具调用仍走现有
   /// 审批链（auto 模式工作区内照常免审）。type 为内置 explore/bash
@@ -807,6 +817,9 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         .firstOrNull;
     final AgentSessionMode childMode;
     final AgentProfile childProfile;
+    Model? childModel;
+    int? childMaxTurns;
+    var childPrompt = prompt;
     if (builtin != null) {
       if (builtin == AgentSubagentType.bash && parentReadOnly) {
         return const AgentToolResult(
@@ -820,17 +833,31 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           : parent.mode;
       childProfile = AgentProfile(
         id: parent.profileId,
-        name: builtin == AgentSubagentType.explore ? '探索子代理' : '终端子代理',
+        name: switch (builtin) {
+          AgentSubagentType.explore => '探索子代理',
+          AgentSubagentType.bash => '终端子代理',
+          AgentSubagentType.fork => '分身子代理',
+        },
         emoji: '🤖',
-        systemPrompt: builtin == AgentSubagentType.explore
-            ? _kExploreSubagentPrompt
-            : _kBashSubagentPrompt,
-        tools: builtin == AgentSubagentType.explore
-            ? (baseProfile?.tools ?? AgentToolGroup.values.toSet())
-            : {AgentToolGroup.terminal},
+        systemPrompt: switch (builtin) {
+          AgentSubagentType.explore => _kExploreSubagentPrompt,
+          AgentSubagentType.bash => _kBashSubagentPrompt,
+          AgentSubagentType.fork => _kForkSubagentPrompt,
+        },
+        tools: builtin == AgentSubagentType.bash
+            ? {AgentToolGroup.terminal}
+            : (baseProfile?.tools ?? AgentToolGroup.values.toSet()),
         workspaceId: baseProfile?.workspaceId,
         workspaceName: baseProfile?.workspaceName,
       );
+      // fork 继承父对话：把父事件流摘录拼在指令前，prompt 只需指令。
+      if (builtin == AgentSubagentType.fork) {
+        final parentEvents = await _store().getEvents(parent.id);
+        final context = buildSubagentForkContext(parentEvents);
+        if (context.isNotEmpty) {
+          childPrompt = '[父任务对话摘录]\n$context\n\n[指令]\n$prompt';
+        }
+      }
     } else {
       List<AgentSubagentProfile> customs;
       try {
@@ -844,8 +871,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       final custom = customs.where((p) => p.name == typeName).firstOrNull;
       if (custom == null) {
         final names = [
-          'explore',
-          'bash',
+          for (final t in AgentSubagentType.values) t.name,
           for (final p in customs) p.name,
         ].join('、');
         return AgentToolResult(
@@ -868,17 +894,54 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           : parent.mode == AgentSessionMode.auto
               ? AgentSessionMode.code
               : parent.mode;
+      // frontmatter tools 白名单：限定工具分组（无效名字忽略，
+      // 全部无效/未声明时继承父档案）。
+      final whitelisted = {
+        for (final g in AgentToolGroup.values)
+          if (custom.tools.contains(g.name)) g,
+      };
+      // frontmatter memory：注入持久记忆文件内容；非只读档案可用
+      // 文件工具回写记忆（路径已给出）。
+      var memorySection = '';
+      if (custom.memory) {
+        try {
+          final mem = await readSubagentMemory(
+            ref,
+            parent.workspaceId.isEmpty ? null : parent.workspaceId,
+            custom.name,
+          );
+          if (mem != null) {
+            memorySection = '\n\n[持久记忆]（文件：${mem.path}）\n'
+                '${mem.content?.trim().isNotEmpty == true ? mem.content!.trim() : '（暂无记忆，首次运行）'}'
+                '${custom.readonly ? '' : '\n任务中学到的可复用经验（坑、约定、关键路径）请用文件工具更新到上述记忆文件，保持精炼。'}';
+          }
+        } catch (_) {}
+      }
       childProfile = AgentProfile(
         id: parent.profileId,
         name: custom.name,
         emoji: '🤖',
-        systemPrompt: custom.systemPrompt.isEmpty
-            ? _kCustomSubagentSuffix
-            : '${custom.systemPrompt}\n\n$_kCustomSubagentSuffix',
-        tools: baseProfile?.tools ?? AgentToolGroup.values.toSet(),
+        systemPrompt: (custom.systemPrompt.isEmpty
+                ? _kCustomSubagentSuffix
+                : '${custom.systemPrompt}\n\n$_kCustomSubagentSuffix') +
+            memorySection,
+        tools: whitelisted.isNotEmpty
+            ? whitelisted
+            : (baseProfile?.tools ?? AgentToolGroup.values.toSet()),
         workspaceId: baseProfile?.workspaceId,
         workspaceName: baseProfile?.workspaceName,
       );
+      childMaxTurns = custom.maxTurns;
+      // frontmatter model：按 id/显示名匹配已配置模型；匹不上时
+      // 静默回退父任务当前模型（不阻断派发）。
+      if (custom.model.isNotEmpty) {
+        try {
+          final providers =
+              await ref.read(appModelProvidersProvider.future);
+          final found = findModelNamed(providers, custom.model);
+          if (found != null) childModel = effectiveModelFor(found);
+        } catch (_) {}
+      }
     }
 
     final now = DateTime.now();
@@ -893,12 +956,12 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       mode: childMode,
       createdAt: now,
       updatedAt: now,
-      modelLabel: parent.modelLabel,
+      modelLabel: childModel?.name ?? parent.modelLabel,
       lastEventSummary: prompt,
       parentTaskId: parent.id,
     );
     await ref.read(agentTasksProvider.notifier).apply(child);
-    await _store().appendUserMessage(childId, prompt);
+    await _store().appendUserMessage(childId, childPrompt);
 
     if (background) {
       unawaited(
@@ -908,6 +971,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           childProfile: childProfile,
           childMode: childMode,
           toolEventId: toolEventId,
+          childModel: childModel,
+          childMaxTurns: childMaxTurns,
         ),
       );
       return AgentToolResult(
@@ -933,6 +998,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         childProfile: childProfile,
         childMode: childMode,
         childToken: childToken,
+        childModel: childModel,
+        childMaxTurns: childMaxTurns,
       );
     } finally {
       cancel.removeListener(bridge);
@@ -948,6 +1015,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     required AgentProfile childProfile,
     required AgentSessionMode childMode,
     required String toolEventId,
+    Model? childModel,
+    int? childMaxTurns,
   }) async {
     final token = AgentCancellationToken();
     _tokens[child.id] = token;
@@ -968,6 +1037,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         childProfile: childProfile,
         childMode: childMode,
         childToken: token,
+        childModel: childModel,
+        childMaxTurns: childMaxTurns,
       );
       final events = await _store().getEvents(parent.id);
       final event = events
@@ -1040,6 +1111,8 @@ class AgentTaskRunner extends _$AgentTaskRunner {
     required AgentProfile childProfile,
     required AgentSessionMode childMode,
     required AgentCancellationToken childToken,
+    Model? childModel,
+    int? childMaxTurns,
   }) async {
     final runtime = await ref
         .read(agentRuntimeProvider)
@@ -1048,6 +1121,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
           mode: childMode,
           enableSubagents: false,
           boundWorkspaceId: child.workspaceId,
+          modelOverride: childModel,
         );
     runtime.setHookTimeline(_hookTimelineFor(child.id));
     runtime.setHookRewake(_hookRewakeFor(child.id));
@@ -1060,7 +1134,11 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       approval: runtime.approval,
       store: _store(),
       gateway: _ProviderTaskGateway(this),
-      budget: _budgetFromSettings(maxRounds: 15, maxTokens: 200000),
+      // 档案 maxTurns 覆盖默认轮数预算（限 1~100 防失控）。
+      budget: _budgetFromSettings(
+        maxRounds: childMaxTurns?.clamp(1, 100) ?? 15,
+        maxTokens: 200000,
+      ),
       toolStream: ref.read(agentToolStreamProvider.notifier),
       stopGuard: runtime.subagentStopGuard,
       hookStopSignal: runtime.hookStopSignal,
