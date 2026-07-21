@@ -99,7 +99,11 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
     // 工作段折叠由侧边栏设置控制（默认折叠，用户点段头展开）。
     final collapse = ref.watch(agentUiSettingsControllerProvider
         .select((s) => s.autoCollapseWorkSessions));
-    final blocks = buildTimelineBlocks(events, collapse: collapse);
+    final blocks = buildTimelineBlocks(
+      events,
+      collapse: collapse,
+      running: widget.task.status == AgentTaskStatus.running,
+    );
     final showWorking = widget.task.status == AgentTaskStatus.running &&
         needsWorkingIndicator(events);
     // Plan 模式收尾（方案已出完）→ 事件流末尾出「方案已就绪」卡，
