@@ -44,7 +44,8 @@ enum BuddySpecies {
   mushroom('蘑菇'),
   chonk('胖猫'),
   nailong('奶龙'),
-  blueGuga('蓝咕咕');
+  blueGuga('蓝咕咕'),
+  shyNailong('腼腆奶龙');
 
   const BuddySpecies(this.label);
 
