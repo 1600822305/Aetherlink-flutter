@@ -284,38 +284,37 @@ mixin _ChatMultiModel on _$ChatController {
     ];
     _emitTurn(topicId, views, streaming: true);
 
-    // 4. Shared request context: the history up to and including the user turn.
-    //    The sibling placeholders are excluded so every model answers the same
-    //    conversation independently.
-    final mcp = await _mcpSetup();
-    final ctx = _contextSettings();
-    final params = _parameterFields();
-    final regexRules = await _sendingRegexRules();
-    final baseViews = <ChatMessageView>[...snapshot.messages, userView];
-    final contextViews = ChatController._trimViews(
-      ChatController._filterSiblingsForContext(baseViews),
-      ctx.contextCount,
-    );
-    final memInjection = await collectChatMemoryInjection(
-      ref,
-      assistantId: _assistantId,
-      query: trimmed,
-    );
-    final kbInjection = await collectChatKnowledgeInjection(
-      ref,
-      baseIds: ref.read(mountedKnowledgeBasesProvider),
-      query: trimmed,
-    );
-
-    // 5. Stream every sibling in parallel; each keeps the turn alive
-    //    (finalizeTurn: false) so the others stay visible until all settle.
-    //    Each sibling is guarded: a failure anywhere in its request building
-    //    or streaming marks that sibling errored instead of escaping the
-    //    Future.wait — an escaped exception would skip step 6 and leave the
+    // 4/5. Everything after the streaming:true emit runs inside try/finally:
+    //    an escaped exception anywhere here would skip step 6 and leave the
     //    topic in streaming state forever (every send/regenerate becomes a
-    //    no-op until app restart). The final emit runs in `finally` for the
-    //    same reason.
+    //    no-op until app restart).
     try {
+      // 4. Shared request context: the history up to and including the user
+      //    turn. The sibling placeholders are excluded so every model answers
+      //    the same conversation independently.
+      final mcp = await _mcpSetup();
+      final ctx = _contextSettings();
+      final params = _parameterFields();
+      final regexRules = await _sendingRegexRules();
+      final baseViews = <ChatMessageView>[...snapshot.messages, userView];
+      final contextViews = ChatController._trimViews(
+        ChatController._filterSiblingsForContext(baseViews),
+        ctx.contextCount,
+      );
+      final memInjection = await collectChatMemoryInjection(
+        ref,
+        assistantId: _assistantId,
+        query: trimmed,
+      );
+      final kbInjection = await collectChatKnowledgeInjection(
+        ref,
+        baseIds: ref.read(mountedKnowledgeBasesProvider),
+        query: trimmed,
+      );
+
+      // 5. Stream every sibling in parallel; each keeps the turn alive
+      //    (finalizeTurn: false) so the others stay visible until all settle.
+      //    Each sibling is individually guarded, so the wait never rejects.
       await Future.wait(<Future<void>>[
         for (final sibling in siblings)
           _streamSiblingGuarded(
@@ -331,6 +330,18 @@ mixin _ChatMultiModel on _$ChatController {
             kbInjection: kbInjection,
           ),
       ]);
+    } on Object catch (error) {
+      // Shared prep failed before any sibling streamed (记忆/知识库检索、MCP
+      // setup…): mark every still-streaming sibling errored so none is left as
+      // a hollow streaming bubble.
+      for (final sibling in siblings) {
+        await _failSibling(
+          sibling: sibling,
+          topicId: topicId,
+          views: views,
+          error: error,
+        );
+      }
     } finally {
       // 6. Whole turn done: end streaming and run the once-per-turn side
       //    effects.
@@ -460,36 +471,53 @@ mixin _ChatMultiModel on _$ChatController {
       // building, gateway construction, terminal persistence): mark this
       // sibling errored so the group renders the failure and 重试失败 can
       // re-run it.
-      final messageText = _errorMessage(error);
-      try {
-        await _persistMessageBlocks(
-          messageId: sibling.assistantMessageId,
-          status: MessageStatus.error,
-          blocks: <MessageBlock>[
-            MessageBlock.error(
-              id: generateId('block'),
-              messageId: sibling.assistantMessageId,
-              status: MessageBlockStatus.error,
-              createdAt: sibling.assistantTime,
-              updatedAt: DateTime.now(),
-              content: '',
-              message: messageText,
-            ),
-          ],
-        );
-      } on Object catch (_) {
-        // Best-effort persistence — the in-memory view below still shows it.
-      }
-      final errored = await _reloadView(
-        sibling.assistantMessageId,
-        sibling.assistantView.copyWith(
-          status: MessageStatus.error,
-          errorText: messageText,
-        ),
+      await _failSibling(
+        sibling: sibling,
+        topicId: topicId,
+        views: views,
+        error: error,
       );
-      _replace(views, errored);
-      _emitTurn(topicId, views, streaming: true);
     }
+  }
+
+  /// Persists [sibling] as errored (error block + [MessageStatus.error]) and
+  /// refreshes its view in the live turn, keeping the turn streaming — the
+  /// coordinator's `finally` ends it.
+  Future<void> _failSibling({
+    required _MultiModelSibling sibling,
+    required String topicId,
+    required List<ChatMessageView> views,
+    required Object error,
+  }) async {
+    final messageText = _errorMessage(error);
+    try {
+      await _persistMessageBlocks(
+        messageId: sibling.assistantMessageId,
+        status: MessageStatus.error,
+        blocks: <MessageBlock>[
+          MessageBlock.error(
+            id: generateId('block'),
+            messageId: sibling.assistantMessageId,
+            status: MessageBlockStatus.error,
+            createdAt: sibling.assistantTime,
+            updatedAt: DateTime.now(),
+            content: '',
+            message: messageText,
+          ),
+        ],
+      );
+    } on Object catch (_) {
+      // Best-effort persistence — the in-memory view below still shows it.
+    }
+    final errored = await _reloadView(
+      sibling.assistantMessageId,
+      sibling.assistantView.copyWith(
+        status: MessageStatus.error,
+        errorText: messageText,
+      ),
+    );
+    _replace(views, errored);
+    _emitTurn(topicId, views, streaming: true);
   }
 
   /// The next free sibling-group id for [topicId]: one past the largest existing
