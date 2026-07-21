@@ -98,6 +98,26 @@ abstract class AgentEventStore {
     String label = '',
   });
 
+  /// 检查点 commits 原位补写（id/seq 不变）：占位检查点先落库让用户
+  /// 消息立即显示，耗时的 git 快照完成后回填。
+  Future<CheckpointEvent> updateCheckpoint(
+    String taskId,
+    CheckpointEvent event, {
+    required Map<String, String> commits,
+  });
+
+  /// 占位检查点快照失败/不可用时原位降级为状态行（沿用 id/seq），
+  /// 避免留下永远不可回滚的空检查点。
+  Future<StatusChangeEvent> replaceCheckpointWithStatus(
+    String taskId,
+    CheckpointEvent event,
+    String description,
+  );
+
+  /// 删除单个事件（占位检查点静默降级：提示已经出过一次时直接移除，
+  /// 不每条消息刷一行状态）。
+  Future<void> removeEvent(String taskId, AgentEvent event);
+
   Future<CompactionEvent> appendCompaction(
     String taskId, {
     required int coveredCount,
@@ -393,6 +413,44 @@ class DriftAgentEventStore implements AgentEventStore {
     await _dao.upsertEvents(taskId, [event]);
     return event;
   }
+
+  @override
+  Future<CheckpointEvent> updateCheckpoint(
+    String taskId,
+    CheckpointEvent event, {
+    required Map<String, String> commits,
+  }) async {
+    final updated = CheckpointEvent(
+      id: event.id,
+      seq: event.seq,
+      at: event.at,
+      commits: commits,
+      label: event.label,
+    );
+    await _dao.upsertEvents(taskId, [updated]);
+    return updated;
+  }
+
+  @override
+  Future<StatusChangeEvent> replaceCheckpointWithStatus(
+    String taskId,
+    CheckpointEvent event,
+    String description,
+  ) async {
+    // 同 id/seq 覆写（主键是 id，insertOrReplace 会一并改写 kind 列）。
+    final updated = StatusChangeEvent(
+      id: event.id,
+      seq: event.seq,
+      at: event.at,
+      description: description,
+    );
+    await _dao.upsertEvents(taskId, [updated]);
+    return updated;
+  }
+
+  @override
+  Future<void> removeEvent(String taskId, AgentEvent event) =>
+      _dao.deleteEventById(taskId, event.id);
 
   @override
   Future<void> truncateEventsAfter(String taskId, int seq) {

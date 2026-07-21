@@ -291,6 +291,44 @@ class InMemoryAgentEventStore implements AgentEventStore {
   }
 
   @override
+  Future<CheckpointEvent> updateCheckpoint(
+    String taskId,
+    CheckpointEvent event, {
+    required Map<String, String> commits,
+  }) async {
+    final updated = CheckpointEvent(
+      id: event.id,
+      seq: event.seq,
+      at: event.at,
+      commits: commits,
+      label: event.label,
+    );
+    _upsert(taskId, updated);
+    return updated;
+  }
+
+  @override
+  Future<StatusChangeEvent> replaceCheckpointWithStatus(
+    String taskId,
+    CheckpointEvent event,
+    String description,
+  ) async {
+    final updated = StatusChangeEvent(
+      id: event.id,
+      seq: event.seq,
+      at: event.at,
+      description: description,
+    );
+    _upsert(taskId, updated);
+    return updated;
+  }
+
+  @override
+  Future<void> removeEvent(String taskId, AgentEvent event) async {
+    _events[taskId]?.removeWhere((e) => e.id == event.id);
+  }
+
+  @override
   Future<void> truncateEventsAfter(String taskId, int seq) async {
     _events[taskId]?.removeWhere((e) => e.seq > seq);
   }

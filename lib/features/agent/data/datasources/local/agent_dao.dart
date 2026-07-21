@@ -175,6 +175,11 @@ class AgentDao extends DatabaseAccessor<AppDatabase> with _$AgentDaoMixin {
     return row.read(expr) ?? 0;
   }
 
+  /// 按 id 删除单个事件（占位检查点静默降级用）。
+  Future<void> deleteEventById(String taskId, String id) => (delete(
+    agentEventRows,
+  )..where((e) => e.taskId.equals(taskId) & e.id.equals(id))).go();
+
   /// 删除话题内 seq 大于 [seq] 的全部事件（回滚对话到检查点用）。
   Future<void> deleteEventsAfterSeq(String taskId, int seq) => (delete(
     agentEventRows,

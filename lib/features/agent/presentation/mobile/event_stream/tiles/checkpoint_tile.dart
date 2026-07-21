@@ -50,6 +50,9 @@ class _CheckpointTileState extends ConsumerState<CheckpointTile> {
               height: 14,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
+          else if (widget.event.commits.isEmpty)
+            // 占位检查点：git 快照在后台补写，完成前不可回滚。
+            Text('快照中…', style: theme.textTheme.labelSmall?.copyWith(color: muted))
           else
             TextButton(
               onPressed: running ? null : _startRollback,

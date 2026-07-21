@@ -395,7 +395,30 @@ class AgentTaskRunner extends _$AgentTaskRunner {
   /// 每条用户消息落地前都落检查点（含 plan/ask 模式，中途切模式后
   /// 也能回滚到任意一条消息之前）；不可用/失败降级为一次性状态
   /// 提示，不阻断任务启动。
+  ///
+  /// 先落一个空 commits 的占位检查点（纯 DB 写，毫秒级），让紧随其后
+  /// 的用户消息立即上屏；耗时的 git 快照（可能跨 proot/SSH 跑
+  /// read-tree/commit-tree，秒级）转后台补写 commits。快照失败/不可用
+  /// 时占位事件原位降级为状态行，不留空检查点。
   Future<void> _checkpoint(AgentTask task, String text) async {
+    final CheckpointEvent placeholder;
+    try {
+      placeholder = await _store().appendCheckpoint(
+        task.id,
+        commits: const {},
+        label: _titleFrom(text),
+      );
+    } catch (e) {
+      if (_checkpointHintShown.add(task.id)) {
+        await _store().appendStatusChange(task.id, '检查点创建失败：$e');
+      }
+      return;
+    }
+    unawaited(_fillCheckpoint(task, placeholder));
+  }
+
+  /// 后台补写占位检查点的 git 快照结果。
+  Future<void> _fillCheckpoint(AgentTask task, CheckpointEvent event) async {
     try {
       final result = await createAgentCheckpoint(
         ref,
@@ -403,21 +426,38 @@ class AgentTaskRunner extends _$AgentTaskRunner {
         task.workspaceId.isEmpty ? null : task.workspaceId,
       );
       if (result.commits != null) {
-        await _store().appendCheckpoint(
+        await _store().updateCheckpoint(
           task.id,
+          event,
           commits: result.commits!,
-          label: _titleFrom(text),
         );
-      } else if (_checkpointHintShown.add(task.id)) {
-        await _store().appendStatusChange(
-          task.id,
-          '检查点不可用：${result.unavailableReason}',
-        );
+        return;
       }
+      final hint = _checkpointHintShown.add(task.id)
+          ? '检查点不可用：${result.unavailableReason}'
+          : null;
+      await _degradeCheckpoint(task.id, event, hint);
     } catch (e) {
-      if (_checkpointHintShown.add(task.id)) {
-        await _store().appendStatusChange(task.id, '检查点创建失败：$e');
+      final hint = _checkpointHintShown.add(task.id) ? '检查点创建失败：$e' : null;
+      await _degradeCheckpoint(task.id, event, hint);
+    }
+  }
+
+  /// 占位检查点降级：首次带原因原位改写为状态行；提示出过后静默移除，
+  /// 不每条消息刷一行。
+  Future<void> _degradeCheckpoint(
+    String taskId,
+    CheckpointEvent event,
+    String? hint,
+  ) async {
+    try {
+      if (hint != null) {
+        await _store().replaceCheckpointWithStatus(taskId, event, hint);
+      } else {
+        await _store().removeEvent(taskId, event);
       }
+    } catch (_) {
+      // 降级失败只影响这一行的展示（空检查点回滚时会给出可读错误）。
     }
   }
 
