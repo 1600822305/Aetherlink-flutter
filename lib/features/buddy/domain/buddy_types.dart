@@ -46,7 +46,8 @@ enum BuddySpecies {
   nailong('奶龙'),
   blueGuga('蓝咕咕'),
   shyNailong('腼腆奶龙'),
-  naihuangbao('奶黄包');
+  naihuangbao('奶黄包'),
+  yuexinmiao('月薪喵');
 
   const BuddySpecies(this.label);
 
