@@ -215,8 +215,8 @@ String encodeAgentEventPayload(AgentEvent event) {
             {'path': f.path, 'content': f.content},
         ],
       },
-    CheckpointEvent(:final commit, :final label) => {
-        'commit': commit,
+    CheckpointEvent(:final commits, :final label) => {
+        'commits': commits,
         'label': label,
       },
     StatusChangeEvent(:final description) => {'description': description},
@@ -335,11 +335,20 @@ AgentEvent decodeAgentEvent({
         ],
       );
     case 'checkpoint':
+      // 旧单仓库数据只有 commit 字符串，归一化为 {'': commit}：空键表示
+      // 回滚时从工作区根 rev-parse 解析仓库（与旧行为一致）。
+      final legacy = p['commit'] as String? ?? '';
       return CheckpointEvent(
         id: id,
         seq: seq,
         at: at,
-        commit: p['commit'] as String? ?? '',
+        commits: switch (p['commits']) {
+          final Map<String, dynamic> m => {
+            for (final MapEntry(:key, :value) in m.entries)
+              if (value is String && value.isNotEmpty) key: value,
+          },
+          _ => legacy.isEmpty ? const {} : {'': legacy},
+        },
         label: p['label'] as String? ?? '',
       );
     case 'status_change':

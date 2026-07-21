@@ -247,12 +247,14 @@ class CheckpointEvent extends AgentEvent {
     required super.id,
     required super.seq,
     required super.at,
-    required this.commit,
+    required this.commits,
     this.label = '',
   });
 
-  /// 基线 commit 哈希（由 refs/aetherlink/checkpoints/… 保活，防 gc）。
-  final String commit;
+  /// 仓库根 → 基线 commit 哈希（由 refs/aetherlink/checkpoints/… 保活，
+  /// 防 gc）。多仓库工作区每个仓库各一个快照；旧单仓库数据解码为
+  /// `{'': commit}`——空键表示「回滚时从工作区根 rev-parse 解析仓库」。
+  final Map<String, String> commits;
 
   /// 触发检查点的用户消息摘要（UI 标记行展示）。
   final String label;

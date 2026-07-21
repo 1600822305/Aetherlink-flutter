@@ -12,23 +12,29 @@ import 'package:aetherlink_flutter/features/workspace/application/workspace_git_
 /// `git restore --source` 还原其余文件；对话/事件流不受影响。
 /// 仅 canExec + git 仓库的工作区可用（SAF 无法执行 git）。
 
-/// 检查点创建结果：成功给 [commit]，不可用给 [unavailableReason]。
+/// 检查点创建结果：成功给 [commits]（仓库根 → commit，多仓库工作区
+/// 每个仓库各一个快照），不可用给 [unavailableReason]。
 class AgentCheckpointResult {
-  const AgentCheckpointResult.ok(String this.commit) : unavailableReason = null;
+  const AgentCheckpointResult.ok(Map<String, String> this.commits)
+    : unavailableReason = null;
 
   const AgentCheckpointResult.unavailable(String this.unavailableReason)
-    : commit = null;
+    : commits = null;
 
-  final String? commit;
+  final Map<String, String>? commits;
   final String? unavailableReason;
 }
 
-/// 回滚结果：[safetyCommit] 是回滚前自动落的安全快照（可再回滚回来），
-/// [files] 是本次回滚实际触达的文件清单（检查点 vs 回滚前状态）。
+/// 回滚结果：[safetyCommits] 是回滚前自动落的安全快照（仓库根 →
+/// commit，可再回滚回来），[files] 是本次回滚实际触达的文件清单
+///（检查点 vs 回滚前状态）。
 class AgentRollbackResult {
-  const AgentRollbackResult({required this.safetyCommit, required this.files});
+  const AgentRollbackResult({
+    required this.safetyCommits,
+    required this.files,
+  });
 
-  final String safetyCommit;
+  final Map<String, String> safetyCommits;
   final List<RollbackFileChange> files;
 }
 
@@ -37,6 +43,8 @@ class RollbackFileChange {
   const RollbackFileChange({
     required this.path,
     required this.kind,
+    this.repoRoot = '',
+    this.repoName = '',
     this.insertions,
     this.deletions,
   });
@@ -46,6 +54,12 @@ class RollbackFileChange {
 
   final RollbackFileKind kind;
 
+  /// 所属仓库根（检查点 commits 的键；旧单仓库数据为空串）。
+  final String repoRoot;
+
+  /// 仓库根尾段，多仓库预览面板展示归属用。
+  final String repoName;
+
   /// 检查点之后新增/删除的行数（numstat）；二进制或取不到时 null。
   final int? insertions;
   final int? deletions;
@@ -54,6 +68,8 @@ class RollbackFileChange {
       RollbackFileChange(
         path: path,
         kind: kind,
+        repoRoot: repoRoot,
+        repoName: repoName,
         insertions: insertions ?? this.insertions,
         deletions: deletions ?? this.deletions,
       );
@@ -72,8 +88,10 @@ enum RollbackFileKind {
   deleted,
 }
 
-/// 为任务当前工作区创建检查点。不可用（未绑定/SAF/非 git）不抛错，
-/// 由调用方决定是否提示。
+/// 为任务当前工作区创建检查点：对工作区下发现的**每个**仓库各落
+/// 一个快照（多仓库容器工作区支持）。部分仓库快照失败不阻断其余；
+/// 全部失败才报不可用。不可用（未绑定/SAF/无仓库）不抛错，由调用方
+/// 决定是否提示。
 Future<AgentCheckpointResult> createAgentCheckpoint(
   Ref ref,
   String taskId,
@@ -83,89 +101,177 @@ Future<AgentCheckpointResult> createAgentCheckpoint(
   if (context.unavailableReason != null) {
     return AgentCheckpointResult.unavailable(context.unavailableReason!);
   }
-  final (backend, repoRoot) = (context.backend!, context.repoRoot!);
-  try {
-    final commit = await _snapshot(backend, repoRoot, taskId);
-    return AgentCheckpointResult.ok(commit);
-  } on _GitFailure catch (e) {
-    return AgentCheckpointResult.unavailable('git 快照失败：${e.message}');
+  final (backend, roots) = (context.backend!, context.repoRoots!);
+  final commits = <String, String>{};
+  String? firstError;
+  for (final repoRoot in roots) {
+    try {
+      commits[repoRoot] = await _snapshot(backend, repoRoot, taskId);
+    } on _GitFailure catch (e) {
+      firstError ??= e.message;
+    }
   }
+  if (commits.isEmpty) {
+    return AgentCheckpointResult.unavailable('git 快照失败：$firstError');
+  }
+  return AgentCheckpointResult.ok(commits);
 }
 
-/// 回滚到检查点 [commit]：先落安全快照，再删掉检查点之后新增的文件、
-/// 还原被改/被删文件。失败抛 [StateError]（带用户可读原因）。
+/// 回滚到检查点 [commits]（仓库根 → commit）：逐仓库先落安全快照，
+/// 再删掉检查点之后新增的文件、还原被改/被删文件。旧单仓库数据
+///（空键）回滚时从工作区根 rev-parse 解析仓库。失败抛 [StateError]
+///（带用户可读原因）。
 Future<AgentRollbackResult> rollbackAgentCheckpoint(
   Ref ref,
   String taskId,
   String? workspaceId,
-  String commit,
+  Map<String, String> commits,
 ) async {
   final context = await _repoContext(ref, workspaceId);
   if (context.unavailableReason != null) {
     throw StateError(context.unavailableReason!);
   }
-  final (backend, repoRoot) = (context.backend!, context.repoRoot!);
+  final backend = context.backend!;
 
-  final exists = await backend.exec(
-    'git cat-file -e ${shellQuoteArg('$commit^{commit}')}',
-    workingDirectory: repoRoot,
-    timeout: const Duration(seconds: 10),
-  );
-  if (exists.exitCode != 0) {
-    throw StateError('检查点提交已不存在（可能被清理），无法回滚');
-  }
+  final resolved = await _resolveCommitRepos(context, commits);
+  final safetyCommits = <String, String>{};
+  final files = <RollbackFileChange>[];
+  final multi = resolved.length > 1;
 
-  late final String safetyCommit;
-  try {
-    safetyCommit = await _snapshot(backend, repoRoot, taskId);
-  } on _GitFailure catch (e) {
-    throw StateError('回滚前安全快照失败，已中止：${e.message}');
-  }
-
-  // 两个快照都含未跟踪文件，这个 diff 就是本次回滚实际触达的文件清单。
-  final quotedCommit = shellQuoteArg(commit);
-  final diff = await backend.exec(
-    'git -c core.quotepath=off diff --name-status --no-renames -z '
-    '$quotedCommit ${shellQuoteArg(safetyCommit)}',
-    workingDirectory: repoRoot,
-    timeout: const Duration(minutes: 1),
-  );
-  final files = diff.exitCode == 0
-      ? parseNameStatusZ(diff.stdout)
-      : <RollbackFileChange>[];
-
-  // 删掉检查点之后新增的文件（安全快照已保住它们），再整树还原。
-  // --worktree 只动工作树，不碰用户的 index/暂存区。
-  final restore = await backend.exec(
-    'git diff --name-only -z --diff-filter=A '
-    '$quotedCommit ${shellQuoteArg(safetyCommit)} '
-    '| xargs -0 -r rm -f -- && '
-    'git restore --source=$quotedCommit --worktree -- :/',
-    workingDirectory: repoRoot,
-    timeout: const Duration(minutes: 2),
-  );
-  if (restore.exitCode != 0) {
-    throw StateError(
-      '还原失败：${restore.stderr.trim()}\n'
-      '当前状态已保存为安全快照 ${_short(safetyCommit)}',
+  // 先逐仓库验证 commit 还在 + 落安全快照，全部就绪后才开始还原：
+  // 避免前面仓库已还原、后面仓库才发现快照失败的半成品状态。
+  for (final (repoRoot, commit) in resolved) {
+    final exists = await backend.exec(
+      'git cat-file -e ${shellQuoteArg('$commit^{commit}')}',
+      workingDirectory: repoRoot,
+      timeout: const Duration(seconds: 10),
     );
+    if (exists.exitCode != 0) {
+      throw StateError(
+        '检查点提交已不存在（可能被清理），无法回滚'
+        '${multi ? '：${_repoName(repoRoot)}' : ''}',
+      );
+    }
+    try {
+      safetyCommits[repoRoot] = await _snapshot(backend, repoRoot, taskId);
+    } on _GitFailure catch (e) {
+      throw StateError('回滚前安全快照失败，已中止：${e.message}');
+    }
   }
-  return AgentRollbackResult(safetyCommit: safetyCommit, files: files);
+
+  for (final (repoRoot, commit) in resolved) {
+    final safetyCommit = safetyCommits[repoRoot]!;
+    // 两个快照都含未跟踪文件，这个 diff 就是本次回滚实际触达的清单。
+    final quotedCommit = shellQuoteArg(commit);
+    final diff = await backend.exec(
+      'git -c core.quotepath=off diff --name-status --no-renames -z '
+      '$quotedCommit ${shellQuoteArg(safetyCommit)}',
+      workingDirectory: repoRoot,
+      timeout: const Duration(minutes: 1),
+    );
+    if (diff.exitCode == 0) {
+      files.addAll(_withRepo(parseNameStatusZ(diff.stdout), repoRoot));
+    }
+
+    // 删掉检查点之后新增的文件（安全快照已保住它们），再整树还原。
+    // --worktree 只动工作树，不碰用户的 index/暂存区。
+    final restore = await backend.exec(
+      'git diff --name-only -z --diff-filter=A '
+      '$quotedCommit ${shellQuoteArg(safetyCommit)} '
+      '| xargs -0 -r rm -f -- && '
+      'git restore --source=$quotedCommit --worktree -- :/',
+      workingDirectory: repoRoot,
+      timeout: const Duration(minutes: 2),
+    );
+    if (restore.exitCode != 0) {
+      throw StateError(
+        '还原失败${multi ? '（${_repoName(repoRoot)}）' : ''}：'
+        '${restore.stderr.trim()}\n'
+        '当前状态已保存为安全快照 ${_short(safetyCommit)}',
+      );
+    }
+  }
+  return AgentRollbackResult(safetyCommits: safetyCommits, files: files);
 }
 
-/// 回滚预览：检查点 vs 当前工作区会触达的文件清单（不改任何状态）。
-/// `git diff <commit>` 看不到检查点之后新增的未跟踪文件，单独用
-/// ls-files/ls-tree 补齐。失败抛 [StateError]。
+/// 把检查点 commits 的键解析成可用的仓库根：空键（旧单仓库数据）
+/// 回退到发现列表的首个仓库（与旧行为一致：工作区所在仓库）。
+Future<List<(String, String)>> _resolveCommitRepos(
+  _RepoContext context,
+  Map<String, String> commits,
+) async {
+  final resolved = <(String, String)>[];
+  for (final MapEntry(key: root, value: commit) in commits.entries) {
+    if (commit.isEmpty) continue;
+    if (root.isNotEmpty) {
+      resolved.add((root, commit));
+      continue;
+    }
+    final fallback = context.repoRoots!.firstOrNull;
+    if (fallback == null) {
+      throw StateError('工作区里没有发现 git 仓库，无法回滚旧检查点');
+    }
+    resolved.add((fallback, commit));
+  }
+  if (resolved.isEmpty) {
+    throw StateError('检查点没有可用的 commit 记录，无法回滚');
+  }
+  return resolved;
+}
+
+List<RollbackFileChange> _withRepo(
+  List<RollbackFileChange> files,
+  String repoRoot,
+) => [
+  for (final f in files)
+    RollbackFileChange(
+      path: f.path,
+      kind: f.kind,
+      repoRoot: repoRoot,
+      repoName: _repoName(repoRoot),
+      insertions: f.insertions,
+      deletions: f.deletions,
+    ),
+];
+
+String _repoName(String repoRoot) => repoRoot.contains('/')
+    ? repoRoot.substring(repoRoot.lastIndexOf('/') + 1)
+    : repoRoot;
+
+/// 回滚预览：检查点 vs 当前工作区会触达的文件清单（不改任何状态），
+/// 多仓库逐仓库聚合。失败抛 [StateError]。
 Future<List<RollbackFileChange>> previewAgentRollback(
   Ref ref,
   String? workspaceId,
-  String commit,
+  Map<String, String> commits,
 ) async {
   final context = await _repoContext(ref, workspaceId);
   if (context.unavailableReason != null) {
     throw StateError(context.unavailableReason!);
   }
-  final (backend, repoRoot) = (context.backend!, context.repoRoot!);
+  final backend = context.backend!;
+  final resolved = await _resolveCommitRepos(context, commits);
+  final files = <RollbackFileChange>[];
+  for (final (repoRoot, commit) in resolved) {
+    files.addAll(
+      _withRepo(await _previewRepo(backend, repoRoot, commit), repoRoot),
+    );
+  }
+  files.sort(
+    (a, b) => a.repoName != b.repoName
+        ? a.repoName.compareTo(b.repoName)
+        : a.path.compareTo(b.path),
+  );
+  return files;
+}
+
+/// 单仓库预览：`git diff <commit>` 看不到检查点之后新增的未跟踪
+/// 文件，单独用 ls-files/ls-tree 补齐。
+Future<List<RollbackFileChange>> _previewRepo(
+  WorkspaceBackend backend,
+  String repoRoot,
+  String commit,
+) async {
   final quotedCommit = shellQuoteArg(commit);
 
   final diff = await backend.exec(
@@ -249,22 +355,28 @@ Future<List<RollbackFileChange>> previewAgentRollback(
   return files;
 }
 
-/// 取单文件「检查点 vs 当前工作区」的文本 diff（预览面板看内容用）。
-/// 未跟踪新增文件 git diff 看不到，返回空串由 UI 降级提示。
+/// 取单文件「检查点 vs 当前工作区」的文本 diff（预览面板看内容用），
+/// 按 [file] 的所属仓库从 [commits] 取对应基线。未跟踪新增文件
+/// git diff 看不到，返回空串由 UI 降级提示。
 Future<String> loadRollbackFileDiff(
   Ref ref,
   String? workspaceId,
-  String commit,
-  String path,
+  Map<String, String> commits,
+  RollbackFileChange file,
 ) async {
   final context = await _repoContext(ref, workspaceId);
   if (context.unavailableReason != null) {
     throw StateError(context.unavailableReason!);
   }
-  final (backend, repoRoot) = (context.backend!, context.repoRoot!);
+  final backend = context.backend!;
+  final resolved = await _resolveCommitRepos(context, commits);
+  final (repoRoot, commit) = resolved.firstWhere(
+    (r) => file.repoRoot.isEmpty || r.$1 == file.repoRoot,
+    orElse: () => resolved.first,
+  );
   final diff = await backend.exec(
     'git -c core.quotepath=off diff --no-color --no-renames '
-    '${shellQuoteArg(commit)} -- ${shellQuoteArg(path)}',
+    '${shellQuoteArg(commit)} -- ${shellQuoteArg(file.path)}',
     workingDirectory: repoRoot,
     timeout: const Duration(seconds: 30),
   );
@@ -307,15 +419,19 @@ class _GitFailure implements Exception {
 }
 
 class _RepoContext {
-  const _RepoContext.ok(WorkspaceBackend this.backend, String this.repoRoot)
-    : unavailableReason = null;
+  const _RepoContext.ok(
+    WorkspaceBackend this.backend,
+    List<String> this.repoRoots,
+  ) : unavailableReason = null;
 
   const _RepoContext.unavailable(String this.unavailableReason)
     : backend = null,
-      repoRoot = null;
+      repoRoots = null;
 
   final WorkspaceBackend? backend;
-  final String? repoRoot;
+
+  /// 工作区下发现的全部仓库根（工作区在仓库内 / 多仓库容器都支持）。
+  final List<String>? repoRoots;
   final String? unavailableReason;
 }
 
@@ -332,16 +448,11 @@ Future<_RepoContext> _repoContext(Ref ref, String? workspaceId) async {
       '当前工作区为纯 SAF 后端，无法执行 git；检查点仅在 SSH / PRoot 工作区可用',
     );
   }
-  final top = await backend.exec(
-    'git rev-parse --show-toplevel',
-    workingDirectory: workspace.root,
-    timeout: const Duration(seconds: 10),
-  );
-  final repoRoot = top.stdout.trim();
-  if (top.exitCode != 0 || repoRoot.isEmpty) {
-    return const _RepoContext.unavailable('工作区不在 git 仓库内，初始化 git 后可用检查点');
+  final roots = await discoverGitRepos(backend, workspace.root);
+  if (roots.isEmpty) {
+    return const _RepoContext.unavailable('工作区里没有发现 git 仓库，初始化 git 后可用检查点');
   }
-  return _RepoContext.ok(backend, repoRoot);
+  return _RepoContext.ok(backend, roots);
 }
 
 /// 删除某任务在其工作区下的全部检查点 ref（删任务时联动），
@@ -355,15 +466,17 @@ Future<void> cleanupAgentCheckpointRefs(
   try {
     final context = await _repoContext(ref, workspaceId);
     if (context.unavailableReason != null) return;
-    final (backend, repoRoot) = (context.backend!, context.repoRoot!);
+    final (backend, roots) = (context.backend!, context.repoRoots!);
     final safeTask = taskId.replaceAll(RegExp(r'[^\w-]'), '_');
     final prefix = 'refs/aetherlink/checkpoints/$safeTask/';
-    await backend.exec(
-      'git for-each-ref --format="%(refname)" ${shellQuoteArg(prefix)} '
-      '| while read -r r; do git update-ref -d "\$r"; done',
-      workingDirectory: repoRoot,
-      timeout: const Duration(minutes: 1),
-    );
+    for (final repoRoot in roots) {
+      await backend.exec(
+        'git for-each-ref --format="%(refname)" ${shellQuoteArg(prefix)} '
+        '| while read -r r; do git update-ref -d "\$r"; done',
+        workingDirectory: repoRoot,
+        timeout: const Duration(minutes: 1),
+      );
+    }
   } catch (_) {}
 }
 

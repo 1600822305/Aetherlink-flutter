@@ -96,9 +96,9 @@ class _CheckpointTileState extends ConsumerState<CheckpointTile> {
       builder: (context) => _RollbackPreviewSheet(
         label: widget.event.label,
         files: preview,
-        loadDiff: (path) => ref
+        loadDiff: (file) => ref
             .read(agentTaskRunnerProvider.notifier)
-            .rollbackFileDiff(task, widget.event, path),
+            .rollbackFileDiff(task, widget.event, file),
       ),
     );
     if (mode == null || !mounted) return;
@@ -145,7 +145,7 @@ class _RollbackPreviewSheet extends StatefulWidget {
 
   final String label;
   final List<RollbackFileChange> files;
-  final Future<String> Function(String path) loadDiff;
+  final Future<String> Function(RollbackFileChange file) loadDiff;
 
   @override
   State<_RollbackPreviewSheet> createState() => _RollbackPreviewSheetState();
@@ -198,8 +198,16 @@ class _RollbackPreviewSheetState extends State<_RollbackPreviewSheet> {
                   child: ListView.builder(
                     shrinkWrap: true,
                     itemCount: files.length,
-                    itemBuilder: (context, i) =>
-                        _FileRow(file: files[i], loadDiff: loadDiff),
+                    itemBuilder: (context, i) => _FileRow(
+                      file: files[i],
+                      loadDiff: loadDiff,
+                      // 多仓库预览时带仓库名前缀，看清归属。
+                      showRepo: files
+                              .map((f) => f.repoRoot)
+                              .toSet()
+                              .length >
+                          1,
+                    ),
                   ),
                 ),
               ],
@@ -262,10 +270,15 @@ class _RollbackPreviewSheetState extends State<_RollbackPreviewSheet> {
 }
 
 class _FileRow extends StatelessWidget {
-  const _FileRow({required this.file, required this.loadDiff});
+  const _FileRow({
+    required this.file,
+    required this.loadDiff,
+    this.showRepo = false,
+  });
 
   final RollbackFileChange file;
-  final Future<String> Function(String path) loadDiff;
+  final Future<String> Function(RollbackFileChange file) loadDiff;
+  final bool showRepo;
 
   @override
   Widget build(BuildContext context) {
@@ -300,7 +313,9 @@ class _FileRow extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                file.path,
+                showRepo && file.repoName.isNotEmpty
+                    ? '${file.repoName}/${file.path}'
+                    : file.path,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall,
@@ -353,7 +368,7 @@ class _FileRow extends StatelessWidget {
         content: SizedBox(
           width: double.maxFinite,
           child: FutureBuilder<String>(
-            future: loadDiff(file.path),
+            future: loadDiff(file),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return Text('取 diff 失败：${snapshot.error}');
