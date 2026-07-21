@@ -45,7 +45,8 @@ enum BuddySpecies {
   chonk('胖猫'),
   nailong('奶龙'),
   blueGuga('蓝咕咕'),
-  shyNailong('腼腆奶龙');
+  shyNailong('腼腆奶龙'),
+  naihuangbao('奶黄包');
 
   const BuddySpecies(this.label);
 
@@ -124,11 +125,11 @@ class BuddySoul {
 
 /// 编码：灵魂 → JSON 字符串（单键存储）。
 String encodeBuddySoul(BuddySoul soul) => jsonEncode({
-      'name': soul.name,
-      'personality': soul.personality,
-      'hatchedAt': soul.hatchedAt,
-      'seed': soul.seed,
-    });
+  'name': soul.name,
+  'personality': soul.personality,
+  'hatchedAt': soul.hatchedAt,
+  'seed': soul.seed,
+});
 
 /// 解码：缺字段/坏数据返回 null（视为未孵化）。
 BuddySoul? decodeBuddySoul(String? raw) {

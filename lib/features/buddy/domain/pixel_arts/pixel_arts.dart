@@ -20,6 +20,7 @@ import 'owl.dart';
 import 'penguin.dart';
 import 'pixel_art.dart';
 import 'rabbit.dart';
+import 'naihuangbao.dart';
 import 'robot.dart';
 import 'shy_nailong.dart';
 import 'snail.dart';
@@ -51,4 +52,5 @@ const Map<BuddySpecies, BuddyPixelArt> kBuddyPixelArts = {
   BuddySpecies.nailong: nailongArt,
   BuddySpecies.blueGuga: blueGugaArt,
   BuddySpecies.shyNailong: shyNailongArt,
+  BuddySpecies.naihuangbao: naihuangbaoArt,
 };
