@@ -3,11 +3,12 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench_diff_tab.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench_docs_tab.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench_focus_tab.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench_terminal_tab.dart';
 
 /// 右页：工作台（UI 稿 §4.3）——顶部小 tab 切换
-/// 「终端 / 焦点 / 改动 diff」，三个 tab 均已接真：终端实时围观任务工作区
+/// 「终端 / 焦点 / 改动 diff / 文档」：终端实时围观任务工作区
 /// 的 AI 会话（[WorkbenchTerminalTab]）；焦点由事件流驱动，跟随最新
 /// 工具/思考/叙述活动自动切内容，附最近工具列表（[WorkbenchFocusTab]）；
 /// diff 为任务工作区的未提交改动清单 + 复用 Git 只读 diff 组件
@@ -43,6 +44,7 @@ class _WorkbenchPageState extends State<WorkbenchPage>
     (LucideIcons.terminal, '终端'),
     (LucideIcons.eye, '焦点'),
     (LucideIcons.gitCompareArrows, 'diff'),
+    (LucideIcons.fileText, '文档'),
   ];
 
   @override
@@ -118,7 +120,8 @@ class _WorkbenchPageState extends State<WorkbenchPage>
           child: switch (_tab) {
             0 => WorkbenchTerminalTab(task: widget.task),
             1 => WorkbenchFocusTab(task: widget.task),
-            _ => WorkbenchDiffTab(task: widget.task),
+            2 => WorkbenchDiffTab(task: widget.task),
+            _ => WorkbenchDocsTab(task: widget.task),
           },
         ),
       ],

@@ -253,6 +253,25 @@ Future<void> revertAgentFileChange(
   }
 }
 
+/// 工作台「文档」tab：按任务工作区读取智能体写入的文档全文。
+/// [path] 为工具参数里的路径（相对工作区 root 或绝对 POSIX 路径），
+/// 与 file-editor 写入侧同规则锚定到 root。
+Future<String> readAgentWorkspaceDoc(
+  Ref ref,
+  String? workspaceId,
+  String path,
+) async {
+  final resolved = await resolveAgentWorkspace(ref, workspaceId);
+  if (resolved == null) {
+    throw StateError('尚未打开任何工作区');
+  }
+  final (workspace, backend) = resolved;
+  final abs = path.startsWith('/') || !workspace.root.startsWith('/')
+      ? path
+      : joinPosixPath(workspace.root, path);
+  return backend.readFile(abs);
+}
+
 /// 按任务/档案绑定解析工作区及其后端。
 ///
 /// [allowFallback] 为 true 时绑定未命中会回退到当前打开 → 最近
