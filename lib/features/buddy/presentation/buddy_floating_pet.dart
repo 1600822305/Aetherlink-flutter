@@ -1,6 +1,6 @@
 // App 内悬浮宠物：挂在 MaterialApp.builder 里浮在所有路由之上。
-// 收起态是一颗迷你像素宠物胶囊（贴边吸附、可拖动），点按展开成
-// 小卡片：像素动画 + 抚摸 + 碎碎念气泡 + 打开宠物页 + ✕ 关闭悬浮窗。
+// 收起态是一只透明抠图的迷你像素宠物（贴边吸附、可拖动），点按展开成
+// 小卡片：像素动画 + 抚摸 + 碎碎念气泡 + 打开宠物页 + ✕ 关闭悬浮窗（需二次确认）。
 
 import 'dart:async';
 import 'dart:math';
@@ -69,7 +69,7 @@ class _FloatingPet extends ConsumerStatefulWidget {
 }
 
 class _FloatingPetState extends ConsumerState<_FloatingPet> {
-  static const double _capsuleHeight = 48;
+  static const double _collapsedPetSize = 56;
   static const double _expandedWidth = 200;
 
   final Random _random = Random();
@@ -83,6 +83,9 @@ class _FloatingPetState extends ConsumerState<_FloatingPet> {
   int _petTrigger = 0;
   String? _bubbleText;
   int _bubbleTicksLeft = 0;
+
+  /// 关闭二次确认窗口（tick 数）：>0 时 ✕ 处于待确认态，再点一次才真关。
+  int _closeConfirmTicksLeft = 0;
 
   @override
   void initState() {
@@ -100,6 +103,7 @@ class _FloatingPetState extends ConsumerState<_FloatingPet> {
     if (!mounted) return;
     setState(() {
       if (_petTicksLeft > 0) _petTicksLeft--;
+      if (_closeConfirmTicksLeft > 0) _closeConfirmTicksLeft--;
       if (_bubbleTicksLeft > 0) {
         _bubbleTicksLeft--;
         if (_bubbleTicksLeft == 0) _bubbleText = null;
@@ -150,13 +154,14 @@ class _FloatingPetState extends ConsumerState<_FloatingPet> {
       onPanStart: (d) => setState(() {
         _dragging = true;
         _dragPosition = Offset(
-          settings.snapLeft ? 0 : screen.width - (width ?? 120),
+          settings.snapLeft ? 0 : screen.width - (width ?? _collapsedPetSize),
           top.toDouble(),
         );
       }),
       onPanUpdate: (d) => setState(() => _dragPosition += d.delta),
       onPanEnd: (_) {
-        final snapLeft = _dragPosition.dx + (width ?? 120) / 2 < screen.width / 2;
+        final snapLeft = _dragPosition.dx + (width ?? _collapsedPetSize) / 2 <
+            screen.width / 2;
         ref.read(buddyOverlayControllerProvider.notifier).setPosition(
               dy: _dragPosition.dy,
               snapLeft: snapLeft,
@@ -177,47 +182,26 @@ class _FloatingPetState extends ConsumerState<_FloatingPet> {
     );
   }
 
-  /// 收起态：迷你像素宠物胶囊（+ 头顶小气泡）。
+  /// 收起态：透明抠图的迷你像素宠物本体（+ 头顶小气泡），
+  /// 无背景/边框/阴影。
   Widget _buildCapsule(BuildContext context) {
     final theme = Theme.of(context);
-    final cs = theme.colorScheme;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         if (_bubbleText != null) _bubble(theme, maxWidth: 180),
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(_capsuleHeight / 2),
-            onTap: () {
-              Haptics.instance.soft();
-              setState(() => _expanded = true);
-            },
-            child: Container(
-              height: _capsuleHeight,
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              decoration: BoxDecoration(
-                color: cs.surface,
-                borderRadius: BorderRadius.circular(_capsuleHeight / 2),
-                border: Border.all(color: theme.dividerColor),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x1A000000),
-                    blurRadius: 12,
-                    offset: Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Center(
-                child: BuddyPixelPet(
-                  bones: widget.bones,
-                  size: _capsuleHeight - 10,
-                  petTrigger: _petTrigger,
-                ),
-              ),
-            ),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            Haptics.instance.soft();
+            setState(() => _expanded = true);
+          },
+          child: BuddyPixelPet(
+            bones: widget.bones,
+            size: _collapsedPetSize,
+            petTrigger: _petTrigger,
           ),
         ),
       ],
@@ -278,11 +262,13 @@ class _FloatingPetState extends ConsumerState<_FloatingPet> {
                   constraints:
                       const BoxConstraints.tightFor(width: 32, height: 32),
                   icon: const Icon(LucideIcons.x, size: 16),
-                  color: cs.onSurface.withValues(alpha: 0.6),
-                  // 悬浮窗内直接关闭：同步关掉宠物页里的开关。
-                  onPressed: () => ref
-                      .read(buddyOverlayControllerProvider.notifier)
-                      .setEnabled(false),
+                  color: _closeConfirmTicksLeft > 0
+                      ? cs.error
+                      : cs.onSurface.withValues(alpha: 0.6),
+                  // 关闭悬浮窗需二次确认（防误触）：首次点击进入待确认
+                  // 态（✕ 变红 + 气泡提示），窗口内再点才真关，并同步
+                  // 关掉宠物页里的开关。
+                  onPressed: _onClosePressed,
                 ),
               ],
             ),
@@ -330,6 +316,20 @@ class _FloatingPetState extends ConsumerState<_FloatingPet> {
         ],
       ),
     );
+  }
+
+  /// 关闭二次确认：悬浮层在 Navigator 之上开不了对话框，改用内联
+  /// 确认态——首次点击只进入待确认（约 3s 窗口），窗口内再点才关。
+  void _onClosePressed() {
+    if (_closeConfirmTicksLeft > 0) {
+      ref.read(buddyOverlayControllerProvider.notifier).setEnabled(false);
+      return;
+    }
+    Haptics.instance.light();
+    setState(() {
+      _closeConfirmTicksLeft = 6;
+      _say('再点一次 ✕ 关闭悬浮窗');
+    });
   }
 
   Widget _bubble(ThemeData theme, {required double maxWidth}) {
