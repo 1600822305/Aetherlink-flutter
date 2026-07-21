@@ -577,6 +577,7 @@ class OneToolThenFinishLlm implements AgentLlmClient {
     _round++;
     if (_round > 1) {
       return AgentLlmTurn(
+        text: '已推送完成。',
         toolCalls: [
           AgentToolCallRequest(
             id: 'finish-1',
@@ -595,6 +596,53 @@ class OneToolThenFinishLlm implements AgentLlmClient {
           argsJson: jsonEncode({'command': 'git push'}),
           argSummary: 'git push',
         ),
+      ],
+    );
+  }
+
+  @override
+  Future<String> summarizeForCompaction(
+    AgentTask task,
+    List<AgentEvent> events, {
+    String? customInstructions,
+  }) async =>
+      '摘要';
+}
+
+/// 同一轮先 finish_task 再跟一个普通工具，且普通工具经 onToolCall
+/// 预建事件（测收尾时剩余预建事件的回填）。
+class FinishWithTrailingToolLlm implements AgentLlmClient {
+  @override
+  Future<AgentLlmTurn> completeTurn(
+    AgentLlmContext context, {
+    void Function(String textSoFar)? onTextDelta,
+    void Function(String reasoningSoFar)? onReasoningDelta,
+    Future<void> Function(
+      String streamKey,
+      String? toolName,
+      String argsTextSoFar,
+    )? onToolCallDelta,
+    Future<void> Function(AgentToolCallRequest call, String? streamKey)?
+        onToolCall,
+    AgentCancellationToken? cancel,
+  }) async {
+    final trailing = AgentToolCallRequest(
+      id: 'call-after-finish',
+      name: 'read_file',
+      argsJson: jsonEncode({'path': 'a.txt'}),
+      argSummary: 'a.txt',
+    );
+    await onToolCall?.call(trailing, null);
+    return AgentLlmTurn(
+      text: '已完成。',
+      toolCalls: [
+        AgentToolCallRequest(
+          id: 'finish-1',
+          name: kToolFinishTask,
+          argsJson: jsonEncode({'summary': '完成'}),
+          argSummary: '完成',
+        ),
+        trailing,
       ],
     );
   }
@@ -629,6 +677,7 @@ class TwoReadToolsThenFinishLlm implements AgentLlmClient {
     _round++;
     if (_round > 1) {
       return AgentLlmTurn(
+        text: '两个文件已读完。',
         toolCalls: [
           AgentToolCallRequest(
             id: 'finish-1',
@@ -863,6 +912,32 @@ void main() {
     expect(toolEvents, hasLength(2));
     expect(toolEvents.map((e) => e.state),
         everyElement(AgentToolCallState.success));
+  });
+
+  test('finish_task 收尾时同轮剩余预建工具事件按中断回填，不留永久 running', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    final engine = AgentEngine(
+      llm: FinishWithTrailingToolLlm(),
+      tools: const FakeAgentToolExecutor(delay: Duration.zero),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(),
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '收尾');
+
+    await engine.run(task, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.done);
+    final toolEvents =
+        (await store.getEvents(task.id)).whereType<ToolCallEvent>().toList();
+    // 跟在 finish_task 后面的预建工具事件被回填为失败，而不是永久 running。
+    expect(toolEvents.map((e) => e.state),
+        isNot(contains(AgentToolCallState.running)));
+    expect(toolEvents.map((e) => e.state),
+        contains(AgentToolCallState.failure));
   });
 
   test('ask_user 提问落库、等待回答并可恢复完成', () async {
@@ -1412,7 +1487,7 @@ void main() {
       final engine = AgentEngine(
         llm: ScriptedLlm([
           AgentLlmTurn(toolCalls: [planCall(kToolEnterPlanMode)]),
-          AgentLlmTurn(toolCalls: [
+          AgentLlmTurn(text: '规划完成。', toolCalls: [
             planCall(kToolFinishTask, {'summary': '完成'}),
           ]),
         ]),
