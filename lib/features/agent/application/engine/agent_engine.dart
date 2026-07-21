@@ -585,6 +585,7 @@ class AgentEngine {
                 suggestions: suggestions,
                 toolCallId: call.id,
                 argsJson: call.argsJson);
+            await failPendingToolEvents();
             current = await transition(
                 AgentTaskStatus.waitingInput, '等待回答：$question');
             onNotification?.call('等待回答：$question', 'question');
@@ -696,6 +697,7 @@ class AgentEngine {
             // summary 只进任务列表（lastEventSummary）；事件流里正文
             // 就是结束语，状态行只留元信息，不再重复展示 summary。
             final summary = _stringArg(call, 'summary') ?? '任务完成';
+            await failPendingToolEvents();
             await store.appendStatusChange(
                 current.id, '任务完成 · ${current.rounds} 轮');
             current = await save(current.copyWith(
