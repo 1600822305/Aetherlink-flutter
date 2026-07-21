@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/agent_event_tile.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/tiles/event_rail.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/event_stream/timeline_blocks.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/widgets/agent_status.dart';
 
@@ -45,35 +46,43 @@ class _WorkSegmentTileState extends State<WorkSegmentTile> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        InkWell(
-          onTap: () => setState(() => _expanded = !_expanded),
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            margin: const EdgeInsets.only(left: 28, bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: cs.onSurface.withValues(alpha: 0.04),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  _expanded
-                      ? LucideIcons.chevronDown
-                      : LucideIcons.chevronRight,
-                  size: 14,
-                  color: summaryColor,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  '${segmentSummary(widget.block)} · $elapsed · ${tools.length} 个操作'
-                  '$statsLabel${hasFailure ? ' · ✗' : ''}',
-                  style: theme.textTheme.labelMedium?.copyWith(
+        EventRail(
+          node: Icon(
+            hasFailure ? LucideIcons.circleX : LucideIcons.layers,
+            size: 14,
+            color: summaryColor,
+          ),
+          child: InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: cs.onSurface.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    _expanded
+                        ? LucideIcons.chevronDown
+                        : LucideIcons.chevronRight,
+                    size: 14,
                     color: summaryColor,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '${segmentSummary(widget.block)} · $elapsed · ${tools.length} 个操作'
+                      '$statsLabel${hasFailure ? ' · ✗' : ''}',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: summaryColor,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

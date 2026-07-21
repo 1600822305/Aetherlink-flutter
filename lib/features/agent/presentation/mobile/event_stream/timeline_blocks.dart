@@ -125,21 +125,26 @@ PlanUpdateEvent? latestPlan(List<AgentEvent> events) {
   return plan;
 }
 
-/// 工作段折叠（UI 稿 §4.1）：连续的**已完结**（success/failure/denied）
-/// 工具调用及夹在其间的已定稿思考，折叠成摘要块（默认折叠，
-/// 用户点段头展开）；执行中/待审批的工具行与流式思考保持实况展开。
+/// 工作段折叠（UI 稿 §4.1，段边界对标 Claude Code
+/// collapseReadSearchGroups）：连续的**已完结**（success/failure/denied）
+/// 工具调用及夹在其间的已定稿思考构成一个工作段；段只在被正文
+/// 「收尾」后才折叠——助手定稿正文、用户消息或状态变化出现时段
+/// 结束并折叠成摘要块。仍在推进中的段（后面只是执行中的工具/
+/// 流式文本，或列表末尾且 [running] 为 true）保持实况平铺，
+/// 避免刚跑完的工具在任务还没说结论前就被收起。
 /// [collapse] 关闭（侧边栏设置「自动折叠工作段」）时不折叠，
 /// 所有事件平铺展示。
 List<TimelineBlock> buildTimelineBlocks(
   List<AgentEvent> events, {
   bool collapse = true,
+  bool running = false,
 }) {
   final blocks = <TimelineBlock>[];
   var run = <AgentEvent>[];
   var runTools = 0;
 
-  void flush() {
-    if (collapse && runTools >= 1) {
+  void flush({required bool closed}) {
+    if (collapse && closed && runTools >= 1) {
       blocks.add(SegmentBlock(run));
     } else {
       blocks.addAll(run.map(SingleBlock.new));
@@ -161,10 +166,16 @@ List<TimelineBlock> buildTimelineBlocks(
     } else if (finishedReasoning) {
       run.add(e);
     } else {
-      flush();
+      // 正文/用户消息/状态变化收尾段 → 折叠；执行中工具、流式
+      // 文本等实况事件只是暂断，段保持展开。
+      final closes = (e is AssistantTextEvent && !e.streaming) ||
+          e is UserMessageEvent ||
+          e is StatusChangeEvent;
+      flush(closed: closes);
       if (e is! PlanUpdateEvent) blocks.add(SingleBlock(e));
     }
   }
-  flush();
+  // 列表末尾：任务仍在跑说明段还没收尾，保持实况；已结束则折叠。
+  flush(closed: !running);
   return blocks;
 }
