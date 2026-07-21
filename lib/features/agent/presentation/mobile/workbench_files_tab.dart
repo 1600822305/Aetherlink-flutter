@@ -8,6 +8,7 @@ import 'package:aetherlink_flutter/app/di/markdown_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
 import 'package:aetherlink_flutter/features/agent/application/workbench_files.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/features/settings/presentation/widgets/model_settings_widgets.dart';
 import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 
 /// 工作台「文件」tab：列出智能体本次任务写入的文件（不限 Markdown）。
@@ -171,6 +172,8 @@ final _fileContentProvider = FutureProvider.autoDispose
 
 /// 全屏文件查看器：创建中实时渲染流式正文（跟随事件流刷新），完成后
 /// 读文件全文。Markdown 可在「渲染 / 原文」间切换，其余按纯文本显示。
+/// 页面链路复用设置页的 chrome（ModelSettingsAppBar + ModelSettingsCard），
+/// 与其他三级页风格一致。
 class _FileViewerPage extends ConsumerStatefulWidget {
   const _FileViewerPage({
     required this.taskId,
@@ -201,34 +204,19 @@ class _FileViewerPageState extends ConsumerState<_FileViewerPage> {
     final isMd = file?.isMarkdown ?? widget.path.toLowerCase().endsWith('.md');
 
     return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: Row(
-          children: [
-            Icon(
-              _iconForExt(file?.ext ?? ''),
-              size: 16,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                widget.path.split('/').last,
-                style: theme.textTheme.titleSmall,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
+      appBar: ModelSettingsAppBar(
+        title: widget.path.split('/').last,
+        onBack: () => Navigator.of(context).pop(),
         actions: [
           if (creating)
             Padding(
-              padding: const EdgeInsets.only(right: 12),
+              padding: const EdgeInsets.only(right: 16),
               child: Center(
                 child: Text(
                   '创建中…',
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -241,24 +229,39 @@ class _FileViewerPageState extends ConsumerState<_FileViewerPage> {
                   _rendered ? LucideIcons.code : LucideIcons.eye,
                   size: 18,
                 ),
+                color: theme.colorScheme.primary,
                 onPressed: () => setState(() => _rendered = !_rendered),
               ),
             IconButton(
               tooltip: '复制全文',
               icon: const Icon(LucideIcons.copy, size: 18),
+              color: theme.colorScheme.primary,
               onPressed: () => _copy(file),
             ),
+            const SizedBox(width: 4),
           ],
         ],
       ),
-      body: SafeArea(
-        top: false,
-        child: creating
-            ? _streamingBody(file, isMd)
-            : _fileBody(file, isMd),
-      ),
+      body: creating ? _streamingBody(file, isMd) : _fileBody(file, isMd),
     );
   }
+
+  /// 设置页同款卡片容器：16 外边距 + 卡片 + 底部安全区域。
+  Widget _cardScroll(Widget child) => SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          16 + MediaQuery.paddingOf(context).bottom,
+        ),
+        child: SizedBox(
+          width: double.infinity,
+          child: ModelSettingsCard(
+            padding: const EdgeInsets.all(16),
+            child: child,
+          ),
+        ),
+      );
 
   Future<void> _copy(AgentFileEntry? file) async {
     try {
@@ -286,9 +289,8 @@ class _FileViewerPageState extends ConsumerState<_FileViewerPage> {
     }
     // 创建中始终用流式 Markdown 组件（纯文本也能安全渲染）。
     final theme = Theme.of(context);
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: isMd
+    return _cardScroll(
+      isMd
           ? StreamingMarkdownBody(
               content: '$content▍',
               style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
@@ -316,9 +318,8 @@ class _FileViewerPageState extends ConsumerState<_FileViewerPage> {
           ),
         ),
       ),
-      data: (content) => SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: isMd && _rendered
+      data: (content) => _cardScroll(
+        isMd && _rendered
             ? AppMarkdown(
                 content: content,
                 style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
