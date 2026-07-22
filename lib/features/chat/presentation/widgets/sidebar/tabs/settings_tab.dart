@@ -91,7 +91,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
     ),
     _SelectSettingRow<MessageNavigation>(
       title: '对话导航',
-      description: '显示上下按钮快速跳转到上一条/下一条消息',
+      description: '显示上下按钮快速跳转消息',
       value: s.messageNavigation,
       options: [for (final v in MessageNavigation.values) (v, v.label)],
       onChanged: c.setMessageNavigation,
@@ -99,7 +99,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
     if (s.messageNavigation == MessageNavigation.buttons)
       _SwitchSettingRow(
         title: '滚动时显示导航',
-        description: '滚动消息列表时自动弹出导航面板，停止后自动隐藏',
+        description: '滚动时自动弹出导航，停止后隐藏',
         value: s.showNavigationOnScroll,
         onChanged: c.setShowNavigationOnScroll,
       ),

@@ -68,12 +68,11 @@ enum SettingsLayoutMode {
 }
 
 /// 对话导航 (`settings.messageNavigation`): `none` 不显示（默认）；`buttons` 显示上下
-/// 按钮快速跳转；`always` 导航面板常驻右侧（Flutter 特有，免呼出手势，
-/// 适配全面屏手势与右边缘返回冲突的场景）。
+/// 按钮快速跳转（点击右侧呼吸灯手动呼出，或开启滚动时自动显示）。
+/// 历史的 `always` 常驻模式已合并进 `buttons`（旧值自动迁移）。
 enum MessageNavigation {
   none('none', '不显示'),
-  buttons('buttons', '上下按钮'),
-  always('always', '常驻显示');
+  buttons('buttons', '上下按钮');
 
   const MessageNavigation(this.id, this.label);
 
@@ -84,6 +83,7 @@ enum MessageNavigation {
   final String label;
 
   static MessageNavigation fromId(String? id) {
+    if (id == 'always') return MessageNavigation.buttons;
     for (final v in MessageNavigation.values) {
       if (v.id == id) return v;
     }
@@ -122,7 +122,10 @@ abstract class SidebarSettings with _$SidebarSettings {
     @Default(true) bool renderUserInputAsMarkdown,
     @Default(true) bool autoScrollToBottom,
     @Default(MessageStyle.bubble) MessageStyle messageStyle,
-    @Default(MessageNavigation.none) MessageNavigation messageNavigation,
+    // 旧版的 always（常驻显示）已合并进 buttons，未知值回退到 buttons。
+    @JsonKey(unknownEnumValue: MessageNavigation.buttons)
+    @Default(MessageNavigation.none)
+    MessageNavigation messageNavigation,
     // 滚动时显示导航 (`settings.showNavigationOnScroll`)：开启后消息列表滚动时自动
     // 弹出导航面板，停止后自动隐藏。默认关闭，与 Web 一致。
     @Default(false) bool showNavigationOnScroll,

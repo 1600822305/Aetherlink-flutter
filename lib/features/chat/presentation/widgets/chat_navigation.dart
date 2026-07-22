@@ -36,12 +36,10 @@ void unregisterChatNavigationHandler(ChatNavigationHandler handler) {
 /// vertical center of the visible message area (above the keyboard, tracked
 /// via [bottomInset]); tapping it or swiping it left reveals a floating
 /// vertical panel with 滚动显示开关 / 回到顶部 / 上一条消息 / 下一条消息 /
-/// 回到底部 buttons. With 滚动时显示导航 on, the panel also slides in while
-/// the list is scrolling (rikkahub's `isRecentScroll` behaviour). The panel
-/// auto-hides after the web original's 1.5s idle timer. When set to 常驻显示
-/// the panel is pinned open — no reveal gesture and no auto-hide — so it stays
-/// reachable on full-screen-gesture devices where the right-edge swipe belongs
-/// to the system back gesture. Renders nothing when set to 不显示.
+/// 回到底部 buttons. With 滚动时显示导航 on, the same panel also slides in
+/// while the list is scrolling (rikkahub's `isRecentScroll` behaviour). Either
+/// way it is one panel with one style; it auto-hides after the web original's
+/// 1.5s idle timer. Renders nothing when set to 不显示.
 class ChatNavigationOverlay extends ConsumerStatefulWidget {
   const ChatNavigationOverlay({
     super.key,
@@ -113,8 +111,6 @@ class _ChatNavigationOverlayState extends ConsumerState<ChatNavigationOverlay>
         !settings.showNavigationOnScroll) {
       return;
     }
-    // 常驻显示 mode never reaches here (guarded above), so the timer below
-    // only ever hides the transient panel.
     if (widget.isScrolling.value) {
       _hideTimer?.cancel();
       if (!_visible) setState(() => _visible = true);
@@ -138,19 +134,15 @@ class _ChatNavigationOverlayState extends ConsumerState<ChatNavigationOverlay>
     });
   }
 
-  bool get _alwaysOn =>
-      ref.read(sidebarSettingsControllerProvider).messageNavigation ==
-      MessageNavigation.always;
-
   void _dispatch(ChatNavigationAction action) {
     Haptics.instance.onNavigation();
-    if (!_alwaysOn) _resetHideTimer();
+    _resetHideTimer();
     _handler?.call(action);
   }
 
   void _toggleScrollNavigation() {
     Haptics.instance.onNavigation();
-    if (!_alwaysOn) _resetHideTimer();
+    _resetHideTimer();
     final controller = ref.read(sidebarSettingsControllerProvider.notifier);
     final current = ref
         .read(sidebarSettingsControllerProvider)
@@ -167,9 +159,7 @@ class _ChatNavigationOverlayState extends ConsumerState<ChatNavigationOverlay>
       _pulse.stop();
       return const SizedBox.shrink();
     }
-    final alwaysOn = mode == MessageNavigation.always;
-    final showPanel = alwaysOn || _visible;
-    if (alwaysOn) _hideTimer?.cancel();
+    final showPanel = _visible;
     final showOnScroll = ref.watch(
       sidebarSettingsControllerProvider.select((s) => s.showNavigationOnScroll),
     );
@@ -208,9 +198,7 @@ class _ChatNavigationOverlayState extends ConsumerState<ChatNavigationOverlay>
                     duration: const Duration(milliseconds: 200),
                     child: _NavigationPanel(
                       onAction: _dispatch,
-                      // 滚动显示开关只对呼出式（上下按钮）模式有意义，
-                      // 常驻模式下隐藏该按钮。
-                      showOnScroll: alwaysOn ? null : showOnScroll,
+                      showOnScroll: showOnScroll,
                       onToggleShowOnScroll: _toggleScrollNavigation,
                     ),
                   ),
@@ -310,8 +298,8 @@ class _NavigationPanel extends StatelessWidget {
 
   final ValueChanged<ChatNavigationAction> onAction;
 
-  /// Null hides the 滚动显示 toggle (常驻显示 mode, where it has no effect).
-  final bool? showOnScroll;
+  /// Highlights the 滚动显示 toggle when 滚动时显示导航 is on.
+  final bool showOnScroll;
   final VoidCallback onToggleShowOnScroll;
 
   static const List<(ChatNavigationAction, IconData, String)> _buttons = [
@@ -339,15 +327,12 @@ class _NavigationPanel extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (showOnScroll != null)
-              _PanelButton(
-                icon: LucideIcons.scroll,
-                tooltip: showOnScroll!
-                    ? '滚动时显示导航：已开启'
-                    : '滚动时显示导航：已关闭',
-                selected: showOnScroll,
-                onTap: onToggleShowOnScroll,
-              ),
+            _PanelButton(
+              icon: LucideIcons.scroll,
+              tooltip: showOnScroll ? '滚动时显示导航：已开启' : '滚动时显示导航：已关闭',
+              selected: showOnScroll,
+              onTap: onToggleShowOnScroll,
+            ),
             for (final (action, icon, tooltip) in _buttons)
               _PanelButton(
                 icon: icon,
