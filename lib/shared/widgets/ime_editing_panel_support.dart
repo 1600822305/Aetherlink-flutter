@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -35,6 +37,13 @@ class _ImeEditingPanelSupportState extends State<ImeEditingPanelSupport> {
   bool _latched = false;
   DateTime _lastArrowAt = DateTime.fromMillisecondsSinceEpoch(0);
 
+  /// A shift pair that *might* be the user toggling 选择 off starts this
+  /// timer instead of unlatching immediately: some IMEs (百度/讯飞等) re-send
+  /// the latch pair *before every* cursor key, so a pair followed at once by
+  /// an arrow is per-key chatter, not a toggle. The arrow cancels the timer;
+  /// no arrow means it really was the user toggling off.
+  Timer? _unlatchTimer;
+
   /// Set on the Shift down; if the following Shift up is synthesized the pair
   /// came from an IME latch tap rather than a held hardware key.
   bool _pendingShiftDown = false;
@@ -48,12 +57,14 @@ class _ImeEditingPanelSupportState extends State<ImeEditingPanelSupport> {
   @override
   void dispose() {
     FocusManager.instance.removeListener(_onFocusChanged);
+    _unlatchTimer?.cancel();
     super.dispose();
   }
 
   void _onFocusChanged() {
     _latched = false;
     _pendingShiftDown = false;
+    _unlatchTimer?.cancel();
   }
 
   bool get _isMobile =>
@@ -79,8 +90,17 @@ class _ImeEditingPanelSupportState extends State<ImeEditingPanelSupport> {
         // (which also re-syncs the state if it ever drifts from the IME's).
         if (event.synthesized) {
           final sinceArrow = DateTime.now().difference(_lastArrowAt);
-          if (!_latched || sinceArrow.inMilliseconds > 400) {
-            _latched = !_latched;
+          if (!_latched) {
+            _unlatchTimer?.cancel();
+            _latched = true;
+          } else if (sinceArrow.inMilliseconds > 400) {
+            // Either the user toggling 选择 off, or a leading per-key pair
+            // from an IME that re-latches before every cursor key. Defer:
+            // an arrow arriving right after keeps the selection going.
+            _unlatchTimer?.cancel();
+            _unlatchTimer = Timer(const Duration(milliseconds: 250), () {
+              _latched = false;
+            });
           }
         }
       }
@@ -96,7 +116,12 @@ class _ImeEditingPanelSupportState extends State<ImeEditingPanelSupport> {
       LogicalKeyboardKey.home,
       LogicalKeyboardKey.end,
     };
-    if (cursorKeys.contains(key)) _lastArrowAt = DateTime.now();
+    if (cursorKeys.contains(key)) {
+      _lastArrowAt = DateTime.now();
+      // An arrow right after a shift pair marks that pair as per-key
+      // chatter — keep the latch.
+      if (_latched) _unlatchTimer?.cancel();
+    }
 
     if (!_latched || event is KeyUpEvent) return KeyEventResult.ignored;
 
@@ -143,6 +168,7 @@ class _ImeEditingPanelSupportState extends State<ImeEditingPanelSupport> {
       // Any other key (typing, delete, enter...) drops the IME out of select
       // mode on its side; mirror that.
       _latched = false;
+      _unlatchTimer?.cancel();
       return KeyEventResult.ignored;
     }
 
