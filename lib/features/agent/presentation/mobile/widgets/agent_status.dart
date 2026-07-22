@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/domain/agent_event.dart';
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
 
 /// 状态色板（全局统一，UI 稿 §三）。
@@ -91,6 +92,23 @@ class AgentStatusLine extends ConsumerWidget {
     final contextInfo = task.contextTokens > 0
         ? ' · 上下文${formatTokens(task.contextTokens)}/${formatTokens(limit)}'
         : '';
+    // 运行中且计划有进行中条目时，状态文案改为该条目
+    // （对标 CC spinner 用 activeForm 驱动动词）。
+    String statusText = agentStatusLabel(task.status);
+    if (task.status == AgentTaskStatus.running) {
+      final events =
+          ref.watch(agentTaskEventsProvider(task.id)).value ?? const [];
+      PlanUpdateEvent? plan;
+      for (final e in events) {
+        if (e is PlanUpdateEvent) plan = e;
+      }
+      final active = plan?.items
+          .where((it) => it.status == AgentPlanItemStatus.inProgress)
+          .firstOrNull;
+      if (active != null && active.content.isNotEmpty) {
+        statusText = active.content;
+      }
+    }
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -100,12 +118,16 @@ class AgentStatusLine extends ConsumerWidget {
           const AgentAutoBadge(),
           const SizedBox(width: 5),
         ],
-        Text(
-          '${agentStatusLabel(task.status)} · 第${task.rounds}轮'
-          '$contextInfo · '
-          '${formatElapsed(task.elapsed)}',
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+        Flexible(
+          child: Text(
+            '$statusText · 第${task.rounds}轮'
+            '$contextInfo · '
+            '${formatElapsed(task.elapsed)}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
           ),
         ),
       ],

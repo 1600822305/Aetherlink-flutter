@@ -139,7 +139,14 @@ class _EventStreamPageState extends ConsumerState<EventStreamPage> {
                   itemBuilder: (context, i) => i >= blocks.length
                       ? (showPlanReady
                           ? PlanReadyCard(task: widget.task)
-                          : const WorkingIndicatorTile())
+                          : WorkingIndicatorTile(
+                              label: plan?.items
+                                  .where((it) =>
+                                      it.status ==
+                                      AgentPlanItemStatus.inProgress)
+                                  .firstOrNull
+                                  ?.content,
+                            ))
                       : switch (blocks[i]) {
                           final SegmentBlock b => WorkSegmentTile(
                               block: b,
