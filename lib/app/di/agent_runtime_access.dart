@@ -20,7 +20,8 @@ import 'package:aetherlink_flutter/features/agent/application/engine/compaction/
 import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_compaction_prompt.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_microcompact.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_control_tools.dart';
-import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart' show kToolAskUser;
+import 'package:aetherlink_flutter/features/agent/application/engine/agent_engine.dart'
+    show kToolAskUser, kToolUpdatePlan;
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_llm_client.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_subagent.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_system_prompt.dart';
@@ -349,6 +350,9 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
   /// 子代理档案指定 model 时经构造参数预锁。
   Model? _lockedModel;
 
+  /// 计划提醒的节流状态：taskId → 上次注入提醒时的轮次。
+  final Map<String, int> _planReminderRound = {};
+
   Future<Model> _resolveModel(Ref ref) async {
     final locked = _lockedModel;
     if (locked != null) return locked;
@@ -391,6 +395,11 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
       microCompactEnabled: context.microCompactEnabled,
       microCompactTriggerChars: context.microCompactTriggerChars,
     );
+    // 计划提醒（对标 CC todo_reminder）：久未更新计划时才把当前计划
+    // 快照以置尾 system-reminder 注入（只进本轮上下文不落事件流，
+    // 不进 system prompt，前缀缓存友好）。
+    final planReminder = _planReminderMessage(context);
+    if (planReminder != null) messages.add(planReminder);
     // Plan 模式每轮置尾提醒（对标 CC plan_mode attachment）：只进本轮
     // 上下文不落事件流，长任务中防模型"忘了"自己在计划模式。
     if (context.task.mode == AgentSessionMode.plan) {
@@ -649,6 +658,56 @@ class _GatewayAgentLlmClient implements AgentLlmClient {
     } catch (_) {
       return null; // 不存在或后端不可用：跳过该层。
     }
+  }
+
+  /// 距上次 update_plan 之后的其他工具调用数达到阈值才提醒。
+  static const int _kPlanReminderStaleToolCalls = 10;
+
+  /// 两次提醒之间至少间隔的轮次。
+  static const int _kPlanReminderCooldownRounds = 10;
+
+  /// 计划提醒（对标 CC todo_reminder 的双阈值节流）：计划非空且有
+  /// 未完成条目、距上次 update_plan 已过 [_kPlanReminderStaleToolCalls]
+  /// 个工具调用、且距上次提醒已过 [_kPlanReminderCooldownRounds] 轮
+  /// 时，注入一条置尾 system-reminder（不落事件流）。
+  LlmMessage? _planReminderMessage(AgentLlmContext context) {
+    final events = context.events;
+    final plan = events.whereType<PlanUpdateEvent>().lastOrNull;
+    if (plan == null || plan.items.isEmpty) return null;
+    if (plan.items.every(
+        (i) => i.status == AgentPlanItemStatus.completed)) {
+      return null;
+    }
+    var toolCallsSince = 0;
+    for (final event in events.reversed) {
+      if (event is PlanUpdateEvent) break;
+      if (event is ToolCallEvent && event.toolName != kToolUpdatePlan) {
+        toolCallsSince++;
+      }
+    }
+    if (toolCallsSince < _kPlanReminderStaleToolCalls) return null;
+    final lastRound = _planReminderRound[context.task.id];
+    if (lastRound != null &&
+        context.task.rounds - lastRound < _kPlanReminderCooldownRounds) {
+      return null;
+    }
+    _planReminderRound[context.task.id] = context.task.rounds;
+    final lines = [
+      for (final item in plan.items)
+        '- [${switch (item.status) {
+          AgentPlanItemStatus.pending => ' ',
+          AgentPlanItemStatus.inProgress => '~',
+          AgentPlanItemStatus.completed => 'x',
+        }}] ${item.content}',
+    ];
+    return LlmMessage(
+      role: MessageRole.user,
+      content: '<system-reminder>你已有一段时间没有更新计划（update_plan）。'
+          '当前计划如下：\n${lines.join('\n')}\n'
+          '若计划仍适用，完成/开始条目时记得全量重新提交更新状态；'
+          '若已过时请重新提交修订后的计划。本提醒由系统注入，'
+          '与用户消息无关，不要向用户提及。</system-reminder>',
+    );
   }
 }
 

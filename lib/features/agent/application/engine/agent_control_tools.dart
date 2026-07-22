@@ -7,7 +7,9 @@ const List<McpToolDefinition> kAgentControlToolDefinitions = [
   McpToolDefinition(
     name: kToolUpdatePlan,
     description: '维护任务计划（全量覆盖式提交）。复杂任务开始时先提交完整计划，'
-        '之后每完成/开始一项就重新提交全量条目以更新状态。',
+        '之后每完成/开始一项就重新提交全量条目以更新状态；同一时间恰好一项 '
+        'in_progress。全部条目 completed 时提交即收尾（计划自动清空）；'
+        '不要提交空列表。',
     inputSchema: {
       'type': 'object',
       'properties': {

@@ -1032,10 +1032,25 @@ void main() {
     expect(gateway.last.rounds, 2);
 
     final events = await store.getEvents(task.id);
-    // 计划事件两次（in_progress → completed）。
-    expect(events.whereType<PlanUpdateEvent>().length, 2);
-    // 工具调用成功且有耗时/结果。
-    final tool = events.whereType<ToolCallEvent>().single;
+    // 计划事件两次：in_progress → 全部 completed（收尾自动清空）。
+    final plans = events.whereType<PlanUpdateEvent>().toList();
+    expect(plans.length, 2);
+    expect(plans.first.items, isNotEmpty);
+    expect(plans.last.items, isEmpty);
+    // update_plan 控制工具有结果回填（成功）。
+    final planTools = events
+        .whereType<ToolCallEvent>()
+        .where((e) => e.toolName == kToolUpdatePlan)
+        .toList();
+    expect(planTools.length, 2);
+    expect(
+      planTools.every((e) => e.state == AgentToolCallState.success),
+      isTrue,
+    );
+    // 普通工具调用成功且有耗时/结果。
+    final tool = events
+        .whereType<ToolCallEvent>()
+        .singleWhere((e) => e.toolName == 'read_file');
     expect(tool.state, AgentToolCallState.success);
     expect(tool.resultSummary, isNotEmpty);
     expect(tool.elapsed, isNotNull);
@@ -1053,6 +1068,73 @@ void main() {
     // seq 严格递增无重复。
     final seqs = [for (final e in events) e.seq];
     expect(seqs.toSet().length, seqs.length);
+  });
+
+  test('update_plan 参数非法：拒绝并回填错误，已有计划保持不变', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    AgentToolCallRequest call(Map<String, Object?> args) =>
+        AgentToolCallRequest(
+          id: 'plan-${args.hashCode}',
+          name: kToolUpdatePlan,
+          argsJson: jsonEncode(args),
+          argSummary: '计划',
+        );
+    final engine = AgentEngine(
+      llm: ScriptedLlm([
+        AgentLlmTurn(toolCalls: [
+          call({
+            'items': [
+              {'content': '第一步', 'status': 'in_progress'},
+            ],
+          }),
+        ]),
+        AgentLlmTurn(toolCalls: [
+          // 非法 status + 空 items：都应被拒绝，不覆盖已有计划。
+          call({
+            'items': [
+              {'content': '第一步', 'status': 'done'},
+            ],
+          }),
+          call({'items': <Object?>[]}),
+        ]),
+        AgentLlmTurn(text: '完成。', toolCalls: [
+          AgentToolCallRequest(
+            id: 'finish-1',
+            name: kToolFinishTask,
+            argsJson: jsonEncode({'summary': '完成'}),
+            argSummary: '收尾',
+          ),
+        ]),
+      ]),
+      tools: const FakeAgentToolExecutor(delay: Duration.zero),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(),
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '做点事');
+
+    await engine.run(task, AgentCancellationToken());
+
+    expect(gateway.last.status, AgentTaskStatus.done);
+    final events = await store.getEvents(task.id);
+    // 只有首次合法提交落了计划事件，非法提交没有覆盖/清空。
+    final plans = events.whereType<PlanUpdateEvent>().toList();
+    expect(plans.length, 1);
+    expect(plans.single.items.single.content, '第一步');
+    // 控制工具结果回填：1 成功 + 2 失败（带错误说明）。
+    final planTools = events
+        .whereType<ToolCallEvent>()
+        .where((e) => e.toolName == kToolUpdatePlan)
+        .toList();
+    expect(planTools.length, 3);
+    expect(planTools[0].state, AgentToolCallState.success);
+    expect(planTools[1].state, AgentToolCallState.failure);
+    expect(planTools[1].resultDetail, contains('status 非法'));
+    expect(planTools[2].state, AgentToolCallState.failure);
+    expect(planTools[2].resultDetail, contains('items 为空'));
   });
 
   test('stop hook 阻止收尾：原因回填继续跑，放行后 done（最多阻一次）', () async {

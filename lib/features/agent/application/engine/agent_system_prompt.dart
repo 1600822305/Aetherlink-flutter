@@ -99,20 +99,9 @@ String buildAgentSystemPrompt({
       '[项目指令]（来自工作区 AGENTS.md）\n${projectInstructions.trim()}',
   ];
 
-  // 计划置尾（设计初稿 §5.3）：最近一次 update_plan 的快照追加在最后，
-  // 提醒模型当前进度，避免长上下文里计划被"遗忘"。
-  final plan = events.whereType<PlanUpdateEvent>().lastOrNull;
-  if (plan != null && plan.items.isNotEmpty) {
-    final lines = [
-      for (final item in plan.items)
-        '- [${switch (item.status) {
-          AgentPlanItemStatus.pending => ' ',
-          AgentPlanItemStatus.inProgress => '~',
-          AgentPlanItemStatus.completed => 'x',
-        }}] ${item.content}',
-    ];
-    sections.add('[当前计划]\n${lines.join('\n')}');
-  }
+  // 计划不进 system prompt（对标 CC）：update_plan 的调用与结果留在
+  // 消息历史里，快忘了时由消息置尾的节流提醒兜底（缓存友好，
+  // 见 runtime 层 plan reminder）。
 
   // 已批准方案置尾（对标 CC 计划文件）：方案全文只存在工具结果事件里，
   // 长任务中可能被聚合预算/压缩折叠掉；这里从事件流取最近一次批准的
