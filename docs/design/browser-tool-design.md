@@ -161,10 +161,11 @@ content（复用现有工具图片返回通道，若无则新增）。
 
 ## 8. 里程碑
 
+- **M0 前置改造**：`McpToolResult` 加图片 content 通道 + 打通 LLM gateway 多模态回传（snapshot 依赖）。
 - **M1 包骨架**：`aetherlink_browser` 建包 + 会话/管理器 + open/read/snapshot；example 手测。
-- **M2 主工程接入**：browser_tools.dart schema + 路由 + 审批 + 事件；截图多模态回传。
-- **M3 交互**：click/input/close + 等待导航策略。
-- **M4 打磨**：会话回收、超时、正文提取质量、截图压缩、后台策略。
+- **M2 主工程接入**：browser_tools.dart schema + 路由（归 webSearch 组）+ 审批 + 事件；截图多模态回传。
+- **M3 打磨**：会话回收、超时、正文提取质量、截图压缩、后台策略。
+- **M4 交互（后期，另起）**：click/input/close + 等待导航策略 + approval gate。
 
 ## 9. 开放问题（研究后结论）
 
@@ -213,10 +214,18 @@ content（复用现有工具图片返回通道，若无则新增）。
 
 **供应链**：优先锁定 6.1.5（发布已久、稳定），不用 6.2.0-beta。
 
-## 11. 需要用户拍板的决策
+## 11. 已定决策（用户已拍板）
 
-1. **首版范围**：A) open+read（纯文本，零多模态改造，最快落地）；
-   B) open+read+snapshot（需先补 `McpToolResult` 图片通道，见 §9.6）。
-2. **工具分组**：新增 `AgentToolGroup.browser` 独立组，还是并入
-   `webSearch`？
-3. **交互类（click/input）**：本轮做还是先只读、下一轮再做？
+1. **首版范围 = B**：`browser_open` + `browser_read` + `browser_snapshot`。
+   **前置改造**：先给 `McpToolResult` 加图片 content 通道并打通 LLM gateway
+   多模态回传（snapshot 依赖，见 §9.6），再接工具。
+2. **工具分组 = 并入现有 `webSearch` 组**：首版全是只读工具，风险面与
+   搜索/抓取同级，不新增 `AgentToolGroup` 枚举。将来加交互类（会改网页
+   状态）再考虑拆独立组做精细授权。
+3. **交互类（click/input）= 后期做**：首版只做只读三件套，交互留下一轮
+   （届时接 approval gate，Auto 模式默认需确认）。
+
+> 备注：本文档为设计定稿；实现将在新会话开始。首版落地顺序建议：
+> ① `McpToolResult` 图片通道前置改造 → ② `packages/aetherlink_browser`
+> 建包（HeadlessInAppWebView + 会话池 + open/read/snapshot）→ ③ 主工程
+> `lib/shared/mcp_tools/browser/` 薄接入（schema/路由/审批/事件）→ ④ 打磨。
