@@ -14,6 +14,8 @@ import 'package:aetherlink_flutter/app/di/model_access.dart';
 import 'package:aetherlink_flutter/app/di/remote_mcp_access.dart';
 import 'package:aetherlink_flutter/app/di/skills_access.dart';
 import 'package:aetherlink_flutter/features/agent/application/agent_permission_rules.dart';
+import 'package:aetherlink_flutter/features/agent/application/agent_providers.dart';
+import 'package:aetherlink_flutter/features/agent/application/engine/context_breakdown.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_approval_registry.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/agent_cancellation.dart';
 import 'package:aetherlink_flutter/features/agent/application/engine/compaction/agent_compaction.dart';
@@ -154,6 +156,55 @@ class AgentRuntime {
     final current = await _refOf().read(appCurrentModelProvider.future);
     return current?.model.name;
   }
+}
+
+/// 上下文占用分解（工作台「上下文」tab，对标 CC /context）：按与
+/// 真实请求相同的构建路径重建系统提示 / 工具定义 / 消息重放，
+/// 估算各部分 token 占用。事件流变化时自动重算。
+@riverpod
+Future<AgentContextBreakdown> agentContextBreakdown(
+  Ref ref,
+  String taskId,
+) async {
+  final task = ref
+      .watch(agentTasksProvider)
+      .where((t) => t.id == taskId)
+      .firstOrNull;
+  if (task == null) {
+    return const AgentContextBreakdown(sections: []);
+  }
+  final events = await ref.watch(agentTaskEventsProvider(taskId).future);
+  final profile = ref
+          .watch(agentProfilesProvider)
+          .where((p) => p.id == task.profileId)
+          .firstOrNull ??
+      AgentProfile(
+        id: task.profileId,
+        name: '',
+        emoji: '🤖',
+        systemPrompt: '',
+        tools: AgentToolGroup.values.toSet(),
+      );
+  final catalog = _catalogFor(profile.tools, mode: task.mode);
+  try {
+    await _addMcpServerTools(ref, profile, task.mode, catalog);
+  } catch (_) {
+    // MCP 服务不可用时分解仍可用（少算 MCP 工具定义）。
+  }
+  final client = _GatewayAgentLlmClient(() => ref, profile, catalog.definitions);
+  final system = buildAgentSystemPrompt(
+    task: task,
+    profile: profile,
+    events: events,
+    environmentContext: await client._environmentContext(ref, task),
+    projectInstructions: await client._projectInstructions(ref, task),
+  );
+  return computeContextBreakdown(
+    systemPrompt: system,
+    toolDefinitions: catalog.definitions,
+    messages: _replayMessages(events),
+    apiContextTokens: task.contextTokens,
+  );
 }
 
 /// Hooks 设置页「试跑」入口：用示例上下文单独执行一条 hook。

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:aetherlink_flutter/features/agent/domain/agent_task.dart';
+import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench_context_tab.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench_diff_tab.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench_files_tab.dart';
 import 'package:aetherlink_flutter/features/agent/presentation/mobile/workbench_focus_tab.dart';
@@ -45,6 +46,7 @@ class _WorkbenchPageState extends State<WorkbenchPage>
     (LucideIcons.eye, '焦点'),
     (LucideIcons.gitCompareArrows, 'diff'),
     (LucideIcons.fileText, '文件'),
+    (LucideIcons.chartPie, '上下文'),
   ];
 
   @override
@@ -121,7 +123,8 @@ class _WorkbenchPageState extends State<WorkbenchPage>
             0 => WorkbenchTerminalTab(task: widget.task),
             1 => WorkbenchFocusTab(task: widget.task),
             2 => WorkbenchDiffTab(task: widget.task),
-            _ => WorkbenchFilesTab(task: widget.task),
+            3 => WorkbenchFilesTab(task: widget.task),
+            _ => WorkbenchContextTab(task: widget.task),
           },
         ),
       ],

@@ -1070,6 +1070,60 @@ void main() {
     expect(seqs.toSet().length, seqs.length);
   });
 
+  test('update_plan 收尾 3+ 项且无验证条目：结果附验证提醒', () async {
+    final store = InMemoryAgentEventStore();
+    final gateway = RecordingTaskGateway();
+    AgentToolCallRequest plan(String id, List<String> contents) =>
+        AgentToolCallRequest(
+          id: id,
+          name: kToolUpdatePlan,
+          argsJson: jsonEncode({
+            'items': [
+              for (final c in contents) {'content': c, 'status': 'completed'},
+            ],
+          }),
+          argSummary: '计划',
+        );
+    final engine = AgentEngine(
+      llm: ScriptedLlm([
+        // 3 项全 completed 且无验证类条目 → 附提醒。
+        AgentLlmTurn(toolCalls: [
+          plan('plan-nudge', ['写代码', '改配置', '更新文档']),
+        ]),
+        // 3 项全 completed 但含"测试"条目 → 不附提醒。
+        AgentLlmTurn(toolCalls: [
+          plan('plan-ok', ['写代码', '跑测试', '更新文档']),
+        ]),
+        AgentLlmTurn(text: '完成。', toolCalls: [
+          AgentToolCallRequest(
+            id: 'finish-1',
+            name: kToolFinishTask,
+            argsJson: jsonEncode({'summary': '完成'}),
+            argSummary: '收尾',
+          ),
+        ]),
+      ]),
+      tools: const FakeAgentToolExecutor(delay: Duration.zero),
+      approval: const AutoApprovalGate(),
+      store: store,
+      gateway: gateway,
+      budget: AgentBudget(),
+    );
+    final task = newTask();
+    await store.appendUserMessage(task.id, '做点事');
+
+    await engine.run(task, AgentCancellationToken());
+
+    final events = await store.getEvents(task.id);
+    final planTools = events
+        .whereType<ToolCallEvent>()
+        .where((e) => e.toolName == kToolUpdatePlan)
+        .toList();
+    expect(planTools.length, 2);
+    expect(planTools[0].resultDetail, contains('没有任何验证类步骤'));
+    expect(planTools[1].resultDetail, isNot(contains('没有任何验证类步骤')));
+  });
+
   test('update_plan 参数非法：拒绝并回填错误，已有计划保持不变', () async {
     final store = InMemoryAgentEventStore();
     final gateway = RecordingTaskGateway();
