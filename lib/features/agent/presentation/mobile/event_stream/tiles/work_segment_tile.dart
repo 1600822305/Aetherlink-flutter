@@ -27,9 +27,12 @@ class _WorkSegmentTileState extends State<WorkSegmentTile> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final tools = widget.block.toolCalls.toList();
-    final hasFailure = tools.any(
-      (e) => e.state == AgentToolCallState.failure,
-    );
+    final failedCount = tools
+        .where((e) => e.state == AgentToolCallState.failure)
+        .length;
+    // 只有整段全部失败才整体标红；部分失败时段头保持中性，
+    // 另附琥珀色失败计数，避免看起来像全部操作都挂了。
+    final allFailed = tools.isNotEmpty && failedCount == tools.length;
     var totalMs = 0;
     for (final e in tools) {
       totalMs += e.elapsed?.inMilliseconds ?? 500;
@@ -39,18 +42,27 @@ class _WorkSegmentTileState extends State<WorkSegmentTile> {
     final statsLabel = stats.added + stats.removed > 0
         ? ' · +${stats.added} −${stats.removed}'
         : '';
-    final summaryColor = hasFailure
+    final summaryColor = allFailed
         ? cs.error
         : cs.onSurface.withValues(alpha: 0.6);
+    final warnColor = Colors.orange.shade800;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         EventRail(
           node: Icon(
-            hasFailure ? LucideIcons.circleX : LucideIcons.layers,
+            allFailed
+                ? LucideIcons.circleX
+                : failedCount > 0
+                    ? LucideIcons.triangleAlert
+                    : LucideIcons.layers,
             size: 14,
-            color: summaryColor,
+            color: allFailed
+                ? summaryColor
+                : failedCount > 0
+                    ? warnColor
+                    : summaryColor,
           ),
           child: InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
@@ -73,9 +85,21 @@ class _WorkSegmentTileState extends State<WorkSegmentTile> {
                   ),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: Text(
-                      '${segmentSummary(widget.block)} · $elapsed · ${tools.length} 个操作'
-                      '$statsLabel${hasFailure ? ' · ✗' : ''}',
+                    child: Text.rich(
+                      TextSpan(
+                        text:
+                            '${segmentSummary(widget.block)} · $elapsed · '
+                            '${tools.length} 个操作$statsLabel',
+                        children: [
+                          if (allFailed)
+                            const TextSpan(text: ' · ✗')
+                          else if (failedCount > 0)
+                            TextSpan(
+                              text: ' · $failedCount 失败',
+                              style: TextStyle(color: warnColor),
+                            ),
+                        ],
+                      ),
                       style: theme.textTheme.labelMedium?.copyWith(
                         color: summaryColor,
                       ),
