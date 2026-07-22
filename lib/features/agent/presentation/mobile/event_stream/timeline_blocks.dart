@@ -116,12 +116,14 @@ final Map<String, ({int added, int removed})> _lineStatsCache = {};
   return (added: added, removed: removed);
 }
 
-/// 最新计划快照（顶部计划纪要条数据源）。
+/// 最新计划快照（顶部计划纪要条数据源）；空快照表示计划已
+/// 收尾清空，返 null 隐藏面板。
 PlanUpdateEvent? latestPlan(List<AgentEvent> events) {
   PlanUpdateEvent? plan;
   for (final e in events) {
     if (e is PlanUpdateEvent) plan = e;
   }
+  if (plan == null || plan.items.isEmpty) return null;
   return plan;
 }
 

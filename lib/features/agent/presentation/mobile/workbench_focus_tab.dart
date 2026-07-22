@@ -524,6 +524,12 @@ class _PlanFocus extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             children: [
+              if (event.items.isEmpty)
+                Text(
+                  '计划已全部完成，清单已清空',
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: mutedColor),
+                ),
               for (final item in event.items)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),

@@ -22,9 +22,11 @@ class PlanUpdateTile extends StatelessWidget {
     final current = items
         .where((i) => i.status == AgentPlanItemStatus.inProgress)
         .firstOrNull;
-    final label = current != null
-        ? '计划已更新 $done/${items.length} · 当前：${current.content}'
-        : '计划已更新 $done/${items.length}';
+    final label = items.isEmpty
+        ? '计划已全部完成，清单已清空'
+        : current != null
+            ? '计划已更新 $done/${items.length} · 当前：${current.content}'
+            : '计划已更新 $done/${items.length}';
     return EventRail(
       node: Icon(LucideIcons.listTodo, size: 13, color: muted),
       child: Text(
