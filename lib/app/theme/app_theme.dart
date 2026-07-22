@@ -77,6 +77,20 @@ abstract final class AppTheme {
       fontFamily: fontFamily,
       textTheme: textTheme,
       visualDensity: _density(spec.density),
+      // 下拉菜单（PopupMenuButton/showMenu）跟随主题 surface。默认取
+      // surfaceContainer 且 M2 暗色下 elevation 8 会叠加 onSurface 高程
+      // 罩层（ElevationOverlay），菜单显示成偏灰的"非主题色"；这里用
+      // 与面板一致的 3% onSurface 混色（同时避开 color == surface 才触发
+      // 的高程罩层），圆角对齐主题 borderRadius。
+      popupMenuTheme: PopupMenuThemeData(
+        color: Color.alphaBlend(
+          textPrimary.withValues(alpha: 0.03),
+          surface,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(spec.shape.borderRadius),
+        ),
+      ),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: _NoTransitionsBuilder(),
