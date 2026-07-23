@@ -5,9 +5,12 @@ import 'dart:ui' show Size;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+import '../interaction/interaction_js.dart';
 import '../models/browser_exception.dart';
+import '../models/interact_result.dart';
 import '../models/page_load_result.dart';
 import '../security/url_policy.dart';
+import '../snapshot/element_target.dart';
 import '../snapshot/screenshot.dart';
 import 'page_load.dart';
 
@@ -31,6 +34,22 @@ abstract class BrowserSession {
   /// 带 `@N` 编号的可见交互元素列表。ref 映射存页面侧，每次调用
   /// 整体重建，旧编号一律失效。
   Future<String> snapshotDom();
+
+  /// 点击元素（升级设计 §2.2 M4b）。[target] 支持 @N / role: / CSS；
+  /// auto-wait 元素可见可用；点击后自动解析导航结果。
+  Future<InteractResult> click(String target);
+
+  /// 填表：原生 value setter + input/change 事件；[submit] 追加回车
+  /// 提交（无导航时回退 form.requestSubmit）。
+  Future<InteractResult> fill(String target, String text,
+      {bool submit = false});
+
+  /// 下拉选择：按 value 精确匹配，其次按可见文本匹配。
+  Future<InteractResult> selectOption(String target, String value);
+
+  /// 等待条件成立。超时**返回 false 不抛异常**（借 ego-lite 语义，
+  /// 让上层能分支处理）。
+  Future<bool> waitFor(WaitForCondition condition, {Duration? timeout});
 
   /// 截图（JPEG 字节，体积受 [options] 控制）。
   Future<Uint8List> snapshot({SnapshotOptions options = const SnapshotOptions()});
@@ -152,6 +171,168 @@ class HeadlessBrowserSession implements BrowserSession {
       );
     }
     return normalizeExtractedText(text);
+  }
+
+  /// 交互前的 auto-wait：元素未就绪（invisible/disabled/notfound）时
+  /// 重试的总时长与间隔（升级设计 §2.2）。
+  static const _actionWait = Duration(seconds: 5);
+  static const _actionPollInterval = Duration(milliseconds: 200);
+
+  /// 动作后等待导航开始的宽限期与新页加载上限。
+  static const _navigationGrace = Duration(milliseconds: 1200);
+  static const _navigationWait = Duration(seconds: 15);
+
+  @override
+  Future<InteractResult> click(String target) =>
+      _interact(ElementTarget.parse(target), buildClickJs);
+
+  @override
+  Future<InteractResult> fill(String target, String text,
+      {bool submit = false}) =>
+      _interact(
+        ElementTarget.parse(target),
+        (t) => buildFillJs(t, text, submit: submit),
+      );
+
+  @override
+  Future<InteractResult> selectOption(String target, String value) =>
+      _interact(
+        ElementTarget.parse(target),
+        (t) => buildSelectOptionJs(t, value),
+      );
+
+  Future<InteractResult> _interact(
+    ElementTarget target,
+    String Function(ElementTarget) buildJs,
+  ) async {
+    _ensureAlive();
+    final controller = _ensureNavigated();
+    // 新建导航门控再动作：动作可能触发导航（点链接/提交表单）。
+    final loadStart = _loadStart = Completer<void>();
+    final loadStop = _loadStop = Completer<void>();
+    _blockedNavigation = null;
+    final js = buildJs(target);
+    final deadline = DateTime.now().add(_actionWait);
+    String status;
+    while (true) {
+      status = ((await _evaluate(js)) as String?) ?? 'error: 无返回值';
+      if (status == 'ok') break;
+      final retryable = status == 'invisible' ||
+          status == 'disabled' ||
+          status == 'notfound';
+      if (!retryable || DateTime.now().isAfter(deadline)) {
+        throw _interactError(target, status);
+      }
+      await Future<void>.delayed(_actionPollInterval);
+    }
+    return _resolveNavigation(controller, loadStart, loadStop);
+  }
+
+  BrowserException _interactError(ElementTarget target, String status) {
+    switch (status) {
+      case 'stale':
+        return const BrowserException(
+          BrowserErrorKind.refStale,
+          '@N 引用已失效（页面已导航或快照已重建），请重新 browser_snapshot_dom',
+        );
+      case 'notfound':
+        return BrowserException(
+          BrowserErrorKind.elementNotFound,
+          '未找到元素 「$target」；可用 browser_snapshot_dom 查看当前可交互元素',
+        );
+      case 'invisible':
+      case 'disabled':
+        return BrowserException(
+          BrowserErrorKind.elementNotFound,
+          '元素 「$target」${status == 'disabled' ? '被禁用' : '不可见'}（已等待 '
+          '${_actionWait.inSeconds}s）；页面可能仍在加载或需先展开/滚动',
+          transient: true,
+        );
+      default:
+        return BrowserException(
+          BrowserErrorKind.internal,
+          '交互动作失败：$status',
+        );
+    }
+  }
+
+  /// 动作后解析导航：宽限期内 onLoadStart 未触发视为页内动作；
+  /// 触发了则等新页加载完成（超时截停，页面部分可读）。
+  Future<InteractResult> _resolveNavigation(
+    InAppWebViewController controller,
+    Completer<void> loadStart,
+    Completer<void> loadStop,
+  ) async {
+    final started = await Future.any<bool>([
+      loadStart.future.then((_) => true),
+      Future<void>.delayed(_navigationGrace).then((_) => false),
+    ]);
+    if (started) {
+      final blocked = _blockedNavigation;
+      if (blocked != null) throw blocked;
+      final poller = PageLoadPoller(
+        timeout: _navigationWait,
+        pollInterval: _poller.pollInterval,
+      );
+      final completed = await poller.wait(
+        loadStop: loadStop.future,
+        probe: () async {
+          final state = await _evaluate("document.readyState");
+          return state == 'complete';
+        },
+      );
+      if (!completed) await controller.stopLoading();
+      final blockedLate = _blockedNavigation;
+      if (blockedLate != null) throw blockedLate;
+    }
+    return InteractResult(
+      navigated: started,
+      url: (await controller.getUrl())?.toString() ?? '',
+      title: await controller.getTitle() ?? '',
+    );
+  }
+
+  @override
+  Future<bool> waitFor(WaitForCondition condition, {Duration? timeout}) async {
+    _ensureAlive();
+    _ensureNavigated();
+    if (condition.isEmpty) {
+      throw const BrowserException(
+        BrowserErrorKind.elementNotFound,
+        'waitFor 需要提供 selector / urlContains / jsPredicate 之一',
+      );
+    }
+    final selectorJs = condition.selector == null
+        ? null
+        : buildSelectorProbeJs(ElementTarget.parse(condition.selector!));
+    final deadline = DateTime.now().add(timeout ?? const Duration(seconds: 10));
+    while (true) {
+      if (await _probeCondition(condition, selectorJs)) return true;
+      if (DateTime.now().isAfter(deadline)) return false;
+      await Future<void>.delayed(_actionPollInterval);
+    }
+  }
+
+  Future<bool> _probeCondition(
+    WaitForCondition condition,
+    String? selectorJs,
+  ) async {
+    if (selectorJs != null) {
+      if ((await _evaluate(selectorJs)) != true) return false;
+    }
+    final urlContains = condition.urlContains;
+    if (urlContains != null) {
+      final url = (await _controller?.getUrl())?.toString() ?? '';
+      if (!url.contains(urlContains)) return false;
+    }
+    final predicate = condition.jsPredicate;
+    if (predicate != null) {
+      final result = await _evaluate(
+        '(() => { try { return !!($predicate); } catch (e) { return false; } })()',
+      );
+      if (result != true) return false;
+    }
+    return true;
   }
 
   @override

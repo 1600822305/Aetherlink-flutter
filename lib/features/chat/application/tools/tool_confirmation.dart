@@ -1,5 +1,6 @@
 import 'package:aetherlink_flutter/features/chat/application/tools/tool_routes.dart';
 import 'package:aetherlink_flutter/features/workspace/domain/workspace.dart';
+import 'package:aetherlink_flutter/shared/mcp_tools/browser/browser_tool.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/file_editor/file_editor_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/knowledge/knowledge_tools.dart';
 import 'package:aetherlink_flutter/shared/mcp_tools/settings/settings_tools.dart';
@@ -28,7 +29,10 @@ bool toolNeedsConfirmation(
             toolName,
             args,
             workspaces: workspaces,
-          ));
+          )) ||
+      (route is BuiltinToolRoute &&
+          route.serverName == kBrowserServerName &&
+          browserToolNeedsConfirmation(toolName));
 }
 
 /// Whether the user's tool authorization whitelist ([policy], 工作区管理页
@@ -90,6 +94,12 @@ String toolConfirmSummary(String toolName, Map<String, Object?> args) {
       return '在「${_pathTail(args['path'])}」中替换「${args['search'] ?? ''}」';
     case 'terminal_execute':
       return '在工作区执行命令：${args['command'] ?? ''}';
+    // @aether/browser 交互工具（升级设计 §2.2 M4b）。
+    case 'browser_click':
+      return '在内置浏览器中点击元素「${args['target'] ?? ''}」';
+    case 'browser_input':
+      return '向内置浏览器元素「${args['target'] ?? ''}」输入文本'
+          '${args['submit'] == true ? '并提交' : ''}';
     // 只有 action=write 会走到确认（见 terminalToolNeedsConfirmation）。
     case 'terminal_session':
       return '向终端会话 ${args['session_id'] ?? ''} 的进程输入：${args['input'] ?? ''}';

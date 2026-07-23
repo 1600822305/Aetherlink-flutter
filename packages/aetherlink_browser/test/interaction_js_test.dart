@@ -1,0 +1,65 @@
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:aetherlink_browser/aetherlink_browser.dart';
+
+void main() {
+  group('buildClickJs', () {
+    test('@N 目标区分 stale 与可用性检查后点击', () {
+      final js = buildClickJs(ElementTarget.parse('@3'));
+      expect(js, contains('window.__aetherRefs'));
+      expect(js, contains("return 'stale'"));
+      expect(js, contains("return 'invisible'"));
+      expect(js, contains("return 'disabled'"));
+      expect(js, contains('el.click()'));
+      expect(js, contains("return 'ok'"));
+    });
+
+    test('CSS 目标缺元素返回 notfound', () {
+      final js = buildClickJs(ElementTarget.parse('#submit'));
+      expect(js, contains('document.querySelector'));
+      expect(js, contains("return 'notfound'"));
+      expect(js, isNot(contains("return 'stale'")));
+    });
+  });
+
+  group('buildFillJs', () {
+    test('原生 value setter + input/change 事件，文本安全转义', () {
+      final js = buildFillJs(ElementTarget.parse('@1'), "a'b\nc");
+      expect(js, contains('Object.getOwnPropertyDescriptor'));
+      expect(js, contains("new Event('input'"));
+      expect(js, contains("new Event('change'"));
+      expect(js, contains(r"'a\'b\nc'"));
+      expect(js, isNot(contains('requestSubmit')));
+    });
+
+    test('submit=true 追加回车与表单提交回退', () {
+      final js = buildFillJs(ElementTarget.parse('@1'), 'x', submit: true);
+      expect(js, contains("key: 'Enter'"));
+      expect(js, contains('requestSubmit'));
+    });
+  });
+
+  group('buildSelectOptionJs', () {
+    test('按 value/文本匹配并派发 change', () {
+      final js = buildSelectOptionJs(ElementTarget.parse('select'), '北京');
+      expect(js, contains("'北京'"));
+      expect(js, contains('selectedIndex'));
+      expect(js, contains("new Event('change'"));
+    });
+  });
+
+  group('buildSelectorProbeJs', () {
+    test('探测元素存在且可见，异常时返回 false', () {
+      final js = buildSelectorProbeJs(ElementTarget.parse('role:button:登录'));
+      expect(js, contains('getBoundingClientRect'));
+      expect(js, contains('return false'));
+    });
+  });
+
+  test('WaitForCondition.isEmpty', () {
+    expect(const WaitForCondition().isEmpty, isTrue);
+    expect(const WaitForCondition(selector: '@1').isEmpty, isFalse);
+    expect(const WaitForCondition(urlContains: '/done').isEmpty, isFalse);
+    expect(const WaitForCondition(jsPredicate: '1').isEmpty, isFalse);
+  });
+}

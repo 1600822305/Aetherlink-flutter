@@ -423,6 +423,93 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
+      name: 'browser_click',
+      description:
+          '点击内置浏览器当前页面的元素。target 支持三种定位：@N（来自 '
+          'browser_snapshot_dom 的编号）、role:角色:名称（如 role:button:登录）、'
+          'CSS 选择器。自动等待元素可见可用（最多 5 秒），点击后返回是否触发'
+          '导航及当前页面状态；导航后旧 @N 编号失效，需重新快照。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'target': {
+            'type': 'string',
+            'description': '元素定位：@N / role:角色:名称 / CSS 选择器',
+          },
+          'session': {
+            'type': 'string',
+            'description': '可选会话标识（当前版本共享同一浏览器实例，保留参数）',
+          },
+        },
+        'required': ['target'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'browser_input',
+      description:
+          '向内置浏览器当前页面的输入框/文本域填入文本（覆盖原值，触发 '
+          'input/change 事件，兼容 React 等框架）。target 定位方式同 '
+          'browser_click。submit=true 时填完后按回车提交（无导航时回退'
+          '表单提交）。返回是否触发导航及当前页面状态。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'target': {
+            'type': 'string',
+            'description': '元素定位：@N / role:角色:名称 / CSS 选择器',
+          },
+          'text': {
+            'type': 'string',
+            'description': '要填入的文本（覆盖原值）',
+          },
+          'submit': {
+            'type': 'boolean',
+            'description': '填完后是否按回车提交（默认 false）',
+            'default': false,
+          },
+          'session': {
+            'type': 'string',
+            'description': '可选会话标识（当前版本共享同一浏览器实例，保留参数）',
+          },
+        },
+        'required': ['target', 'text'],
+      },
+    ),
+    McpToolDefinition(
+      name: 'browser_wait',
+      description:
+          '等待内置浏览器页面满足条件后再继续（先等待再动作，避免盲目重试）：'
+          'selector（元素出现且可见，支持 @N/role:/CSS）、url_contains'
+          '（URL 包含子串）、js_predicate（JS 表达式为真）至少提供一个，'
+          '多个条件需同时成立。超时返回未成立提示而非报错。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'selector': {
+            'type': 'string',
+            'description': '等待该元素出现且可见（@N / role:角色:名称 / CSS）',
+          },
+          'url_contains': {
+            'type': 'string',
+            'description': '等待当前 URL 包含该子串',
+          },
+          'js_predicate': {
+            'type': 'string',
+            'description': '等待该 JS 表达式求值为真',
+          },
+          'timeout_seconds': {
+            'type': 'integer',
+            'description': '等待超时秒数（默认 10，范围 1-60）',
+            'default': 10,
+          },
+          'session': {
+            'type': 'string',
+            'description': '可选会话标识（当前版本共享同一浏览器实例，保留参数）',
+          },
+        },
+      },
+    ),
+    McpToolDefinition(
       name: 'browser_snapshot',
       description:
           '截取内置浏览器当前页面的截图（JPEG），以图片消息注入上下文供多模态'

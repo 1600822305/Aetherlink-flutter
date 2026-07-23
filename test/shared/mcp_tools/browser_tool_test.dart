@@ -15,6 +15,13 @@ class _FakeSession implements BrowserSession {
     this.bytes,
     this.openError,
     this.readError,
+    this.interactError,
+    this.interactResult = const InteractResult(
+      navigated: false,
+      url: 'https://example.com/',
+      title: '示例页',
+    ),
+    this.waitForResult = true,
   });
 
   final String text;
@@ -22,11 +29,20 @@ class _FakeSession implements BrowserSession {
   final Uint8List? bytes;
   final BrowserException? openError;
   final BrowserException? readError;
+  final BrowserException? interactError;
+  final InteractResult interactResult;
+  final bool waitForResult;
 
   String? url;
   String? openedUrl;
   Duration? openedTimeout;
   String? readSelector;
+  String? clickedTarget;
+  String? filledTarget;
+  String? filledText;
+  bool? filledSubmit;
+  WaitForCondition? waitedCondition;
+  Duration? waitedTimeout;
   SnapshotOptions? snapshotOptions;
   bool closed = false;
 
@@ -48,6 +64,36 @@ class _FakeSession implements BrowserSession {
     final error = readError;
     if (error != null) throw error;
     return domSnapshot;
+  }
+
+  @override
+  Future<InteractResult> click(String target) async {
+    final error = interactError;
+    if (error != null) throw error;
+    clickedTarget = target;
+    return interactResult;
+  }
+
+  @override
+  Future<InteractResult> fill(String target, String text,
+      {bool submit = false}) async {
+    final error = interactError;
+    if (error != null) throw error;
+    filledTarget = target;
+    filledText = text;
+    filledSubmit = submit;
+    return interactResult;
+  }
+
+  @override
+  Future<InteractResult> selectOption(String target, String value) async =>
+      interactResult;
+
+  @override
+  Future<bool> waitFor(WaitForCondition condition, {Duration? timeout}) async {
+    waitedCondition = condition;
+    waitedTimeout = timeout;
+    return waitForResult;
   }
 
   @override
@@ -80,7 +126,7 @@ void main() {
   group('runBrowserTool', () {
     test('未知工具名返回错误', () async {
       final result = await runBrowserTool(
-        'browser_click',
+        'browser_drag',
         {},
         manager: _managerOf(_FakeSession()),
       );
@@ -241,6 +287,95 @@ void main() {
       expect(result.text, contains('sessionGone'));
     });
 
+    test('browser_click 返回导航结果与 ref 失效提示', () async {
+      final session = _FakeSession(
+        interactResult: const InteractResult(
+          navigated: true,
+          url: 'https://example.com/next',
+          title: '下一页',
+        ),
+      );
+      final result = await runBrowserTool(
+        'browser_click',
+        {'target': '@3'},
+        manager: _managerOf(session),
+      );
+      expect(result.isError, isFalse);
+      expect(session.clickedTarget, '@3');
+      expect(result.text, contains('页面已导航'));
+      expect(result.text, contains('下一页'));
+      expect(result.text, contains('旧 @N 编号已失效'));
+    });
+
+    test('browser_click 缺 target 返回错误', () async {
+      final result = await runBrowserTool(
+        'browser_click',
+        {},
+        manager: _managerOf(_FakeSession()),
+      );
+      expect(result.isError, isTrue);
+    });
+
+    test('browser_click 的 refStale 转分类错误消息', () async {
+      final session = _FakeSession(
+        interactError: const BrowserException(
+          BrowserErrorKind.refStale,
+          '@N 引用已失效',
+        ),
+      );
+      final result = await runBrowserTool(
+        'browser_click',
+        {'target': '@9'},
+        manager: _managerOf(session),
+      );
+      expect(result.isError, isTrue);
+      expect(result.text, contains('refStale'));
+    });
+
+    test('browser_input 透传 target/text/submit，未导航返回页内动作', () async {
+      final session = _FakeSession();
+      final result = await runBrowserTool(
+        'browser_input',
+        {'target': 'role:textbox:搜索', 'text': 'flutter', 'submit': true},
+        manager: _managerOf(session),
+      );
+      expect(result.isError, isFalse);
+      expect(session.filledTarget, 'role:textbox:搜索');
+      expect(session.filledText, 'flutter');
+      expect(session.filledSubmit, isTrue);
+      expect(result.text, contains('页面未导航'));
+    });
+
+    test('browser_wait 条件成立/超时分支', () async {
+      final session = _FakeSession();
+      final ok = await runBrowserTool(
+        'browser_wait',
+        {'selector': '@1', 'timeout_seconds': 5},
+        manager: _managerOf(session),
+      );
+      expect(ok.isError, isFalse);
+      expect(ok.text, contains('条件已成立'));
+      expect(session.waitedCondition?.selector, '@1');
+      expect(session.waitedTimeout, const Duration(seconds: 5));
+
+      final timedOut = await runBrowserTool(
+        'browser_wait',
+        {'url_contains': '/done'},
+        manager: _managerOf(_FakeSession(waitForResult: false)),
+      );
+      expect(timedOut.isError, isFalse);
+      expect(timedOut.text, contains('等待超时'));
+    });
+
+    test('browser_wait 无条件返回错误', () async {
+      final result = await runBrowserTool(
+        'browser_wait',
+        {},
+        manager: _managerOf(_FakeSession()),
+      );
+      expect(result.isError, isTrue);
+    });
+
     test('browser_snapshot 截图落盘并回填 imagePath/imageMimeType', () async {
       final session = _FakeSession(bytes: Uint8List.fromList([9, 8, 7, 6]));
       final dir = await Directory.systemTemp.createTemp('browser_shot_test');
@@ -273,7 +408,7 @@ void main() {
   });
 
   group('注册面', () {
-    test('catalog 注册了只读工具集', () {
+    test('catalog 注册了完整浏览器工具集', () {
       final tools = builtinToolsFor(kBrowserServerName);
       expect(
         tools.map((t) => t.name),
@@ -282,8 +417,19 @@ void main() {
           'browser_read',
           'browser_snapshot',
           'browser_snapshot_dom',
+          'browser_click',
+          'browser_input',
+          'browser_wait',
         ]),
       );
+    });
+
+    test('交互工具需审批，只读工具不需要', () {
+      expect(browserToolNeedsConfirmation('browser_click'), isTrue);
+      expect(browserToolNeedsConfirmation('browser_input'), isTrue);
+      expect(browserToolNeedsConfirmation('browser_open'), isFalse);
+      expect(browserToolNeedsConfirmation('browser_snapshot_dom'), isFalse);
+      expect(browserToolNeedsConfirmation('browser_wait'), isFalse);
     });
 
     test('open/read/snapshot_dom 在 microcompact 白名单（网页内容可重取），snapshot 不在', () {
