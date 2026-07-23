@@ -12,6 +12,7 @@ abstract class AgentEventStore {
     String taskId,
     String text, {
     bool queued = false,
+    bool interrupt = false,
     List<AgentUserAttachment> attachments = const [],
     String? replyToQuestionId,
   });
@@ -176,6 +177,7 @@ class DriftAgentEventStore implements AgentEventStore {
     String taskId,
     String text, {
     bool queued = false,
+    bool interrupt = false,
     List<AgentUserAttachment> attachments = const [],
     String? replyToQuestionId,
   }) async {
@@ -185,6 +187,7 @@ class DriftAgentEventStore implements AgentEventStore {
       at: DateTime.now(),
       text: text,
       queued: queued,
+      interrupt: interrupt,
       attachments: attachments,
       replyToQuestionId: replyToQuestionId,
     );
@@ -203,6 +206,7 @@ class DriftAgentEventStore implements AgentEventStore {
             seq: e.seq,
             at: e.at,
             text: e.text,
+            interrupt: e.interrupt,
             attachments: e.attachments,
             replyToQuestionId: e.replyToQuestionId,
           ),

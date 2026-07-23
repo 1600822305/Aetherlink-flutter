@@ -38,7 +38,7 @@ class UserMessageTile extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Text(
-                    '已排队 · 下一轮生效',
+                    event.interrupt ? '打断中 · 正在中止当前步骤' : '已排队 · 下一轮生效',
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: cs.primary,
                     ),

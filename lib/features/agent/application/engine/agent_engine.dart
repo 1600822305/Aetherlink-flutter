@@ -396,8 +396,16 @@ class AgentEngine {
           cancel: cancel,
           onReasoningDelta: writer.onReasoningDelta,
           onTextDelta: writer.onTextDelta,
-          onToolCallDelta: binder.onToolCallDelta,
-          onToolCall: binder.onToolCall,
+          // 工具块建事件前先把当前思考/正文段定稿落库（seq 顺序 =
+          // 模型输出顺序）；工具之后的文本另起新段，保持交错顺序。
+          onToolCallDelta: (streamKey, toolName, argsTextSoFar) async {
+            await writer.sealSegments();
+            await binder.onToolCallDelta(streamKey, toolName, argsTextSoFar);
+          },
+          onToolCall: (call, streamKey) async {
+            await writer.sealSegments();
+            await binder.onToolCall(call, streamKey);
+          },
         );
         final AgentLlmTurn turn;
         try {

@@ -239,6 +239,7 @@ class AgentTaskRunner extends _$AgentTaskRunner {
       task.id,
       text,
       queued: true,
+      interrupt: true,
       attachments: attachments,
     );
     _tokens[task.id]?.requestToolInterrupt();
