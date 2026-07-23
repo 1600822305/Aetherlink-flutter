@@ -42,16 +42,16 @@ class AgentProfileConverter extends TypeConverter<AgentProfile, String> {
 
   @override
   String toSql(AgentProfile value) => jsonEncode({
-        'id': value.id,
-        'name': value.name,
-        'emoji': value.emoji,
-        'systemPrompt': value.systemPrompt,
-        'tools': [for (final t in value.tools) t.name],
-        'mcpServerIds': [...value.mcpServerIds],
-        'workspaceId': value.workspaceId,
-        'workspaceName': value.workspaceName,
-        'builtin': value.builtin,
-      });
+    'id': value.id,
+    'name': value.name,
+    'emoji': value.emoji,
+    'systemPrompt': value.systemPrompt,
+    'tools': [for (final t in value.tools) t.name],
+    'mcpServerIds': [...value.mcpServerIds],
+    'workspaceId': value.workspaceId,
+    'workspaceName': value.workspaceName,
+    'builtin': value.builtin,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -75,14 +75,15 @@ class AgentTaskConverter extends TypeConverter<AgentTask, String> {
       prePlanMode: json['prePlanMode'] == null
           ? null
           : AgentSessionMode.values
-              .where((m) => m.name == json['prePlanMode'])
-              .firstOrNull,
+                .where((m) => m.name == json['prePlanMode'])
+                .firstOrNull,
       createdAt: DateTime.fromMillisecondsSinceEpoch(json['createdAt'] as int),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(json['updatedAt'] as int),
       modelLabel: json['modelLabel'] as String? ?? '',
       rounds: json['rounds'] as int? ?? 0,
       tokenCount: json['tokenCount'] as int? ?? 0,
       contextTokens: json['contextTokens'] as int? ?? 0,
+      contextTokensRound: json['contextTokensRound'] as int? ?? 0,
       elapsed: Duration(milliseconds: json['elapsedMs'] as int? ?? 0),
       lastEventSummary: json['lastEventSummary'] as String? ?? '',
       parentTaskId: json['parentTaskId'] as String? ?? '',
@@ -92,25 +93,26 @@ class AgentTaskConverter extends TypeConverter<AgentTask, String> {
 
   @override
   String toSql(AgentTask value) => jsonEncode({
-        'id': value.id,
-        'profileId': value.profileId,
-        'title': value.title,
-        'workspaceId': value.workspaceId,
-        'workspaceName': value.workspaceName,
-        'status': value.status.name,
-        'mode': value.mode.name,
-        if (value.prePlanMode != null) 'prePlanMode': value.prePlanMode!.name,
-        'createdAt': value.createdAt.millisecondsSinceEpoch,
-        'updatedAt': value.updatedAt.millisecondsSinceEpoch,
-        'modelLabel': value.modelLabel,
-        'rounds': value.rounds,
-        'tokenCount': value.tokenCount,
-        'contextTokens': value.contextTokens,
-        'elapsedMs': value.elapsed.inMilliseconds,
-        'lastEventSummary': value.lastEventSummary,
-        'parentTaskId': value.parentTaskId,
-        'pinned': value.pinned,
-      });
+    'id': value.id,
+    'profileId': value.profileId,
+    'title': value.title,
+    'workspaceId': value.workspaceId,
+    'workspaceName': value.workspaceName,
+    'status': value.status.name,
+    'mode': value.mode.name,
+    if (value.prePlanMode != null) 'prePlanMode': value.prePlanMode!.name,
+    'createdAt': value.createdAt.millisecondsSinceEpoch,
+    'updatedAt': value.updatedAt.millisecondsSinceEpoch,
+    'modelLabel': value.modelLabel,
+    'rounds': value.rounds,
+    'tokenCount': value.tokenCount,
+    'contextTokens': value.contextTokens,
+    'contextTokensRound': value.contextTokensRound,
+    'elapsedMs': value.elapsed.inMilliseconds,
+    'lastEventSummary': value.lastEventSummary,
+    'parentTaskId': value.parentTaskId,
+    'pinned': value.pinned,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -118,16 +120,16 @@ class AgentTaskConverter extends TypeConverter<AgentTask, String> {
 // ---------------------------------------------------------------------------
 
 String agentEventKind(AgentEvent event) => switch (event) {
-      UserMessageEvent() => 'user_message',
-      UserQuestionEvent() => 'user_question',
-      AssistantTextEvent() => 'assistant_text',
-      ReasoningEvent() => 'reasoning',
-      ToolCallEvent() => 'tool_call',
-      PlanUpdateEvent() => 'plan_update',
-      CompactionEvent() => 'compaction',
-      CheckpointEvent() => 'checkpoint',
-      StatusChangeEvent() => 'status_change',
-    };
+  UserMessageEvent() => 'user_message',
+  UserQuestionEvent() => 'user_question',
+  AssistantTextEvent() => 'assistant_text',
+  ReasoningEvent() => 'reasoning',
+  ToolCallEvent() => 'tool_call',
+  PlanUpdateEvent() => 'plan_update',
+  CompactionEvent() => 'compaction',
+  CheckpointEvent() => 'checkpoint',
+  StatusChangeEvent() => 'status_change',
+};
 
 String encodeAgentEventPayload(AgentEvent event) {
   final payload = switch (event) {
@@ -166,14 +168,14 @@ String encodeAgentEventPayload(AgentEvent event) {
         if (argsJson != null) 'argsJson': argsJson,
       },
     AssistantTextEvent(:final text, :final streaming) => {
-        'text': text,
-        'streaming': streaming,
-      },
+      'text': text,
+      'streaming': streaming,
+    },
     ReasoningEvent(:final text, :final streaming, :final elapsed) => {
-        'text': text,
-        'streaming': streaming,
-        'elapsedMs': elapsed?.inMilliseconds,
-      },
+      'text': text,
+      'streaming': streaming,
+      'elapsedMs': elapsed?.inMilliseconds,
+    },
     ToolCallEvent(
       :final toolName,
       :final argSummary,
@@ -199,11 +201,11 @@ String encodeAgentEventPayload(AgentEvent event) {
         if (imageMimeType != null) 'imageMimeType': imageMimeType,
       },
     PlanUpdateEvent(:final items) => {
-        'items': [
-          for (final item in items)
-            {'content': item.content, 'status': item.status.name},
-        ],
-      },
+      'items': [
+        for (final item in items)
+          {'content': item.content, 'status': item.status.name},
+      ],
+    },
     CompactionEvent(
       :final coveredCount,
       :final summary,
@@ -215,14 +217,13 @@ String encodeAgentEventPayload(AgentEvent event) {
         'summary': summary,
         'revoked': revoked,
         'restoredFiles': [
-          for (final f in restoredFiles)
-            {'path': f.path, 'content': f.content},
+          for (final f in restoredFiles) {'path': f.path, 'content': f.content},
         ],
       },
     CheckpointEvent(:final commits, :final label) => {
-        'commits': commits,
-        'label': label,
-      },
+      'commits': commits,
+      'label': label,
+    },
     StatusChangeEvent(:final description) => {'description': description},
   };
   return jsonEncode(payload);
@@ -242,7 +243,8 @@ AgentEvent decodeAgentEvent({
         for (final raw in p['attachments'] as List<dynamic>? ?? const [])
           if (raw is Map<String, dynamic>)
             AgentUserAttachment(
-              kind: AgentAttachmentKind.values
+              kind:
+                  AgentAttachmentKind.values
                       .where((k) => k.name == raw['kind'])
                       .firstOrNull ??
                   AgentAttachmentKind.snippet,
@@ -318,8 +320,9 @@ AgentEvent decodeAgentEvent({
           for (final item in (p['items'] as List<dynamic>? ?? const []))
             AgentPlanItem(
               content: (item as Map<String, dynamic>)['content'] as String,
-              status:
-                  AgentPlanItemStatus.values.byName(item['status'] as String),
+              status: AgentPlanItemStatus.values.byName(
+                item['status'] as String,
+              ),
             ),
         ],
       );

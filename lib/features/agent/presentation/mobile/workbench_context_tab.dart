@@ -29,20 +29,23 @@ class WorkbenchContextTab extends ConsumerWidget {
     final breakdown = ref.watch(agentContextBreakdownProvider(task.id));
     return breakdown.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(
-        child: Text(
-          '分解计算失败：$e',
-          style: theme.textTheme.bodySmall,
-        ),
-      ),
+      error: (e, _) =>
+          Center(child: Text('分解计算失败：$e', style: theme.textTheme.bodySmall)),
       data: (data) {
         final total = data.estimatedTotal;
+        // API 实测可能滞后：供应商不回 usage 时沿用旧值，标注
+        // 测量轮次避免与当前估算直接对比造成误解。
+        final stale =
+            data.apiContextTokens > 0 &&
+            task.contextTokensRound > 0 &&
+            task.contextTokensRound < task.rounds;
         if (total == 0) {
           return Center(
             child: Text(
               '暂无上下文数据',
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: cs.onSurface.withValues(alpha: 0.5)),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: cs.onSurface.withValues(alpha: 0.5),
+              ),
             ),
           );
         }
@@ -51,15 +54,21 @@ class WorkbenchContextTab extends ConsumerWidget {
           children: [
             Text(
               '估算总量 ${formatTokens(total)} tokens'
-              '${data.apiContextTokens > 0 ? ' · API 实测 ${formatTokens(data.apiContextTokens)}' : ''}',
-              style: theme.textTheme.titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w600),
+              '${data.apiContextTokens > 0 ? ' · API 实测 ${formatTokens(data.apiContextTokens)}'
+                        '${task.contextTokensRound > 0 ? '（第${task.contextTokensRound}轮）' : ''}' : ''}',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
-              '按当前请求组成估算（字符启发式），实际计量以 API 为准。',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: cs.onSurface.withValues(alpha: 0.5)),
+              '按当前请求组成估算（字符启发式），实际计量以 API 为准。'
+              '${stale ? '\n⚠ API 实测来自第${task.contextTokensRound}轮'
+                        '（当前第${task.rounds}轮）：之后供应商未回报 usage，'
+                        '该值可能已滞后。' : ''}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onSurface.withValues(alpha: 0.5),
+              ),
             ),
             const SizedBox(height: 14),
             ClipRRect(
@@ -129,8 +138,9 @@ class _SectionRow extends StatelessWidget {
           Text(
             '${formatTokens(section.estimatedTokens)} · '
             '${percent.toStringAsFixed(1)}%',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: cs.onSurface.withValues(alpha: 0.6)),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: cs.onSurface.withValues(alpha: 0.6),
+            ),
           ),
         ],
       ),
