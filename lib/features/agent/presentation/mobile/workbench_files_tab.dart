@@ -61,9 +61,13 @@ class WorkbenchFilesTab extends ConsumerWidget {
 
   void _openFile(BuildContext context, WidgetRef ref, AgentFileEntry file) {
     final workspaceId = _workspaceId(ref);
+    // 零时长路由：与项目其它全屏子页一致（MaterialPageRoute 自带
+    // 300ms transitionDuration，进入/返回都会卡一拍）。
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => _FileViewerPage(
+      PageRouteBuilder<void>(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (_, __, ___) => _FileViewerPage(
           taskId: task.id,
           workspaceId: workspaceId,
           path: file.path,
@@ -74,14 +78,19 @@ class WorkbenchFilesTab extends ConsumerWidget {
 }
 
 IconData _iconForExt(String ext) => switch (ext) {
-      'md' || 'markdown' => LucideIcons.fileText,
-      'json' => LucideIcons.braces,
-      'dart' || 'ts' || 'js' || 'py' || 'java' || 'kt' || 'go' || 'rs' =>
-        LucideIcons.code,
-      'png' || 'jpg' || 'jpeg' || 'gif' || 'webp' || 'svg' =>
-        LucideIcons.image,
-      _ => LucideIcons.file,
-    };
+  'md' || 'markdown' => LucideIcons.fileText,
+  'json' => LucideIcons.braces,
+  'dart' ||
+  'ts' ||
+  'js' ||
+  'py' ||
+  'java' ||
+  'kt' ||
+  'go' ||
+  'rs' => LucideIcons.code,
+  'png' || 'jpg' || 'jpeg' || 'gif' || 'webp' || 'svg' => LucideIcons.image,
+  _ => LucideIcons.file,
+};
 
 class _FileRow extends StatelessWidget {
   const _FileRow({required this.file, required this.onTap});
@@ -138,7 +147,10 @@ class _FileRow extends StatelessWidget {
               SizedBox(
                 width: 10,
                 height: 10,
-                child: CircularProgressIndicator(strokeWidth: 1.6, color: color),
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.6,
+                  color: color,
+                ),
               ),
               const SizedBox(width: 6),
             ],
@@ -166,9 +178,9 @@ class _FileRow extends StatelessWidget {
 /// 文件内容（成品）读取：seq 变化（同一文件再次写入）自动失效重读。
 final _fileContentProvider = FutureProvider.autoDispose
     .family<String, (String?, String, int)>((ref, args) {
-  final (workspaceId, path, _) = args;
-  return readAgentWorkspaceDoc(ref, workspaceId, path);
-});
+      final (workspaceId, path, _) = args;
+      return readAgentWorkspaceDoc(ref, workspaceId, path);
+    });
 
 /// 全屏文件查看器：创建中实时渲染流式正文（跟随事件流刷新），完成后
 /// 读文件全文。Markdown 可在「渲染 / 原文」间切换，其余按纯文本显示。
@@ -197,9 +209,9 @@ class _FileViewerPageState extends ConsumerState<_FileViewerPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final events = ref.watch(agentTaskEventsProvider(widget.taskId)).value;
-    final file = deriveAgentFiles(events ?? const [])
-        .where((f) => f.path == widget.path)
-        .firstOrNull;
+    final file = deriveAgentFiles(
+      events ?? const [],
+    ).where((f) => f.path == widget.path).firstOrNull;
     final creating = file?.state == AgentFileState.creating;
     final isMd = file?.isMarkdown ?? widget.path.toLowerCase().endsWith('.md');
 
@@ -248,26 +260,26 @@ class _FileViewerPageState extends ConsumerState<_FileViewerPage> {
 
   /// 设置页同款卡片容器：16 外边距 + 卡片 + 底部安全区域。
   Widget _cardScroll(Widget child) => SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          16,
-          16,
-          16 + MediaQuery.paddingOf(context).bottom,
-        ),
-        child: SizedBox(
-          width: double.infinity,
-          child: ModelSettingsCard(
-            padding: const EdgeInsets.all(16),
-            child: child,
-          ),
-        ),
-      );
+    padding: EdgeInsets.fromLTRB(
+      16,
+      16,
+      16,
+      16 + MediaQuery.paddingOf(context).bottom,
+    ),
+    child: SizedBox(
+      width: double.infinity,
+      child: ModelSettingsCard(padding: const EdgeInsets.all(16), child: child),
+    ),
+  );
 
   Future<void> _copy(AgentFileEntry? file) async {
     try {
       final content = await ref.read(
-        _fileContentProvider((widget.workspaceId, widget.path, file?.seq ?? 0))
-            .future,
+        _fileContentProvider((
+          widget.workspaceId,
+          widget.path,
+          file?.seq ?? 0,
+        )).future,
       );
       await Clipboard.setData(ClipboardData(text: content));
       if (mounted) AppToast.success(context, '已复制文件全文');
@@ -330,11 +342,7 @@ class _FileViewerPageState extends ConsumerState<_FileViewerPage> {
   }
 
   Widget _rawText(String content) => SelectableText(
-        content,
-        style: const TextStyle(
-          fontFamily: 'monospace',
-          fontSize: 13,
-          height: 1.45,
-        ),
-      );
+    content,
+    style: const TextStyle(fontFamily: 'monospace', fontSize: 13, height: 1.45),
+  );
 }

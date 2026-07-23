@@ -25,9 +25,13 @@ import 'package:aetherlink_flutter/shared/widgets/app_toast.dart';
 /// file layer.
 Future<void> showFileBlockPreview(BuildContext context, FileBlock block) {
   FocusManager.instance.primaryFocus?.unfocus();
+  // 零时长路由：与项目其它全屏子页一致（MaterialPageRoute 自带
+  // 300ms transitionDuration，进入/返回都会卡一拍）。
   return Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => _FileBlockPreviewPage(block: block),
+    PageRouteBuilder<void>(
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+      pageBuilder: (_, __, ___) => _FileBlockPreviewPage(block: block),
     ),
   );
 }

@@ -50,6 +50,7 @@ class AgentTask {
     this.rounds = 0,
     this.tokenCount = 0,
     this.contextTokens = 0,
+    this.contextTokensRound = 0,
     this.elapsed = Duration.zero,
     this.lastEventSummary = '',
     this.parentTaskId = '',
@@ -83,6 +84,10 @@ class AgentTask {
 
   /// 当前上下文占用（最近一次 LLM 请求的总 token，对比窗口上限）。
   final int contextTokens;
+
+  /// [contextTokens] 测得时的轮次：供应商不回 usage 时沿用旧值，
+  /// 记住测量轮次才能在 UI 上提示可能滞后（0 = 未知）。
+  final int contextTokensRound;
   final Duration elapsed;
 
   /// 侧栏话题卡上的最近事件摘要。
@@ -114,6 +119,7 @@ class AgentTask {
     int? rounds,
     int? tokenCount,
     int? contextTokens,
+    int? contextTokensRound,
     Duration? elapsed,
     String? lastEventSummary,
     bool? pinned,
@@ -126,14 +132,14 @@ class AgentTask {
       workspaceName: workspaceName,
       status: status ?? this.status,
       mode: mode ?? this.mode,
-      prePlanMode:
-          clearPrePlanMode ? null : (prePlanMode ?? this.prePlanMode),
+      prePlanMode: clearPrePlanMode ? null : (prePlanMode ?? this.prePlanMode),
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       modelLabel: modelLabel ?? this.modelLabel,
       rounds: rounds ?? this.rounds,
       tokenCount: tokenCount ?? this.tokenCount,
       contextTokens: contextTokens ?? this.contextTokens,
+      contextTokensRound: contextTokensRound ?? this.contextTokensRound,
       elapsed: elapsed ?? this.elapsed,
       lastEventSummary: lastEventSummary ?? this.lastEventSummary,
       parentTaskId: parentTaskId,
