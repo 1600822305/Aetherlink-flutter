@@ -19,9 +19,13 @@ abstract class BrowserSession {
   /// 可读，可继续 readText/snapshot 或换 URL。
   Future<PageLoadResult> open(String url, {Duration? timeout});
 
-  /// 提取当前页正文：优先 Readability，取不到回退 body.innerText。
+  /// 提取当前页正文：优先 Readability，取不到回退 body.innerText；
+  /// 结果经空白归一化（行尾空白去除、连续空行压缩）。
   /// [selector] 提供时取该元素文本。
   Future<String> readText({String? selector});
+
+  /// 当前页面 URL（尚未打开任何页面时为 null）。
+  Future<String?> currentUrl();
 
   /// 截图（JPEG 字节，体积受 [options] 控制）。
   Future<Uint8List> snapshot({SnapshotOptions options = const SnapshotOptions()});
@@ -48,6 +52,7 @@ class HeadlessBrowserSession implements BrowserSession {
   InAppWebViewController? _controller;
   Completer<void>? _loadStart;
   Completer<void>? _loadStop;
+  BrowserException? _blockedNavigation;
   bool _disposed = false;
 
   /// JS 执行级超时（设计稿 §19.2）。
@@ -67,6 +72,7 @@ class HeadlessBrowserSession implements BrowserSession {
     // about:blank 的 readyState='complete' 和抢跑的 onLoadStop 都不作数。
     final loadStart = _loadStart = Completer<void>();
     final loadStop = _loadStop = Completer<void>();
+    _blockedNavigation = null;
     await controller.loadUrl(urlRequest: URLRequest(url: WebUri.uri(uri)));
     final poller = timeout == null
         ? _poller
@@ -81,6 +87,10 @@ class HeadlessBrowserSession implements BrowserSession {
     );
     if (!completed) {
       await controller.stopLoading();
+      // 重定向被 SSRF 复检拦下时页面会停在半路直到超时：
+      // 把真实原因（blockedUrl）回填给调用方，而非笼统的超时。
+      final blocked = _blockedNavigation;
+      if (blocked != null) throw blocked;
       throw const BrowserException(
         BrowserErrorKind.navigationTimeout,
         '页面加载超时，已截停；会话保留，页面可能部分可读，'
@@ -100,7 +110,7 @@ class HeadlessBrowserSession implements BrowserSession {
       final text = await _evaluate(
         "document.querySelector(${_jsString(selector)})?.innerText ?? ''",
       );
-      return (text as String?) ?? '';
+      return _normalizeText((text as String?) ?? '');
     }
     final readability = await _loadReadabilityJs();
     final result = await _evaluate('''
@@ -119,7 +129,15 @@ class HeadlessBrowserSession implements BrowserSession {
         return document.body ? document.body.innerText : '';
       })()
     ''');
-    return (result as String?) ?? '';
+    return _normalizeText((result as String?) ?? '');
+  }
+
+  @override
+  Future<String?> currentUrl() async {
+    _ensureAlive();
+    final controller = _controller;
+    if (controller == null) return null;
+    return (await controller.getUrl())?.toString();
   }
 
   @override
@@ -212,7 +230,8 @@ class HeadlessBrowserSession implements BrowserSession {
         try {
           await _urlPolicy.validate(target.toString());
           return NavigationActionPolicy.ALLOW;
-        } on BrowserException {
+        } on BrowserException catch (e) {
+          _blockedNavigation = e;
           return NavigationActionPolicy.CANCEL;
         }
       },
@@ -261,6 +280,15 @@ class HeadlessBrowserSession implements BrowserSession {
         'packages/aetherlink_browser/assets/js/readability.js',
       );
 
-  static String _jsString(String value) =>
-      "'${value.replaceAll(r'\', r'\\').replaceAll("'", r"\'")}'";
+  static String _jsString(String value) => "'${value.replaceAll(r'\', r'\\').replaceAll("'", r"\'").replaceAll('\n', r'\n').replaceAll('\r', r'\r')}'";
+
+  static String _normalizeText(String text) => normalizeExtractedText(text);
 }
+
+/// 正文空白归一化（设计稿 §19.3 体积控制）：CRLF 统一、行尾空白去除、
+/// 3 个以上连续换行压成 2 个，减少无意义字符占用上下文。
+String normalizeExtractedText(String text) => text
+    .replaceAll('\r\n', '\n')
+    .replaceAll(RegExp(r'[ \t]+(?=\n)'), '')
+    .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+    .trim();

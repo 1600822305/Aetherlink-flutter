@@ -119,6 +119,7 @@ Future<McpToolResult> _read(
     final content = await session.readText(
       selector: selector == null || selector.isEmpty ? null : selector,
     );
+    final src = (await session.currentUrl()) ?? '当前页面';
     final totalLength = content.length;
     if (totalLength == 0) {
       return const McpToolResult('当前页面没有可提取的正文内容');
@@ -131,7 +132,7 @@ Future<McpToolResult> _read(
     }
     final endIndex = (startIndex + maxLength).clamp(0, totalLength);
     final slice = content.substring(startIndex, endIndex);
-    final buf = StringBuffer(wrapUntrustedWebContent('当前页面', slice));
+    final buf = StringBuffer(wrapUntrustedWebContent(src, slice));
     if (endIndex < totalLength) {
       buf
         ..writeln()
@@ -165,7 +166,7 @@ Future<McpToolResult> _snapshot(
     await File(path).writeAsBytes(bytes);
     return McpToolResult(
       '已截取当前页面截图（JPEG，${bytes.length} 字节'
-      '${fullPage ? '，整页' : '，视口'}）。截图将以图片消息随本结果注入上下文。',
+      '${fullPage ? '，整页' : '，视口'}）并已保存；智能体模式下将以图片消息随本结果注入上下文。',
       imagePath: path,
       imageMimeType: 'image/jpeg',
     );

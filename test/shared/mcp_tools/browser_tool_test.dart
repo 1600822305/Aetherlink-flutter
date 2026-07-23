@@ -21,6 +21,7 @@ class _FakeSession implements BrowserSession {
   final BrowserException? openError;
   final BrowserException? readError;
 
+  String? url;
   String? openedUrl;
   Duration? openedTimeout;
   String? readSelector;
@@ -33,8 +34,12 @@ class _FakeSession implements BrowserSession {
     if (error != null) throw error;
     openedUrl = url;
     openedTimeout = timeout;
+    this.url = 'https://example.com/';
     return const PageLoadResult(title: '示例页', finalUrl: 'https://example.com/');
   }
+
+  @override
+  Future<String?> currentUrl() async => url;
 
   @override
   Future<String> readText({String? selector}) async {
@@ -147,6 +152,30 @@ void main() {
       expect(session.readSelector, '#main');
       expect(result.text, contains('<untrusted-web-content'));
       expect(result.text, contains('正文 abc'));
+    });
+
+    test('browser_read 边界 src 使用当前页面 URL（取不到时降级占位）',
+        () async {
+      final session = _FakeSession(text: '正文')..url = 'https://a.com/p';
+      final result = await runBrowserTool(
+        'browser_read',
+        {},
+        manager: _managerOf(session),
+      );
+      expect(
+        result.text,
+        contains('<untrusted-web-content src="https://a.com/p">'),
+      );
+      final noUrl = _FakeSession(text: '正文');
+      final fallback = await runBrowserTool(
+        'browser_read',
+        {},
+        manager: _managerOf(noUrl),
+      );
+      expect(
+        fallback.text,
+        contains('<untrusted-web-content src="当前页面">'),
+      );
     });
 
     test('browser_read 分块：超长内容带续读提示', () async {
