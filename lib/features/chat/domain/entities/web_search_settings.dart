@@ -132,8 +132,8 @@ class WebSearchSettings {
 
   factory WebSearchSettings.fromJson(Map<String, dynamic> json) =>
       WebSearchSettings(
-        maxResults: json['maxResults'] as int? ?? 5,
-        timeout: json['timeout'] as int? ?? 10,
+        maxResults: (json['maxResults'] as num?)?.toInt() ?? 5,
+        timeout: (json['timeout'] as num?)?.toInt() ?? 10,
         language: json['language'] as String? ?? 'zh-CN',
         categories: json['categories'] as String? ?? 'general',
         activeProviderId: json['activeProviderId'] as String? ?? 'searxng',

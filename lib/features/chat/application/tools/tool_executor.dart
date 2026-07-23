@@ -357,7 +357,7 @@ class ChatToolExecutor {
       );
     }
 
-    final maxResults = (args['maxResults'] as int?) ?? ws.maxResults;
+    final maxResults = (args['maxResults'] as num?)?.toInt() ?? ws.maxResults;
     final language = (args['language'] as String?) ?? ws.language;
     final categories = (args['categories'] as String?) ?? ws.categories;
 
