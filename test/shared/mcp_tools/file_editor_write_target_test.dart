@@ -190,6 +190,27 @@ void main() {
     });
   });
 
+  group('tilde paths', () {
+    test('isTildePath / expandTildeWithHome', () {
+      expect(isTildePath('~'), isTrue);
+      expect(isTildePath('~/x/y.txt'), isTrue);
+      expect(isTildePath('a/~b'), isFalse);
+      expect(expandTildeWithHome('/home/u', '~'), '/home/u');
+      expect(expandTildeWithHome('/home/u', '~/a/b.txt'), '/home/u/a/b.txt');
+    });
+
+    test('fileEditorPathsWithinRoot treats ~ paths as outside root', () {
+      expect(
+        fileEditorPathsWithinRoot({'path': '~/x.txt'}, root: '/root'),
+        isFalse,
+      );
+      expect(
+        fileEditorPathsWithinRoot({'path': 'x.txt'}, root: '/root'),
+        isTrue,
+      );
+    });
+  });
+
   group('diffSummaryJson', () {
     test('null when unchanged', () {
       expect(diffSummaryJson('a\nb\n', 'a\nb\n'), isNull);
