@@ -27,6 +27,11 @@ abstract class BrowserSession {
   /// 当前页面 URL（尚未打开任何页面时为 null）。
   Future<String?> currentUrl();
 
+  /// 语义快照（升级设计 §2.1 M4a）：页面标题/URL/标题结构 +
+  /// 带 `@N` 编号的可见交互元素列表。ref 映射存页面侧，每次调用
+  /// 整体重建，旧编号一律失效。
+  Future<String> snapshotDom();
+
   /// 截图（JPEG 字节，体积受 [options] 控制）。
   Future<Uint8List> snapshot({SnapshotOptions options = const SnapshotOptions()});
 
@@ -59,6 +64,7 @@ class HeadlessBrowserSession implements BrowserSession {
   static const _jsTimeout = Duration(seconds: 10);
 
   static String? _readabilityJs;
+  static String? _domSnapshotJs;
 
   @override
   bool get disposed => _disposed;
@@ -130,6 +136,22 @@ class HeadlessBrowserSession implements BrowserSession {
       })()
     ''');
     return _normalizeText((result as String?) ?? '');
+  }
+
+  @override
+  Future<String> snapshotDom() async {
+    _ensureAlive();
+    _ensureNavigated();
+    final js = await _loadDomSnapshotJs();
+    final result = await _evaluate(js);
+    final text = (result as String?) ?? '';
+    if (text.trim().isEmpty) {
+      throw const BrowserException(
+        BrowserErrorKind.internal,
+        '语义快照生成失败：页面未返回快照文本',
+      );
+    }
+    return normalizeExtractedText(text);
   }
 
   @override
@@ -278,6 +300,11 @@ class HeadlessBrowserSession implements BrowserSession {
   static Future<String> _loadReadabilityJs() async => _readabilityJs ??=
       await rootBundle.loadString(
         'packages/aetherlink_browser/assets/js/readability.js',
+      );
+
+  static Future<String> _loadDomSnapshotJs() async => _domSnapshotJs ??=
+      await rootBundle.loadString(
+        'packages/aetherlink_browser/assets/js/dom_snapshot.js',
       );
 
   static String _jsString(String value) => "'${value.replaceAll(r'\', r'\\').replaceAll("'", r"\'").replaceAll('\n', r'\n').replaceAll('\r', r'\r')}'";

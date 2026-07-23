@@ -35,6 +35,7 @@ const Set<String> kMicroCompactableTools = {
   // browser_snapshot 的文本结果很短且截图淘汰独立处理，不进白名单。
   'browser_open',
   'browser_read',
+  'browser_snapshot_dom',
 };
 
 /// microcompact 触发阈值（字符，与 compaction 同款粗代理）：低于

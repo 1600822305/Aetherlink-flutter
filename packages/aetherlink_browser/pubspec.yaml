@@ -20,3 +20,4 @@ dev_dependencies:
 flutter:
   assets:
     - assets/js/readability.js
+    - assets/js/dom_snapshot.js

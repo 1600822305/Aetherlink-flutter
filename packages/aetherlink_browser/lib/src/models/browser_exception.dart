@@ -16,15 +16,25 @@ enum BrowserErrorKind {
   /// 会话已失效（WebView 已回收/重建），应重新 open。
   sessionGone,
 
+  /// 元素未找到/定位方式无效（permanent：换定位方式或先重新快照）。
+  elementNotFound,
+
+  /// @N ref 已失效（页面已导航/快照已重建），应重新 browser_snapshot_dom。
+  refStale,
+
   /// 其他内部错误。
   internal,
 }
 
 class BrowserException implements Exception {
-  const BrowserException(this.kind, this.message);
+  const BrowserException(this.kind, this.message, {this.transient = false});
 
   final BrowserErrorKind kind;
   final String message;
+
+  /// 瞬态失败（可原样小重试，如页面未加载完）；false 为 permanent，
+  /// 应换策略而非重试（借 ego-lite element-resolver 的失败分类语义）。
+  final bool transient;
 
   @override
   String toString() => 'BrowserException(${kind.name}): $message';

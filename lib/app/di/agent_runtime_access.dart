@@ -246,7 +246,7 @@ const Set<String> _kReadOnlyToolNames = {
   // 知识库：只读子集（kb_manage 有写操作，排除）
   'kb_list', 'kb_search', 'kb_read',
   // 内置浏览器：首版只读三件套（浏览器设计稿 §6）
-  'browser_open', 'browser_read', 'browser_snapshot',
+  'browser_open', 'browser_read', 'browser_snapshot', 'browser_snapshot_dom',
 };
 
 /// 档案工具分组 → 模型可见工具定义 + 名称到 [ToolRoute] 的分发表。

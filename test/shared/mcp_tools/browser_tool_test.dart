@@ -11,12 +11,14 @@ import 'package:flutter_test/flutter_test.dart';
 class _FakeSession implements BrowserSession {
   _FakeSession({
     this.text = '',
+    this.domSnapshot = '',
     this.bytes,
     this.openError,
     this.readError,
   });
 
   final String text;
+  final String domSnapshot;
   final Uint8List? bytes;
   final BrowserException? openError;
   final BrowserException? readError;
@@ -40,6 +42,13 @@ class _FakeSession implements BrowserSession {
 
   @override
   Future<String?> currentUrl() async => url;
+
+  @override
+  Future<String> snapshotDom() async {
+    final error = readError;
+    if (error != null) throw error;
+    return domSnapshot;
+  }
 
   @override
   Future<String> readText({String? selector}) async {
@@ -201,6 +210,37 @@ void main() {
       expect(result.text, contains('超出内容长度'));
     });
 
+    test('browser_snapshot_dom 返回不可信边界包裹的语义快照 + ref 失效提示', () async {
+      final session = _FakeSession(domSnapshot: '页面: 示例\n@1 button "登录"');
+      session.url = 'https://example.com/';
+      final result = await runBrowserTool(
+        'browser_snapshot_dom',
+        {},
+        manager: _managerOf(session),
+      );
+      expect(result.isError, isFalse);
+      expect(result.text,
+          contains('<untrusted-web-content src="https://example.com/">'));
+      expect(result.text, contains('@1 button'));
+      expect(result.text, contains('@N 编号仅在本次快照后有效'));
+    });
+
+    test('browser_snapshot_dom 的 BrowserException 转分类错误消息', () async {
+      final session = _FakeSession(
+        readError: const BrowserException(
+          BrowserErrorKind.sessionGone,
+          '尚未打开任何页面',
+        ),
+      );
+      final result = await runBrowserTool(
+        'browser_snapshot_dom',
+        {},
+        manager: _managerOf(session),
+      );
+      expect(result.isError, isTrue);
+      expect(result.text, contains('sessionGone'));
+    });
+
     test('browser_snapshot 截图落盘并回填 imagePath/imageMimeType', () async {
       final session = _FakeSession(bytes: Uint8List.fromList([9, 8, 7, 6]));
       final dir = await Directory.systemTemp.createTemp('browser_shot_test');
@@ -233,18 +273,23 @@ void main() {
   });
 
   group('注册面', () {
-    test('catalog 注册了只读三件套', () {
+    test('catalog 注册了只读工具集', () {
       final tools = builtinToolsFor(kBrowserServerName);
       expect(
         tools.map((t) => t.name),
-        containsAll(['browser_open', 'browser_read', 'browser_snapshot']),
+        containsAll([
+          'browser_open',
+          'browser_read',
+          'browser_snapshot',
+          'browser_snapshot_dom',
+        ]),
       );
     });
 
-    test('open/read 在 microcompact 白名单（网页内容可重取），snapshot 不在', () {
+    test('open/read/snapshot_dom 在 microcompact 白名单（网页内容可重取），snapshot 不在', () {
       expect(
         kMicroCompactableTools,
-        containsAll(['browser_open', 'browser_read']),
+        containsAll(['browser_open', 'browser_read', 'browser_snapshot_dom']),
       );
       expect(kMicroCompactableTools, isNot(contains('browser_snapshot')));
     });

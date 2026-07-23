@@ -406,6 +406,23 @@ const Map<String, List<McpToolDefinition>> kBuiltinMcpTools = {
       },
     ),
     McpToolDefinition(
+      name: 'browser_snapshot_dom',
+      description:
+          '获取内置浏览器当前页面的语义快照：标题结构 + 可见交互元素列表'
+          '（链接/按钮/输入框等），每个元素带 @N 编号、角色、名称和状态。'
+          '需先用 browser_open 打开页面。用于了解页面结构、可交互内容，'
+          '比截图省 token；@N 编号在页面导航或重新快照后失效。',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'session': {
+            'type': 'string',
+            'description': '可选会话标识（当前版本共享同一浏览器实例，保留参数）',
+          },
+        },
+      },
+    ),
+    McpToolDefinition(
       name: 'browser_snapshot',
       description:
           '截取内置浏览器当前页面的截图（JPEG），以图片消息注入上下文供多模态'
