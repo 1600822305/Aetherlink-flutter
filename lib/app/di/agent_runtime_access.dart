@@ -1137,12 +1137,29 @@ class _McpAgentToolExecutor implements AgentToolExecutor {
     cancel.addListener(onCancelSignal);
     onCancelSignal();
     try {
-      final result = await _executor.runTool(
+      // 与中断信号赛跑：cancelSignal 只有部分工具（terminal_execute）
+      // 主动响应，其余工具会跑到自然结束——暂停/终止/打断在这类工具上
+      // 表现为"点了没反应"。这里统一在信号命中时立即返回中断结果，
+      // 引擎回到安全点收敛；底层调用继续在后台自然收尾，结果丢弃
+      // （与工具超时路径同款语义）。
+      final pending = _executor.runTool(
         route,
         call.name,
         args,
         cancelSignal: interrupted.future,
       );
+      unawaited(pending.then((_) {}, onError: (_) {}));
+      final result = await Future.any<McpToolResult?>([
+        pending,
+        interrupted.future.then((_) => null),
+      ]);
+      if (result == null) {
+        return const AgentToolResult(
+          ok: false,
+          summary: '已中断 ✗',
+          detail: '用户中断了该工具调用，执行结果已丢弃。',
+        );
+      }
       final spilled = await _spillLargeOutput(call.name, result.text);
       return AgentToolResult(
         ok: !result.isError,

@@ -67,6 +67,7 @@ class UserMessageEvent extends AgentEvent {
     required super.at,
     required this.text,
     this.queued = false,
+    this.interrupt = false,
     this.attachments = const [],
     this.replyToQuestionId,
   });
@@ -75,6 +76,10 @@ class UserMessageEvent extends AgentEvent {
 
   /// true = 执行中排队注入的追加指令（事件流回显"已排队"态）。
   final bool queued;
+
+  /// true = 「立即打断并发送」注入的指令：与 [queued] 同为排队消费
+  /// 语义，但回显"打断中"而不是"已排队"（用户点的是打断）。
+  final bool interrupt;
 
   final List<AgentUserAttachment> attachments;
 

@@ -136,12 +136,14 @@ String encodeAgentEventPayload(AgentEvent event) {
     UserMessageEvent(
       :final text,
       :final queued,
+      :final interrupt,
       :final attachments,
       :final replyToQuestionId,
     ) =>
       {
         'text': text,
         'queued': queued,
+        if (interrupt) 'interrupt': true,
         if (attachments.isNotEmpty)
           'attachments': [
             for (final a in attachments)
@@ -260,6 +262,7 @@ AgentEvent decodeAgentEvent({
         at: at,
         text: p['text'] as String? ?? '',
         queued: p['queued'] as bool? ?? false,
+        interrupt: p['interrupt'] as bool? ?? false,
         attachments: attachments,
         replyToQuestionId: p['replyToQuestionId'] as String?,
       );

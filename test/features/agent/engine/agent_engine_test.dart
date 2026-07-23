@@ -51,6 +51,7 @@ class InMemoryAgentEventStore implements AgentEventStore {
     String taskId,
     String text, {
     bool queued = false,
+    bool interrupt = false,
     List<AgentUserAttachment> attachments = const [],
     String? replyToQuestionId,
   }) async {
@@ -60,6 +61,7 @@ class InMemoryAgentEventStore implements AgentEventStore {
       at: DateTime.now(),
       text: text,
       queued: queued,
+      interrupt: interrupt,
       attachments: attachments,
       replyToQuestionId: replyToQuestionId,
     );
