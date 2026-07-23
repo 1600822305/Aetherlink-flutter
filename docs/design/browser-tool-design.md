@@ -506,3 +506,71 @@ CC **没有会话池/LRU**，两条路线都回避了这个问题：
 3. **淘汰策略**：上下文中只保留最近 N 张（建议 N=1~2）截图，旧截图在
    重放时替换为文本占位（"[此处截图已淘汰]"）；compaction 时优先丢图。
 4. 上下文可视化（工作台"上下文"tab）应把图片 token 单列，便于观察。
+
+## 18. 目录结构与模块分块
+
+对齐 `packages/` 现有包的组织惯例（`aetherlink_saf` / `aetherlink_devtools`：
+单一公共出口 + `lib/src/` 私有实现 + 按能力域分子目录 + `test/`）。
+**原则**：一个文件一个职责；公共 API 只从包根出口 export；纯逻辑
+（安全校验、加载策略）与 WebView 依赖分离，保证可单测。
+
+### 18.1 包内结构（`packages/aetherlink_browser/`）
+
+```
+packages/aetherlink_browser/
+├── pubspec.yaml                  # 依赖：flutter_inappwebview（锁 6.1.5）
+├── README.md
+├── assets/
+│   └── js/readability.js         # Mozilla Readability（版本锁定，包内资产）
+├── lib/
+│   ├── aetherlink_browser.dart   # 唯一公共出口：export 公共 API，不写实现
+│   └── src/
+│       ├── session/
+│       │   ├── browser_session.dart    # BrowserSession：open/read/snapshot 门面
+│       │   ├── session_manager.dart    # 单实例 + 互斥队列 + 空闲回收（§16 升级口）
+│       │   └── page_load.dart          # 加载等待策略（onLoadStop/readyState/超时）
+│       ├── extract/
+│       │   ├── readability_extractor.dart  # 注入 readability + innerText 回退
+│       │   ├── html_to_markdown.dart       # 共享提取管线（§13 与 fetch 复用点）
+│       │   └── dom_outline.dart            # DOM 摘要（可延后）
+│       ├── snapshot/
+│       │   └── screenshot.dart         # takeScreenshot + 降采样/JPEG（§17）
+│       ├── security/
+│       │   ├── url_policy.dart         # 协议白名单 + 主机/IP 校验（§15，纯 Dart）
+│       │   └── private_networks.dart   # 内网/环回/链路本地/元数据 IP 段表
+│       └── models/
+│           ├── page_load_result.dart
+│           └── browser_exception.dart  # 面向模型的错误分类
+├── test/
+│   ├── url_policy_test.dart            # 安全逻辑纯 Dart 单测（无需 WebView）
+│   ├── session_manager_test.dart       # 互斥/回收（mock 会话）
+│   └── page_load_test.dart
+└── example/                            # 手测入口（真机验证渲染/截图）
+```
+
+关键分离：`security/` 与 `page_load.dart` 的策略部分是**纯 Dart、零
+WebView 依赖**，可以 `flutter test` 直接跑；只有 `session/` 的实现和
+`snapshot/` 真正碰 `flutter_inappwebview`。
+
+### 18.2 主工程侧（薄接入层，不进包）
+
+```
+lib/shared/mcp_tools/
+├── tools/browser_tool.dart       # 工具 schema + 参数校验 + 调包 API（对标 fetch_tool.dart）
+├── builtin_tool_catalog.dart     # 注册 @aether/browser 服务与三个工具
+└── builtin_tools.dart            # 路由 case '@aether/browser'
+test/shared/mcp_tools/browser_tool_test.dart
+```
+
+权限/审批（permission_rule + approval registry）、事件流落库、多模态注入
+（§14 的截图→user 图片消息）都留在主工程现有层，包保持"纯浏览器能力"，
+聊天模式将来可直接复用。
+
+### 18.3 依赖方向（单向，禁止反向）
+
+```
+主工程 mcp_tools → aetherlink_browser → flutter_inappwebview
+```
+
+包不 import 主工程任何代码（不知道 McpToolResult/审批/事件流的存在），
+对外只暴露纯 Dart API 与自己的 models。
